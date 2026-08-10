@@ -1,0 +1,213 @@
+import { isUniqueViolation, runInTransaction, SoftFailure } from '../db/pool.js';
+import type {
+  AddKeyResult,
+  CreateDeviceResult,
+  DeviceRepository,
+  RevokeDeviceResult,
+  RevokeKeyResult,
+} from './DeviceRepository.js';
+import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord, OpaqueFamilyId } from './types.js';
+
+interface DeviceRow {
+  device_id: string;
+  family_id: string;
+  platform: DeviceRecord['platform'];
+  status: DeviceRecord['status'];
+  created_at: Date;
+  revoked_at: Date | null;
+}
+
+interface DeviceKeyRow {
+  device_id: string;
+  key_id: string;
+  public_key: string;
+  status: DeviceKeyRecord['status'];
+  created_at: Date;
+  revoked_at: Date | null;
+}
+
+function mapDevice(row: DeviceRow): DeviceRecord {
+  return {
+    deviceId: row.device_id,
+    familyId: row.family_id,
+    platform: row.platform,
+    status: row.status,
+    createdAt: row.created_at,
+    revokedAt: row.revoked_at,
+  };
+}
+
+function mapKey(row: DeviceKeyRow): DeviceKeyRecord {
+  return {
+    deviceId: row.device_id,
+    keyId: row.key_id,
+    publicKey: row.public_key,
+    status: row.status,
+    createdAt: row.created_at,
+    revokedAt: row.revoked_at,
+  };
+}
+
+type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND';
+
+export class PostgresDeviceRepository implements DeviceRepository {
+  async createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult> {
+    try {
+      return await runInTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [device.deviceId, device.familyId, device.platform, device.status, device.createdAt, device.revokedAt],
+        );
+        try {
+          await client.query(
+            `INSERT INTO device_public_keys (device_id, key_id, public_key, status, created_at, revoked_at)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [key.deviceId, key.keyId, key.publicKey, key.status, key.createdAt, key.revokedAt],
+          );
+        } catch (error) {
+          if (isUniqueViolation(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
+          throw error;
+        }
+        return { outcome: 'CREATED', device, key } as const;
+      });
+    } catch (error) {
+      if (error instanceof SoftFailure) return { outcome: 'DUPLICATE_KEY' };
+      throw error;
+    }
+  }
+
+  async findDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord | null> {
+    const { rows } = await runInTransaction((client) =>
+      client.query<DeviceRow>(`SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`, [deviceId, familyId]),
+    );
+    return rows[0] ? mapDevice(rows[0]) : null;
+  }
+
+  /** Device revocation and cascading key revocation as ONE transaction, not an application-level loop. */
+  async revokeDeviceAndKeysAtomically(
+    familyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    revokedAt: Date,
+  ): Promise<RevokeDeviceResult> {
+    try {
+      return await runInTransaction(async (client) => {
+        const deviceResult = await client.query<DeviceRow>(
+          `UPDATE devices SET status = 'REVOKED', revoked_at = $3
+           WHERE device_id = $1 AND family_id = $2
+           RETURNING *`,
+          [deviceId, familyId, revokedAt],
+        );
+        let deviceRow = deviceResult.rows[0];
+        if (!deviceRow) {
+          // Either unknown or already revoked (WHERE doesn't restrict on
+          // status, so "already revoked" still matches and re-updates
+          // idempotently) -- verify existence under the family scope.
+          const existing = await client.query<DeviceRow>(
+            `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`,
+            [deviceId, familyId],
+          );
+          if (!existing.rows[0]) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
+          deviceRow = existing.rows[0];
+        }
+
+        await client.query(
+          `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $2
+           WHERE device_id = $1 AND status = 'ACTIVE'`,
+          [deviceId, revokedAt],
+        );
+        const keysResult = await client.query<DeviceKeyRow>(
+          `SELECT * FROM device_public_keys WHERE device_id = $1`,
+          [deviceId],
+        );
+        return { outcome: 'REVOKED', device: mapDevice(deviceRow), keys: keysResult.rows.map(mapKey) } as const;
+      });
+    } catch (error) {
+      if (error instanceof SoftFailure) return { outcome: 'DEVICE_NOT_FOUND' };
+      throw error;
+    }
+  }
+
+  async addKeyAtomically(familyId: OpaqueFamilyId, record: DeviceKeyRecord): Promise<AddKeyResult> {
+    try {
+      return await runInTransaction(async (client) => {
+        const deviceResult = await client.query<DeviceRow>(
+          `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2 FOR UPDATE`,
+          [record.deviceId, familyId],
+        );
+        const deviceRow = deviceResult.rows[0];
+        if (!deviceRow) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
+        if (deviceRow.status === 'REVOKED') throw new SoftFailure<DeviceSoftCode>('DEVICE_REVOKED');
+
+        try {
+          await client.query(
+            `INSERT INTO device_public_keys (device_id, key_id, public_key, status, created_at, revoked_at)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [record.deviceId, record.keyId, record.publicKey, record.status, record.createdAt, record.revokedAt],
+          );
+        } catch (error) {
+          if (isUniqueViolation(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
+          throw error;
+        }
+        return { outcome: 'ADDED', key: record } as const;
+      });
+    } catch (error) {
+      if (error instanceof SoftFailure) {
+        return { outcome: error.outcome } as AddKeyResult;
+      }
+      throw error;
+    }
+  }
+
+  async findKeysByDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceKeyRecord[]> {
+    return runInTransaction(async (client) => {
+      const device = await client.query(`SELECT 1 FROM devices WHERE device_id = $1 AND family_id = $2`, [
+        deviceId,
+        familyId,
+      ]);
+      if (device.rowCount === 0) return [];
+      const keys = await client.query<DeviceKeyRow>(`SELECT * FROM device_public_keys WHERE device_id = $1`, [
+        deviceId,
+      ]);
+      return keys.rows.map(mapKey);
+    });
+  }
+
+  async revokeKeyForFamily(
+    familyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    keyId: DeviceKeyId,
+    revokedAt: Date,
+  ): Promise<RevokeKeyResult> {
+    try {
+      return await runInTransaction(async (client) => {
+        const device = await client.query(`SELECT 1 FROM devices WHERE device_id = $1 AND family_id = $2`, [
+          deviceId,
+          familyId,
+        ]);
+        if (device.rowCount === 0) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
+
+        const updated = await client.query<DeviceKeyRow>(
+          `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $3
+           WHERE device_id = $1 AND key_id = $2
+           RETURNING *`,
+          [deviceId, keyId, revokedAt],
+        );
+        if (updated.rows[0]) return { outcome: 'REVOKED', key: mapKey(updated.rows[0]) } as const;
+
+        const existing = await client.query<DeviceKeyRow>(
+          `SELECT * FROM device_public_keys WHERE device_id = $1 AND key_id = $2`,
+          [deviceId, keyId],
+        );
+        if (!existing.rows[0]) throw new SoftFailure<DeviceSoftCode>('KEY_NOT_FOUND');
+        // Already revoked -- idempotent success.
+        return { outcome: 'REVOKED', key: mapKey(existing.rows[0]) } as const;
+      });
+    } catch (error) {
+      if (error instanceof SoftFailure) {
+        return { outcome: error.outcome } as RevokeKeyResult;
+      }
+      throw error;
+    }
+  }
+}

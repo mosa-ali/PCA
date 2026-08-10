@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const connectionString = process.env.PCA_DATABASE_URL;
@@ -15,7 +15,7 @@ const client = new pg.Client({ connectionString });
 await client.connect();
 try {
   for (const file of files) {
-    const migration = await readFile(join(root.pathname, file), 'utf8');
+    const migration = await readFile(fileURLToPath(new URL(file, root)), 'utf8');
     await client.query('BEGIN');
     try {
       await client.query(migration);
@@ -28,7 +28,8 @@ try {
   }
   const { rows } = await client.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   const actual = rows.map((row) => row.table_name).join(',');
-  const expected = 'device_public_keys,devices,families,licenses,release_metadata,schema_migrations,security_audit_metadata,service_accounts';
+  const expected =
+    'device_public_keys,devices,enrollment_invitations,families,licenses,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,schema_migrations,security_audit_metadata,service_accounts';
   if (actual !== expected) throw new Error(`Unexpected public schema: ${actual}`);
   console.log(`PostgreSQL migration/privacy gate passed (${files.length} migration(s)).`);
 } finally {
