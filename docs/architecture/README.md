@@ -2,10 +2,10 @@
 
 **Version:** 1.0  
 **Date:** 2026-08-10  
-**Status:** Documentation complete and published; the final verified remote SHA is recorded by the closeout report/commit after checksum verification. Pending independent review and owner acceptance.
-**Implementation:** Prohibited until Gate A-100 is accepted.
+**Status:** VERIFIED_COMPLETE v1.0; owner accepted published baseline `fda523...`.
+**Implementation:** NOT_STARTED; authorization remains NOT_GRANTED.
 
-This package is the controlled architecture baseline for PCA before implementation. `A_100 = PENDING_INDEPENDENT_REVIEW`; it is not owner-accepted and independent review has not passed.
+This package is the controlled architecture baseline for PCA before implementation. `A_100 = OWNER_ACCEPTED`; implementation remains separately unauthorized.
 
 | # | Document | Purpose |
 |---|---|---|

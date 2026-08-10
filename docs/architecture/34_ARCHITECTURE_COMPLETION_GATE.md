@@ -8,18 +8,15 @@
 
 | Field | State |
 |---|---|
-| CONTENT_STATE | DOCUMENTATION_COMPLETE_PENDING_INDEPENDENT_REVIEW |
-| A_100 | PENDING_INDEPENDENT_REVIEW |
-| OWNER_ACCEPTANCE | PENDING |
-| Publication baseline | Reconciliation publication baseline published after the earlier reviewed baseline `8a7bb2b9347f9236943fc476d9706ead7026c9c8` |
+| CONTENT_STATE | VERIFIED_COMPLETE |
+| A_100 | OWNER_ACCEPTED |
+| OWNER_ACCEPTANCE | ACCEPTED |
+| Publication baseline | Owner-accepted published baseline `fda523...` |
 | FINAL_ARCHITECTURE_PUBLISHED | Published; final verified remote SHA is recorded by the closeout report/commit after checksum verification |
-| Latest reconciliation | PUBLISHED; independent review must use the final verified remote SHA recorded at closeout |
+| Latest reconciliation | PUBLISHED and owner accepted |
 | IMPLEMENTATION_STATUS | NOT_STARTED |
 | IMPLEMENTATION_AUTHORIZATION | NOT_GRANTED |
 
-## Open closure work
+## Gate result
 
-- Independently run R3/R4/R5 against the final verified remote SHA recorded by the closeout report/commit; previous findings are not closed merely by publication.
-- Obtain explicit owner acceptance only after that independent review is complete.
-
-No checklist marks this gate complete while any item above remains open.
+The owner has accepted the architecture baseline at version 1.0. This acceptance does not authorize implementation; the implementation freeze remains in force until separately changed by the owner.
