@@ -1,51 +1,155 @@
 # 07 — iOS Architecture
 
-## 1. Native technology
+Owning agent: **PCA-DOC-B**. Governed by doc 00 (Document Control).
 
-Recommended client: **Swift + SwiftUI** with required Screen Time API extensions.
+## 1. Purpose
 
-## 2. Core frameworks
+Define the iOS-specific technical architecture of the PCA Child Agent (and PCA Parent's iOS-facing configuration UI), built strictly within Apple's Screen Time API family (Family Controls, Managed Settings, Device Activity) and public frameworks (Keychain, Core ML). Every capability claim carries a doc 00 Section 8 label. iOS's architecture is structurally different from Android's (doc 06): Apple's model is opaque-token-based and privacy-preserving by design, and this document's central discipline is to never claim a capability beyond what those opaque tokens and public APIs actually expose.
 
-- **Family Controls** — authorization and family activity selection.
-- **Managed Settings** — privacy-preserving restrictions/shields.
-- **Device Activity** — schedules and threshold callbacks.
-- **Managed Settings UI** — customized shield presentation where supported.
+## 2. Scope
 
-Distribution requires the Family Controls entitlement for the app and relevant extensions.
+In scope: native technology choice, Family Controls authorization, Managed Settings restrictions/shields, Device Activity schedules/thresholds, Keychain key storage, Core ML placement for on-device inference, anti-removal mechanics, and App Store distribution/entitlement constraints. Out of scope: Android (06), enrollment token protocol (08 — this document covers only the iOS-side child-authorization step within that flow), cryptographic primitive selection (09), and per-feature behavior detail (12–17), for which this document describes only the iOS platform mechanism.
 
-## 3. Privacy boundary
+## 3. Native technology
 
-Apple's model intentionally uses opaque tokens and privacy-preserving controls. PCA must not assume unrestricted access to another app's URLs, private content or arbitrary activity history.
+Recommended client: **Swift + SwiftUI**, with the required Screen Time API app extensions: a `DeviceActivityMonitor` extension (schedule/threshold callbacks run out-of-process from the main app, per Apple's design) and, where a custom shield UI is used, a `ManagedSettingsUI` `ShieldConfiguration`/`ShieldActionExtension` pair. Rationale: SwiftUI plus the extension-based Screen Time architecture is Apple's only supported integration path for this capability class — there is no viable alternative framework, since Family Controls/Managed Settings/Device Activity are Apple-native APIs with no cross-platform binding, and any attempt to reimplement equivalent restriction behavior outside these frameworks would fall outside Apple's public API surface (doc 01 Section 5's "no unsupported device manipulation" boundary).
 
-## 4. Anti-removal
+## 4. Core frameworks
 
-For a child account authorized by a parent/guardian, Apple documents that Family Controls can prevent the child from deleting the parental-control app. This must be implemented only through Apple-supported authorization; no jailbreak or unsupported device manipulation.
+- **Family Controls** (`FamilyControls`) — parent/guardian authorization (`AuthorizationCenter.shared.requestAuthorization(for: .child)`) and the `FamilyActivityPicker` UI the parent uses to select apps/categories/web domains, returning opaque `FamilyActivitySelection` tokens (`ApplicationToken`/`ActivityCategoryToken`/`WebDomainToken`) rather than identifiable app/domain data to the requesting app. Label: `REQUIRES_ENTITLEMENT`.
+- **Managed Settings** (`ManagedSettings`) — applies restrictions ("shields") to the tokens selected via Family Controls: `ManagedSettingsStore().shield.applications`/`.applicationCategories`/`.webDomains`, plus non-shield restrictions (e.g. account/App Store restrictions) where applicable to the product's scope. Label: `REQUIRES_ENTITLEMENT`.
+- **Device Activity** (`DeviceActivity`) — defines monitoring schedules (`DeviceActivitySchedule`) and threshold-based event callbacks (`DeviceActivityEvent`) delivered to the `DeviceActivityMonitor` extension (e.g. "N minutes of category X reached"), and `DeviceActivityReport` for privacy-preserving usage reporting UI rendered inside an extension the host app cannot directly read raw data from. Label: `REQUIRES_ENTITLEMENT`.
+- **Managed Settings UI** (`ManagedSettingsUI`) — customized shield presentation (`ShieldConfiguration`) where Apple's API surface supports customization; the underlying shield-triggered UI is otherwise a system-presented screen PCA does not fully control. Label: `REQUIRES_ENTITLEMENT`; VERIFIED_WITH_LIMITATION on the degree of customization (Apple controls the shield's base presentation).
 
-## 5. Screen-time enforcement
+Distribution requires Apple to grant the Family Controls entitlement to the app (and, for the child-authorized-account flow, the app's extensions) on request; entitlement is not automatically available to every developer account (doc 01 Section 6.3, doc 33).
 
-Device Activity schedules and thresholds trigger extensions; Managed Settings applies app/category/domain shields selected through Family Controls. The product must remain within Apple's public API and entitlement boundaries.
+## 5. Privacy boundary
 
-## 6. App and web visibility
+Apple's model intentionally uses opaque tokens and privacy-preserving restriction primitives rather than exposing raw identifiers. PCA MUST NOT assume, claim, or design around unrestricted access to another app's URLs, private in-app content, or an arbitrary cross-app activity history. Concretely:
 
-- Selected apps/categories/domains are represented through privacy-preserving tokens where applicable.
-- Detailed cross-device reporting must be designed only around data Apple explicitly exposes.
-- PCA Safe Browser may maintain its own local history for activity that occurs inside the PCA browser.
-- PCA must not promise a general Safari/other-app full URL history unless public APIs expressly support it for the deployment.
+- `ApplicationToken`/`WebDomainToken`/`ActivityCategoryToken` are opaque even to the requesting app in the general case — the app that requested the `FamilyActivityPicker` selection can re-present the same tokens back through Apple's own UI (e.g. to show "here is what you selected"), but cannot reliably reverse a token into an arbitrary human-readable app name/domain string on every OS version/config without Apple-provided display APIs, and MUST NOT attempt to defeat that opacity via non-public means.
+- `DeviceActivityReport` is rendered by an extension that Apple restricts the host app's raw-data access to — the host app receives what the report extension is permitted to compute/display, not a raw exportable dataset, per Apple's documented report-extension model. `VERIFIED_WITH_LIMITATION`.
+- This privacy boundary is a deliberate constraint PCA's iOS reporting UI (doc 15) must be designed around, not a limitation to work around via undocumented behavior.
 
-## 7. Eye-distance behavior
+**PCA-IOS-001** No iOS code path in the Child Agent or its extensions may call a private/undocumented API (including via runtime introspection or symbol lookup) to obtain data Apple's public Screen Time API surface does not expose; any feature that would require this MUST be redesigned to fit the public API boundary or explicitly marked `UNSUPPORTED` on iOS rather than implemented via a private-API path that risks App Store rejection and reintroduces exactly the "claims access the OS doesn't grant" problem doc 01 Section 5 prohibits.
 
-Apple provides a system Screen Distance feature on supported TrueDepth devices. PCA may explain/recommend enabling the system feature but cannot claim control over a private API.
+## 6. Anti-removal
 
-Within PCA's own foreground experience, public proximity/TrueDepth APIs may be used when justified and permissioned. Cross-app continuous camera monitoring is not part of the architecture.
+For a child account authorized by a parent/guardian via Family Controls' child-authorization flow, Apple documents that Family Controls restrictions (which can include restricting app deletion for the profile) prevent the child from deleting the parental-control app through ordinary means while that authorization is active. Label: `VERIFIED_WITH_LIMITATION` (REQUIRES_ENTITLEMENT; scoped precisely to: (a) a device where Family Sharing / child-account authorization is actually configured for that child, and (b) restrictions applied through the supported Family Controls authorization state — this is not a universal "cannot be uninstalled" claim, per this document's binding constraint from the task brief).
 
-## 8. Emergency behavior
+This MUST be implemented only through Apple-supported authorization (`AuthorizationCenter` child flow) — no jailbreak, no MDM-adjacent unsupported device manipulation, no attempt to hook into `Springboard`/deletion APIs outside the public framework. An authorized parent/guardian retains a recovery/removal route at all times: removing the child-account restriction (via Screen Time passcode / Family Sharing management, which is Apple's own supported mechanism, not PCA's) is what un-restricts app deletion — PCA's own removal flow (doc 08 Section 5) triggers this through the supported API surface rather than bypassing it.
 
-Managed shields must not intentionally block emergency/SOS or required system functionality.
+**PCA-IOS-002** The product's marketing and in-app copy MUST state the anti-removal claim with its precise scope (child-account authorization active, via Family Controls) and MUST NOT generalize it to "cannot be removed from the device" without qualification, consistent with the binding constraint that no platform's anti-removal claim may be stated as universal.
 
-## 9. Entitlement fallback
+## 7. Screen-time enforcement
 
-If Apple distribution entitlement approval is unavailable:
-- no fake/unsupported parental-control implementation;
-- iOS release is limited to features supported without that entitlement;
-- Android release may proceed only if separately accepted;
-- marketing must reflect the reduced iOS capability.
+Device Activity schedules and thresholds trigger the `DeviceActivityMonitor` extension's callbacks (`intervalDidStart`/`intervalDidEnd`/`eventDidReachThreshold`, etc.); the extension applies/removes Managed Settings shields (app/category/domain) in response. The product must remain strictly within Apple's public API and entitlement boundaries — no attempt to poll or intercept outside the documented callback model, since Device Activity extensions run in a separate, Apple-controlled process specifically to prevent the host app from continuously observing raw activity in real time (part of the same privacy-by-design boundary as Section 5).
+
+```mermaid
+sequenceDiagram
+    participant Parent as PCA Parent (policy source)
+    participant Child as PCA Child Agent (host app)
+    participant DAExt as DeviceActivityMonitor extension
+    participant MS as ManagedSettingsStore
+
+    Parent->>Child: Signed policy envelope (doc 05 §6)
+    Child->>Child: Verify signature/version/expiry
+    Child->>DAExt: Configure DeviceActivitySchedule/Events\nfrom verified policy
+    Note over DAExt: Runs out-of-process,\nApple-controlled lifecycle
+    DAExt->>DAExt: intervalDidStart / eventDidReachThreshold
+    DAExt->>MS: Apply shield (applications/categories/webDomains)
+    MS-->>Child: Shield active (system-presented)
+    Note over MS: Emergency/system functionality\nnever shielded (§8)
+```
+
+## 8. App and web visibility
+
+- Selected apps/categories/domains are represented through privacy-preserving tokens (Section 5), not identifiable strings, wherever Apple's API returns tokens.
+- Detailed cross-device or historical reporting MUST be designed only around data Apple explicitly exposes through `DeviceActivityReport`/`DeviceActivity` extensions — PCA MUST NOT design a reporting feature on iOS that assumes a raw, exportable per-URL or per-app timestamped event log unless a specific, cited Apple API is confirmed to provide it.
+- PCA Safe Browser (doc 06 Section 6's Android equivalent applies identically on iOS) may maintain its own local history for activity that occurs inside PCA's own in-house browser surface — this is first-party data PCA's own app legitimately handles, not third-party interception.
+- PCA MUST NOT promise a general Safari/other-app full URL history on iOS unless a public API is confirmed to expressly support it for the deployment target; absent that confirmation this capability is `UNSUPPORTED` on iOS outside PCA Safe Browser, consistent with doc 15's ownership of the detailed claim.
+
+## 9. Eye-distance behavior
+
+Apple provides a system **Screen Distance** feature on supported TrueDepth-camera devices, which warns the user when a device is held too close. PCA may explain/recommend enabling this system feature to the family but cannot claim control over it, cannot read its state via private API, and cannot present it as a PCA-built capability. Label: `UNSUPPORTED` as a PCA-controlled feature; `VERIFIED` only as "PCA can point the family to a system setting that exists."
+
+Within PCA's own foreground experience (i.e. only while the PCA app itself is the active, user-facing app), public proximity/TrueDepth-adjacent APIs may be used for PCA's own eye-distance estimation feature (doc 13) when justified and permissioned, subject to this document's binding constraint: **estimated proximity from a front-facing camera or TrueDepth sensor is an approximate signal, not a medically precise centimeter measurement**, and doc 13's UI/claims MUST reflect that (no clinical-precision wording). Cross-app continuous camera monitoring is explicitly not part of this architecture — the estimation only runs while PCA is the foreground app the child is actively using, per doc 01 Section 5's no-covert-camera-surveillance boundary.
+
+## 10. Emergency behavior
+
+Managed Settings shields MUST NOT intentionally block emergency/SOS calling or other OS-required emergency functionality. This is implemented by never including Phone/Emergency SOS/FaceTime-emergency-adjacent system functionality in a shield's applied-restriction set, mirroring doc 06 Section 8's Android emergency-allowlist floor.
+
+**PCA-IOS-003** A policy envelope that would configure a shield covering the system Phone/Emergency-SOS surface MUST be rejected client-side regardless of signature validity — the same local, non-overridable safety floor pattern as PCA-AND-003 (doc 06), applied to the iOS shield model.
+
+## 11. Entitlement fallback
+
+If Apple's Family Controls distribution entitlement approval is unavailable or delayed:
+- No fake/unsupported parental-control implementation may substitute for it (no private-API workaround, per PCA-IOS-001).
+- The iOS release is limited to whatever features are supported without that entitlement (e.g. informational content, account/family management UI, features that do not require Screen Time restriction capability) until entitlement is granted.
+- The Android release (doc 06) may proceed independently only if separately accepted as a standalone launch by the product owner (cross-referenced, not decided, in this document).
+- Marketing and store-listing copy MUST reflect the reduced iOS capability set for as long as the entitlement is unavailable — no claim of iOS parity with the entitled feature set.
+
+## 12. Key storage
+
+Parent/Child Device Identity Keys and any locally-held Family Data Encryption Key material (doc 09 Section 2) MUST be stored via iOS **Keychain** with an access-control level appropriate to the key's sensitivity (e.g. `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` or stronger, non-synchronizable to iCloud Keychain unless a specific, deliberate multi-device key-sync design is adopted and reviewed under doc 09) — this document states the placement constraint; doc 09 owns the key-hierarchy and rotation design itself.
+
+## 13. On-device inference
+
+Where on-device content classification (doc 14) requires local inference on iOS, implementation uses **Core ML** (optionally via the Vision framework for image-adjacent preprocessing) so that classification runs on-device with no network egress for the classification path itself — the same placement constraint as doc 06 Section 11 (Android), stated here for iOS; PCA-PRIV-002 applies identically on both platforms. Model architecture and runtime specifics belong to doc 23.
+
+## 14. Failure modes
+
+| Failure | Detection | Behavior |
+|---|---|---|
+| Family Controls authorization revoked (parent removes child-account restriction via Apple's Screen Time passcode flow) | `AuthorizationCenter` status check | Shields/monitoring stop being enforceable; app surfaces this to the parent as an out-of-band change (Apple's own flow, not PCA's) rather than silently reporting stale "protected" status |
+| `DeviceActivityMonitor` extension fails to receive scheduled callback (OS resource constraints) | Missed-callback detection via expected-vs-actual schedule reconciliation on next host-app foreground | Treated as a degraded-signal event (parallel to doc 06 Section 12's OEM-throttling case), not silently reported as full compliance |
+| Entitlement revoked/expired at the Apple account level | Build/runtime entitlement check | App MUST degrade to Section 11's fallback state, not crash or silently disable protection without informing the parent |
+| Shield misconfiguration accidentally covers emergency surface | Client-side allowlist validation (Section 10) | Rejected before application (PCA-IOS-003) |
+
+## 15. Security/privacy implications
+
+- The entire iOS architecture is built around Apple's opaque-token privacy model (Section 5); this is treated as a feature to preserve, not friction to engineer around, consistent with doc 09 Section 1's confidentiality goals and doc 01 Section 5's scope boundary.
+- PCA-IOS-001's prohibition on private-API use is both a store-policy risk control and a direct privacy control — a private-API path that reveals token identities would itself be a confidentiality regression against doc 09.
+- Eye-distance estimation (Section 9) is scoped tightly (foreground-only, PCA's own app, approximate signal only) specifically to avoid the two named prohibited claims from the task brief: no clinical-precision claim, no cross-app camera surveillance claim.
+
+## 16. Assumptions
+
+- The family has configured Apple Family Sharing / a child Apple Account for the child device, since Family Controls' child-authorization flow depends on that account relationship existing; a child device without a configured child account is `REQUIRES_FURTHER_OWNER_DECISION` for iOS support scope (PCA-DEC-016 below).
+- Target iOS minimum version is set during doc 30's implementation programme; Section 4's framework availability assumes a currently-supported iOS version and requires revalidation if the minimum changes.
+
+## 17. Platform limitations summary
+
+| Claim | Label |
+|---|---|
+| Prevent child from deleting the app while child-account authorization is active | `VERIFIED_WITH_LIMITATION` (REQUIRES_ENTITLEMENT, scoped per Section 6) |
+| Full raw per-app/per-URL historical event log outside PCA Safe Browser | `UNSUPPORTED` unless a specific Apple API is cited confirming otherwise |
+| Real-time continuous cross-app camera-based proximity monitoring | `UNSUPPORTED` / explicitly out of scope (Section 9) |
+| Medically precise eye-distance measurement | `UNSUPPORTED` as a precision claim; approximate signal only (Section 9) |
+| Shield/restriction enforcement without the Family Controls entitlement | `UNSUPPORTED` (Section 11 fallback applies) |
+
+## 18. Unresolved owner decisions
+
+| Decision ID | Topic | Options | Recommendation | Status |
+|---|---|---|---|---|
+| PCA-DEC-016 | iOS support scope for a child device without a configured Apple child account (Section 16) | (a) Unsupported, require child-account setup before enrollment completes; (b) Reduced-feature mode without Family Controls (informational only) | (a) — the entitlement-gated capability set is the product's core iOS value; a reduced mode risks the same false-capability-claim problem this document exists to prevent | PROPOSED |
+| PCA-DEC-017 | Whether to pursue `ManagedSettingsUI` custom shield branding at launch vs. accept Apple's default shield presentation | (a) Custom shield at launch; (b) Default Apple shield at launch, custom shield as a fast-follow | (b) — reduces initial entitlement/review surface area | PROPOSED |
+
+## 19. Dependencies
+
+- Doc 01 Section 6.3 for the product-level iOS mode definition this document implements technically.
+- Doc 05 Section 6 for the signed-policy-envelope model consumed in Section 7's sequence diagram.
+- Doc 08 for the child-authorization step's place in the overall enrollment flow.
+- Doc 09 for key-hierarchy/rotation design behind Section 12's Keychain placement.
+- Doc 13 for the eye-distance feature's detailed behavior built on Section 9's platform constraint.
+- Doc 14/15 for filtering and app/YouTube-visibility claims built on Sections 5/8's platform boundary.
+- Doc 23 for on-device model/runtime selection referenced in Section 13.
+- Doc 33 for pending citations (Family Controls entitlement process, Device Activity Report data-exposure boundary, Screen Distance feature documentation).
+
+## 20. Acceptance criteria
+
+- [ ] Every capability claim in this document carries a doc 00 Section 8 label and matches doc 01 Section 10's cross-reference table.
+- [ ] No UI or marketing string generalizes Section 6's anti-removal claim beyond its stated scope (PCA-IOS-002).
+- [ ] No code path violates PCA-IOS-001 (private-API use); covered by a static-analysis/App-Review-readiness check in doc 28.
+- [ ] PCA-IOS-003's emergency-shield floor is covered by a test asserting a malformed policy envelope covering Phone/Emergency SOS is rejected.
+- [ ] Doc 13's eye-distance copy is reviewed against Section 9's precision/scope constraints before release.
+- [ ] PCA-DEC-016 and PCA-DEC-017 are resolved before doc 30's iOS implementation phase begins.
