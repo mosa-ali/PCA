@@ -20,28 +20,30 @@ function family() {
 
 test('PG: device + initial key creation persists atomically', async () => {
   const familyId = family();
-  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
-  assert.equal(device.status, 'ACTIVE');
+  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  assert.equal(device.status, 'PAIRING_PENDING');
   const active = await service.listActiveKeys(familyId, device.deviceId);
   assert.equal(active.length, 1);
   assert.equal(active[0].keyId, registeredKey.keyId);
+  assert.equal(active[0].keyPurpose, 'DSK');
 });
 
 test('PG: public-key uniqueness is DB-enforced across devices', async () => {
   const sharedKey = key();
   const familyId = family();
-  await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: sharedKey });
+  await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: sharedKey });
   await assert.rejects(
-    () => service.registerDevice({ familyId, platform: 'ANDROID', publicKey: sharedKey }),
+    () => service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: sharedKey }),
     { code: 'DUPLICATE_KEY' },
   );
 });
 
 test('PG: key addition is atomic and rejects duplicates', async () => {
   const familyId = family();
-  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
-  const added = await service.addDeviceKey(familyId, device.deviceId, key());
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  const added = await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
   assert.equal(added.status, 'ACTIVE');
+  assert.equal(added.keyPurpose, 'DEK');
   const active = await service.listActiveKeys(familyId, device.deviceId);
   assert.equal(active.length, 2);
 });
@@ -49,7 +51,7 @@ test('PG: key addition is atomic and rejects duplicates', async () => {
 test('PG: wrong-family lookup is indistinguishable from nonexistent device', async () => {
   const familyId = family();
   const otherFamilyId = family();
-  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   const wrongFamilyError = await service.listActiveKeys(otherFamilyId, device.deviceId).catch((e) => e);
   const unknownError = await service.listActiveKeys(otherFamilyId, randomUUID()).catch((e) => e);
   assert.ok(wrongFamilyError instanceof DeviceDirectoryError);
@@ -59,9 +61,9 @@ test('PG: wrong-family lookup is indistinguishable from nonexistent device', asy
 
 test('PG: device revocation + all ACTIVE keys revoked in ONE DB transaction', async () => {
   const familyId = family();
-  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
-  await service.addDeviceKey(familyId, device.deviceId, key());
-  await service.addDeviceKey(familyId, device.deviceId, key());
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
+  await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
   const revoked = await service.revokeDevice(familyId, device.deviceId);
   assert.equal(revoked.status, 'REVOKED');
   const active = await service.listActiveKeys(familyId, device.deviceId);
@@ -71,7 +73,7 @@ test('PG: device revocation + all ACTIVE keys revoked in ONE DB transaction', as
 test('PG CONCURRENCY: many simultaneous registrations with the same public key -- exactly 1 succeeds', async () => {
   const sharedKey = key();
   const attempts = await Promise.allSettled(
-    Array.from({ length: 25 }, () => service.registerDevice({ familyId: family(), platform: 'ANDROID', publicKey: sharedKey })),
+    Array.from({ length: 25 }, () => service.registerDevice({ familyId: family(), platform: 'ANDROID', keyPurpose: 'DSK', publicKey: sharedKey })),
   );
   const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
   const rejected = attempts.filter((a) => a.status === 'rejected');
@@ -91,15 +93,15 @@ test('PG FAILURE INJECTION: createDeviceWithKey itself leaves no orphan device r
   const firstDeviceId = randomUUID();
   const now = new Date();
   await repository.createDeviceWithKey(
-    { deviceId: firstDeviceId, familyId: firstFamilyId, platform: 'ANDROID', status: 'ACTIVE', createdAt: now, revokedAt: null },
-    { deviceId: firstDeviceId, keyId: randomUUID(), publicKey: sharedKey, status: 'ACTIVE', createdAt: now, revokedAt: null },
+    { deviceId: firstDeviceId, familyId: firstFamilyId, platform: 'ANDROID', status: 'PAIRING_PENDING', createdAt: now, revokedAt: null, pairedAt: null, pairedByAccountId: null },
+    { deviceId: firstDeviceId, keyId: randomUUID(), keyPurpose: 'DSK', publicKey: sharedKey, status: 'ACTIVE', createdAt: now, revokedAt: null },
   );
 
   const collidingFamilyId = family();
   const collidingDeviceId = randomUUID();
   const result = await repository.createDeviceWithKey(
-    { deviceId: collidingDeviceId, familyId: collidingFamilyId, platform: 'ANDROID', status: 'ACTIVE', createdAt: now, revokedAt: null },
-    { deviceId: collidingDeviceId, keyId: randomUUID(), publicKey: sharedKey, status: 'ACTIVE', createdAt: now, revokedAt: null },
+    { deviceId: collidingDeviceId, familyId: collidingFamilyId, platform: 'ANDROID', status: 'PAIRING_PENDING', createdAt: now, revokedAt: null, pairedAt: null, pairedByAccountId: null },
+    { deviceId: collidingDeviceId, keyId: randomUUID(), keyPurpose: 'DSK', publicKey: sharedKey, status: 'ACTIVE', createdAt: now, revokedAt: null },
   );
   assert.equal(result.outcome, 'DUPLICATE_KEY');
 
@@ -138,34 +140,34 @@ test('PG FAILURE INJECTION: general Postgres rollback semantics -- an aborted tr
 test('PG REVOKED_KEY_REUSE: revoked key material is permanently tombstoned in PostgreSQL -- same device, different device, different family all rejected', async () => {
   const revokedKey = key();
   const ownerFamilyId = family();
-  const { device: owner } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: revokedKey });
+  const { device: owner } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: revokedKey });
   await service.revokeDevice(ownerFamilyId, owner.deviceId);
 
   // Same device (would need a new device since it's revoked, so this
   // exercises addDeviceKey against a real, still-active device instead).
-  const { device: sameFamilyDevice } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: key() });
+  const { device: sameFamilyDevice } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await assert.rejects(
-    () => service.addDeviceKey(ownerFamilyId, sameFamilyDevice.deviceId, revokedKey),
+    () => service.addDeviceKey(ownerFamilyId, sameFamilyDevice.deviceId, revokedKey, 'DEK'),
     { code: 'DUPLICATE_KEY' },
   );
 
   // Different device, same family, via registerDevice.
   await assert.rejects(
-    () => service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: revokedKey }),
+    () => service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: revokedKey }),
     { code: 'DUPLICATE_KEY' },
   );
 
   // Different family entirely -- rejected with the same generic error, no cross-family leak.
   const otherFamilyId = family();
-  const error = await service.registerDevice({ familyId: otherFamilyId, platform: 'ANDROID', publicKey: revokedKey }).catch((e) => e);
+  const error = await service.registerDevice({ familyId: otherFamilyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: revokedKey }).catch((e) => e);
   assert.equal(error.code, 'DUPLICATE_KEY');
   assert.equal(error.message, 'This public key is already registered to a device.');
 });
 
 test('PG REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first revoked_at for both the device and its cascaded keys', async () => {
   const familyId = family();
-  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
-  await service.addDeviceKey(familyId, device.deviceId, key());
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
 
   const first = await service.revokeDevice(familyId, device.deviceId);
   await new Promise((resolve) => setTimeout(resolve, 20)); // ensure a real clock delta is observable
@@ -181,7 +183,7 @@ test('PG REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first 
 
 test('PG REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the first revoked_at', async () => {
   const familyId = family();
-  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   const first = await service.revokeKey(familyId, device.deviceId, registeredKey.keyId);
   await new Promise((resolve) => setTimeout(resolve, 20));
   const second = await service.revokeKey(familyId, device.deviceId, registeredKey.keyId);
@@ -190,8 +192,8 @@ test('PG REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the fi
 
 test('PG CONCURRENCY: many genuinely simultaneous device-revocation calls converge on one winning revoked_at, not a sequential-only guarantee', async () => {
   const familyId = family();
-  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
-  await service.addDeviceKey(familyId, device.deviceId, key());
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
+  await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
 
   const attempts = await Promise.allSettled(
     Array.from({ length: 20 }, () => service.revokeDevice(familyId, device.deviceId)),
@@ -206,7 +208,7 @@ test('PG CONCURRENCY: many genuinely simultaneous device-revocation calls conver
 
 test('PG CONCURRENCY: many genuinely simultaneous single-key revocation calls converge on one winning revoked_at', async () => {
   const familyId = family();
-  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
 
   const attempts = await Promise.allSettled(
     Array.from({ length: 20 }, () => service.revokeKey(familyId, device.deviceId, registeredKey.keyId)),

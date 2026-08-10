@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { isPlausiblePublicKey } from './publicKey.js';
 import type { AddKeyResult, CreateDeviceResult, DeviceRepository } from './DeviceRepository.js';
-import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord, OpaqueFamilyId, Platform } from './types.js';
+import type {
+  DeviceId,
+  DeviceKeyId,
+  DeviceKeyPurpose,
+  DeviceKeyRecord,
+  DeviceRecord,
+  OpaqueFamilyId,
+  Platform,
+} from './types.js';
 
 export type DeviceDirectoryErrorCode =
   | 'INVALID_PUBLIC_KEY'
   | 'DUPLICATE_KEY'
   | 'DEVICE_NOT_FOUND'
   | 'DEVICE_REVOKED'
-  | 'KEY_NOT_FOUND';
+  | 'KEY_NOT_FOUND'
+  | 'INVALID_STATE';
 
 /** Fixed, generic messages per code -- never interpolates key material or family data. */
 export class DeviceDirectoryError extends Error {
@@ -28,12 +37,14 @@ const DEVICE_ERROR_MESSAGES: Record<DeviceDirectoryErrorCode, string> = {
   DEVICE_NOT_FOUND: 'Device was not found.',
   DEVICE_REVOKED: 'Device has been revoked.',
   KEY_NOT_FOUND: 'Device key was not found.',
+  INVALID_STATE: 'Device is not in a state that permits this operation.',
 };
 
 export interface RegisterDeviceInput {
   familyId: OpaqueFamilyId;
   platform: Platform;
   publicKey: string;
+  keyPurpose: DeviceKeyPurpose;
 }
 
 export interface RegisteredDevice {
@@ -50,7 +61,12 @@ export class DeviceDirectoryService {
     this.now = now;
   }
 
-  /** Registration is the family-establishing action itself: the caller asserts the family a new device joins. */
+  /**
+   * Registration is the family-establishing action itself: the caller
+   * asserts the family a new device joins. A freshly registered device is
+   * PAIRING_PENDING, never ACTIVE -- see types.ts's DeviceStatus doc
+   * comment for the full lifecycle reasoning.
+   */
   async registerDevice(input: RegisterDeviceInput): Promise<RegisteredDevice> {
     if (!isPlausiblePublicKey(input.publicKey)) throw new DeviceDirectoryError('INVALID_PUBLIC_KEY');
     const createdAt = this.now();
@@ -58,13 +74,16 @@ export class DeviceDirectoryService {
       deviceId: randomUUID(),
       familyId: input.familyId,
       platform: input.platform,
-      status: 'ACTIVE',
+      status: 'PAIRING_PENDING',
       createdAt,
       revokedAt: null,
+      pairedAt: null,
+      pairedByAccountId: null,
     };
     const key: DeviceKeyRecord = {
       deviceId: device.deviceId,
       keyId: randomUUID(),
+      keyPurpose: input.keyPurpose,
       publicKey: input.publicKey,
       status: 'ACTIVE',
       createdAt,
@@ -75,11 +94,17 @@ export class DeviceDirectoryService {
     return { device: result.device, key: result.key };
   }
 
-  async addDeviceKey(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId, publicKey: string): Promise<DeviceKeyRecord> {
+  async addDeviceKey(
+    authorizedFamilyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    publicKey: string,
+    keyPurpose: DeviceKeyPurpose,
+  ): Promise<DeviceKeyRecord> {
     if (!isPlausiblePublicKey(publicKey)) throw new DeviceDirectoryError('INVALID_PUBLIC_KEY');
     const record: DeviceKeyRecord = {
       deviceId,
       keyId: randomUUID(),
+      keyPurpose,
       publicKey,
       status: 'ACTIVE',
       createdAt: this.now(),
@@ -122,5 +147,18 @@ export class DeviceDirectoryService {
     if (!device) throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
     const keys = await this.repository.findKeysByDeviceForFamily(authorizedFamilyId, deviceId);
     return keys.filter((k) => k.status === 'ACTIVE');
+  }
+
+  /** PAIRING_PENDING -> PAIRED, per doc 08 PCA-FR-141 (parent fingerprint confirmation). Idempotent. */
+  async confirmPairing(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId, confirmedByAccountId: string): Promise<DeviceRecord> {
+    const result = await this.repository.confirmPairing(authorizedFamilyId, deviceId, confirmedByAccountId, this.now());
+    switch (result.outcome) {
+      case 'CONFIRMED':
+        return result.device;
+      case 'DEVICE_NOT_FOUND':
+        throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
+      case 'INVALID_STATE':
+        throw new DeviceDirectoryError('INVALID_STATE');
+    }
   }
 }

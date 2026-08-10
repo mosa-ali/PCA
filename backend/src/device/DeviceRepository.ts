@@ -19,6 +19,11 @@ export type RevokeKeyResult =
   | { outcome: 'DEVICE_NOT_FOUND' }
   | { outcome: 'KEY_NOT_FOUND' };
 
+export type ConfirmPairingResult =
+  | { outcome: 'CONFIRMED'; device: DeviceRecord }
+  | { outcome: 'DEVICE_NOT_FOUND' }
+  | { outcome: 'INVALID_STATE' };
+
 /**
  * Persistence port for the device identity/key directory. Only a
  * deterministic in-memory implementation exists today (test support). The
@@ -53,4 +58,18 @@ export interface DeviceRepository {
     keyId: DeviceKeyId,
     revokedAt: Date,
   ): Promise<RevokeKeyResult>;
+
+  /**
+   * PAIRING_PENDING -> PAIRED only, per doc 08 Section 4 (parent
+   * fingerprint confirmation, PCA-FR-141). Idempotent: confirming an
+   * already-PAIRED device returns success with the original pairedAt
+   * unchanged. Any other status (REVOKED, or already ACTIVE) is
+   * INVALID_STATE -- confirmation is not a general-purpose status setter.
+   */
+  confirmPairing(
+    familyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    confirmedByAccountId: string,
+    confirmedAt: Date,
+  ): Promise<ConfirmPairingResult>;
 }

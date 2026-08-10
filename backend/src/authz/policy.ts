@@ -18,7 +18,8 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   VIEW_INVITATION_STATUS: { requiresFamilyScope: true, requiresLicense: false },
   REVOKE_INVITATION: { requiresFamilyScope: true, requiresLicense: false },
   LIST_OWN_INVITATIONS: { requiresFamilyScope: true, requiresLicense: false },
-  ENROLLMENT_BOOTSTRAP: { requiresFamilyScope: true, requiresLicense: false },
+  VIEW_PAIRING_REQUEST: { requiresFamilyScope: true, requiresLicense: false },
+  CONFIRM_PAIRING_REQUEST: { requiresFamilyScope: true, requiresLicense: false },
   LICENSE_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   RELEASE_METADATA_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
 };

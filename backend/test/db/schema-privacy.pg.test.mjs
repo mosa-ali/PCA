@@ -21,7 +21,7 @@ const PROHIBITED_TERMS = [
 
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
-const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id']);
+const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id', 'key_purpose']);
 
 test('PG SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
   const [tables, columns] = await Promise.all([

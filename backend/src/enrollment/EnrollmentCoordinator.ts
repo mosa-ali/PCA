@@ -7,6 +7,7 @@ import type { EnrollDeviceInput, EnrollDeviceResult, Platform } from './types.js
 export type EnrollmentErrorCode =
   | 'INVALID_TOKEN'
   | 'INVALID_PUBLIC_KEY'
+  | 'KEYS_NOT_DISTINCT'
   | 'INVALID_PLATFORM'
   | 'NOT_FOUND'
   | 'EXPIRED'
@@ -28,6 +29,7 @@ export class EnrollmentError extends Error {
 const ENROLLMENT_ERROR_MESSAGES: Record<EnrollmentErrorCode, string> = {
   INVALID_TOKEN: 'Invitation token is malformed.',
   INVALID_PUBLIC_KEY: 'Device public key is malformed.',
+  KEYS_NOT_DISTINCT: 'Signing and encryption public keys must be distinct.',
   INVALID_PLATFORM: 'Platform is not supported.',
   NOT_FOUND: 'Invitation was not found.',
   EXPIRED: 'Invitation has expired.',
@@ -42,10 +44,16 @@ const VALID_PLATFORMS: ReadonlySet<string> = new Set(['ANDROID', 'IOS']);
 /**
  * The ONLY supported way to consume an enrollment invitation. There is
  * deliberately no standalone "redeem invitation" operation reachable from
- * enrollment -- redemption only ever happens bundled with device+key
+ * enrollment -- redemption only ever happens bundled with device+DSK+DEK
  * creation in one atomic transaction, so a failure partway through can
- * never consume the invitation while leaving no enrolled device (or vice
+ * never consume the invitation while leaving no device identity (or vice
  * versa).
+ *
+ * The resulting device is PAIRING_PENDING -- claiming an invitation and
+ * submitting keys is not, by itself, trust: an authorized parent must
+ * still confirm the key fingerprints (PairingService.confirmPairing,
+ * doc 08 PCA-FR-141) before the device is PAIRED, and first-policy
+ * delivery via the Family Trust Set before it is ACTIVE.
  */
 export class EnrollmentCoordinator {
   private readonly repository: EnrollmentRepository;
@@ -59,28 +67,40 @@ export class EnrollmentCoordinator {
   async enrollDevice(input: EnrollDeviceInput): Promise<EnrollDeviceResult> {
     if (!isPlausibleInvitationToken(input.rawInvitationToken)) throw new EnrollmentError('INVALID_TOKEN');
     if (!isValidPlatform(input.platform)) throw new EnrollmentError('INVALID_PLATFORM');
-    if (!isPlausiblePublicKey(input.publicKey)) throw new EnrollmentError('INVALID_PUBLIC_KEY');
+    if (!isPlausiblePublicKey(input.signingPublicKey) || !isPlausiblePublicKey(input.encryptionPublicKey)) {
+      throw new EnrollmentError('INVALID_PUBLIC_KEY');
+    }
+    // DSK and DEK are distinct roles (doc 09 Section 3.1) -- reusing the
+    // same bytes for both would collapse the role separation the
+    // architecture requires, independent of the permanent per-value
+    // uniqueness the persistence layer also enforces.
+    if (input.signingPublicKey === input.encryptionPublicKey) throw new EnrollmentError('KEYS_NOT_DISTINCT');
 
     const tokenHash = hashInvitationToken(input.rawInvitationToken);
     const deviceId = randomUUID();
-    const keyId = randomUUID();
+    const signingKeyId = randomUUID();
+    const encryptionKeyId = randomUUID();
 
     const result: EnrollDeviceOutcome = await this.repository.enrollDevice(
       tokenHash,
       input.platform,
-      input.publicKey,
+      input.signingPublicKey,
+      input.encryptionPublicKey,
       deviceId,
-      keyId,
+      signingKeyId,
+      encryptionKeyId,
       this.now(),
     );
 
     switch (result.outcome) {
-      case 'ENROLLED':
+      case 'PAIRING_REQUEST_CREATED':
         return {
           deviceId: result.deviceId,
-          keyId: result.keyId,
+          signingKeyId: result.signingKeyId,
+          encryptionKeyId: result.encryptionKeyId,
           familyId: result.familyId,
           invitationId: result.invitationId,
+          status: 'PAIRING_PENDING',
         };
       case 'NOT_FOUND':
         throw new EnrollmentError('NOT_FOUND');

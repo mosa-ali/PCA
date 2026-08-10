@@ -21,16 +21,22 @@ export class PostgresEnrollmentCoordinatorRepository implements EnrollmentReposi
    * PG-CORR-2, there is no "locking a row that doesn't exist yet" gap
    * here). Concurrent enrollment attempts against the same invitation
    * serialize on this lock: the first to acquire it redeems the invitation
-   * and creates the device; every other concurrent caller blocks, then
-   * (once unblocked) observes the now-REDEEMED row and cleanly reports
-   * ALREADY_REDEEMED without creating any device/key row.
+   * and creates the device, PAIRING_PENDING; every other concurrent caller
+   * blocks, then (once unblocked) observes the now-REDEEMED row and
+   * cleanly reports ALREADY_REDEEMED without creating any device/key row.
+   *
+   * The device is inserted PAIRING_PENDING, never ACTIVE or PAIRED --
+   * claiming an invitation and submitting DSK/DEK material is not, by
+   * itself, trust (doc 08 Section 3).
    */
   async enrollDevice(
     tokenHash: string,
     platform: Platform,
-    publicKey: string,
+    signingPublicKey: string,
+    encryptionPublicKey: string,
     deviceId: string,
-    keyId: string,
+    signingKeyId: string,
+    encryptionKeyId: string,
     now: Date,
   ): Promise<EnrollDeviceOutcome> {
     try {
@@ -50,15 +56,15 @@ export class PostgresEnrollmentCoordinatorRepository implements EnrollmentReposi
         if (invitation.platform !== platform) throw new SoftFailure<EnrollmentSoftCode>('PLATFORM_MISMATCH');
 
         await client.query(
-          `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at)
-           VALUES ($1, $2, $3, 'ACTIVE', $4, NULL)`,
+          `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at, paired_at, paired_by_account_id)
+           VALUES ($1, $2, $3, 'PAIRING_PENDING', $4, NULL, NULL, NULL)`,
           [deviceId, invitation.family_id, platform, now],
         );
         try {
           await client.query(
-            `INSERT INTO device_public_keys (device_id, key_id, public_key, status, created_at, revoked_at)
-             VALUES ($1, $2, $3, 'ACTIVE', $4, NULL)`,
-            [deviceId, keyId, publicKey, now],
+            `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
+             VALUES ($1, $2, 'DSK', $3, 'ACTIVE', $4, NULL), ($1, $5, 'DEK', $6, 'ACTIVE', $4, NULL)`,
+            [deviceId, signingKeyId, signingPublicKey, now, encryptionKeyId, encryptionPublicKey],
           );
         } catch (error) {
           if (isUniqueViolation(error)) throw new SoftFailure<EnrollmentSoftCode>('DUPLICATE_KEY');
@@ -72,9 +78,10 @@ export class PostgresEnrollmentCoordinatorRepository implements EnrollmentReposi
         );
 
         return {
-          outcome: 'ENROLLED',
+          outcome: 'PAIRING_REQUEST_CREATED',
           deviceId,
-          keyId,
+          signingKeyId,
+          encryptionKeyId,
           familyId: invitation.family_id,
           invitationId: invitation.invitation_id,
         } as const;

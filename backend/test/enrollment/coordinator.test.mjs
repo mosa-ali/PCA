@@ -41,30 +41,56 @@ function seedInvitation(repository, overrides = {}) {
   return { token, invitation };
 }
 
-test('successful enrollment: device created, key registered, invitation redeemed -- all in one result', async () => {
+function deviceKeysInput(overrides = {}) {
+  return { platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key(), ...overrides };
+}
+
+test('successful enrollment: PAIRING_PENDING device created, DSK+DEK registered, invitation redeemed', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token, invitation } = seedInvitation(repository);
-  const result = await coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() });
+  const result = await coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() });
   assert.equal(result.familyId, invitation.familyId);
   assert.equal(result.invitationId, invitation.invitationId);
+  assert.equal(result.status, 'PAIRING_PENDING');
   assert.ok(result.deviceId);
-  assert.ok(result.keyId);
+  assert.ok(result.signingKeyId);
+  assert.ok(result.encryptionKeyId);
+  assert.notEqual(result.signingKeyId, result.encryptionKeyId);
 });
 
 test('malformed invitation token rejected before any repository lookup', async () => {
   const { coordinator } = buildCoordinator();
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: 'not a token', platform: 'ANDROID', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: 'not a token', ...deviceKeysInput() }),
     { code: 'INVALID_TOKEN' },
   );
 });
 
-test('malformed public key rejected', async () => {
+test('malformed signing public key rejected', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository);
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: 'not a key' }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ signingPublicKey: 'not a key' }) }),
     { code: 'INVALID_PUBLIC_KEY' },
+  );
+});
+
+test('malformed encryption public key rejected', async () => {
+  const { coordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ encryptionPublicKey: 'not a key' }) }),
+    { code: 'INVALID_PUBLIC_KEY' },
+  );
+});
+
+test('identical signing and encryption keys rejected -- DSK/DEK role separation is mandatory', async () => {
+  const { coordinator, repository } = buildCoordinator();
+  const { token } = seedInvitation(repository);
+  const sharedKey = key();
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ signingPublicKey: sharedKey, encryptionPublicKey: sharedKey }) }),
+    { code: 'KEYS_NOT_DISTINCT' },
   );
 });
 
@@ -72,7 +98,7 @@ test('invalid platform rejected', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository);
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'WINDOWS', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ platform: 'WINDOWS' }) }),
     { code: 'INVALID_PLATFORM' },
   );
 });
@@ -80,7 +106,7 @@ test('invalid platform rejected', async () => {
 test('unknown invitation token rejected', async () => {
   const { coordinator } = buildCoordinator();
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: rawToken(), platform: 'ANDROID', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: rawToken(), ...deviceKeysInput() }),
     { code: 'NOT_FOUND' },
   );
 });
@@ -90,7 +116,7 @@ test('expired invitation rejected', async () => {
   const { token } = seedInvitation(repository, { expiresAt: new Date(BASE_TIME + 1000) });
   clock.advance(1001);
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() }),
     { code: 'EXPIRED' },
   );
 });
@@ -99,7 +125,7 @@ test('revoked invitation rejected', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository, { status: 'REVOKED' });
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() }),
     { code: 'REVOKED' },
   );
 });
@@ -107,9 +133,9 @@ test('revoked invitation rejected', async () => {
 test('already-redeemed invitation rejected -- cannot enroll a second device', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository);
-  await coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() });
+  await coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() });
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() }),
     { code: 'ALREADY_REDEEMED' },
   );
 });
@@ -118,7 +144,7 @@ test('platform mismatch rejected: an IOS device cannot redeem an ANDROID invitat
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository, { platform: 'ANDROID' });
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'IOS', publicKey: key() }),
+    () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ platform: 'IOS' }) }),
     { code: 'PLATFORM_MISMATCH' },
   );
 });
@@ -126,37 +152,39 @@ test('platform mismatch rejected: an IOS device cannot redeem an ANDROID invitat
 test('platform mismatch does NOT redeem the invitation -- it remains usable by a correctly-platformed device', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository, { platform: 'ANDROID' });
-  await assert.rejects(() => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'IOS', publicKey: key() }));
-  const result = await coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() });
+  await assert.rejects(() => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ platform: 'IOS' }) }));
+  const result = await coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput({ platform: 'ANDROID' }) });
   assert.ok(result.deviceId);
 });
 
-test('duplicate public key rejected and does not consume the invitation', async () => {
+test('duplicate public key (as either DSK or DEK) rejected and does not consume the invitation', async () => {
   const { coordinator, repository } = buildCoordinator();
   const sharedKey = key();
   const { token: firstToken } = seedInvitation(repository);
-  await coordinator.enrollDevice({ rawInvitationToken: firstToken, platform: 'ANDROID', publicKey: sharedKey });
+  await coordinator.enrollDevice({ rawInvitationToken: firstToken, ...deviceKeysInput({ signingPublicKey: sharedKey }) });
 
   const { token: secondToken } = seedInvitation(repository);
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: secondToken, platform: 'ANDROID', publicKey: sharedKey }),
+    () => coordinator.enrollDevice({ rawInvitationToken: secondToken, ...deviceKeysInput({ encryptionPublicKey: sharedKey }) }),
     { code: 'DUPLICATE_KEY' },
   );
   // The second invitation must NOT have been consumed by the failed attempt.
-  const retry = await coordinator.enrollDevice({ rawInvitationToken: secondToken, platform: 'ANDROID', publicKey: key() });
+  const retry = await coordinator.enrollDevice({ rawInvitationToken: secondToken, ...deviceKeysInput() });
   assert.ok(retry.deviceId);
 });
 
 test('errors never carry the raw token or public key', async () => {
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository);
-  await coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() });
+  const input = deviceKeysInput();
+  await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
   try {
-    await coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() });
+    await coordinator.enrollDevice({ rawInvitationToken: token, ...input });
     assert.fail('expected rejection');
   } catch (error) {
     assert.ok(error instanceof EnrollmentError);
     assert.equal(error.message.includes(token), false);
+    assert.equal(error.message.includes(input.signingPublicKey), false);
   }
 });
 
@@ -164,7 +192,7 @@ test('concurrency (in-memory): many simultaneous enrollment attempts against one
   const { coordinator, repository } = buildCoordinator();
   const { token } = seedInvitation(repository);
   const attempts = await Promise.allSettled(
-    Array.from({ length: 20 }, () => coordinator.enrollDevice({ rawInvitationToken: token, platform: 'ANDROID', publicKey: key() })),
+    Array.from({ length: 20 }, () => coordinator.enrollDevice({ rawInvitationToken: token, ...deviceKeysInput() })),
   );
   const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
   const rejected = attempts.filter((a) => a.status === 'rejected');

@@ -93,5 +93,16 @@ export function createInMemoryDeviceRepository() {
       }
       return { outcome: 'REVOKED', key: { ...key } };
     },
+
+    async confirmPairing(familyId, deviceId, confirmedByAccountId, confirmedAt) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
+      if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device } }; // idempotent
+      if (device.status !== 'PAIRING_PENDING') return { outcome: 'INVALID_STATE' };
+      device.status = 'PAIRED';
+      device.pairedAt = confirmedAt;
+      device.pairedByAccountId = confirmedByAccountId;
+      return { outcome: 'CONFIRMED', device: { ...device } };
+    },
   };
 }
