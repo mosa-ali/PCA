@@ -94,9 +94,14 @@ foreach ($TrackedPath in $TrackedFiles) {
     Add-Failure $Failures "privacy sentinel escaped the explicit fixture/test-harness allowlist: $TrackedPath"
   }
 
-  if ($NormalPath -match '(?i)(?:^|/)(?:package\\.json|package-lock\\.json|pnpm-lock\\.yaml|build\\.gradle(?:\\.kts)?|libs\\.versions\\.toml|podfile|package\\.resolved)$') {
+  if ($NormalPath -match '(?i)(?:^|/)(?:package\.json|package-lock\.json|pnpm-lock\.yaml|build\.gradle(?:\.kts)?|libs\.versions\.toml|podfile|package\.resolved)$') {
     $Inventory.Add([PSCustomObject]@{ path = $NormalPath; sha256 = (Get-FileHash -LiteralPath $FullPath -Algorithm SHA256).Hash.ToLowerInvariant() })
   }
+}
+
+if ($Failures.Count -gt 0) {
+  $Failures | Sort-Object -Unique | ForEach-Object { Write-Error "PCA security check failed: $_" }
+  exit 1
 }
 
 if ($EmitDependencyInventory) {
@@ -105,11 +110,7 @@ if ($EmitDependencyInventory) {
     generatedFrom = 'tracked dependency manifests only'
     manifests = @($Inventory | Sort-Object path)
   } | ConvertTo-Json -Depth 4
-}
-
-if ($Failures.Count -gt 0) {
-  $Failures | Sort-Object -Unique | ForEach-Object { Write-Error "PCA security check failed: $_" }
-  exit 1
+  exit 0
 }
 
 Write-Host "PCA security checks passed ($($TrackedFiles.Count) tracked files checked; $($Inventory.Count) dependency manifests inventoried)."

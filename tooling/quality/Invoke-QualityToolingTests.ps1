@@ -38,4 +38,13 @@ Assert-Rejected 'escaped privacy sentinel' 'contracts/example.json' '{"value":"P
 Assert-Rejected 'escaped Android privacy sentinel' 'android/src/main/kotlin/App.kt' 'val marker = "PCA_SYNTHETIC_APP_USAGE_EVENT"'
 Assert-Rejected 'escaped iOS privacy sentinel' 'ios/App.swift' 'let marker = "PCA_SYNTHETIC_YOUTUBE_VIDEO_ID"'
 
-Write-Host 'PCA quality/security negative tests passed (8 rejection controls verified).'
+$Inventory = & $PowerShell -NoProfile -File $SecurityCheck -RepositoryRoot $RepositoryRoot -EmitDependencyInventory | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Dependency inventory command failed.' }
+$InventoryPaths = @($Inventory.manifests.path)
+foreach ($ExpectedManifest in @('android/build.gradle.kts', 'android/app/build.gradle.kts', 'android/gradle/libs.versions.toml')) {
+  if ($InventoryPaths -notcontains $ExpectedManifest) {
+    throw "Dependency inventory omitted expected tracked manifest: $ExpectedManifest"
+  }
+}
+
+Write-Host 'PCA quality/security negative tests passed (8 rejection controls and Gradle inventory verified).'
