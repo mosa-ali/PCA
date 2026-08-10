@@ -135,6 +135,87 @@ test('PG FAILURE INJECTION: general Postgres rollback semantics -- an aborted tr
   assert.equal(found, null, 'the first insert must not survive once the transaction is rolled back');
 });
 
+test('PG REVOKED_KEY_REUSE: revoked key material is permanently tombstoned in PostgreSQL -- same device, different device, different family all rejected', async () => {
+  const revokedKey = key();
+  const ownerFamilyId = family();
+  const { device: owner } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: revokedKey });
+  await service.revokeDevice(ownerFamilyId, owner.deviceId);
+
+  // Same device (would need a new device since it's revoked, so this
+  // exercises addDeviceKey against a real, still-active device instead).
+  const { device: sameFamilyDevice } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: key() });
+  await assert.rejects(
+    () => service.addDeviceKey(ownerFamilyId, sameFamilyDevice.deviceId, revokedKey),
+    { code: 'DUPLICATE_KEY' },
+  );
+
+  // Different device, same family, via registerDevice.
+  await assert.rejects(
+    () => service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', publicKey: revokedKey }),
+    { code: 'DUPLICATE_KEY' },
+  );
+
+  // Different family entirely -- rejected with the same generic error, no cross-family leak.
+  const otherFamilyId = family();
+  const error = await service.registerDevice({ familyId: otherFamilyId, platform: 'ANDROID', publicKey: revokedKey }).catch((e) => e);
+  assert.equal(error.code, 'DUPLICATE_KEY');
+  assert.equal(error.message, 'This public key is already registered to a device.');
+});
+
+test('PG REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first revoked_at for both the device and its cascaded keys', async () => {
+  const familyId = family();
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  await service.addDeviceKey(familyId, device.deviceId, key());
+
+  const first = await service.revokeDevice(familyId, device.deviceId);
+  await new Promise((resolve) => setTimeout(resolve, 20)); // ensure a real clock delta is observable
+  const second = await service.revokeDevice(familyId, device.deviceId);
+  assert.equal(second.revokedAt.getTime(), first.revokedAt.getTime());
+
+  const { rows } = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  const keyRevokedAt = rows[0].revoked_at.getTime();
+  await service.revokeDevice(familyId, device.deviceId); // third, redundant call
+  const { rows: rowsAgain } = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  assert.equal(rowsAgain[0].revoked_at.getTime(), keyRevokedAt);
+});
+
+test('PG REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the first revoked_at', async () => {
+  const familyId = family();
+  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  const first = await service.revokeKey(familyId, device.deviceId, registeredKey.keyId);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const second = await service.revokeKey(familyId, device.deviceId, registeredKey.keyId);
+  assert.equal(second.revokedAt.getTime(), first.revokedAt.getTime());
+});
+
+test('PG CONCURRENCY: many genuinely simultaneous device-revocation calls converge on one winning revoked_at, not a sequential-only guarantee', async () => {
+  const familyId = family();
+  const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+  await service.addDeviceKey(familyId, device.deviceId, key());
+
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 20 }, () => service.revokeDevice(familyId, device.deviceId)),
+  );
+  assert.equal(attempts.every((a) => a.status === 'fulfilled'), true, 'repeated revocation must never be a hard error, even racing');
+  const timestamps = new Set(attempts.map((a) => a.value.revokedAt.getTime()));
+  assert.equal(timestamps.size, 1, 'every concurrent caller must observe the same single winning revocation instant');
+
+  const { rows } = await getPool().query(`SELECT DISTINCT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  assert.equal(rows.length, 1, 'the cascaded keys must also agree on exactly one revocation instant under real concurrency');
+});
+
+test('PG CONCURRENCY: many genuinely simultaneous single-key revocation calls converge on one winning revoked_at', async () => {
+  const familyId = family();
+  const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', publicKey: key() });
+
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 20 }, () => service.revokeKey(familyId, device.deviceId, registeredKey.keyId)),
+  );
+  assert.equal(attempts.every((a) => a.status === 'fulfilled'), true);
+  const timestamps = new Set(attempts.map((a) => a.value.revokedAt.getTime()));
+  assert.equal(timestamps.size, 1, 'every concurrent caller must observe the same single winning revocation instant');
+});
+
 test.after(async () => {
   await closePool();
 });

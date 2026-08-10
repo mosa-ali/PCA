@@ -71,13 +71,24 @@ CREATE TABLE device_public_keys (
 
 CREATE INDEX device_public_keys_device_id_idx ON device_public_keys (device_id);
 
--- A public key may never be ACTIVE on more than one device at a time.
--- Revoking a key frees its value for future re-registration, matching the
--- domain's documented behavior -- a partial unique index (not a plain
--- UNIQUE constraint) is required to allow that.
-CREATE UNIQUE INDEX device_public_keys_active_public_key_idx
-  ON device_public_keys (public_key)
-  WHERE status = 'ACTIVE';
+-- A public key may never be registered more than once, full stop -- not
+-- merely "not twice while ACTIVE". Revoked key material is permanently
+-- tombstoned: rotation means generating genuinely new key material, so a
+-- previously revoked public key can never later become ACTIVE again under
+-- any device or key id. A plain (non-partial) UNIQUE index enforces this
+-- across the row's entire lifetime, regardless of status.
+--
+-- This index is a single namespace shared across ALL families. That is
+-- privacy-safe only because device keys are required to be freshly,
+-- independently random per device (never derived from anything
+-- identifying) -- so a collision can only mean "this exact key value was
+-- genuinely reused," never a meaningful cross-family relationship. A
+-- DUPLICATE_KEY rejection is identical (same code, same generic message)
+-- whether the collision is against an ACTIVE key, a revoked key in the
+-- same family, or a revoked key in a different family -- the caller can
+-- never distinguish which case occurred.
+CREATE UNIQUE INDEX device_public_keys_public_key_idx
+  ON device_public_keys (public_key);
 
 -- ---------------------------------------------------------------------
 -- Opaque store-and-forward relay
@@ -132,10 +143,19 @@ CREATE TABLE release_packages (
   UNIQUE (package_type, platform, version)
 );
 
+-- version_major/minor/patch mirror the `version` string as integers so the
+-- "only advance forward" rule can be enforced as a single atomic UPSERT
+-- (tuple comparison in the ON CONFLICT ... WHERE clause) instead of a
+-- SELECT ... FOR UPDATE, which cannot lock a row that does not exist yet --
+-- the exact gap that let a low-version first-publish race a high-version
+-- first-publish and non-deterministically win.
 CREATE TABLE release_current_pointers (
   package_type TEXT NOT NULL,
   platform TEXT NOT NULL,
   version TEXT NOT NULL,
+  version_major INTEGER NOT NULL CHECK (version_major >= 0),
+  version_minor INTEGER NOT NULL CHECK (version_minor >= 0),
+  version_patch INTEGER NOT NULL CHECK (version_patch >= 0),
   is_explicit_rollback BOOLEAN NOT NULL DEFAULT false,
   updated_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (package_type, platform)

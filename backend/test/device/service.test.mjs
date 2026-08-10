@@ -102,14 +102,51 @@ test('revokeDevice atomically cascades to revoke every active key', async () => 
   assert.equal(active.length, 0);
 });
 
-test('a public key freed by full revocation of its owning device can be re-registered (no permanent lockout of the key value)', async () => {
+test('revoked key material is permanently tombstoned: it can never be re-registered on the same device after full device revocation', async () => {
   const { service } = buildService();
-  const reusedKey = key();
-  const { device } = await service.registerDevice({ ...baseInput, publicKey: reusedKey });
+  const revokedKey = key();
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: revokedKey });
   await service.revokeDevice(FAMILY_A, device.deviceId);
-  const second = await service.registerDevice({ ...baseInput, publicKey: reusedKey });
-  assert.equal(second.device.status, 'ACTIVE');
-  assert.notEqual(second.device.deviceId, device.deviceId);
+  await assert.rejects(
+    () => service.registerDevice({ ...baseInput, publicKey: revokedKey }),
+    { code: 'DUPLICATE_KEY' },
+  );
+});
+
+test('revoked key material is permanently tombstoned: a different device (same family) cannot register it either', async () => {
+  const { service } = buildService();
+  const revokedKey = key();
+  const { device: firstDevice } = await service.registerDevice({ ...baseInput, publicKey: revokedKey });
+  await service.revokeDevice(FAMILY_A, firstDevice.deviceId);
+  await assert.rejects(
+    () => service.registerDevice({ ...baseInput, publicKey: revokedKey }),
+    { code: 'DUPLICATE_KEY' },
+  );
+});
+
+test('revoked key material is permanently tombstoned: a device in a different family cannot register it, without leaking that it belongs to another family', async () => {
+  const { service } = buildService();
+  const revokedKey = key();
+  const { device } = await service.registerDevice({ familyId: FAMILY_A, platform: 'ANDROID', publicKey: revokedKey });
+  await service.revokeDevice(FAMILY_A, device.deviceId);
+  const error = await service
+    .registerDevice({ familyId: FAMILY_B, platform: 'ANDROID', publicKey: revokedKey })
+    .catch((e) => e);
+  assert.equal(error.code, 'DUPLICATE_KEY');
+  // Same generic message as any other duplicate-key rejection -- no hint of cross-family origin.
+  assert.equal(error.message, 'This public key is already registered to a device.');
+});
+
+test('revoking a single key (not the whole device) also permanently tombstones it', async () => {
+  const { service } = buildService();
+  const revokedKey = key();
+  const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: revokedKey });
+  await service.addDeviceKey(FAMILY_A, device.deviceId, key()); // keep the device ACTIVE
+  await service.revokeKey(FAMILY_A, device.deviceId, registeredKey.keyId);
+  await assert.rejects(
+    () => service.addDeviceKey(FAMILY_A, device.deviceId, revokedKey),
+    { code: 'DUPLICATE_KEY' },
+  );
 });
 
 test('familyId is server-recorded from input only -- device registration cannot be steered to an unrelated family after creation', async () => {
@@ -209,6 +246,29 @@ test('family scope: revoked-device behavior is correct under the owning family',
   // Revoking an already-revoked device is idempotent, not an error.
   const again = await service.revokeDevice(FAMILY_A, device.deviceId);
   assert.equal(again.status, 'REVOKED');
+});
+
+test('revocation timestamps are idempotent: repeated device/key revocation preserves the first revocation instant', async () => {
+  const repository = createInMemoryDeviceRepository();
+  let currentTime = new Date('2026-01-01T00:00:00.000Z').getTime();
+  const service = new DeviceDirectoryService(repository, () => new Date(currentTime));
+
+  const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  const secondKey = await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  await service.revokeKey(FAMILY_A, device.deviceId, secondKey.keyId);
+
+  const firstDeviceRevoke = await service.revokeDevice(FAMILY_A, device.deviceId);
+  currentTime += 60_000;
+  const secondDeviceRevoke = await service.revokeDevice(FAMILY_A, device.deviceId);
+  assert.equal(secondDeviceRevoke.revokedAt.getTime(), firstDeviceRevoke.revokedAt.getTime());
+
+  const activeKeysAfter = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+  const cascadedKey = activeKeysAfter.find((k) => k.keyId === registeredKey.keyId);
+  const preRevokeKeyTimestamp = cascadedKey.revokedAt.getTime();
+  await service.revokeDevice(FAMILY_A, device.deviceId); // redundant call, must not disturb key timestamps either
+  const activeKeysAgain = await repository.findKeysByDeviceForFamily(FAMILY_A, device.deviceId);
+  const cascadedKeyAgain = activeKeysAgain.find((k) => k.keyId === registeredKey.keyId);
+  assert.equal(cascadedKeyAgain.revokedAt.getTime(), preRevokeKeyTimestamp);
 });
 
 test('family scope: cross-family key access is impossible even by guessing a real key id', async () => {

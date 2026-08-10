@@ -77,7 +77,36 @@ test('PG: rollback is a distinct transaction that CAN move the pointer backward'
   assert.equal(current.version, '1.0.0');
 });
 
-test('PG CONCURRENCY: many simultaneous publishes under the same identity -- exactly 1 wins, rest match or conflict deterministically', async () => {
+test('PG REQUIRED CONCURRENCY: simultaneous FIRST publishes into an empty pointer lane converge to the highest version, never a race-order artifact', async () => {
+  // Repeated across trials because the original bug (SELECT ... FOR UPDATE
+  // on a not-yet-existing pointer row) was non-deterministic -- it could
+  // pass by luck on any single run.
+  for (let trial = 0; trial < 8; trial++) {
+    const packageType = 'RULE_PACKAGE';
+    const platform = trial % 2 === 0 ? 'ANDROID' : 'IOS'; // fresh, empty pointer lane each trial
+    const digestFor = (v) => v.replace(/\./g, '').padEnd(64, '0');
+    const versions = ['1.0.0', '9.0.0', '2.0.0', '5.0.0'];
+
+    await Promise.all(
+      versions.map((version) =>
+        service.publishRelease({
+          packageType,
+          platform,
+          version,
+          artifactDigest: digestFor(version),
+          artifactSizeBytes: 1024,
+          signingKeyId: `key-${version}`,
+          signedMetadata: Buffer.from(`metadata-${version}`),
+        }),
+      ),
+    );
+
+    const current = await service.getCurrentRelease(packageType, platform);
+    assert.equal(current.version, '9.0.0', `trial ${trial}: current must be the highest published version`);
+  }
+});
+
+test('PG CONCURRENCY: many simultaneous publishes under the same identity -- exactly one canonical stored digest wins, everyone else matches or conflicts consistently', async () => {
   const input = release();
   const attempts = await Promise.allSettled(
     Array.from({ length: 15 }, (_, i) =>
@@ -86,10 +115,24 @@ test('PG CONCURRENCY: many simultaneous publishes under the same identity -- exa
   );
   const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
   const rejected = attempts.filter((a) => a.status === 'rejected');
-  // even-index calls (identical) succeed/idempotent-match; odd-index calls (conflicting digest) are rejected
-  assert.equal(fulfilled.length, 8);
-  assert.equal(rejected.length, 7);
+  assert.equal(fulfilled.length + rejected.length, 15);
+  assert.ok(fulfilled.length > 0, 'the true winner (whichever payload variant reaches the database first) must always succeed');
+
+  // Under 15 genuinely concurrent calls, EITHER payload variant may win the
+  // underlying INSERT race -- the two variants (input.artifactDigest vs
+  // 'b'.repeat(64)) were fired in a fixed 8-vs-7 split, but which one
+  // actually lands first in Postgres is not deterministic from the test's
+  // perspective. The real invariant is that every fulfilled call agrees on
+  // one single stored digest, every rejected call is a clean CONFLICT
+  // against that digest, and the fulfilled count exactly equals however
+  // many calls requested the digest that actually won.
+  const winningDigest = fulfilled[0].value.artifactDigest;
+  for (const outcome of fulfilled) {
+    assert.equal(outcome.value.artifactDigest, winningDigest, 'every fulfilled call must agree on the single canonical stored digest');
+  }
   for (const failure of rejected) assert.equal(failure.reason.code, 'CONFLICT');
+  const requestedWinningDigestCount = winningDigest === input.artifactDigest ? 8 : 7;
+  assert.equal(fulfilled.length, requestedWinningDigestCount);
 });
 
 test.after(async () => {

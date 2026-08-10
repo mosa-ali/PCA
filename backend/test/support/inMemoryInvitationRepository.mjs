@@ -45,7 +45,9 @@ export function createInMemoryInvitationRepository() {
     async revoke(invitationId, revokedAt) {
       const record = byId.get(invitationId);
       if (!record) throw new Error('invitation not found');
-      if (record.status !== 'REDEEMED') {
+      // REDEEMED is terminal (never overwritten); REVOKED is idempotent
+      // (the first revocation's timestamp remains authoritative).
+      if (record.status !== 'REDEEMED' && record.status !== 'REVOKED') {
         record.status = 'REVOKED';
         record.revokedAt = revokedAt;
       }

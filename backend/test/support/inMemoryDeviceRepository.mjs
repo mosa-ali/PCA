@@ -4,9 +4,13 @@ export function createInMemoryDeviceRepository() {
   const devicesById = new Map();
   const keysById = new Map(); // keyId -> key record
   const keysByDevice = new Map(); // deviceId -> Set<keyId>
-  const devicesByPublicKey = new Map(); // publicKey -> deviceId (ACTIVE keys only)
+  // publicKey -> deviceId. Entries are NEVER removed on revocation: revoked
+  // key material is permanently tombstoned (rotation means genuinely new
+  // key material), so a previously registered public key can never become
+  // ACTIVE again under any device or key id, regardless of status.
+  const devicesByPublicKey = new Map();
 
-  function activeKeyExists(publicKey) {
+  function keyEverRegistered(publicKey) {
     return devicesByPublicKey.has(publicKey);
   }
 
@@ -23,7 +27,7 @@ export function createInMemoryDeviceRepository() {
     // synchronously once invoked -- concurrent callers cannot interleave and
     // both "win" a duplicate-key registration.
     async createDeviceWithKey(device, key) {
-      if (activeKeyExists(key.publicKey)) return { outcome: 'DUPLICATE_KEY' };
+      if (keyEverRegistered(key.publicKey)) return { outcome: 'DUPLICATE_KEY' };
       devicesById.set(device.deviceId, { ...device });
       keysById.set(key.keyId, { ...key });
       keysByDevice.set(device.deviceId, new Set([key.keyId]));
@@ -46,10 +50,11 @@ export function createInMemoryDeviceRepository() {
       const ids = keysByDevice.get(deviceId) ?? new Set();
       for (const keyId of ids) {
         const key = keysById.get(keyId);
+        // First-revocation timestamp is authoritative; the key stays
+        // permanently tombstoned in devicesByPublicKey either way.
         if (key.status !== 'REVOKED') {
           key.status = 'REVOKED';
           key.revokedAt = revokedAt;
-          devicesByPublicKey.delete(key.publicKey);
         }
       }
       return {
@@ -63,7 +68,7 @@ export function createInMemoryDeviceRepository() {
       const device = findOwnedDevice(familyId, record.deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       if (device.status === 'REVOKED') return { outcome: 'DEVICE_REVOKED' };
-      if (activeKeyExists(record.publicKey)) return { outcome: 'DUPLICATE_KEY' };
+      if (keyEverRegistered(record.publicKey)) return { outcome: 'DUPLICATE_KEY' };
       keysById.set(record.keyId, { ...record });
       keysByDevice.get(record.deviceId).add(record.keyId);
       devicesByPublicKey.set(record.publicKey, record.deviceId);
@@ -85,7 +90,6 @@ export function createInMemoryDeviceRepository() {
       if (key.status !== 'REVOKED') {
         key.status = 'REVOKED';
         key.revokedAt = revokedAt;
-        devicesByPublicKey.delete(key.publicKey);
       }
       return { outcome: 'REVOKED', key: { ...key } };
     },

@@ -94,15 +94,16 @@ export class PostgresDeviceRepository implements DeviceRepository {
       return await runInTransaction(async (client) => {
         const deviceResult = await client.query<DeviceRow>(
           `UPDATE devices SET status = 'REVOKED', revoked_at = $3
-           WHERE device_id = $1 AND family_id = $2
+           WHERE device_id = $1 AND family_id = $2 AND status != 'REVOKED'
            RETURNING *`,
           [deviceId, familyId, revokedAt],
         );
         let deviceRow = deviceResult.rows[0];
         if (!deviceRow) {
-          // Either unknown or already revoked (WHERE doesn't restrict on
-          // status, so "already revoked" still matches and re-updates
-          // idempotently) -- verify existence under the family scope.
+          // Either unknown, or already revoked -- the status guard above
+          // means "already revoked" falls through here too, so the FIRST
+          // revocation's timestamp stays authoritative rather than being
+          // silently rewritten by a later, redundant revoke call.
           const existing = await client.query<DeviceRow>(
             `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`,
             [deviceId, familyId],
@@ -111,6 +112,9 @@ export class PostgresDeviceRepository implements DeviceRepository {
           deviceRow = existing.rows[0];
         }
 
+        // AND status = 'ACTIVE' already makes this idempotent on repeat
+        // calls -- an already-revoked key is never re-touched, so its
+        // original revoked_at is preserved automatically.
         await client.query(
           `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $2
            WHERE device_id = $1 AND status = 'ACTIVE'`,
@@ -189,7 +193,7 @@ export class PostgresDeviceRepository implements DeviceRepository {
 
         const updated = await client.query<DeviceKeyRow>(
           `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $3
-           WHERE device_id = $1 AND key_id = $2
+           WHERE device_id = $1 AND key_id = $2 AND status != 'REVOKED'
            RETURNING *`,
           [deviceId, keyId, revokedAt],
         );
@@ -200,7 +204,7 @@ export class PostgresDeviceRepository implements DeviceRepository {
           [deviceId, keyId],
         );
         if (!existing.rows[0]) throw new SoftFailure<DeviceSoftCode>('KEY_NOT_FOUND');
-        // Already revoked -- idempotent success.
+        // Already revoked -- idempotent success, first revocation's timestamp preserved.
         return { outcome: 'REVOKED', key: mapKey(existing.rows[0]) } as const;
       });
     } catch (error) {

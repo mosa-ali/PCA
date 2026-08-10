@@ -112,6 +112,27 @@ test('state cannot move from REVOKED to active', async () => {
   await assert.rejects(() => service.redeemInvitation(rawToken), { code: 'REVOKED' });
 });
 
+test('REDEEMED is permanently terminal: revoking an already-redeemed invitation does not change its status', async () => {
+  const { service, repository } = buildService();
+  const { record, rawToken } = await service.createInvitation(baseInput);
+  const redeemed = await service.redeemInvitation(rawToken);
+  const afterRevoke = await service.revokeInvitation(record.invitationId);
+  assert.equal(afterRevoke.status, 'REDEEMED');
+  assert.equal(afterRevoke.redeemedAt.getTime(), redeemed.redeemedAt.getTime());
+  assert.equal(afterRevoke.revokedAt, null);
+  const stored = await repository.findByTokenHash(hashInvitationToken(rawToken));
+  assert.equal(stored.status, 'REDEEMED');
+});
+
+test('REVOKED revocation timestamp is idempotent: revoking twice preserves the first revocation instant', async () => {
+  const { service, clock } = buildService();
+  const { record } = await service.createInvitation(baseInput);
+  const first = await service.revokeInvitation(record.invitationId);
+  clock.advance(60_000);
+  const second = await service.revokeInvitation(record.invitationId);
+  assert.equal(second.revokedAt.getTime(), first.revokedAt.getTime());
+});
+
 test('raw secret absent from thrown errors', async () => {
   const { service } = buildService();
   const { rawToken } = await service.createInvitation(baseInput);

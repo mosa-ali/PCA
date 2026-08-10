@@ -87,6 +87,41 @@ test('PG CRITICAL CONCURRENCY: many simultaneous redemption attempts against one
   assert.equal(final.status, 'REDEEMED', 'final persisted state must be REDEEMED, no duplicate enrollment state');
 });
 
+test('PG: REDEEMED is permanently terminal -- create -> redeem -> revoke -> fetch still reports REDEEMED', async () => {
+  const service = buildService();
+  const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+  await service.redeemInvitation(rawToken);
+  const afterRevoke = await service.revokeInvitation(record.invitationId);
+  assert.equal(afterRevoke.status, 'REDEEMED');
+  const fetched = await repository.findByTokenHash(hashInvitationToken(rawToken));
+  assert.equal(fetched.status, 'REDEEMED');
+  assert.equal(fetched.revokedAt, null);
+});
+
+test('PG CONCURRENCY: redeem raced against revoke resolves to exactly one deterministic, architecture-consistent terminal state', async () => {
+  for (let trial = 0; trial < 15; trial++) {
+    const service = buildService();
+    const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+
+    const [redeemOutcome] = await Promise.allSettled([
+      service.redeemInvitation(rawToken),
+      service.revokeInvitation(record.invitationId),
+    ]);
+
+    const final = await repository.findByTokenHash(hashInvitationToken(rawToken));
+    assert.ok(['REDEEMED', 'REVOKED'].includes(final.status), `unexpected terminal state: ${final.status}`);
+
+    if (final.status === 'REDEEMED') {
+      assert.notEqual(final.redeemedAt, null);
+      assert.equal(final.revokedAt, null, 'a REDEEMED invitation must never carry a revokedAt from a losing concurrent revoke');
+      assert.equal(redeemOutcome.status, 'fulfilled', 'redeem must have been the winner if the final state is REDEEMED');
+    } else {
+      assert.notEqual(final.revokedAt, null);
+      assert.equal(final.redeemedAt, null, 'a REVOKED invitation must never carry a redeemedAt from a losing concurrent redeem');
+    }
+  }
+});
+
 test.after(async () => {
   await closePool();
 });

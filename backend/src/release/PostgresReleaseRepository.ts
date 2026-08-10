@@ -1,5 +1,5 @@
 import { isUniqueViolation, runInTransaction, SoftFailure } from '../db/pool.js';
-import { compareVersions } from './version.js';
+import { compareVersions, parseVersion } from './version.js';
 import type { PublishResult, ReleaseRepository, RetireResult, RollbackResult } from './ReleaseRepository.js';
 import type { CurrentPointerRecord, PackageType, Platform, ReleaseRecord } from './types.js';
 
@@ -58,9 +58,9 @@ type ReleaseSoftCode = 'CONFLICT';
 export class PostgresReleaseRepository implements ReleaseRepository {
   /**
    * Publish + forward-only current-pointer advancement as ONE transaction.
-   * The pointer row is locked (FOR UPDATE) before being compared, so two
-   * concurrent publishes for the same package/platform cannot both observe
-   * a stale pointer and race to set it.
+   * The pointer advance is a single atomic UPSERT with an integer-tuple
+   * comparison in its WHERE clause (see below) rather than a SELECT ...
+   * FOR UPDATE, which cannot lock a row that doesn't exist yet.
    */
   async publishRelease(record: ReleaseRecord): Promise<PublishResult> {
     try {
@@ -113,20 +113,40 @@ export class PostgresReleaseRepository implements ReleaseRepository {
           throw new SoftFailure<ReleaseSoftCode>('CONFLICT');
         }
 
-        const pointer = await client.query<PointerRow>(
-          `SELECT * FROM release_current_pointers WHERE package_type = $1 AND platform = $2 FOR UPDATE`,
-          [record.packageType, record.platform],
+        const parsedVersion = parseVersion(record.version);
+        if (!parsedVersion) throw new Error('release version failed re-validation at the persistence boundary');
+
+        // Single atomic UPSERT: the WHERE clause on the DO UPDATE compares
+        // the new version against the existing pointer's version as an
+        // integer tuple, entirely in SQL. This replaces a SELECT ... FOR
+        // UPDATE, which cannot lock a row that does not exist yet -- the
+        // gap that let concurrent *first* publishes for the same
+        // package/platform race non-deterministically. INSERT ON CONFLICT
+        // is itself atomic per target row, so concurrent upserts serialize
+        // regardless of whether the pointer already existed.
+        await client.query(
+          `INSERT INTO release_current_pointers
+             (package_type, platform, version, version_major, version_minor, version_patch, is_explicit_rollback, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, false, $7)
+           ON CONFLICT (package_type, platform) DO UPDATE
+           SET version = EXCLUDED.version,
+               version_major = EXCLUDED.version_major,
+               version_minor = EXCLUDED.version_minor,
+               version_patch = EXCLUDED.version_patch,
+               is_explicit_rollback = false,
+               updated_at = EXCLUDED.updated_at
+           WHERE (release_current_pointers.version_major, release_current_pointers.version_minor, release_current_pointers.version_patch)
+                 < (EXCLUDED.version_major, EXCLUDED.version_minor, EXCLUDED.version_patch)`,
+          [
+            record.packageType,
+            record.platform,
+            record.version,
+            parsedVersion.major,
+            parsedVersion.minor,
+            parsedVersion.patch,
+            record.publishedAt,
+          ],
         );
-        const currentVersion = pointer.rows[0]?.version;
-        if (!currentVersion || compareVersions(record.version, currentVersion) > 0) {
-          await client.query(
-            `INSERT INTO release_current_pointers (package_type, platform, version, is_explicit_rollback, updated_at)
-             VALUES ($1, $2, $3, false, $4)
-             ON CONFLICT (package_type, platform)
-             DO UPDATE SET version = EXCLUDED.version, is_explicit_rollback = false, updated_at = EXCLUDED.updated_at`,
-            [record.packageType, record.platform, record.version, record.publishedAt],
-          );
-        }
         return { outcome: 'PUBLISHED', record: mapRelease(inserted.rows[0]) } as const;
       });
     } catch (error) {
@@ -207,12 +227,20 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       if (!row) return { outcome: 'TARGET_NOT_FOUND' };
       if (row.state !== 'PUBLISHED') return { outcome: 'TARGET_NOT_PUBLISHED' };
 
+      const parsedVersion = parseVersion(targetVersion);
+      if (!parsedVersion) throw new Error('rollback target version failed re-validation at the persistence boundary');
+
+      // Explicit rollback always applies, unconditionally -- unlike ordinary
+      // publish, there is deliberately no version-tuple WHERE guard here.
       await client.query(
-        `INSERT INTO release_current_pointers (package_type, platform, version, is_explicit_rollback, updated_at)
-         VALUES ($1, $2, $3, true, $4)
+        `INSERT INTO release_current_pointers
+           (package_type, platform, version, version_major, version_minor, version_patch, is_explicit_rollback, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, true, $7)
          ON CONFLICT (package_type, platform)
-         DO UPDATE SET version = EXCLUDED.version, is_explicit_rollback = true, updated_at = EXCLUDED.updated_at`,
-        [packageType, platform, targetVersion, rolledBackAt],
+         DO UPDATE SET version = EXCLUDED.version, version_major = EXCLUDED.version_major,
+           version_minor = EXCLUDED.version_minor, version_patch = EXCLUDED.version_patch,
+           is_explicit_rollback = true, updated_at = EXCLUDED.updated_at`,
+        [packageType, platform, targetVersion, parsedVersion.major, parsedVersion.minor, parsedVersion.patch, rolledBackAt],
       );
       return {
         outcome: 'ROLLED_BACK',

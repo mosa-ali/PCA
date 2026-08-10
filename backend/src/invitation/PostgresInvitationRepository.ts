@@ -116,7 +116,7 @@ export class PostgresInvitationRepository implements InvitationRepository {
     return runInTransaction(async (client) => {
       const updated = await client.query<InvitationRow>(
         `UPDATE enrollment_invitations SET status = 'REVOKED', revoked_at = $2
-         WHERE invitation_id = $1 AND status != 'REVOKED'
+         WHERE invitation_id = $1 AND status NOT IN ('REVOKED', 'REDEEMED')
          RETURNING *`,
         [invitationId, revokedAt],
       );
