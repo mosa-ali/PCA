@@ -60,6 +60,9 @@ jobs:
           cache: gradle
       - name: Confirm clean JDK environment
         run: java --version
+      - name: Assert Gradle wrapper is executable
+        working-directory: android
+        run: test -x ./gradlew
       - name: Build, lint, and test
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace lint test assembleDebug
@@ -71,6 +74,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Inspect Xcode project and PCA scheme
+        working-directory: ios
+        run: |
+          xcodebuild -list -project PCA.xcodeproj
+          xcodebuild -showBuildSettings -project PCA.xcodeproj -scheme PCA -sdk iphonesimulator
+      - name: List available iOS Simulators
+        run: xcrun simctl list devices available
       - name: Select an available iOS Simulator
         shell: bash
         run: |
