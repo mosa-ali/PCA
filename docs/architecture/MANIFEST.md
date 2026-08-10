@@ -2,9 +2,9 @@
 
 **Prepared:** 2026-08-10
 **Lifecycle:** DRAFT_RECONCILIATION
-**Controlled set:** `00_DOCUMENT_CONTROL.md` through `34_ARCHITECTURE_COMPLETION_GATE.md`, plus this file and `README.md`.
+**Controlled architecture set:** `00_DOCUMENT_CONTROL.md` through `34_ARCHITECTURE_COMPLETION_GATE.md`, this file, this directory `README.md`, and repository-root `README.md` plus `PCA_ARCHITECTURE_MASTER_v1.0.md`.
 
-This is a local reconciliation manifest, not publication evidence. It intentionally has no final content hashes: hashes must be generated only from the stable final controlled set and recorded in the repository-root `SHA256SUMS.txt` during publication. The controlled set contains 37 Markdown files: docs 00–34, this manifest, and this directory README.
+This is a local reconciliation manifest, not publication evidence. It intentionally has no final content hashes: hashes must be generated only from the stable final controlled set and recorded in the repository-root `SHA256SUMS.txt` during publication. The controlled architecture set contains 39 Markdown files: docs 00–34, this manifest, this directory README, and the two root controlled documents. `SHA256SUMS.txt` is a publication artifact owned at repository root and is therefore not regenerated here.
 
 | Field | Value |
 |---|---|
@@ -14,4 +14,4 @@ This is a local reconciliation manifest, not publication evidence. It intentiona
 | Publication | BASELINE_PUBLISHED; LATEST_RECONCILIATION_LOCAL_ONLY |
 | Implementation | NOT_STARTED; NOT GRANTED |
 
-The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited.
+The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. Until then, `SHA256 = PENDING_FINAL_PUBLICATION` for every controlled item.

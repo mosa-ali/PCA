@@ -18,7 +18,7 @@
 
 ## Open closure work
 
-- Run the deterministic traceability validation in doc 32 against the final controlled package and record its counts.
+- Re-run the deterministic traceability validation in doc 32 against the final controlled package after publication (local evidence currently records 155 defined IDs, 155 rows, and zero duplicate/missing/orphan IDs).
 - Reconcile and publish the complete local correction chain using a non-force workflow, then independently review that exact remote SHA.
 - Regenerate root SHA256SUMS and controlled manifest at publication time; verify root hygiene and clean working tree.
 - Re-run R3/R4/R5. The remote review findings R2-001, R2-002, R2-003/R3-002, R3-001 and R4-001 are not closed merely by local edits.
