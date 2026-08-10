@@ -1,0 +1,59 @@
+{
+  "catalogueVersion": "0.1.0",
+  "scope": "logical-contract-metadata-only",
+  "representation": "neutral",
+  "familyEnvelope": {
+    "requiredLogicalFields": [
+      "protocolMajor",
+      "protocolMinor",
+      "messageId",
+      "familyOpaqueId",
+      "senderDeviceOpaqueId",
+      "senderKeyId",
+      "messageType",
+      "trustSetEpoch",
+      "keyEpoch",
+      "issuedAtUtc",
+      "expiresAtUtc",
+      "semanticVersion",
+      "encryptedPayload",
+      "signature"
+    ],
+    "exclusiveAlternativeGroups": [
+      ["recipientDeviceOpaqueId", "recipientGroup"],
+      ["senderSequence", "replayNonce"]
+    ],
+    "optionalLogicalFields": ["correlationId"],
+    "signatureCoverage": "all-preceding-envelope-logical-fields",
+    "payload": "opaque-authenticated-encrypted"
+  },
+  "compatibility": {
+    "majorMismatch": "reject-before-decrypt-or-apply",
+    "unknownMinor": "allow-only-known-required-fields-and-nonsecurity-extensibility",
+    "unknownMessageType": "reject",
+    "unknownSecuritySemantic": "reject",
+    "ordering": "semantic-dependencies-never-skip-predecessor",
+    "rollback": "distinct-signed-time-bounded-message"
+  },
+  "messageTypes": [
+    {"type": "POLICY_UPDATE", "route": "authorized-parent-to-child", "retentionClass": "family-e2ee-opaque", "idempotency": "strictly-increasing-policy-version"},
+    {"type": "POLICY_RECEIPT", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-opaque", "idempotency": "stable-receipt"},
+    {"type": "STATUS_SNAPSHOT", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-opaque", "idempotency": "latest-status-only"},
+    {"type": "ACTIVITY_SUMMARY", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-retention-scoped", "idempotency": "message-id"},
+    {"type": "LOCATION_RESPONSE", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-retention-scoped", "idempotency": "message-id"},
+    {"type": "CHILD_REQUEST", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-opaque", "idempotency": "correlated-request"},
+    {"type": "PARENT_DECISION", "route": "authorized-parent-to-child", "retentionClass": "family-e2ee-opaque", "idempotency": "correlated-expiring-decision"},
+    {"type": "TAMPER_ALERT", "route": "child-to-authorized-parent", "retentionClass": "family-e2ee-opaque", "idempotency": "message-id"},
+    {"type": "RETENTION_DELETION_INSTRUCTION", "route": "authorized-parent-to-device", "retentionClass": "family-e2ee-opaque", "idempotency": "one-time-deletion-id"},
+    {"type": "RETENTION_RECEIPT", "route": "device-to-authorized-parent", "retentionClass": "family-e2ee-opaque", "idempotency": "same-completion-for-duplicate"},
+    {"type": "FTS_UPDATE", "route": "authorized-fts-actor-to-family-devices", "retentionClass": "family-e2ee-opaque", "idempotency": "advance-epoch"},
+    {"type": "KEY_ROTATION", "route": "authorized-fts-actor-to-family-devices", "retentionClass": "family-e2ee-opaque", "idempotency": "advance-epoch"},
+    {"type": "DEVICE_REVOKE", "route": "authorized-fts-actor-to-family-devices", "retentionClass": "family-e2ee-opaque", "idempotency": "advance-epoch"},
+    {"type": "RECOVERY_TRANSACTION", "route": "recovery-authorized-replacement-to-relay-or-family", "retentionClass": "family-e2ee-opaque", "idempotency": "accepted-once-by-recovery-transaction-id"},
+    {"type": "SIGNED_ROLLBACK", "route": "explicitly-authorized-parent-to-target", "retentionClass": "family-e2ee-opaque", "idempotency": "one-time-rollback-id"}
+  ],
+  "serviceControlPlane": {
+    "logicalFunctions": ["enrollment", "device-directory", "license-release", "opaque-relay", "recovery-availability"],
+    "forbiddenCapabilities": ["read-family-plaintext", "store-readable-family-history", "search-family-content", "sign-family-policy", "plaintext-diagnostics"]
+  }
+}
