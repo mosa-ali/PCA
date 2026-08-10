@@ -129,7 +129,7 @@ flowchart TB
 |---|---|---|---|
 | Hard anti-uninstall | `UNSUPPORTED` (visible only) | `VERIFIED_WITH_LIMITATION` (REQUIRES_MANAGED_DEVICE) | `VERIFIED_WITH_LIMITATION` (REQUIRES_ENTITLEMENT; child cannot delete app while authorized, but a device-passcode-level parent/guardian action can) |
 | App usage duration | `VERIFIED_WITH_LIMITATION` (REQUIRES_USER_PERMISSION — Usage Access) | `VERIFIED_WITH_LIMITATION` | `VERIFIED_WITH_LIMITATION` (Device Activity Report, opaque tokens only) |
-| YouTube watch history via account | `UNSUPPORTED` for full history — see doc 15 | `UNSUPPORTED` | `UNSUPPORTED` |
+| Exact-video / complete account watch history in normal YouTube (Mode A) | `UNSUPPORTED` as a PCA product promise — Mode A is duration-only; see PCA-FR-051 | `UNSUPPORTED` as a PCA product promise | `UNSUPPORTED` as a PCA product promise |
 | Location | `REQUIRES_USER_PERMISSION` | `REQUIRES_USER_PERMISSION` | `REQUIRES_USER_PERMISSION` |
 
 Full detail lives in the platform-specific documents (06, 07) and the feature documents (12–17); this table exists only to keep doc 01's scope claims consistent with them.
@@ -139,7 +139,7 @@ Full detail lives in the platform-specific documents (06, 07) and the feature do
 | Decision ID | Topic | Options | Recommendation | Status |
 |---|---|---|---|---|
 | PCA-DEC-001 | Legal data-controller role for family activity data | (a) Family is sole controller, PCA is processor only; (b) PCA is joint controller for enrollment metadata only, family is sole controller for activity payloads | (b) — cleanest split matching the technical E2EE boundary | PROPOSED |
-| PCA-DEC-002 | Android Protected Mode distribution legality/mechanism (DPC provisioning for a consumer app outside formal EMM) | (a) Pursue Android Enterprise "dedicated device" provisioning; (b) Restrict Protected Mode to a documented ADB/QR device-owner provisioning flow at family setup time only; (c) Drop Protected Mode, ship Standard Mode only | (b) — matches how existing consumer parental-control apps in this space operate today (pending citation, see doc 33) | PROPOSED |
+| PCA-DEC-002 | Android Protected Mode distribution legality/mechanism (DPC provisioning for a consumer app outside formal EMM) | (a) Pursue Android Enterprise "dedicated device" provisioning; (b) Restrict Protected Mode to a documented ADB/QR device-owner provisioning flow at family setup time only; (c) Drop Protected Mode, ship Standard Mode only | (b) subject to documented, store-policy, and distribution validation; this is not a claim that consumer DPC distribution is currently approved | PROPOSED |
 | PCA-DEC-003 | Default first-enrollment retention window (see also PCA-FR-101 in doc 03) | 14d / 1m / 3m / 6m / 9m | 1 month | PROPOSED |
 
 ## 12. Dependencies

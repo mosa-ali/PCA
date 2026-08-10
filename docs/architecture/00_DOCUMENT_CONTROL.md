@@ -127,6 +127,7 @@ Any claim of platform capability must be labeled with one of:
 |---|---|---|
 | initial draft | Created 00_DOCUMENT_CONTROL.md skeleton | (pre-existing) |
 | 2026-08-10 | Expanded to implementation-grade depth: added package structure/ownership table, capability-label rubric, version history table, this change log | PCA-DOC-A |
+| 2026-08-10 | Added dated official-source handoffs for Apple Family Controls, Android DPC authority, and the YouTube watch-history-source discrepancy; assigned canonical-register reconciliation to doc 33's owner | PCA-DOC-A |
 
 ## 10. Source freshness
 
@@ -138,6 +139,18 @@ Platform-dependent sources (Android/Apple/Google/YouTube developer documentation
 - after major Android/iOS policy changes (e.g. Play Store Families Policy updates, Apple Screen Time API changes).
 
 **PCA-NFR-000** Every citation in doc 33 MUST carry a "last verified" date; a citation older than 180 days at the start of a new implementation phase MUST be revalidated before that phase begins.
+
+### 10.1 Source-register handoff (owned by document 33)
+
+This document does not edit the canonical source register. The following verified-source handoff items are supplied to the owner of doc 33 so the register can record the URL, verification date, claim status, and architectural consequence without another author silently changing the register.
+
+| Handoff ID | Official source and verification date | Claim status | Architecture consequence for this package |
+|---|---|---|---|
+| `SRC-H-A-001` | Apple, [Family Controls overview](https://developer.apple.com/documentation/familycontrols?language=swift), verified 2026-08-10 | `REQUIRES_ENTITLEMENT`; `VERIFIED_WITH_LIMITATION` | A parent/guardian-approved child authorization prevents the child from deleting the authorized parental-controls app through ordinary means. It is not a universal anti-removal claim; iOS wording and recovery must remain scoped to the authorization state. |
+| `SRC-H-A-002` | Android, [DevicePolicyManager API](https://developer.android.com/reference/android/app/admin/DevicePolicyManager), verified 2026-08-10 | `REQUIRES_MANAGED_DEVICE` | `setUninstallBlocked` and package suspension are device/profile-owner powers. They cannot underpin an Android Standard Mode promise. |
+| `SRC-H-A-003` | Google, [YouTube Data API sample requests](https://developers.google.com/youtube/v3/sample_requests), verified 2026-08-10 | `VERIFIED_WITH_LIMITATION` | The official sample documents a `watchHistory` related-playlist ID for the authenticated user's channel and shows a playlist-items query pattern. PCA nevertheless does not use this to offer a Mode A "complete watch history" feature: account scope, completeness, family authorization, API-policy review, and retention behavior require a separate approved design. This handoff supersedes any source-register statement that the API simply cannot retrieve watch-history data. |
+
+The owner of doc 33 MUST reconcile `SRC-H-A-003` with the existing YouTube entry and alert the owner of doc 15, whose current categorical no-access statement conflicts with this official sample. Until that reconciliation is complete, product copy must retain the narrower PCA-FR-051 commitment: Mode A has no exact-video-history promise.
 
 ## 11. Dependencies
 

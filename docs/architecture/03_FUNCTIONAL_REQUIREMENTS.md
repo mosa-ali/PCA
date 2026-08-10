@@ -173,7 +173,7 @@ flowchart TD
 ## F. YouTube
 
 - **PCA-FR-050** Record YouTube app usage duration where platform usage APIs permit (same mechanism/limitations as PCA-FR-040, applied to the YouTube package specifically).
-- **PCA-FR-051** Do not claim access to official YouTube account watch history through the YouTube Data API. **This claim is treated as `REQUIRES_FURTHER_OWNER_DECISION` / pending LOOP-2 verification against current YouTube Data API v3 documentation** — the architecture must not assert either that full watch history is or is not obtainable through the Data API for an authenticated account until that documentation is actually re-checked; until verified, the product MUST behave as though it is not obtainable (i.e., ship without a watch-history feature) rather than build against an assumed capability.
+- **PCA-FR-051** Mode A (the normal YouTube application) MUST NOT offer, market, or infer an exact-video / complete Google-account watch-history feature. This is a product-boundary requirement, not a claim that every YouTube API surface is incapable of returning historical items. The official Data API sample documents a `watchHistory` related-playlist identifier for an authenticated user's channel and a playlist-items query pattern; that does not establish a family-authorized, complete, durable, policy-compliant monitoring feed. PCA therefore does not query or retain that account history in Mode A. `VERIFIED_WITH_LIMITATION`; official source: [YouTube Data API sample requests](https://developers.google.com/youtube/v3/sample_requests), verified 2026-08-10; required source-register handoff: `SRC-H-A-003` in doc 00 Section 10.1.
 - **PCA-FR-052** Offer an optional PCA-controlled YouTube experience ("Mode B") if compliant with YouTube API Services Terms and policies, where PCA can record locally the videos started inside that controlled experience only (because it renders that specific playback surface itself) — this is categorically different from PCA-FR-051 and does not require the Data API watch-history claim to be true.
 - **PCA-FR-053** Use available safe-search/restricted-content mechanisms where compliant (e.g. YouTube's Restricted Mode signal, where a compliant integration path exists).
 - **PCA-FR-054** Support a "Mode A / Mode B" distinction visible to the parent: Mode A = normal YouTube app, usage-duration-only visibility (PCA-FR-050); Mode B = PCA-controlled experience with per-video-start local logging (PCA-FR-052) but reduced feature parity with the native app (e.g. no comments, no account-based recommendations, or only what a compliant embed/API surface allows). Parent chooses per child; product MUST show this as a real trade-off, not silently degrade one mode into looking like the other.
@@ -294,13 +294,13 @@ flowchart TD
 
 | Decision ID | Topic | Options | Recommendation | Status |
 |---|---|---|---|---|
-| PCA-DEC-006 | YouTube Data API watch-history capability (PCA-FR-051) | (a) Assume no access, ship without the feature; (b) Verify against current API docs before deciding | (b), defaulting to (a)'s behavior until verified | PROPOSED |
+| PCA-DEC-006 | Whether PCA should ever use an authenticated child's YouTube account-history surface | (a) Never use it; Mode A remains duration-only; (b) evaluate a tightly scoped, separately authorized feature after legal/API-policy/privacy review | (a) for launch and the architecture baseline — it preserves the Mode A promise, avoids asserting completeness, and minimizes family data collection | PROPOSED |
 | PCA-DEC-007 | Default-uncertain content policy (Section D.1) | (a) Allow + log for parent review; (b) Block + log, require parent unblock | (a) as documented default, but families may prefer (b) — expose as a family-level toggle | PROPOSED |
 | PCA-DEC-008 | Whether Android Standard Mode ships install-approval (PCA-FR-045) as report-only or attempts best-effort pre-install interception via Accessibility Service | (a) Report-only, no interception; (b) Best-effort interception | (a) — matches AD-B-001's rejection of Accessibility-Service overreach | PROPOSED |
 
 ## 6. Acceptance criteria (package-level)
 
 - [ ] Every `PCA-FR-*`/`PCA-SEC-*`/`PCA-PRIV-*`/`PCA-DATA-*` ID in this document appears exactly once in doc 32's traceability matrix.
-- [ ] Every requirement carrying a `REQUIRES_*`/`VERIFIED_WITH_LIMITATION`/`UNSUPPORTED` label has a corresponding citation or pending-verification note in doc 33.
+- [ ] Every requirement carrying a `REQUIRES_*`/`VERIFIED_WITH_LIMITATION`/`UNSUPPORTED` label has a corresponding dated source-register entry in doc 33; `SRC-H-A-001` through `SRC-H-A-003` in doc 00 Section 10.1 are mandatory handoffs for this writer's current platform claims.
 - [ ] No requirement in this document contradicts the out-of-scope list in doc 01 Section 5.
 - [ ] Section D.1's content-category boundary (PCA-FR-031A) is reflected verbatim (no weaker wording) in doc 14.
