@@ -11,7 +11,7 @@ This is a local reconciliation manifest, not publication evidence. It intentiona
 | Version | 1.0 |
 | A_100 | PENDING_INDEPENDENT_REVIEW |
 | Owner acceptance | PENDING |
-| Publication | Publication baseline `816caae`; FINAL_ARCHITECTURE_PUBLISHED checksum-refreshed `origin/main` SHA `65ed573` |
+| Publication | FINAL_ARCHITECTURE_PUBLISHED; final verified remote SHA is recorded by the closeout report/commit after checksum verification |
 | Implementation | NOT_STARTED; NOT GRANTED |
 
-The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. Final remote verification SHA: `65ed573` (the earlier `816caae` is the publication baseline). The repository-root checksum artifact remains the authoritative hash inventory. This state does not assert an independent-review pass or owner acceptance.
+The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. The final remote verification SHA is deliberately recorded by the closeout report/commit after checksum verification, avoiding checksum self-reference. The repository-root checksum artifact remains the authoritative hash inventory. This state does not assert an independent-review pass or owner acceptance.
