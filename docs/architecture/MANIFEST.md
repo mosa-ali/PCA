@@ -1,7 +1,7 @@
 # PCA Architecture Manifest v1.0
 
 **Prepared:** 2026-08-10
-**Lifecycle:** DRAFT_RECONCILIATION
+**Lifecycle:** DOCUMENTATION_COMPLETE_PENDING_INDEPENDENT_REVIEW
 **Controlled architecture set:** `00_DOCUMENT_CONTROL.md` through `34_ARCHITECTURE_COMPLETION_GATE.md`, this file, this directory `README.md`, and repository-root `README.md` plus `PCA_ARCHITECTURE_MASTER_v1.0.md`.
 
 This is a local reconciliation manifest, not publication evidence. It intentionally has no final content hashes: hashes must be generated only from the stable final controlled set and recorded in the repository-root `SHA256SUMS.txt` during publication. The controlled architecture set contains 39 Markdown files: docs 00–34, this manifest, this directory README, and the two root controlled documents. `SHA256SUMS.txt` is a publication artifact owned at repository root and is therefore not regenerated here.
@@ -9,9 +9,9 @@ This is a local reconciliation manifest, not publication evidence. It intentiona
 | Field | Value |
 |---|---|
 | Version | 1.0 |
-| A_100 | NOT_SATISFIED |
+| A_100 | PENDING_INDEPENDENT_REVIEW |
 | Owner acceptance | PENDING |
-| Publication | BASELINE_PUBLISHED; LATEST_RECONCILIATION_LOCAL_ONLY |
+| Publication | FINAL_ARCHITECTURE_PUBLISHED at `origin/main` SHA `816caae` |
 | Implementation | NOT_STARTED; NOT GRANTED |
 
-The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. Until then, `SHA256 = PENDING_FINAL_PUBLICATION` for every controlled item.
+The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. Publication SHA: `816caae`. The repository-root checksum artifact remains the authoritative hash inventory. This state does not assert an independent-review pass or owner acceptance.
