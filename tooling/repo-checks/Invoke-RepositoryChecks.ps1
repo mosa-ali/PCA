@@ -32,7 +32,7 @@ foreach ($Path in $TrackedFiles) {
   }
 }
 
-$AllowedTopLevel = @('.editorconfig', '.gitattributes', '.github', '.gitignore', 'README.md', 'PCA_ARCHITECTURE_MASTER_v1.0.md', 'SHA256SUMS.txt', 'android', 'contracts', 'docs', 'ios', 'tooling')
+$AllowedTopLevel = @('.editorconfig', '.gitattributes', '.github', '.gitignore', 'README.md', 'PCA_ARCHITECTURE_MASTER_v1.0.md', 'SHA256SUMS.txt', 'android', 'backend', 'contracts', 'docs', 'ios', 'tooling')
 foreach ($Path in $TrackedFiles) {
   $TopLevel = ($Path -replace '\\', '/').Split('/')[0]
   if ($AllowedTopLevel -notcontains $TopLevel) {
