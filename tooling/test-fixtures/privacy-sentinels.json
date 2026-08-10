@@ -1,0 +1,17 @@
+{
+  "fixtureClass": "PCA_SYNTHETIC_PRIVACY_SENTINELS_V1",
+  "purpose": "Negative-test corpus only. These values are invented and must never appear in implementation, logs, telemetry, crash reports, or support bundles.",
+  "sentinels": {
+    "url": "https://PCA-SYNTHETIC.invalid/child-search?query=PCA_SYNTHETIC_QUERY",
+    "domain": "PCA-SYNTHETIC.invalid",
+    "searchTerm": "PCA_SYNTHETIC_SEARCH_TERM",
+    "location": "PCA_SYNTHETIC_LOCATION_12.345678_98.765432",
+    "youtube": "PCA_SYNTHETIC_YOUTUBE_VIDEO_ID",
+    "appUsage": "PCA_SYNTHETIC_APP_USAGE_EVENT",
+    "face": "PCA_SYNTHETIC_FACE_FRAME_MARKER",
+    "familyPayload": "PCA_SYNTHETIC_FAMILY_POLICY_PLAINTEXT",
+    "fdEk": "PCA_SYNTHETIC_FDEK_MATERIAL",
+    "privateKey": "PCA_SYNTHETIC_PRIVATE_KEY_MATERIAL",
+    "recoverySecret": "PCA_SYNTHETIC_RECOVERY_SECRET"
+  }
+}
