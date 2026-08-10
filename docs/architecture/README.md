@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Date:** 2026-08-10  
-**Status:** Documentation complete and published at `origin/main` SHA `816caae`; pending independent review and owner acceptance.
+**Status:** Documentation complete and checksum-refreshed at `origin/main` SHA `65ed573` (publication baseline `816caae`); pending independent review and owner acceptance.
 **Implementation:** Prohibited until Gate A-100 is accepted.
 
 This package is the controlled architecture baseline for PCA before implementation. `A_100 = PENDING_INDEPENDENT_REVIEW`; it is not owner-accepted and independent review has not passed.
