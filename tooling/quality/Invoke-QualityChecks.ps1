@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $SecurityCheck)) { throw 'Missing deterministic
 if (-not (Test-Path -LiteralPath $FixturePath)) { throw 'Missing synthetic privacy sentinel fixture.' }
 
 $Fixture = Get-Content -LiteralPath $FixturePath -Raw | ConvertFrom-Json
-if ($Fixture.fixtureClass -ne 'PCA_SYNTHETIC_PRIVACY_SENTINELS_V1') { throw 'Unexpected privacy fixture class.' }
+if ($Fixture.fixtureClass -ne 'PCA_FIXTURE_PRIVACY_SENTINELS_V1') { throw 'Unexpected privacy fixture class.' }
 $SentinelProperties = @($Fixture.sentinels.PSObject.Properties)
 if ($SentinelProperties.Count -lt 10) { throw 'Privacy fixture is incomplete.' }
 foreach ($Property in $SentinelProperties) {

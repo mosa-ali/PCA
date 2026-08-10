@@ -4,4 +4,4 @@ Run `pwsh -File tooling/quality/Invoke-QualityChecks.ps1` from the repository ro
 
 Run `pwsh -File tooling/security/Invoke-SecurityChecks.ps1 -EmitDependencyInventory` to print a tracked-manifest hash inventory suitable for an SBOM/dependency-review input. It does not resolve, download, or transmit dependencies.
 
-Run `pwsh -File tooling/quality/Invoke-QualityToolingTests.ps1` to execute six isolated, temporary-Git-repository negative tests. The test creates and removes its own system temporary directories; it never adds fixture secrets to this repository.
+Run `pwsh -File tooling/quality/Invoke-QualityToolingTests.ps1` to execute eight isolated, temporary-Git-repository negative tests. The test creates and removes its own system temporary directories; it never adds fixture secrets to this repository.

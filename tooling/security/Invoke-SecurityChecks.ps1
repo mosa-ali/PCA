@@ -48,6 +48,12 @@ $TelemetryPatterns = @(
   '(?i)(sentry|mixpanel|amplitude|segment|posthog|datadog|newrelic|appcenter|fullstory|hotjar|logrocket)'
 )
 $SensitiveLoggingPattern = '(?i)(?:Log|logger|print|NSLog|os_log)\s*[.(].{0,160}(?:url|domain|search|location|youtube|usage|family|child|parent|token|secret|private.?key|recovery|fd[ek]|camera|face)'
+$SyntheticPrefix = 'PCA' + '_SYNTHETIC_'
+$SyntheticSentinelPattern = [regex]::Escape($SyntheticPrefix) + '[A-Z0-9_]+'
+$IntentionalSentinelLiteralPaths = @(
+  'tooling/test-fixtures/privacy-sentinels.json',
+  'tooling/quality/Invoke-QualityToolingTests.ps1'
+)
 
 $Inventory = [System.Collections.Generic.List[object]]::new()
 foreach ($TrackedPath in $TrackedFiles) {
@@ -84,10 +90,8 @@ foreach ($TrackedPath in $TrackedFiles) {
     }
   }
 
-  if ($NormalPath -notmatch '^tooling/test-fixtures/') {
-    if ($Content -match 'PCA_SYNTHETIC_[A-Z0-9_]+') {
-      Add-Failure $Failures "privacy sentinel escaped the synthetic fixture boundary: $TrackedPath"
-    }
+  if ($Content -match $SyntheticSentinelPattern -and $IntentionalSentinelLiteralPaths -notcontains $NormalPath) {
+    Add-Failure $Failures "privacy sentinel escaped the explicit fixture/test-harness allowlist: $TrackedPath"
   }
 
   if ($NormalPath -match '(?i)(?:^|/)(?:package\\.json|package-lock\\.json|pnpm-lock\\.yaml|build\\.gradle(?:\\.kts)?|libs\\.versions\\.toml|podfile|package\\.resolved)$') {

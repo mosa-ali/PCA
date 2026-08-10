@@ -1,5 +1,5 @@
 {
-  "fixtureClass": "PCA_SYNTHETIC_PRIVACY_SENTINELS_V1",
+  "fixtureClass": "PCA_FIXTURE_PRIVACY_SENTINELS_V1",
   "purpose": "Negative-test corpus only. These values are invented and must never appear in implementation, logs, telemetry, crash reports, or support bundles.",
   "sentinels": {
     "url": "https://PCA-SYNTHETIC.invalid/child-search?query=PCA_SYNTHETIC_QUERY",
