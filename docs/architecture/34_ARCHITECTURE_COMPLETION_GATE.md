@@ -1,59 +1,26 @@
 # 34 — Architecture Completion Gate
 
-## Gate A-100 — Documentation 100% Complete
+## Gate A-100
 
-Architecture content is considered complete only when all checks below are satisfied.
+`A-100` is satisfied only after all defined requirements have one exact traceability row, the matrix validation reports no duplicate/missing/orphan IDs, sources are current, all high findings are closed, the controlled manifest and checksums are regenerated, and the reviewed final SHA is published. It is not an implementation authorization.
 
-### A. Product and requirements
-- [x] Vision/scope/non-goals defined.
-- [x] Parent/child/operator roles defined.
-- [x] Functional requirements numbered.
-- [x] Non-functional requirements numbered.
-- [x] Arabic/English and RTL requirements defined.
-- [x] Retention choices 14d/1m/3m/6m/9m defined.
+## Current truthful state — 2026-08-10
 
-### B. Platform architecture
-- [x] Android Standard Mode documented.
-- [x] Android Protected/managed capability documented without overclaiming.
-- [x] iOS Family Controls architecture documented.
-- [x] Platform limitations/fallbacks documented.
+| Field | State |
+|---|---|
+| CONTENT_STATE | RECONCILIATION_IN_PROGRESS |
+| A_100 | NOT_SATISFIED |
+| OWNER_ACCEPTANCE | PENDING |
+| Publication baseline | BASELINE_PUBLISHED (`origin/main` reviewed at `8a7bb2b9347f9236943fc476d9706ead7026c9c8`) |
+| Latest reconciliation | LATEST_RECONCILIATION_LOCAL_ONLY |
+| IMPLEMENTATION_STATUS | NOT_STARTED |
+| IMPLEMENTATION_AUTHORIZATION | NOT_GRANTED |
 
-### C. Privacy/security
-- [x] No-readable-activity central service boundary defined.
-- [x] E2EE/key architecture defined.
-- [x] Local data model defined.
-- [x] Retention/delete-now defined.
-- [x] Threat model defined.
-- [x] Recovery and anti-tamper defined.
+## Open closure work
 
-### D. Feature architecture
-- [x] Screen-time/break engine.
-- [x] Eye-distance/proximity.
-- [x] Web/content filtering.
-- [x] App/YouTube visibility boundaries.
-- [x] Location/last seen.
-- [x] Prayer times.
-- [x] Parent dashboard/RBAC.
-- [x] Notifications/email.
+- Run the deterministic traceability validation in doc 32 against the final controlled package and record its counts.
+- Reconcile and publish the complete local correction chain using a non-force workflow, then independently review that exact remote SHA.
+- Regenerate root SHA256SUMS and controlled manifest at publication time; verify root hygiene and clean working tree.
+- Re-run R3/R4/R5. The remote review findings R2-001, R2-002, R2-003/R3-002, R3-001 and R4-001 are not closed merely by local edits.
 
-### E. Delivery quality
-- [x] API/protocol contracts.
-- [x] AI architecture/model governance.
-- [x] Store compliance requirements.
-- [x] Accessibility/child transparency.
-- [x] Observability/support boundaries.
-- [x] QA/security validation strategy.
-- [x] Release/rollback strategy.
-- [x] Future implementation phase plan.
-- [x] Decision/risk register.
-- [x] Traceability matrix.
-- [x] Official reference register.
-
-## Current gate state
-
-**CONTENT STATE: COMPLETE v1.0**  
-**OWNER ACCEPTANCE: PENDING**  
-**GITHUB PUBLICATION: BLOCKED by connected GitHub integration write permission (HTTP 403)**  
-**IMPLEMENTATION AUTHORIZATION: NOT GRANTED**
-
-The package may be reviewed and revised, but production implementation remains frozen until the owner explicitly accepts A-100 and the approved package is committed to the repository.
+No checklist marks this gate complete while any item above remains open.
