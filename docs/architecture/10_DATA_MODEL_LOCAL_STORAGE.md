@@ -24,8 +24,8 @@ In scope: family configuration entities, activity/event entities, security/audit
 - `createdAt`
 - `defaultLanguage` (doc 20)
 - `defaultRetentionPolicy` (doc 11 Section 1 — one of the five supported windows)
-- `ownerParentDeviceId` (points to the current Family Owner's active Parent Device Identity Key holder, doc 09 Section 3.2)
-- `frrsGeneratedAt` *(sensitive — local plaintext only; the FRRS value itself, doc 09 Section 3.4, is never a field in this or any other entity — it exists only in its offline-exported form and is not stored in the app's structured local database at all beyond this generation timestamp)*
+- `ownerParentDeviceId` (points to current owner DSK holder, doc 09 Section 3.2)
+- `recoverySecretGeneratedAt` *(the Recovery Secret itself is never a database field; only the offline owner retains it, doc 09 Section 3.4)*
 
 ### 3.2 FamilyMember
 - `memberId`
@@ -39,7 +39,8 @@ In scope: family configuration entities, activity/event entities, security/audit
 - `memberId` (FK to FamilyMember)
 - `platform`: `ANDROID | IOS`
 - `platformVersion`, `appVersion`
-- `publicKeyId` (points to the device's current Parent/Child Device Identity Key public component, doc 09 Section 3.1 — the private key never appears in this or any entity, it lives only in the platform secure key store, doc 09 Section 7)
+- `signingKeyId`/`signingPublicKey` and `encryptionKeyId`/`encryptionPublicKey` (distinct DSK and DEK roles, doc 09 Section 3.1; private keys never appear in this or any entity)
+- `trustSetEpoch`, `keyEpoch`, `trustState` (`ACTIVE | ROTATION_PENDING | DEVICE_OFFLINE | REVOKED | EPOCH_STALE | RECOVERY_REQUIRED`)
 - `enrollmentState`: mirrors doc 08 Section 3's lifecycle state machine (`NEW | INVITED | PAIRED | ACTIVE | DEGRADED | RECOVERY_PENDING | REVOKED | REMOVED`) exactly — this document does not maintain a second, divergent state enum
 - `lastSeenAt` (doc 05 Section 7's Live/Offline/Sync-overdue distinction is computed from this field, not stored as a separate derived status, so the UI cannot show a stale cached status label)
 - `capabilityProfile` (which optional platform capabilities are currently granted — e.g. usage-access, location permission, Family Controls authorization — feeds doc 21's tamper monitor)
@@ -136,7 +137,7 @@ Central service (Enrollment/Licensing Service + Relay, doc 05 Section 3.3/3.4) h
 |---|---|---|
 | Account/license | account ID, subscription/plan state, billing reference (out of this document's scope beyond existence) | doc 05 Section 3.3 |
 | Family (opaque) | `familyId` only — no name, no member list beyond count if needed for licensing tiers | Section 3.1's `familyId`, opaque per PCA-DATA-012 |
-| Device registration | `deviceId`, `publicKeyId`, platform, last-seen (coarse), enrollment state (coarse: pending/active/revoked, not the full doc 08 state machine detail) | Section 3.3 |
+| Device registration | `deviceId`, DSK/DEK public key IDs, platform, last-seen (coarse), trust/key epoch, enrollment state (coarse: pending/active/revoked) | Section 3.3 |
 | Enrollment invitation | token hash, issued-at, expires-at, redeemed (bool) — doc 03 PCA-SEC-001 | doc 08 Section 4 |
 | Push routing metadata | opaque push token per device | doc 09 Section 6 |
 | Revocation status (coarse) | `deviceId`, revoked (bool), revoked-at | doc 08 Section 9 |
@@ -144,6 +145,29 @@ Central service (Enrollment/Licensing Service + Relay, doc 05 Section 3.3/3.4) h
 | Short-lived encrypted relay envelopes | ciphertext blob, opaque sender/recipient device ID, size class, TTL expiry | Section 6, doc 09 Section 5.1 |
 
 **No central `web_visits`, `locations`, `usage_sessions`, `content_block_events`, `prayer_events`, or any other readable family-activity-history table is allowed under any name** — this is the schema-level restatement of doc 05 PCA-FR-136 and doc 09 PCA-SEC-023; a table matching this description appearing anywhere in an implementation is a release-blocking architecture violation, not a normal schema addition.
+
+## 7A. Canonical privacy and data-flow inventory
+
+This is the package's single canonical data-flow inventory. `Child`/`Parent` mean app-managed encrypted local storage where applicable; `E2EE` means payload ciphertext only; `PCA readable` explicitly includes infrastructure metadata. Retention classes: `FAMILY` = doc 11 selected window, `LOC` = shorter/equal location rule, `OPS` = operational minimum/TTL, `ACCOUNT` = account/legal lifecycle, `NONE` = not retained.
+
+| Data class | Generated on | Child | Parent | E2EE | PCA readable / server retention | Provider metadata | Exportable | Retention / deletion / notes |
+|---|---|---|---|---|---|---|---|---|
+| Web domain, full URL, page title, search query | Child browser/filter | Yes | Policy-selected replica | Yes | No / relay ciphertext max 7d | Push: wake timing/token only | Yes | FAMILY; delete locally/replica; URL/title mode-dependent |
+| YouTube video ID, YouTube title | Controlled player where available | Yes | Policy-selected replica | Yes | No / ciphertext max 7d | Push metadata only | Yes | FAMILY; no claim of normal-app complete history |
+| App usage, screen session | Child platform/app | Yes | Yes | Yes | No / ciphertext max 7d | Push metadata only | Yes | FAMILY; delete all device copies per doc 11 |
+| Location, geofence, battery, last seen | Child device | Yes | Yes | Yes except coarse last-seen | Coarse connection/last-seen and opaque device ID / OPS; no coordinates | Push token/timing; IP may be seen by PCA network | Location: Yes; health/status: limited export | LOC for coordinates/geofence; battery/last-seen OPS; delete app copies |
+| Eye-distance event | Child local estimator | Bucket only | Optional summary | Yes if synced | No / ciphertext max 7d | None beyond routing | Yes, bucket only | FAMILY; no raw media |
+| Camera frame, face landmarks | Child transient estimator | No durable storage | No | No | No / NONE | None | No | NONE; prohibited from sync/export/logs |
+| Dhikr counter, prayer settings | Child/parent | Yes | Yes | Yes | No / ciphertext max 7d | Push generic wake only | Yes | FAMILY/configuration lifecycle; deletion per doc 11 or family removal |
+| Policy | Parent | Yes | Yes | Yes | No plaintext / ciphertext max 7d | Push token/timing | Yes | Current policy retained; superseded versions/audits per doc 11 |
+| Parent email | Parent account entry | Optional local account profile | Yes | Account channel TLS, not family payload | Account/license service / ACCOUNT | Email provider: address, delivery metadata | Account export where supported | ACCOUNT; delete on account/family removal subject to legal obligation |
+| Device opaque ID, public keys, push token, IP address | Device/network | ID/keys yes; token local | ID/keys yes | IDs/keys in signed/encrypted protocol as applicable | IDs/public keys/tokens/IP/connection time readable / OPS or ACCOUNT | Push provider: token, delivery/timing; email provider as above | Limited device/account export | Remove/revoke at lifecycle end; IP logs bounded OPS |
+| Subscription/license | Account service | Entitlement cache | Entitlement cache | Not a family activity payload | Account/license readable / ACCOUNT | Payment provider data outside PCA family vault | Account export where supported | ACCOUNT/legal deletion schedule |
+| Recovery envelope | Owner device | Opaque copy only | Opaque copy only | Yes (RS-protected) | Opaque blob/metadata / ACCOUNT or recovery lifecycle | None beyond routing | No by default | Replace on recovery/RS rotation; PCA never has RS/plaintext |
+| Audit event, crash log, diagnostic log | Device/app | Audit yes; diagnostics minimized | Audit yes | Audit sync if configured | No activity plaintext; crash/diagnostic may expose only approved OPS metadata / OPS | Push none | Audit limited; diagnostics no | Audit floor per doc 11; diagnostics bounded OPS; redact URLs/locations/keys/secrets |
+| Encrypted export | Parent device | Optional local file | Yes at creation | Family-key encrypted | No unless family independently uploads it / NONE | Any chosen external provider metadata is outside PCA control | It is the export | `EXPORT_EXISTS_EXTERNALLY`; app deletion cannot delete external copies |
+
+Any new field or flow must add a row here before implementation. Docs 09 and 11 are normative for crypto and deletion respectively; docs 19 and 27 must reference this matrix for notification and observability boundaries.
 
 ## 8. Data model diagram (logical, not physical)
 

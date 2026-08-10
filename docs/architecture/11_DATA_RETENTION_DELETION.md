@@ -18,6 +18,8 @@ Supported activity-retention choices (doc 03 PCA-FR-100):
 
 Architecture default at first enrollment: **1 month**, shown explicitly for parent confirmation, not silently applied (doc 03 PCA-FR-101, tracked as PCA-DEC-003 in doc 01 Section 11 for whether this default itself should change before implementation).
 
+**Authoritative clock rule (PCA-DATA-030).** `14 days` is an exact elapsed interval of 14 × 24 hours from the UTC event instant. `1`, `3`, `6`, and `9 months` are calendar-month intervals: calculate the expiry calendar date/time in the family's policy timezone using a calendar library and convert that result to a UTC instant; if the target month lacks the source day, use that month's final day at the corresponding local time. Store every event and policy change as a UTC instant plus the IANA timezone used for presentation/policy context. The timezone is not an elapsed-time authority. Active screen/session duration uses a monotonic clock and is not derived from this retention clock.
+
 ## 3. Scope of retention
 
 ### 3.1 Subject to the general retention window (`defaultRetentionPolicy`, doc 10 Section 3.1)
@@ -37,7 +39,7 @@ Architecture default at first enrollment: **1 month**, shown explicitly for pare
 - current device keys / key metadata (`DeviceKeyMetadata` for `ACTIVE` keys, doc 10 Section 5; doc 09 Section 3);
 - current policies/schedules (`Policy` at its currently-effective version, doc 10 Section 3.4);
 - parent roles (`FamilyMember.role` assignments, doc 10 Section 3.2);
-- recovery configuration (the FRRS's *existence/generation-timestamp* record, doc 10 Section 3.1's `frrsGeneratedAt` — the FRRS value itself is never stored centrally or in a deletable local field to begin with, doc 09 Section 3.4);
+- recovery configuration (the Recovery Secret's *existence/generation timestamp* record, doc 10 Section 3.1's `recoverySecretGeneratedAt` — the secret itself is never stored centrally or in a local database field, doc 09 Section 3.4);
 - active license metadata (doc 05 Section 3.3);
 - **audit trail** — `ParentActionAudit` and `TamperEvent` (doc 10 Section 5, PCA-DATA-013) are exempt from the *general activity* retention window and instead use their own, longer-lived retention floor (Section 3.3) — an audit record that vanished on the same cycle as the activity it documents would defeat the audit trail's purpose.
 
@@ -51,7 +53,7 @@ Architecture default at first enrollment: **1 month**, shown explicitly for pare
 
 Location history (`LocationPoint`) may use a **shorter or equal** retention window than the general policy (`defaultRetentionPolicy`), **never longer** (doc 03 PCA-FR-102). The parent may also select **"current/last location only"** — no historical location trail is retained at all; only the single most-recent `LocationPoint` is kept, and every prior point is deleted as soon as a new one is recorded (a rolling one-record retention, not a time-window retention).
 
-**PCA-DATA-022** The child device MUST reject (or clamp, per PCA-DEC-024 below) any `Policy.locationPolicy.retentionPolicy` value received via a signed envelope (doc 09 Section 4) that specifies a location-retention window longer than that same policy's general `retentionPolicy` value — this is enforced client-side, not only in the parent authoring UI, so a corrupted or malicious policy envelope cannot widen location retention past the general window even if it somehow passed signature/version verification (doc 09 PCA-SEC-022's independent-checks principle extends to this semantic validation, not only the four structural checks doc 09 Section 4 enumerates).
+**PCA-DATA-022** The child device MUST reject any `Policy.locationPolicy.retentionPolicy` value received via a signed envelope that is longer than that policy's general window. This semantic verification occurs on-device; a malformed policy is not silently clamped or partially applied.
 
 ## 5. Deletion algorithm
 
@@ -65,9 +67,13 @@ At least daily, and opportunistically at app start and other maintenance windows
 6. **Compact/securely replace storage** where the platform/database engine permits (doc 06/07); **do not promise forensic secure erase on flash storage where the OS cannot guarantee it** — this document does not claim a stronger physical-erasure guarantee than the underlying platform storage stack provides (Section 9).
 7. **Create a non-sensitive deletion receipt** (`RetentionDeletionReceipt`, doc 10 Section 5) with counts/categories/time — the receipt itself contains no content, only "N `WebVisit` records older than `<cutoff>` deleted at `<timestamp>`"-shaped metadata, so the receipt cannot become a second copy of the data it documents having deleted.
 
-### 5.1 Event-timestamp vs. calendar semantics
+### 5.1 Event-timestamp, clock anomaly, and deletion state machine
 
 **PCA-DATA-023** Retention cut-off computation uses the **event's own timestamp** (e.g. `WebVisit.timestamp`, `UsageSession.startedAt`) compared against **wall-clock calendar time** at evaluation time, using calendar-accurate month/day arithmetic (a "1 month" window from a March 31 evaluation resolves to the correct prior-month boundary per platform calendar libraries, not a naive `30 * 86400` seconds approximation) — this avoids retention silently drifting shorter or longer than the parent's selected label implies across months of different length, daylight-saving transitions, or leap years.
+
+Each replica and deletion request uses one durable state machine: `ACTIVE → EXPIRY_DUE → DELETE_REQUESTED → DELETED_LOCAL → DELETION_CONFIRMED`; a counterpart that cannot be contacted is `DELETE_PENDING_REMOTE_DEVICE`; a generated export is additionally marked `EXPORT_EXISTS_EXTERNALLY` and is never represented as app-deletable. State transitions are idempotent and carry record/deletion-request IDs, policy version and UTC timestamp. `DELETION_CONFIRMED` means every currently reachable in-scope app-managed copy acknowledged deletion; it never means a removed/offline endpoint, flash remnant, platform backup, or external export was erased.
+
+Each device persists a last accepted wall-clock/trusted-time high-water mark. If wall clock moves backwards beyond tolerance, it does not move an expired/deleted record back to `ACTIVE`, does not extend expiry, and emits a clock-anomaly event. It continues deletion based on the maximum of its accepted high-water mark and any authenticated server-time anchor; anchors are used only to detect/correct time anomalies and contain no activity plaintext. On reboot, monotonic elapsed-duration values are reset/reconstructed from UTC bounds, never treated as continuous across boot.
 
 ### 5.2 Scheduled cleanup and offline-device deferral
 
@@ -76,6 +82,8 @@ At least daily, and opportunistically at app start and other maintenance windows
 ### 5.3 Parent/child copy synchronization
 
 **PCA-DATA-025** When the child device's local deletion cycle removes a record, the parent device's own encrypted replica (doc 10 Section 4's framing note) of that same record is deleted by the parent's independently scheduled local cycle using the same cut-off computation (Section 5.1). The two devices are not required to delete in the same instant: each may be unavailable to its own maintenance scheduler. They MUST converge to the same retained set once both have run a cycle, since both compute the identical cut-off from the same `Policy.retentionPolicy` value and the same underlying event timestamps; network reconnection is needed only for status synchronization, not for the deletion itself.
+
+Policy changes apply immediately to all still-held activity data. A reduction (for example 9 months → 14 days) marks every newly out-of-window record `EXPIRY_DUE` and deletes it on the next local cycle; queued ciphertext is withdrawn and an offline copy remains `DELETE_PENDING_REMOTE_DEVICE`. An increase (14 days → 9 months) affects only records that are still `ACTIVE`; it cannot resurrect `DELETED_LOCAL`, expired queued data, or any external export.
 
 ### 5.4 Tombstones
 
@@ -112,7 +120,7 @@ Encrypted undelivered relay envelopes (doc 09 Section 5.1, doc 05 Section 3.4) u
 
 ## 10. Backup and export copy handling
 
-**PCA-DATA-029** Retention/deletion (Sections 5–7) applies to the app's own managed local storage and its own encrypted replica flow; it does **not** reach into a **previously-generated export** (doc 09 Section 9) that the family has since moved outside app-managed storage (e.g. saved to a personal cloud drive, printed, emailed to themselves) — this limitation MUST be disclosed at export-creation time (doc 09 Section 9's "exports include retention scope and creation timestamp" requirement exists precisely so a family understands an old export is a frozen snapshot, not something "delete now" or retention cycling will reach). Similarly, if a platform-level device backup (doc 09 Section 8) was taken before a backup-exclusion configuration was correctly applied, or before a "delete now"/retention cycle ran, that backup snapshot is outside this document's deletion algorithm's reach until/unless the family also deletes or overwrites that backup through the platform's own backup-management surface — doc 09 Section 8's exclusion configuration is the primary control preventing this scenario, this document only states the limitation for the case where it is bypassed or was misconfigured.
+**PCA-DATA-029** Retention/deletion applies to app-managed child copies, parent replicas, and queued ciphertext. It does not reach a previous encrypted export once placed outside app-managed storage; mark it `EXPORT_EXISTS_EXTERNALLY` and disclose that limitation at creation. Sensitive vault/key material is excluded from platform backup by doc 09 Section 8. If an excluded/legacy backup nevertheless exists, it is `DELETE_PENDING_REMOTE_DEVICE` in the user's backup domain: PCA cannot delete it, and the family must remove/overwrite it using the platform backup controls. Removed devices are revoked and retain the same honest limitation; removed children/families invoke deletion requests to every known in-scope device, revoke trust/keys, and report unacknowledged offline copies as pending rather than erased.
 
 ## 11. Deletion flow diagram
 
@@ -140,7 +148,7 @@ flowchart TD
 |---|---|---|
 | Device offline past its retention window | Local clock check on next foreground/maintenance window (§5.2) | One deletion cycle covers the full elapsed backlog at the next local execution opportunity; network reconnection is not required for local expiry deletion |
 | "Delete now" issued on parent device while child device is offline | Parent-local signed instruction and pending acknowledgement state; Relay TTL is only a delivery attempt (§6/§8) | Parent re-enqueues after connectivity returns; UI shows pending, not completed. If no authorized parent/recovery material remains, the limitation is disclosed rather than silently treated as remote deletion |
-| Location retention policy value received wider than general window (corrupted/malicious envelope) | Client-side semantic validation (PCA-DATA-022) | Envelope's location-retention value rejected/clamped; tamper/anomaly event raised (doc 21) if the mismatch looks adversarial rather than an authoring-UI bug |
+| Location retention policy value wider than general window | Client-side semantic validation (PCA-DATA-022) | Reject whole envelope, retain last valid policy, and raise anomaly where appropriate |
 | Deletion job crashes mid-cycle | Next scheduled run re-evaluates from current state (idempotent: Section 5's cutoff computation is deterministic and re-computable, not a stateful multi-step transaction that can be "half done" in a way that loses records) | Next run completes any remaining eligible deletions; no data loss beyond what was already correctly identified for deletion |
 | Family removal (doc 08 Section 8) interrupted after key revocation but before local vault wipe | Doc 08 PCA-FR-145's outcome tracking | Parent informed of required manual follow-up (doc 08); this document's Section 7 deletion sub-step is retried/resumed under the same removal flow, not silently abandoned |
 | Export or backup copy exists outside app-managed storage | Not detectable by the app (§10) | Disclosed proactively at export/backup-configuration time rather than discovered as a gap during an incident |
@@ -170,7 +178,7 @@ flowchart TD
 | Decision ID | Topic | Options | Recommendation | Status |
 |---|---|---|---|---|
 | PCA-DEC-023 | Whether audit-trail retention (Section 3.3) should be independently parent-configurable, vs. fixed at the "general window or 12 months, whichever is longer" floor | (a) Fixed floor only, not separately configurable (simpler, avoids a parent accidentally shortening their own accountability trail); (b) Independently configurable with a hard minimum floor (e.g. cannot go below 3 months regardless of general-activity setting) | (a) for initial launch — an audit trail a parent can shorten defeats some of its purpose (e.g. reviewing a prior role change after a dispute); revisit (b) only if there is a legitimate storage-pressure or explicit-privacy reason raised in practice | PROPOSED |
-| PCA-DEC-024 | Whether an out-of-bounds location-retention value in a received policy envelope (PCA-DATA-022) should be silently **clamped** to the general window or **rejected outright** (falling back to last-valid policy, doc 09 Section 4) | (a) Clamp to general window and continue applying the rest of the policy; (b) Reject the entire envelope as doc 09 Section 4's normal verification-failure path | (b) — treating a semantically invalid retention value the same as a structurally invalid envelope is more conservative and consistent with doc 09 PCA-SEC-022's "independent checks, no silent partial-acceptance" principle; (a) risks quietly diverging from what the parent actually authored | PROPOSED |
+| PCA-DEC-024 | Handling of an out-of-bounds location window | Reject whole envelope and retain last-valid policy | Rejection is now the architecture baseline (PCA-DATA-022); no unresolved implementation choice remains | RESOLVED |
 
 ## 17. Dependencies
 
@@ -186,6 +194,7 @@ flowchart TD
 
 - [ ] Every Section 3.1 entity class has a working deletion path verified by a doc 28 test that seeds aged records and confirms Section 5's algorithm removes them and produces a matching `RetentionDeletionReceipt`.
 - [ ] Every Section 3.2 entity is verified, by a doc 28 negative test, to survive a full retention cycle including "delete now" (Section 6) and to be removed only via full family/device removal (Section 7).
-- [ ] PCA-DATA-022's client-side clamp/reject behavior (pending PCA-DEC-024) is covered by a test that submits an out-of-bounds location-retention policy envelope.
+- [ ] PCA-DATA-022 rejection is covered by a test that submits an out-of-bounds location-retention policy envelope and verifies the last valid policy remains active.
+- [ ] Doc 28 tests 14-day exact UTC expiry, calendar-month end-of-month/leap-year behavior, rollback non-resurrection, reduction/increase behavior, offline parent/child state and backup/export disclosure.
 - [ ] Section 5.1's calendar-accurate cutoff computation is covered by a test spanning a leap year and a daylight-saving transition, not only fixed 30-day-month arithmetic.
 - [ ] PCA-DEC-023 and PCA-DEC-024 are resolved before doc 30's retention-engine implementation phase begins.

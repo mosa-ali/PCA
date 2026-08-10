@@ -27,18 +27,18 @@ These goals are the acceptance bar for Sections 3–8; a design that satisfies t
 
 | Key | Type | Generated | Held by | Purpose |
 |---|---|---|---|---|
-| **Family Root Recovery Secret (FRRS)** | High-entropy symmetric secret (or equivalent recovery-grade material — exact construction is an implementation-review choice, Section 3.6) | Once, at family creation, on the Family Owner's parent device | Family Owner only, in an offline/exported form (Section 3.4) — never uploaded to PCA infrastructure in plaintext or otherwise-recoverable form | Root of family recovery: re-derive/re-wrap access to the Family Data Encryption Key(s) when all live device keys for a role are lost (doc 08 Section 6) |
-| **Parent Device Signing Key** | Asymmetric signing keypair | Per parent device, at pairing (doc 08 Section 4/5) | Private key never leaves the device's secure key store (doc 06/07); verification key is relayed to and stored by the Enrollment Service and shared with other family devices | Signs policy, revocation, and recovery envelopes as that parent; authenticates the device within the family trust set |
-| **Child Device Signing Key** | Asymmetric signing keypair | Per child device, at pairing (doc 08 Section 4) | Private key never leaves the device's secure key store | Authenticates the child device; signs status receipts and tamper events (doc 21) |
-| **Device Key-Encapsulation/Public Encryption Key** | Separate asymmetric encryption/encapsulation keypair, unless the reviewed platform suite safely defines an approved combined-key construction | Per device, at pairing and on cryptographic rotation | Private component never leaves that device's secure key store; public component is in the family trust set | Receives the wrapped FDEK. A signing key MUST NOT be reused as an encryption/encapsulation key merely for convenience unless the selected, reviewed suite explicitly and safely specifies that construction. |
-| **Family Data Encryption Key(s) (FDEK)** | Symmetric content-encryption key(s), rotated | At family creation; rotated on key-compromise, device revocation, or scheduled rotation (Section 3.5) | Wrapped individually to every currently-authorized device's encryption/encapsulation public key, so each authorized device can unwrap its own copy; never held in a form any single non-family party can unwrap | Encrypts activity-summary payloads and, where used, the parent's own encrypted replica (doc 10 Section 4) |
+| **Recovery Secret (RS)** | High-entropy, offline recovery material, distinct from all device keys | Once at family creation | Family Owner only, offline/exported; never plaintext to PCA | Inputs a reviewed KDF to make a **Recovery Wrapping Key (RWK)**. It does **not** derive an FDEK. |
+| **Device Signing Key Pair (DSK)** | Dedicated asymmetric signing pair | Per device, at pairing/identity rotation | Private key stays in platform secure storage; public verification key is in the signed trust set | Signs trust-set epochs, policy/control envelopes, receipts and recovery authorization. It is never used for key agreement or wrapping. |
+| **Device Key-Agreement / Encryption Key Pair (DEK)** | Dedicated recipient encryption/KEM pair | Per device, at pairing/cryptographic rotation | Private key stays in platform secure storage; public recipient key is in the signed trust set | Receives FDEK envelopes. It is never used to sign policy or trust-state. |
+| **Family Data Encryption Key (FDEK)** | Random symmetric content key, identified by `keyEpoch` | At family creation and every security rotation | Only family devices, via device-targeted envelopes; PCA never holds a decryptable copy | Encrypts family activity/policy payloads. Random generation is mandatory; no recovery secret is represented as an FDEK derivation input. |
+| **Recovery Wrapping Key (RWK)** | Ephemeral KDF output from RS, with family binding and recovery-envelope salt | Only while creating/opening a recovery envelope | Family Owner/recovery transaction only; zeroized afterwards | Opens the recovery envelope containing wrapped FDEK/key/trust material. |
 | **Message/Session Keys** | Ephemeral, derived per-envelope or per-session (e.g. via an authenticated-encryption construction keyed from the FDEK and a per-message nonce) | Per envelope/session | Not persisted beyond the envelope's processing | Confidentiality + integrity of the transport payload; bounds the blast radius of any single derived-key exposure |
 
 Concrete cryptographic primitives (curve choice, AEAD construction, KDF) are selected during a dedicated security implementation review from current, platform-supported, non-deprecated libraries (e.g. platform-native crypto providers or a maintained, audited open-source library); **custom/home-grown cryptographic primitives are prohibited** (PCA-SEC-016). This document intentionally does not pin a specific algorithm suite so that the security review is not constrained by a documentation choice made before implementation-time library/OS support is confirmed; it does pin the *properties* every candidate suite must have (Section 3.6).
 
 ### 3.2 Family trust set
 
-The **family trust set** (referenced by doc 08 Sections 4–7) is the authoritative, Family-Owner-controlled list of currently-authorized device public keys (parent and child) for a family, each entry signed in by an existing trusted device at the moment of pairing (doc 08 Section 4's fingerprint-confirmation step) or role change. A device's key leaving the trust set (revocation) is what makes that device's signatures rejected and its wrapped FDEK copy meaningless going forward (Section 3.5) — trust-set membership, not a server-side ACL, is the enforcement mechanism, because the trust set itself is distributed to and checked by every device, not looked up from PCA infrastructure at message-verification time.
+The **Family Trust Set (FTS)** is a signed, versioned family object, not a server ACL. Each epoch contains: `familyId`; `trustSetEpoch`; authorized parent and child device entries; for each entry `deviceId`, role, DSK key ID/public key, DEK key ID/public key, status (`ACTIVE | ROTATION_PENDING | DEVICE_OFFLINE | REVOKED | EPOCH_STALE | RECOVERY_REQUIRED`); `keyEpoch`; `issuedAt`; `supersedesEpoch`; authorization rule and signature(s). It is signed by the currently authorized owner DSK (or by the recovery transaction defined in Section 10). A recipient verifies the FTS before accepting an envelope; the Relay is only a distributor.
 
 **PCA-SEC-017** Every device MUST independently verify envelope signatures against its own locally-held copy of the family trust set; a device MUST NOT treat "the Relay delivered this message" as any form of authentication.
 
@@ -50,23 +50,25 @@ sequenceDiagram
     participant Enroll as Enrollment Service
     participant New as New device (parent or child)
 
-    Owner->>Owner: Family creation (first run only):\ngenerate FRRS, generate own\nParent Device Identity Key
-    Owner->>Owner: Export FRRS offline\n(display/print/QR — Section 3.4)
-    New->>New: Generate own Identity Key pair locally\n(private key never leaves device)
+    Owner->>Owner: Generate random FDEK, RS, DSK and DEK\n(private keys never leave secure storage)
+    Owner->>Owner: Export RS offline\n(display/print/QR — Section 3.4)
+    New->>New: Generate DSK and DEK locally
     New->>Enroll: Submit public key + enrollment token (doc 08 §4)
     Enroll-->>Owner: Relay public key + device fingerprint\n(Enrollment Service is a relay for this step, not an authority)
     Owner->>Owner: Visually confirm fingerprint\nmatches new device (doc 08 PCA-FR-141)
-    Owner->>New: Sign new device's key into family trust set
-    Owner->>New: Wrap current FDEK to new device's\nencryption/encapsulation public key,\ndeliver E2EE via Relay
+    Owner->>New: Sign FTS epoch N+1 containing DSK/DEK roles
+    Owner->>New: Send FDEK envelope to new DEK\ndeliver E2EE via Relay
     New->>New: Unwrap FDEK using own private key
     New->>New: Device is now ACTIVE (doc 08 §3)\nand can verify/decrypt family traffic
 ```
 
 This diagram elaborates doc 08 Section 4's pairing sequence from the cryptographic side; doc 08 owns lifecycle-state sequencing, this document owns what each cryptographic step actually does.
 
-### 3.4 Family Root Recovery Secret export
+### 3.4 Recovery Secret export and recovery envelope
 
-**PCA-SEC-018** The FRRS MUST be presented to the Family Owner in an offline, exportable form (e.g. a displayed recovery phrase, a printable/scan-able recovery sheet, or an equivalent offline QR artifact) at family-creation time, with an explicit, non-dismissible-without-acknowledgment confirmation that the Family Owner has saved it, and with the plain-language disclosure required by doc 08 PCA-FR-144 that losing both the FRRS and every live parent device makes the family **permanently unrecoverable by design** (Section 2, "support staff cannot recover family plaintext"). PCA infrastructure MUST NOT retain a copy, fragment, escrow share, or recoverable derivative of the FRRS at any point in this flow — the export happens entirely between the Family Owner's device and the Family Owner; the Enrollment Service is not a party to FRRS generation or export.
+**PCA-SEC-018** The RS MUST be presented offline at creation with explicit acknowledgement that loss of both RS and all active parent devices makes recovery permanently impossible. PCA infrastructure never receives RS, an escrow share, or a recoverable derivative. The recovery envelope is an authenticated-encrypted object containing only: `familyId`, envelope format/KDF suite IDs, salt, recovery-envelope ID, creation/key/trust-set epochs, encrypted FDEK(s) and the minimum signed FTS material needed to start recovery. The associated data binds `familyId`, envelope ID, epochs and suite IDs. It contains no activity plaintext. An opaque copy MAY be retained by PCA solely for delivery/availability; it is not decryptable by PCA.
+
+The RWK is produced from RS with the recorded reviewed KDF and salt, then used only to open this envelope. Recovery never "re-derives" the random FDEK. Candidate pattern: RFC 9180 HPKE for device envelopes plus a reviewed password/recovery-key KDF and AEAD for the RS-protected envelope; DSK/DEK role separation is architectural choice, while exact suites require specialist cryptographic approval, platform-library review and test vectors before implementation.
 
 ### 3.5 Rotation and revocation
 
@@ -75,7 +77,7 @@ Key rotation and device revocation are two related but distinct operations:
 - **Rotation** (scheduled, or triggered by suspected compromise) generates a fresh FDEK and re-wraps it to every device still in the trust set at rotation time using that device's encryption/encapsulation public key. Rotation alone does not remove any device from the trust set.
 - **Revocation** (doc 08 Sections 6–8: device replacement, parent-phone recovery, removal) removes a device's public key from the family trust set. A revoked device's already-held FDEK copy remains locally on that device (it cannot be remotely deleted from a device with no connectivity, per doc 08 Section 9/PCA-FR-146) but becomes cryptographically useless for **future** traffic because revocation is always followed by rotation (**PCA-SEC-019**: every revocation MUST trigger an FDEK rotation to every remaining trusted device, not merely a trust-set edit, so a revoked device cannot decrypt anything encrypted after its revocation even if it retains its last-known FDEK copy).
 
-**PCA-SEC-020** Revocation and the subsequent rotation MUST be applied atomically from the perspective of every remaining device — no remaining device may accept a policy envelope encrypted under a pre-rotation FDEK once it has processed the revocation event, closing the window in which a revoked-but-not-yet-rotated key could still be used.
+**PCA-SEC-020** This distributed transition is **not atomic**. Owner signs FTS epoch N+1, marks the removed device `REVOKED`, creates FDEK key epoch N+1, and sends FDEK envelopes only to active remaining DEKs. Online devices verify/adopt N+1 before they accept new control or activity envelopes; a device without N+1 is `EPOCH_STALE`/`DEVICE_OFFLINE`, must not exercise new control authority, and displays pending convergence to the parent. Receivers reject messages signed by revoked keys and reject future data/control whose FTS/key epoch is older than their accepted minimum. A revoked offline endpoint can retain already-held historical data and pre-revocation FDEK material; PCA makes no retroactive remote-erasure claim. The goal is loss of **new** data access and **new** control authority after convergence.
 
 ### 3.6 Required cryptographic properties (implementation-review constraints)
 
@@ -160,11 +162,21 @@ Sensitive local databases (activity vault, doc 10) use OS-backed key protection:
 
 ## 9. Data export
 
-**PCA-SEC-026** A parent-requested export is generated and encrypted entirely on the parent device (never proxied through, or generated by, PCA infrastructure) and is encrypted such that only the family's own key material can open it — restated from doc 03 PCA-FR-125. Exports include an explicit retention scope (which window of data is included) and a creation timestamp, so an old export cannot be mistaken for current data. Export handling is otherwise governed by doc 11 Section 8 (retention/deletion semantics for exported copies once they leave the app's managed storage are the family's own responsibility, disclosed at export time).
+**PCA-SEC-026** A parent-requested export is generated and encrypted entirely on the parent device (never proxied through, or generated by, PCA infrastructure) and is encrypted such that only the family's own key material can open it — restated from doc 03 PCA-FR-125. Exports include an explicit retention scope (which window of data is included) and a creation timestamp, so an old export cannot be mistaken for current data. Export handling is otherwise governed by doc 11 Section 10 (retention/deletion semantics for copies once they leave app-managed storage are the family's responsibility, disclosed at export time).
 
-## 10. Recovery (cross-reference)
+## 10. Authenticated recovery transaction
 
-Full recovery flow sequencing (lost parent device, no-second-parent failure case, re-enrollment) is owned by doc 08 Section 6 and doc 21; this document supplies the underlying primitives those flows consume: the FRRS (Section 3.1/3.4), the re-wrap-on-recovery mechanism (Section 3.5's rotation), and the deliberate-unrecoverability property (Section 2, PCA-SEC-015) that makes doc 08 PCA-FR-144's "not possible by design" claim true rather than aspirational.
+Recovery is a controlled trust transition, not a support reset. The Family Owner starts it on a new parent device, generates new DSK/DEK pairs, retrieves the opaque recovery envelope, derives RWK locally from RS, and verifies the envelope's family binding, format and anti-replay fields. The recovery transaction creates FTS epoch N+1, enrolls the new parent, revokes lost/replaced parent keys, creates a fresh FDEK key epoch N+1 and re-wraps it only to the new/remaining authorized DEKs. It is signed by the new recovery-authorized identity and recorded with an immutable `recoveryTransactionId`; Relay accepts each transaction ID once and returns a signed/authoritative delivery receipt, preventing replay. A second active parent may instead authorize an ordinary replacement through the current FTS; it still triggers an epoch/key rotation.
+
+| Case | Required behavior |
+|---|---|
+| Recovery-code loss and no active parent | `RECOVERY_REQUIRED` but unrecoverable; no support-agent bypass or alternate account proof can decrypt family material. |
+| Recovery-code theft | Treat as compromise: initiate recovery from an active parent if possible, rotate RS/recovery envelope, FTS and FDEK; disclose that theft plus a lost device may permit takeover. |
+| Replaced/lost parent | Revoke its DSK/DEK in N+1; status stays `ROTATION_PENDING` until active devices acknowledge N+1. |
+| Server compromise | Attacker may obtain opaque envelope, public keys and routing metadata, but not RS/RWK/FDEK plaintext; device fingerprint/FTS signature verification remains mandatory. |
+| Offline device | It adopts N+1 at reconnect; until then UI says `DEVICE_OFFLINE` and its local historical content cannot be remotely erased. |
+
+No recovery transaction exposes recovery plaintext to PCA staff. Full lifecycle UI sequencing remains in docs 08 and 21; those documents must consume this exact model.
 
 ## 11. Failure modes
 
@@ -173,15 +185,16 @@ Full recovery flow sequencing (lost parent device, no-second-parent failure case
 | Relay compromised (server-side) | N/A to payload confidentiality — ciphertext only (Section 5.2) | Attacker gains routing metadata and undelivered ciphertext (Section 5.1), not plaintext; still a metadata-exposure concern carried into doc 24 |
 | Enrollment Service compromised, attempts to relay a substitute device public key | Fingerprint confirmation at pairing (doc 08 PCA-FR-141) | Family Owner detects mismatch and aborts before the substitute key ever enters the trust set (Section 3.2/3.3) |
 | Envelope replayed by a network attacker | Sequence/nonce check (PCA-SEC-021) and version monotonicity (Section 4) | Rejected independently by either check; tamper/anomaly event raised (doc 21) |
-| Device revoked but rotation delayed/fails to reach a remaining device | Atomic revoke+rotate requirement (PCA-SEC-020) | Architecture requirement is atomicity; an implementation gap here is a release-blocking defect, not an accepted risk — tracked for doc 28 test coverage |
-| FRRS lost with no second parent device | Recovery flow validation (doc 08 Section 6) | Recovery blocked by design (PCA-SEC-015); disclosed up front at FRRS generation (Section 3.4) |
+| Device revoked while another device is offline | FTS epoch acknowledgements and status values | No atomicity claim: online devices use N+1; offline device is `DEVICE_OFFLINE`/`EPOCH_STALE` until it receives N+1, and cannot be remotely stripped of historic content |
+| RS lost with no second parent device | Recovery transaction validation | Recovery blocked by design (PCA-SEC-015); disclosed at RS generation |
+| RS stolen | Parent-reported compromise or suspicious recovery attempt | Active parent rotates recovery envelope, trust set and FDEK; no support master bypass exists |
 | Local vault key protection unavailable (low-end device, no hardware keystore) | Platform capability check at first run (doc 06/07) | Software-backed fallback used (Section 7); device is not silently left with a weaker guarantee than the parent is told about — doc 26/27 own the exact user-facing disclosure |
 | Push provider (FCM/APNs) compromised or subpoenaed | N/A to family content — opaque payload only (Section 6) | Attacker/requester learns only that a wake event occurred, not its content |
 
 ## 12. Security/privacy implications
 
 - Section 5 is the canonical answer to "what does PCA know about my family" and MUST stay in sync with doc 03 Section M (PCA-FR-120–127) and doc 03's "What parents can see" page content — a change to Section 5.1/5.2 without a corresponding doc 03 change is a doc 00 Section 9 conflict, not a routine edit.
-- The FRRS (Section 3.1/3.4) is simultaneously the strongest recovery guarantee available to the family and the single point whose loss (combined with all-parent-device loss) makes the family unrecoverable — this trade-off is deliberate (Section 2, PCA-SEC-015) and its cost is disclosed, not hidden, per doc 08 PCA-FR-144.
+- The RS (Section 3.1/3.4) is deliberately separate from DSK, DEK and FDEK: it opens an envelope containing random key material; it is not a disguised deterministic family master key.
 - Metadata exposure (Section 5.1's "MAY know" list) is still a real privacy consideration (traffic analysis, family-existence disclosure, rough activity-timing inference from message-size/timing patterns) and is explicitly carried into doc 24's threat model rather than dismissed because payloads are encrypted.
 
 ## 13. Assumptions
@@ -205,7 +218,7 @@ Full recovery flow sequencing (lost parent device, no-second-parent failure case
 | Decision ID | Topic | Options | Recommendation | Status |
 |---|---|---|---|---|
 | PCA-DEC-020 | Forward-secrecy construction for message/session keys (Section 3.6) | (a) Full ratchet-style forward secrecy (e.g. Double-Ratchet-like construction) per envelope; (b) Simpler per-envelope AEAD keyed from the current FDEK with periodic FDEK rotation as the primary mitigation (Section 3.5) | (b) for initial launch — lower implementation risk, rotation-on-revocation (PCA-SEC-019) already bounds exposure; revisit (a) once base E2EE is validated in production | PROPOSED |
-| PCA-DEC-021 | Exact FRRS construction (raw high-entropy secret + recovery phrase encoding vs. a Shamir-style split held partially across parent devices with no single-device full-secret exposure) | (a) Single exportable secret held by the Family Owner only (matches doc 08's current assumption); (b) Threshold/split scheme across multiple parent devices | (a) — matches doc 08's existing single-parent-family assumption (Section 13) and keeps the recovery UX simple; (b) only becomes attractive if multi-parent families are common enough to justify the added complexity | PROPOSED |
+| PCA-DEC-021 | Exact RS encoding/recovery KDF and whether a threshold recovery option is offered | (a) single high-entropy RS; (b) reviewed threshold construction | (a) initially; do not implement either without cryptographic review | PROPOSED |
 
 ## 16. Dependencies
 
@@ -221,7 +234,7 @@ Full recovery flow sequencing (lost parent device, no-second-parent failure case
 ## 17. Acceptance criteria
 
 - [ ] Every "PCA cannot read X" or "E2EE" claim anywhere in the package resolves to a specific row in Section 5.1/5.2, not to an unqualified "zero-knowledge" assertion.
-- [ ] PCA-SEC-019/PCA-SEC-020 (revocation-triggers-rotation, atomicity) are covered by a doc 28 test that simulates a revoked device attempting to decrypt post-revocation traffic.
+- [ ] PCA-SEC-019/PCA-SEC-020 are covered by doc 28 tests for online adoption, offline `EPOCH_STALE` convergence, rejected revoked signatures and a revoked device's failure to decrypt post-rotation traffic.
 - [ ] PCA-SEC-021/PCA-SEC-022 (replay/verification independence) are covered by a doc 28 test that replays a validly-signed, previously-processed envelope and confirms rejection.
 - [ ] No Enrollment/Licensing Service or Relay schema field introduced during implementation violates PCA-SEC-023, verified by the same schema-review gate doc 05 PCA-FR-136 requires.
 - [ ] PCA-DEC-020 is resolved before the security implementation review (Section 3.1) pins a final algorithm suite.
