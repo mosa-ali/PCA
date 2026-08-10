@@ -17,6 +17,16 @@ export function createInMemoryInvitationRepository() {
       return record ? { ...record } : null;
     },
 
+    async findByIdForFamily(familyId, invitationId) {
+      const record = byId.get(invitationId);
+      if (!record || record.familyId !== familyId) return null;
+      return { ...record };
+    },
+
+    async listForFamily(familyId) {
+      return [...byId.values()].filter((record) => record.familyId === familyId).map((record) => ({ ...record }));
+    },
+
     async markOpened(invitationId, openedAt) {
       const record = byId.get(invitationId);
       if (!record) throw new Error('invitation not found');
@@ -47,6 +57,16 @@ export function createInMemoryInvitationRepository() {
       if (!record) throw new Error('invitation not found');
       // REDEEMED is terminal (never overwritten); REVOKED is idempotent
       // (the first revocation's timestamp remains authoritative).
+      if (record.status !== 'REDEEMED' && record.status !== 'REVOKED') {
+        record.status = 'REVOKED';
+        record.revokedAt = revokedAt;
+      }
+      return { ...record };
+    },
+
+    async revokeForFamily(familyId, invitationId, revokedAt) {
+      const record = byId.get(invitationId);
+      if (!record || record.familyId !== familyId) return null;
       if (record.status !== 'REDEEMED' && record.status !== 'REVOKED') {
         record.status = 'REVOKED';
         record.revokedAt = revokedAt;

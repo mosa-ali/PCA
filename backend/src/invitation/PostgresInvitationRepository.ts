@@ -1,6 +1,6 @@
 import { runInTransaction } from '../db/pool.js';
 import type { InvitationRepository, RedemptionResult } from './InvitationRepository.js';
-import type { InvitationId, InvitationRecord } from './types.js';
+import type { InvitationId, InvitationRecord, OpaqueFamilyId } from './types.js';
 
 interface InvitationRow {
   invitation_id: string;
@@ -61,6 +61,25 @@ export class PostgresInvitationRepository implements InvitationRepository {
       client.query<InvitationRow>(`SELECT * FROM enrollment_invitations WHERE token_hash = $1`, [tokenHash]),
     );
     return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  async findByIdForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord | null> {
+    const { rows } = await runInTransaction((client) =>
+      client.query<InvitationRow>(`SELECT * FROM enrollment_invitations WHERE invitation_id = $1 AND family_id = $2`, [
+        invitationId,
+        familyId,
+      ]),
+    );
+    return rows[0] ? mapRow(rows[0]) : null;
+  }
+
+  async listForFamily(familyId: OpaqueFamilyId): Promise<InvitationRecord[]> {
+    const { rows } = await runInTransaction((client) =>
+      client.query<InvitationRow>(`SELECT * FROM enrollment_invitations WHERE family_id = $1 ORDER BY created_at DESC`, [
+        familyId,
+      ]),
+    );
+    return rows.map(mapRow);
   }
 
   async markOpened(invitationId: InvitationId, openedAt: Date): Promise<InvitationRecord> {
@@ -127,6 +146,23 @@ export class PostgresInvitationRepository implements InvitationRepository {
       );
       if (!current.rows[0]) throw new Error('invitation not found');
       return mapRow(current.rows[0]);
+    });
+  }
+
+  async revokeForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId, revokedAt: Date): Promise<InvitationRecord | null> {
+    return runInTransaction(async (client) => {
+      const updated = await client.query<InvitationRow>(
+        `UPDATE enrollment_invitations SET status = 'REVOKED', revoked_at = $3
+         WHERE invitation_id = $1 AND family_id = $2 AND status NOT IN ('REVOKED', 'REDEEMED')
+         RETURNING *`,
+        [invitationId, familyId, revokedAt],
+      );
+      if (updated.rows[0]) return mapRow(updated.rows[0]);
+      const current = await client.query<InvitationRow>(
+        `SELECT * FROM enrollment_invitations WHERE invitation_id = $1 AND family_id = $2`,
+        [invitationId, familyId],
+      );
+      return current.rows[0] ? mapRow(current.rows[0]) : null;
     });
   }
 }

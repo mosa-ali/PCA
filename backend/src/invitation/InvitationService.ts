@@ -116,6 +116,25 @@ export class InvitationService {
     return this.repository.revoke(invitationId, this.now());
   }
 
+  /** Family-scoped read: wrong family is indistinguishable from nonexistent (IDOR defense, matching the device/pairing domains' pattern). */
+  async getInvitationForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord> {
+    const record = await this.repository.findByIdForFamily(familyId, invitationId);
+    if (!record) throw new InvitationError('NOT_FOUND');
+    return { ...record, status: this.effectiveStatus(record) };
+  }
+
+  async listInvitationsForFamily(familyId: OpaqueFamilyId): Promise<InvitationRecord[]> {
+    const records = await this.repository.listForFamily(familyId);
+    return records.map((record) => ({ ...record, status: this.effectiveStatus(record) }));
+  }
+
+  /** Family-scoped revoke: the UPDATE itself is filtered by family_id (see revokeForFamily), so a caller can never revoke another family's invitation by guessing an id. */
+  async revokeInvitationForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord> {
+    const record = await this.repository.revokeForFamily(familyId, invitationId, this.now());
+    if (!record) throw new InvitationError('NOT_FOUND');
+    return record;
+  }
+
   async resolveInvitationState(rawToken: string): Promise<InvitationStatusLike> {
     const record = await this.findByToken(rawToken);
     if (!record) throw new InvitationError('NOT_FOUND');

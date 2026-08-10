@@ -1,4 +1,4 @@
-import type { InvitationId, InvitationRecord } from './types.js';
+import type { InvitationId, InvitationRecord, OpaqueFamilyId } from './types.js';
 
 export type RedemptionResult =
   | { outcome: 'REDEEMED'; record: InvitationRecord }
@@ -19,7 +19,17 @@ export type RedemptionResult =
 export interface InvitationRepository {
   create(record: InvitationRecord): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<InvitationRecord | null>;
+  /** Family-scoped by design: an invitation belonging to a different family must be indistinguishable from a nonexistent one. */
+  findByIdForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord | null>;
+  listForFamily(familyId: OpaqueFamilyId): Promise<InvitationRecord[]>;
   markOpened(invitationId: InvitationId, openedAt: Date): Promise<InvitationRecord>;
   redeemAtomically(invitationId: InvitationId, redeemedAt: Date): Promise<RedemptionResult>;
   revoke(invitationId: InvitationId, revokedAt: Date): Promise<InvitationRecord>;
+  /**
+   * Family-scoped revoke: the UPDATE itself is filtered by family_id (not
+   * just a preceding read), so this method alone can never revoke another
+   * family's invitation even if a future caller skips an ownership check.
+   * Returns null if no invitation with that id exists in that family.
+   */
+  revokeForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId, revokedAt: Date): Promise<InvitationRecord | null>;
 }
