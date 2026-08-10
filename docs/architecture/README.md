@@ -2,10 +2,10 @@
 
 **Version:** 1.0  
 **Date:** 2026-08-10  
-**Status:** Architecture content complete; owner review and GitHub publication pending.  
+**Status:** Reconciliation in progress; baseline is published and later corrections remain local pending independent review.
 **Implementation:** Prohibited until Gate A-100 is accepted.
 
-This package is the single architecture baseline for PCA before implementation.
+This package is the controlled architecture baseline for PCA before implementation. It is not yet an A-100-complete or owner-accepted package.
 
 | # | Document | Purpose |
 |---|---|---|
@@ -51,4 +51,4 @@ The architecture is intentionally **platform-honest**. PCA must never promise ca
 
 ## Gate rule
 
-`A-100 DOCUMENTATION ACCEPTED` must be recorded before creation of production source trees.
+`A-100 DOCUMENTATION ACCEPTED` must be recorded before creation of production source trees. Current state: `A_100 = NOT_SATISFIED`, `IMPLEMENTATION_STATUS = NOT_STARTED`, `IMPLEMENTATION_AUTHORIZATION = NOT_GRANTED`.
