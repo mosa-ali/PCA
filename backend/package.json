@@ -1,0 +1,25 @@
+{
+  "name": "pca-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCA privacy-boundary backend foundation",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node test/schema-privacy.test.mjs && node test/server.test.mjs",
+    "test:privacy": "node test/schema-privacy.test.mjs",
+    "test:db": "node scripts/verify-postgres.mjs",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "fastify": "5.6.2",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "@types/pg": "8.15.4",
+    "typescript": "5.8.3"
+  }
+}

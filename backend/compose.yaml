@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17.5-bookworm
+    environment:
+      POSTGRES_DB: pca_test
+      POSTGRES_USER: pca_test
+      POSTGRES_PASSWORD: pca_test_only_not_a_secret
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pca_test -d pca_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
