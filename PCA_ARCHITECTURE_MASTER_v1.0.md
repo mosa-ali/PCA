@@ -1,24 +1,21 @@
 # PCA Architecture Master v1.0
 
-This file is an index/summary. The controlled source is the complete set under `docs/architecture/`.
+**Package:** v1.0 · **Lifecycle:** `DRAFT_RECONCILIATION` · **Implementation:** `NOT_STARTED` / `NOT_GRANTED`
 
-## Architecture statement
+This is the executive navigation summary. The controlled detail is the 35-document set in [docs/architecture/README.md](docs/architecture/README.md); it must be read before implementation or product commitments.
 
-PCA is a bilingual Arabic/English parental-control platform with local family-owned monitoring data, E2EE parent-child synchronization and minimal central enrollment/licensing/relay infrastructure.
+## System boundaries and platform reality
 
-## Core decisions
+PCA is an Arabic/English parental-control platform. Family activity is encrypted and controlled by family devices; PCA services provide enrollment, licensing, opaque rendezvous/relay, and minimal operational metadata only. Android Standard Mode is deliberately capability-limited; stronger controls require the documented managed/Device Owner path. iOS relies on entitled Family Controls, Managed Settings, and Device Activity, which expose opaque selections and do not make PCA a universal system controller.
 
-1. No implementation before architecture acceptance.
-2. Native Kotlin Android and Swift iOS.
-3. Android has Standard and Protected/managed capability modes.
-4. iOS uses Family Controls + Managed Settings + Device Activity and required entitlement.
-5. Child activity is not stored readably on PCA central servers.
-6. Parent-child payloads are end-to-end encrypted.
-7. Data retention choices are 14 days, 1 month, 3 months, 6 months and 9 months; delete-now is mandatory.
-8. Arabic RTL and English LTR are both release-blocking.
-9. Deterministic web/security controls precede AI; AI runs on-device by default.
-10. No hidden surveillance, covert TLS interception, face recognition or unsupported platform bypasses.
-11. Emergency access and parent recovery always remain available.
-12. Full URL/YouTube-history claims are limited to data legitimately available; YouTube Data API does not expose watch history.
+## Trust, data, and lifecycle
 
-See `docs/architecture/README.md` for the full 35-document controlled architecture set.
+The design separates device signing, device key-agreement/encryption, random family data encryption keys, and recovery material. A signed Family Trust Set and key epochs define enrollment, revocation, offline convergence, replacement-parent recovery, and the non-retroactive limit for compromised offline devices. PCA has no support or administrator decryption bypass. Local monitoring retention is 14 exact days or 1/3/6/9 calendar months, with delete-now, synchronization tombstones, export/backup disclosures, and no forensic-erasure promise.
+
+## Protection and family experience
+
+The package specifies screen-time breaks with an immutable emergency floor; sensor-first eye-distance protection with foreground/capability-gated camera use; layered deterministic web controls before optional on-device AI; bounded YouTube visibility; location/last-seen disclosure; offline prayer calculation; family RBAC; transparent notifications; and independently selectable English/Arabic interfaces with true RTL, bidi, accessibility, charts, and child-facing transparency.
+
+## Assurance and next gate
+
+Threat modeling, policy/store compliance, zero-plaintext observability, test planning, future implementation phases, exact-ID traceability, and first-party source references are documented. `A-100` remains **not satisfied** until the final local package is safely published and independently reviewed. This does not authorize implementation.

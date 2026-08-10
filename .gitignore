@@ -1,0 +1,11 @@
+# Visual Studio local workspace and user state
+.vs/
+
+# Common editor and operating-system local files
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
