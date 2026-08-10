@@ -40,6 +40,11 @@ export function createInMemoryDeviceRepository() {
       return device ? { ...device } : null;
     },
 
+    async findDeviceUnscoped(deviceId) {
+      const device = devicesById.get(deviceId);
+      return device ? { ...device } : null;
+    },
+
     async revokeDeviceAndKeysAtomically(familyId, deviceId, revokedAt) {
       const device = findOwnedDevice(familyId, deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };

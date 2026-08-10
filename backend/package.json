@@ -8,9 +8,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node test/schema-privacy.test.mjs && node test/server.test.mjs && node --test test/invitation/token.test.mjs test/invitation/service.test.mjs test/device/publicKey.test.mjs test/device/service.test.mjs test/relay/policy.test.mjs test/relay/service.test.mjs test/recovery/policy.test.mjs test/recovery/service.test.mjs test/release/version.test.mjs test/release/service.test.mjs test/auth/token.test.mjs test/auth/service.test.mjs test/auth/fastifyAuthPlugin.test.mjs test/authz/service.test.mjs test/enrollment/coordinator.test.mjs test/pairing/fingerprint.test.mjs test/pairing/service.test.mjs",
+    "test": "npm run build && node test/schema-privacy.test.mjs && node test/server.test.mjs && node --test test/invitation/token.test.mjs test/invitation/service.test.mjs test/device/publicKey.test.mjs test/device/service.test.mjs test/relay/policy.test.mjs test/relay/service.test.mjs test/recovery/policy.test.mjs test/recovery/service.test.mjs test/release/version.test.mjs test/release/service.test.mjs test/auth/token.test.mjs test/auth/service.test.mjs test/auth/fastifyAuthPlugin.test.mjs test/authz/service.test.mjs test/enrollment/coordinator.test.mjs test/pairing/fingerprint.test.mjs test/pairing/service.test.mjs test/deviceauth/nonce.test.mjs test/deviceauth/service.test.mjs",
     "test:privacy": "node test/schema-privacy.test.mjs",
-    "test:db": "npm run build && node scripts/verify-postgres.mjs && node --test --test-concurrency=1 test/db/invitation.pg.test.mjs test/db/device.pg.test.mjs test/db/relay.pg.test.mjs test/db/recovery.pg.test.mjs test/db/release.pg.test.mjs test/db/auth.pg.test.mjs test/db/authz.pg.test.mjs test/db/enrollment.pg.test.mjs test/db/pairing.pg.test.mjs test/db/http.pg.test.mjs test/db/schema-privacy.pg.test.mjs",
+    "test:db": "npm run build && node scripts/verify-postgres.mjs && node --test --test-concurrency=1 test/db/invitation.pg.test.mjs test/db/device.pg.test.mjs test/db/relay.pg.test.mjs test/db/recovery.pg.test.mjs test/db/release.pg.test.mjs test/db/auth.pg.test.mjs test/db/authz.pg.test.mjs test/db/enrollment.pg.test.mjs test/db/pairing.pg.test.mjs test/db/deviceauth.pg.test.mjs test/db/http.pg.test.mjs test/db/schema-privacy.pg.test.mjs",
     "start": "node dist/main.js"
   },
   "dependencies": {

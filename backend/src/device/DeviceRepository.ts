@@ -44,6 +44,33 @@ export type ConfirmPairingResult =
 export interface DeviceRepository {
   createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult>;
   findDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord | null>;
+  /**
+   * Deliberately NOT family-scoped -- for the one caller allowed to use it,
+   * device-authentication challenge issuance/verification (src/deviceauth),
+   * where the device itself is the caller and proves identity by signing a
+   * challenge with its own DSK, not by presenting an externally-authorized
+   * familyId. Knowing another device's opaque deviceId alone can never
+   * produce a valid SIGNATURE over that device's challenge nonce, so an
+   * unscoped lookup here does not let an attacker impersonate another
+   * device.
+   *
+   * IMPORTANT, NOT YET CLOSED: `verifyChallenge`'s use of this method is
+   * safe because it's gated by a signature. `issueChallenge`'s use is NOT
+   * signature-gated -- by construction, proof of possession happens later,
+   * so issuance itself currently accepts any caller-supplied deviceId and
+   * answers DEVICE_NOT_FOUND / DEVICE_REVOKED / success based purely on
+   * this unscoped lookup. Today that's inert because nothing calls
+   * issueChallenge except this domain's own tests. The FIRST HTTP-wiring
+   * slice that exposes challenge issuance MUST NOT let an arbitrary caller
+   * supply an arbitrary deviceId to it -- that would reopen exactly the
+   * cross-family existence/revocation-status oracle every other method in
+   * this repository is designed to prevent (e.g. require the caller to
+   * already be the device itself over an authenticated transport, or bind
+   * issuance to a value only the legitimate device could present). Do not
+   * call findDeviceUnscoped from any other HTTP-authenticated-caller code
+   * path -- those must keep using the family-scoped methods above.
+   */
+  findDeviceUnscoped(deviceId: DeviceId): Promise<DeviceRecord | null>;
   revokeDeviceAndKeysAtomically(
     familyId: OpaqueFamilyId,
     deviceId: DeviceId,

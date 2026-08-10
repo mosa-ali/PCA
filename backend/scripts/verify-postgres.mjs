@@ -29,7 +29,7 @@ try {
   const { rows } = await client.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
   const actual = rows.map((row) => row.table_name).join(',');
   const expected =
-    'device_public_keys,devices,enrollment_invitations,families,licenses,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions';
+    'device_challenges,device_public_keys,devices,enrollment_invitations,families,licenses,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions';
   if (actual !== expected) throw new Error(`Unexpected public schema: ${actual}`);
   console.log(`PostgreSQL migration/privacy gate passed (${files.length} migration(s)).`);
 } finally {

@@ -100,6 +100,13 @@ export class PostgresDeviceRepository implements DeviceRepository {
     return rows[0] ? mapDevice(rows[0]) : null;
   }
 
+  async findDeviceUnscoped(deviceId: DeviceId): Promise<DeviceRecord | null> {
+    const { rows } = await runInTransaction((client) =>
+      client.query<DeviceRow>(`SELECT * FROM devices WHERE device_id = $1`, [deviceId]),
+    );
+    return rows[0] ? mapDevice(rows[0]) : null;
+  }
+
   /** Device revocation and cascading key revocation as ONE transaction, not an application-level loop. */
   async revokeDeviceAndKeysAtomically(
     familyId: OpaqueFamilyId,
