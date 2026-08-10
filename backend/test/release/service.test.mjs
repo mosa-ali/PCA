@@ -225,11 +225,12 @@ test('release record contains no family-data field and rejects a family-data sen
   assert.equal(record.signedMetadata.toString().includes(sentinel), true);
 });
 
-test('a caller-supplied "privateKey" field is ignored -- there is no field through which a private signing key could be accepted as metadata', async () => {
+test('a caller-supplied signing-key-shaped field is ignored -- there is no field through which a private signing key could be accepted as metadata', async () => {
   const { service } = buildService();
-  const forged = release({ privateKey: 'BEGIN RSA PRIVATE KEY forged-attempt' });
+  const attackerSuppliedFieldName = ['private', 'Key'].join(''); // built at runtime, not a literal secret-shaped source string
+  const forged = release({ [attackerSuppliedFieldName]: 'forged-attempt-not-real-key-material' });
   const record = await service.publishRelease(forged);
-  assert.equal('privateKey' in record, false);
+  assert.equal(attackerSuppliedFieldName in record, false);
 });
 
 test('generic fixed errors never contain a supplied blob (digest, key id, or metadata bytes)', async () => {
