@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      - pca-dev
 
 # CI only reads the repository. It does not receive credentials, publish artifacts,
 # deploy, or modify repository state.
@@ -58,6 +58,8 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Confirm clean JDK environment
+        run: java --version
       - name: Build, lint, and test
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace lint test assembleDebug
@@ -69,15 +71,24 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select an available iOS Simulator
+        shell: bash
+        run: |
+          device_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ { print $2; exit }')"
+          if [[ -z "$device_id" ]]; then
+            echo "No available iPhone simulator was found on this macOS runner." >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "PCA_SIMULATOR_DESTINATION=platform=iOS Simulator,id=$device_id" >> "$GITHUB_ENV"
       - name: Build and test the inert launch shell
         working-directory: ios
-        run: >-
-          xcodebuild test
-          -project PCA.xcodeproj
-          -scheme PCA
-          -sdk iphonesimulator
-          -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
-          CODE_SIGNING_ALLOWED=NO
+        run: |
+          xcodebuild test \
+            -project PCA.xcodeproj \
+            -scheme PCA \
+            -destination "$PCA_SIMULATOR_DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO
 
   security:
     name: Security controls
