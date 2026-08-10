@@ -16,7 +16,7 @@ Recommended client: **Swift + SwiftUI**, with the required Screen Time API app e
 
 ## 4. Core frameworks
 
-- **Family Controls** (`FamilyControls`) — parent/guardian authorization (`AuthorizationCenter.shared.requestAuthorization(for: .child)`) and the `FamilyActivityPicker` UI the parent uses to select apps/categories/web domains, returning opaque `FamilyActivitySelection` tokens (`ApplicationToken`/`ActivityCategoryToken`/`WebDomainToken`) rather than identifiable app/domain data to the requesting app. Label: `REQUIRES_ENTITLEMENT`.
+- **Family Controls** (`FamilyControls`) — parent/guardian authorization (`AuthorizationCenter.shared.requestAuthorization(for: .child)`) and the authorized host UI's `FamilyActivityPicker` for selecting apps/categories/web domains. It returns opaque `FamilyActivitySelection` tokens (`ApplicationToken`/`ActivityCategoryToken`/`WebDomainToken`) rather than a general-purpose readable inventory to the requesting app. Label: `REQUIRES_ENTITLEMENT`.
 - **Managed Settings** (`ManagedSettings`) — applies restrictions ("shields") to the tokens selected via Family Controls: `ManagedSettingsStore().shield.applications`/`.applicationCategories`/`.webDomains`, plus non-shield restrictions (e.g. account/App Store restrictions) where applicable to the product's scope. Label: `REQUIRES_ENTITLEMENT`.
 - **Device Activity** (`DeviceActivity`) — defines monitoring schedules (`DeviceActivitySchedule`) and threshold-based event callbacks (`DeviceActivityEvent`) delivered to the `DeviceActivityMonitor` extension (e.g. "N minutes of category X reached"), and `DeviceActivityReport` for privacy-preserving usage reporting UI rendered inside an extension the host app cannot directly read raw data from. Label: `REQUIRES_ENTITLEMENT`.
 - **Managed Settings UI** (`ManagedSettingsUI`) — customized shield presentation (`ShieldConfiguration`) where Apple's API surface supports customization; the underlying shield-triggered UI is otherwise a system-presented screen PCA does not fully control. Label: `REQUIRES_ENTITLEMENT`; VERIFIED_WITH_LIMITATION on the degree of customization (Apple controls the shield's base presentation).
@@ -35,9 +35,9 @@ Apple's model intentionally uses opaque tokens and privacy-preserving restrictio
 
 ## 6. Anti-removal
 
-For a child account authorized by a parent/guardian via Family Controls' child-authorization flow, Apple documents that Family Controls restrictions (which can include restricting app deletion for the profile) prevent the child from deleting the parental-control app through ordinary means while that authorization is active. Label: `VERIFIED_WITH_LIMITATION` (REQUIRES_ENTITLEMENT; scoped precisely to: (a) a device where Family Sharing / child-account authorization is actually configured for that child, and (b) restrictions applied through the supported Family Controls authorization state — this is not a universal "cannot be uninstalled" claim, per this document's binding constraint from the task brief).
+For a child account authorized by a parent/guardian through Family Controls, Apple documents that authorization prevents the child user from deleting the app that provides parental controls. Label: `VERIFIED_WITH_LIMITATION` (`REQUIRES_ENTITLEMENT`; scoped precisely to an active child authorization approved by a parent/guardian in the required Family Sharing relationship). This is not a universal "cannot be uninstalled" claim and does not prevent an authorized adult recovery/removal action.
 
-This MUST be implemented only through Apple-supported authorization (`AuthorizationCenter` child flow) — no jailbreak, no MDM-adjacent unsupported device manipulation, no attempt to hook into `Springboard`/deletion APIs outside the public framework. An authorized parent/guardian retains a recovery/removal route at all times: removing the child-account restriction (via Screen Time passcode / Family Sharing management, which is Apple's own supported mechanism, not PCA's) is what un-restricts app deletion — PCA's own removal flow (doc 08 Section 5) triggers this through the supported API surface rather than bypassing it.
+This MUST be implemented only through Apple-supported authorization (`AuthorizationCenter` child flow) — no jailbreak, MDM-adjacent unsupported device manipulation, or attempt to hook into `SpringBoard`/deletion APIs outside the public framework. PCA's authorized removal flow MUST call the documented authorization-revocation API where available, verify the resulting authorization state, and clearly direct the authorized parent/guardian to Apple's supported account-recovery path if that revocation cannot complete. It must never promise that PCA can silently remove system restrictions without that authorization state changing.
 
 **PCA-IOS-002** The product's marketing and in-app copy MUST state the anti-removal claim with its precise scope (child-account authorization active, via Family Controls) and MUST NOT generalize it to "cannot be removed from the device" without qualification, consistent with the binding constraint that no platform's anti-removal claim may be stated as universal.
 
@@ -54,7 +54,7 @@ sequenceDiagram
 
     Parent->>Child: Signed policy envelope (doc 05 §6)
     Child->>Child: Verify signature/version/expiry
-    Child->>DAExt: Configure DeviceActivitySchedule/Events\nfrom verified policy
+    Child->>Child: Configure DeviceActivityCenter schedule/events\nfrom verified policy
     Note over DAExt: Runs out-of-process,\nApple-controlled lifecycle
     DAExt->>DAExt: intervalDidStart / eventDidReachThreshold
     DAExt->>MS: Apply shield (applications/categories/webDomains)
@@ -101,9 +101,9 @@ Where on-device content classification (doc 14) requires local inference on iOS,
 
 | Failure | Detection | Behavior |
 |---|---|---|
-| Family Controls authorization revoked (parent removes child-account restriction via Apple's Screen Time passcode flow) | `AuthorizationCenter` status check | Shields/monitoring stop being enforceable; app surfaces this to the parent as an out-of-band change (Apple's own flow, not PCA's) rather than silently reporting stale "protected" status |
+| Family Controls authorization revoked by an authorized parent/guardian or through the documented revocation flow | `AuthorizationCenter` status check | Shields/monitoring stop being enforceable; app surfaces this to the parent as an out-of-band change rather than silently reporting stale "protected" status |
 | `DeviceActivityMonitor` extension fails to receive scheduled callback (OS resource constraints) | Missed-callback detection via expected-vs-actual schedule reconciliation on next host-app foreground | Treated as a degraded-signal event (parallel to doc 06 Section 12's OEM-throttling case), not silently reported as full compliance |
-| Entitlement revoked/expired at the Apple account level | Build/runtime entitlement check | App MUST degrade to Section 11's fallback state, not crash or silently disable protection without informing the parent |
+| Family Controls authorization is unavailable after install/update | Authorization-status check and attempted schedule start | App MUST degrade to Section 11's fallback state, not crash or silently disable protection without informing the parent |
 | Shield misconfiguration accidentally covers emergency surface | Client-side allowlist validation (Section 10) | Rejected before application (PCA-IOS-003) |
 
 ## 15. Security/privacy implications
@@ -114,7 +114,7 @@ Where on-device content classification (doc 14) requires local inference on iOS,
 
 ## 16. Assumptions
 
-- The family has configured Apple Family Sharing / a child Apple Account for the child device, since Family Controls' child-authorization flow depends on that account relationship existing; a child device without a configured child account is `REQUIRES_FURTHER_OWNER_DECISION` for iOS support scope (PCA-DEC-016 below).
+- The family has configured the Apple Family Sharing relationship and child account required for Family Controls child authorization; a child device without this setup is `REQUIRES_FURTHER_OWNER_DECISION` for iOS support scope (PCA-DEC-016 below).
 - Target iOS minimum version is set during doc 30's implementation programme; Section 4's framework availability assumes a currently-supported iOS version and requires revalidation if the minimum changes.
 
 ## 17. Platform limitations summary
