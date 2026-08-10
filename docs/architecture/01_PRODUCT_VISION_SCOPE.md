@@ -2,6 +2,8 @@
 
 Owning agent: **PCA-DOC-A**. Governed by doc 00 (Document Control).
 
+**Package lifecycle:** `DRAFT_RECONCILIATION`. This is a design baseline, not evidence that a product capability is built, available, or accepted.
+
 ## 1. Purpose
 
 Define what PCA is, the product principles that constrain every subsequent architecture decision, and the precise boundary between what PCA will and will not do. This document is the reference every other document must remain consistent with; where a lower-level document appears to expand PCA's data collection beyond what is described here, doc 00's authority order (Section 4) requires that conflict be raised, not silently implemented.
@@ -149,7 +151,9 @@ Full detail lives in the platform-specific documents (06, 07) and the feature do
 - Docs 06/07 for the platform-mode technical detail summarized in Section 6.
 - Doc 09 for the E2EE mechanism that makes Section 2's "PCA cannot read" claim technically true rather than aspirational.
 
-## 13. Acceptance criteria
+## 13. Future acceptance evidence
+
+These are future evidence gates for independent review. They are intentionally unchecked while the package lifecycle is `DRAFT_RECONCILIATION`.
 
 - [ ] No document in the package describes a PCA server-side capability to read plaintext family activity data.
 - [ ] Every "out of scope" item in Section 5 has a corresponding enforcement or design control referenced in a downstream document (E2EE for message-reading, no-mic-access permission model for microphone, etc.).

@@ -2,6 +2,8 @@
 
 Owning agent: **PCA-DOC-A**. Governed by doc 00 (Document Control).
 
+**Package lifecycle:** `DRAFT_RECONCILIATION`. Role definitions are architectural intent only; no runtime authorization control is asserted as implemented or verified by this document.
+
 ## 1. Purpose
 
 Define every human role that interacts with PCA, the permissions each role holds, the trust boundary each role sits inside, and the persona context (goals, concerns, typical scenarios) that the functional requirements in doc 03 must serve. This document is the authority for role-based access control design in doc 18.
@@ -139,7 +141,9 @@ flowchart LR
 - Doc 09 (Security/Privacy/E2EE) implements the key-hierarchy claim in Section 6.
 - Doc 21 (Tamper Protection/Recovery) implements the ownership-transfer and recovery flows referenced in Sections 3.1, 6, and 10.
 
-## 13. Acceptance criteria
+## 13. Future acceptance evidence
+
+These are future evidence gates for independent review. They are intentionally unchecked while the package lifecycle is `DRAFT_RECONCILIATION`.
 
 - [ ] Every permission listed in Section 3–4 has a corresponding enforced check in doc 18's RBAC matrix (traced in doc 32).
 - [ ] No role other than Family Owner (or a delegate explicitly named via the doc 21 transfer flow) can access recovery keys.

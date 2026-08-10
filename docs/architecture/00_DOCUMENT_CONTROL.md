@@ -1,5 +1,7 @@
 # 00 — Document Control and Governance
 
+**Package version:** v1.0; **lifecycle state:** `DRAFT_RECONCILIATION` — architecture documentation is under reconciliation and evidence review; it is not accepted, implementation-ready, or implementation-authorized.
+
 ## 1. Purpose
 
 This document defines how the PCA architecture package is governed, versioned, and kept internally consistent before and during implementation. It is the entry point that establishes authority order, freeze rules, and change-control discipline for the entire `docs/architecture/` package (documents 00–34).
@@ -86,14 +88,13 @@ Permitted during freeze: documentation, diagrams, architecture decision records 
 - **Minor version**: additive requirements or clarified designs that do not break prior commitments (e.g. adding a new PCA-FR item, adding a diagram).
 - **Patch version**: editorial or source-reference updates with no requirement change (e.g. fixing a typo, refreshing a citation URL).
 
-Current package: **v1.1** (bumped from v1.0 by this revision: doc 00–04 expanded to implementation-grade depth; no breaking requirement changes, so this is a **minor** bump under the rule above).
+Current package: **v1.0**, lifecycle `DRAFT_RECONCILIATION`. Reconciliation edits improve the v1.0 draft but do not assert package completion, owner acceptance, or implementation authorization. A version increment may be proposed only after the completion gate is evidenced and the owner approves it.
 
 ### 6.1 Version history
 
 | Version | Date | Change | Docs affected |
 |---|---|---|---|
-| v1.0 | initial draft pass | First-pass architecture skeleton (00–34), 40–120 lines each | All |
-| v1.1 | 2026-08-10 | Reconciled and expanded 00–04 to implementation-grade depth: added requirement IDs for personas/roles cross-references, expanded FR/NFR sets with acceptance criteria, added Mermaid diagrams, added unresolved-decision tables | 00, 01, 02, 03, 04 |
+| v1.0 | 2026-08-10 | Draft architecture package created and undergoing reconciliation; content depth varies by document and remains subject to source verification, traceability evidence, and owner review | All |
 
 ## 7. Change control after approval
 
@@ -128,6 +129,7 @@ Any claim of platform capability must be labeled with one of:
 | initial draft | Created 00_DOCUMENT_CONTROL.md skeleton | (pre-existing) |
 | 2026-08-10 | Expanded to implementation-grade depth: added package structure/ownership table, capability-label rubric, version history table, this change log | PCA-DOC-A |
 | 2026-08-10 | Added dated official-source handoffs for Apple Family Controls, Android DPC authority, and the YouTube watch-history-source discrepancy; assigned canonical-register reconciliation to doc 33's owner | PCA-DOC-A |
+| 2026-08-10 | Corrected lifecycle/version wording: package remains v1.0 in `DRAFT_RECONCILIATION`; converted owned-document acceptance lists into explicit future-evidence gates | PCA-DOC-A |
 
 ## 10. Source freshness
 
@@ -157,7 +159,9 @@ The owner of doc 33 MUST reconcile `SRC-H-A-003` with the existing YouTube entry
 - Doc 34 (Architecture Completion Gate) depends on this document's freeze/versioning rules being satisfied for every other document.
 - Doc 31 (Risk/Decision Register) is the canonical location for open owner decisions that originate in any document; documents 00–04 reference it rather than duplicating a separate decision log, except where a decision is local to a single document's numbering (see each document's own "Unresolved owner decisions" table).
 
-## 12. Acceptance criteria for this document
+## 12. Future acceptance evidence for this document
+
+All items below are future evidence gates. Their unchecked state is intentional in `DRAFT_RECONCILIATION`; no checkbox is evidence of completion until independently reviewed and recorded in docs 32 and 34.
 
 - [ ] Every other document in the package declares an owning agent/role, either in its own header or in the table in Section 3.
 - [ ] No document in the package contains an unlabeled platform-capability claim.

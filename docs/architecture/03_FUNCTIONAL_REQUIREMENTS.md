@@ -2,6 +2,8 @@
 
 Owning agent: **PCA-DOC-A**. Governed by doc 00 (Document Control). Personas/roles referenced below are defined in doc 02.
 
+**Package lifecycle:** `DRAFT_RECONCILIATION`. All `MUST`/`SHALL` statements below are future implementation requirements; they do not assert a currently built, tested, available, or owner-accepted capability.
+
 ## 1. Purpose and scope
 
 This document is the authoritative functional requirement set (`PCA-FR-*`) for PCA. Every requirement is mandatory unless explicitly labeled platform-dependent or tied to a specific product mode (doc 01 Section 6). Requirement numbering is grouped alphabetically by topic (A–O); numbers are never reused, and this revision extends existing groups with lettered sub-IDs (e.g. `PCA-FR-011A`) rather than renumbering, per doc 00 Section 7.
@@ -298,7 +300,9 @@ flowchart TD
 | PCA-DEC-007 | Default-uncertain content policy (Section D.1) | (a) Allow + log for parent review; (b) Block + log, require parent unblock | (a) as documented default, but families may prefer (b) — expose as a family-level toggle | PROPOSED |
 | PCA-DEC-008 | Whether Android Standard Mode ships install-approval (PCA-FR-045) as report-only or attempts best-effort pre-install interception via Accessibility Service | (a) Report-only, no interception; (b) Best-effort interception | (a) — matches AD-B-001's rejection of Accessibility-Service overreach | PROPOSED |
 
-## 6. Acceptance criteria (package-level)
+## 6. Future acceptance evidence (package-level)
+
+All items below are future traceability and independent-review evidence gates. Their unchecked state is intentional in `DRAFT_RECONCILIATION`; implementation is not authorized by this document.
 
 - [ ] Every `PCA-FR-*`/`PCA-SEC-*`/`PCA-PRIV-*`/`PCA-DATA-*` ID in this document appears exactly once in doc 32's traceability matrix.
 - [ ] Every requirement carrying a `REQUIRES_*`/`VERIFIED_WITH_LIMITATION`/`UNSUPPORTED` label has a corresponding dated source-register entry in doc 33; `SRC-H-A-001` through `SRC-H-A-003` in doc 00 Section 10.1 are mandatory handoffs for this writer's current platform claims.

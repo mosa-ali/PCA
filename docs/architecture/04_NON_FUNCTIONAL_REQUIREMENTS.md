@@ -2,6 +2,8 @@
 
 Owning agent: **PCA-DOC-A**. Governed by doc 00 (Document Control). Cross-references doc 03 functional requirements and doc 02 role/trust-boundary definitions.
 
+**Package lifecycle:** `DRAFT_RECONCILIATION`. These quality constraints define future evidence expectations; they do not represent achieved service levels, measured performance, or an accepted production architecture.
+
 ## 1. Purpose and scope
 
 This document is the authoritative non-functional requirement set (`PCA-NFR-*`) — the quality attributes every functional requirement in doc 03 must be delivered within: security, privacy, reliability, performance/battery, accessibility, maintainability, and trust. Non-functional requirements are as mandatory as functional ones; a feature that satisfies its `PCA-FR-*` but violates an applicable `PCA-NFR-*` is not complete.
@@ -148,7 +150,9 @@ sequenceDiagram
 | PCA-DEC-010 | Default-uncertain classification timeout (PCA-NFR-032) | 100ms / 250ms / 500ms | 250ms — balances responsiveness against giving the on-device classifier a fair chance | PROPOSED |
 | PCA-DEC-011 | Minimum TLS version floor (PCA-NFR-001) if a supported OS/device combination cannot do TLS 1.3 | (a) Hard-require TLS 1.3, drop support for devices that can't; (b) Accept TLS 1.2 floor with modern cipher suites | (b), reviewed periodically as device-support matrix evolves | PROPOSED |
 
-## 12. Acceptance criteria (package-level)
+## 12. Future acceptance evidence (package-level)
+
+All items below are future traceability and independent-review evidence gates. Their unchecked state is intentional in `DRAFT_RECONCILIATION`; none is a current-complete claim.
 
 - [ ] Every `PCA-NFR-*` ID in this document appears in doc 32's traceability matrix, mapped to at least one functional requirement or one standalone quality test in doc 28.
 - [ ] No functional requirement in doc 03 has an implementation that violates PCA-NFR-002/011 (spot-checked in doc 24's threat model and doc 28's security test suite).
