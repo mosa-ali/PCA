@@ -14,7 +14,9 @@ function buildService() {
   return { service, repository };
 }
 
-const baseInput = { familyId: 'family-opaque-1', platform: 'ANDROID' };
+const FAMILY_A = 'family-opaque-A';
+const FAMILY_B = 'family-opaque-B';
+const baseInput = { familyId: FAMILY_A, platform: 'ANDROID' };
 
 test('registerDevice creates an ACTIVE device with an ACTIVE key', async () => {
   const { service } = buildService();
@@ -42,12 +44,12 @@ test('registerDevice rejects a public key already registered to another device',
   );
 });
 
-test('addDeviceKey rotates in a new active key for an active device', async () => {
+test('addDeviceKey rotates in a new active key for an active device (correct family)', async () => {
   const { service } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  const rotated = await service.addDeviceKey(device.deviceId, key());
+  const rotated = await service.addDeviceKey(FAMILY_A, device.deviceId, key());
   assert.equal(rotated.status, 'ACTIVE');
-  const active = await service.listActiveKeys(device.deviceId);
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
   assert.equal(active.length, 2);
 });
 
@@ -57,29 +59,29 @@ test('addDeviceKey rejects duplicate public key across devices', async () => {
   const { device: deviceA } = await service.registerDevice({ ...baseInput, publicKey: key() });
   await service.registerDevice({ ...baseInput, publicKey: sharedKey });
   await assert.rejects(
-    () => service.addDeviceKey(deviceA.deviceId, sharedKey),
+    () => service.addDeviceKey(FAMILY_A, deviceA.deviceId, sharedKey),
     { code: 'DUPLICATE_KEY' },
   );
 });
 
 test('addDeviceKey rejects unknown device', async () => {
   const { service } = buildService();
-  await assert.rejects(() => service.addDeviceKey('unknown-device', key()), { code: 'DEVICE_NOT_FOUND' });
+  await assert.rejects(() => service.addDeviceKey(FAMILY_A, 'unknown-device', key()), { code: 'DEVICE_NOT_FOUND' });
 });
 
 test('addDeviceKey rejects a revoked device', async () => {
   const { service } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  await service.revokeDevice(device.deviceId);
-  await assert.rejects(() => service.addDeviceKey(device.deviceId, key()), { code: 'DEVICE_REVOKED' });
+  await service.revokeDevice(FAMILY_A, device.deviceId);
+  await assert.rejects(() => service.addDeviceKey(FAMILY_A, device.deviceId, key()), { code: 'DEVICE_REVOKED' });
 });
 
 test('revokeKey deactivates only the targeted key, leaving other active keys untouched', async () => {
   const { service } = buildService();
   const { device, key: firstKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  const secondKey = await service.addDeviceKey(device.deviceId, key());
-  await service.revokeKey(device.deviceId, firstKey.keyId);
-  const active = await service.listActiveKeys(device.deviceId);
+  const secondKey = await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  await service.revokeKey(FAMILY_A, device.deviceId, firstKey.keyId);
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
   assert.equal(active.length, 1);
   assert.equal(active[0].keyId, secondKey.keyId);
 });
@@ -87,16 +89,16 @@ test('revokeKey deactivates only the targeted key, leaving other active keys unt
 test('revokeKey rejects an unknown key id for a real device', async () => {
   const { service } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  await assert.rejects(() => service.revokeKey(device.deviceId, 'unknown-key-id'), { code: 'KEY_NOT_FOUND' });
+  await assert.rejects(() => service.revokeKey(FAMILY_A, device.deviceId, 'unknown-key-id'), { code: 'KEY_NOT_FOUND' });
 });
 
-test('revokeDevice cascades to revoke every active key', async () => {
+test('revokeDevice atomically cascades to revoke every active key', async () => {
   const { service } = buildService();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
-  await service.addDeviceKey(device.deviceId, key());
-  const revoked = await service.revokeDevice(device.deviceId);
+  await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  const revoked = await service.revokeDevice(FAMILY_A, device.deviceId);
   assert.equal(revoked.status, 'REVOKED');
-  const active = await service.listActiveKeys(device.deviceId);
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
   assert.equal(active.length, 0);
 });
 
@@ -104,7 +106,7 @@ test('a public key freed by full revocation of its owning device can be re-regis
   const { service } = buildService();
   const reusedKey = key();
   const { device } = await service.registerDevice({ ...baseInput, publicKey: reusedKey });
-  await service.revokeDevice(device.deviceId);
+  await service.revokeDevice(FAMILY_A, device.deviceId);
   const second = await service.registerDevice({ ...baseInput, publicKey: reusedKey });
   assert.equal(second.device.status, 'ACTIVE');
   assert.notEqual(second.device.deviceId, device.deviceId);
@@ -112,8 +114,8 @@ test('a public key freed by full revocation of its owning device can be re-regis
 
 test('familyId is server-recorded from input only -- device registration cannot be steered to an unrelated family after creation', async () => {
   const { service } = buildService();
-  const { device } = await service.registerDevice({ familyId: 'family-A', platform: 'ANDROID', publicKey: key() });
-  assert.equal(device.familyId, 'family-A');
+  const { device } = await service.registerDevice({ familyId: FAMILY_A, platform: 'ANDROID', publicKey: key() });
+  assert.equal(device.familyId, FAMILY_A);
 });
 
 test('concurrent registration attempts with the same public key: exactly one succeeds', async () => {
@@ -148,4 +150,88 @@ test('security: registerDevice input has no field through which a caller can for
   const { device } = await service.registerDevice(forged);
   assert.notEqual(device.deviceId, 'attacker-chosen');
   assert.equal(device.status, 'ACTIVE');
+});
+
+// --- Family/authority scope ---------------------------------------------
+
+test('family scope: correct family succeeds for every mutation/read', async () => {
+  const { service } = buildService();
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
+  assert.equal(active.length, 2);
+  const [firstKey] = active;
+  await service.revokeKey(FAMILY_A, device.deviceId, firstKey.keyId);
+  const revoked = await service.revokeDevice(FAMILY_A, device.deviceId);
+  assert.equal(revoked.status, 'REVOKED');
+});
+
+test('family scope: wrong family is rejected identically to unknown device on every operation', async () => {
+  const { service } = buildService();
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+
+  await assert.rejects(() => service.listActiveKeys(FAMILY_B, device.deviceId), { code: 'DEVICE_NOT_FOUND' });
+  await assert.rejects(() => service.addDeviceKey(FAMILY_B, device.deviceId, key()), { code: 'DEVICE_NOT_FOUND' });
+  await assert.rejects(() => service.revokeDevice(FAMILY_B, device.deviceId), { code: 'DEVICE_NOT_FOUND' });
+
+  // Device must remain fully intact and operable by its real family after every rejected cross-family attempt.
+  const stillActive = await service.listActiveKeys(FAMILY_A, device.deviceId);
+  assert.equal(stillActive.length, 1);
+});
+
+test('family scope: revokeKey under the wrong family is rejected and does not revoke the key', async () => {
+  const { service } = buildService();
+  const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  await assert.rejects(
+    () => service.revokeKey(FAMILY_B, device.deviceId, registeredKey.keyId),
+    { code: 'DEVICE_NOT_FOUND' },
+  );
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
+  assert.equal(active.length, 1);
+  assert.equal(active[0].status, 'ACTIVE');
+});
+
+test('family scope: unknown device is rejected the same way as a real device in another family', async () => {
+  const { service } = buildService();
+  const unknownError = await service.listActiveKeys(FAMILY_A, 'no-such-device').catch((e) => e);
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  const wrongFamilyError = await service.listActiveKeys(FAMILY_B, device.deviceId).catch((e) => e);
+  assert.equal(unknownError.code, 'DEVICE_NOT_FOUND');
+  assert.equal(wrongFamilyError.code, 'DEVICE_NOT_FOUND');
+  assert.equal(unknownError.message, wrongFamilyError.message);
+});
+
+test('family scope: revoked-device behavior is correct under the owning family', async () => {
+  const { service } = buildService();
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  await service.revokeDevice(FAMILY_A, device.deviceId);
+  await assert.rejects(() => service.addDeviceKey(FAMILY_A, device.deviceId, key()), { code: 'DEVICE_REVOKED' });
+  // Revoking an already-revoked device is idempotent, not an error.
+  const again = await service.revokeDevice(FAMILY_A, device.deviceId);
+  assert.equal(again.status, 'REVOKED');
+});
+
+test('family scope: cross-family key access is impossible even by guessing a real key id', async () => {
+  const { service } = buildService();
+  const { device, key: registeredKey } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  const otherFamilyDevice = await service.registerDevice({ familyId: FAMILY_B, platform: 'ANDROID', publicKey: key() });
+  await assert.rejects(
+    () => service.revokeKey(FAMILY_B, device.deviceId, registeredKey.keyId),
+    { code: 'DEVICE_NOT_FOUND' },
+  );
+  await assert.rejects(
+    () => service.revokeKey(FAMILY_A, otherFamilyDevice.device.deviceId, otherFamilyDevice.key.keyId),
+    { code: 'DEVICE_NOT_FOUND' },
+  );
+});
+
+test('atomicity: device revocation and key revocation observe no partial state (all-or-nothing from the caller\'s perspective)', async () => {
+  const { service } = buildService();
+  const { device } = await service.registerDevice({ ...baseInput, publicKey: key() });
+  await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  await service.addDeviceKey(FAMILY_A, device.deviceId, key());
+  const revoked = await service.revokeDevice(FAMILY_A, device.deviceId);
+  assert.equal(revoked.status, 'REVOKED');
+  const active = await service.listActiveKeys(FAMILY_A, device.deviceId);
+  assert.equal(active.length, 0, 'no key may remain ACTIVE once the device transition is observed as REVOKED');
 });

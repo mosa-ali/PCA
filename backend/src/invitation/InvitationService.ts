@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { generateInvitationToken, hashInvitationToken, isPlausibleInvitationToken } from './token.js';
+import { computeExpiryInstant, resolveInvitationTtlMs } from './policy.js';
 import type { InvitationRepository, RedemptionResult } from './InvitationRepository.js';
 import type {
   InvitationRecord,
@@ -38,7 +39,8 @@ export interface CreateInvitationInput {
   familyId: OpaqueFamilyId;
   platform: Platform;
   requestedProtectionMode: RequestedProtectionMode;
-  ttlMs: number;
+  /** Optional; omit to use the server default. Server rejects anything above the policy maximum -- see policy.ts. */
+  ttlMs?: number;
 }
 
 export interface CreateInvitationResult {
@@ -60,9 +62,7 @@ export class InvitationService {
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
-    if (!Number.isFinite(input.ttlMs) || input.ttlMs <= 0) {
-      throw new RangeError('ttlMs must be a positive duration in milliseconds.');
-    }
+    const ttlMs = resolveInvitationTtlMs(input.ttlMs);
     const { rawToken, tokenHash } = generateInvitationToken();
     const createdAt = this.now();
     const record: InvitationRecord = {
@@ -73,7 +73,7 @@ export class InvitationService {
       requestedProtectionMode: input.requestedProtectionMode,
       status: 'CREATED',
       createdAt,
-      expiresAt: new Date(createdAt.getTime() + input.ttlMs),
+      expiresAt: computeExpiryInstant(createdAt, ttlMs),
       openedAt: null,
       redeemedAt: null,
       revokedAt: null,

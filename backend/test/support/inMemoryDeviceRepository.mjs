@@ -10,6 +10,14 @@ export function createInMemoryDeviceRepository() {
     return devicesByPublicKey.has(publicKey);
   }
 
+  // A device owned by a different family is treated identically to a device
+  // that does not exist -- callers must not learn cross-family existence.
+  function findOwnedDevice(familyId, deviceId) {
+    const device = devicesById.get(deviceId);
+    if (!device || device.familyId !== familyId) return null;
+    return device;
+  }
+
   return {
     // No `await` before any mutation below, so each call runs to completion
     // synchronously once invoked -- concurrent callers cannot interleave and
@@ -23,23 +31,36 @@ export function createInMemoryDeviceRepository() {
       return { outcome: 'CREATED', device: { ...device }, key: { ...key } };
     },
 
-    async findDevice(deviceId) {
-      const device = devicesById.get(deviceId);
+    async findDeviceForFamily(familyId, deviceId) {
+      const device = findOwnedDevice(familyId, deviceId);
       return device ? { ...device } : null;
     },
 
-    async revokeDevice(deviceId, revokedAt) {
-      const device = devicesById.get(deviceId);
-      if (!device) throw new Error('device not found');
+    async revokeDeviceAndKeysAtomically(familyId, deviceId, revokedAt) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       if (device.status !== 'REVOKED') {
         device.status = 'REVOKED';
         device.revokedAt = revokedAt;
       }
-      return { ...device };
+      const ids = keysByDevice.get(deviceId) ?? new Set();
+      for (const keyId of ids) {
+        const key = keysById.get(keyId);
+        if (key.status !== 'REVOKED') {
+          key.status = 'REVOKED';
+          key.revokedAt = revokedAt;
+          devicesByPublicKey.delete(key.publicKey);
+        }
+      }
+      return {
+        outcome: 'REVOKED',
+        device: { ...device },
+        keys: [...ids].map((id) => ({ ...keysById.get(id) })),
+      };
     },
 
-    async addKeyAtomically(record) {
-      const device = devicesById.get(record.deviceId);
+    async addKeyAtomically(familyId, record) {
+      const device = findOwnedDevice(familyId, record.deviceId);
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       if (device.status === 'REVOKED') return { outcome: 'DEVICE_REVOKED' };
       if (activeKeyExists(record.publicKey)) return { outcome: 'DUPLICATE_KEY' };
@@ -49,20 +70,24 @@ export function createInMemoryDeviceRepository() {
       return { outcome: 'ADDED', key: { ...record } };
     },
 
-    async findKeysByDevice(deviceId) {
+    async findKeysByDeviceForFamily(familyId, deviceId) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (!device) return [];
       const ids = keysByDevice.get(deviceId) ?? new Set();
       return [...ids].map((id) => ({ ...keysById.get(id) }));
     },
 
-    async revokeKey(deviceId, keyId, revokedAt) {
+    async revokeKeyForFamily(familyId, deviceId, keyId, revokedAt) {
+      const device = findOwnedDevice(familyId, deviceId);
+      if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       const key = keysById.get(keyId);
-      if (!key || key.deviceId !== deviceId) throw new Error('device key not found');
+      if (!key || key.deviceId !== deviceId) return { outcome: 'KEY_NOT_FOUND' };
       if (key.status !== 'REVOKED') {
         key.status = 'REVOKED';
         key.revokedAt = revokedAt;
         devicesByPublicKey.delete(key.publicKey);
       }
-      return { ...key };
+      return { outcome: 'REVOKED', key: { ...key } };
     },
   };
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InvitationService, InvitationError } from '../../dist/invitation/InvitationService.js';
 import { hashInvitationToken } from '../../dist/invitation/token.js';
+import { DEFAULT_INVITATION_TTL_MS, MAX_INVITATION_TTL_MS } from '../../dist/invitation/policy.js';
 import { createInMemoryInvitationRepository } from '../support/inMemoryInvitationRepository.mjs';
 
 const BASE_TIME = new Date('2026-01-01T00:00:00.000Z').getTime();
@@ -184,10 +185,10 @@ test('security: token truncation is rejected', async () => {
   await assert.rejects(() => service.redeemInvitation(rawToken.slice(0, 10)), { code: 'INVALID_TOKEN' });
 });
 
-test('security: token extension is rejected (extended value does not collide)', async () => {
+test('security: token extension is rejected as malformed (canonical length no longer matches)', async () => {
   const { service } = buildService();
   const { rawToken } = await service.createInvitation(baseInput);
-  await assert.rejects(() => service.redeemInvitation(rawToken + 'AAAA'), { code: 'NOT_FOUND' });
+  await assert.rejects(() => service.redeemInvitation(rawToken + 'AAAA'), { code: 'INVALID_TOKEN' });
 });
 
 test('security: empty and oversized input rejected without throwing an unhandled error', async () => {
@@ -208,6 +209,44 @@ test('security: createInvitation ignores any attempt to pass a client-forged sta
 test('security: negative or non-finite ttlMs is rejected rather than producing an already-expired or eternal invitation', async () => {
   const { service } = buildService();
   await assert.rejects(() => service.createInvitation({ ...baseInput, ttlMs: -1 }), RangeError);
+  await assert.rejects(() => service.createInvitation({ ...baseInput, ttlMs: 0 }), RangeError);
   await assert.rejects(() => service.createInvitation({ ...baseInput, ttlMs: Number.POSITIVE_INFINITY }), RangeError);
   await assert.rejects(() => service.createInvitation({ ...baseInput, ttlMs: Number.NaN }), RangeError);
+});
+
+test('TTL policy: omitted ttlMs falls back to the server default', async () => {
+  const { service } = buildService();
+  const withoutTtl = { ...baseInput };
+  delete withoutTtl.ttlMs;
+  const { record } = await service.createInvitation(withoutTtl);
+  assert.equal(record.expiresAt.getTime() - record.createdAt.getTime(), DEFAULT_INVITATION_TTL_MS);
+});
+
+test('TTL policy: exactly the server maximum is accepted', async () => {
+  const { service } = buildService();
+  const { record } = await service.createInvitation({ ...baseInput, ttlMs: MAX_INVITATION_TTL_MS });
+  assert.equal(record.expiresAt.getTime() - record.createdAt.getTime(), MAX_INVITATION_TTL_MS);
+});
+
+test('TTL policy: one millisecond above the server maximum is rejected', async () => {
+  const { service } = buildService();
+  await assert.rejects(
+    () => service.createInvitation({ ...baseInput, ttlMs: MAX_INVITATION_TTL_MS + 1 }),
+    RangeError,
+  );
+});
+
+test('TTL policy: a shorter client-requested lifetime is honored exactly, not silently extended', async () => {
+  const { service } = buildService();
+  const shortTtl = 60_000;
+  const { record } = await service.createInvitation({ ...baseInput, ttlMs: shortTtl });
+  assert.equal(record.expiresAt.getTime() - record.createdAt.getTime(), shortTtl);
+});
+
+test('TTL policy: a caller cannot exceed the maximum by requesting an astronomically large ttlMs (overflow guard)', async () => {
+  const { service } = buildService();
+  await assert.rejects(
+    () => service.createInvitation({ ...baseInput, ttlMs: Number.MAX_SAFE_INTEGER }),
+    RangeError,
+  );
 });

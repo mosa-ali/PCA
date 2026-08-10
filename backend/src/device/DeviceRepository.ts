@@ -1,4 +1,4 @@
-import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord } from './types.js';
+import type { DeviceId, DeviceKeyId, DeviceKeyRecord, DeviceRecord, OpaqueFamilyId } from './types.js';
 
 export type CreateDeviceResult =
   | { outcome: 'CREATED'; device: DeviceRecord; key: DeviceKeyRecord }
@@ -10,6 +10,15 @@ export type AddKeyResult =
   | { outcome: 'DEVICE_NOT_FOUND' }
   | { outcome: 'DEVICE_REVOKED' };
 
+export type RevokeDeviceResult =
+  | { outcome: 'REVOKED'; device: DeviceRecord; keys: DeviceKeyRecord[] }
+  | { outcome: 'DEVICE_NOT_FOUND' };
+
+export type RevokeKeyResult =
+  | { outcome: 'REVOKED'; key: DeviceKeyRecord }
+  | { outcome: 'DEVICE_NOT_FOUND' }
+  | { outcome: 'KEY_NOT_FOUND' };
+
 /**
  * Persistence port for the device identity/key directory. Only a
  * deterministic in-memory implementation exists today (test support). The
@@ -19,13 +28,29 @@ export type AddKeyResult =
  * A given public key must never be registrable against more than one
  * device -- createDeviceWithKey/addKeyAtomically enforce this atomically to
  * close the check-then-act window a naive find-then-insert would leave open.
+ *
+ * Every read/mutation below except creation is scoped by an authorized
+ * familyId. A device that exists but belongs to a different family must be
+ * indistinguishable from a device that does not exist at all (DEVICE_NOT_FOUND
+ * in both cases) -- this is a deliberate IDOR defense: it must not be
+ * possible to learn "this deviceId exists, just not in your family" from the
+ * response shape.
  */
 export interface DeviceRepository {
   createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult>;
-  findDevice(deviceId: DeviceId): Promise<DeviceRecord | null>;
-  revokeDevice(deviceId: DeviceId, revokedAt: Date): Promise<DeviceRecord>;
+  findDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord | null>;
+  revokeDeviceAndKeysAtomically(
+    familyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    revokedAt: Date,
+  ): Promise<RevokeDeviceResult>;
 
-  addKeyAtomically(record: DeviceKeyRecord): Promise<AddKeyResult>;
-  findKeysByDevice(deviceId: DeviceId): Promise<DeviceKeyRecord[]>;
-  revokeKey(deviceId: DeviceId, keyId: DeviceKeyId, revokedAt: Date): Promise<DeviceKeyRecord>;
+  addKeyAtomically(familyId: OpaqueFamilyId, record: DeviceKeyRecord): Promise<AddKeyResult>;
+  findKeysByDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceKeyRecord[]>;
+  revokeKeyForFamily(
+    familyId: OpaqueFamilyId,
+    deviceId: DeviceId,
+    keyId: DeviceKeyId,
+    revokedAt: Date,
+  ): Promise<RevokeKeyResult>;
 }

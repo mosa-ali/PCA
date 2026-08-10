@@ -1,7 +1,12 @@
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 const RAW_TOKEN_BYTES = 32; // 256 bits of entropy
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{40,64}$/;
+// randomBytes(32).toString('base64url') always yields exactly 43 characters
+// (10 full 3-byte groups -> 40 chars, plus 3 chars for the trailing 2 bytes,
+// unpadded). Validation matches this canonical shape exactly rather than
+// accepting a broader grammar with no concrete compatibility need.
+const CANONICAL_TOKEN_LENGTH = 43;
+const TOKEN_SHAPE = new RegExp(`^[A-Za-z0-9_-]{${CANONICAL_TOKEN_LENGTH}}$`);
 
 export interface GeneratedInvitationToken {
   rawToken: string;
@@ -28,12 +33,4 @@ export function hashInvitationToken(rawToken: string): string {
 
 export function isPlausibleInvitationToken(candidate: unknown): candidate is string {
   return typeof candidate === 'string' && TOKEN_SHAPE.test(candidate);
-}
-
-/** Constant-time comparison of two hex digests, for callers outside repository lookup paths. */
-export function tokenHashesEqual(a: string, b: string): boolean {
-  const bufferA = Buffer.from(a, 'hex');
-  const bufferB = Buffer.from(b, 'hex');
-  if (bufferA.length !== bufferB.length) return false;
-  return timingSafeEqual(bufferA, bufferB);
 }

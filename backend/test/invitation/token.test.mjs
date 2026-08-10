@@ -4,14 +4,14 @@ import {
   generateInvitationToken,
   hashInvitationToken,
   isPlausibleInvitationToken,
-  tokenHashesEqual,
 } from '../../dist/invitation/token.js';
 
-test('token generated using secure source has required entropy/format', () => {
+const CANONICAL_LENGTH = 43;
+
+test('token generated using secure source has the canonical entropy/format', () => {
   const { rawToken } = generateInvitationToken();
   assert.equal(isPlausibleInvitationToken(rawToken), true);
-  // base64url of 32 raw bytes -> at least 43 chars, well above the low-entropy shape floor.
-  assert.equal(rawToken.length >= 43, true);
+  assert.equal(rawToken.length, CANONICAL_LENGTH);
   assert.doesNotMatch(rawToken, /[+/=]/); // URL-safe alphabet only
 });
 
@@ -39,21 +39,54 @@ test('hashing is deterministic for the same input', () => {
   assert.equal(hashInvitationToken(rawToken), tokenHash);
 });
 
-test('isPlausibleInvitationToken rejects malformed/empty/oversized input', () => {
+test('canonical valid token (real generator output) is accepted', () => {
+  const { rawToken } = generateInvitationToken();
+  assert.equal(isPlausibleInvitationToken(rawToken), true);
+});
+
+test('one character too short is rejected', () => {
+  const { rawToken } = generateInvitationToken();
+  assert.equal(isPlausibleInvitationToken(rawToken.slice(0, CANONICAL_LENGTH - 1)), false);
+});
+
+test('one character too long is rejected', () => {
+  const { rawToken } = generateInvitationToken();
+  assert.equal(isPlausibleInvitationToken(rawToken + 'A'), false);
+});
+
+test('invalid alphabet characters are rejected', () => {
+  const { rawToken } = generateInvitationToken();
+  const withPlus = '+' + rawToken.slice(1);
+  const withSlash = '/' + rawToken.slice(1);
+  assert.equal(isPlausibleInvitationToken(withPlus), false);
+  assert.equal(isPlausibleInvitationToken(withSlash), false);
+});
+
+test('padding characters are rejected', () => {
+  const padded = 'A'.repeat(CANONICAL_LENGTH - 1) + '=';
+  assert.equal(isPlausibleInvitationToken(padded), false);
+});
+
+test('embedded or trailing whitespace is rejected', () => {
+  const { rawToken } = generateInvitationToken();
+  assert.equal(isPlausibleInvitationToken(rawToken + ' '), false);
+  assert.equal(isPlausibleInvitationToken(' ' + rawToken.slice(1)), false);
+  assert.equal(isPlausibleInvitationToken(rawToken.slice(0, 20) + ' ' + rawToken.slice(21)), false);
+});
+
+test('unicode characters are rejected', () => {
+  const { rawToken } = generateInvitationToken();
+  assert.equal(isPlausibleInvitationToken('é' + rawToken.slice(1)), false);
+  assert.equal(isPlausibleInvitationToken(rawToken.slice(0, -1) + '🙂'), false);
+});
+
+test('very large input is rejected without throwing', () => {
+  assert.equal(isPlausibleInvitationToken('A'.repeat(100_000)), false);
+});
+
+test('empty and non-string input rejected', () => {
   assert.equal(isPlausibleInvitationToken(''), false);
-  assert.equal(isPlausibleInvitationToken('short'), false);
-  assert.equal(isPlausibleInvitationToken('a'.repeat(500)), false);
-  assert.equal(isPlausibleInvitationToken('not a url safe token!!'), false);
   assert.equal(isPlausibleInvitationToken(12345), false);
   assert.equal(isPlausibleInvitationToken(null), false);
   assert.equal(isPlausibleInvitationToken(undefined), false);
-});
-
-test('tokenHashesEqual matches equal digests and rejects unequal/mismatched-length digests', () => {
-  const a = hashInvitationToken('sample-a');
-  const b = hashInvitationToken('sample-a');
-  const c = hashInvitationToken('sample-b');
-  assert.equal(tokenHashesEqual(a, b), true);
-  assert.equal(tokenHashesEqual(a, c), false);
-  assert.equal(tokenHashesEqual(a, 'ab'), false);
 });
