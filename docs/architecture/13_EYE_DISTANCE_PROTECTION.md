@@ -1,43 +1,57 @@
 # 13 — Eye-Distance / Proximity Protection
 
-## 1. Goal
+## Safety objective and non-claims
 
-Encourage healthier viewing distance without pretending a normal phone proximity sensor is a medical-grade ruler.
+**FR-EYE-01.** PCA encourages a child to move a device farther away after a configurable sustained near-viewing condition, then offers an approximately one-minute eye-rest restriction where it can enforce one. It is not a medical device, does not diagnose vision conditions, and must not represent an ordinary proximity sensor as a centimetre-accurate measurement.
 
-## 2. Sensor hierarchy
+Thresholds are expressed as `near/far` unless a supported depth-capable signal is available. Parent configuration is therefore capability-aware: a centimetre preference is only offered with a supported calibrated source, while all other devices use a conservative sustained-near duration. The parent and child see the sensor class and confidence, not a fabricated distance.
 
-1. OS/system screen-distance feature where available and parent-enabled.
-2. Public proximity sensor as near/far signal.
-3. Supported depth/TrueDepth or on-device face geometry only in contexts where public APIs and foreground/privacy rules permit.
+## Evidence hierarchy and platform truth
 
-## 3. Android approach
+| Evidence source | Use | Limitation / capability |
+|---|---|---|
+| Apple Screen Distance | Prefer system guidance on supported TrueDepth iPhone/iPad | **VERIFIED_WITH_LIMITATION**: system-controlled; PCA guides configuration and does not claim a private control API. Apple says it needs Face ID setup and supported TrueDepth hardware. |
+| Android proximity sensor | Low-power binary near/far signal | **VERIFIED_WITH_LIMITATION**: placement and range vary; blocked in a pocket, by a hand or call posture; no medical centimetre value. |
+| Foreground camera / face geometry | Optional calibration or PCA foreground-only experience | **REQUIRES_USER_PERMISSION** and foreground visibility; not a background surveillance mechanism. Hardware, pose, lighting and occlusion make estimates uncertain. |
+| Depth/TrueDepth public capability | Only if a public, entitled API supports the exact flow | **REQUIRES_FURTHER_OWNER_DECISION** pending device/API validation; never infer access from Face ID or consumer Screen Distance alone. |
 
-- Prefer hardware proximity sensor for low-power near/far detection.
-- Optional ML Kit face landmarks in a visible, permissioned PCA foreground flow for calibration/verification.
-- Camera frames are processed transiently and never saved.
-- No facial identity recognition.
+No facial-recognition database, face template, identity matching, age inference, raw frame retention or cloud upload is permitted for this feature.
 
-## 4. iOS approach
+## State machine
 
-Apple offers a system Screen Distance feature on supported TrueDepth devices. PCA should guide parents to enable it where appropriate. PCA does not claim a private API to manage the system feature.
+```mermaid
+stateDiagram-v2
+  [*] --> Unavailable
+  Unavailable --> Monitoring: supported source + consent + eligible context
+  Monitoring --> SuspectedNear: near evidence
+  SuspectedNear --> Monitoring: far / confidence insufficient
+  SuspectedNear --> Warning: sustained near threshold
+  Warning --> Monitoring: far sustained
+  Warning --> RestDue: repeated or persistent near
+  RestDue --> RestActive: enforce available restriction
+  RestActive --> Monitoring: rest timer complete and eligible
+  Monitoring --> Suspended: camera revoked / app background / call / accessibility exclusion
+  Warning --> Suspended: source unavailable
+  RestActive --> Recovery: reboot or process restart
+  Recovery --> RestActive: valid active-rest checkpoint
+  Recovery --> Monitoring: timer ended or cannot justify continuation
+  Suspended --> Monitoring: conditions restored
+```
 
-Public `UIDevice` proximity state may be used inside supported app execution contexts. TrueDepth distance analysis is limited to justified, permissioned foreground camera use.
+The classifier fuses only current samples into an ephemeral `near`, `far`, or `unknown` decision with a coarse confidence bucket. `unknown` is not `near`. A warning requires sustained evidence and a rest requires a second persistence/repetition condition, reducing triggers from a quick phone call, pocket, hand, dark room, mobility aid, or a child deliberately repositioning the device. Default timings are conservative: sustained near for 5–10 seconds triggers a warning; persistent/repeated near may trigger a ~60-second rest. Product research and accessibility review must set the final ranges before release.
 
-## 5. Trigger policy
+## Enforcement and exceptions
 
-Parent-configurable, with conservative defaults. Example architecture rule:
-- near condition persists for 5–10 seconds;
-- first response is warning;
-- repeated/persistent condition may trigger a one-minute PCA eye-rest experience where platform enforcement permits.
+The one-minute experience selects the same capability ladder as the screen-time engine: managed Android suspension where eligible, a selected iOS shield where Family Controls applies, or a PCA-only prompt/shield. A system Screen Distance alert may coexist with PCA but must be reported separately; PCA does not try to evade, suppress or duplicate it as though it were PCA enforcement.
 
-Exact numeric distance thresholds are labeled approximate unless a depth-capable sensor is used.
+Emergency calling, active phone/video calls, navigation/safety workflows, and explicitly configured accessibility exceptions do not receive an automatic PCA rest block. When a safety exception ends, the engine reassesses; it does not retroactively punish the child. A parent can pause the feature, but cannot turn a sensor gap into an assertion that distance is safe.
 
-## 6. Privacy
+## Privacy, power and transparency
 
-Never retain:
-- face frames;
-- facial landmarks after the immediate calculation;
-- face templates;
-- biometric identity.
+Sampling follows a duty cycle: use the lowest-power suitable sensor first, run camera estimation only in an obvious foreground PCA flow, stop immediately when backgrounded/locked, and throttle or suspend on battery/thermal pressure. The child-facing page says what is sensed, when, whether frames leave the device (**never** for this feature), and exactly what parents can see.
 
-Store only event outcome such as `near`, `rest_triggered`, timestamp and sensor confidence bucket.
+Persisted data is limited to configuration, capability/consent status, outcome (`warning`, `rest`, `source-unavailable`), timestamp, duration and coarse confidence/source class. It excludes raw sensor streams, camera frames, landmarks and face geometry. Outcomes are encrypted on the family devices, retained under the selected monitoring retention policy, and are not readable by PCA infrastructure. A false-positive report/parent allow-once action is recorded as a policy-audit outcome, not as biometric data.
+
+## Validation
+
+**Acceptance evidence:** test different sensor-equipped and sensorless devices; verify pocket/hand/call and low-light false-positive cases; prove frames/landmarks are not persisted or transmitted; verify camera permission denial and backgrounding fail safely; measure power/thermal behavior; and test screen reader, low-vision, mobility and emergency exemptions with child usability review.
