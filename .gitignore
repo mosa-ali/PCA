@@ -9,21 +9,3 @@
 *.sln.docstates
 .DS_Store
 Thumbs.db
-
-# Build output and platform workspace state
-**/build/
-**/.gradle/
-**/DerivedData/
-**/xcuserdata/
-**/*.xcuserstate
-
-# Local configuration, credentials, and generated environment files
-.env
-.env.*
-!.env.example
-*.pem
-*.p12
-*.p8
-*.keystore
-*.jks
-local.properties
