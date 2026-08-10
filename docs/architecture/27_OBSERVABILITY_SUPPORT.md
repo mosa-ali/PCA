@@ -1,37 +1,39 @@
-# 27 — Observability and Support Without Central Child-Activity Collection
+# 27 — Observability and Support: Zero Activity Plaintext
 
-## 1. Operational telemetry allowed
+## 1. Non-negotiable boundary
 
-- app version;
-- OS/device model class;
-- crash signature with redacted context;
-- service latency/error code;
-- enrollment state transitions;
-- rule/model package version;
-- aggregate non-sensitive health metrics.
+Operational observability exists to operate PCA, not to reconstruct a child’s activity. Analytics, application logs, crash reports, APM traces, metrics labels, support tickets, session replay, debug endpoints, and support bundles MUST NOT contain family activity plaintext. This prohibition applies to production, beta, developer diagnostics, lower environments, and third-party SDKs.
 
-## 2. Telemetry forbidden by default
+Specifically prohibited values include full URLs, domains when tied to a family/child, page titles, search queries, YouTube video IDs/titles/history, app-usage events/history, screen-session detail, location coordinates/geofences/route, battery/last-seen when identifying a family, eye-distance events, camera frames, face landmarks/identity, Dhikr activity, family policy plaintext, parent/child message content, E2EE payload plaintext, FDEKs/session keys/private keys, recovery secrets/codes, recovery-envelope plaintext, and unredacted family identifiers. Logging a ciphertext is not permission to log its decrypted schema or contextual activity fields.
 
-- URLs/domains tied to a child;
-- precise location;
-- app-use history;
-- child names in logs where avoidable;
-- face/camera images;
-- content screenshots;
-- private encryption keys;
-- decrypted E2EE payloads.
+## 2. Allowed telemetry and minimization
 
-## 3. Support bundle
+Permitted telemetry is limited to release/OS/app-version, coarse device-model class, capability state, non-sensitive error code, latency bucket, aggregate health count, enrollment transition category, signed rule/model package version/hash, protocol version, and operational service outcome. Values use bounded enumerations, aggregation, sampling, and rotation/retention limits. A correlation identifier is opaque, scoped, short-lived, and cannot be derived from a child name, email, device ID, push token, public key, IP address, or family ID.
 
-Parent may explicitly generate a redacted diagnostic bundle containing:
-- app/OS versions;
-- permission/capability states;
-- recent non-sensitive error codes;
-- policy version hashes;
-- connectivity diagnostics.
+IP address, push token, email address, license/subscription record, opaque device identifier, public key, and delivery/service audit metadata are infrastructure metadata governed by document 10—not activity plaintext. Their use is restricted to the operational purpose, access-controlled, retained for the stated minimum, and never copied into general analytics or free-text support notes.
 
-Before sharing, the UI shows exactly what will be included.
+## 3. Collection architecture and controls
 
-## 4. Audit
+Instrumentation has an allowlist schema. New event names, attributes, third-party SDKs, APM integrations, exception processors, and support-export fields require privacy review against document 10 before activation. Unknown attributes are dropped; free-form exception messages, request bodies, headers, query strings, breadcrumbs, SQL payloads, and serialized objects are denied by default. Production debug logging is disabled; temporary diagnostic elevation is time-bound, auditable, family-scoped only with explicit parent action, and still redacts/omits prohibited data.
 
-Family-sensitive audit records remain encrypted/local/E2EE to family devices. Service operator audit covers administrative access to enrollment/license metadata.
+Crash handling transmits a scrubbed signature, stack fingerprint, release/environment, coarse OS/device class, and permitted error code only. It must disable automatic capture of screenshots, DOM/view hierarchy, network bodies, breadcrumbs containing user input, and memory dumps. Analytics/session-replay products that cannot guarantee these boundaries are prohibited.
+
+Service access is least-privilege, authenticated, audited, and separated between operational infrastructure metadata and encrypted family relay data. No support employee has a master decryption path, recovery-secret view, or ability to request family plaintext as a troubleshooting prerequisite.
+
+## 4. Parent-controlled support bundle
+
+A parent may explicitly create a locally generated, redacted support bundle containing app/OS version, capability/permission state, signed package versions/hashes, connectivity result categories, non-sensitive error codes, and enrolment stage. Before export, PCA presents a field-by-field preview, purpose, destination, expiry, and delete/cancel control. The bundle excludes every prohibited data type in section 1, raw identifiers unless strictly required for a declared support case, and all keys/secrets. The parent can revoke/cancel an unsubmitted bundle; submitted bundles have a support retention/deletion record.
+
+Support responses use case IDs and sanitized templates. A request for a URL, location coordinate, video title, child activity, key, recovery code, screenshot, or raw diagnostic is rejected and escalated as a privacy incident if generated by a system workflow.
+
+## 5. Incident operation
+
+An observability data-boundary failure triggers containment: stop the offending collector/export, preserve only minimally necessary security evidence under restricted access, assess whether sensitive data was emitted, notify the privacy/security response owner, and follow applicable notification obligations. Remediation includes deletion/containment where feasible, root-cause review, regression tests, and vendor/SDK reassessment. Incident reports themselves use redacted identifiers and do not reproduce activity plaintext.
+
+## 6. Verifiable zero-plaintext control
+
+The no-plaintext promise is an absence-tested property, not an intention. Document 28 requires automated schema linting, negative fixture injection, outbound-interceptor tests, crash/trace/support-bundle inspection, vendor configuration review, and release-candidate sampling. The fixtures intentionally contain sentinel URLs, coordinates, YouTube titles, app events, face/frame markers, family payload plaintext, FDEK-like strings, and recovery-secret-like strings. The release fails if any sentinel or derivable sensitive field reaches a telemetry, log, crash, trace, analytics, or bundle sink.
+
+## 7. Cross-references
+
+Document 10 is the canonical data-flow inventory; document 11 defines deletion states; document 19 controls notifications/email metadata; document 24 covers abuse/threat scenarios; document 28 validates this design. “Zero activity plaintext” does not erase the documented infrastructure metadata boundary.
