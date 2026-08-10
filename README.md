@@ -1,8 +1,8 @@
 # PCA — Parental Control App
 
-**Architecture package:** v1.0  
-**Lifecycle:** `DRAFT_RECONCILIATION`  
-**Implementation status:** `NOT_STARTED` — implementation is frozen pending independent review and owner acceptance.
+**Architecture package:** v1.0
+**Lifecycle:** `VERIFIED_COMPLETE`
+**Implementation status:** `NOT_STARTED` — implementation is authorized only for PCA-0 repository and quality foundation.
 
 PCA is a privacy-first parental-control platform. The child device enforces policies, the parent device owns family activity data, and PCA infrastructure is limited to enrollment, licensing, updates, and privacy-preserving connectivity. PCA does not operate a readable central family-activity store.
 
@@ -16,7 +16,7 @@ This repository currently contains architecture documentation only. It defines, 
 - locally controlled retention: 14 days, 1, 3, 6, or 9 calendar months;
 - English and Arabic, with true RTL support and independently chosen parent/child languages.
 
-The current A-100 gate is **not satisfied**. Publication of the reconciliation chain and a fresh independent R3/R4/R5 review are still required. No PCA application source may be added until the owner accepts the architecture.
+The owner accepted A-100 against technical baseline `fda523caacebec4ccc89df3073365d749946ae19`. This does not authorize PCA-1 or later: the only granted source phase is PCA-0 repository and quality foundation.
 
 ## Documentation
 

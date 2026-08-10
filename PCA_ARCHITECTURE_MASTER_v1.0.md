@@ -1,6 +1,6 @@
 # PCA Architecture Master v1.0
 
-**Package:** v1.0 · **Lifecycle:** `DRAFT_RECONCILIATION` · **Implementation:** `NOT_STARTED` / `NOT_GRANTED`
+**Package:** v1.0 · **Lifecycle:** `VERIFIED_COMPLETE` · **Implementation:** `NOT_STARTED`; PCA-0 only is authorized.
 
 This is the executive navigation summary. The controlled detail is the 35-document set in [docs/architecture/README.md](docs/architecture/README.md); it must be read before implementation or product commitments.
 
@@ -18,4 +18,4 @@ The package specifies screen-time breaks with an immutable emergency floor; sens
 
 ## Assurance and next gate
 
-Threat modeling, policy/store compliance, zero-plaintext observability, test planning, future implementation phases, exact-ID traceability, and first-party source references are documented. `A-100` remains **not satisfied** until the final local package is safely published and independently reviewed. This does not authorize implementation.
+Threat modeling, policy/store compliance, zero-plaintext observability, test planning, future implementation phases, exact-ID traceability, and first-party source references are documented. The owner accepted `A-100` against `fda523caacebec4ccc89df3073365d749946ae19`; the acceptance does not authorize PCA-1 or later implementation phases.
