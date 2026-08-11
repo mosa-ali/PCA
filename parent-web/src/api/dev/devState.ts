@@ -4,7 +4,24 @@
 import type { FamilyRole } from '../../domain/roles';
 import type { AuthenticatedSession } from '../interfaces';
 
-let currentRole: FamilyRole = 'OWNER';
+const VALID_ROLES: readonly FamilyRole[] = ['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'];
+
+function initialDevRole(): FamilyRole {
+  // Test-only convenience: a `?demoRole=VIEWER` query param lets Playwright
+  // e2e tests preset the fixture role across a full page navigation (a real
+  // browser reload resets this module's in-memory state, so switching role
+  // via the header select and then calling page.goto() would otherwise lose
+  // the selection). Only ever consulted in fixture/demo mode.
+  if (typeof window !== 'undefined') {
+    const requested = new URLSearchParams(window.location.search).get('demoRole');
+    if (requested && (VALID_ROLES as string[]).includes(requested)) {
+      return requested as FamilyRole;
+    }
+  }
+  return 'OWNER';
+}
+
+let currentRole: FamilyRole = initialDevRole();
 let serviceAuthenticated = true;
 
 const listeners = new Set<() => void>();

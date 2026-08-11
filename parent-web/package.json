@@ -46,6 +46,7 @@
     "jsdom": "25.0.0",
     "vitest-axe": "0.1.0",
     "axe-core": "4.10.0",
-    "@playwright/test": "1.47.2"
+    "@playwright/test": "1.47.2",
+    "@types/node": "22.5.5"
   }
 }
