@@ -1,6 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Arabic (ar) launch-quality strings. Doc 20 Section 1: "equal launch-quality languages, not a
+  translated afterthought." AUTHORED BY: engineering pass, standard Modern Standard Arabic;
+  PENDING NATIVE/RELIGIOUS REVIEWER SIGN-OFF before release, per doc 20 Section 2 ("PCA does not
+  have developers invent Arabic or religious translations at runtime"). The word choices below
+  reuse only standard, universally recognized Arabic/Islamic terminology already present elsewhere
+  in this codebase, e.g. PrayerName.kt's arabicName values; no religious phrase content has been
+  authored net-new here. See docs/i18n_arabic_review_notes.md.
+-->
 <resources>
     <string name="app_name">PCA</string>
     <string name="launch_shell_title">PCA</string>
     <string name="launch_shell_message">غلاف التطبيق جاهز.</string>
-</resources>
 
+    <string name="break_shield_title">وقت الاستراحة</string>
+    <!-- %1$s = a pre-formatted mm:ss duration string. -->
+    <string name="break_shield_remaining_time">الوقت المتبقي: %1$s</string>
+    <string name="break_shield_remaining_time_a11y">الوقت المتبقي في هذه الاستراحة: %1$s</string>
+
+    <!-- Arabic CLDR plural categories: zero/one/two/few(3-10)/many(11-99)/other. Flagged for
+         native-speaker review: grammatical gender/number agreement for "تفاعل" (interaction)
+         across these six forms was authored engineering-side, not reviewer-verified. -->
+    <plurals name="dhikr_interaction_count">
+        <item quantity="zero">لا توجد تفاعلات ذكر</item>
+        <item quantity="one">تفاعل ذكر واحد</item>
+        <item quantity="two">تفاعلان اثنان مع الذكر</item>
+        <item quantity="few">%1$d تفاعلات مع الذكر</item>
+        <item quantity="many">%1$d تفاعلاً مع الذكر</item>
+        <item quantity="other">%1$d تفاعل مع الذكر</item>
+    </plurals>
+
+    <string name="dhikr_button_label">الذكر</string>
+    <string name="dhikr_button_hint">تسجيل لحظة ذكر</string>
+    <string name="ask_parent_button_label">اسأل أحد الوالدين</string>
+    <string name="ask_parent_button_hint">إرسال طلب إلى أحد الوالدين للعودة المبكرة للاستخدام</string>
+    <string name="emergency_button_label">طوارئ</string>
+    <string name="emergency_button_hint">التواصل مع المساعدة الطارئة فورًا. متاح دائمًا.</string>
+
+    <!-- Reuses the exact same Arabic text already present in PrayerName.kt's arabicName field
+         (not re-authored); see PrayerDisplayNames.kt. -->
+    <string name="prayer_name_fajr">الفجر</string>
+    <string name="prayer_name_sunrise">الشروق</string>
+    <string name="prayer_name_dhuhr">الظهر</string>
+    <string name="prayer_name_asr">العصر</string>
+    <string name="prayer_name_maghrib">المغرب</string>
+    <string name="prayer_name_isha">العشاء</string>
+</resources>

@@ -40,6 +40,15 @@ android {
         jvmTarget = "17"
     }
 
+    // PCA-16 (lane brief Section 13): en-XA/ar-XB pseudo-locales surface hard-coded strings,
+    // truncation and text-expansion issues in debug builds without needing physical Arabic
+    // review for every iteration. Debug-only -- never shipped to a release build.
+    buildTypes {
+        debug {
+            isPseudoLocalesEnabled = true
+        }
+    }
+
     lint {
         lintConfig = file("../lint.xml")
         abortOnError = true

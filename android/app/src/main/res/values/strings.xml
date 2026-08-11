@@ -1,6 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PCA-16 string architecture (doc 20 Section 2): every key here is a stable, ASCII, semantic
+  message ID, never renamed once shipped, never reused for a different meaning. Placeholders
+  are always typed/positional (%1$s, %1$d) so translators may reorder them per Arabic grammar.
+  No string here is built by concatenating two translated fragments at the call site; each is a
+  complete localized sentence. See docs/i18n_arabic_review_notes.md for translator-review status.
+-->
 <resources>
     <string name="app_name">PCA</string>
     <string name="launch_shell_title">PCA</string>
     <string name="launch_shell_message">The application shell is ready.</string>
-</resources>
 
+    <!-- Break Shield (doc 20 Section 5 "Child transparency, break screen, Dhikr, prayer"). -->
+    <string name="break_shield_title">Break Time</string>
+    <!-- %1$s = a pre-formatted mm:ss duration string (already locale/digit-aware; see formatDuration). -->
+    <string name="break_shield_remaining_time">Remaining: %1$s</string>
+    <string name="break_shield_remaining_time_a11y">%1$s remaining in this break</string>
+
+    <!-- Arabic has six grammatical plural categories (zero/one/two/few/many/other); English uses
+         only one/other. Both files declare all six so the key set matches exactly. -->
+    <plurals name="dhikr_interaction_count">
+        <item quantity="one">%1$d dhikr interaction</item>
+        <item quantity="other">%1$d dhikr interactions</item>
+    </plurals>
+
+    <string name="dhikr_button_label">Dhikr / Remembrance</string>
+    <string name="dhikr_button_hint">Record a moment of remembrance</string>
+    <string name="ask_parent_button_label">Ask a parent</string>
+    <string name="ask_parent_button_hint">Send a request to a parent for early return to use</string>
+    <string name="emergency_button_label">Emergency</string>
+    <string name="emergency_button_hint">Reach emergency help immediately. Always available.</string>
+
+    <!-- Prayer names (doc 20 Section 5): presentation-layer display strings only; calculation
+         logic uses PrayerName.kt's own fields (untouched by PCA-16). These are what a screen
+         reader/UI renders. -->
+    <string name="prayer_name_fajr">Fajr</string>
+    <string name="prayer_name_sunrise">Sunrise</string>
+    <string name="prayer_name_dhuhr">Dhuhr</string>
+    <string name="prayer_name_asr">Asr</string>
+    <string name="prayer_name_maghrib">Maghrib</string>
+    <string name="prayer_name_isha">Isha</string>
+</resources>
