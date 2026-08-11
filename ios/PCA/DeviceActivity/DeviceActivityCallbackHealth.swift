@@ -10,7 +10,7 @@ import Foundation
 /// app on foreground) records each callback kind it actually observed
 /// with a timestamp; this type compares that log against what the
 /// SCHEDULE said should have fired by `nowUtc` and reports health.
-public enum DeviceActivityCallbackKind: Equatable, Hashable {
+public enum DeviceActivityCallbackKind: Equatable, Hashable, Codable {
     case intervalDidStart
     case intervalDidEnd
     case eventDidReachThreshold(eventId: String)

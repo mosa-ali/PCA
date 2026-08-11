@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- doc 07 Section 4/11: REQUIRES_ENTITLEMENT, not automatically available
+	     to every developer account. Confirm actual approval status before
+	     relying on this in a distributed build (docs/MAC_XCODE_VALIDATION_CHECKLIST.md Section 6). -->
+	<key>com.apple.developer.family-controls</key>
+	<true/>
+	<!-- Shared with the three extension targets so the DeviceActivityMonitor/
+	     ShieldConfiguration/ShieldAction extensions (separate processes, doc 07
+	     Section 7) can read the same synced policy/token/callback-log state
+	     this app writes. Confirm this exact group identifier is also
+	     provisioned in App Store Connect / the Apple Developer portal. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.org.pca.app</string>
+	</array>
+</dict>
+</plist>

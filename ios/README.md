@@ -16,10 +16,14 @@ SpringBoard manipulation, no jailbreak dependency (PCA-IOS-001) — see
   `Enrollment/`.
 - `PCADeviceActivityMonitor/`, `PCAShieldConfiguration/`,
   `PCAShieldAction/` — source for the three required Screen Time
-  extension targets. **These are source files only** — the actual Xcode
-  extension TARGETS (with their generated `Info.plist`/entitlements) must
-  be created via Xcode's New Target flow; see
-  `docs/MAC_XCODE_VALIDATION_CHECKLIST.md` Section 0.
+  extension targets, each with its own physical `Info.plist` and
+  `.entitlements` file. The corresponding Xcode `app-extension` targets
+  are wired into `PCA.xcodeproj/project.pbxproj` (via
+  `scripts/generate_pbxproj.py`, a deterministic, reviewable generator —
+  not hand-typed, since no Xcode was available to author them
+  interactively) and embedded into the host `PCA` target. This has NOT
+  been opened in real Xcode — see `docs/MAC_XCODE_VALIDATION_CHECKLIST.md`
+  Section 0 for the exact project-membership checks to run first.
 - `PCATests/` — XCTest suite. Every test file added for PCA-15 avoids a
   hard dependency on FamilyControls/ManagedSettings/DeviceActivity/
   Security/CoreLocation at the type level (via protocol seams and

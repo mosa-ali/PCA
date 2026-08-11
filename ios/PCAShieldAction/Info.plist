@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>PCAShieldAction</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- doc 07 Section 3/4: this identifier uses the "ManagedSettings" (NOT
+	     "ManagedSettingsUI") prefix. Confirmed via a real App Store Connect
+	     rejection-and-correction thread (developer forum 814945): a
+	     developer's submission using "com.apple.ManagedSettingsUI.shield-
+	     action-service" was REJECTED, and Apple DTS gave
+	     "com.apple.ManagedSettings.shield-action-service" as correct --
+	     deliberately NOT symmetric with ShieldConfiguration's identifier
+	     above. Re-verify at first real build per
+	     docs/MAC_XCODE_VALIDATION_CHECKLIST.md Section 0. -->
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.ManagedSettings.shield-action-service</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).PCAShieldActionExtension</string>
+	</dict>
+</dict>
+</plist>
