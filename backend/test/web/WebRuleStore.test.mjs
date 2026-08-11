@@ -50,3 +50,41 @@ test('removeParentRule deletes a previously stored rule', async () => {
   const matched = await repo.findMatching('fam-1', 'example.com');
   assert.equal(matched.length, 0);
 });
+
+// NEW-003 regression: InMemoryWebRuleRepository's internal Map key is built
+// from `${familyId} ${domain} ${listType}`. put() and remove() must key an
+// identical (familyId, domain, listType) triple to the SAME Map entry
+// (round-trip: put then remove then find returns nothing) while distinct
+// triples -- including ones that share a domain or a listType -- must never
+// collide with one another. This is unaffected by which separator
+// character sits between the fields, since opaque family ids and
+// canonicalized domains never contain that character; the assertions below
+// only depend on put/remove/findMatching agreeing on the same key, not on
+// the exact byte used to join them.
+test('rule keys round-trip through put/remove and never collide across distinct families, domains or list types', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const service = new WebRuleService(repo);
+
+  await service.setParentRule('fam-1', 'example.com', 'DENY', 'PARENT_DENYLIST');
+  await service.setParentRule('fam-1', 'example.com', 'ALLOW', 'PARENT_ALLOWLIST');
+  await service.setParentRule('fam-1', 'other.example', 'DENY', 'PARENT_DENYLIST');
+  await service.setParentRule('fam-2', 'example.com', 'DENY', 'PARENT_DENYLIST');
+
+  const famOneExampleCom = await repo.findMatching('fam-1', 'example.com');
+  assert.equal(famOneExampleCom.length, 2); // DENY and ALLOW coexist as distinct keys, not overwritten
+  assert.deepEqual(famOneExampleCom.map((r) => r.listType).sort(), ['ALLOW', 'DENY']);
+
+  const famOneOtherExample = await repo.findMatching('fam-1', 'other.example');
+  assert.equal(famOneOtherExample.length, 1);
+
+  const famTwoExampleCom = await repo.findMatching('fam-2', 'example.com');
+  assert.equal(famTwoExampleCom.length, 1);
+
+  // Removing one (familyId, domain, listType) triple must not disturb any other.
+  await service.removeParentRule('fam-1', 'example.com', 'DENY');
+  const afterRemoval = await repo.findMatching('fam-1', 'example.com');
+  assert.equal(afterRemoval.length, 1);
+  assert.equal(afterRemoval[0].listType, 'ALLOW');
+  assert.equal((await repo.findMatching('fam-1', 'other.example')).length, 1);
+  assert.equal((await repo.findMatching('fam-2', 'example.com')).length, 1);
+});
