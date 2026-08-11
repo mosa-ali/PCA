@@ -37,3 +37,18 @@ class StandardWallClockCalendarSource : WallClockCalendarSource {
         return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 }
+
+/**
+ * Conservative placeholder for [WellbeingScheduleContextSource] (WELL-3): always reports "not
+ * active" rather than fabricating a bedtime/schedule state this module has no way to actually
+ * observe. This intentionally means PCA bedtime suppression is a no-op until a Coordinator wires a
+ * real adapter against PCA-3's live schedule state (tracked in
+ * `docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`) -- returning `false` here never causes a
+ * false *suppression*; it just means this lane cannot yet add the real PCA-bedtime-aware
+ * suppression on its own, matching the same boundary as [EligibleAppSignalSource],
+ * [SuppressionContextSource], and [BreakStateSource].
+ */
+class NoOpWellbeingScheduleContextSource : WellbeingScheduleContextSource {
+    override fun isPcaBedtimeActive(): Boolean = false
+    override fun isScheduledQuietContext(): Boolean = false
+}

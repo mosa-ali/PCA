@@ -11,8 +11,10 @@ import org.pca.app.feature.wellbeing.ports.BreakStateSource
 import org.pca.app.feature.wellbeing.ports.EligibleAppSignalSource
 import org.pca.app.feature.wellbeing.ports.NotificationCapabilitySource
 import org.pca.app.feature.wellbeing.ports.ScreenLockStateSource
+import org.pca.app.feature.wellbeing.ports.NoOpWellbeingScheduleContextSource
 import org.pca.app.feature.wellbeing.ports.SuppressionContextSource
 import org.pca.app.feature.wellbeing.ports.WallClockCalendarSource
+import org.pca.app.feature.wellbeing.ports.WellbeingScheduleContextSource
 import org.pca.app.foundation.MonotonicTimeSource
 
 /**
@@ -41,6 +43,10 @@ class WellbeingTriggerDispatcher(
     private val suppressionContextSource: SuppressionContextSource,
     private val breakStateSource: BreakStateSource,
     private val wallClockCalendarSource: WallClockCalendarSource,
+    /** Defaults to the conservative no-op adapter (WELL-3): real wiring to PCA-3's live bedtime
+     * state is a Coordinator integration task, same boundary as the other cross-feature ports
+     * above (see `docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`). */
+    private val scheduleContextSource: WellbeingScheduleContextSource = NoOpWellbeingScheduleContextSource(),
 ) {
     fun buildContext(trigger: NudgeTrigger): NudgeTriggerContext = NudgeTriggerContext(
         trigger = trigger,
@@ -57,6 +63,8 @@ class WellbeingTriggerDispatcher(
         minuteOfDayForQuietHoursOnly = wallClockCalendarSource.minuteOfDay(),
         notificationsCapable = notificationCapabilitySource.notificationsEnabled(),
         lockScreenNotificationsCapable = notificationCapabilitySource.lockScreenNotificationsAvailable(),
+        isPcaBedtimeActive = scheduleContextSource.isPcaBedtimeActive(),
+        isScheduledQuietContext = scheduleContextSource.isScheduledQuietContext(),
     )
 
     fun dispatch(

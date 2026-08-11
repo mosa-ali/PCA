@@ -24,4 +24,15 @@ data class NudgeTriggerContext(
     val minuteOfDayForQuietHoursOnly: Int,
     val notificationsCapable: Boolean,
     val lockScreenNotificationsCapable: Boolean,
+    /** PCA-3 bedtime schedule state, read through the narrow
+     * [org.pca.app.feature.wellbeing.ports.WellbeingScheduleContextSource] port (WELL-3) -- WELL-1
+     * never computes this itself. Defaults to `false` (not active) so existing callers/tests that
+     * predate this port are unaffected; the shipped no-op adapter also always reports `false`
+     * until a Coordinator wires it to PCA-3's real schedule state (see
+     * `docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`). */
+    val isPcaBedtimeActive: Boolean = false,
+    /** Any other PCA-scheduled quiet context (distinct from bedtime specifically) reported by the
+     * same port; same conservative `false` default and Coordinator-wiring status as
+     * [isPcaBedtimeActive]. */
+    val isScheduledQuietContext: Boolean = false,
 )

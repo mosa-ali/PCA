@@ -45,3 +45,21 @@ interface BreakStateSource {
 interface WallClockCalendarSource {
     fun minuteOfDay(): Int
 }
+
+/**
+ * Read-only view of PCA-3/PCA-4's *existing* bedtime/schedule policy (WELL-3). This is
+ * deliberately narrow -- WELL-1 must never own or recompute a bedtime/schedule calculation of its
+ * own (that stays PCA-3/PCA-4 territory); it only asks "is that schedule currently suppressing
+ * activity?" so wellbeing quiet-hours can never diverge from or override the family's real
+ * bedtime. See `docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`: like
+ * [EligibleAppSignalSource], [SuppressionContextSource], and [BreakStateSource], the real
+ * implementation genuinely needs to observe another lane's live state and is out of scope for this
+ * worktree; a conservative no-op default ships instead (see `NoOpWellbeingScheduleContextSource`).
+ */
+interface WellbeingScheduleContextSource {
+    /** True iff PCA-3's bedtime schedule is currently active/enforcing. */
+    fun isPcaBedtimeActive(): Boolean
+
+    /** True iff any other PCA-scheduled quiet context (distinct from bedtime) currently applies. */
+    fun isScheduledQuietContext(): Boolean
+}
