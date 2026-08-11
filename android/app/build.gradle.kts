@@ -17,7 +17,26 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures { compose = true }
+    // AGP 8+ no longer generates BuildConfig by default; the existing test
+    // (LaunchShellContractTest) reads BuildConfig.APPLICATION_ID, so it must
+    // be explicitly opted back in.
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    // Explicit and consistent: without this, Java compile tasks fall back to
+    // AGP's own default (1.8) while the Kotlin compiler targets the running
+    // JDK (17 here), and the mismatch fails the build ("Inconsistent
+    // JVM-target compatibility detected for tasks 'compileDebugJavaWithJavac'
+    // (1.8) and 'compileDebugKotlin' (17)").
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
     lint {
         lintConfig = file("../lint.xml")
