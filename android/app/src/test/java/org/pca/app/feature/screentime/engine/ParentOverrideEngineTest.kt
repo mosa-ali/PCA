@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.feature.screentime.persistence.InMemoryUsedAuthorizationStore
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -211,7 +214,8 @@ class ParentOverrideEngineTest {
         )
 
         assertTrue(result is ParentOverrideResult.Applied)
-        assertTrue(store.isUsed("audit-42"))
+        // A second claim attempt for the same id must now fail — it was consumed by the call above.
+        assertTrue(!store.claimAuthorization("audit-42"))
     }
 
     @Test
@@ -313,9 +317,11 @@ class ParentOverrideEngineTest {
             config,
         )
         assertEquals(ParentOverrideRejectionReason.NOT_IN_BREAK_SHIELD, (tooEarly as ParentOverrideResult.Rejected).reason)
-        assertTrue(!store.isUsed("audit-42"))
 
-        // Once actually in BREAK_SHIELD, the same (still-unused) authorization succeeds.
+        // Once actually in BREAK_SHIELD, the same (still-unused) authorization succeeds — which
+        // is itself the proof that the earlier rejected attempt never consumed it; a peek-only
+        // "is it used" check is deliberately not part of the store's interface, since exposing
+        // one would reintroduce the check-then-act race the atomic claim exists to remove.
         val inBreak = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
         val nowValid = ParentOverrideEngine.applySkipBreakRequest(
             inBreak,
@@ -325,5 +331,85 @@ class ParentOverrideEngineTest {
         )
 
         assertTrue(nowValid is ParentOverrideResult.Applied)
+    }
+
+    // ---- NF-002: atomic claim under real concurrency --------------------------
+
+    @Test
+    fun `two concurrent skip-break requests for the same authorization - exactly one is Applied`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.SKIP_BREAK)
+        val inBreak = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+
+        val results = raceSkipBreakRequests(inBreak, auth, store, concurrency = 2)
+
+        assertEquals(1, results.count { it is ParentOverrideResult.Applied })
+        assertEquals(1, results.count { it is ParentOverrideResult.Rejected && it.reason == ParentOverrideRejectionReason.ALREADY_USED })
+    }
+
+    @Test
+    fun `N concurrent skip-break requests for the same authorization - exactly one is Applied`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.SKIP_BREAK)
+        val inBreak = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+
+        val results = raceSkipBreakRequests(inBreak, auth, store, concurrency = 32)
+
+        assertEquals(1, results.count { it is ParentOverrideResult.Applied })
+        assertEquals(31, results.count { it is ParentOverrideResult.Rejected && it.reason == ParentOverrideRejectionReason.ALREADY_USED })
+    }
+
+    @Test
+    fun `N concurrent grant-time requests for the same authorization - exactly one is Applied`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.GRANT_TIME, boundedDuration = 30.minutes)
+        val active = tick(ScreenTimeState.initial(0L), 55.minutes.inWholeNanoseconds)
+
+        val pool = Executors.newFixedThreadPool(16)
+        val results = try {
+            val concurrency = 16
+            val barrier = CyclicBarrier(concurrency)
+            (1..concurrency).map {
+                pool.submit<ParentOverrideResult> {
+                    barrier.await(5, TimeUnit.SECONDS)
+                    ParentOverrideEngine.applyGrantTimeRequest(
+                        active,
+                        GrantTimeRequest(55.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = auth, extra = 15.minutes),
+                        store,
+                        config,
+                    )
+                }
+            }.map { it.get(5, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdown()
+        }
+
+        assertEquals(1, results.count { it is ParentOverrideResult.Applied })
+        assertEquals(15, results.count { it is ParentOverrideResult.Rejected && it.reason == ParentOverrideRejectionReason.ALREADY_USED })
+    }
+
+    private fun raceSkipBreakRequests(
+        state: ScreenTimeState,
+        auth: ParentAuthorization,
+        store: InMemoryUsedAuthorizationStore,
+        concurrency: Int,
+    ): List<ParentOverrideResult> {
+        val pool = Executors.newFixedThreadPool(concurrency)
+        return try {
+            val barrier = CyclicBarrier(concurrency)
+            (1..concurrency).map {
+                pool.submit<ParentOverrideResult> {
+                    barrier.await(5, TimeUnit.SECONDS)
+                    ParentOverrideEngine.applySkipBreakRequest(
+                        state,
+                        SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = auth),
+                        store,
+                        config,
+                    )
+                }
+            }.map { it.get(5, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdown()
+        }
     }
 }

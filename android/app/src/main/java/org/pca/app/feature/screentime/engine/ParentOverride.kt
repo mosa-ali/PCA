@@ -91,12 +91,18 @@ sealed interface ParentOverrideResult {
  * silently no-op when the request is invalid or arrives in the wrong state.
  *
  * Both entry points require a [UsedAuthorizationStore] so single-use replay protection is never
- * accidentally left to volatile memory: an authorization is checked against — and, on success,
- * recorded into — that store, so the same signed [ParentAuthorization.auditId] cannot authorize
- * a second action even across a process restart, as long as the caller binds a durable store.
- * A rejected request (wrong scope, expired, wrong mode, over-bound) never marks the
- * authorization as used, since it never actually accomplished anything — only a successful
- * [ParentOverrideResult.Applied] consumes it.
+ * accidentally left to volatile memory: an authorization must win [UsedAuthorizationStore.claimAuthorization]
+ * before it can authorize anything, so the same signed [ParentAuthorization.auditId] cannot
+ * authorize a second action even across a process restart (as long as the caller binds a durable
+ * store) or from two concurrent callers racing the same id (the claim itself is atomic — see
+ * [UsedAuthorizationStore]).
+ *
+ * The claim is attempted only *after* scope/expiry/mode validation, not before: a request that
+ * fails validation (wrong scope, expired, wrong mode, over-bound) never touches the store, since
+ * it never actually accomplished anything. Only a request that has already passed every other
+ * check — and then wins the atomic claim — becomes [ParentOverrideResult.Applied]; if it loses
+ * the claim (because a concurrent request already consumed the same id), it is rejected as
+ * [ParentOverrideRejectionReason.ALREADY_USED] just like an ordinary replay.
  */
 object ParentOverrideEngine {
 
@@ -109,14 +115,14 @@ object ParentOverrideEngine {
         val advanced = ScreenTimeEngine.advance(state, request.nowNanos, config)
         val auth = request.authorization
 
-        if (usedAuthorizations.isUsed(auth.auditId)) {
-            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
-        }
         rejectionFor(auth, request.nowWallClockMillis, ParentOverrideScope.SKIP_BREAK)?.let {
             return ParentOverrideResult.Rejected(advanced, it, auth.auditId)
         }
         if (advanced.mode != ScreenTimeMode.BREAK_SHIELD) {
             return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.NOT_IN_BREAK_SHIELD, auth.auditId)
+        }
+        if (!usedAuthorizations.claimAuthorization(auth.auditId)) {
+            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
         }
 
         val applied = advanced.copy(
@@ -128,7 +134,6 @@ object ParentOverrideEngine {
             dhikrInteractionCount = 0,
             overriddenBreakCount = advanced.overriddenBreakCount + 1,
         )
-        usedAuthorizations.markUsed(auth.auditId)
         return ParentOverrideResult.Applied(applied, auth.auditId)
     }
 
@@ -141,9 +146,6 @@ object ParentOverrideEngine {
         val advanced = ScreenTimeEngine.advance(state, request.nowNanos, config)
         val auth = request.authorization
 
-        if (usedAuthorizations.isUsed(auth.auditId)) {
-            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
-        }
         rejectionFor(auth, request.nowWallClockMillis, ParentOverrideScope.GRANT_TIME)?.let {
             return ParentOverrideResult.Rejected(advanced, it, auth.auditId)
         }
@@ -153,10 +155,12 @@ object ParentOverrideEngine {
         if (request.extra.isNegative() || request.extra > auth.boundedDuration) {
             return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.EXTRA_DURATION_EXCEEDS_BOUND, auth.auditId)
         }
+        if (!usedAuthorizations.claimAuthorization(auth.auditId)) {
+            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
+        }
 
         val extraNanos = request.extra.inWholeNanoseconds
         val applied = advanced.copy(activeElapsedNanos = (advanced.activeElapsedNanos - extraNanos).coerceAtLeast(0L))
-        usedAuthorizations.markUsed(auth.auditId)
         return ParentOverrideResult.Applied(applied, auth.auditId)
     }
 
