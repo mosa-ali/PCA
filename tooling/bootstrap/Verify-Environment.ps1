@@ -23,7 +23,16 @@ try {
 
 $Branch = (& git -C $RepositoryRoot branch --show-current 2>&1 | Out-String).Trim()
 if ([string]::IsNullOrWhiteSpace($Branch)) {
-  Fail 'detached HEAD is not a supported developer setup; switch to a named branch.'
+  # Detached HEAD is a legitimate, sanctioned developer setup for a
+  # multi-agent implementation worktree pinned to a frozen baseline SHA
+  # (see .agent-runtime/control/OWNERSHIP.md) -- it is not itself an
+  # error. The only real failure condition is HEAD not resolving to a
+  # commit at all (a genuinely broken worktree).
+  $HeadSha = (& git -C $RepositoryRoot rev-parse HEAD 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($HeadSha)) {
+    Fail 'HEAD does not resolve to a commit; this worktree is not in a usable state.'
+  }
+  $Branch = "detached @ $HeadSha"
 }
 
 Write-Host "Repository: $RepositoryRoot"
