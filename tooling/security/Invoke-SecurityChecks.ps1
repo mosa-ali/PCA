@@ -47,7 +47,11 @@ $TelemetryPatterns = @(
   '(?i)com\.google\.firebase', '(?i)firebase-(analytics|crashlytics|performance)',
   '(?i)(sentry|mixpanel|amplitude|segment|posthog|datadog|newrelic|appcenter|fullstory|hotjar|logrocket)'
 )
-$SensitiveLoggingPattern = '(?i)(?:Log|logger|print|NSLog|os_log)\s*[.(].{0,160}(?:url|domain|search|location|youtube|usage|family|child|parent|token|secret|private.?key|recovery|fd[ek]|camera|face)'
+# (?<![A-Za-z]) is a required word-boundary guard: without it, this pattern
+# matches "print" as a mere substring of an unrelated identifier (e.g.
+# "fingerprint" in a test file path list), producing false positives against
+# files that contain no logging call at all.
+$SensitiveLoggingPattern = '(?i)(?<![A-Za-z])(?:Log|logger|print|NSLog|os_log)\s*[.(].{0,160}(?:url|domain|search|location|youtube|usage|family|child|parent|token|secret|private.?key|recovery|fd[ek]|camera|face)'
 $SyntheticPrefix = 'PCA' + '_SYNTHETIC_'
 $SyntheticSentinelPattern = [regex]::Escape($SyntheticPrefix) + '[A-Z0-9_]+'
 $IntentionalSentinelLiteralPaths = @(
