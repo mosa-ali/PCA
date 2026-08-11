@@ -1,0 +1,22 @@
+{
+  "name": "@pca/parent-sdk-wellbeing-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCA parent-controlled wellbeing message policy domain (doc 36) -- types, validators, canonical serialization, command model, and preview model for the family E2EE plane",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "typescript": "5.8.3"
+  }
+}

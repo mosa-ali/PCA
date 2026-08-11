@@ -1,0 +1,89 @@
+{
+  "catalogueVersion": "0.1.0",
+  "contractVersion": 1,
+  "scope": "logical-contract-metadata-only",
+  "representation": "neutral",
+  "authority": "docs/architecture/36_PARENT_WELLBEING_MESSAGE_CONTROL.md",
+  "policyDocument": {
+    "requiredTopLevelFields": [
+      "version",
+      "policyId",
+      "policyRevision",
+      "familyScopeRef",
+      "targets",
+      "enabled",
+      "selectedCuratedSuggestionIds",
+      "customMessages",
+      "createdAt",
+      "updatedAt"
+    ]
+  },
+  "targetModes": ["ONE_CHILD", "MULTIPLE_CHILDREN", "ALL_CHILDREN"],
+  "categories": [
+    "SKILLS_AND_LEARNING", "READING", "FAITH_POSITIVE", "GRATITUDE", "GOOD_DEED",
+    "FAMILY_HELP", "HOME_RESPONSIBILITY", "CREATIVITY", "MOVEMENT_RESET",
+    "REST_AND_RESET", "OUTDOOR_OR_OFFSCREEN", "PLANNING_AND_ORGANIZATION", "CUSTOM"
+  ],
+  "triggers": [
+    "PERIODIC", "AFTER_UNLOCK", "RAPID_GAME_RETURN", "BREAK_STARTED", "BREAK_ACTIVE",
+    "BREAK_COMPLETED", "LONG_SESSION_ENDED", "SCHEDULED_TIME", "CHILD_REQUESTED_IDEA"
+  ],
+  "deliverySurfaces": {
+    "permitted": [
+      "IN_APP_SMALL_CARD", "STANDARD_NOTIFICATION", "LOCK_SCREEN_REDACTED",
+      "NEXT_UNLOCK_SMALL_CARD", "BREAK_SHIELD_OPTIONAL_CARD"
+    ],
+    "forbidden": [
+      "FULL_SCREEN_MESSAGE", "SYSTEM_LOCKSCREEN_REPLACEMENT", "SYSTEM_SECURITY_ALERT_IMPERSONATION"
+    ]
+  },
+  "customMessageRequiredFields": [
+    "messageId", "enabled", "category", "languageTexts", "daysOfWeek", "timeWindows",
+    "triggers", "minimumIntervalMinutes", "maximumPerDay", "repeatCooldownMinutes",
+    "lockScreenAllowed", "dismissible", "snoozable", "requiresAdultSupervision"
+  ],
+  "customMessageOptionalFields": ["startDate", "endDate", "archivedAt"],
+  "languageTags": ["en", "ar"],
+  "lengthBounds": { "titleMaxChars": 60, "bodyMaxChars": 240 },
+  "frequencyBounds": {
+    "minimumIntervalMinutesFloor": 5,
+    "maximumPerDayCeiling": 12,
+    "repeatCooldownMinutesFloor": 15
+  },
+  "adultSupervisionRule": {
+    "whenRequiresAdultSupervisionIsTrue": {
+      "lockScreenAllowedMustBe": false,
+      "prohibitUnattendedStandardNotification": true
+    }
+  },
+  "revisionModel": {
+    "policyRevision": "strictly-monotonic-integer",
+    "staleUpdate": "reject",
+    "duplicateOperation": "idempotent-no-op",
+    "localizedTextAsRevisionIdentity": "forbidden"
+  },
+  "commandTypes": [
+    "CREATE_CUSTOM_MESSAGE", "UPDATE_CUSTOM_MESSAGE", "ARCHIVE_CUSTOM_MESSAGE",
+    "RESTORE_CUSTOM_MESSAGE", "ENABLE_CURATED_MESSAGE", "DISABLE_CURATED_MESSAGE",
+    "UPDATE_DELIVERY_POLICY", "UPDATE_TARGETS"
+  ],
+  "commandRequiredFields": ["operationId", "expectedRevision", "newRevision", "actorMemberId", "targetScope"],
+  "mechanicalSafetyRejections": [
+    "blank", "over-length", "control-characters", "bidi-override-abuse",
+    "html-or-script-markup", "os-security-alert-impersonation"
+  ],
+  "forbiddenCoercivePatterns": [
+    "forced-devotional-completion", "forced-exercise", "body-weight-targets",
+    "shaming-metrics", "leaderboards", "punitive-streaks"
+  ],
+  "auditPayload": {
+    "fields": ["actionType", "actorOpaqueId", "targetOpaqueId", "messageId", "policyRevision", "timestampUtc", "operationId"],
+    "prohibitFullMessageProse": true
+  },
+  "previewSurfaces": ["IN_APP_SMALL_CARD", "STANDARD_NOTIFICATION", "LOCK_SCREEN_REDACTED", "ARABIC_RTL", "ENGLISH"],
+  "e2eeBoundary": {
+    "centralPlaintextCustomMessageTable": "forbidden",
+    "serviceVisibility": ["opaque-envelope-metadata", "ciphertext"],
+    "clientOutput": "canonical-payload-for-existing-family-envelope"
+  }
+}
