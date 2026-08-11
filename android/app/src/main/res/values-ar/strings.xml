@@ -13,6 +13,147 @@
     <string name="launch_shell_title">PCA</string>
     <string name="launch_shell_message">غلاف التطبيق جاهز.</string>
 
+    <!-- Wellbeing (PCA-WELL-1) UI strings -->
+    <string name="wellbeing_notification_channel_name">اقتراحات الرفاهية</string>
+    <string name="wellbeing_notification_channel_description">اقتراحات لطيفة واختيارية لتوازن رقمي صحي.</string>
+    <string name="wellbeing_notification_generic_title">لدى PCA فكرة من أجلك</string>
+    <string name="wellbeing_notification_generic_body">افتح التطبيق عندما تكون مستعدًا لرؤيتها.</string>
+    <string name="wellbeing_card_title">إليك فكرة</string>
+    <string name="wellbeing_card_dismiss">ليس الآن</string>
+    <string name="wellbeing_card_helpful">أعجبتني هذه الفكرة</string>
+    <string name="wellbeing_card_not_for_me">ليست مناسبة لي</string>
+    <string name="wellbeing_card_remind_later">ذكّرني لاحقًا</string>
+    <string name="wellbeing_card_done">قمت بذلك</string>
+    <string name="wellbeing_give_me_an_idea_title">أعطني فكرة</string>
+    <string name="wellbeing_give_me_an_idea_button">أعطني فكرة</string>
+    <string name="wellbeing_game_return_title">مرحبًا بعودتك</string>
+    <string name="wellbeing_game_return_body">هل تريد تجربة شيء آخر قليلاً، أم المتابعة؟</string>
+    <string name="wellbeing_game_return_continue">أكمل</string>
+    <string name="wellbeing_game_return_try_alternative">جرّب بديلاً</string>
+    <string name="wellbeing_game_return_remind_later">ذكّرني لاحقًا</string>
+    <string name="wellbeing_choose_alternative_title">اختر شيئًا لتجربته</string>
+    <string name="wellbeing_daily_mission_title">فكرة اليوم</string>
+    <string name="wellbeing_daily_mission_done">تم</string>
+    <string name="wellbeing_daily_mission_skip">تخطّي</string>
+    <string name="wellbeing_daily_mission_new_idea">فكرة جديدة</string>
+    <string name="wellbeing_reflection_title">فقط أطمئن عليك</string>
+    <string name="wellbeing_reflection_body">لاحظنا أنك عدت عدة مرات. ماذا تحب أن تفعل؟</string>
+    <string name="wellbeing_reflection_continue">أكمل</string>
+    <string name="wellbeing_reflection_take_break">خذ استراحة قصيرة</string>
+    <string name="wellbeing_reflection_try_useful">جرّب شيئًا مفيدًا</string>
+    <string name="wellbeing_break_shield_suggestion_prefix">بينما تنتظر:</string>
+    <string name="wellbeing_summary_title">توازنك الصحي</string>
+    <string name="wellbeing_summary_suggestions_tried">الاقتراحات المجرَّبة</string>
+    <string name="wellbeing_summary_missions_done">أفكار اليوم المكتملة</string>
+    <string name="wellbeing_parent_policy_title">العادات الإيجابية والتوازن الرقمي الصحي</string>
+    <string name="wellbeing_custom_suggestion_pending_review">بانتظار مراجعة السلامة</string>
+    <string name="wellbeing_policy_toggle_enabled">تفعيل الاقتراحات الإيجابية</string>
+    <string name="wellbeing_policy_toggle_periodic">الاقتراحات الدورية</string>
+    <string name="wellbeing_policy_toggle_game_return">اقتراحات العودة للعبة</string>
+    <string name="wellbeing_policy_toggle_break">اقتراحات وقت الاستراحة</string>
+    <string name="wellbeing_policy_toggle_lock_screen">اقتراحات شاشة القفل</string>
+    <string name="wellbeing_policy_toggle_faith">محتوى إيماني إيجابي</string>
+    <string name="wellbeing_policy_toggle_custom">السماح باقتراحات مخصصة</string>
+    <string name="wellbeing_policy_toggle_child_snooze">يمكن للطفل تأجيل الاقتراحات</string>
+    <string name="wellbeing_policy_toggle_child_not_for_me">يمكن للطفل اختيار \"ليست مناسبة لي\"</string>
+    <string name="wellbeing_category_skills_and_learning">المهارات والتعلّم</string>
+    <string name="wellbeing_category_reading">القراءة</string>
+    <string name="wellbeing_category_faith_positive">الإيمان والتأمل</string>
+    <string name="wellbeing_category_gratitude">الامتنان</string>
+    <string name="wellbeing_category_good_deed">الأعمال الطيبة</string>
+    <string name="wellbeing_category_family_help">مساعدة العائلة</string>
+    <string name="wellbeing_category_home_responsibility">المسؤولية المنزلية</string>
+    <string name="wellbeing_category_creativity">الإبداع</string>
+    <string name="wellbeing_category_movement_reset">استراحة حركية</string>
+    <string name="wellbeing_category_rest_and_reset">الراحة وإعادة التنشيط</string>
+    <string name="wellbeing_category_outdoor_or_offscreen">في الخارج / بلا شاشة</string>
+    <string name="wellbeing_category_planning_and_organization">التخطيط والتنظيم</string>
+    <string name="wellbeing_category_child_selected_favorites">المفضلة لدي</string>
+
+    <!-- Wellbeing content catalogue copy: SKILLS_AND_LEARNING -->
+    <string name="wellbeing_sugg_skills_1">جرّب 5 دقائق من مهارة جديدة، مثل تطبيق لغة أو أحجية.</string>
+    <string name="wellbeing_sugg_skills_2">شاهد فيديو تعليميًا قصيرًا وجرّب المهارة بنفسك.</string>
+    <string name="wellbeing_sugg_skills_3">تدرّب على الكتابة أو الرسم أو آلة موسيقية لبضع دقائق.</string>
+    <string name="wellbeing_sugg_skills_4">تعلّم ثلاث حقائق جديدة عن موضوع يثير فضولك.</string>
+    <string name="wellbeing_sugg_skills_5">جرّب لغزًا ذهنيًا سريعًا أو أحجية منطقية.</string>
+
+    <!-- READING -->
+    <string name="wellbeing_sugg_reading_1">اقرأ بضع صفحات من كتاب تستمتع به.</string>
+    <string name="wellbeing_sugg_reading_2">اقرأ قصة قصيرة أو قصة مصورة لبعض الوقت.</string>
+    <string name="wellbeing_sugg_reading_3">اقرأ مقالًا عن شيء تجده مثيرًا للاهتمام.</string>
+    <string name="wellbeing_sugg_reading_4">استرخِ مع كتاب لجلسة قراءة أطول.</string>
+    <string name="wellbeing_sugg_reading_5">اقرأ قصيدة بصوت عالٍ.</string>
+
+    <!-- FAITH_POSITIVE (optional, never a gate) -->
+    <string name="wellbeing_sugg_faith_1">خذ لحظة هادئة لدعاء قصير أو تأمّل.</string>
+    <string name="wellbeing_sugg_faith_2">اقرأ مقطعًا قصيرًا من كتاب يعني الكثير لعائلتك.</string>
+    <string name="wellbeing_sugg_faith_3">اقضِ بضع دقائق هادئة في التأمل أو الامتنان.</string>
+    <string name="wellbeing_sugg_faith_4">استمع إلى تلاوة أو حديث قصير تستمتع به عائلتك.</string>
+    <string name="wellbeing_sugg_faith_5">شارك شيئًا لطيفًا مع أحد أفراد العائلة، مستوحى من قيمك.</string>
+
+    <!-- GRATITUDE -->
+    <string name="wellbeing_sugg_gratitude_1">فكّر في شيء واحد جعلك تبتسم اليوم.</string>
+    <string name="wellbeing_sugg_gratitude_2">أخبر أحد أفراد عائلتك بشيء تقدّره فيه.</string>
+    <string name="wellbeing_sugg_gratitude_3">اكتب ثلاثة أشياء صغيرة أنت ممتن لها.</string>
+    <string name="wellbeing_sugg_gratitude_4">أرسل رسالة لطيفة لشخص تهتم به.</string>
+    <string name="wellbeing_sugg_gratitude_5">تذكّر ذكرى سعيدة من هذا الأسبوع.</string>
+
+    <!-- GOOD_DEED -->
+    <string name="wellbeing_sugg_gooddeed_1">افعل شيئًا لطيفًا صغيرًا لشخص ما اليوم.</string>
+    <string name="wellbeing_sugg_gooddeed_2">ساعد أحد أفراد عائلتك بشيء بسيط، بلا سبب سوى اللطف.</string>
+    <string name="wellbeing_sugg_gooddeed_3">اكتب أو ارسم بطاقة شكر لشخص ما.</string>
+    <string name="wellbeing_sugg_gooddeed_4">امدح شخصًا ما بصدق.</string>
+    <string name="wellbeing_sugg_gooddeed_5">فكّر في طريقة لمساعدة صديق، وجرّبها.</string>
+
+    <!-- FAMILY_HELP -->
+    <string name="wellbeing_sugg_familyhelp_1">اسأل أحد أفراد عائلتك إن كان بحاجة إلى مساعدة في شيء.</string>
+    <string name="wellbeing_sugg_familyhelp_2">ساعد في تجهيز الطاولة أو تنظيفها بعد الوجبة.</string>
+    <string name="wellbeing_sugg_familyhelp_3">ساعد أخًا أو أختًا أصغر في شيء يعمل عليه.</string>
+    <string name="wellbeing_sugg_familyhelp_4">اعرض حمل أو ترتيب شيء لأحد أفراد العائلة.</string>
+    <string name="wellbeing_sugg_familyhelp_5">اقضِ بعض الوقت في مساعدة العائلة بمهمة أو مشروع.</string>
+
+    <!-- HOME_RESPONSIBILITY -->
+    <string name="wellbeing_sugg_homeresp_1">رتّب ركنًا صغيرًا من غرفتك.</string>
+    <string name="wellbeing_sugg_homeresp_2">أعد الملابس أو الألعاب إلى أماكنها.</string>
+    <string name="wellbeing_sugg_homeresp_3">ساعد في مسح الطاولة أو الرخام بمساعدة أحد الكبار.</string>
+    <string name="wellbeing_sugg_homeresp_4">رتّب سريرك.</string>
+    <string name="wellbeing_sugg_homeresp_5">ساعد في مهمة تتعلق بالفرن أو الموقد برفقة أحد الكبار.</string>
+
+    <!-- CREATIVITY -->
+    <string name="wellbeing_sugg_creativity_1">ارسم رسمًا بسيطًا لبضع دقائق.</string>
+    <string name="wellbeing_sugg_creativity_2">اكتب قصة قصيرة أو قصيدة أو فكرة أغنية.</string>
+    <string name="wellbeing_sugg_creativity_3">اصنع شيئًا من أي مواد حرفية متوفرة لديك.</string>
+    <string name="wellbeing_sugg_creativity_4">ابتكر شريط كوميكس قصيرًا عن يومك.</string>
+    <string name="wellbeing_sugg_creativity_5">جرّب طريقة جديدة لطي الورق أو تلوينه أو تزيينه.</string>
+
+    <!-- MOVEMENT_RESET (no calories/weight/punitive framing) -->
+    <string name="wellbeing_sugg_movement_1">مدّ ذراعيك وساقيك وظهرك لمدة دقيقة.</string>
+    <string name="wellbeing_sugg_movement_2">قم ببعض تمارين القفز أو التمدد لتجديد نشاطك.</string>
+    <string name="wellbeing_sugg_movement_3">ارقص على أغنية مفضلة لبضع دقائق.</string>
+    <string name="wellbeing_sugg_movement_4">قم بجولة مشي قصيرة داخل المنزل.</string>
+    <string name="wellbeing_sugg_movement_5">جرّب بعض تمارين التمدد اللطيفة.</string>
+
+    <!-- REST_AND_RESET -->
+    <string name="wellbeing_sugg_rest_1">أغلق عينيك وخذ خمسة أنفاس بطيئة.</string>
+    <string name="wellbeing_sugg_rest_2">أرح عينيك بالنظر إلى شيء بعيد لمدة دقيقة.</string>
+    <string name="wellbeing_sugg_rest_3">اجلس بهدوء ودع أفكارك تسترخي قليلًا.</string>
+    <string name="wellbeing_sugg_rest_4">خذ استراحة قصيرة لتمديد كتفيك واسترخائهما.</string>
+    <string name="wellbeing_sugg_rest_5">استلقِ لبضع دقائق وتنفّس فقط.</string>
+
+    <!-- OUTDOOR_OR_OFFSCREEN -->
+    <string name="wellbeing_sugg_outdoor_1">اخرج لبضع دقائق للاستمتاع بالهواء الطلق.</string>
+    <string name="wellbeing_sugg_outdoor_2">انظر من النافذة ولاحظ ثلاثة أشياء لم تلاحظها من قبل.</string>
+    <string name="wellbeing_sugg_outdoor_3">اقضِ بعض الوقت في الخارج إن كان ذلك ممكنًا الآن.</string>
+    <string name="wellbeing_sugg_outdoor_4">اسقِ نبتة أو تفقّد شيئًا ينمو بالقرب منك.</string>
+    <string name="wellbeing_sugg_outdoor_5">خذ استراحة بلا شاشة والعب لعبة لوحية أو ورق مع شخص ما.</string>
+
+    <!-- PLANNING_AND_ORGANIZATION -->
+    <string name="wellbeing_sugg_planning_1">اكتب قائمة قصيرة بالأشياء التي تريد فعلها اليوم.</string>
+    <string name="wellbeing_sugg_planning_2">رتّب حقيبتك المدرسية أو مكتبك.</string>
+    <string name="wellbeing_sugg_planning_3">خطّط لملابس الغد أو الأشياء التي ستحتاجها.</string>
+    <string name="wellbeing_sugg_planning_4">رتّب رفًا أو درجًا أو مساحة صغيرة.</string>
+    <string name="wellbeing_sugg_planning_5">اكتب هدفًا واحدًا لهذا الأسبوع.</string>
+
     <string name="break_shield_title">وقت الاستراحة</string>
     <!-- %1$s = a pre-formatted mm:ss duration string. -->
     <string name="break_shield_remaining_time">الوقت المتبقي: %1$s</string>

@@ -11,6 +11,147 @@
     <string name="launch_shell_title">PCA</string>
     <string name="launch_shell_message">The application shell is ready.</string>
 
+    <!-- Wellbeing (PCA-WELL-1) UI strings -->
+    <string name="wellbeing_notification_channel_name">Wellbeing suggestions</string>
+    <string name="wellbeing_notification_channel_description">Gentle, optional suggestions for a healthy digital balance.</string>
+    <string name="wellbeing_notification_generic_title">PCA has an idea for you</string>
+    <string name="wellbeing_notification_generic_body">Open the app when you\'re ready to see it.</string>
+    <string name="wellbeing_card_title">Here\'s an idea</string>
+    <string name="wellbeing_card_dismiss">Not now</string>
+    <string name="wellbeing_card_helpful">I liked this</string>
+    <string name="wellbeing_card_not_for_me">Not for me</string>
+    <string name="wellbeing_card_remind_later">Remind me later</string>
+    <string name="wellbeing_card_done">I did it</string>
+    <string name="wellbeing_give_me_an_idea_title">Give me an idea</string>
+    <string name="wellbeing_give_me_an_idea_button">Give me an idea</string>
+    <string name="wellbeing_game_return_title">Welcome back</string>
+    <string name="wellbeing_game_return_body">Want to try something else for a bit, or keep going?</string>
+    <string name="wellbeing_game_return_continue">Keep going</string>
+    <string name="wellbeing_game_return_try_alternative">Try an alternative</string>
+    <string name="wellbeing_game_return_remind_later">Remind me later</string>
+    <string name="wellbeing_choose_alternative_title">Choose something to try</string>
+    <string name="wellbeing_daily_mission_title">Today\'s idea</string>
+    <string name="wellbeing_daily_mission_done">Done</string>
+    <string name="wellbeing_daily_mission_skip">Skip</string>
+    <string name="wellbeing_daily_mission_new_idea">New idea</string>
+    <string name="wellbeing_reflection_title">Just checking in</string>
+    <string name="wellbeing_reflection_body">You\'ve come back a few times. What would you like to do?</string>
+    <string name="wellbeing_reflection_continue">Keep going</string>
+    <string name="wellbeing_reflection_take_break">Take a short break</string>
+    <string name="wellbeing_reflection_try_useful">Try something useful</string>
+    <string name="wellbeing_break_shield_suggestion_prefix">While you wait:</string>
+    <string name="wellbeing_summary_title">Your healthy balance</string>
+    <string name="wellbeing_summary_suggestions_tried">Suggestions tried</string>
+    <string name="wellbeing_summary_missions_done">Daily ideas completed</string>
+    <string name="wellbeing_parent_policy_title">Positive habits &amp; healthy balance</string>
+    <string name="wellbeing_custom_suggestion_pending_review">Waiting for safety review</string>
+    <string name="wellbeing_policy_toggle_enabled">Positive suggestions enabled</string>
+    <string name="wellbeing_policy_toggle_periodic">Periodic suggestions</string>
+    <string name="wellbeing_policy_toggle_game_return">Game-return suggestions</string>
+    <string name="wellbeing_policy_toggle_break">Break-time suggestions</string>
+    <string name="wellbeing_policy_toggle_lock_screen">Lock-screen suggestions</string>
+    <string name="wellbeing_policy_toggle_faith">Faith-positive content</string>
+    <string name="wellbeing_policy_toggle_custom">Allow custom suggestions</string>
+    <string name="wellbeing_policy_toggle_child_snooze">Child can snooze suggestions</string>
+    <string name="wellbeing_policy_toggle_child_not_for_me">Child can mark \"not for me\"</string>
+    <string name="wellbeing_category_skills_and_learning">Skills &amp; learning</string>
+    <string name="wellbeing_category_reading">Reading</string>
+    <string name="wellbeing_category_faith_positive">Faith &amp; reflection</string>
+    <string name="wellbeing_category_gratitude">Gratitude</string>
+    <string name="wellbeing_category_good_deed">Good deeds</string>
+    <string name="wellbeing_category_family_help">Family help</string>
+    <string name="wellbeing_category_home_responsibility">Home responsibility</string>
+    <string name="wellbeing_category_creativity">Creativity</string>
+    <string name="wellbeing_category_movement_reset">Movement reset</string>
+    <string name="wellbeing_category_rest_and_reset">Rest &amp; reset</string>
+    <string name="wellbeing_category_outdoor_or_offscreen">Outdoor / offscreen</string>
+    <string name="wellbeing_category_planning_and_organization">Planning &amp; organization</string>
+    <string name="wellbeing_category_child_selected_favorites">My favorites</string>
+
+    <!-- Wellbeing content catalogue copy: SKILLS_AND_LEARNING -->
+    <string name="wellbeing_sugg_skills_1">Try 5 minutes of a new skill, like a language app or a puzzle.</string>
+    <string name="wellbeing_sugg_skills_2">Watch a short how-to video and try the skill yourself.</string>
+    <string name="wellbeing_sugg_skills_3">Practice typing, drawing, or an instrument for a few minutes.</string>
+    <string name="wellbeing_sugg_skills_4">Learn three new facts about a topic you\'re curious about.</string>
+    <string name="wellbeing_sugg_skills_5">Try a quick brain-teaser or logic puzzle.</string>
+
+    <!-- READING -->
+    <string name="wellbeing_sugg_reading_1">Read a few pages of a book you\'re enjoying.</string>
+    <string name="wellbeing_sugg_reading_2">Read a short story or comic for a while.</string>
+    <string name="wellbeing_sugg_reading_3">Read an article about something you find interesting.</string>
+    <string name="wellbeing_sugg_reading_4">Curl up with a book for a longer reading session.</string>
+    <string name="wellbeing_sugg_reading_5">Read a poem out loud.</string>
+
+    <!-- FAITH_POSITIVE (optional, never a gate) -->
+    <string name="wellbeing_sugg_faith_1">Take a quiet moment for a short prayer or reflection.</string>
+    <string name="wellbeing_sugg_faith_2">Read a short passage from a book that means a lot to your family.</string>
+    <string name="wellbeing_sugg_faith_3">Spend a few quiet minutes in reflection or gratitude.</string>
+    <string name="wellbeing_sugg_faith_4">Listen to a short recitation or talk your family enjoys.</string>
+    <string name="wellbeing_sugg_faith_5">Share something kind with a family member, inspired by your values.</string>
+
+    <!-- GRATITUDE -->
+    <string name="wellbeing_sugg_gratitude_1">Think of one thing that made you smile today.</string>
+    <string name="wellbeing_sugg_gratitude_2">Tell someone in your family one thing you appreciate about them.</string>
+    <string name="wellbeing_sugg_gratitude_3">Write down three small things you\'re grateful for.</string>
+    <string name="wellbeing_sugg_gratitude_4">Send a kind note or message to someone you care about.</string>
+    <string name="wellbeing_sugg_gratitude_5">Think back on a happy memory from this week.</string>
+
+    <!-- GOOD_DEED -->
+    <string name="wellbeing_sugg_gooddeed_1">Do one small kind thing for someone today.</string>
+    <string name="wellbeing_sugg_gooddeed_2">Help a family member with something small, just because.</string>
+    <string name="wellbeing_sugg_gooddeed_3">Write or draw a thank-you note for someone.</string>
+    <string name="wellbeing_sugg_gooddeed_4">Give someone a genuine compliment.</string>
+    <string name="wellbeing_sugg_gooddeed_5">Think of a way to help a friend, and try it out.</string>
+
+    <!-- FAMILY_HELP -->
+    <string name="wellbeing_sugg_familyhelp_1">Ask a family member if they need a hand with anything.</string>
+    <string name="wellbeing_sugg_familyhelp_2">Help set or clear the table for a meal.</string>
+    <string name="wellbeing_sugg_familyhelp_3">Help a younger sibling with something they\'re working on.</string>
+    <string name="wellbeing_sugg_familyhelp_4">Offer to carry or organize something for a family member.</string>
+    <string name="wellbeing_sugg_familyhelp_5">Spend some time helping with a family errand or project.</string>
+
+    <!-- HOME_RESPONSIBILITY -->
+    <string name="wellbeing_sugg_homeresp_1">Tidy up one small area of your room.</string>
+    <string name="wellbeing_sugg_homeresp_2">Put away clothes or toys that are out of place.</string>
+    <string name="wellbeing_sugg_homeresp_3">Help wipe down a counter or table with an adult\'s help.</string>
+    <string name="wellbeing_sugg_homeresp_4">Make your bed.</string>
+    <string name="wellbeing_sugg_homeresp_5">Help with a stove or oven task together with an adult.</string>
+
+    <!-- CREATIVITY -->
+    <string name="wellbeing_sugg_creativity_1">Doodle or sketch something for a few minutes.</string>
+    <string name="wellbeing_sugg_creativity_2">Write a short story, poem, or song idea.</string>
+    <string name="wellbeing_sugg_creativity_3">Build something with whatever craft materials you have on hand.</string>
+    <string name="wellbeing_sugg_creativity_4">Make up a short comic strip about your day.</string>
+    <string name="wellbeing_sugg_creativity_5">Try a new way to fold, color, or decorate paper.</string>
+
+    <!-- MOVEMENT_RESET (no calories/weight/punitive framing) -->
+    <string name="wellbeing_sugg_movement_1">Stretch your arms, legs, and back for a minute.</string>
+    <string name="wellbeing_sugg_movement_2">Do a few jumping jacks or stretches to reset.</string>
+    <string name="wellbeing_sugg_movement_3">Dance to a favorite song for a few minutes.</string>
+    <string name="wellbeing_sugg_movement_4">Take a short walk around your home.</string>
+    <string name="wellbeing_sugg_movement_5">Try a few simple, gentle stretches.</string>
+
+    <!-- REST_AND_RESET -->
+    <string name="wellbeing_sugg_rest_1">Close your eyes and take five slow breaths.</string>
+    <string name="wellbeing_sugg_rest_2">Rest your eyes by looking at something far away for a minute.</string>
+    <string name="wellbeing_sugg_rest_3">Sit quietly and let your mind wander for a bit.</string>
+    <string name="wellbeing_sugg_rest_4">Take a short break to stretch and relax your shoulders.</string>
+    <string name="wellbeing_sugg_rest_5">Lie down for a few minutes and just breathe.</string>
+
+    <!-- OUTDOOR_OR_OFFSCREEN -->
+    <string name="wellbeing_sugg_outdoor_1">Step outside for a few minutes of fresh air.</string>
+    <string name="wellbeing_sugg_outdoor_2">Look out a window and notice three things you haven\'t noticed before.</string>
+    <string name="wellbeing_sugg_outdoor_3">Spend some time outside, if that\'s possible right now.</string>
+    <string name="wellbeing_sugg_outdoor_4">Water a plant or check on something growing nearby.</string>
+    <string name="wellbeing_sugg_outdoor_5">Take an offscreen break to play a board game or cards with someone.</string>
+
+    <!-- PLANNING_AND_ORGANIZATION -->
+    <string name="wellbeing_sugg_planning_1">Make a short list of things you want to do today.</string>
+    <string name="wellbeing_sugg_planning_2">Tidy up your school bag or desk.</string>
+    <string name="wellbeing_sugg_planning_3">Plan out tomorrow\'s outfit or things you\'ll need.</string>
+    <string name="wellbeing_sugg_planning_4">Organize a shelf, drawer, or small space.</string>
+    <string name="wellbeing_sugg_planning_5">Write down one goal for this week.</string>
+
     <!-- Break Shield (doc 20 Section 5 "Child transparency, break screen, Dhikr, prayer"). -->
     <string name="break_shield_title">Break Time</string>
     <!-- %1$s = a pre-formatted mm:ss duration string (already locale/digit-aware; see formatDuration). -->
