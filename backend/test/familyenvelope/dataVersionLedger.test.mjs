@@ -9,25 +9,25 @@ test('getLastAcceptedVersion is null before anything is recorded', () => {
 
 test('recordAcceptedVersion then getLastAcceptedVersion reflects it', () => {
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', 5);
-  assert.equal(ledger.getLastAcceptedVersion('key-1'), 5);
+  ledger.recordAcceptedVersion('key-1', '1.0.0');
+  assert.equal(ledger.getLastAcceptedVersion('key-1'), '1.0.0');
 });
 
 test('recordAcceptedVersion unconditionally sets the value -- it does NOT enforce a max-only/forward-only floor itself', () => {
   // The ledger trusts its caller (FamilyEnvelopeVerifier.evaluateEnvelope)
   // to invoke this only on full acceptance, which already enforces
-  // monotonicity for ordinary messages before this is ever called. A
-  // ROLLBACK's whole purpose is to move the floor DOWN to an authorized
-  // target version -- a ledger that silently refused to record a lower
-  // value would defeat that (see FamilyEnvelopeVerifier's ROLLBACK tests).
+  // monotonicity for POLICY_UPDATE before this is ever called. A
+  // SIGNED_ROLLBACK's whole purpose is to move the floor DOWN to an
+  // authorized target version -- a ledger that silently refused to
+  // record a lower value would defeat that.
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', 5);
-  ledger.recordAcceptedVersion('key-1', 3);
-  assert.equal(ledger.getLastAcceptedVersion('key-1'), 3);
+  ledger.recordAcceptedVersion('key-1', '5.0.0');
+  ledger.recordAcceptedVersion('key-1', '3.0.0');
+  assert.equal(ledger.getLastAcceptedVersion('key-1'), '3.0.0');
 });
 
 test('versions are scoped per sender key', () => {
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', 5);
+  ledger.recordAcceptedVersion('key-1', '5.0.0');
   assert.equal(ledger.getLastAcceptedVersion('key-2'), null);
 });

@@ -9,9 +9,9 @@ import type { DataVersionLedger } from './DataVersionLedger.js';
  * interface.
  */
 export class InMemoryDataVersionLedger implements DataVersionLedger {
-  private readonly lastVersionBySender = new Map<SenderKeyId, number>();
+  private readonly lastVersionBySender = new Map<SenderKeyId, string>();
 
-  getLastAcceptedVersion(senderKeyId: SenderKeyId): number | null {
+  getLastAcceptedVersion(senderKeyId: SenderKeyId): string | null {
     return this.lastVersionBySender.get(senderKeyId) ?? null;
   }
 
@@ -19,15 +19,15 @@ export class InMemoryDataVersionLedger implements DataVersionLedger {
    * Unconditionally sets the recorded version -- this ledger trusts its
    * caller (FamilyEnvelopeVerifier.evaluateEnvelope) to invoke this ONLY
    * on full envelope acceptance, which already enforces monotonicity for
-   * every non-ROLLBACK message before ever reaching this call. A
-   * max-only ("only advance forward") guard here would be wrong: it would
-   * silently defeat the ROLLBACK exemption's entire purpose by never
-   * letting an accepted rollback to a LOWER version actually become the
-   * new floor, so a legitimate post-rollback envelope at an intermediate
-   * version would be incorrectly rejected as non-monotonic against the
-   * stale, pre-rollback floor.
+   * an ordinary POLICY_UPDATE before ever reaching this call. A max-only
+   * ("only advance forward") guard here would be wrong: it would silently
+   * defeat SIGNED_ROLLBACK's entire purpose by never letting an accepted
+   * rollback to a LOWER version actually become the new floor, so a
+   * legitimate post-rollback envelope at an intermediate version would be
+   * incorrectly rejected as non-monotonic against the stale,
+   * pre-rollback floor.
    */
-  recordAcceptedVersion(senderKeyId: SenderKeyId, dataVersion: number): void {
-    this.lastVersionBySender.set(senderKeyId, dataVersion);
+  recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): void {
+    this.lastVersionBySender.set(senderKeyId, semanticVersion);
   }
 }

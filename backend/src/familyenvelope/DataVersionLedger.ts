@@ -1,14 +1,24 @@
 import type { SenderKeyId } from './types.js';
 
 /**
- * Per-sender-key record of the last ACCEPTED policy/data version (doc 09
- * Section 4: "policy/data version, checked for strict monotonicity...
- * except for an explicitly signed rollback message type"). As with
- * ReplayLedger, only a fully-accepted envelope's version may be recorded
- * -- a rejected envelope (bad signature, expired, etc.) must never move
- * this state forward.
+ * Per-sender-key record of the last ACCEPTED semanticVersion, used ONLY
+ * for message types doc 22 Section 4 describes as strictly increasing
+ * (currently: POLICY_UPDATE -- see policy.ts's requiresStrictVersionIncrease).
+ * Most message types do NOT use this ledger at all; their idempotency
+ * comes from MessageIdempotencyLedger instead. As with ReplayLedger, only
+ * a fully-accepted envelope's version may be recorded -- a rejected
+ * envelope (bad signature, expired, etc.) must never move this state
+ * forward.
+ *
+ * `recordAcceptedVersion` is intentionally UNCONDITIONAL (it does not
+ * itself enforce "only advance forward"): a SIGNED_ROLLBACK acceptance
+ * must be able to move this floor DOWN to its named target version (doc
+ * 22 Section 4/Section 6) -- the caller (FamilyEnvelopeVerifier) is
+ * responsible for only invoking this on full acceptance, having already
+ * enforced ordinary monotonicity before ever reaching this call for a
+ * POLICY_UPDATE.
  */
 export interface DataVersionLedger {
-  getLastAcceptedVersion(senderKeyId: SenderKeyId): number | null;
-  recordAcceptedVersion(senderKeyId: SenderKeyId, dataVersion: number): void;
+  getLastAcceptedVersion(senderKeyId: SenderKeyId): string | null;
+  recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): void;
 }

@@ -1,29 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateEnvelope } from '../../dist/familyenvelope/FamilyEnvelopeVerifier.js';
+import { evaluateEnvelope, OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED } from '../../dist/familyenvelope/FamilyEnvelopeVerifier.js';
 import { canonicalizeEnvelope } from '../../dist/familyenvelope/canonicalize.js';
 import { InMemoryReplayLedger } from '../../dist/familyenvelope/InMemoryReplayLedger.js';
 import { InMemoryDataVersionLedger } from '../../dist/familyenvelope/InMemoryDataVersionLedger.js';
+import { InMemoryMessageIdempotencyLedger } from '../../dist/familyenvelope/InMemoryMessageIdempotencyLedger.js';
 import {
   createTestOnlyEnvelopeSignatureVerifier,
   signTestOnlyEnvelope,
 } from '../support/testOnlyEnvelopeSignatureVerifier.mjs';
 
 const SENDER_PUBLIC_KEY = 'sender-public-key-1';
+let messageCounter = 0;
 
 function buildEnvelope(overrides = {}) {
+  messageCounter += 1;
   const unsigned = {
-    protocolVersion: 1,
+    protocolMajor: 1,
+    protocolMinor: 0,
+    messageId: `msg-${messageCounter}`,
     familyId: 'family-1',
     senderDeviceId: 'device-1',
+    recipient: { kind: 'DEVICE', recipientDeviceId: 'recipient-1' },
     senderKeyId: 'key-1',
-    messageType: 'POLICY_PUSH',
-    sequenceOrNonce: 'seq-1',
+    messageType: 'POLICY_UPDATE',
+    sequenceOrNonce: `seq-${messageCounter}`,
     issuedAt: new Date('2026-01-01T00:00:00.000Z'),
     expiresAt: new Date('2026-01-01T01:00:00.000Z'),
-    dataVersion: 1,
     trustSetEpoch: 1,
     keyEpoch: 1,
+    semanticVersion: '1.0.0',
+    correlationId: null,
     payload: Buffer.from('hello'),
     ...overrides,
   };
@@ -36,6 +43,7 @@ function buildHarness() {
     verifier: createTestOnlyEnvelopeSignatureVerifier(),
     replayLedger: new InMemoryReplayLedger(),
     versionLedger: new InMemoryDataVersionLedger(),
+    messageIdempotencyLedger: new InMemoryMessageIdempotencyLedger(),
   };
 }
 
@@ -49,194 +57,284 @@ function baseContext(overrides = {}) {
   };
 }
 
-test('a valid envelope is accepted', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const verdict = await evaluateEnvelope(buildEnvelope(), baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
+async function evaluate(envelope, context, harness) {
+  return evaluateEnvelope(
+    envelope,
+    context,
+    harness.verifier,
+    harness.replayLedger,
+    harness.versionLedger,
+    harness.messageIdempotencyLedger,
+  );
+}
+
+test('a valid POLICY_UPDATE envelope is accepted, not idempotent on first delivery', async () => {
+  const harness = buildHarness();
+  const verdict = await evaluate(buildEnvelope(), baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('an unsupported protocolMajor is rejected before anything else is checked', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ protocolMajor: 99 });
+  const verdict = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'UNSUPPORTED_PROTOCOL_MAJOR' });
 });
 
 test('an expired envelope is rejected as EXPIRED, even with a valid signature', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope();
   const context = baseContext({ now: new Date('2026-01-01T02:00:00.000Z') });
-  const verdict = await evaluateEnvelope(envelope, context, verifier, replayLedger, versionLedger);
+  const verdict = await evaluate(envelope, context, harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'EXPIRED' });
 });
 
 test('an envelope below the receiver\'s minimum accepted trustSetEpoch is rejected', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope({ trustSetEpoch: 1 });
   const context = baseContext({ minimumAcceptedTrustSetEpoch: 2 });
-  const verdict = await evaluateEnvelope(envelope, context, verifier, replayLedger, versionLedger);
+  const verdict = await evaluate(envelope, context, harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'STALE_TRUST_SET_EPOCH' });
 });
 
 test('an envelope below the receiver\'s minimum accepted keyEpoch is rejected', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope({ keyEpoch: 1 });
   const context = baseContext({ minimumAcceptedKeyEpoch: 2 });
-  const verdict = await evaluateEnvelope(envelope, context, verifier, replayLedger, versionLedger);
+  const verdict = await evaluate(envelope, context, harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'STALE_KEY_EPOCH' });
 });
 
 test('a tampered field invalidates the signature -- metadata cannot be altered without detection', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope();
-  const tampered = { ...envelope, trustSetEpoch: 999 }; // signature no longer matches canonical bytes
-  const verdict = await evaluateEnvelope(tampered, baseContext(), verifier, replayLedger, versionLedger);
+  const tampered = { ...envelope, trustSetEpoch: 999 };
+  const verdict = await evaluate(tampered, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
 });
 
-test('a replayed sequence/nonce is rejected on the second delivery, even though the signature is still genuinely valid', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const envelope = buildEnvelope();
-  const first = await evaluateEnvelope(envelope, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(first, { accepted: true });
-  const second = await evaluateEnvelope(envelope, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(second, { accepted: false, reason: 'REPLAYED' });
+test('a replayed sequence/nonce under a DIFFERENT messageId is rejected, even with a genuinely valid signature', async () => {
+  const harness = buildHarness();
+  const first = buildEnvelope({ sequenceOrNonce: 'shared-seq' });
+  const firstVerdict = await evaluate(first, baseContext(), harness);
+  assert.deepEqual(firstVerdict, { accepted: true, idempotent: false });
+
+  const second = buildEnvelope({ sequenceOrNonce: 'shared-seq' }); // fresh messageId, same sequence/nonce
+  const secondVerdict = await evaluate(second, baseContext(), harness);
+  assert.deepEqual(secondVerdict, { accepted: false, reason: 'REPLAYED' });
 });
 
-test('a non-monotonic dataVersion is rejected for an ordinary (non-ROLLBACK) message', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 5 });
-  await evaluateEnvelope(first, baseContext(), verifier, replayLedger, versionLedger);
+test('a genuine retransmission of the SAME messageId with byte-identical content is an idempotent accept, not REPLAYED', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope();
+  const first = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(first, { accepted: true, idempotent: false });
 
-  const equalVersion = buildEnvelope({ sequenceOrNonce: 'seq-2', dataVersion: 5 });
-  const equalVerdict = await evaluateEnvelope(equalVersion, baseContext(), verifier, replayLedger, versionLedger);
+  const second = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(second, { accepted: true, idempotent: true });
+});
+
+test('reusing a messageId with DIFFERENT content is MESSAGE_ID_CONFLICT, never a silent accept', async () => {
+  const harness = buildHarness();
+  const first = buildEnvelope({ messageId: 'shared-msg-id' });
+  await evaluate(first, baseContext(), harness);
+
+  // Same messageId, different payload -- must re-sign since canonical bytes changed.
+  const conflicting = buildEnvelope({ messageId: 'shared-msg-id', payload: Buffer.from('different') });
+  const verdict = await evaluate(conflicting, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'MESSAGE_ID_CONFLICT' });
+});
+
+test('a non-monotonic semanticVersion is rejected for POLICY_UPDATE', async () => {
+  const harness = buildHarness();
+  const first = buildEnvelope({ semanticVersion: '5.0.0' });
+  await evaluate(first, baseContext(), harness);
+
+  const equalVersion = buildEnvelope({ semanticVersion: '5.0.0' });
+  const equalVerdict = await evaluate(equalVersion, baseContext(), harness);
   assert.deepEqual(equalVerdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
 
-  const lowerVersion = buildEnvelope({ sequenceOrNonce: 'seq-3', dataVersion: 4 });
-  const lowerVerdict = await evaluateEnvelope(lowerVersion, baseContext(), verifier, replayLedger, versionLedger);
+  const lowerVersion = buildEnvelope({ semanticVersion: '4.0.0' });
+  const lowerVerdict = await evaluate(lowerVersion, baseContext(), harness);
   assert.deepEqual(lowerVerdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
 });
 
-test('a higher dataVersion for an ordinary message is accepted and advances the ledger', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 5 });
-  await evaluateEnvelope(first, baseContext(), verifier, replayLedger, versionLedger);
-
-  const higher = buildEnvelope({ sequenceOrNonce: 'seq-2', dataVersion: 6 });
-  const verdict = await evaluateEnvelope(higher, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
+test('a higher semanticVersion for POLICY_UPDATE is accepted and advances the ledger', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '5.0.0' }), baseContext(), harness);
+  const higher = buildEnvelope({ semanticVersion: '6.0.0' });
+  const verdict = await evaluate(higher, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
-test('an explicitly signed ROLLBACK message is exempt from version monotonicity', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 5 });
-  await evaluateEnvelope(first, baseContext(), verifier, replayLedger, versionLedger);
-
-  const rollback = buildEnvelope({ sequenceOrNonce: 'seq-2', dataVersion: 2, messageType: 'ROLLBACK' });
-  const verdict = await evaluateEnvelope(rollback, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
-
-  // The rollback's target version becomes the new floor for subsequent ordinary messages.
-  const equalToRollback = buildEnvelope({ sequenceOrNonce: 'seq-3', dataVersion: 2 });
-  const rejected = await evaluateEnvelope(equalToRollback, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(rejected, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-
-  // The real proof the floor actually moved DOWN, not just "still rejects
-  // the exact rollback target": an intermediate version (3) sits between
-  // the rollback target (2) and the stale pre-rollback floor (5) -- it
-  // must be accepted, which is only possible if the floor is genuinely 2,
-  // not still 5.
-  const postRollbackVersion = buildEnvelope({ sequenceOrNonce: 'seq-4', dataVersion: 3 });
-  const accepted = await evaluateEnvelope(postRollbackVersion, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(accepted, { accepted: true });
+test('numeric, not lexicographic, semantic version comparison: 1.9.0 < 1.10.0', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '1.9.0' }), baseContext(), harness);
+  const verdict = await evaluate(buildEnvelope({ semanticVersion: '1.10.0' }), baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
-test('a rejected envelope never advances the replay ledger -- a corrected legitimate resubmission with the same sequence/nonce can still succeed', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const expiredAttempt = buildEnvelope({ sequenceOrNonce: 'seq-1' });
-  const expiredVerdict = await evaluateEnvelope(
+test('KNOWN LIMITATION (doc 22 Section 5, disclosed via OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED): an out-of-order later version is currently applied immediately rather than held pending for its predecessor', async () => {
+  assert.equal(OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED, false, 'this test documents current behavior -- flip it only alongside a real hold-pending implementation');
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '1.0.0' }), baseContext(), harness);
+
+  // N+2 arrives before N+1 (e.g. the receiver was offline for N+1's delivery window).
+  const skipsAhead = buildEnvelope({ semanticVersion: '3.0.0' });
+  const skipVerdict = await evaluate(skipsAhead, baseContext(), harness);
+  assert.deepEqual(skipVerdict, { accepted: true, idempotent: false }, 'current behavior: accepted immediately, not queued');
+});
+
+test('SAFETY PROPERTY preserved despite the limitation above: a genuinely intervening version that arrives late is still correctly and permanently rejected, never mis-applied out of order', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '1.0.0' }), baseContext(), harness);
+  await evaluate(buildEnvelope({ semanticVersion: '3.0.0' }), baseContext(), harness); // floor jumps to 3.0.0
+
+  // The "missed" 2.0.0 arrives late -- it must be rejected, never silently
+  // accepted into an ambiguous position, and must never move the floor
+  // backward or sideways. This is the fail-safe half of the doc 22
+  // Section 5 requirement even though the feature-complete "hold pending
+  // and apply once the gap fills" half (see the limitation test above)
+  // is not implemented.
+  const lateIntervening = buildEnvelope({ semanticVersion: '2.0.0' });
+  const verdict = await evaluate(lateIntervening, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
+  assert.equal(harness.versionLedger.getLastAcceptedVersion(lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
+});
+
+test('SIGNED_ROLLBACK is exempt from version monotonicity and moves the floor DOWN to its target version', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '5.0.0' }), baseContext(), harness);
+
+  const rollback = buildEnvelope({ semanticVersion: '2.0.0', messageType: 'SIGNED_ROLLBACK' });
+  const rollbackVerdict = await evaluate(rollback, baseContext(), harness);
+  assert.deepEqual(rollbackVerdict, { accepted: true, idempotent: false });
+
+  // The real proof the floor moved DOWN: an intermediate version (3.0.0)
+  // between the rollback target (2.0.0) and the stale pre-rollback floor
+  // (5.0.0) must be accepted -- only possible if the floor is genuinely 2.0.0.
+  const postRollback = buildEnvelope({ semanticVersion: '3.0.0' });
+  const verdict = await evaluate(postRollback, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('a SIGNED_ROLLBACK equal to the pre-rollback floor is still exempt from the monotonicity check', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '5.0.0' }), baseContext(), harness);
+  const rollback = buildEnvelope({ semanticVersion: '5.0.0', messageType: 'SIGNED_ROLLBACK' });
+  const verdict = await evaluate(rollback, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('non-POLICY_UPDATE, non-SIGNED_ROLLBACK message types never consult or update the semantic-version ledger', async () => {
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ semanticVersion: '5.0.0' }), baseContext(), harness); // establishes a POLICY_UPDATE floor of 5.0.0
+
+  // A STATUS_SNAPSHOT with a "lower" semanticVersion must not be rejected
+  // as non-monotonic -- this ledger has nothing to do with that message type.
+  const snapshot = buildEnvelope({ semanticVersion: '1.0.0', messageType: 'STATUS_SNAPSHOT' });
+  const verdict = await evaluate(snapshot, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+
+  // And the POLICY_UPDATE floor must be unaffected by it.
+  assert.equal(harness.versionLedger.getLastAcceptedVersion('key-1'), '5.0.0');
+});
+
+test('a rejected (EXPIRED) envelope never advances the replay ledger -- a corrected legitimate resubmission with the same sequence/nonce can still succeed', async () => {
+  const harness = buildHarness();
+  const expiredAttempt = buildEnvelope({ sequenceOrNonce: 'seq-shared' });
+  const expiredVerdict = await evaluate(
     expiredAttempt,
-    baseContext({ now: new Date('2026-01-01T02:00:00.000Z') }), // forces EXPIRED
-    verifier,
-    replayLedger,
-    versionLedger,
+    baseContext({ now: new Date('2026-01-01T02:00:00.000Z') }),
+    harness,
   );
   assert.deepEqual(expiredVerdict, { accepted: false, reason: 'EXPIRED' });
 
-  // Same sequenceOrNonce, but now evaluated before expiry -- must still succeed.
-  const resubmission = buildEnvelope({ sequenceOrNonce: 'seq-1' });
-  const verdict = await evaluateEnvelope(resubmission, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
+  const resubmission = buildEnvelope({ sequenceOrNonce: 'seq-shared' });
+  const verdict = await evaluate(resubmission, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
-test('a rejected (invalid-signature) envelope never advances the data-version ledger', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const forged = { ...buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 10 }), signature: 'not-a-real-signature' };
-  const forgedVerdict = await evaluateEnvelope(forged, baseContext(), verifier, replayLedger, versionLedger);
+test('a rejected (INVALID_SIGNATURE) envelope never advances the semantic-version ledger', async () => {
+  const harness = buildHarness();
+  const forged = { ...buildEnvelope({ semanticVersion: '10.0.0' }), signature: 'not-a-real-signature' };
+  const forgedVerdict = await evaluate(forged, baseContext(), harness);
   assert.deepEqual(forgedVerdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
 
-  // A genuine, lower-numbered envelope must still be accepted as version 1 -- proving the forged attempt at version 10 never became the floor.
-  const genuine = buildEnvelope({ sequenceOrNonce: 'seq-2', dataVersion: 1 });
-  const verdict = await evaluateEnvelope(genuine, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
+  const genuine = buildEnvelope({ semanticVersion: '1.0.0' });
+  const verdict = await evaluate(genuine, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
 test('a STALE_TRUST_SET_EPOCH rejection never advances the replay ledger', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const envelope = buildEnvelope({ sequenceOrNonce: 'seq-1', trustSetEpoch: 1 });
-  const staleVerdict = await evaluateEnvelope(
-    envelope,
-    baseContext({ minimumAcceptedTrustSetEpoch: 2 }),
-    verifier,
-    replayLedger,
-    versionLedger,
-  );
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ sequenceOrNonce: 'seq-epoch', trustSetEpoch: 1 });
+  const staleVerdict = await evaluate(envelope, baseContext({ minimumAcceptedTrustSetEpoch: 2 }), harness);
   assert.deepEqual(staleVerdict, { accepted: false, reason: 'STALE_TRUST_SET_EPOCH' });
-  assert.equal(replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce), false);
+  assert.equal(harness.replayLedger.hasProcessed(envelope.senderKeyId, 'seq-epoch'), false);
 
-  // The same sequenceOrNonce, now evaluated against a floor it satisfies, must still succeed.
-  const verdict = await evaluateEnvelope(envelope, baseContext(), verifier, replayLedger, versionLedger);
-  assert.deepEqual(verdict, { accepted: true });
+  const verdict = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
-test('a REPLAYED rejection never advances the data-version ledger', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 5 });
-  await evaluateEnvelope(first, baseContext(), verifier, replayLedger, versionLedger);
+test('a REPLAYED rejection never advances the semantic-version ledger', async () => {
+  const harness = buildHarness();
+  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', semanticVersion: '5.0.0' });
+  await evaluate(first, baseContext(), harness);
 
-  // Same sequenceOrNonce, higher dataVersion -- REPLAYED must win over what would otherwise be a monotonic version bump.
-  const replay = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 99 });
-  const replayVerdict = await evaluateEnvelope(replay, baseContext(), verifier, replayLedger, versionLedger);
+  const replay = buildEnvelope({ sequenceOrNonce: 'seq-1', semanticVersion: '99.0.0' });
+  const replayVerdict = await evaluate(replay, baseContext(), harness);
   assert.deepEqual(replayVerdict, { accepted: false, reason: 'REPLAYED' });
-  assert.equal(versionLedger.getLastAcceptedVersion(first.senderKeyId), 5, 'the replayed envelope\'s dataVersion of 99 must never have been recorded');
+  assert.equal(harness.versionLedger.getLastAcceptedVersion(first.senderKeyId), '5.0.0');
 });
 
 test('a VERSION_NOT_MONOTONIC rejection never advances the replay ledger', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
-  const first = buildEnvelope({ sequenceOrNonce: 'seq-1', dataVersion: 5 });
-  await evaluateEnvelope(first, baseContext(), verifier, replayLedger, versionLedger);
+  const harness = buildHarness();
+  await evaluate(buildEnvelope({ sequenceOrNonce: 'seq-1', semanticVersion: '5.0.0' }), baseContext(), harness);
 
-  const nonMonotonic = buildEnvelope({ sequenceOrNonce: 'seq-2', dataVersion: 3 });
-  const rejected = await evaluateEnvelope(nonMonotonic, baseContext(), verifier, replayLedger, versionLedger);
+  const nonMonotonic = buildEnvelope({ sequenceOrNonce: 'seq-2', semanticVersion: '3.0.0' });
+  const rejected = await evaluate(nonMonotonic, baseContext(), harness);
   assert.deepEqual(rejected, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-  assert.equal(replayLedger.hasProcessed(nonMonotonic.senderKeyId, 'seq-2'), false);
+  assert.equal(harness.replayLedger.hasProcessed(nonMonotonic.senderKeyId, 'seq-2'), false);
 });
 
 test('expiry is boundary-inclusive: now exactly equal to expiresAt is rejected', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope();
-  const verdict = await evaluateEnvelope(
-    envelope,
-    baseContext({ now: envelope.expiresAt }),
-    verifier,
-    replayLedger,
-    versionLedger,
-  );
+  const verdict = await evaluate(envelope, baseContext({ now: envelope.expiresAt }), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'EXPIRED' });
 });
 
 test('epoch floors are boundary-inclusive: an envelope exactly at the minimum accepted epoch is accepted', async () => {
-  const { verifier, replayLedger, versionLedger } = buildHarness();
+  const harness = buildHarness();
   const envelope = buildEnvelope({ trustSetEpoch: 2, keyEpoch: 3 });
-  const verdict = await evaluateEnvelope(
+  const verdict = await evaluate(
     envelope,
     baseContext({ minimumAcceptedTrustSetEpoch: 2, minimumAcceptedKeyEpoch: 3 }),
-    verifier,
-    replayLedger,
-    versionLedger,
+    harness,
   );
-  assert.deepEqual(verdict, { accepted: true });
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('a GROUP recipient envelope is accepted just like a DEVICE recipient one', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ recipient: { kind: 'GROUP', recipientGroup: 'all-parents' } });
+  const verdict = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('tampering the recipient after signing invalidates the signature -- recipient binding is cryptographically covered', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope();
+  const tampered = { ...envelope, recipient: { kind: 'DEVICE', recipientDeviceId: 'someone-else' } };
+  const verdict = await evaluate(tampered, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
+});
+
+test('a present correlationId is covered by the signature -- tampering it invalidates the signature', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ correlationId: 'corr-1' });
+  const tampered = { ...envelope, correlationId: 'corr-2' };
+  const verdict = await evaluate(tampered, baseContext(), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
 });
