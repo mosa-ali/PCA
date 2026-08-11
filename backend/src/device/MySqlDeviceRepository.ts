@@ -1,4 +1,4 @@
-import { isUniqueViolation, runInTransaction, SoftFailure } from '../db/pool.js';
+import { execute, isDuplicateEntry, runInTransaction, SoftFailure } from '../db/pool.js';
 import type {
   AddKeyResult,
   ConfirmPairingResult,
@@ -57,13 +57,14 @@ function mapKey(row: DeviceKeyRow): DeviceKeyRecord {
 
 type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND' | 'INVALID_STATE';
 
-export class PostgresDeviceRepository implements DeviceRepository {
+export class MySqlDeviceRepository implements DeviceRepository {
   async createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult> {
     try {
-      return await runInTransaction(async (client) => {
-        await client.query(
+      return await runInTransaction(async (conn) => {
+        await execute(
+          conn,
           `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at, paired_at, paired_by_account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             device.deviceId,
             device.familyId,
@@ -76,13 +77,14 @@ export class PostgresDeviceRepository implements DeviceRepository {
           ],
         );
         try {
-          await client.query(
+          await execute(
+            conn,
             `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [key.deviceId, key.keyId, key.keyPurpose, key.publicKey, key.status, key.createdAt, key.revokedAt],
           );
         } catch (error) {
-          if (isUniqueViolation(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
+          if (isDuplicateEntry(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
           throw error;
         }
         return { outcome: 'CREATED', device, key } as const;
@@ -94,15 +96,15 @@ export class PostgresDeviceRepository implements DeviceRepository {
   }
 
   async findDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord | null> {
-    const { rows } = await runInTransaction((client) =>
-      client.query<DeviceRow>(`SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`, [deviceId, familyId]),
+    const { rows } = await runInTransaction((conn) =>
+      execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [deviceId, familyId]),
     );
     return rows[0] ? mapDevice(rows[0]) : null;
   }
 
   async findDeviceUnscoped(deviceId: DeviceId): Promise<DeviceRecord | null> {
-    const { rows } = await runInTransaction((client) =>
-      client.query<DeviceRow>(`SELECT * FROM devices WHERE device_id = $1`, [deviceId]),
+    const { rows } = await runInTransaction((conn) =>
+      execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ?`, [deviceId]),
     );
     return rows[0] ? mapDevice(rows[0]) : null;
   }
@@ -114,39 +116,44 @@ export class PostgresDeviceRepository implements DeviceRepository {
     revokedAt: Date,
   ): Promise<RevokeDeviceResult> {
     try {
-      return await runInTransaction(async (client) => {
-        const deviceResult = await client.query<DeviceRow>(
-          `UPDATE devices SET status = 'REVOKED', revoked_at = $3
-           WHERE device_id = $1 AND family_id = $2 AND status != 'REVOKED'
-           RETURNING *`,
-          [deviceId, familyId, revokedAt],
+      return await runInTransaction(async (conn) => {
+        // status != 'REVOKED' guarantees any row this UPDATE actually
+        // matches also actually changes, so MySQL's affectedRows (which
+        // counts changed rows, not merely matched rows) still tells us
+        // "this call performed the first-ever revocation" -- an
+        // already-revoked device falls straight through to the SELECT
+        // below, and its first revocation's timestamp stays authoritative
+        // rather than being silently rewritten by a later, redundant call.
+        const updateResult = await execute(
+          conn,
+          `UPDATE devices SET status = 'REVOKED', revoked_at = ?
+           WHERE device_id = ? AND family_id = ? AND status != 'REVOKED'`,
+          [revokedAt, deviceId, familyId],
         );
-        let deviceRow = deviceResult.rows[0];
-        if (!deviceRow) {
-          // Either unknown, or already revoked -- the status guard above
-          // means "already revoked" falls through here too, so the FIRST
-          // revocation's timestamp stays authoritative rather than being
-          // silently rewritten by a later, redundant revoke call.
-          const existing = await client.query<DeviceRow>(
-            `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`,
+        let deviceRow: DeviceRow | undefined;
+        if (updateResult.rowCount > 0) {
+          const reread = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ?`, [deviceId]);
+          deviceRow = reread.rows[0];
+        } else {
+          const existing = await execute<DeviceRow>(
+            conn,
+            `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`,
             [deviceId, familyId],
           );
-          if (!existing.rows[0]) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
           deviceRow = existing.rows[0];
+          if (!deviceRow) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
         }
 
         // AND status = 'ACTIVE' already makes this idempotent on repeat
         // calls -- an already-revoked key is never re-touched, so its
         // original revoked_at is preserved automatically.
-        await client.query(
-          `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $2
-           WHERE device_id = $1 AND status = 'ACTIVE'`,
-          [deviceId, revokedAt],
-        );
-        const keysResult = await client.query<DeviceKeyRow>(
-          `SELECT * FROM device_public_keys WHERE device_id = $1`,
-          [deviceId],
-        );
+        await execute(conn, `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = ? WHERE device_id = ? AND status = 'ACTIVE'`, [
+          revokedAt,
+          deviceId,
+        ]);
+        const keysResult = await execute<DeviceKeyRow>(conn, `SELECT * FROM device_public_keys WHERE device_id = ?`, [
+          deviceId,
+        ]);
         return { outcome: 'REVOKED', device: mapDevice(deviceRow), keys: keysResult.rows.map(mapKey) } as const;
       });
     } catch (error) {
@@ -157,9 +164,10 @@ export class PostgresDeviceRepository implements DeviceRepository {
 
   async addKeyAtomically(familyId: OpaqueFamilyId, record: DeviceKeyRecord): Promise<AddKeyResult> {
     try {
-      return await runInTransaction(async (client) => {
-        const deviceResult = await client.query<DeviceRow>(
-          `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2 FOR UPDATE`,
+      return await runInTransaction(async (conn) => {
+        const deviceResult = await execute<DeviceRow>(
+          conn,
+          `SELECT * FROM devices WHERE device_id = ? AND family_id = ? FOR UPDATE`,
           [record.deviceId, familyId],
         );
         const deviceRow = deviceResult.rows[0];
@@ -167,13 +175,14 @@ export class PostgresDeviceRepository implements DeviceRepository {
         if (deviceRow.status === 'REVOKED') throw new SoftFailure<DeviceSoftCode>('DEVICE_REVOKED');
 
         try {
-          await client.query(
+          await execute(
+            conn,
             `INSERT INTO device_public_keys (device_id, key_id, key_purpose, public_key, status, created_at, revoked_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [record.deviceId, record.keyId, record.keyPurpose, record.publicKey, record.status, record.createdAt, record.revokedAt],
           );
         } catch (error) {
-          if (isUniqueViolation(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
+          if (isDuplicateEntry(error)) throw new SoftFailure<DeviceSoftCode>('DUPLICATE_KEY');
           throw error;
         }
         return { outcome: 'ADDED', key: record } as const;
@@ -187,13 +196,13 @@ export class PostgresDeviceRepository implements DeviceRepository {
   }
 
   async findKeysByDeviceForFamily(familyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceKeyRecord[]> {
-    return runInTransaction(async (client) => {
-      const device = await client.query(`SELECT 1 FROM devices WHERE device_id = $1 AND family_id = $2`, [
+    return runInTransaction(async (conn) => {
+      const device = await execute(conn, `SELECT 1 FROM devices WHERE device_id = ? AND family_id = ?`, [
         deviceId,
         familyId,
       ]);
       if (device.rowCount === 0) return [];
-      const keys = await client.query<DeviceKeyRow>(`SELECT * FROM device_public_keys WHERE device_id = $1`, [
+      const keys = await execute<DeviceKeyRow>(conn, `SELECT * FROM device_public_keys WHERE device_id = ?`, [
         deviceId,
       ]);
       return keys.rows.map(mapKey);
@@ -207,23 +216,31 @@ export class PostgresDeviceRepository implements DeviceRepository {
     revokedAt: Date,
   ): Promise<RevokeKeyResult> {
     try {
-      return await runInTransaction(async (client) => {
-        const device = await client.query(`SELECT 1 FROM devices WHERE device_id = $1 AND family_id = $2`, [
+      return await runInTransaction(async (conn) => {
+        const device = await execute(conn, `SELECT 1 FROM devices WHERE device_id = ? AND family_id = ?`, [
           deviceId,
           familyId,
         ]);
         if (device.rowCount === 0) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
 
-        const updated = await client.query<DeviceKeyRow>(
-          `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = $3
-           WHERE device_id = $1 AND key_id = $2 AND status != 'REVOKED'
-           RETURNING *`,
-          [deviceId, keyId, revokedAt],
+        const updated = await execute(
+          conn,
+          `UPDATE device_public_keys SET status = 'REVOKED', revoked_at = ?
+           WHERE device_id = ? AND key_id = ? AND status != 'REVOKED'`,
+          [revokedAt, deviceId, keyId],
         );
-        if (updated.rows[0]) return { outcome: 'REVOKED', key: mapKey(updated.rows[0]) } as const;
+        if (updated.rowCount > 0) {
+          const reread = await execute<DeviceKeyRow>(
+            conn,
+            `SELECT * FROM device_public_keys WHERE device_id = ? AND key_id = ?`,
+            [deviceId, keyId],
+          );
+          return { outcome: 'REVOKED', key: mapKey(reread.rows[0]!) } as const;
+        }
 
-        const existing = await client.query<DeviceKeyRow>(
-          `SELECT * FROM device_public_keys WHERE device_id = $1 AND key_id = $2`,
+        const existing = await execute<DeviceKeyRow>(
+          conn,
+          `SELECT * FROM device_public_keys WHERE device_id = ? AND key_id = ?`,
           [deviceId, keyId],
         );
         if (!existing.rows[0]) throw new SoftFailure<DeviceSoftCode>('KEY_NOT_FOUND');
@@ -245,19 +262,25 @@ export class PostgresDeviceRepository implements DeviceRepository {
     confirmedAt: Date,
   ): Promise<ConfirmPairingResult> {
     try {
-      return await runInTransaction(async (client) => {
-        const updated = await client.query<DeviceRow>(
-          `UPDATE devices SET status = 'PAIRED', paired_at = $3, paired_by_account_id = $4
-           WHERE device_id = $1 AND family_id = $2 AND status = 'PAIRING_PENDING'
-           RETURNING *`,
-          [deviceId, familyId, confirmedAt, confirmedByAccountId],
+      return await runInTransaction(async (conn) => {
+        const updated = await execute(
+          conn,
+          `UPDATE devices SET status = 'PAIRED', paired_at = ?, paired_by_account_id = ?
+           WHERE device_id = ? AND family_id = ? AND status = 'PAIRING_PENDING'`,
+          [confirmedAt, confirmedByAccountId, deviceId, familyId],
         );
-        if (updated.rows[0]) return { outcome: 'CONFIRMED', device: mapDevice(updated.rows[0]) } as const;
+        if (updated.rowCount > 0) {
+          const reread = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
+            deviceId,
+            familyId,
+          ]);
+          return { outcome: 'CONFIRMED', device: mapDevice(reread.rows[0]!) } as const;
+        }
 
-        const existing = await client.query<DeviceRow>(
-          `SELECT * FROM devices WHERE device_id = $1 AND family_id = $2`,
-          [deviceId, familyId],
-        );
+        const existing = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
+          deviceId,
+          familyId,
+        ]);
         const row = existing.rows[0];
         if (!row) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
         // Already PAIRED -- idempotent success, original pairedAt untouched.

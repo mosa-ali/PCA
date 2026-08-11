@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
-import { PostgresAuthRepository } from '../../dist/auth/PostgresAuthRepository.js';
+import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 import { verifyTestOnlyIdentity } from '../support/testOnlyIdentityProvider.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresAuthRepository();
+const repository = new MySqlAuthRepository();
 
 function buildService(now = () => new Date()) {
   return new AuthService(repository, now);
@@ -19,7 +19,7 @@ function subject() {
   return `subject-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-test('PG: issuing and validating a session persists through real PostgreSQL', async () => {
+test('MySQL: issuing and validating a session persists through real MySQL', async () => {
   const service = buildService();
   const identity = verifyTestOnlyIdentity(subject());
   const { rawToken, session } = await service.issueSession(identity);
@@ -27,7 +27,7 @@ test('PG: issuing and validating a session persists through real PostgreSQL', as
   assert.equal(accountId, session.accountId);
 });
 
-test('PG: the same identity resolves to the same account across sessions (DB-enforced unique reference hash)', async () => {
+test('MySQL: the same identity resolves to the same account across sessions (DB-enforced unique reference hash)', async () => {
   const service = buildService();
   const identity = verifyTestOnlyIdentity(subject());
   const first = await service.issueSession(identity);
@@ -35,18 +35,18 @@ test('PG: the same identity resolves to the same account across sessions (DB-enf
   assert.equal(first.session.accountId, second.session.accountId);
 });
 
-test('PG: token hash uniqueness is DB-enforced', async () => {
+test('MySQL: token hash uniqueness is DB-enforced', async () => {
   const now = new Date();
   const accountId = (await repository.findOrCreateAccount(Buffer.from(subject()), now)).accountId;
   const shared = { sessionId: randomUUID(), accountId, tokenHash: 'a'.repeat(64), issuedAt: now, expiresAt: new Date(now.getTime() + 60_000), revokedAt: null };
   await repository.createSession(shared);
   await assert.rejects(
     () => repository.createSession({ ...shared, sessionId: randomUUID() }),
-    (error) => error.code === '23505',
+    (error) => error.code === 'ER_DUP_ENTRY',
   );
 });
 
-test('PG: unknown and malformed tokens are rejected with the same generic error', async () => {
+test('MySQL: unknown and malformed tokens are rejected with the same generic error', async () => {
   const service = buildService();
   const unknownError = await service.validateSession('A'.repeat(43)).catch((e) => e);
   const malformedError = await service.validateSession('not a token').catch((e) => e);
@@ -54,7 +54,7 @@ test('PG: unknown and malformed tokens are rejected with the same generic error'
   assert.equal(unknownError.message, malformedError.message);
 });
 
-test('PG: exact expiry boundary rejected', async () => {
+test('MySQL: exact expiry boundary rejected', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const service = buildService(() => now);
   const { rawToken, session } = await service.issueSession(verifyTestOnlyIdentity(subject()));
@@ -63,7 +63,7 @@ test('PG: exact expiry boundary rejected', async () => {
   assert.equal(error.code, 'UNAUTHORIZED');
 });
 
-test('PG: revoked session rejected; replay after revoke fails', async () => {
+test('MySQL: revoked session rejected; replay after revoke fails', async () => {
   const service = buildService();
   const { rawToken } = await service.issueSession(verifyTestOnlyIdentity(subject()));
   await service.revokeSession(rawToken);
@@ -71,18 +71,18 @@ test('PG: revoked session rejected; replay after revoke fails', async () => {
   assert.equal(error.code, 'UNAUTHORIZED');
 });
 
-test('PG: disabled account invalidates an already-issued, unexpired session on the very next validation', async () => {
+test('MySQL: disabled account invalidates an already-issued, unexpired session on the very next validation', async () => {
   const service = buildService();
   const identity = verifyTestOnlyIdentity(subject());
   const { rawToken, session } = await service.issueSession(identity);
   await service.validateSession(rawToken);
   // Disabling is not part of the public AuthRepository contract -- use a raw query.
-  await getPool().query(`UPDATE service_accounts SET disabled_at = now() WHERE account_id = $1`, [session.accountId]);
+  await getPool().query(`UPDATE service_accounts SET disabled_at = NOW(3) WHERE account_id = ?`, [session.accountId]);
   const error = await service.validateSession(rawToken).catch((e) => e);
   assert.equal(error.code, 'UNAUTHORIZED');
 });
 
-test('PG CONCURRENCY: revocation race -- many simultaneous revoke calls converge on one winning revoked_at', async () => {
+test('MySQL CONCURRENCY: revocation race -- many simultaneous revoke calls converge on one winning revoked_at', async () => {
   const service = buildService();
   const { rawToken } = await service.issueSession(verifyTestOnlyIdentity(subject()));
   const attempts = await Promise.allSettled(Array.from({ length: 15 }, () => service.revokeSession(rawToken)));
@@ -91,12 +91,12 @@ test('PG CONCURRENCY: revocation race -- many simultaneous revoke calls converge
   assert.equal(error.code, 'UNAUTHORIZED');
 });
 
-test('PG CONCURRENCY: account-disable race -- concurrent validate calls never see an inconsistent partial state', async () => {
+test('MySQL CONCURRENCY: account-disable race -- concurrent validate calls never see an inconsistent partial state', async () => {
   const service = buildService();
   const identity = verifyTestOnlyIdentity(subject());
   const { rawToken, session } = await service.issueSession(identity);
   const [disableResult, ...validations] = await Promise.allSettled([
-    getPool().query(`UPDATE service_accounts SET disabled_at = now() WHERE account_id = $1`, [session.accountId]),
+    getPool().query(`UPDATE service_accounts SET disabled_at = NOW(3) WHERE account_id = ?`, [session.accountId]),
     ...Array.from({ length: 10 }, () => service.validateSession(rawToken)),
   ]);
   assert.equal(disableResult.status, 'fulfilled');
@@ -112,7 +112,7 @@ test('PG CONCURRENCY: account-disable race -- concurrent validate calls never se
 test('raw token never appears in the database -- only its hash is stored', async () => {
   const service = buildService();
   const { rawToken, session } = await service.issueSession(verifyTestOnlyIdentity(subject()));
-  const { rows } = await getPool().query(`SELECT token_hash FROM service_sessions WHERE session_id = $1`, [session.sessionId]);
+  const [rows] = await getPool().query(`SELECT token_hash FROM service_sessions WHERE session_id = ?`, [session.sessionId]);
   assert.equal(rows[0].token_hash.includes(rawToken), false);
   assert.notEqual(rows[0].token_hash, rawToken);
 });

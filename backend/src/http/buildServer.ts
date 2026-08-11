@@ -1,4 +1,5 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import { getPool } from '../db/pool.js';
 import type { AuthService } from '../auth/AuthService.js';
 import type { AuthzService } from '../authz/AuthzService.js';
 import type { InvitationService } from '../invitation/InvitationService.js';
@@ -20,7 +21,7 @@ export interface ServerDependencies {
 /**
  * Explicit dependency composition -- no route module instantiates its own
  * repository, service, or database connection. Production wiring
- * constructs real Postgres-backed services and passes them here; tests
+ * constructs real MySQL-backed services and passes them here; tests
  * pass differently-backed (or in-memory) services through the same shape.
  *
  * Only the reviewed Secure Invite/pairing surface is registered here.
@@ -38,7 +39,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   // route's own narrower abuse budget.
   const authAttemptLimiter = rateLimiter({ windowMs: 60_000, max: 60, bucket: 'auth-attempt' });
 
-  // Every unhandled exception (a bug, a Postgres outage, an unmapped driver
+  // Every unhandled exception (a bug, a MySQL outage, an unmapped driver
   // error) must never reach the client as a raw error.message -- that can
   // carry DB hosts/ports, constraint names, or internal invariant text.
   // Ordinary 4xx errors Fastify itself generates (oversized body, malformed
@@ -54,6 +55,18 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
 
   app.get('/health', async () => ({ service: 'pca-backend', status: 'ok' }));
+
+  // Verifies DB connectivity only -- never exposes hostname, username,
+  // password, connection string, or any table content in the response.
+  app.get('/health/db', async (_request, reply) => {
+    try {
+      await getPool().query('SELECT 1');
+      return { status: 'ok', database: 'connected' };
+    } catch {
+      reply.code(503);
+      return { status: 'error', database: 'unavailable' };
+    }
+  });
 
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,

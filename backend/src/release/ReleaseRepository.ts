@@ -13,9 +13,9 @@ export type RollbackResult =
   | { outcome: 'TARGET_NOT_PUBLISHED' };
 
 /**
- * Persistence port for release metadata. Only a deterministic in-memory
- * implementation exists today (test support); PostgreSQL persistence is a
- * separate, later slice.
+ * Persistence port for release metadata. A deterministic in-memory
+ * implementation exists for tests; MySqlReleaseRepository is the production
+ * implementation.
  *
  * Identity is the (packageType, platform, version) tuple (releaseId).
  * publishRelease is idempotent for a byte-identical resubmission and a

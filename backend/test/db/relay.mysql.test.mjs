@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { RelayService } from '../../dist/relay/RelayService.js';
-import { PostgresRelayRepository } from '../../dist/relay/PostgresRelayRepository.js';
+import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
 import { closePool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresRelayRepository();
+const repository = new MySqlRelayRepository();
 
 function buildService(now = () => new Date()) {
   return new RelayService(repository, now);
@@ -24,7 +24,7 @@ function envelope(overrides = {}) {
   };
 }
 
-test('PG: queue + retrieve by correct recipient, ciphertext stored as opaque BYTEA', async () => {
+test('MySQL: queue + retrieve by correct recipient, ciphertext stored as opaque blob', async () => {
   const service = buildService();
   const input = envelope();
   await service.queueEnvelope(input);
@@ -32,7 +32,7 @@ test('PG: queue + retrieve by correct recipient, ciphertext stored as opaque BYT
   assert.equal(fetched.ciphertext.equals(input.ciphertext), true);
 });
 
-test('PG: messageId uniqueness -- duplicate identical submission is idempotent', async () => {
+test('MySQL: messageId uniqueness -- duplicate identical submission is idempotent', async () => {
   const service = buildService();
   const input = envelope();
   const first = await service.queueEnvelope(input);
@@ -40,7 +40,7 @@ test('PG: messageId uniqueness -- duplicate identical submission is idempotent',
   assert.equal(first.messageId, second.messageId);
 });
 
-test('PG: conflicting reuse of messageId with different ciphertext is rejected', async () => {
+test('MySQL: conflicting reuse of messageId with different ciphertext is rejected', async () => {
   const service = buildService();
   const input = envelope();
   await service.queueEnvelope(input);
@@ -50,14 +50,14 @@ test('PG: conflicting reuse of messageId with different ciphertext is rejected',
   );
 });
 
-test('PG: recipient-scoped retrieval -- wrong recipient cannot read the envelope', async () => {
+test('MySQL: recipient-scoped retrieval -- wrong recipient cannot read the envelope', async () => {
   const service = buildService();
   const input = envelope();
   await service.queueEnvelope(input);
   await assert.rejects(() => service.fetchEnvelope('someone-else', input.messageId), { code: 'NOT_FOUND' });
 });
 
-test('PG: TTL expiry makes an envelope unavailable', async () => {
+test('MySQL: TTL expiry makes an envelope unavailable', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const service = buildService(() => now);
   const input = envelope({ ttlMs: 60_000 });
@@ -66,7 +66,7 @@ test('PG: TTL expiry makes an envelope unavailable', async () => {
   await assert.rejects(() => service.fetchEnvelope(input.recipientDeviceId, input.messageId), { code: 'EXPIRED' });
 });
 
-test('PG: acknowledgement is idempotent', async () => {
+test('MySQL: acknowledgement is idempotent', async () => {
   const service = buildService();
   const input = envelope();
   await service.queueEnvelope(input);
@@ -75,7 +75,7 @@ test('PG: acknowledgement is idempotent', async () => {
   assert.equal(first.acknowledgedAt.getTime(), second.acknowledgedAt.getTime());
 });
 
-test('PG CONCURRENCY: duplicate submission race -- many concurrent identical creates resolve consistently', async () => {
+test('MySQL CONCURRENCY: duplicate submission race -- many concurrent identical creates resolve consistently', async () => {
   const service = buildService();
   const input = envelope();
   const attempts = await Promise.allSettled(
@@ -85,7 +85,7 @@ test('PG CONCURRENCY: duplicate submission race -- many concurrent identical cre
   for (const outcome of attempts) assert.equal(outcome.value.ciphertext.equals(input.ciphertext), true);
 });
 
-test('PG CONCURRENCY: ack race -- many concurrent acks on one envelope all resolve to the same acknowledgedAt', async () => {
+test('MySQL CONCURRENCY: ack race -- many concurrent acks on one envelope all resolve to the same acknowledgedAt', async () => {
   const service = buildService();
   const input = envelope();
   await service.queueEnvelope(input);

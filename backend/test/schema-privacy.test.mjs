@@ -2,16 +2,27 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const migration = await readFile(new URL('../migrations/0001_service_privacy_foundation.sql', import.meta.url), 'utf8');
-const requiredTables = ['service_accounts', 'families', 'devices', 'device_public_keys', 'licenses', 'release_metadata', 'security_audit_metadata'];
-const prohibitedTerms = ['url', 'title', 'search', 'location', 'usage', 'policy', 'pin', 'private_key', 'fdek', 'recovery_secret', 'camera', 'face'];
+// Static (no-DB) privacy gate over the MySQL baseline migration -- fast
+// enough to run in the default `npm test` pipeline, unlike
+// test/db/schema-privacy.mysql.test.mjs (which asserts the same invariants
+// against a real, live-migrated database and therefore requires
+// PCA_DATABASE_URL).
+const migration = await readFile(new URL('../migrations/0001_mysql_baseline.sql', import.meta.url), 'utf8');
+const requiredTables = [
+  'schema_migrations', 'service_accounts', 'families', 'licenses', 'security_audit_metadata',
+  'service_sessions', 'service_account_family_scopes', 'enrollment_invitations',
+  'devices', 'device_public_keys', 'device_challenges',
+  'relay_envelopes', 'recovery_envelopes', 'release_packages', 'release_current_pointers',
+];
+const prohibitedTerms = [
+  'url', 'title', 'search', 'location', 'usage', 'policy', 'pin', 'private_key', 'fdek', 'recovery_secret', 'camera', 'face',
+];
 
-test('foundation migration contains only the approved minimal service tables', () => {
+test('MySQL baseline migration contains exactly the approved minimal central-service tables', () => {
   for (const table of requiredTables) assert.match(migration, new RegExp(`CREATE TABLE ${table} \\(`));
-  assert.doesNotMatch(migration, /CREATE TABLE (enrollment|relay|recovery)_/);
 });
 
-test('foundation migration does not introduce prohibited readable or secret fields', () => {
+test('MySQL baseline migration does not introduce prohibited readable or secret fields', () => {
   const schema = migration.replace(/--[^\n]*/g, '').toLowerCase();
   for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
 });

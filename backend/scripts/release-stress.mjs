@@ -1,8 +1,8 @@
 // Repeatable stress verification for concurrent same-identity release
 // publication (backend/src/release). Not part of the default `test:db`
 // run (it is deliberately slower/heavier -- 15-way concurrency x N
-// trials against real Postgres) -- run explicitly via `npm run
-// test:release-stress` whenever src/release or its Postgres repository
+// trials against real MySQL) -- run explicitly via `npm run
+// test:release-stress` whenever src/release or its MySQL repository
 // changes, and as part of this baseline's clean-room verification.
 //
 // Required invariant per every trial: for N concurrent publishRelease
@@ -14,7 +14,7 @@
 // a raw/uncaught error, and never a miscount.
 import assert from 'node:assert/strict';
 import { ReleaseService } from '../dist/release/ReleaseService.js';
-import { PostgresReleaseRepository } from '../dist/release/PostgresReleaseRepository.js';
+import { MySqlReleaseRepository } from '../dist/release/MySqlReleaseRepository.js';
 import { closePool } from '../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for release-stress.mjs.');
@@ -22,7 +22,7 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 const TRIALS = Number.parseInt(process.env.RELEASE_STRESS_TRIALS ?? '50', 10);
 const CONCURRENCY = 15;
 
-const service = new ReleaseService(new PostgresReleaseRepository());
+const service = new ReleaseService(new MySqlReleaseRepository());
 let mismatches = 0;
 
 for (let trial = 0; trial < TRIALS; trial++) {

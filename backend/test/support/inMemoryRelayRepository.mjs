@@ -1,5 +1,5 @@
 // Deterministic in-memory RelayRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryRelayRepository() {
   const byMessageId = new Map();
   const messageIdsByRecipient = new Map(); // recipientDeviceId -> Set<messageId>

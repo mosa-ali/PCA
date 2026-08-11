@@ -2,18 +2,18 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService } from '../../dist/device/DeviceDirectoryService.js';
-import { PostgresDeviceRepository } from '../../dist/device/PostgresDeviceRepository.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { PairingService } from '../../dist/pairing/PairingService.js';
 import { computeKeyFingerprint } from '../../dist/pairing/fingerprint.js';
-import { PostgresAuthRepository } from '../../dist/auth/PostgresAuthRepository.js';
+import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { closePool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresDeviceRepository();
+const repository = new MySqlDeviceRepository();
 const deviceService = new DeviceDirectoryService(repository, () => new Date());
 const pairingService = new PairingService(repository, () => new Date());
-const authRepository = new PostgresAuthRepository();
+const authRepository = new MySqlAuthRepository();
 
 function key() {
   return randomBytes(32).toString('base64url');
@@ -39,7 +39,7 @@ async function pairedCandidateDevice(familyId) {
   return { device, signingKey, encryptionKey };
 }
 
-test('PG: getPairingRequest exposes real DSK/DEK fingerprints persisted in Postgres', async () => {
+test('MySQL: getPairingRequest exposes real DSK/DEK fingerprints persisted in MySQL', async () => {
   const familyId = family();
   const { device, signingKey, encryptionKey } = await pairedCandidateDevice(familyId);
   const view = await pairingService.getPairingRequest(familyId, device.deviceId);
@@ -48,7 +48,7 @@ test('PG: getPairingRequest exposes real DSK/DEK fingerprints persisted in Postg
   assert.equal(view.dekFingerprint, computeKeyFingerprint(encryptionKey));
 });
 
-test('PG: wrong family cannot inspect a pairing request (IDOR)', async () => {
+test('MySQL: wrong family cannot inspect a pairing request (IDOR)', async () => {
   const familyId = family();
   const otherFamilyId = family();
   const { device } = await pairedCandidateDevice(familyId);
@@ -58,7 +58,7 @@ test('PG: wrong family cannot inspect a pairing request (IDOR)', async () => {
   assert.equal(wrongFamilyError.message, unknownError.message);
 });
 
-test('PG: authorized parent confirmation transitions PAIRING_PENDING -> PAIRED, persisted', async () => {
+test('MySQL: authorized parent confirmation transitions PAIRING_PENDING -> PAIRED, persisted', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   const confirmedBy = await realAccountId();
@@ -68,7 +68,7 @@ test('PG: authorized parent confirmation transitions PAIRING_PENDING -> PAIRED, 
   assert.equal(reread.status, 'PAIRED');
 });
 
-test('PG: REVOKED pairing request cannot become PAIRED', async () => {
+test('MySQL: REVOKED pairing request cannot become PAIRED', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   await deviceService.revokeDevice(familyId, device.deviceId);
@@ -79,7 +79,7 @@ test('PG: REVOKED pairing request cannot become PAIRED', async () => {
   );
 });
 
-test('PG CONCURRENCY: many genuinely simultaneous confirmation attempts converge on one winning pairedAt', async () => {
+test('MySQL CONCURRENCY: many genuinely simultaneous confirmation attempts converge on one winning pairedAt', async () => {
   const familyId = family();
   const { device } = await pairedCandidateDevice(familyId);
   const confirmedBy = await realAccountId();

@@ -1,7 +1,7 @@
 import { compareVersions } from '../../dist/release/version.js';
 
 // Deterministic in-memory ReleaseRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryReleaseRepository() {
   const releasesById = new Map();
   const pointers = new Map(); // `${packageType}:${platform}` -> CurrentPointerRecord

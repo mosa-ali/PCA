@@ -1,16 +1,16 @@
 import { buildServer } from './http/buildServer.js';
 import { AuthService } from './auth/AuthService.js';
-import { PostgresAuthRepository } from './auth/PostgresAuthRepository.js';
+import { MySqlAuthRepository } from './auth/MySqlAuthRepository.js';
 import { AuthzService } from './authz/AuthzService.js';
-import { PostgresAuthzRepository } from './authz/PostgresAuthzRepository.js';
+import { MySqlAuthzRepository } from './authz/MySqlAuthzRepository.js';
 import { InvitationService } from './invitation/InvitationService.js';
-import { PostgresInvitationRepository } from './invitation/PostgresInvitationRepository.js';
+import { MySqlInvitationRepository } from './invitation/MySqlInvitationRepository.js';
 import { EnrollmentCoordinator } from './enrollment/EnrollmentCoordinator.js';
-import { PostgresEnrollmentCoordinatorRepository } from './enrollment/PostgresEnrollmentCoordinatorRepository.js';
+import { MySqlEnrollmentCoordinatorRepository } from './enrollment/MySqlEnrollmentCoordinatorRepository.js';
 import { PairingService } from './pairing/PairingService.js';
-import { PostgresDeviceRepository } from './device/PostgresDeviceRepository.js';
+import { MySqlDeviceRepository } from './device/MySqlDeviceRepository.js';
 
-const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
 
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
@@ -19,11 +19,11 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
 
 async function start(): Promise<void> {
   const app = buildServer({
-    authService: new AuthService(new PostgresAuthRepository()),
-    authzService: new AuthzService(new PostgresAuthzRepository()),
-    invitationService: new InvitationService(new PostgresInvitationRepository()),
-    enrollmentCoordinator: new EnrollmentCoordinator(new PostgresEnrollmentCoordinatorRepository()),
-    pairingService: new PairingService(new PostgresDeviceRepository()),
+    authService: new AuthService(new MySqlAuthRepository()),
+    authzService: new AuthzService(new MySqlAuthzRepository()),
+    invitationService: new InvitationService(new MySqlInvitationRepository()),
+    enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository()),
+    pairingService: new PairingService(new MySqlDeviceRepository()),
   });
   await app.listen({ host, port });
 }

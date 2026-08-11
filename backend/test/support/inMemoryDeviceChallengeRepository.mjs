@@ -1,5 +1,5 @@
 // Deterministic in-memory DeviceChallengeRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryDeviceChallengeRepository() {
   const byId = new Map();
 

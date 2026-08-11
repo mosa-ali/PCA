@@ -23,23 +23,23 @@ const PROHIBITED_TERMS = [
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
 const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id', 'key_purpose']);
 
-test('PG SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
-  const [tables, columns] = await Promise.all([
-    getPool().query(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`),
+test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
+  const [[tables], [columns]] = await Promise.all([
+    getPool().query(`SELECT table_name AS table_name FROM information_schema.tables WHERE table_schema = DATABASE()`),
     getPool().query(
-      `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY table_name, column_name`,
+      `SELECT table_name AS table_name, column_name AS column_name FROM information_schema.columns WHERE table_schema = DATABASE() ORDER BY table_name, column_name`,
     ),
   ]);
-  assert.ok(columns.rows.length > 0, 'sanity check: schema must have columns to inspect');
+  assert.ok(columns.length > 0, 'sanity check: schema must have columns to inspect');
 
   const violations = [];
-  for (const { table_name: table } of tables.rows) {
+  for (const { table_name: table } of tables) {
     const lower = table.toLowerCase();
     for (const term of PROHIBITED_TERMS) {
       if (lower.includes(term)) violations.push(`table ${table} matches prohibited term "${term}"`);
     }
   }
-  for (const { table_name: table, column_name: column } of columns.rows) {
+  for (const { table_name: table, column_name: column } of columns) {
     const lower = column.toLowerCase();
     for (const term of PROHIBITED_TERMS) {
       if (lower.includes(term)) violations.push(`${table}.${column} matches prohibited term "${term}"`);
@@ -48,10 +48,10 @@ test('PG SCHEMA PRIVACY: no table or column name matches a prohibited family-mon
   assert.deepEqual(violations, [], violations.join('; '));
 });
 
-test('PG SCHEMA PRIVACY: any column literally named "*key*" is an allowlisted opaque/public reference, never a private key', async () => {
-  const { rows } = await getPool().query(
-    `SELECT table_name, column_name FROM information_schema.columns
-     WHERE table_schema = 'public' AND column_name ILIKE '%key%'`,
+test('MySQL SCHEMA PRIVACY: any column literally named "*key*" is an allowlisted opaque/public reference, never a private key', async () => {
+  const [rows] = await getPool().query(
+    `SELECT table_name AS table_name, column_name AS column_name FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND column_name LIKE '%key%'`,
   );
   for (const { table_name: table, column_name: column } of rows) {
     assert.ok(
@@ -61,26 +61,27 @@ test('PG SCHEMA PRIVACY: any column literally named "*key*" is an allowlisted op
   }
 });
 
-test('PG SCHEMA PRIVACY: ciphertext/opaque-blob columns are BYTEA, never TEXT (no accidental readable storage)', async () => {
+test('MySQL SCHEMA PRIVACY: ciphertext/opaque-blob columns are a BLOB family type, never TEXT/VARCHAR (no accidental readable storage)', async () => {
   const opaqueColumns = [
     ['relay_envelopes', 'ciphertext'],
     ['recovery_envelopes', 'ciphertext'],
     ['release_packages', 'signed_metadata'],
   ];
   for (const [table, column] of opaqueColumns) {
-    const { rows } = await getPool().query(
-      `SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2`,
+    const [rows] = await getPool().query(
+      `SELECT data_type AS data_type FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
       [table, column],
     );
-    assert.equal(rows[0]?.data_type, 'bytea', `${table}.${column} must be BYTEA`);
+    assert.equal(rows[0]?.data_type, 'mediumblob', `${table}.${column} must be MEDIUMBLOB`);
   }
 });
 
-test('PG SCHEMA PRIVACY: no index is built over ciphertext/opaque-blob column content', async () => {
-  const { rows } = await getPool().query(`
-    SELECT indexname, indexdef FROM pg_indexes
-    WHERE schemaname = 'public'
-      AND (indexdef ILIKE '%ciphertext%' OR indexdef ILIKE '%signed_metadata%')
+test('MySQL SCHEMA PRIVACY: no index is built over ciphertext/opaque-blob column content', async () => {
+  const [rows] = await getPool().query(`
+    SELECT DISTINCT table_name, index_name, column_name
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND column_name IN ('ciphertext', 'signed_metadata')
   `);
   assert.deepEqual(rows, [], 'no index may be built over ciphertext or opaque signed-metadata content');
 });

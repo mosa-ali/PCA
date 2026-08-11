@@ -3,28 +3,28 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { buildServer } from '../../dist/http/buildServer.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
-import { PostgresAuthRepository } from '../../dist/auth/PostgresAuthRepository.js';
+import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { AuthzService } from '../../dist/authz/AuthzService.js';
-import { PostgresAuthzRepository } from '../../dist/authz/PostgresAuthzRepository.js';
+import { MySqlAuthzRepository } from '../../dist/authz/MySqlAuthzRepository.js';
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
-import { PostgresInvitationRepository } from '../../dist/invitation/PostgresInvitationRepository.js';
+import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
 import { EnrollmentCoordinator } from '../../dist/enrollment/EnrollmentCoordinator.js';
-import { PostgresEnrollmentCoordinatorRepository } from '../../dist/enrollment/PostgresEnrollmentCoordinatorRepository.js';
+import { MySqlEnrollmentCoordinatorRepository } from '../../dist/enrollment/MySqlEnrollmentCoordinatorRepository.js';
 import { PairingService } from '../../dist/pairing/PairingService.js';
-import { PostgresDeviceRepository } from '../../dist/device/PostgresDeviceRepository.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const authRepository = new PostgresAuthRepository();
+const authRepository = new MySqlAuthRepository();
 const authService = new AuthService(authRepository);
-const authzRepository = new PostgresAuthzRepository();
+const authzRepository = new MySqlAuthzRepository();
 const authzService = new AuthzService(authzRepository);
-const invitationRepository = new PostgresInvitationRepository();
+const invitationRepository = new MySqlInvitationRepository();
 const invitationService = new InvitationService(invitationRepository);
-const deviceRepository = new PostgresDeviceRepository();
+const deviceRepository = new MySqlDeviceRepository();
 const pairingService = new PairingService(deviceRepository);
-const enrollmentCoordinator = new EnrollmentCoordinator(new PostgresEnrollmentCoordinatorRepository());
+const enrollmentCoordinator = new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository());
 
 /**
  * A fresh app per test (or per test group needing shared rate-limit state
@@ -55,20 +55,20 @@ async function createAccountWithSession() {
 
 async function grantScope(accountId, familyId, status = 'ACTIVE') {
   await getPool().query(
-    `INSERT INTO service_account_family_scopes (account_id, family_id, status, created_at) VALUES ($1, $2, $3, now())`,
+    `INSERT INTO service_account_family_scopes (account_id, family_id, status, created_at) VALUES (?, ?, ?, NOW(3))`,
     [accountId, familyId, status],
   );
 }
 
 async function addLicense(accountId, status = 'ACTIVE') {
   await getPool().query(
-    `INSERT INTO licenses (license_id, account_id, license_reference_hash, status, expires_at) VALUES ($1, $2, $3, $4, NULL)`,
+    `INSERT INTO licenses (license_id, account_id, license_reference_hash, status, expires_at) VALUES (?, ?, ?, ?, NULL)`,
     [randomUUID(), accountId, Buffer.from(randomUUID()), status],
   );
 }
 
 async function disableAccount(accountId) {
-  await getPool().query(`UPDATE service_accounts SET disabled_at = now() WHERE account_id = $1`, [accountId]);
+  await getPool().query(`UPDATE service_accounts SET disabled_at = NOW(3) WHERE account_id = ?`, [accountId]);
 }
 
 /** A fully authorized parent for a fresh family: session + ACTIVE scope + ACTIVE license. */
@@ -86,19 +86,27 @@ function authHeader(rawToken) {
 
 // --- Health -----------------------------------------------------------
 
-test('PG HTTP: GET /health works without auth', async () => {
+test('MySQL HTTP: GET /health works without auth', async () => {
   const response = await freshApp().inject({ method: 'GET', url: '/health' });
   assert.equal(response.statusCode, 200);
 });
 
+test('MySQL HTTP: GET /health/db reports connected against a real database, and exposes no connection details', async () => {
+  const response = await freshApp().inject({ method: 'GET', url: '/health/db' });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { status: 'ok', database: 'connected' });
+  const body = response.body;
+  assert.equal(/pca_test|pca_dev|127\.0\.0\.1|localhost/i.test(body), false, 'health/db must never leak host/database identifiers');
+});
+
 // --- Parent auth --------------------------------------------------------
 
-test('PG HTTP: invitation creation with no bearer is 401', async () => {
+test('MySQL HTTP: invitation creation with no bearer is 401', async () => {
   const response = await freshApp().inject({ method: 'POST', url: `/v1/families/${family()}/invitations`, payload: {} });
   assert.equal(response.statusCode, 401);
 });
 
-test('PG HTTP: malformed bearer is 401', async () => {
+test('MySQL HTTP: malformed bearer is 401', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: `/v1/families/${family()}/invitations`,
@@ -108,22 +116,22 @@ test('PG HTTP: malformed bearer is 401', async () => {
   assert.equal(response.statusCode, 401);
 });
 
-test('PG HTTP: expired bearer is 401', async () => {
+test('MySQL HTTP: expired bearer is 401', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   // Force expiry directly -- issueSession's TTL is bounded server-side, we can't request 0.
-  await getPool().query(`UPDATE service_sessions SET expires_at = now() - interval '1 second' WHERE account_id = $1`, [accountId]);
+  await getPool().query(`UPDATE service_sessions SET expires_at = NOW(3) - INTERVAL 1 SECOND WHERE account_id = ?`, [accountId]);
   const response = await freshApp().inject({ method: 'GET', url: `/v1/families/${family()}/invitations`, headers: authHeader(rawToken) });
   assert.equal(response.statusCode, 401);
 });
 
-test('PG HTTP: revoked bearer is 401', async () => {
+test('MySQL HTTP: revoked bearer is 401', async () => {
   const { rawToken } = await createAccountWithSession();
   await authService.revokeSession(rawToken);
   const response = await freshApp().inject({ method: 'GET', url: `/v1/families/${family()}/invitations`, headers: authHeader(rawToken) });
   assert.equal(response.statusCode, 401);
 });
 
-test('PG HTTP: disabled account is 401', async () => {
+test('MySQL HTTP: disabled account is 401', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   await disableAccount(accountId);
   const response = await freshApp().inject({ method: 'GET', url: `/v1/families/${family()}/invitations`, headers: authHeader(rawToken) });
@@ -132,7 +140,7 @@ test('PG HTTP: disabled account is 401', async () => {
 
 // --- Authorization --------------------------------------------------------
 
-test('PG HTTP: correct family + license succeeds creating an invitation', async () => {
+test('MySQL HTTP: correct family + license succeeds creating an invitation', async () => {
   const parent = await authorizedParent();
   const response = await freshApp().inject({
     method: 'POST',
@@ -143,7 +151,7 @@ test('PG HTTP: correct family + license succeeds creating an invitation', async 
   assert.equal(response.statusCode, 201);
 });
 
-test('PG HTTP: wrong family is 403', async () => {
+test('MySQL HTTP: wrong family is 403', async () => {
   const parent = await authorizedParent();
   const response = await freshApp().inject({
     method: 'GET',
@@ -153,7 +161,7 @@ test('PG HTTP: wrong family is 403', async () => {
   assert.equal(response.statusCode, 403);
 });
 
-test('PG HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
+test('MySQL HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   await grantScope(accountId, familyId); // scope but no license
@@ -166,7 +174,7 @@ test('PG HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
   assert.equal(response.statusCode, 403);
 });
 
-test('PG HTTP: revoked family scope is 403', async () => {
+test('MySQL HTTP: revoked family scope is 403', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   await grantScope(accountId, familyId, 'REVOKED');
@@ -176,7 +184,7 @@ test('PG HTTP: revoked family scope is 403', async () => {
 
 // --- Invitations ------------------------------------------------------
 
-test('PG HTTP: create -> status -> list -> revoke -> repeated revoke idempotent', async () => {
+test('MySQL HTTP: create -> status -> list -> revoke -> repeated revoke idempotent', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
   const created = await app.inject({
@@ -224,7 +232,7 @@ test('PG HTTP: create -> status -> list -> revoke -> repeated revoke idempotent'
   assert.equal(revokedAgain.statusCode, 200, 'repeated revoke must be idempotent, not an error');
 });
 
-test('PG HTTP: wrong-family invitation status/revoke is 404 (family-scoped lookup, indistinguishable from nonexistent)', async () => {
+test('MySQL HTTP: wrong-family invitation status/revoke is 404 (family-scoped lookup, indistinguishable from nonexistent)', async () => {
   const app = freshApp();
   const owner = await authorizedParent();
   const attacker = await authorizedParent();
@@ -264,7 +272,7 @@ test('PG HTTP: wrong-family invitation status/revoke is 404 (family-scoped looku
   assert.equal(stillActive.json().status, 'CREATED', 'the attacker\'s no-op revoke attempt must not have touched the real record');
 });
 
-test('PG HTTP: a family with no scope at all on the target family is 403 before ever reaching the invitation lookup', async () => {
+test('MySQL HTTP: a family with no scope at all on the target family is 403 before ever reaching the invitation lookup', async () => {
   const owner = await authorizedParent();
   const stranger = await createAccountWithSession(); // no scope grant anywhere
   const created = await freshApp().inject({
@@ -294,7 +302,7 @@ async function createRealInvitation(overrides = {}) {
   });
 }
 
-test('PG HTTP: valid bootstrap returns PAIRING_PENDING', async () => {
+test('MySQL HTTP: valid bootstrap returns PAIRING_PENDING', async () => {
   const { rawToken } = await createRealInvitation();
   const response = await freshApp().inject({
     method: 'POST',
@@ -305,7 +313,7 @@ test('PG HTTP: valid bootstrap returns PAIRING_PENDING', async () => {
   assert.equal(response.json().status, 'PAIRING_PENDING');
 });
 
-test('PG HTTP: malformed token is 400', async () => {
+test('MySQL HTTP: malformed token is 400', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
@@ -314,7 +322,7 @@ test('PG HTTP: malformed token is 400', async () => {
   assert.equal(response.statusCode, 400);
 });
 
-test('PG HTTP: expired/revoked/consumed/unknown invitation all collapse to the same generic 404, never a distinguishing detail', async () => {
+test('MySQL HTTP: expired/revoked/consumed/unknown invitation all collapse to the same generic 404, never a distinguishing detail', async () => {
   const app = freshApp();
   const { rawToken: expiredToken } = await createRealInvitation({ ttlMs: 1 });
   await new Promise((resolve) => setTimeout(resolve, 5));
@@ -356,7 +364,7 @@ test('PG HTTP: expired/revoked/consumed/unknown invitation all collapse to the s
   }
 });
 
-test('PG HTTP: wrong platform is a distinguishable 400 (caller\'s own request shape, not an enumeration oracle)', async () => {
+test('MySQL HTTP: wrong platform is a distinguishable 400 (caller\'s own request shape, not an enumeration oracle)', async () => {
   const { rawToken } = await createRealInvitation({ platform: 'ANDROID' });
   const response = await freshApp().inject({
     method: 'POST',
@@ -366,7 +374,7 @@ test('PG HTTP: wrong platform is a distinguishable 400 (caller\'s own request sh
   assert.equal(response.statusCode, 400);
 });
 
-test('PG HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', async () => {
+test('MySQL HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', async () => {
   const app = freshApp();
   const { rawToken: t1 } = await createRealInvitation();
   const badDsk = await app.inject({
@@ -394,7 +402,7 @@ test('PG HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', asy
   assert.equal(equal.statusCode, 400);
 });
 
-test('PG HTTP: duplicate tombstoned DSK/DEK rejected as 400', async () => {
+test('MySQL HTTP: duplicate tombstoned DSK/DEK rejected as 400', async () => {
   const app = freshApp();
   const sharedKey = key();
   const { rawToken: firstToken } = await createRealInvitation();
@@ -421,7 +429,7 @@ test('PG HTTP: duplicate tombstoned DSK/DEK rejected as 400', async () => {
   assert.equal(duplicateAsDek.statusCode, 400);
 });
 
-test('PG HTTP CONCURRENCY: 30 bootstrap attempts against one invitation -- exactly one pairing request created', async () => {
+test('MySQL HTTP CONCURRENCY: 30 bootstrap attempts against one invitation -- exactly one pairing request created', async () => {
   const app = freshApp(); // fresh 'bootstrap' rate-limit budget (max 30/min) sized to exactly this burst
   const { rawToken } = await createRealInvitation();
   const attempts = await Promise.allSettled(
@@ -439,7 +447,7 @@ test('PG HTTP CONCURRENCY: 30 bootstrap attempts against one invitation -- exact
   assert.equal(notCreated.length, 29, 'every other attempt must be rejected (404 invitation_unavailable, or 429 if it also collided with the rate-limit budget) -- never a second 201');
 });
 
-test('PG HTTP: bootstrap bucket itself rate-limits independently of invitation validity', async () => {
+test('MySQL HTTP: bootstrap bucket itself rate-limits independently of invitation validity', async () => {
   const app = freshApp(); // bootstrap bucket budget is 30/min; send 31 to guarantee at least one 429
   const responses = [];
   for (let i = 0; i < 31; i++) {
@@ -472,7 +480,7 @@ async function bootstrapDevice(app, familyId) {
   return bootstrapResponse.json().deviceId;
 }
 
-test('PG HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE', async () => {
+test('MySQL HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
   const deviceId = await bootstrapDevice(app, parent.familyId);
@@ -497,7 +505,7 @@ test('PG HTTP: authorized pairing view + confirm reaches PAIRED, never ACTIVE', 
   assert.notEqual(confirm.json().status, 'ACTIVE');
 });
 
-test('PG HTTP: wrong-family pairing view/confirm is 404 (family-scoped device lookup, indistinguishable from nonexistent)', async () => {
+test('MySQL HTTP: wrong-family pairing view/confirm is 404 (family-scoped device lookup, indistinguishable from nonexistent)', async () => {
   const app = freshApp();
   const owner = await authorizedParent();
   const attacker = await authorizedParent();
@@ -522,7 +530,7 @@ test('PG HTTP: wrong-family pairing view/confirm is 404 (family-scoped device lo
   assert.equal(confirm.statusCode, 404);
 });
 
-test('PG HTTP: a family with no scope at all on the target family is 403 for pairing routes too, before ever reaching PairingService', async () => {
+test('MySQL HTTP: a family with no scope at all on the target family is 403 for pairing routes too, before ever reaching PairingService', async () => {
   const app = freshApp();
   const owner = await authorizedParent();
   const stranger = await createAccountWithSession(); // no scope grant anywhere
@@ -543,7 +551,7 @@ test('PG HTTP: a family with no scope at all on the target family is 403 for pai
   assert.equal(confirm.statusCode, 403, 'the confirm route shares createRequireFamilyAuthorization with the view route -- must reject identically, not just the GET path');
 });
 
-test('PG HTTP: repeated confirmation is idempotent', async () => {
+test('MySQL HTTP: repeated confirmation is idempotent', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
   const deviceId = await bootstrapDevice(app, parent.familyId);
@@ -562,7 +570,7 @@ test('PG HTTP: repeated confirmation is idempotent', async () => {
   assert.equal(second.json().status, 'PAIRED');
 });
 
-test('PG HTTP: confirming a REVOKED device is 409, not silently accepted', async () => {
+test('MySQL HTTP: confirming a REVOKED device is 409, not silently accepted', async () => {
   const app = freshApp();
   const parent = await authorizedParent();
   const deviceId = await bootstrapDevice(app, parent.familyId);
@@ -577,7 +585,7 @@ test('PG HTTP: confirming a REVOKED device is 409, not silently accepted', async
 
 // --- Limits -----------------------------------------------------------
 
-test('PG HTTP: oversized invitation-creation body rejected', async () => {
+test('MySQL HTTP: oversized invitation-creation body rejected', async () => {
   const parent = await authorizedParent();
   const response = await freshApp().inject({
     method: 'POST',
@@ -588,7 +596,7 @@ test('PG HTTP: oversized invitation-creation body rejected', async () => {
   assert.equal(response.statusCode, 413);
 });
 
-test('PG HTTP: oversized bootstrap token/keys rejected as 400', async () => {
+test('MySQL HTTP: oversized bootstrap token/keys rejected as 400', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
@@ -602,7 +610,7 @@ test('PG HTTP: oversized bootstrap token/keys rejected as 400', async () => {
   assert.equal(response.statusCode, 400);
 });
 
-test('PG HTTP: malformed JSON body is rejected, not a 500', async () => {
+test('MySQL HTTP: malformed JSON body is rejected, not a 500', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
@@ -612,7 +620,7 @@ test('PG HTTP: malformed JSON body is rejected, not a 500', async () => {
   assert.ok(response.statusCode >= 400 && response.statusCode < 500);
 });
 
-test('PG HTTP: rate limiting kicks in on repeated invitation-creation requests from one caller', async () => {
+test('MySQL HTTP: rate limiting kicks in on repeated invitation-creation requests from one caller', async () => {
   const app = freshApp(); // deliberately shared across the whole burst -- this is exactly the state the limiter must accumulate
   const parent = await authorizedParent();
   const attempts = [];
@@ -632,7 +640,7 @@ test('PG HTTP: rate limiting kicks in on repeated invitation-creation requests f
 
 // --- Privacy ----------------------------------------------------------
 
-test('PG HTTP PRIVACY: server runs with logging disabled -- no bearer/raw-invite/DSK/DEK can reach any log sink', async () => {
+test('MySQL HTTP PRIVACY: server runs with logging disabled -- no bearer/raw-invite/DSK/DEK can reach any log sink', async () => {
   // buildServer() constructs Fastify with `logger: false` (see buildServer.ts) --
   // there is no request/response logger anywhere in the HTTP layer that could
   // capture an Authorization header, a raw invitation token, or a public key

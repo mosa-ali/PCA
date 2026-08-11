@@ -1,5 +1,5 @@
 // Deterministic in-memory RecoveryRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryRecoveryRepository() {
   const byFamilyId = new Map();
 

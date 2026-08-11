@@ -5,7 +5,7 @@ import type { CanonicalDomain, OpaqueFamilyId, WebRule, WebRuleListType, WebRule
  * Persistence port for parent-authored allow/deny entries and the global
  * security-feed denylist. `familyId: null` selects the security feed (see
  * WebRule.familyId); a family-scoped write must never be able to touch it.
- * Only a deterministic in-memory implementation exists today -- PostgreSQL
+ * Only a deterministic in-memory implementation exists today -- MySQL
  * persistence is a later slice, mirroring RecoveryRepository/RelayRepository.
  */
 export interface WebRuleRepository {

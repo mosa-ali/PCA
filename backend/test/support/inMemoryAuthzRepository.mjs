@@ -1,5 +1,5 @@
 // Deterministic in-memory AuthzRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryAuthzRepository() {
   const scopesByKey = new Map(); // `${accountId}:${familyId}` -> status
   const licensesByAccount = new Map(); // accountId -> [{status, expiresAt}]

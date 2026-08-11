@@ -7,9 +7,9 @@ export type StoreEnvelopeResult =
 export type DeleteEnvelopeResult = { outcome: 'DELETED' } | { outcome: 'NOT_FOUND' };
 
 /**
- * Persistence port for the opaque family recovery envelope. Only a
- * deterministic in-memory implementation exists today (test support);
- * PostgreSQL persistence is a separate, later slice.
+ * Persistence port for the opaque family recovery envelope. A deterministic
+ * in-memory implementation exists for tests; MySqlRecoveryRepository is the
+ * production implementation.
  *
  * Exactly one envelope exists per family, keyed directly by familyId --
  * there is no separate guessable envelope id, so cross-family access is

@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ReleaseService } from '../../dist/release/ReleaseService.js';
-import { PostgresReleaseRepository } from '../../dist/release/PostgresReleaseRepository.js';
+import { MySqlReleaseRepository } from '../../dist/release/MySqlReleaseRepository.js';
 import { closePool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresReleaseRepository();
+const repository = new MySqlReleaseRepository();
 const service = new ReleaseService(repository, () => new Date());
 
 let sequence = 0;
 function uniquePlatform() {
-  // MODEL_PACKAGE/SHARED lets each test use an isolated (packageType, platform) pointer lane
-  // by varying version, while distinct package types below isolate identity entirely.
   sequence += 1;
   return sequence;
 }
@@ -31,13 +29,13 @@ function release(overrides = {}) {
   };
 }
 
-test('PG: publish persists and package/version identity is DB-enforced unique', async () => {
+test('MySQL: publish persists and package/version identity is DB-enforced unique', async () => {
   const input = release();
   const record = await service.publishRelease(input);
   assert.equal(record.state, 'PUBLISHED');
 });
 
-test('PG: same identity + different immutable artifact data is CONFLICT', async () => {
+test('MySQL: same identity + different immutable artifact data is CONFLICT', async () => {
   const input = release();
   await service.publishRelease(input);
   await assert.rejects(
@@ -46,14 +44,14 @@ test('PG: same identity + different immutable artifact data is CONFLICT', async 
   );
 });
 
-test('PG: identical resubmission is idempotent', async () => {
+test('MySQL: identical resubmission is idempotent', async () => {
   const input = release();
   const first = await service.publishRelease(input);
   const second = await service.publishRelease({ ...input, signedMetadata: Buffer.from(input.signedMetadata) });
   assert.equal(first.releaseId, second.releaseId);
 });
 
-test('PG: ordinary publish cannot silently move the current pointer backward', async () => {
+test('MySQL: ordinary publish cannot silently move the current pointer backward', async () => {
   const packageType = 'MODEL_PACKAGE';
   const platform = 'ANDROID';
   const higher = release({ packageType, platform, version: '9.0.0', artifactDigest: 'c'.repeat(64) });
@@ -64,7 +62,7 @@ test('PG: ordinary publish cannot silently move the current pointer backward', a
   assert.equal(current.version, '9.0.0');
 });
 
-test('PG: rollback is a distinct transaction that CAN move the pointer backward', async () => {
+test('MySQL: rollback is a distinct transaction that CAN move the pointer backward', async () => {
   const packageType = 'MODEL_PACKAGE';
   const platform = 'IOS';
   await service.publishRelease(release({ packageType, platform, version: '1.0.0', artifactDigest: 'e'.repeat(64) }));
@@ -77,10 +75,12 @@ test('PG: rollback is a distinct transaction that CAN move the pointer backward'
   assert.equal(current.version, '1.0.0');
 });
 
-test('PG REQUIRED CONCURRENCY: simultaneous FIRST publishes into an empty pointer lane converge to the highest version, never a race-order artifact', async () => {
-  // Repeated across trials because the original bug (SELECT ... FOR UPDATE
-  // on a not-yet-existing pointer row) was non-deterministic -- it could
-  // pass by luck on any single run.
+test('MySQL REQUIRED CONCURRENCY: simultaneous FIRST publishes into an empty pointer lane converge to the highest version, never a race-order artifact', async () => {
+  // Repeated across trials because the original bug class (locking a
+  // not-yet-existing pointer row) is non-deterministic -- it could pass by
+  // luck on any single run. The MySQL implementation avoids the class of
+  // bug entirely by using a single atomic INSERT ... ON DUPLICATE KEY
+  // UPDATE with a row-constructor guard instead of SELECT ... FOR UPDATE.
   for (let trial = 0; trial < 8; trial++) {
     const packageType = 'RULE_PACKAGE';
     const platform = trial % 2 === 0 ? 'ANDROID' : 'IOS'; // fresh, empty pointer lane each trial
@@ -106,7 +106,7 @@ test('PG REQUIRED CONCURRENCY: simultaneous FIRST publishes into an empty pointe
   }
 });
 
-test('PG CONCURRENCY: many simultaneous publishes under the same identity -- exactly one canonical stored digest wins, everyone else matches or conflicts consistently', async () => {
+test('MySQL CONCURRENCY: many simultaneous publishes under the same identity -- exactly one canonical stored digest wins, everyone else matches or conflicts consistently', async () => {
   const input = release();
   const attempts = await Promise.allSettled(
     Array.from({ length: 15 }, (_, i) =>
@@ -118,14 +118,6 @@ test('PG CONCURRENCY: many simultaneous publishes under the same identity -- exa
   assert.equal(fulfilled.length + rejected.length, 15);
   assert.ok(fulfilled.length > 0, 'the true winner (whichever payload variant reaches the database first) must always succeed');
 
-  // Under 15 genuinely concurrent calls, EITHER payload variant may win the
-  // underlying INSERT race -- the two variants (input.artifactDigest vs
-  // 'b'.repeat(64)) were fired in a fixed 8-vs-7 split, but which one
-  // actually lands first in Postgres is not deterministic from the test's
-  // perspective. The real invariant is that every fulfilled call agrees on
-  // one single stored digest, every rejected call is a clean CONFLICT
-  // against that digest, and the fulfilled count exactly equals however
-  // many calls requested the digest that actually won.
   const winningDigest = fulfilled[0].value.artifactDigest;
   for (const outcome of fulfilled) {
     assert.equal(outcome.value.artifactDigest, winningDigest, 'every fulfilled call must agree on the single canonical stored digest');

@@ -1,8 +1,8 @@
 // Deterministic in-memory EnrollmentRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryEnrollmentRepository() {
   const invitationsByTokenHash = new Map();
-  const everRegisteredPublicKeys = new Set(); // permanent, matches the Postgres tombstone invariant
+  const everRegisteredPublicKeys = new Set(); // permanent, matches the MySQL tombstone invariant
 
   return {
     // Test-only seam: not part of the EnrollmentRepository interface.

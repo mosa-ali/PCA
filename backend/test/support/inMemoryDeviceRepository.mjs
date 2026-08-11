@@ -1,5 +1,5 @@
 // Deterministic in-memory DeviceRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryDeviceRepository() {
   const devicesById = new Map();
   const keysById = new Map(); // keyId -> key record

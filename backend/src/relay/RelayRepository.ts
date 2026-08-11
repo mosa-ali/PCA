@@ -11,9 +11,9 @@ export type AcknowledgeResult =
   | { outcome: 'NOT_FOUND' };
 
 /**
- * Persistence port for the opaque relay. Only a deterministic in-memory
- * implementation exists today (test support); PostgreSQL persistence is a
- * separate, later slice.
+ * Persistence port for the opaque relay. A deterministic in-memory
+ * implementation exists for tests; MySqlRelayRepository is the production
+ * implementation.
  *
  * messageId is the idempotency authority: createOrMatchEnvelope must detect
  * a duplicate submission of the identical envelope and return it unchanged

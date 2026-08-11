@@ -14,7 +14,7 @@ export type ValidateSessionResult =
 
 /**
  * Persistence port for service accounts/sessions. Only a deterministic
- * in-memory implementation exists for tests; PostgresAuthRepository is the
+ * in-memory implementation exists for tests; MySqlAuthRepository is the
  * production implementation.
  *
  * validateSession reads session and account state in one atomic query so a

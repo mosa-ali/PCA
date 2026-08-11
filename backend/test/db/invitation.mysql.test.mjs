@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
-import { PostgresInvitationRepository } from '../../dist/invitation/PostgresInvitationRepository.js';
+import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
 import { hashInvitationToken } from '../../dist/invitation/token.js';
 import { closePool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresInvitationRepository();
+const repository = new MySqlInvitationRepository();
 
 function buildService(now = () => new Date()) {
   return new InvitationService(repository, now);
@@ -20,7 +20,7 @@ const baseInput = {
   requestedProtectionMode: 'ANDROID_STANDARD',
 };
 
-test('PG: create/redeem lifecycle persists through real PostgreSQL', async () => {
+test('MySQL: create/redeem lifecycle persists through real MySQL', async () => {
   const service = buildService();
   const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
   assert.equal(record.status, 'CREATED');
@@ -28,7 +28,7 @@ test('PG: create/redeem lifecycle persists through real PostgreSQL', async () =>
   assert.equal(redeemed.status, 'REDEEMED');
 });
 
-test('PG: token hash uniqueness is DB-enforced (duplicate hash rejected by the database itself)', async () => {
+test('MySQL: token hash uniqueness is DB-enforced (duplicate hash rejected by the database itself)', async () => {
   const now = new Date('2026-01-01T00:00:00.000Z');
   const first = {
     invitationId: randomUUID(),
@@ -45,17 +45,17 @@ test('PG: token hash uniqueness is DB-enforced (duplicate hash rejected by the d
   };
   await repository.create(first);
   const second = { ...first, invitationId: randomUUID(), familyId: `family-${randomUUID()}` };
-  await assert.rejects(() => repository.create(second), (error) => error.code === '23505');
+  await assert.rejects(() => repository.create(second), (error) => error.code === 'ER_DUP_ENTRY');
 });
 
-test('PG: second redemption rejected after real commit', async () => {
+test('MySQL: second redemption rejected after real commit', async () => {
   const service = buildService();
   const { rawToken } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
   await service.redeemInvitation(rawToken);
   await assert.rejects(() => service.redeemInvitation(rawToken), { code: 'ALREADY_REDEEMED' });
 });
 
-test('PG: expired invitation cannot be redeemed', async () => {
+test('MySQL: expired invitation cannot be redeemed', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const service = buildService(() => now);
   const { rawToken } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}`, ttlMs: 60_000 });
@@ -63,14 +63,14 @@ test('PG: expired invitation cannot be redeemed', async () => {
   await assert.rejects(() => service.redeemInvitation(rawToken), { code: 'EXPIRED' });
 });
 
-test('PG: revoked invitation cannot be redeemed', async () => {
+test('MySQL: revoked invitation cannot be redeemed', async () => {
   const service = buildService();
   const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
   await service.revokeInvitation(record.invitationId);
   await assert.rejects(() => service.redeemInvitation(rawToken), { code: 'REVOKED' });
 });
 
-test('PG CRITICAL CONCURRENCY: many simultaneous redemption attempts against one invitation -- exactly 1 succeeds', async () => {
+test('MySQL CRITICAL CONCURRENCY: many simultaneous redemption attempts against one invitation -- exactly 1 succeeds', async () => {
   const service = buildService();
   const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
 
@@ -87,7 +87,7 @@ test('PG CRITICAL CONCURRENCY: many simultaneous redemption attempts against one
   assert.equal(final.status, 'REDEEMED', 'final persisted state must be REDEEMED, no duplicate enrollment state');
 });
 
-test('PG: REDEEMED is permanently terminal -- create -> redeem -> revoke -> fetch still reports REDEEMED', async () => {
+test('MySQL: REDEEMED is permanently terminal -- create -> redeem -> revoke -> fetch still reports REDEEMED', async () => {
   const service = buildService();
   const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
   await service.redeemInvitation(rawToken);
@@ -98,7 +98,7 @@ test('PG: REDEEMED is permanently terminal -- create -> redeem -> revoke -> fetc
   assert.equal(fetched.revokedAt, null);
 });
 
-test('PG CONCURRENCY: redeem raced against revoke resolves to exactly one deterministic, architecture-consistent terminal state', async () => {
+test('MySQL CONCURRENCY: redeem raced against revoke resolves to exactly one deterministic, architecture-consistent terminal state', async () => {
   for (let trial = 0; trial < 15; trial++) {
     const service = buildService();
     const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });

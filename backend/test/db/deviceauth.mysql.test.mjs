@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService } from '../../dist/device/DeviceDirectoryService.js';
-import { PostgresDeviceRepository } from '../../dist/device/PostgresDeviceRepository.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { DeviceAuthService, DeviceAuthError } from '../../dist/deviceauth/DeviceAuthService.js';
-import { PostgresDeviceChallengeRepository } from '../../dist/deviceauth/PostgresDeviceChallengeRepository.js';
+import { MySqlDeviceChallengeRepository } from '../../dist/deviceauth/MySqlDeviceChallengeRepository.js';
 import { DEVICE_CHALLENGE_TTL_MS } from '../../dist/deviceauth/policy.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const deviceRepository = new PostgresDeviceRepository();
+const deviceRepository = new MySqlDeviceRepository();
 const directoryService = new DeviceDirectoryService(deviceRepository, () => new Date());
-const challengeRepository = new PostgresDeviceChallengeRepository();
+const challengeRepository = new MySqlDeviceChallengeRepository();
 
 function key() {
   return randomBytes(32).toString('base64url');
@@ -41,7 +41,7 @@ async function registerDeviceWithDsk(familyId = family()) {
   return { device, dskPublicKey };
 }
 
-test('PG: issueChallenge persists a real row, retrievable via findById', async () => {
+test('MySQL: issueChallenge persists a real row, retrievable via findById', async () => {
   const { device } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -52,7 +52,7 @@ test('PG: issueChallenge persists a real row, retrievable via findById', async (
   assert.equal(stored.consumedAt, null);
 });
 
-test('PG: verifyChallenge with a valid signature succeeds and persists consumedAt', async () => {
+test('MySQL: verifyChallenge with a valid signature succeeds and persists consumedAt', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -62,7 +62,7 @@ test('PG: verifyChallenge with a valid signature succeeds and persists consumedA
   assert.ok(stored.consumedAt);
 });
 
-test('PG: second verification with the same replayed valid signature is ALREADY_CONSUMED after a real commit', async () => {
+test('MySQL: second verification with the same replayed valid signature is ALREADY_CONSUMED after a real commit', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -73,7 +73,7 @@ test('PG: second verification with the same replayed valid signature is ALREADY_
   assert.equal(error.code, 'ALREADY_CONSUMED');
 });
 
-test('PG REQUIRED CONCURRENCY: many genuinely simultaneous verifications of the identical replayed valid signature -- exactly one CONSUMED', async () => {
+test('MySQL REQUIRED CONCURRENCY: many genuinely simultaneous verifications of the identical replayed valid signature -- exactly one CONSUMED', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -84,7 +84,7 @@ test('PG REQUIRED CONCURRENCY: many genuinely simultaneous verifications of the 
   );
   const succeeded = attempts.filter((a) => a.status === 'fulfilled');
   const rejected = attempts.filter((a) => a.status === 'rejected');
-  assert.equal(succeeded.length, 1, 'exactly one concurrent verification of a replayed valid signature may ever succeed, even racing against real Postgres row locking');
+  assert.equal(succeeded.length, 1, 'exactly one concurrent verification of a replayed valid signature may ever succeed, even racing against real InnoDB row locking');
   assert.equal(rejected.length, 19);
   for (const outcome of rejected) {
     assert.ok(outcome.reason instanceof DeviceAuthError);
@@ -95,7 +95,7 @@ test('PG REQUIRED CONCURRENCY: many genuinely simultaneous verifications of the 
   assert.ok(stored.consumedAt);
 });
 
-test('PG: an invalid signature never consumes the challenge -- a later valid signature can still succeed', async () => {
+test('MySQL: an invalid signature never consumes the challenge -- a later valid signature can still succeed', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -108,21 +108,21 @@ test('PG: an invalid signature never consumes the challenge -- a later valid sig
   assert.equal(identity.deviceId, device.deviceId);
 });
 
-test('PG: expiry is enforced against the real persisted expires_at, not just service-side clock state', async () => {
+test('MySQL: expiry is enforced against the real persisted expires_at, not just service-side clock state', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
   // Force the persisted row to already be expired, independent of the
   // service's own in-process clock, to prove the DB layer's own guard
-  // (expires_at > $2 in consumeAtomically) is real, not just the service's
+  // (expires_at > ? in consumeAtomically) is real, not just the service's
   // pre-check.
-  await getPool().query(`UPDATE device_challenges SET expires_at = now() - interval '1 second' WHERE challenge_id = $1`, [issued.challengeId]);
+  await getPool().query(`UPDATE device_challenges SET expires_at = NOW(3) - INTERVAL 1 SECOND WHERE challenge_id = ?`, [issued.challengeId]);
   const error = await authService.verifyChallenge(issued.challengeId, sign(dskPublicKey, issued.nonce)).catch((e) => e);
   assert.ok(error instanceof DeviceAuthError);
   assert.equal(error.code, 'EXPIRED');
 });
 
-test('PG: revoking the device after challenge issuance blocks verification even with a correct signature', async () => {
+test('MySQL: revoking the device after challenge issuance blocks verification even with a correct signature', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const issued = await authService.issueChallenge(device.deviceId);
@@ -132,7 +132,7 @@ test('PG: revoking the device after challenge issuance blocks verification even 
   assert.equal(error.code, 'DEVICE_REVOKED');
 });
 
-test('PG: a DEK can never satisfy a device-authentication challenge, only the DSK, against real persisted key rows', async () => {
+test('MySQL: a DEK can never satisfy a device-authentication challenge, only the DSK, against real persisted key rows', async () => {
   const { device, dskPublicKey } = await registerDeviceWithDsk();
   const authService = buildAuthService();
   const dekPublicKey = key();
@@ -148,7 +148,7 @@ test('PG: a DEK can never satisfy a device-authentication challenge, only the DS
   assert.equal(identity.deviceId, device.deviceId);
 });
 
-test('PG: a signature valid for a DIFFERENT device\'s real persisted DSK is rejected -- the challenge is bound to the device it was issued for', async () => {
+test('MySQL: a signature valid for a DIFFERENT device\'s real persisted DSK is rejected -- the challenge is bound to the device it was issued for', async () => {
   const authService = buildAuthService();
   const { device: deviceA } = await registerDeviceWithDsk();
   const { dskPublicKey: dskB } = await registerDeviceWithDsk();
@@ -159,7 +159,7 @@ test('PG: a signature valid for a DIFFERENT device\'s real persisted DSK is reje
   assert.equal(error.code, 'INVALID_SIGNATURE');
 });
 
-test('PG: DEVICE_CHALLENGE_TTL_MS is genuinely short (sanity bound, catches an accidental policy regression)', () => {
+test('MySQL: DEVICE_CHALLENGE_TTL_MS is genuinely short (sanity bound, catches an accidental policy regression)', () => {
   assert.ok(DEVICE_CHALLENGE_TTL_MS <= 5 * 60 * 1000, 'a device-auth challenge must stay short-lived');
   assert.ok(DEVICE_CHALLENGE_TTL_MS > 0);
 });

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 // backend/test/ -- it is not part of the TypeScript build (tsconfig's
 // "include" is src/**/*.ts only) and nothing under backend/src/ imports
 // from backend/test/, so it structurally cannot reach backend/dist/ or a
-// production runtime. See test/db/auth.pg.test.mjs's
+// production runtime. See test/db/auth.mysql.test.mjs's
 // "test identity provider impossible in production runtime" assertion for
 // the automated proof.
 //

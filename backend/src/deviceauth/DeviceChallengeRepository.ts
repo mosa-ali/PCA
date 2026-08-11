@@ -7,10 +7,9 @@ export type ConsumeChallengeResult =
   | { outcome: 'ALREADY_CONSUMED' };
 
 /**
- * Persistence port for device-authentication challenges. Only a
- * deterministic in-memory implementation exists for now (test support);
- * the PostgreSQL implementation is a separate, later slice and must not be
- * faked or assumed here.
+ * Persistence port for device-authentication challenges. A deterministic
+ * in-memory implementation exists for tests; MySqlDeviceChallengeRepository
+ * is the production implementation and must not be faked or assumed here.
  *
  * consumeAtomically MUST guarantee exactly one caller ever observes
  * CONSUMED for a given challenge, even under concurrent verification

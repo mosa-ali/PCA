@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 // Deterministic in-memory AuthRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation.
+// Never used as a production substitute for the MySQL implementation.
 export function createInMemoryAuthRepository() {
   const accountsByReferenceHash = new Map(); // hex(hash) -> account
   const sessionsByTokenHash = new Map(); // tokenHash -> session

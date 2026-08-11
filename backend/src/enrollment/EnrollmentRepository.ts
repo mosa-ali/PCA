@@ -26,8 +26,8 @@ export type EnrollDeviceOutcome =
  * (doc 08 Section 3).
  *
  * Only a deterministic in-memory implementation exists for tests;
- * PostgresEnrollmentCoordinator is the production implementation and is
- * the only place that spans the invitation and device tables in a single
+ * MySqlEnrollmentCoordinatorRepository is the production implementation and
+ * is the only place that spans the invitation and device tables in a single
  * transaction -- reusing the separately-transacted InvitationRepository
  * and DeviceRepository here would NOT be atomic across both.
  */

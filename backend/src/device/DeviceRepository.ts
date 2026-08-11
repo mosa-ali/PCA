@@ -25,10 +25,9 @@ export type ConfirmPairingResult =
   | { outcome: 'INVALID_STATE' };
 
 /**
- * Persistence port for the device identity/key directory. Only a
- * deterministic in-memory implementation exists today (test support). The
- * PostgreSQL implementation is a separate, later slice and must not be
- * assumed here.
+ * Persistence port for the device identity/key directory. A deterministic
+ * in-memory implementation exists for tests; MySqlDeviceRepository is the
+ * production implementation and must not be assumed here.
  *
  * A given public key must never be registrable against more than one
  * device -- createDeviceWithKey/addKeyAtomically enforce this atomically to

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceDirectoryService, DeviceDirectoryError } from '../../dist/device/DeviceDirectoryService.js';
-import { PostgresDeviceRepository } from '../../dist/device/PostgresDeviceRepository.js';
+import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const repository = new PostgresDeviceRepository();
+const repository = new MySqlDeviceRepository();
 const service = new DeviceDirectoryService(repository, () => new Date());
 
 function key() {
@@ -18,7 +18,7 @@ function family() {
   return `family-${randomUUID()}`;
 }
 
-test('PG: device + initial key creation persists atomically', async () => {
+test('MySQL: device + initial key creation persists atomically', async () => {
   const familyId = family();
   const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   assert.equal(device.status, 'PAIRING_PENDING');
@@ -28,7 +28,7 @@ test('PG: device + initial key creation persists atomically', async () => {
   assert.equal(active[0].keyPurpose, 'DSK');
 });
 
-test('PG: public-key uniqueness is DB-enforced across devices', async () => {
+test('MySQL: public-key uniqueness is DB-enforced across devices', async () => {
   const sharedKey = key();
   const familyId = family();
   await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: sharedKey });
@@ -38,7 +38,7 @@ test('PG: public-key uniqueness is DB-enforced across devices', async () => {
   );
 });
 
-test('PG: key addition is atomic and rejects duplicates', async () => {
+test('MySQL: key addition is atomic and rejects duplicates', async () => {
   const familyId = family();
   const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   const added = await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
@@ -48,7 +48,7 @@ test('PG: key addition is atomic and rejects duplicates', async () => {
   assert.equal(active.length, 2);
 });
 
-test('PG: wrong-family lookup is indistinguishable from nonexistent device', async () => {
+test('MySQL: wrong-family lookup is indistinguishable from nonexistent device', async () => {
   const familyId = family();
   const otherFamilyId = family();
   const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
@@ -59,7 +59,7 @@ test('PG: wrong-family lookup is indistinguishable from nonexistent device', asy
   assert.equal(wrongFamilyError.message, unknownError.message);
 });
 
-test('PG: device revocation + all ACTIVE keys revoked in ONE DB transaction', async () => {
+test('MySQL: device revocation + all ACTIVE keys revoked in ONE DB transaction', async () => {
   const familyId = family();
   const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
@@ -70,7 +70,7 @@ test('PG: device revocation + all ACTIVE keys revoked in ONE DB transaction', as
   assert.equal(active.length, 0, 'every key must be revoked in the same transaction as the device');
 });
 
-test('PG CONCURRENCY: many simultaneous registrations with the same public key -- exactly 1 succeeds', async () => {
+test('MySQL CONCURRENCY: many simultaneous registrations with the same public key -- exactly 1 succeeds', async () => {
   const sharedKey = key();
   const attempts = await Promise.allSettled(
     Array.from({ length: 25 }, () => service.registerDevice({ familyId: family(), platform: 'ANDROID', keyPurpose: 'DSK', publicKey: sharedKey })),
@@ -82,12 +82,12 @@ test('PG CONCURRENCY: many simultaneous registrations with the same public key -
   for (const failure of rejected) assert.equal(failure.reason.code, 'DUPLICATE_KEY');
 });
 
-test('PG FAILURE INJECTION: createDeviceWithKey itself leaves no orphan device row when the key insert fails', async () => {
+test('MySQL FAILURE INJECTION: createDeviceWithKey itself leaves no orphan device row when the key insert fails', async () => {
   // Exercises the REAL production path (repository.createDeviceWithKey ->
   // runInTransaction), not a hand-rolled transaction, unlike the generic
   // rollback-semantics test below. The device INSERT succeeds first; the
-  // key INSERT then hits the partial-unique-index violation, which must
-  // abort the whole transaction and take the device insert down with it.
+  // key INSERT then hits the unique-index violation, which must abort the
+  // whole transaction and take the device insert down with it.
   const sharedKey = key();
   const firstFamilyId = family();
   const firstDeviceId = randomUUID();
@@ -109,35 +109,35 @@ test('PG FAILURE INJECTION: createDeviceWithKey itself leaves no orphan device r
   assert.equal(orphan, null, 'the device half of the failed pair must not survive as an orphan row');
 });
 
-test('PG FAILURE INJECTION: general Postgres rollback semantics -- an aborted transaction discards its earlier statement', async () => {
+test('MySQL FAILURE INJECTION: general InnoDB rollback semantics -- an aborted transaction discards its earlier statement', async () => {
   const familyId = family();
   const deviceId = randomUUID();
   const now = new Date();
-  const client = await getPool().connect();
+  const conn = await getPool().getConnection();
   try {
-    await client.query('BEGIN');
-    await client.query(
-      `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at) VALUES ($1,$2,'ANDROID','ACTIVE',$3,NULL)`,
+    await conn.beginTransaction();
+    await conn.query(
+      `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at) VALUES (?,?,'ANDROID','ACTIVE',?,NULL)`,
       [deviceId, familyId, now],
     );
     // Deliberately violate the platform CHECK constraint on a second,
     // unrelated insert to force this transaction to abort.
     await assert.rejects(() =>
-      client.query(`INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at) VALUES ($1,$2,'WINDOWS','ACTIVE',$3,NULL)`, [
+      conn.query(`INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at) VALUES (?,?,'WINDOWS','ACTIVE',?,NULL)`, [
         randomUUID(),
         familyId,
         now,
       ]),
     );
   } finally {
-    await client.query('ROLLBACK').catch(() => {});
-    client.release();
+    await conn.rollback().catch(() => {});
+    conn.release();
   }
   const found = await repository.findDeviceForFamily(familyId, deviceId);
   assert.equal(found, null, 'the first insert must not survive once the transaction is rolled back');
 });
 
-test('PG REVOKED_KEY_REUSE: revoked key material is permanently tombstoned in PostgreSQL -- same device, different device, different family all rejected', async () => {
+test('MySQL REVOKED_KEY_REUSE: revoked key material is permanently tombstoned -- same device, different device, different family all rejected', async () => {
   const revokedKey = key();
   const ownerFamilyId = family();
   const { device: owner } = await service.registerDevice({ familyId: ownerFamilyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: revokedKey });
@@ -164,7 +164,7 @@ test('PG REVOKED_KEY_REUSE: revoked key material is permanently tombstoned in Po
   assert.equal(error.message, 'This public key is already registered to a device.');
 });
 
-test('PG REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first revoked_at for both the device and its cascaded keys', async () => {
+test('MySQL REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first revoked_at for both the device and its cascaded keys', async () => {
   const familyId = family();
   const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
@@ -174,14 +174,14 @@ test('PG REVOCATION_IDEMPOTENCY: repeated device revocation preserves the first 
   const second = await service.revokeDevice(familyId, device.deviceId);
   assert.equal(second.revokedAt.getTime(), first.revokedAt.getTime());
 
-  const { rows } = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  const [rows] = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = ?`, [device.deviceId]);
   const keyRevokedAt = rows[0].revoked_at.getTime();
   await service.revokeDevice(familyId, device.deviceId); // third, redundant call
-  const { rows: rowsAgain } = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  const [rowsAgain] = await getPool().query(`SELECT revoked_at FROM device_public_keys WHERE device_id = ?`, [device.deviceId]);
   assert.equal(rowsAgain[0].revoked_at.getTime(), keyRevokedAt);
 });
 
-test('PG REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the first revoked_at', async () => {
+test('MySQL REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the first revoked_at', async () => {
   const familyId = family();
   const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   const first = await service.revokeKey(familyId, device.deviceId, registeredKey.keyId);
@@ -190,7 +190,7 @@ test('PG REVOCATION_IDEMPOTENCY: repeated single-key revocation preserves the fi
   assert.equal(second.revokedAt.getTime(), first.revokedAt.getTime());
 });
 
-test('PG CONCURRENCY: many genuinely simultaneous device-revocation calls converge on one winning revoked_at, not a sequential-only guarantee', async () => {
+test('MySQL CONCURRENCY: many genuinely simultaneous device-revocation calls converge on one winning revoked_at, not a sequential-only guarantee', async () => {
   const familyId = family();
   const { device } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
   await service.addDeviceKey(familyId, device.deviceId, key(), 'DEK');
@@ -202,11 +202,11 @@ test('PG CONCURRENCY: many genuinely simultaneous device-revocation calls conver
   const timestamps = new Set(attempts.map((a) => a.value.revokedAt.getTime()));
   assert.equal(timestamps.size, 1, 'every concurrent caller must observe the same single winning revocation instant');
 
-  const { rows } = await getPool().query(`SELECT DISTINCT revoked_at FROM device_public_keys WHERE device_id = $1`, [device.deviceId]);
+  const [rows] = await getPool().query(`SELECT DISTINCT revoked_at FROM device_public_keys WHERE device_id = ?`, [device.deviceId]);
   assert.equal(rows.length, 1, 'the cascaded keys must also agree on exactly one revocation instant under real concurrency');
 });
 
-test('PG CONCURRENCY: many genuinely simultaneous single-key revocation calls converge on one winning revoked_at', async () => {
+test('MySQL CONCURRENCY: many genuinely simultaneous single-key revocation calls converge on one winning revoked_at', async () => {
   const familyId = family();
   const { device, key: registeredKey } = await service.registerDevice({ familyId, platform: 'ANDROID', keyPurpose: 'DSK', publicKey: key() });
 

@@ -8,7 +8,7 @@ import type { WebDecision } from '../web/types.js';
  * Local persistence port for Safe Browser block decisions. This is
  * DEVICE-local storage per doc 14's privacy matrix (full URL/title never
  * leaves the child/parent devices) -- only a deterministic in-memory
- * implementation exists here; no PostgreSQL repository is provided, since
+ * implementation exists here; no MySQL repository is provided, since
  * this module must never centralize readable browsing history server-side.
  */
 export interface BlockDecisionStateRepository {

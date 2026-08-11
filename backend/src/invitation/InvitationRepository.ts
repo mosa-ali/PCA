@@ -10,7 +10,7 @@ export type RedemptionResult =
 /**
  * Persistence port for the invitation lifecycle. INV-A ships this interface
  * plus a deterministic in-memory implementation confined to test support.
- * The production PostgreSQL implementation (INV-B) is a separate slice and
+ * MySqlInvitationRepository (INV-B) is the production implementation and
  * must not be faked or assumed here.
  *
  * redeemAtomically MUST guarantee exactly one caller observes REDEEMED for a

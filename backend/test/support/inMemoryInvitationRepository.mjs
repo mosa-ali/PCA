@@ -1,5 +1,5 @@
 // Deterministic in-memory InvitationRepository for tests only.
-// Never used as a production substitute for the PostgreSQL implementation (INV-B).
+// Never used as a production substitute for the MySQL implementation (INV-B).
 export function createInMemoryInvitationRepository() {
   const byId = new Map();
   const byTokenHash = new Map();
