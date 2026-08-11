@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- PCA-7 location capability (org.pca.app.platform.LocationCapabilitySource):
+         foreground location, checked at runtime via ContextCompat.checkSelfPermission.
+         Neither is requested automatically; the runtime prompt flow is a separate,
+         user-visible feature slice built on top of this capability adapter. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- StandardLocationCapabilitySource.backgroundState(): API 29+ background location,
+         checked separately and live (never cached), see BackgroundLocationState. Per
+         Android policy this must be requested in its own runtime prompt after foreground
+         access is already granted, never bundled into the same request. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
