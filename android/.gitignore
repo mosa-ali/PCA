@@ -4,4 +4,7 @@ build/
 local.properties
 .idea/
 *.iml
+.kotlin/
+hs_err_pid*.log
+replay_pid*.log
 
