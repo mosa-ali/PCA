@@ -39,7 +39,7 @@ auto-grants screen time, bonus time, or unblocks anything — it is a private we
 | PCA-4 App Usage visibility (doc 15) | "high-engagement / qualifying app" foreground signal, via a narrow port (`EligibleAppSignalSource`) | Does not reimplement usage accounting |
 | PCA-2 `PersistentStateStore` / `EncryptedSharedPreferencesStateStore` | Durable local storage for policy/rate-state/custom suggestions | Does not add a second storage mechanism |
 | PCA-11 Family Envelope / FTS sync (doc 09, doc 11) | Transport contract for any parent-authored/child-feedback data that syncs; E2EE via the same envelope, no second transport | Does not read plaintext at any relay; does not invent a parallel sync channel |
-| PCA-12 retention/Delete Now (doc 11) | Same retention model; local purge hook exposed for a Delete-Now orchestrator to call | No Android-side Delete-Now orchestrator exists yet in this baseline (see Coordinator queue) — `WellbeingDataEraser.purgeAll()` is provided and must be wired in when that orchestrator lands |
+| PCA-12 retention/Delete Now (doc 11) | Same retention model; local purge hook exposed for a Delete-Now orchestrator to call | No Android-side Delete-Now orchestrator exists yet in this baseline (see `docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`) — `WellbeingDataEraser.purgeAll()` is provided and must be wired in when that orchestrator lands |
 
 ## Requirement IDs (traceability)
 
@@ -110,6 +110,58 @@ elapsed-time math (same rule as doc 12). On reboot/process death, only this dura
 restored — no elapsed time is fabricated across the boundary, and the daily counters use the same
 conservative reset-on-uncertainty policy as PCA-3's cross-boot handling: a boot-generation gap
 resets the day-window rather than assuming zero elapsed nudges were sent.
+
+## Coordinator correction round (post-review addenda)
+
+A Coordinator review of the initial PCA-WELL-1 baseline found three MEDIUM findings, closed in a
+follow-up correction round on top of the reviewed baseline. All three stay within the WELL-1
+boundary above (still only ever a nudge; PCA-3/PCA-4 remain sole enforcement authority).
+
+**WELL-1 fix -- `eligibleApps` eligibility filter.** `WellbeingNudgePolicy.eligibleApps` is a set of
+opaque, non-reversible app tokens (never human-readable names, PCA-WELL-027). **Documented default:
+an empty set means "no restriction" -- every app the `EligibleAppSignalSource` reports remains
+eligible.** A non-empty set narrows eligibility, compared by exact token equality only, and only
+for triggers that are actually about a specific foreground/just-exited app
+(`IMMEDIATE_APP_RETURN`, `PERIODIC_HIGH_ENGAGEMENT_USE`, `LONG_SESSION_ENDED`) -- it never
+restricts a break card or the child's own `CHILD_REQUESTED_IDEA` pull, neither of which is tied to
+one app. A non-matching token yields `NudgeDeliveryStatus.SUPPRESSED_APP_NOT_ELIGIBLE`. Game-return
+detection (`WellbeingTriggerDispatcher.handleAppForegrounded`) goes through the same
+`NudgeSelectionEngine.evaluate` call and therefore respects the same filter.
+
+**WELL-2 fix -- adult-supervision delivery-safety gate (PCA-WELL-026).** A suggestion with
+`requiresAdultSupervision = true` is no longer merely tagged; `NudgeSelectionEngine`'s eligibility
+filter now actually excludes it from every delivery surface except `IN_APP_CARD` (a clearly
+foreground, interactive surface) -- specifically it can never appear via
+`LOCK_SCREEN_NOTIFICATION_BEST_EFFORT`, `STANDARD_NOTIFICATION`, or `NEXT_UNLOCK_CARD`, none of
+which guarantee an adult is present. When such a suggestion is shown on `IN_APP_CARD`,
+`WellbeingCardScreen` renders an explicit, visible+accessible supervision line ("Do this with an
+adult." / AR: "افعل هذا مع شخص بالغ.") as plain `Text` -- never conveyed by color, icon, or
+animation alone, so it is TalkBack-visible like the rest of the card. No camera/microphone/
+location/Bluetooth-proximity signal was added anywhere to "verify" adult presence; this is a
+delivery-surface constraint only.
+
+**WELL-3 fix -- PCA bedtime/schedule reuse via `WellbeingScheduleContextSource`.** WELL-1 no longer
+lets its own `quietHoursStartMinuteOfDay`/`quietHoursEndMinuteOfDay` fields be the only quiet-time
+concept. A new narrow read-only port, `WellbeingScheduleContextSource`
+(`isPcaBedtimeActive()`, `isScheduledQuietContext()`), is consulted by
+`NudgeSelectionEngine.evaluate` with this suppression precedence (highest to lowest):
+
+1. PCA emergency/active-call suppression (unchanged, `SUPPRESSED_EMERGENCY` / `SUPPRESSED_CALL_ACTIVE`)
+2. PCA bedtime/schedule suppression via the new port (`SUPPRESSED_PCA_BEDTIME`) -- applies
+   regardless of trigger, including child-initiated ones, since bedtime is PCA-3's authority, not a
+   wellbeing preference
+3. Wellbeing-specific quiet hours (`SUPPRESSED_QUIET_HOURS`) -- an OPTIONAL ADDITIONAL restriction
+   only, never a substitute for bedtime, and (as before) skipped for child-initiated triggers
+4. Ordinary wellbeing eligibility
+
+Wellbeing quiet hours can only ever add extra suppression on top of PCA bedtime, never relax or
+override it. This module still does not reimplement PCA-3/PCA-4's schedule calculation: the real
+adapter wiring `WellbeingScheduleContextSource` to PCA-3's live bedtime state is a Coordinator
+integration task, same boundary as `EligibleAppSignalSource`/`SuppressionContextSource`/
+`BreakStateSource` below -- for this lane it ships with a conservative no-op default
+(`NoOpWellbeingScheduleContextSource`, always reports "not active") so the feature keeps working
+exactly as before until that wiring lands. See
+`docs/architecture/COORDINATOR_INTEGRATION_QUEUE.md`.
 
 ## iOS status
 
