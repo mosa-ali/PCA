@@ -7,11 +7,27 @@ import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
 export type FtsRejectionReason =
   | 'NOT_EXACTLY_ONE_ACTIVE_OWNER'
   | 'KEYS_NOT_DISTINCT'
+  | 'DUPLICATE_ENTRY_IDENTITY'
   | 'FAMILY_MISMATCH'
   | 'STALE_EPOCH'
+  | 'STALE_KEY_EPOCH'
   | 'INVALID_SIGNATURE';
 
 export type FtsVerdict = { accepted: true } | { accepted: false; reason: FtsRejectionReason };
+
+/**
+ * This baseline implements ONLY the ordinary path: the previous epoch's
+ * ACTIVE OWNER DSK signs the next epoch (or, at genesis, the candidate's
+ * own claimed OWNER self-certifies). Doc 09 Section 10's recovery
+ * transaction -- a DIFFERENT, multi-signer, recovery-authorized
+ * acceptance path for replacing a lost/compromised owner -- is NOT
+ * implemented here. A recovery-signed epoch is not silently mishandled:
+ * it correctly fails this engine's ordinary INVALID_SIGNATURE check
+ * (its signer is never the previous epoch's stored OWNER), so nothing
+ * unsafe happens -- but the FTS lifecycle is NOT 100% complete without a
+ * dedicated recovery-acceptance workstream built on top of this engine.
+ */
+export const FTS_RECOVERY_ACCEPTANCE = 'PENDING_RECOVERY_WORKSTREAM';
 
 function activeOwnerCount(entries: FamilyTrustSetEntry[]): number {
   return entries.filter((entry) => entry.role === 'OWNER' && entry.status === 'ACTIVE').length;
@@ -19,6 +35,41 @@ function activeOwnerCount(entries: FamilyTrustSetEntry[]): number {
 
 function findActiveOwner(epoch: FamilyTrustSetEpoch): FamilyTrustSetEntry | null {
   return epoch.entries.find((entry) => entry.role === 'OWNER' && entry.status === 'ACTIVE') ?? null;
+}
+
+/**
+ * No public key or opaque device/key id may represent more than one
+ * entry within the same epoch -- a single DSK/DEK silently standing in
+ * for two device identities (or one device identity claimed by two
+ * entries) would be a weaker trust model than doc 09's per-device DSK/DEK
+ * role separation intends, even if every individual entry is otherwise
+ * well-formed.
+ */
+function findDuplicateIdentity(entries: FamilyTrustSetEntry[]): boolean {
+  const deviceIds = new Set<string>();
+  const dskKeyIds = new Set<string>();
+  const dekKeyIds = new Set<string>();
+  const dskPublicKeys = new Set<string>();
+  const dekPublicKeys = new Set<string>();
+  for (const entry of entries) {
+    if (deviceIds.has(entry.deviceId)) return true;
+    if (dskKeyIds.has(entry.dskKeyId)) return true;
+    if (dekKeyIds.has(entry.dekKeyId)) return true;
+    if (dskPublicKeys.has(entry.dskPublicKey)) return true;
+    if (dekPublicKeys.has(entry.dekPublicKey)) return true;
+    // A DSK and a DEK live in the same "key material" space here too --
+    // isDistinctKeyPair already rejects one entry's own DSK==DEK, but an
+    // entry's DSK must also never equal ANOTHER entry's DEK (or vice
+    // versa), which would let one physical key masquerade in both roles
+    // across two claimed identities.
+    if (dekPublicKeys.has(entry.dskPublicKey) || dskPublicKeys.has(entry.dekPublicKey)) return true;
+    deviceIds.add(entry.deviceId);
+    dskKeyIds.add(entry.dskKeyId);
+    dekKeyIds.add(entry.dekKeyId);
+    dskPublicKeys.add(entry.dskPublicKey);
+    dekPublicKeys.add(entry.dekPublicKey);
+  }
+  return false;
 }
 
 /**
@@ -32,7 +83,16 @@ function findActiveOwner(epoch: FamilyTrustSetEpoch): FamilyTrustSetEntry | null
  *   1. PCA-FR-002A: the CANDIDATE epoch must contain exactly one
  *      ACTIVE OWNER entry -- a family trust set with zero or multiple
  *      active owners is never acceptable, regardless of signature.
- *   2. Every entry's DSK and DEK must be distinct key material.
+ *   2. Every entry's DSK and DEK must be distinct key material (own-entry
+ *      check), AND no deviceId/DSK key id/DEK key id/DSK public key/DEK
+ *      public key may be reused across two different entries in the same
+ *      epoch (cross-entry uniqueness -- see findDuplicateIdentity). No
+ *      single public key may silently represent multiple device
+ *      identities or roles.
+ *   2.5. keyEpoch must never DECREASE relative to the store's current
+ *      epoch (if any) -- independent of trustSetEpoch's own check below.
+ *      Equal keyEpoch is allowed (a trust-set-metadata-only change need
+ *      not itself rotate FDEK material); only a decrease is rejected.
  *   3. trustSetEpoch must be strictly greater than the store's current
  *      epoch (if any) -- this is NOT required to be exactly current+1.
  *      Doc 09 Section 3.5/PCA-SEC-020 explicitly describes only the
@@ -74,6 +134,9 @@ export async function acceptEpoch(
       return { accepted: false, reason: 'KEYS_NOT_DISTINCT' };
     }
   }
+  if (findDuplicateIdentity(epoch.entries)) {
+    return { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' };
+  }
 
   const currentEpoch = store.getCurrentEpoch();
   // Defense-in-depth: this engine's contract is one store per family, so
@@ -86,6 +149,16 @@ export async function acceptEpoch(
   }
   if (currentEpoch && epoch.trustSetEpoch <= currentEpoch.trustSetEpoch) {
     return { accepted: false, reason: 'STALE_EPOCH' };
+  }
+  // Anti-downgrade for FDEK material (doc 09 Section 3.5/PCA-SEC-019):
+  // keyEpoch may stay EQUAL to the current one (a trust-set-metadata-only
+  // change need not itself rotate FDEK material) or increase, but must
+  // never DECREASE -- a lower keyEpoch would mean accepting a trust set
+  // that claims an already-superseded, potentially-compromised key
+  // generation is current, independent of whether trustSetEpoch itself
+  // advanced.
+  if (currentEpoch && epoch.keyEpoch < currentEpoch.keyEpoch) {
+    return { accepted: false, reason: 'STALE_KEY_EPOCH' };
   }
 
   const authorizedSigner = currentEpoch ? findActiveOwner(currentEpoch) : findActiveOwner(epoch);

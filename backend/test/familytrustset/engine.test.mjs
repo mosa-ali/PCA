@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { acceptEpoch } from '../../dist/familytrustset/FamilyTrustSetEngine.js';
+import { acceptEpoch, FTS_RECOVERY_ACCEPTANCE } from '../../dist/familytrustset/FamilyTrustSetEngine.js';
 import { canonicalizeTrustSetEpoch } from '../../dist/familytrustset/canonicalize.js';
 import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryFamilyTrustSetStore.js';
 import {
@@ -185,4 +185,156 @@ test('a rejected epoch never advances the store, proven by a subsequent legitima
   const genuine = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1 });
   const verdict = await acceptEpoch(genuine, store, verifier);
   assert.deepEqual(verdict, { accepted: true });
+});
+
+// --- Key-epoch anti-downgrade -------------------------------------------
+
+test('a lower keyEpoch than the store currently holds is STALE_KEY_EPOCH, even with a higher trustSetEpoch and a correct signature', async () => {
+  const { store, verifier } = buildHarness();
+  await acceptEpoch(buildEpoch('owner-dsk-pub', { trustSetEpoch: 1, keyEpoch: 5 }), store, verifier);
+
+  const lowerKeyEpoch = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1, keyEpoch: 4 });
+  const verdict = await acceptEpoch(lowerKeyEpoch, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'STALE_KEY_EPOCH' });
+  assert.equal(store.getCurrentEpoch().keyEpoch, 5, 'the store must still hold the original keyEpoch');
+});
+
+test('an EQUAL keyEpoch is acceptable when trustSetEpoch itself still advances (a trust-set-metadata-only change need not rotate FDEK material)', async () => {
+  const { store, verifier } = buildHarness();
+  await acceptEpoch(buildEpoch('owner-dsk-pub', { trustSetEpoch: 1, keyEpoch: 5 }), store, verifier);
+
+  const sameKeyEpoch = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1, keyEpoch: 5 });
+  const verdict = await acceptEpoch(sameKeyEpoch, store, verifier);
+  assert.deepEqual(verdict, { accepted: true });
+  assert.equal(store.getCurrentEpoch().keyEpoch, 5);
+});
+
+test('a HIGHER keyEpoch (an ordinary rotation) is acceptable', async () => {
+  const { store, verifier } = buildHarness();
+  await acceptEpoch(buildEpoch('owner-dsk-pub', { trustSetEpoch: 1, keyEpoch: 5 }), store, verifier);
+
+  const higherKeyEpoch = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1, keyEpoch: 6 });
+  const verdict = await acceptEpoch(higherKeyEpoch, store, verifier);
+  assert.deepEqual(verdict, { accepted: true });
+  assert.equal(store.getCurrentEpoch().keyEpoch, 6);
+});
+
+test('a rejected STALE_KEY_EPOCH candidate never mutates the store -- proven by a subsequent legitimate epoch still succeeding from the original state', async () => {
+  const { store, verifier } = buildHarness();
+  await acceptEpoch(buildEpoch('owner-dsk-pub', { trustSetEpoch: 1, keyEpoch: 5 }), store, verifier);
+
+  const rejected = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1, keyEpoch: 1 });
+  assert.deepEqual(await acceptEpoch(rejected, store, verifier), { accepted: false, reason: 'STALE_KEY_EPOCH' });
+
+  const genuine = buildEpoch('owner-dsk-pub', { trustSetEpoch: 2, supersedesEpoch: 1, keyEpoch: 5 });
+  assert.deepEqual(await acceptEpoch(genuine, store, verifier), { accepted: true });
+});
+
+// --- Structural uniqueness -----------------------------------------------
+
+test('two entries sharing the same deviceId is DUPLICATE_ENTRY_IDENTITY', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'owner-device', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'p2', dekKeyId: 'k3', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('two entries sharing the same DSK key id is DUPLICATE_ENTRY_IDENTITY', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'owner-dsk-key', dskPublicKey: 'p2', dekKeyId: 'k3', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('two entries sharing the same DEK key id is DUPLICATE_ENTRY_IDENTITY', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'p2', dekKeyId: 'owner-dek-key', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('two entries sharing the same DSK public key is DUPLICATE_ENTRY_IDENTITY -- one physical key cannot represent two device identities', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'owner-dsk-pub', dekKeyId: 'k3', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('two entries sharing the same DEK public key is DUPLICATE_ENTRY_IDENTITY', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'p2', dekKeyId: 'k3', dekPublicKey: 'owner-dek-pub' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('one entry\'s DSK equal to a DIFFERENT entry\'s DEK is DUPLICATE_ENTRY_IDENTITY -- a key cannot masquerade in both roles across two identities', async () => {
+  const { store, verifier } = buildHarness();
+  const dup = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'owner-dek-pub', dekKeyId: 'k3', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(dup, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'DUPLICATE_ENTRY_IDENTITY' });
+});
+
+test('distinct entries with genuinely unique deviceId/DSK/DEK material are accepted', async () => {
+  const { store, verifier } = buildHarness();
+  const distinct = buildEpoch('owner-dsk-pub', {
+    entries: [
+      entry(),
+      entry({ deviceId: 'device-2', role: 'CHILD', dskKeyId: 'k2', dskPublicKey: 'p2', dekKeyId: 'k3', dekPublicKey: 'p3' }),
+    ],
+  });
+  const verdict = await acceptEpoch(distinct, store, verifier);
+  assert.deepEqual(verdict, { accepted: true });
+});
+
+// --- Recovery acceptance boundary ----------------------------------------
+
+test('recovery-transaction acceptance is explicitly marked as a pending, separate workstream, not silently claimed complete', () => {
+  assert.equal(FTS_RECOVERY_ACCEPTANCE, 'PENDING_RECOVERY_WORKSTREAM');
+});
+
+test('a recovery-authorized signer (not the previous epoch\'s stored OWNER) fails closed as INVALID_SIGNATURE, never silently accepted, since recovery acceptance is not implemented', async () => {
+  const { store, verifier } = buildHarness();
+  await acceptEpoch(buildEpoch('owner-dsk-pub'), store, verifier);
+
+  // A plausible-looking "recovery replacement" epoch signed by a brand-new
+  // key that is NOT the current owner's DSK -- ordinary acceptance must
+  // reject it rather than guess at recovery authorization it doesn't implement.
+  const recoveryAttempt = buildEpoch('recovery-authorized-key', {
+    trustSetEpoch: 2,
+    supersedesEpoch: 1,
+    entries: [entry({ deviceId: 'recovered-owner-device', dskPublicKey: 'recovery-authorized-key', dekPublicKey: 'recovery-dek-pub' })],
+  });
+  const verdict = await acceptEpoch(recoveryAttempt, store, verifier);
+  assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
+  assert.equal(store.getCurrentEpoch().trustSetEpoch, 1);
 });
