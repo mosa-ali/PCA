@@ -21,8 +21,9 @@ class StandardUsageObservationSource(
     private val wallClockTimeSource: WallClockTimeSource,
 ) : UsageObservationSource {
 
-    override fun isAccessGranted(): Boolean {
-        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+    override fun accessState(): UsageAccessState {
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+            ?: return UsageAccessState.UNAVAILABLE
         // unsafeCheckOpNoThrow requires API 29+; checkOpNoThrow (deprecated in
         // favor of it, but the only option below API 29) is required for this
         // module's actual floor, minSdk 26.
@@ -32,11 +33,11 @@ class StandardUsageObservationSource(
             @Suppress("DEPRECATION")
             appOps.checkOpNoThrow("android:get_usage_stats", Process.myUid(), context.packageName)
         }
-        return mode == AppOpsManager.MODE_ALLOWED
+        return mapAppOpsMode(mode)
     }
 
     override fun queryEventsSince(elapsedRealtimeMillis: Long): List<UsageEvent> {
-        if (!isAccessGranted()) return emptyList()
+        if (accessState() != UsageAccessState.GRANTED) return emptyList()
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
             ?: return emptyList()
 
@@ -85,4 +86,21 @@ class StandardUsageObservationSource(
             else -> null
         }
     }
+}
+
+/**
+ * Maps a real `android.app.AppOpsManager` MODE_* constant to
+ * [UsageAccessState] -- any mode not explicitly recognized falls closed to
+ * DENIED, never GRANTED. A top-level, package-visible pure function
+ * (rather than a private class member) specifically so this mapping is
+ * directly unit-testable against the real AppOpsManager constants without
+ * needing to mock the Android framework -- `MODE_*` are compile-time
+ * constant fields, referencing them does not invoke any stubbed platform
+ * method body.
+ */
+internal fun mapAppOpsMode(mode: Int): UsageAccessState = when (mode) {
+    AppOpsManager.MODE_ALLOWED -> UsageAccessState.GRANTED
+    AppOpsManager.MODE_DEFAULT -> UsageAccessState.NOT_CONFIGURED
+    AppOpsManager.MODE_IGNORED, AppOpsManager.MODE_ERRORED -> UsageAccessState.DENIED
+    else -> UsageAccessState.DENIED
 }
