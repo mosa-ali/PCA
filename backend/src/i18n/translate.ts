@@ -39,5 +39,13 @@ export function translate(
   if (params.domain !== undefined) {
     result = result.split('{domain}').join(sanitizeBidiControls(params.domain));
   }
+  // Numeric/opaque-id placeholders: substituted as plain decimal digits/text here. Locale-aware
+  // digit presentation (e.g. Arabic-Indic digits) is deliberately the CALLER's responsibility --
+  // this module hands off the raw value, never a pre-localized number string, so a caller can
+  // apply its own platform-correct formatting (see types.ts's MessageParams doc comment).
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'domain' || value === undefined) continue;
+    result = result.split(`{${key}}`).join(String(value));
+  }
   return result;
 }
