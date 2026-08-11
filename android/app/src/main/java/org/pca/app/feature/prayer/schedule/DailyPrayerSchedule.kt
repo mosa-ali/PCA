@@ -1,19 +1,25 @@
 package org.pca.app.feature.prayer.schedule
 
 import org.pca.app.feature.prayer.model.PrayerName
+import org.pca.app.feature.prayer.model.PrayerTimeOutcome
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
 /**
- * A single calendar day's prayer schedule in [zoneId]. A `null` entry means the event has no
- * solution on this date/latitude combination (midnight sun / polar night) rather than a crash —
- * astronomically correct, if rare in practice.
+ * A single calendar day's prayer schedule in [zoneId]. Every prayer maps to an explicit
+ * [PrayerTimeOutcome] — either a resolved instant or [PrayerTimeOutcome.NeedsFamilyChoice] —
+ * never a bare null, so "we couldn't compute this" is never silently indistinguishable from a
+ * missing map entry.
  */
 data class DailyPrayerSchedule(
     val date: LocalDate,
     val zoneId: ZoneId,
-    val times: Map<PrayerName, ZonedDateTime?>,
+    val outcomes: Map<PrayerName, PrayerTimeOutcome>,
 ) {
-    fun time(prayer: PrayerName): ZonedDateTime? = times[prayer]
+    fun outcome(prayer: PrayerName): PrayerTimeOutcome = outcomes.getValue(prayer)
+
+    /** Convenience accessor for callers that only care about resolved times; `null` covers both
+     * an unresolved outcome and [PrayerTimeOutcome.NeedsFamilyChoice] alike. */
+    fun time(prayer: PrayerName): ZonedDateTime? = (outcomes[prayer] as? PrayerTimeOutcome.Resolved)?.at
 }

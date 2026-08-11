@@ -128,64 +128,28 @@ class ScreenTimeEngineTest {
         assertEquals(30.minutes.inWholeNanoseconds, state.lastTickMonotonicNanos)
     }
 
-    // ---- pause / resume ----------------------------------------------------
+    // ---- pause / resume / meaningful pause ----------------------------------
+    // See MeaningfulPauseTest for the dedicated boundary tests (FINDING-001).
 
     @Test
-    fun `pause freezes accumulation and resume continues from where it left off`() {
+    fun `a short pause preserves accumulated streak on resume`() {
         var state = tick(ScreenTimeState.initial(0L), 15.minutes.inWholeNanoseconds)
         state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.Pause(15.minutes.inWholeNanoseconds), config)
         assertEquals(ScreenTimeMode.PAUSED, state.mode)
 
-        // 100 minutes pass while paused: must not accumulate.
-        state = tick(state, 115.minutes.inWholeNanoseconds)
+        // 2 minutes pass while paused, well under the default 5-minute meaningfulPause.
+        state = tick(state, 17.minutes.inWholeNanoseconds)
         assertEquals(ScreenTimeMode.PAUSED, state.mode)
         assertEquals(15.minutes.inWholeNanoseconds, state.activeElapsedNanos)
 
-        state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.Resume(115.minutes.inWholeNanoseconds), config)
+        state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.Resume(17.minutes.inWholeNanoseconds), config)
+        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
+        assertEquals(15.minutes.inWholeNanoseconds, state.activeElapsedNanos)
+
+        state = tick(state, 17.minutes.inWholeNanoseconds + 44.minutes.inWholeNanoseconds + 59.seconds.inWholeNanoseconds)
         assertEquals(ScreenTimeMode.ACTIVE, state.mode)
 
-        state = tick(state, 115.minutes.inWholeNanoseconds + 44.minutes.inWholeNanoseconds + 59.seconds.inWholeNanoseconds)
-        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
-
-        state = tick(state, 115.minutes.inWholeNanoseconds + 45.minutes.inWholeNanoseconds)
-        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
-    }
-
-    // ---- parent override ----------------------------------------------------
-
-    @Test
-    fun `parent override skips the remainder of a break immediately`() {
-        var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
-        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
-
-        state = ScreenTimeEngine.reduce(
-            state,
-            ScreenTimeEvent.ParentOverrideSkipBreak(65.minutes.inWholeNanoseconds),
-            config,
-        )
-
-        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
-        assertEquals(0L, state.activeElapsedNanos)
-        assertEquals(1, state.overriddenBreakCount)
-        assertEquals(0, state.completedBreakCount)
-    }
-
-    @Test
-    fun `parent override grants extra active time before the break is forced`() {
-        var state = tick(ScreenTimeState.initial(0L), 55.minutes.inWholeNanoseconds)
-        state = ScreenTimeEngine.reduce(
-            state,
-            ScreenTimeEvent.ParentOverrideGrantTime(55.minutes.inWholeNanoseconds, 15.minutes),
-            config,
-        )
-        // 5 minutes of headroom left before the grant, +15 granted = 20 minutes of new headroom.
-        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
-        assertEquals(20.minutes.inWholeNanoseconds, ScreenTimeEngine.remainingActiveNanos(state, config))
-
-        state = tick(state, 55.minutes.inWholeNanoseconds + 19.minutes.inWholeNanoseconds)
-        assertEquals(ScreenTimeMode.ACTIVE, state.mode)
-
-        state = tick(state, 55.minutes.inWholeNanoseconds + 20.minutes.inWholeNanoseconds)
+        state = tick(state, 17.minutes.inWholeNanoseconds + 45.minutes.inWholeNanoseconds)
         assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
     }
 
@@ -269,7 +233,22 @@ class ScreenTimeEngineTest {
 
         state = tick(state, 210.minutes.inWholeNanoseconds) // into BREAK_SHIELD again
         assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
-        state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.ParentOverrideSkipBreak(210.minutes.inWholeNanoseconds), config)
+
+        val authorization = ParentAuthorization(
+            approverId = "parent-1",
+            scope = ParentOverrideScope.SKIP_BREAK,
+            boundedDuration = kotlin.time.Duration.ZERO,
+            issuedAtEpochMillis = 0L,
+            expiresAtEpochMillis = 10_000L,
+            auditId = "audit-1",
+        )
+        val result = ParentOverrideEngine.applySkipBreakRequest(
+            state,
+            SkipBreakRequest(nowNanos = 210.minutes.inWholeNanoseconds, nowWallClockMillis = 500L, authorization = authorization),
+            config,
+        )
+        state = (result as ParentOverrideResult.Applied).state
+
         assertEquals(2, state.completedBreakCount)
         assertEquals(1, state.overriddenBreakCount)
     }

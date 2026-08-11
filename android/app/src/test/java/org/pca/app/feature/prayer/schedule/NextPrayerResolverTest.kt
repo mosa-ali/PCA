@@ -76,7 +76,11 @@ class NextPrayerResolverTest {
 
     @Test
     fun `no prayers at all resolves to null`() {
-        val emptySchedule = DailyPrayerSchedule(date, zone, PrayerName.entries.associateWith { null })
+        val emptySchedule = DailyPrayerSchedule(
+            date,
+            zone,
+            PrayerName.entries.associateWith { org.pca.app.feature.prayer.model.PrayerTimeOutcome.NeedsFamilyChoice },
+        )
         assertNull(NextPrayerResolver.resolve(scheduleFor(date).time(PrayerName.DHUHR)!!, emptySchedule, emptySchedule))
     }
 }

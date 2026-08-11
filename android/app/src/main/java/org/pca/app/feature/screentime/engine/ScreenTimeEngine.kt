@@ -7,13 +7,23 @@ import kotlin.time.Duration.Companion.minutes
 data class ScreenTimeConfig(
     val activeThreshold: Duration = 60.minutes,
     val breakDuration: Duration = 30.minutes,
+    /** How long a non-qualifying-activity pause has to last, measured on the monotonic clock,
+     * before the continuous-use streak is considered broken and reset to zero. A pause shorter
+     * than this preserves the accumulated streak on resume. */
+    val meaningfulPause: Duration = 5.minutes,
+    /** Remaining-active-time thresholds at which an informational (non-resetting) warning
+     * should be surfaced, e.g. "10 minutes left". */
+    val warningThresholds: List<Duration> = listOf(10.minutes, 5.minutes, 1.minutes),
 ) {
     val activeThresholdNanos: Long = activeThreshold.inWholeNanoseconds
     val breakDurationNanos: Long = breakDuration.inWholeNanoseconds
+    val meaningfulPauseNanos: Long = meaningfulPause.inWholeNanoseconds
 
     init {
         require(activeThresholdNanos > 0) { "activeThreshold must be positive" }
         require(breakDurationNanos > 0) { "breakDuration must be positive" }
+        require(meaningfulPauseNanos > 0) { "meaningfulPause must be positive" }
+        require(warningThresholds.all { it.inWholeNanoseconds > 0 }) { "warningThresholds must be positive" }
     }
 }
 
@@ -33,6 +43,9 @@ data class ScreenTimeState(
     val mode: ScreenTimeMode,
     val activeElapsedNanos: Long,
     val breakElapsedNanos: Long,
+    /** How long the current non-qualifying-activity pause has lasted so far. Zero whenever
+     * [mode] is not [ScreenTimeMode.PAUSED]. */
+    val pauseElapsedNanos: Long,
     val dhikrInteractionCount: Int,
     val completedBreakCount: Int,
     val overriddenBreakCount: Int,
@@ -40,12 +53,14 @@ data class ScreenTimeState(
     val preEmergencyMode: ScreenTimeMode?,
     val preEmergencyActiveElapsedNanos: Long,
     val preEmergencyBreakElapsedNanos: Long,
+    val preEmergencyPauseElapsedNanos: Long,
 ) {
     companion object {
         fun initial(nowNanos: Long): ScreenTimeState = ScreenTimeState(
             mode = ScreenTimeMode.ACTIVE,
             activeElapsedNanos = 0L,
             breakElapsedNanos = 0L,
+            pauseElapsedNanos = 0L,
             dhikrInteractionCount = 0,
             completedBreakCount = 0,
             overriddenBreakCount = 0,
@@ -53,10 +68,18 @@ data class ScreenTimeState(
             preEmergencyMode = null,
             preEmergencyActiveElapsedNanos = 0L,
             preEmergencyBreakElapsedNanos = 0L,
+            preEmergencyPauseElapsedNanos = 0L,
         )
     }
 }
 
+/**
+ * Note: parent-override requests (skip break / grant extra time) are deliberately *not* part of
+ * this event union — they carry authorization metadata and must surface an explicit typed
+ * accept/reject result rather than silently no-op, so they go through
+ * `ParentOverrideEngine.applySkipBreakRequest` / `ParentOverrideEngine.applyGrantTimeRequest`
+ * instead. See `ParentOverride.kt`.
+ */
 sealed interface ScreenTimeEvent {
     val nowNanos: Long
 
@@ -64,8 +87,6 @@ sealed interface ScreenTimeEvent {
     data class Pause(override val nowNanos: Long) : ScreenTimeEvent
     data class Resume(override val nowNanos: Long) : ScreenTimeEvent
     data class DhikrInteraction(override val nowNanos: Long) : ScreenTimeEvent
-    data class ParentOverrideSkipBreak(override val nowNanos: Long) : ScreenTimeEvent
-    data class ParentOverrideGrantTime(override val nowNanos: Long, val extra: Duration) : ScreenTimeEvent
     data class EmergencyExceptionActivate(override val nowNanos: Long) : ScreenTimeEvent
     data class EmergencyExceptionDeactivate(override val nowNanos: Long) : ScreenTimeEvent
 }
@@ -89,8 +110,6 @@ object ScreenTimeEngine {
             is ScreenTimeEvent.Pause -> applyPause(advanced)
             is ScreenTimeEvent.Resume -> applyResume(advanced)
             is ScreenTimeEvent.DhikrInteraction -> applyDhikrInteraction(advanced)
-            is ScreenTimeEvent.ParentOverrideSkipBreak -> applySkipBreak(advanced)
-            is ScreenTimeEvent.ParentOverrideGrantTime -> applyGrantTime(advanced, event.extra)
             is ScreenTimeEvent.EmergencyExceptionActivate -> applyEmergencyActivate(advanced)
             is ScreenTimeEvent.EmergencyExceptionDeactivate -> applyEmergencyDeactivate(advanced)
         }
@@ -102,7 +121,7 @@ object ScreenTimeEngine {
      * offline period or process restart). The delta itself is clamped to be non-negative so a
      * monotonic clock reading that appears to regress can never subtract accumulated progress.
      */
-    private fun advance(state: ScreenTimeState, nowNanos: Long, config: ScreenTimeConfig): ScreenTimeState {
+    internal fun advance(state: ScreenTimeState, nowNanos: Long, config: ScreenTimeConfig): ScreenTimeState {
         var current = state
         var remaining = (nowNanos - state.lastTickMonotonicNanos).coerceAtLeast(0L)
         var splits = 0
@@ -144,8 +163,23 @@ object ScreenTimeEngine {
                     }
                 }
 
-                // PAUSED and EMERGENCY_EXCEPTION freeze all accumulation; elapsed time is discarded.
-                ScreenTimeMode.PAUSED, ScreenTimeMode.EMERGENCY_EXCEPTION -> {
+                // A pause (non-qualifying activity) freezes active-time accumulation but tracks
+                // its own duration: once it has lasted >= meaningfulPause, the continuous-use
+                // streak is broken and reset to zero. A pause shorter than that preserves the
+                // streak so it can resume where it left off. This is driven purely by the
+                // monotonic delta, never by wall-clock time.
+                ScreenTimeMode.PAUSED -> {
+                    val newPauseElapsed = current.pauseElapsedNanos + remaining
+                    remaining = 0
+                    if (newPauseElapsed >= config.meaningfulPauseNanos) {
+                        current.copy(pauseElapsedNanos = newPauseElapsed, activeElapsedNanos = 0L)
+                    } else {
+                        current.copy(pauseElapsedNanos = newPauseElapsed)
+                    }
+                }
+
+                // EMERGENCY_EXCEPTION freezes all accumulation; elapsed time is discarded.
+                ScreenTimeMode.EMERGENCY_EXCEPTION -> {
                     remaining = 0
                     current
                 }
@@ -161,10 +195,18 @@ object ScreenTimeEngine {
     }
 
     private fun applyPause(state: ScreenTimeState): ScreenTimeState =
-        if (state.mode == ScreenTimeMode.ACTIVE) state.copy(mode = ScreenTimeMode.PAUSED) else state
+        if (state.mode == ScreenTimeMode.ACTIVE) {
+            state.copy(mode = ScreenTimeMode.PAUSED, pauseElapsedNanos = 0L)
+        } else {
+            state
+        }
 
     private fun applyResume(state: ScreenTimeState): ScreenTimeState =
-        if (state.mode == ScreenTimeMode.PAUSED) state.copy(mode = ScreenTimeMode.ACTIVE) else state
+        if (state.mode == ScreenTimeMode.PAUSED) {
+            state.copy(mode = ScreenTimeMode.ACTIVE, pauseElapsedNanos = 0L)
+        } else {
+            state
+        }
 
     private fun applyDhikrInteraction(state: ScreenTimeState): ScreenTimeState =
         if (state.mode == ScreenTimeMode.BREAK_SHIELD) {
@@ -172,29 +214,6 @@ object ScreenTimeEngine {
         } else {
             state
         }
-
-    /** Parent override: end the current break immediately without waiting out the remainder. */
-    private fun applySkipBreak(state: ScreenTimeState): ScreenTimeState =
-        if (state.mode == ScreenTimeMode.BREAK_SHIELD) {
-            state.copy(
-                mode = ScreenTimeMode.ACTIVE,
-                activeElapsedNanos = 0L,
-                breakElapsedNanos = 0L,
-                overriddenBreakCount = state.overriddenBreakCount + 1,
-            )
-        } else {
-            state
-        }
-
-    /** Parent override: push back the active-threshold crossing point by [extra]. */
-    private fun applyGrantTime(state: ScreenTimeState, extra: Duration): ScreenTimeState {
-        val extraNanos = extra.inWholeNanoseconds.coerceAtLeast(0L)
-        return if (state.mode == ScreenTimeMode.ACTIVE) {
-            state.copy(activeElapsedNanos = (state.activeElapsedNanos - extraNanos).coerceAtLeast(0L))
-        } else {
-            state
-        }
-    }
 
     private fun applyEmergencyActivate(state: ScreenTimeState): ScreenTimeState =
         if (state.mode == ScreenTimeMode.EMERGENCY_EXCEPTION) {
@@ -205,6 +224,7 @@ object ScreenTimeEngine {
                 preEmergencyMode = state.mode,
                 preEmergencyActiveElapsedNanos = state.activeElapsedNanos,
                 preEmergencyBreakElapsedNanos = state.breakElapsedNanos,
+                preEmergencyPauseElapsedNanos = state.pauseElapsedNanos,
             )
         }
 
@@ -214,9 +234,11 @@ object ScreenTimeEngine {
                 mode = state.preEmergencyMode ?: ScreenTimeMode.ACTIVE,
                 activeElapsedNanos = state.preEmergencyActiveElapsedNanos,
                 breakElapsedNanos = state.preEmergencyBreakElapsedNanos,
+                pauseElapsedNanos = state.preEmergencyPauseElapsedNanos,
                 preEmergencyMode = null,
                 preEmergencyActiveElapsedNanos = 0L,
                 preEmergencyBreakElapsedNanos = 0L,
+                preEmergencyPauseElapsedNanos = 0L,
             )
         } else {
             state
