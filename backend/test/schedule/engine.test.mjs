@@ -151,6 +151,110 @@ test('precedence: school mode blocks an app not on its allow scope even without 
   assert.equal(result.decision, 'BLOCKED_SCHOOL_MODE');
 });
 
+// FINDING-006: two simultaneously-active SCHOOL_MODE windows with
+// different allow scopes must combine deterministically (intersection /
+// most-restrictive-wins), never by picking whichever happens to appear
+// first in `windows`.
+
+test('FINDING-006: two overlapping school windows with different allow scopes -- app allowed by only one is blocked (intersection)', () => {
+  const windowA = window({ id: 'school-a', kind: 'SCHOOL_MODE', appScope: { apps: ['homework-app'] } });
+  const windowB = window({ id: 'school-b', kind: 'SCHOOL_MODE', appScope: { apps: ['calculator-app'] } });
+  const forwardOrder = evaluateSchedule(baseInput({ windows: [windowA, windowB], appToken: 'homework-app' }));
+  const reverseOrder = evaluateSchedule(baseInput({ windows: [windowB, windowA], appToken: 'homework-app' }));
+  assert.equal(forwardOrder.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.equal(reverseOrder.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.deepEqual(forwardOrder, reverseOrder);
+});
+
+test('FINDING-006: app allowed by every simultaneously-active school window is allowed (intersection includes it)', () => {
+  const windowA = window({ id: 'school-a', kind: 'SCHOOL_MODE', appScope: { apps: ['homework-app', 'calculator-app'] } });
+  const windowB = window({ id: 'school-b', kind: 'SCHOOL_MODE', appScope: { apps: ['calculator-app'] } });
+  const result = evaluateSchedule(baseInput({ windows: [windowA, windowB], appToken: 'calculator-app' }));
+  assert.equal(result.decision, 'ALLOWED');
+});
+
+test('FINDING-006: decision is order-independent (not array-insertion-order authority) regardless of which windows exclude the app', () => {
+  const windowA = window({ id: 'school-a', kind: 'SCHOOL_MODE', appScope: { apps: ['homework-app'] } });
+  const windowB = window({ id: 'school-b', kind: 'SCHOOL_MODE', appScope: 'ALL' });
+  const orderAB = evaluateSchedule(baseInput({ windows: [windowA, windowB], appToken: 'game-app' }));
+  const orderBA = evaluateSchedule(baseInput({ windows: [windowB, windowA], appToken: 'game-app' }));
+  assert.equal(orderAB.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.deepEqual(orderAB, orderBA);
+  // windowB (ALL scope) never excludes the app -- only windowA does, so it alone is attributed.
+  assert.deepEqual(orderAB.matchedWindowIds, ['school-a']);
+});
+
+test('FINDING-006: "same priority" -- neither window is treated as authoritative; both contribute to the block reason', () => {
+  const windowA = window({ id: 'school-a', kind: 'SCHOOL_MODE', appScope: { apps: ['homework-app'] } });
+  const windowB = window({ id: 'school-b', kind: 'SCHOOL_MODE', appScope: { apps: ['calculator-app'] } });
+  const result = evaluateSchedule(baseInput({ windows: [windowA, windowB], appToken: 'game-app' }));
+  assert.equal(result.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.deepEqual(result.matchedWindowIds, ['school-a', 'school-b']);
+  assert.equal(result.matchedWindowId, 'school-a'); // stable lexicographic pick, not insertion order
+});
+
+test('FINDING-006: cross-midnight overlap between two school windows still combines by intersection', () => {
+  const windowA = window({
+    id: 'school-a',
+    kind: 'SCHOOL_MODE',
+    daysOfWeek: [3], // Wednesday 2026-01-07
+    start: { hour: 22, minute: 0 },
+    end: { hour: 6, minute: 0 },
+    appScope: { apps: ['homework-app'] },
+  });
+  const windowB = window({
+    id: 'school-b',
+    kind: 'SCHOOL_MODE',
+    daysOfWeek: [3],
+    start: { hour: 23, minute: 0 },
+    end: { hour: 5, minute: 0 },
+    appScope: 'ALL',
+  });
+  // 02:00 Riyadh Thu (after both cross-midnight windows started Wed) -- both active, intersection excludes game-app.
+  const blocked = evaluateSchedule(
+    baseInput({ nowUtc: new Date('2026-01-07T23:00:00.000Z'), windows: [windowA, windowB], appToken: 'game-app' }),
+  );
+  assert.equal(blocked.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.deepEqual(blocked.matchedWindowIds, ['school-a']);
+
+  const allowed = evaluateSchedule(
+    baseInput({ nowUtc: new Date('2026-01-07T23:00:00.000Z'), windows: [windowA, windowB], appToken: 'homework-app' }),
+  );
+  assert.equal(allowed.decision, 'ALLOWED');
+});
+
+test('FINDING-006: DST-affected overlap between two school windows still combines by intersection', () => {
+  const windowA = window({
+    id: 'school-a',
+    kind: 'SCHOOL_MODE',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    start: { hour: 8, minute: 0 },
+    end: { hour: 10, minute: 0 },
+    appScope: { apps: ['homework-app'] },
+    timezone: 'America/New_York',
+  });
+  const windowB = window({
+    id: 'school-b',
+    kind: 'SCHOOL_MODE',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    start: { hour: 8, minute: 0 },
+    end: { hour: 10, minute: 0 },
+    appScope: 'ALL',
+    timezone: 'America/New_York',
+  });
+  // 2026-03-15T13:30:00Z is 09:30 EDT (after the spring-forward), inside both windows.
+  const result = evaluateSchedule(
+    baseInput({
+      nowUtc: new Date('2026-03-15T13:30:00.000Z'),
+      timezone: 'America/New_York',
+      windows: [windowA, windowB],
+      appToken: 'game-app',
+    }),
+  );
+  assert.equal(result.decision, 'BLOCKED_SCHOOL_MODE');
+  assert.deepEqual(result.matchedWindowIds, ['school-a']);
+});
+
 test('precedence: enforcement-unavailable reports the intended decision instead of a bare block', () => {
   const bedtime = window({ id: 'bedtime', kind: 'BEDTIME', daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
   const result = evaluateSchedule(baseInput({ windows: [bedtime], enforcementCapability: 'UNAVAILABLE' }));

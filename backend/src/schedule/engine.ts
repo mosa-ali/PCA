@@ -8,8 +8,19 @@ import type { ScheduleDecision, ScheduleDecisionKind, ScheduleEvaluationInput } 
  *      and school mode (PCA-FR-043A: exceptions exist specifically to
  *      unlock a currently-locked window).
  *   2. Bedtime blocks unconditionally for its app scope.
- *   3. School mode allows only its configured allow-scope, blocking
- *      everything else.
+ *   3. School mode allows an app only if EVERY simultaneously-active
+ *      SCHOOL_MODE window's allow-scope includes it (intersection /
+ *      most-restrictive-wins across overlapping school windows), blocking
+ *      everything else. This is a deliberate policy derivation, not a doc
+ *      quote: doc 03 FR-043/FR-043A describe school mode as a
+ *      time-window-based override but do not specify how two
+ *      simultaneously-active school windows with different allow scopes
+ *      combine. Every other ambiguous-overlap case in this engine already
+ *      resolves toward the more restrictive outcome (bedtime blocks
+ *      unconditionally, enforcement-unavailable never silently allows,
+ *      offline never relaxes control) -- intersection is the same
+ *      philosophy applied to school mode, and it is commutative, so it is
+ *      independent of the order windows appear in `input.windows`.
  *   4. An explicit block period blocks its app scope.
  *   5. An explicit allow period restricts its app scope to only inside
  *      that window (outside it, blocked).
@@ -36,6 +47,7 @@ export function evaluateSchedule(input: ScheduleEvaluationInput): ScheduleDecisi
       reason: `Intended decision ${intended.decision} cannot be confirmed enforced (capability: ${input.enforcementCapability}).`,
       intendedDecision: intended.decision,
       matchedWindowId: intended.matchedWindowId,
+      matchedWindowIds: intended.matchedWindowIds,
     };
   }
 
@@ -72,13 +84,20 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
     return { decision: 'BLOCKED_BEDTIME', reason: `Active bedtime window ${bedtime.id}.`, matchedWindowId: bedtime.id };
   }
 
-  const schoolMode = activeWindows.find((window) => window.kind === 'SCHOOL_MODE');
-  if (schoolMode && !appScopeIncludes(schoolMode.appScope, appToken)) {
-    return {
-      decision: 'BLOCKED_SCHOOL_MODE',
-      reason: `Active school-mode window ${schoolMode.id} does not allow this app.`,
-      matchedWindowId: schoolMode.id,
-    };
+  const activeSchoolModeWindows = activeWindows.filter((window) => window.kind === 'SCHOOL_MODE');
+  if (activeSchoolModeWindows.length > 0) {
+    const excludingWindows = activeSchoolModeWindows
+      .filter((window) => !appScopeIncludes(window.appScope, appToken))
+      .map((window) => window.id)
+      .sort();
+    if (excludingWindows.length > 0) {
+      return {
+        decision: 'BLOCKED_SCHOOL_MODE',
+        reason: `App is outside the allow-scope of ${excludingWindows.length} of ${activeSchoolModeWindows.length} active school-mode window(s) (intersection semantics): ${excludingWindows.join(', ')}.`,
+        matchedWindowId: excludingWindows[0],
+        matchedWindowIds: excludingWindows,
+      };
+    }
   }
 
   const blockPeriod = activeWindows.find(

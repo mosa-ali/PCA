@@ -71,8 +71,10 @@ export type ScheduleDecisionKind =
 export interface ScheduleDecision {
   decision: ScheduleDecisionKind;
   reason: string;
-  /** The window that produced a BLOCKED_ or ALLOWED_EXCEPTION verdict, when applicable. */
+  /** The window that produced a BLOCKED_ or ALLOWED_EXCEPTION verdict, when applicable. For SCHOOL_MODE, this is the lexicographically-first id in matchedWindowIds -- a stable pick, never insertion order. */
   matchedWindowId?: string;
+  /** All windows that jointly produced the verdict, when more than one contributed (currently only BLOCKED_SCHOOL_MODE with multiple simultaneously-active school-mode windows). Sorted by id, never by array/insertion order. */
+  matchedWindowIds?: string[];
   /** Present only for ENFORCEMENT_UNAVAILABLE: what the engine would otherwise have decided, so the UI can show an honest "should be X, cannot confirm enforcement" state rather than a bare unknown. */
   intendedDecision?: ScheduleDecisionKind;
   remainingMinutesToday?: number;
