@@ -45,7 +45,13 @@ $RecoveryPatterns = @(
 )
 $TelemetryPatterns = @(
   '(?i)com\.google\.firebase', '(?i)firebase-(analytics|crashlytics|performance)',
-  '(?i)(sentry|mixpanel|amplitude|segment|posthog|datadog|newrelic|appcenter|fullstory|hotjar|logrocket)'
+  '(?i)(sentry|mixpanel|amplitude|posthog|datadog|newrelic|appcenter|fullstory|hotjar|logrocket)',
+  # Segment.io: matched on its actual package-reference shapes (scoped npm package, or the
+  # "segment-analytics"/"analytics-node" package names its docs use), not the bare word --
+  # unlike the other SDK names above, "segment" is also an ordinary English word (e.g. "a
+  # parent-directory segment") that legitimately appears in unrelated code/comments, so a
+  # substring match on it alone is not a reliable telemetry signal.
+  '(?i)(@segment/|segment-analytics|analytics-node\b)'
 )
 # (?<![A-Za-z]) is a required word-boundary guard: without it, this pattern
 # matches "print" as a mere substring of an unrelated identifier (e.g.
