@@ -30,6 +30,22 @@ object NudgeSelectionEngine {
      * hours, since nothing is being pushed at them; they asked. */
     private val CHILD_INITIATED = setOf(NudgeTrigger.CHILD_REQUESTED_IDEA)
 
+    /** Triggers that are about a specific foreground/just-exited app, and therefore the only ones
+     * [WellbeingNudgePolicy.eligibleApps] (WELL-1) is meaningful for. A non-empty `eligibleApps`
+     * never restricts triggers that aren't about a particular app (e.g. a break card or the
+     * child's own [NudgeTrigger.CHILD_REQUESTED_IDEA] pull). */
+    private val APP_SIGNAL_DRIVEN_TRIGGERS = setOf(
+        NudgeTrigger.IMMEDIATE_APP_RETURN,
+        NudgeTrigger.PERIODIC_HIGH_ENGAGEMENT_USE,
+        NudgeTrigger.LONG_SESSION_ENDED,
+    )
+
+    /** Delivery surfaces that are clearly foreground and interactive -- the only ones a suggestion
+     * marked [WellbeingSuggestion.requiresAdultSupervision] may ever be offered on (WELL-2). Every
+     * other surface (lock screen, standard/background notification, next-unlock card) may be seen
+     * with no adult present, so a hazard-adjacent suggestion must never appear there. */
+    private val ADULT_SUPERVISION_SAFE_DELIVERIES = setOf(WellbeingNudgeDelivery.IN_APP_CARD)
+
     fun evaluate(
         policy: WellbeingNudgePolicy,
         context: NudgeTriggerContext,
@@ -39,6 +55,9 @@ object NudgeSelectionEngine {
         requestedCount: Int = defaultRequestedCount(context),
     ): Pair<NudgeSelection, NudgeRateState> {
         suppressionStatus(policy, context)?.let {
+            return NudgeSelection(it, emptyList(), null) to rateState
+        }
+        appEligibilityStatus(policy, context)?.let {
             return NudgeSelection(it, emptyList(), null) to rateState
         }
 
@@ -169,6 +188,12 @@ object NudgeSelectionEngine {
         !policy.enabled -> NudgeDeliveryStatus.SUPPRESSED_POLICY_DISABLED
         context.isEmergencyActive -> NudgeDeliveryStatus.SUPPRESSED_EMERGENCY
         context.isCallActive -> NudgeDeliveryStatus.SUPPRESSED_CALL_ACTIVE
+        // PCA-3 bedtime/schedule suppression (WELL-3) ranks second, immediately below emergency/
+        // call safety, and strictly above wellbeing's own optional quiet-hours fields (checked
+        // later, only for non-child-initiated triggers): bedtime is never overridden by a
+        // wellbeing-local override window, and unlike wellbeing quiet hours it also applies to
+        // child-initiated triggers -- it is PCA-3's authority, not a wellbeing preference.
+        context.isPcaBedtimeActive || context.isScheduledQuietContext -> NudgeDeliveryStatus.SUPPRESSED_PCA_BEDTIME
         context.isNavigationOrSafetyContextActive -> NudgeDeliveryStatus.SUPPRESSED_NAVIGATION_SAFETY
         context.isSchoolModeActive -> NudgeDeliveryStatus.SUPPRESSED_POLICY_DISABLED
         context.isCriticalWarningActive -> NudgeDeliveryStatus.SUPPRESSED_DEGRADED_STATE
@@ -178,6 +203,18 @@ object NudgeSelectionEngine {
         context.trigger == NudgeTrigger.BREAK_STARTED && !policy.breakSuggestionsEnabled -> NudgeDeliveryStatus.SUPPRESSED_POLICY_DISABLED
         context.trigger == NudgeTrigger.BREAK_COMPLETED && !policy.breakSuggestionsEnabled -> NudgeDeliveryStatus.SUPPRESSED_POLICY_DISABLED
         else -> null
+    }
+
+    /** WELL-1: an empty [WellbeingNudgePolicy.eligibleApps] is the documented "no restriction"
+     * default -- every app observed via `EligibleAppSignalSource` remains eligible, exactly as
+     * before this field was consumed. A non-empty set narrows eligibility, for app-driven triggers
+     * only, to those opaque tokens -- compared for exact equality only, never by readable app
+     * name (PCA-WELL-027: app names must never appear here or anywhere else in this module). */
+    private fun appEligibilityStatus(policy: WellbeingNudgePolicy, context: NudgeTriggerContext): NudgeDeliveryStatus? {
+        if (policy.eligibleApps.isEmpty()) return null
+        if (context.trigger !in APP_SIGNAL_DRIVEN_TRIGGERS) return null
+        val token = context.eligibleAppToken
+        return if (token == null || token !in policy.eligibleApps) NudgeDeliveryStatus.SUPPRESSED_APP_NOT_ELIGIBLE else null
     }
 
     private fun rateLimitStatus(
@@ -236,6 +273,10 @@ object NudgeSelectionEngine {
             (suggestion.category != WellbeingCategory.FAITH_POSITIVE || policy.faithContentEnabled) &&
             suggestion.duration in policy.durationPreferences &&
             (delivery != WellbeingNudgeDelivery.LOCK_SCREEN_NOTIFICATION_BEST_EFFORT || suggestion.lockScreenSafe) &&
+            // WELL-2: a suggestion requiring adult supervision may only ever be offered on a
+            // clearly foreground, interactive surface -- never on the lock screen, an ordinary/
+            // background notification, or the next-unlock card, where no adult context exists.
+            (!suggestion.requiresAdultSupervision || delivery in ADULT_SUPERVISION_SAFE_DELIVERIES) &&
             notSuppressed(suggestion.suggestionId, rateState, context.nowMonotonicNanos) &&
             notOnRepeatCooldown(suggestion.suggestionId, rateState, context.nowMonotonicNanos, policy)
     }

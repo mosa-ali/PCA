@@ -11,6 +11,14 @@ import kotlin.time.Duration.Companion.minutes
  */
 data class WellbeingNudgePolicy(
     val enabled: Boolean = true,
+    /** Opaque, non-reversible eligible-app tokens (never human-readable app names, PCA-WELL-027) a
+     * nudge/game-return trigger must match to qualify (WELL-1). Comparison is exact-token-equality
+     * only. **Documented default: an empty set means "no restriction" -- every app the
+     * `EligibleAppSignalSource` reports is considered eligible**, i.e. the family has not narrowed
+     * wellbeing nudging to a specific app allowlist. This restriction only ever applies to triggers
+     * that are actually about a specific foreground/just-exited app (`IMMEDIATE_APP_RETURN`,
+     * `PERIODIC_HIGH_ENGAGEMENT_USE`, `LONG_SESSION_ENDED`); it never affects break cards or a
+     * child's own `CHILD_REQUESTED_IDEA` pull, which are not tied to any one app. */
     val eligibleApps: Set<String> = emptySet(),
     val enabledCategories: Set<WellbeingCategory> = WellbeingCategory.entries.toSet(),
     val faithContentEnabled: Boolean = true,

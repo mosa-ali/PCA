@@ -82,6 +82,15 @@ enum class NudgeDeliveryStatus {
     SUPPRESSED_NAVIGATION_SAFETY,
     SUPPRESSED_DEGRADED_STATE,
     NO_ELIGIBLE_SUGGESTION,
+    /** PCA-3 bedtime/schedule is active (or a PCA-scheduled quiet context otherwise applies),
+     * consulted via [org.pca.app.feature.wellbeing.ports.WellbeingScheduleContextSource] (WELL-3).
+     * This always outranks wellbeing's own optional `quietHoursStartMinuteOfDay`/`EndMinuteOfDay`
+     * fields -- PCA bedtime is never overridden by a wellbeing-local override window. */
+    SUPPRESSED_PCA_BEDTIME,
+    /** [WellbeingNudgePolicy.eligibleApps] is non-empty and the app driving this trigger is not in
+     * that set (WELL-1). Never applies to triggers that are not tied to a specific foreground/
+     * just-exited app (e.g. [NudgeTrigger.CHILD_REQUESTED_IDEA], [NudgeTrigger.BREAK_STARTED]). */
+    SUPPRESSED_APP_NOT_ELIGIBLE,
 }
 
 /** Outcome of the intentional-use reflection prompt after repeated rapid re-entry. */
