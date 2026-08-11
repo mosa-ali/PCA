@@ -35,6 +35,19 @@ fun WellbeingCardScreen(
         for ((suggestion, text) in state.suggestions) {
             Column(modifier = Modifier.padding(vertical = 8.dp).semantics { contentDescription = text }) {
                 Text(text = text, style = MaterialTheme.typography.bodyLarge)
+                // WELL-2: a hazard-adjacent suggestion is only ever delivered on this foreground,
+                // interactive surface in the first place (NudgeSelectionEngine's delivery-safety
+                // rule) -- this visible+accessible indicator is the required, non-color/icon-only
+                // supervision cue for it. Plain Text (not a color/icon/animation) so it survives
+                // TalkBack, high-contrast, and print/screenshot review equally.
+                if (suggestion.requiresAdultSupervision) {
+                    val supervisionText = stringResource(R.string.wellbeing_card_requires_adult_supervision)
+                    // Plain `Text` automatically exposes its string as an accessible
+                    // (TalkBack-readable) semantics node -- no separate contentDescription is
+                    // needed for this to be screen-reader visible, and this text is never
+                    // conveyed by color/icon/animation alone.
+                    Text(text = supervisionText, style = MaterialTheme.typography.bodyMedium)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { onSuggestionFeedback(suggestion, NudgeFeedbackType.HELPFUL) }) {
                         Text(stringResource(R.string.wellbeing_card_helpful))

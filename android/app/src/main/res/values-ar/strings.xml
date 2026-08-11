@@ -24,6 +24,7 @@
     <string name="wellbeing_card_not_for_me">ليست مناسبة لي</string>
     <string name="wellbeing_card_remind_later">ذكّرني لاحقًا</string>
     <string name="wellbeing_card_done">قمت بذلك</string>
+    <string name="wellbeing_card_requires_adult_supervision">افعل هذا مع شخص بالغ.</string>
     <string name="wellbeing_give_me_an_idea_title">أعطني فكرة</string>
     <string name="wellbeing_give_me_an_idea_button">أعطني فكرة</string>
     <string name="wellbeing_game_return_title">مرحبًا بعودتك</string>

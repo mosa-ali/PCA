@@ -22,6 +22,7 @@
     <string name="wellbeing_card_not_for_me">Not for me</string>
     <string name="wellbeing_card_remind_later">Remind me later</string>
     <string name="wellbeing_card_done">I did it</string>
+    <string name="wellbeing_card_requires_adult_supervision">Do this with an adult.</string>
     <string name="wellbeing_give_me_an_idea_title">Give me an idea</string>
     <string name="wellbeing_give_me_an_idea_button">Give me an idea</string>
     <string name="wellbeing_game_return_title">Welcome back</string>
