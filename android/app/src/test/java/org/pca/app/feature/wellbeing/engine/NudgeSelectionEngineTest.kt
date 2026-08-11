@@ -262,4 +262,173 @@ class NudgeSelectionEngineTest {
         val (selection, _) = NudgeSelectionEngine.evaluate(policy, baseContext(nowNanos = 0L), rateState, catalogue)
         assertEquals(NudgeDeliveryStatus.SUPPRESSED_RATE_LIMIT, selection.status)
     }
+
+    // --- WELL-2: adult-supervision delivery-safety rule ------------------------------------
+
+    private fun supervisedSuggestion() = catalogue.first { it.requiresAdultSupervision }
+    private fun ordinarySuggestion() = catalogue.first { !it.requiresAdultSupervision }
+
+    private fun policyRestrictedTo(suggestion: org.pca.app.feature.wellbeing.model.WellbeingSuggestion) = WellbeingNudgePolicy(
+        enabledCategories = setOf(suggestion.category),
+        durationPreferences = setOf(suggestion.duration),
+    )
+
+    @Test
+    fun `supervised suggestion is excluded from lock-screen delivery`() {
+        val suggestion = supervisedSuggestion()
+        val policy = policyRestrictedTo(suggestion)
+        val ctx = baseContext(trigger = NudgeTrigger.SCREEN_LOCKED_BEST_EFFORT, locked = true)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertTrue(selection.suggestions.none { it.suggestionId == suggestion.suggestionId })
+    }
+
+    @Test
+    fun `supervised suggestion is excluded from standard notification delivery`() {
+        val suggestion = supervisedSuggestion()
+        val policy = policyRestrictedTo(suggestion)
+        val ctx = baseContext(trigger = NudgeTrigger.IMMEDIATE_APP_RETURN)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(WellbeingNudgeDelivery.STANDARD_NOTIFICATION, selection.recommendedDelivery)
+        assertTrue(selection.suggestions.none { it.suggestionId == suggestion.suggestionId })
+    }
+
+    @Test
+    fun `supervised suggestion is excluded from ordinary background delivery (next-unlock card)`() {
+        val suggestion = supervisedSuggestion()
+        val policy = policyRestrictedTo(suggestion)
+        val ctx = baseContext(trigger = NudgeTrigger.AFTER_SCREEN_UNLOCK)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(WellbeingNudgeDelivery.NEXT_UNLOCK_CARD, selection.recommendedDelivery)
+        assertTrue(selection.suggestions.none { it.suggestionId == suggestion.suggestionId })
+    }
+
+    @Test
+    fun `supervised suggestion is allowed on a foreground in-app card`() {
+        val suggestion = supervisedSuggestion()
+        val policy = policyRestrictedTo(suggestion)
+        val ctx = baseContext(trigger = NudgeTrigger.CHILD_REQUESTED_IDEA)
+        // requestedCount large enough to sweep the whole (small, category+duration-restricted)
+        // pool -- this test is about *eligibility*, not about which single suggestion the
+        // diversity picker happens to choose first.
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue, requestedCount = 10)
+        assertEquals(WellbeingNudgeDelivery.IN_APP_CARD, selection.recommendedDelivery)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+        assertTrue(selection.suggestions.any { it.suggestionId == suggestion.suggestionId })
+    }
+
+    @Test
+    fun `ordinary non-supervised suggestion is unaffected by the adult-supervision rule`() {
+        val suggestion = ordinarySuggestion()
+        val policy = policyRestrictedTo(suggestion)
+        val ctx = baseContext(trigger = NudgeTrigger.IMMEDIATE_APP_RETURN)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue, requestedCount = 10)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+        assertTrue(selection.suggestions.any { it.suggestionId == suggestion.suggestionId })
+    }
+
+    // --- WELL-1: eligibleApps filtering -----------------------------------------------------
+
+    @Test
+    fun `configured eligible app qualifies for a nudge`() {
+        val policy = WellbeingNudgePolicy(eligibleApps = setOf("app_token_1"))
+        val ctx = baseContext(trigger = NudgeTrigger.PERIODIC_HIGH_ENGAGEMENT_USE)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+    }
+
+    @Test
+    fun `non-configured app is rejected when eligibleApps is non-empty`() {
+        val policy = WellbeingNudgePolicy(eligibleApps = setOf("some_other_app"))
+        val ctx = baseContext(trigger = NudgeTrigger.PERIODIC_HIGH_ENGAGEMENT_USE) // eligibleAppToken = "app_token_1"
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_APP_NOT_ELIGIBLE, selection.status)
+    }
+
+    @Test
+    fun `opaque token comparison is deterministic (repeated identical evaluation agrees)`() {
+        val policy = WellbeingNudgePolicy(eligibleApps = setOf("app_token_1"))
+        val ctx = baseContext(trigger = NudgeTrigger.PERIODIC_HIGH_ENGAGEMENT_USE)
+        val (a, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        val (b, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(a.status, b.status)
+        val (c, _) = NudgeSelectionEngine.evaluate(
+            policy.copy(eligibleApps = setOf("app_token_1_but_longer")),
+            ctx,
+            NudgeRateState(),
+            catalogue,
+        )
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_APP_NOT_ELIGIBLE, c.status)
+    }
+
+    @Test
+    fun `empty eligibleApps configuration means no restriction (documented default)`() {
+        val policy = WellbeingNudgePolicy(eligibleApps = emptySet())
+        val ctx = baseContext(trigger = NudgeTrigger.PERIODIC_HIGH_ENGAGEMENT_USE)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+    }
+
+    @Test
+    fun `eligibleApps restriction does not affect a trigger with no specific app (child-requested idea)`() {
+        val policy = WellbeingNudgePolicy(eligibleApps = setOf("some_other_app"))
+        val ctx = baseContext(trigger = NudgeTrigger.CHILD_REQUESTED_IDEA) // eligibleAppToken = "app_token_1", not in set
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+    }
+
+    // --- WELL-3: PCA bedtime suppression precedence ------------------------------------------
+
+    @Test
+    fun `PCA bedtime active suppresses even when wellbeing quiet hours are unset`() {
+        val policy = WellbeingNudgePolicy() // quietHoursStart/End both null
+        val ctx = baseContext().copy(isPcaBedtimeActive = true)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_PCA_BEDTIME, selection.status)
+    }
+
+    @Test
+    fun `PCA bedtime active still suppresses even when wellbeing override window says not quiet now`() {
+        // Wellbeing quiet hours configured as 21:00-07:00; minuteOfDay = 12:00 (noon) is NOT within
+        // that window, i.e. wellbeing-local quiet hours would say "go ahead" -- bedtime must win.
+        val policy = WellbeingNudgePolicy(quietHoursStartMinuteOfDay = 21 * 60, quietHoursEndMinuteOfDay = 7 * 60)
+        val ctx = baseContext(minuteOfDay = 12 * 60).copy(isPcaBedtimeActive = true)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_PCA_BEDTIME, selection.status)
+    }
+
+    @Test
+    fun `PCA bedtime inactive but wellbeing quiet hours active still suppresses`() {
+        val policy = WellbeingNudgePolicy(quietHoursStartMinuteOfDay = 21 * 60, quietHoursEndMinuteOfDay = 7 * 60)
+        val ctx = baseContext(minuteOfDay = 22 * 60).copy(isPcaBedtimeActive = false)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_QUIET_HOURS, selection.status)
+    }
+
+    @Test
+    fun `both PCA bedtime and wellbeing quiet hours inactive yields normal eligibility`() {
+        val policy = WellbeingNudgePolicy(quietHoursStartMinuteOfDay = 21 * 60, quietHoursEndMinuteOfDay = 7 * 60)
+        val ctx = baseContext(minuteOfDay = 12 * 60).copy(isPcaBedtimeActive = false)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, selection.status)
+    }
+
+    @Test
+    fun `midnight-crossing wellbeing quiet-hours window is still computed correctly with bedtime inactive`() {
+        val policy = WellbeingNudgePolicy(quietHoursStartMinuteOfDay = 23 * 60, quietHoursEndMinuteOfDay = 5 * 60)
+        val duringWindow = baseContext(minuteOfDay = 1 * 60).copy(isPcaBedtimeActive = false) // 01:00, wraps past midnight
+        val (duringSelection, _) = NudgeSelectionEngine.evaluate(policy, duringWindow, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_QUIET_HOURS, duringSelection.status)
+
+        val outsideWindow = baseContext(minuteOfDay = 10 * 60).copy(isPcaBedtimeActive = false) // 10:00, outside
+        val (outsideSelection, _) = NudgeSelectionEngine.evaluate(policy, outsideWindow, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.DELIVERED, outsideSelection.status)
+    }
+
+    @Test
+    fun `PCA scheduled quiet context (non-bedtime) also suppresses via the same port`() {
+        val policy = WellbeingNudgePolicy()
+        val ctx = baseContext().copy(isPcaBedtimeActive = false, isScheduledQuietContext = true)
+        val (selection, _) = NudgeSelectionEngine.evaluate(policy, ctx, NudgeRateState(), catalogue)
+        assertEquals(NudgeDeliveryStatus.SUPPRESSED_PCA_BEDTIME, selection.status)
+    }
 }

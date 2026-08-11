@@ -105,6 +105,47 @@ class WellbeingContentCatalogueTest {
         }
     }
 
+    @Test
+    fun `WELL-2 adult-supervision indicator has reviewed EN and AR copy`() {
+        val enValues = readStringResourceValues("values")
+        val arValues = readStringResourceValues("values-ar")
+        assumeResourcesFound(enValues.keys, arValues.keys)
+
+        val key = "wellbeing_card_requires_adult_supervision"
+        assertTrue("missing EN copy for $key", enValues[key]?.isNotBlank() == true)
+        assertTrue("missing AR copy for $key", arValues[key]?.isNotBlank() == true)
+        // Sanity: the AR string must actually be Arabic script, not a leftover placeholder/copy
+        // of the English text (RTL requirement, PCA-WELL-021).
+        val arText = arValues[key].orEmpty()
+        assertTrue("AR copy for $key does not look like Arabic script: $arText", arText.any { it.code in 0x0600..0x06FF })
+    }
+
+    @Test
+    fun `WELL-2 supervision indicator is rendered as visible+accessible text, not color-icon-animation only`() {
+        val root = locateWellbeingModuleRoot()
+        org.junit.Assume.assumeTrue("could not locate feature/wellbeing main sources from test working directory", root != null)
+        val cardScreen = File(root, "ui/WellbeingCardScreen.kt")
+        org.junit.Assume.assumeTrue("WellbeingCardScreen.kt not found", cardScreen.isFile)
+        val text = cardScreen.readText()
+        assertTrue(
+            "WellbeingCardScreen must render the adult-supervision string resource as visible Text",
+            text.contains("wellbeing_card_requires_adult_supervision"),
+        )
+        assertTrue(
+            "adult-supervision indicator must be a plain Text (accessible/TalkBack-visible), not color/icon-only",
+            text.contains("requiresAdultSupervision") && text.contains("Text("),
+        )
+    }
+
+    private fun locateWellbeingModuleRoot(): File? {
+        val candidates = listOf(
+            "src/main/java/org/pca/app/feature/wellbeing",
+            "android/app/src/main/java/org/pca/app/feature/wellbeing",
+            "app/src/main/java/org/pca/app/feature/wellbeing",
+        )
+        return candidates.map { File(it) }.firstOrNull { it.isDirectory }
+    }
+
     // --- helpers: parse the shipped strings.xml files directly (no Android runtime needed) ---
 
     private fun assumeResourcesFound(a: Set<String>, b: Set<String>) {
