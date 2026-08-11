@@ -210,28 +210,26 @@ class ScreenTimeEngineTest {
         assertEquals(remainingBefore - 1.minutes.inWholeNanoseconds, ScreenTimeEngine.remainingBreakNanos(state, config))
     }
 
-    @Test
-    fun `dhikr interaction counter resets on a new break cycle`() {
-        var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
-        state = ScreenTimeEngine.reduce(state, ScreenTimeEvent.DhikrInteraction(60.minutes.inWholeNanoseconds), config)
-        assertEquals(1, state.dhikrInteractionCount)
-
-        state = tick(state, 90.minutes.inWholeNanoseconds) // completes the break
-        assertEquals(0, state.dhikrInteractionCount)
-    }
+    // See DhikrLifecycleTest for the full dhikr-counter lifecycle (NEW-001).
 
     // ---- counters -----------------------------------------------------------
 
     @Test
     fun `completed and overridden break counters are tracked independently`() {
+        // Cycle 1: ACTIVE 0-60, BREAK_SHIELD 60-90 (completes naturally at 90).
         var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
-        state = tick(state, 90.minutes.inWholeNanoseconds) // natural completion #1
+        state = tick(state, 90.minutes.inWholeNanoseconds)
         assertEquals(1, state.completedBreakCount)
 
-        state = tick(state, 150.minutes.inWholeNanoseconds) // natural completion #2
+        // Cycle 2: ACTIVE 90-150, BREAK_SHIELD 150-180 (completes naturally at 180).
+        state = tick(state, 150.minutes.inWholeNanoseconds)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
+        state = tick(state, 180.minutes.inWholeNanoseconds)
         assertEquals(2, state.completedBreakCount)
 
-        state = tick(state, 210.minutes.inWholeNanoseconds) // into BREAK_SHIELD again
+        // Cycle 3: ACTIVE 180-240, BREAK_SHIELD entered at 240 — this one is overridden, not
+        // completed naturally, so completedBreakCount must stay at 2.
+        state = tick(state, 240.minutes.inWholeNanoseconds)
         assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
 
         val authorization = ParentAuthorization(
@@ -244,7 +242,8 @@ class ScreenTimeEngineTest {
         )
         val result = ParentOverrideEngine.applySkipBreakRequest(
             state,
-            SkipBreakRequest(nowNanos = 210.minutes.inWholeNanoseconds, nowWallClockMillis = 500L, authorization = authorization),
+            SkipBreakRequest(nowNanos = 240.minutes.inWholeNanoseconds, nowWallClockMillis = 500L, authorization = authorization),
+            org.pca.app.feature.screentime.persistence.InMemoryUsedAuthorizationStore(),
             config,
         )
         state = (result as ParentOverrideResult.Applied).state

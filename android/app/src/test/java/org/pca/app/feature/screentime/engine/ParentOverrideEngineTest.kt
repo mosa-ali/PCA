@@ -3,6 +3,7 @@ package org.pca.app.feature.screentime.engine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.pca.app.feature.screentime.persistence.InMemoryUsedAuthorizationStore
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -18,13 +19,14 @@ class ParentOverrideEngineTest {
         boundedDuration: Duration = 30.minutes,
         issuedAtEpochMillis: Long = 0L,
         expiresAtEpochMillis: Long = 60_000L,
+        auditId: String = "audit-42",
     ) = ParentAuthorization(
         approverId = "parent-1",
         scope = scope,
         boundedDuration = boundedDuration,
         issuedAtEpochMillis = issuedAtEpochMillis,
         expiresAtEpochMillis = expiresAtEpochMillis,
-        auditId = "audit-42",
+        auditId = auditId,
     )
 
     // ---- skip break ---------------------------------------------------------
@@ -36,6 +38,7 @@ class ParentOverrideEngineTest {
         val result = ParentOverrideEngine.applySkipBreakRequest(
             inBreak,
             SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = authorization(ParentOverrideScope.SKIP_BREAK)),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -53,6 +56,7 @@ class ParentOverrideEngineTest {
         val result = ParentOverrideEngine.applySkipBreakRequest(
             active,
             SkipBreakRequest(0L, nowWallClockMillis = 1_000L, authorization = authorization(ParentOverrideScope.SKIP_BREAK)),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -73,6 +77,7 @@ class ParentOverrideEngineTest {
                 nowWallClockMillis = 70_000L,
                 authorization = authorization(ParentOverrideScope.SKIP_BREAK, expiresAtEpochMillis = 60_000L),
             ),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -92,6 +97,7 @@ class ParentOverrideEngineTest {
                 nowWallClockMillis = 500L,
                 authorization = authorization(ParentOverrideScope.SKIP_BREAK, issuedAtEpochMillis = 1_000L),
             ),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -105,6 +111,7 @@ class ParentOverrideEngineTest {
         val result = ParentOverrideEngine.applySkipBreakRequest(
             inBreak,
             SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = authorization(ParentOverrideScope.GRANT_TIME)),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -126,6 +133,7 @@ class ParentOverrideEngineTest {
                 authorization = authorization(ParentOverrideScope.GRANT_TIME, boundedDuration = 30.minutes),
                 extra = 15.minutes,
             ),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -145,6 +153,7 @@ class ParentOverrideEngineTest {
                 authorization = authorization(ParentOverrideScope.GRANT_TIME, boundedDuration = 10.minutes),
                 extra = 15.minutes,
             ),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
@@ -166,13 +175,15 @@ class ParentOverrideEngineTest {
                 authorization = authorization(ParentOverrideScope.GRANT_TIME),
                 extra = 10.minutes,
             ),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
 
+        // Typed, not a bare unchanged ScreenTimeState: the cast below is only valid because
+        // this is a Rejected, not an Applied that happens to look unchanged.
         val rejected = result as ParentOverrideResult.Rejected
         assertEquals(ParentOverrideRejectionReason.NOT_ACTIVE, rejected.reason)
         assertEquals(ScreenTimeMode.BREAK_SHIELD, rejected.state.mode)
-        assertTrue(result is ParentOverrideResult.Rejected) // typed, not a bare unchanged ScreenTimeState
     }
 
     @Test
@@ -183,5 +194,136 @@ class ParentOverrideEngineTest {
         } catch (expected: IllegalArgumentException) {
             // expected: init block validates approverId
         }
+    }
+
+    // ---- NEW-002: single-use / replay protection -----------------------------
+
+    @Test
+    fun `first legitimate use of a skip-break authorization is accepted`() {
+        val inBreak = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+        val store = InMemoryUsedAuthorizationStore()
+
+        val result = ParentOverrideEngine.applySkipBreakRequest(
+            inBreak,
+            SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = authorization(ParentOverrideScope.SKIP_BREAK)),
+            store,
+            config,
+        )
+
+        assertTrue(result is ParentOverrideResult.Applied)
+        assertTrue(store.isUsed("audit-42"))
+    }
+
+    @Test
+    fun `exact replay of an already-applied skip-break authorization is rejected as ALREADY_USED`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.SKIP_BREAK)
+
+        var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+        val first = ParentOverrideEngine.applySkipBreakRequest(
+            state,
+            SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = auth),
+            store,
+            config,
+        )
+        state = (first as ParentOverrideResult.Applied).state
+
+        // The child immediately re-enters BREAK_SHIELD, and the same signed authorization is
+        // replayed in an attempt to skip it a second time.
+        state = tick(state, 120.minutes.inWholeNanoseconds)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
+
+        val replay = ParentOverrideEngine.applySkipBreakRequest(
+            state,
+            SkipBreakRequest(120.minutes.inWholeNanoseconds, nowWallClockMillis = 2_000L, authorization = auth),
+            store,
+            config,
+        )
+
+        val rejected = replay as ParentOverrideResult.Rejected
+        assertEquals(ParentOverrideRejectionReason.ALREADY_USED, rejected.reason)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, rejected.state.mode) // the second break is not skipped
+    }
+
+    @Test
+    fun `exact replay of an already-applied grant-time authorization is rejected and grants nothing further`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.GRANT_TIME, boundedDuration = 30.minutes)
+
+        var state = tick(ScreenTimeState.initial(0L), 55.minutes.inWholeNanoseconds)
+        val first = ParentOverrideEngine.applyGrantTimeRequest(
+            state,
+            GrantTimeRequest(55.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = auth, extra = 15.minutes),
+            store,
+            config,
+        )
+        state = (first as ParentOverrideResult.Applied).state
+        val remainingAfterFirstGrant = ScreenTimeEngine.remainingActiveNanos(state, config)
+
+        val replay = ParentOverrideEngine.applyGrantTimeRequest(
+            state,
+            GrantTimeRequest(55.minutes.inWholeNanoseconds, nowWallClockMillis = 2_000L, authorization = auth, extra = 15.minutes),
+            store,
+            config,
+        )
+
+        val rejected = replay as ParentOverrideResult.Rejected
+        assertEquals(ParentOverrideRejectionReason.ALREADY_USED, rejected.reason)
+        // the grant did not stack: remaining time is exactly what the first, legitimate use produced.
+        assertEquals(remainingAfterFirstGrant, ScreenTimeEngine.remainingActiveNanos(rejected.state, config))
+    }
+
+    @Test
+    fun `a different authorization id is evaluated independently of a previously used one`() {
+        val store = InMemoryUsedAuthorizationStore()
+        var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+
+        val firstAuth = authorization(ParentOverrideScope.SKIP_BREAK, auditId = "audit-1")
+        val first = ParentOverrideEngine.applySkipBreakRequest(
+            state,
+            SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = firstAuth),
+            store,
+            config,
+        )
+        state = (first as ParentOverrideResult.Applied).state
+        state = tick(state, 120.minutes.inWholeNanoseconds) // back into a second break
+
+        val secondAuth = authorization(ParentOverrideScope.SKIP_BREAK, auditId = "audit-2")
+        val second = ParentOverrideEngine.applySkipBreakRequest(
+            state,
+            SkipBreakRequest(120.minutes.inWholeNanoseconds, nowWallClockMillis = 2_000L, authorization = secondAuth),
+            store,
+            config,
+        )
+
+        assertTrue(second is ParentOverrideResult.Applied)
+        assertEquals(2, (second as ParentOverrideResult.Applied).state.overriddenBreakCount)
+    }
+
+    @Test
+    fun `a rejected request does not consume the authorization, so a later legitimate use still succeeds`() {
+        val store = InMemoryUsedAuthorizationStore()
+        val auth = authorization(ParentOverrideScope.SKIP_BREAK)
+
+        // First attempt arrives too early (still ACTIVE) and is rejected.
+        val tooEarly = ParentOverrideEngine.applySkipBreakRequest(
+            ScreenTimeState.initial(0L),
+            SkipBreakRequest(0L, nowWallClockMillis = 1_000L, authorization = auth),
+            store,
+            config,
+        )
+        assertEquals(ParentOverrideRejectionReason.NOT_IN_BREAK_SHIELD, (tooEarly as ParentOverrideResult.Rejected).reason)
+        assertTrue(!store.isUsed("audit-42"))
+
+        // Once actually in BREAK_SHIELD, the same (still-unused) authorization succeeds.
+        val inBreak = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+        val nowValid = ParentOverrideEngine.applySkipBreakRequest(
+            inBreak,
+            SkipBreakRequest(60.minutes.inWholeNanoseconds, nowWallClockMillis = 1_000L, authorization = auth),
+            store,
+            config,
+        )
+
+        assertTrue(nowValid is ParentOverrideResult.Applied)
     }
 }

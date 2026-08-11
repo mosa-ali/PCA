@@ -3,6 +3,7 @@ package org.pca.app.feature.screentime.engine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.pca.app.feature.screentime.persistence.InMemoryUsedAuthorizationStore
 import kotlin.time.Duration.Companion.minutes
 
 class WarningEngineTest {
@@ -80,6 +81,7 @@ class WarningEngineTest {
         val result = ParentOverrideEngine.applyGrantTimeRequest(
             state,
             GrantTimeRequest(nowNanos = 55.minutes.inWholeNanoseconds, nowWallClockMillis = 1L, authorization = authorization, extra = 20.minutes),
+            InMemoryUsedAuthorizationStore(),
             config,
         )
         state = (result as ParentOverrideResult.Applied).state

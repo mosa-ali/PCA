@@ -158,6 +158,11 @@ object ScreenTimeEngine {
                             mode = ScreenTimeMode.ACTIVE,
                             activeElapsedNanos = 0L,
                             breakElapsedNanos = 0L,
+                            // Dhikr interaction is scoped to the break session that produced
+                            // it: it must not leak into ordinary use or a future break just
+                            // because this one completed naturally rather than being replaced
+                            // by a fresh BREAK_SHIELD entry.
+                            dhikrInteractionCount = 0,
                             completedBreakCount = current.completedBreakCount + 1,
                         )
                     }

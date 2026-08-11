@@ -1,5 +1,6 @@
 package org.pca.app.feature.screentime.engine
 
+import org.pca.app.feature.screentime.persistence.UsedAuthorizationStore
 import kotlin.time.Duration
 
 /** What a [ParentAuthorization] permits the holder to do. */
@@ -54,6 +55,10 @@ data class GrantTimeRequest(
 )
 
 enum class ParentOverrideRejectionReason {
+    /** The same [ParentAuthorization.auditId] has already successfully authorized an action —
+     * a bounded, signed authorization is single-use and cannot be replayed, even within its
+     * validity window. */
+    ALREADY_USED,
     WRONG_SCOPE,
     NOT_YET_VALID,
     EXPIRED,
@@ -84,17 +89,29 @@ sealed interface ParentOverrideResult {
  * Parent-override handling, kept separate from [ScreenTimeEngine.reduce] because these actions
  * carry authorization metadata and must surface an explicit [ParentOverrideResult] rather than
  * silently no-op when the request is invalid or arrives in the wrong state.
+ *
+ * Both entry points require a [UsedAuthorizationStore] so single-use replay protection is never
+ * accidentally left to volatile memory: an authorization is checked against — and, on success,
+ * recorded into — that store, so the same signed [ParentAuthorization.auditId] cannot authorize
+ * a second action even across a process restart, as long as the caller binds a durable store.
+ * A rejected request (wrong scope, expired, wrong mode, over-bound) never marks the
+ * authorization as used, since it never actually accomplished anything — only a successful
+ * [ParentOverrideResult.Applied] consumes it.
  */
 object ParentOverrideEngine {
 
     fun applySkipBreakRequest(
         state: ScreenTimeState,
         request: SkipBreakRequest,
+        usedAuthorizations: UsedAuthorizationStore,
         config: ScreenTimeConfig = ScreenTimeConfig(),
     ): ParentOverrideResult {
         val advanced = ScreenTimeEngine.advance(state, request.nowNanos, config)
         val auth = request.authorization
 
+        if (usedAuthorizations.isUsed(auth.auditId)) {
+            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
+        }
         rejectionFor(auth, request.nowWallClockMillis, ParentOverrideScope.SKIP_BREAK)?.let {
             return ParentOverrideResult.Rejected(advanced, it, auth.auditId)
         }
@@ -106,19 +123,27 @@ object ParentOverrideEngine {
             mode = ScreenTimeMode.ACTIVE,
             activeElapsedNanos = 0L,
             breakElapsedNanos = 0L,
+            // Same rule as a natural completion: dhikr interaction belongs to the break session
+            // it happened in and must not survive past it, however the break ended.
+            dhikrInteractionCount = 0,
             overriddenBreakCount = advanced.overriddenBreakCount + 1,
         )
+        usedAuthorizations.markUsed(auth.auditId)
         return ParentOverrideResult.Applied(applied, auth.auditId)
     }
 
     fun applyGrantTimeRequest(
         state: ScreenTimeState,
         request: GrantTimeRequest,
+        usedAuthorizations: UsedAuthorizationStore,
         config: ScreenTimeConfig = ScreenTimeConfig(),
     ): ParentOverrideResult {
         val advanced = ScreenTimeEngine.advance(state, request.nowNanos, config)
         val auth = request.authorization
 
+        if (usedAuthorizations.isUsed(auth.auditId)) {
+            return ParentOverrideResult.Rejected(advanced, ParentOverrideRejectionReason.ALREADY_USED, auth.auditId)
+        }
         rejectionFor(auth, request.nowWallClockMillis, ParentOverrideScope.GRANT_TIME)?.let {
             return ParentOverrideResult.Rejected(advanced, it, auth.auditId)
         }
@@ -131,6 +156,7 @@ object ParentOverrideEngine {
 
         val extraNanos = request.extra.inWholeNanoseconds
         val applied = advanced.copy(activeElapsedNanos = (advanced.activeElapsedNanos - extraNanos).coerceAtLeast(0L))
+        usedAuthorizations.markUsed(auth.auditId)
         return ParentOverrideResult.Applied(applied, auth.auditId)
     }
 
