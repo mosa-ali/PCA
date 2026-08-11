@@ -69,22 +69,55 @@ type DependencyVerdict =
  * one -- a bad-signature or now-stale-epoch pending candidate is rejected
  * at drain, never silently promoted just because its predecessor arrived.
  *
- * LIVENESS NOTE (not a safety gap): draining a family's pending queue is
- * triggered only by `submit()` accepting a NEW envelope for that family --
- * there is no background timer inside this class. A successor whose
- * dependency becomes satisfied while it is still mid-flight through its
- * own admission screen (a genuine concurrent-arrival race) is not
- * retroactively drained by whichever call finishes first; it converges on
- * the family's next accepted envelope (from any sender) or its own
- * resubmission -- exactly what a real device's next reconnect/retry does.
- * It is never lost, never applied twice, and never applied out of order in
- * the meantime.
+ * LIVENESS NOTE (not a safety gap): a family-wide drain is triggered only
+ * by `submit()` accepting a NEW envelope for that family -- there is no
+ * background timer inside this class. A successor whose dependency becomes
+ * satisfied while it is still mid-flight through its own admission screen
+ * (a genuine concurrent-arrival race) is not retroactively drained by
+ * whichever call finishes first. It converges on EITHER the family's next
+ * accepted envelope (any sender) OR its own resubmission -- both are real
+ * convergence paths: `submitInternal`'s identical-resubmission branch
+ * re-resolves the pending candidate's dependency fresh via
+ * `resolvePendingCandidate` rather than echoing the stale stored verdict,
+ * so a device's ordinary reconnect/retry of the same envelope genuinely
+ * unblocks it. It is never lost, never applied twice, and never applied
+ * out of order in the meantime.
  */
 export class SyncCoordinator {
   private readonly maxPendingLifetimeMs: number;
   private readonly maxPendingPerSender: number;
   private readonly maxPendingPerFamily: number;
   private readonly maxPendingGlobal: number;
+  /**
+   * PCA11_ORDERING_CONCURRENCY red-team finding (HIGH): the underlying,
+   * already-accepted evaluateEnvelope reads the message-idempotency ledger
+   * (and the replay ledger) before its one internal `await` and writes them
+   * only after. Two concurrent submit() calls sharing a messageId can
+   * therefore both pass every synchronous check before either has recorded
+   * anything -- for byte-identical content this only mislabels the second
+   * caller's `idempotent` flag; for CONFLICTING content sharing the same
+   * messageId, it is worse: both could reach "accepted" and the ledger
+   * would simply be overwritten by whichever finishes last, silently
+   * skipping the MESSAGE_ID_CONFLICT rejection entirely. That check-then-act
+   * pattern lives in FamilyEnvelopeVerifier.ts, a pre-existing accepted
+   * module this lane must not reimplement or alter the acceptance
+   * semantics of.
+   *
+   * Fixed entirely within this class instead, with a per-(familyId,
+   * messageId) serialization queue: every submit() call for the same key is
+   * chained strictly after the previous one completes, so evaluateEnvelope
+   * is never invoked twice concurrently for the same messageId -- by the
+   * time a second (or third, ...) call for that key actually runs, the
+   * first one's ledger writes have already landed, so idempotency and
+   * conflict detection both observe true, settled state. An identical
+   * (byte-for-byte) concurrent resubmission is additionally short-circuited
+   * onto the SAME in-flight promise as a pure optimization (skips a
+   * redundant signature verification) -- this is safe/optional, never
+   * required for correctness, since the serialization queue alone already
+   * guarantees the right outcome even without it.
+   */
+  private readonly chainByKey = new Map<string, Promise<unknown>>();
+  private readonly inFlightIdenticalByKey = new Map<string, { canonicalBytes: string; promise: Promise<SubmitResult> }>();
 
   constructor(
     private readonly pendingStore: PendingQueueStore,
@@ -109,22 +142,61 @@ export class SyncCoordinator {
   }
 
   async submit(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext): Promise<SubmitResult> {
-    this.sweepExpired(context.now);
-
     const canonicalBytes = canonicalizeEnvelope(envelope);
+    const key = `${envelope.familyId} ${envelope.messageId}`;
+
+    const identicalInFlight = this.inFlightIdenticalByKey.get(key);
+    if (identicalInFlight && identicalInFlight.canonicalBytes === canonicalBytes) {
+      return identicalInFlight.promise;
+    }
+
+    const previousInChain = this.chainByKey.get(key) ?? Promise.resolve();
+    const runPromise: Promise<SubmitResult> = previousInChain.then(
+      () => this.submitInternal(envelope, context, canonicalBytes),
+      () => this.submitInternal(envelope, context, canonicalBytes),
+    );
+    // The chain link must never itself reject (a rejected chain link would
+    // permanently wedge every future submission for this key) -- settle
+    // to undefined either way, purely as an ordering token. `chainLink` is
+    // stored once and reused for the identity check below, since calling
+    // `.catch()` again would create a brand-new Promise object every time.
+    const chainLink = runPromise.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.chainByKey.set(key, chainLink);
+    this.inFlightIdenticalByKey.set(key, { canonicalBytes, promise: runPromise });
+    try {
+      return await runPromise;
+    } finally {
+      if (this.inFlightIdenticalByKey.get(key)?.promise === runPromise) {
+        this.inFlightIdenticalByKey.delete(key);
+      }
+      // Bound chainByKey's growth: if no newer call replaced our chain link
+      // while we were running, this key has no more pending work -- remove
+      // it rather than retaining one Map entry per messageId ever seen.
+      if (this.chainByKey.get(key) === chainLink) {
+        this.chainByKey.delete(key);
+      }
+    }
+  }
+
+  private async submitInternal(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext, canonicalBytes: string): Promise<SubmitResult> {
+    this.sweepExpired(context.now);
 
     const existingPending = this.pendingStore.get(envelope.familyId, envelope.messageId);
     if (existingPending) {
       if (existingPending.canonicalBytes === canonicalBytes) {
-        return {
-          decision: {
-            kind: 'HOLD_PENDING',
-            reason: existingPending.reason,
-            ...(existingPending.waitingOnMessageId !== null ? { waitingOnMessageId: existingPending.waitingOnMessageId } : {}),
-            ...(existingPending.waitingOnSequence !== null ? { waitingOnSequence: existingPending.waitingOnSequence } : {}),
-          },
-          drained: [],
-        };
+        // PCA11_ORDERING_CONCURRENCY red-team finding: resubmitting the exact
+        // same still-pending envelope must re-check eligibility, not just
+        // echo back the stored HOLD_PENDING verdict -- a device's own natural
+        // retry/resubmit is a legitimate convergence path (documented on
+        // SyncCoordinator above), so it must actually be able to promote and
+        // apply a candidate whose dependency has since resolved, exactly like
+        // drainFamily would.
+        const decision = await this.resolvePendingCandidate(existingPending, context);
+        const drained = decision.kind === 'APPLY_NOW' ? await this.drainFamily(envelope.familyId, context) : [];
+        return { decision, drained };
       }
       return { decision: { kind: 'REJECT', reason: 'PENDING_MESSAGE_ID_CONFLICT' }, drained: [] };
     }
@@ -136,6 +208,18 @@ export class SyncCoordinator {
         return { decision: { kind: 'REJECT', reason: dependency.reason }, drained: [] };
       }
       if (dependency?.kind === 'HOLD') {
+        // Cheap, synchronous capacity pre-check FIRST -- an already-at-capacity
+        // sender/family/global queue is rejected before paying the expensive
+        // dry-run signature-verification cost below (PCA11_SYNC_SECURITY
+        // red-team finding: a capacity-exhausted sender could otherwise force
+        // full verification work on every subsequent submission just to be
+        // told "queue full" afterward). The dry-run screen and the real
+        // insert() below both still independently re-check capacity -- this
+        // is a fast-fail, not the sole enforcement point.
+        const capacityRejection = this.checkPendingCapacity(envelope, canonicalBytes);
+        if (capacityRejection) {
+          return { decision: { kind: 'REJECT', reason: capacityRejection }, drained: [] };
+        }
         // Screen the candidate through the FULL security pipeline (signature
         // included) in dry-run mode before ever spending bounded queue
         // capacity on it -- "a bad-signature pending candidate must reject,
@@ -221,11 +305,9 @@ export class SyncCoordinator {
     return null;
   }
 
-  private tryEnqueuePending(
+  private checkPendingCapacity(
     envelope: FamilyEnvelope,
     canonicalBytes: string,
-    dependency: Extract<DependencyVerdict, { kind: 'HOLD' }>,
-    receivedAt: Date,
   ): 'PENDING_ENVELOPE_TOO_LARGE' | 'PENDING_SENDER_QUEUE_FULL' | 'PENDING_FAMILY_QUEUE_FULL' | 'PENDING_GLOBAL_QUEUE_FULL' | null {
     if (canonicalBytes.length > MAX_PENDING_CANONICAL_BYTES) return 'PENDING_ENVELOPE_TOO_LARGE';
     if (this.pendingStore.countForSender(envelope.familyId, envelope.senderKeyId) >= this.maxPendingPerSender) {
@@ -237,6 +319,17 @@ export class SyncCoordinator {
     if (this.pendingStore.countGlobal() >= this.maxPendingGlobal) {
       return 'PENDING_GLOBAL_QUEUE_FULL';
     }
+    return null;
+  }
+
+  private tryEnqueuePending(
+    envelope: FamilyEnvelope,
+    canonicalBytes: string,
+    dependency: Extract<DependencyVerdict, { kind: 'HOLD' }>,
+    receivedAt: Date,
+  ): 'PENDING_ENVELOPE_TOO_LARGE' | 'PENDING_SENDER_QUEUE_FULL' | 'PENDING_FAMILY_QUEUE_FULL' | 'PENDING_GLOBAL_QUEUE_FULL' | null {
+    const capacityRejection = this.checkPendingCapacity(envelope, canonicalBytes);
+    if (capacityRejection) return capacityRejection;
     const effectiveExpiresAt = new Date(
       Math.min(envelope.expiresAt.getTime(), receivedAt.getTime() + this.maxPendingLifetimeMs),
     );
@@ -253,13 +346,66 @@ export class SyncCoordinator {
       waitingOnSequence: dependency.reason === 'MISSING_SEQUENCE_PREDECESSOR' ? dependency.waitingOnSequence : null,
     };
     const inserted = this.pendingStore.insert(record);
-    return inserted ? null : 'PENDING_FAMILY_QUEUE_FULL';
+    // Re-check for a precise reason rather than a generic fallback -- a rare
+    // TOCTOU window between the check above and this insert (another
+    // concurrent submission growing the same bound in between) is the only
+    // way `inserted` is false here; re-running the same check immediately
+    // after names exactly which bound it was.
+    return inserted ? null : (this.checkPendingCapacity(envelope, canonicalBytes) ?? 'PENDING_FAMILY_QUEUE_FULL');
   }
 
   private recordSequenceIfApplicable(envelope: FamilyEnvelope): void {
     if (!this.options.isNumericSequenceSender(envelope.familyId, envelope.senderKeyId)) return;
     const sequence = parseNumericSequence(envelope.sequenceOrNonce);
     if (sequence !== null) this.sequenceLedger.recordAppliedSequence(envelope.familyId, envelope.senderKeyId, sequence);
+  }
+
+  /**
+   * Re-resolves ONE pending candidate against current ledger state: if its
+   * dependency now resolves, removes it from the pending store and runs it
+   * through the REAL (non-dry-run) security pipeline -- exactly the same
+   * treatment a fresh submission gets, never a shortcut. If still blocked,
+   * refreshes the stored record's dependency metadata (reason/waitingOn may
+   * have advanced, e.g. a sequence gap narrowing) and leaves it queued.
+   * Shared by drainFamily (family-wide sweep) and submitInternal's
+   * identical-resubmission path, so both use one code path for "is this
+   * candidate eligible now."
+   */
+  private async resolvePendingCandidate(record: PendingEnvelopeRecord, context: EnvelopeAcceptanceContext): Promise<SyncDecision> {
+    const dependency = this.resolveDependency(record.envelope);
+    if (dependency === null) {
+      this.pendingStore.remove(record.familyId, record.messageId);
+      const verdict = await evaluateEnvelope(
+        record.envelope,
+        context,
+        this.verifier,
+        this.replayLedger,
+        this.versionLedger,
+        this.messageIdempotencyLedger,
+      );
+      if (verdict.accepted) {
+        this.recordSequenceIfApplicable(record.envelope);
+        return { kind: 'APPLY_NOW', idempotent: verdict.idempotent };
+      }
+      return { kind: 'REJECT', reason: verdict.reason };
+    }
+    if (dependency.kind === 'REJECT') {
+      this.pendingStore.remove(record.familyId, record.messageId);
+      return { kind: 'REJECT', reason: dependency.reason };
+    }
+    this.pendingStore.insert({
+      ...record,
+      reason: dependency.reason,
+      waitingOnMessageId: dependency.reason === 'MISSING_CORRELATION_PREDECESSOR' ? dependency.waitingOnMessageId : null,
+      waitingOnSequence: dependency.reason === 'MISSING_SEQUENCE_PREDECESSOR' ? dependency.waitingOnSequence : null,
+    });
+    return {
+      kind: 'HOLD_PENDING',
+      reason: dependency.reason,
+      ...(dependency.reason === 'MISSING_CORRELATION_PREDECESSOR'
+        ? { waitingOnMessageId: dependency.waitingOnMessageId }
+        : { waitingOnSequence: dependency.waitingOnSequence }),
+    };
   }
 
   private async drainFamily(familyId: OpaqueFamilyId, context: EnvelopeAcceptanceContext): Promise<DrainedOutcome[]> {
@@ -273,32 +419,11 @@ export class SyncCoordinator {
         .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.messageId.localeCompare(b.messageId));
 
       for (const record of candidates) {
-        const dependency = this.resolveDependency(record.envelope);
-        if (dependency === null) {
-          this.pendingStore.remove(familyId, record.messageId);
-          const verdict = await evaluateEnvelope(
-            record.envelope,
-            context,
-            this.verifier,
-            this.replayLedger,
-            this.versionLedger,
-            this.messageIdempotencyLedger,
-          );
-          if (verdict.accepted) {
-            this.recordSequenceIfApplicable(record.envelope);
-            outcomes.push({ messageId: record.messageId, decision: { kind: 'APPLY_NOW', idempotent: verdict.idempotent } });
-          } else {
-            outcomes.push({ messageId: record.messageId, decision: { kind: 'REJECT', reason: verdict.reason } });
-          }
-          progressed = true;
-          break;
-        }
-        if (dependency.kind === 'REJECT') {
-          this.pendingStore.remove(familyId, record.messageId);
-          outcomes.push({ messageId: record.messageId, decision: { kind: 'REJECT', reason: dependency.reason } });
-          progressed = true;
-          break;
-        }
+        const decision = await this.resolvePendingCandidate(record, context);
+        if (decision.kind === 'HOLD_PENDING') continue; // no progress on this one this pass
+        outcomes.push({ messageId: record.messageId, decision });
+        progressed = true;
+        break;
       }
     }
     return outcomes;

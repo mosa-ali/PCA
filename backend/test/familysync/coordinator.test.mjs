@@ -289,6 +289,41 @@ test('the same message arriving concurrently never double-applies or leaves stra
   assert.equal(b.decision.kind, 'APPLY_NOW');
 });
 
+test('RED-TEAM FIX: two concurrent byte-identical submissions collapse onto ONE actual evaluation -- both callers observe the identical single outcome, never two independent (and possibly conflicting) accepts', async () => {
+  const coordinator = buildHarness();
+  const envelope = buildEnvelope({ sequenceOrNonce: '1' });
+  const [a, b] = await Promise.all([coordinator.submit(envelope, baseContext()), coordinator.submit(envelope, baseContext())]);
+  assert.deepEqual(a.decision, { kind: 'APPLY_NOW', idempotent: false });
+  assert.deepEqual(a.decision, b.decision, 'both concurrent callers must see the SAME single accept -- neither independently raced to its own idempotent:false');
+
+  // A genuinely later, separate call now correctly observes it as already applied.
+  const later = await coordinator.submit(envelope, baseContext());
+  assert.deepEqual(later.decision, { kind: 'APPLY_NOW', idempotent: true });
+});
+
+test('RED-TEAM FIX: three-way concurrent identical submission still yields exactly one underlying evaluation (all three see the same outcome)', async () => {
+  const coordinator = buildHarness();
+  const envelope = buildEnvelope({ sequenceOrNonce: '1' });
+  const results = await Promise.all([
+    coordinator.submit(envelope, baseContext()),
+    coordinator.submit(envelope, baseContext()),
+    coordinator.submit(envelope, baseContext()),
+  ]);
+  assert.deepEqual(results[0].decision, { kind: 'APPLY_NOW', idempotent: false });
+  assert.deepEqual(results[1].decision, results[0].decision);
+  assert.deepEqual(results[2].decision, results[0].decision);
+});
+
+test('RED-TEAM FIX: a concurrent submission with the SAME messageId but DIFFERENT content is NOT deduplicated -- it is independently caught as a conflict', async () => {
+  const coordinator = buildHarness();
+  const original = buildEnvelope({ sequenceOrNonce: '1', messageId: 'shared' });
+  const conflicting = buildEnvelope({ sequenceOrNonce: '1', messageId: 'shared', payload: Buffer.from('different') });
+  const [a, b] = await Promise.all([coordinator.submit(original, baseContext()), coordinator.submit(conflicting, baseContext())]);
+  const kinds = [a.decision.kind, b.decision.kind].sort();
+  // One of the two applies; the other is rejected as a conflict -- never both silently applied.
+  assert.deepEqual(kinds, ['APPLY_NOW', 'REJECT']);
+});
+
 test('two concurrent FIRST-EVER messages from a fresh sender both apply safely (no established floor to gap-check against yet)', async () => {
   const coordinator = buildHarness();
   const a = buildEnvelope({ sequenceOrNonce: '5', messageId: 'first-a' });
