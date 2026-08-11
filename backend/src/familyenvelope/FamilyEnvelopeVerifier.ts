@@ -22,44 +22,58 @@ export type EnvelopeVerdict =
   | { accepted: false; reason: EnvelopeRejectionReason };
 
 /**
- * HONEST CAPABILITY DISCLOSURE (do not remove without genuinely
- * implementing the missing behavior below): doc 22 Section 5 requires
- * "a future policy can wait for a signed predecessor until expiry; it
- * MUST NOT skip an intervening version," with an explicit Section 7
- * contract-test row ("offline child receives ordered N+2 before N+1 ->
- * holds pending until predecessor/expiry; never skips state"). This
- * module does NOT implement that hold-pending/gap-fill behavior: the
- * version check below (requiresStrictVersionIncrease) only enforces
- * "never move the floor backward or sideways" -- any envelope whose
- * semanticVersion is HIGHER than the current floor is accepted
- * immediately and becomes the new floor, even if an intermediate
- * version (e.g. floor=1.0.0, candidate=3.0.0) exists and simply hasn't
- * arrived yet. When that intermediate version (2.0.0) later arrives, it
- * is safely and correctly rejected as VERSION_NOT_MONOTONIC forever --
- * so this gap is FAIL-SAFE (a receiver never applies something out of
- * order, never double-applies, never corrupts its floor) but NOT
- * FEATURE-COMPLETE (the skipped intermediate version's content is never
- * applied, where doc 22 wants it queued and applied once its gap is
- * filled).
+ * HOLD-PENDING STATUS (PCA-11, backend/src/familysync/SyncCoordinator.ts):
+ * doc 22 Section 5's "a future policy can wait for a signed predecessor
+ * until expiry; it MUST NOT skip an intervening version" is now
+ * implemented, but at the SYNCHRONIZATION-COORDINATOR layer, not inside
+ * this module. This module's own version check immediately below
+ * (requiresStrictVersionIncrease) is UNCHANGED and, taken alone, still
+ * cannot detect a gap: any envelope whose semanticVersion is higher than
+ * the current floor is still accepted as soon as evaluateEnvelope is
+ * asked to evaluate it, because a version jump (1.0.0 -> 3.0.0 with
+ * 1.x/2.x never issued) is always indistinguishable on the wire from "an
+ * intermediate version was issued but is delayed in transit" -- doc 22
+ * Section 3 gives POLICY_UPDATE no adjacency/predecessor field (unlike
+ * FTS_UPDATE's `supersedesEpoch`), so semanticVersion alone can never
+ * safely imply "hold this."
  *
- * Why this is disclosed rather than "fixed" in this slice: doc 22
- * Section 3's wire contract gives POLICY_UPDATE no adjacency/predecessor
- * field (unlike FTS_UPDATE's `supersedesEpoch`) -- semanticVersion is an
- * arbitrary dotted-triple a sender may legitimately jump across (e.g.
- * 1.0.0 -> 1.5.0 with 1.1-1.4 never issued is valid, indistinguishable
- * on the wire from "1.1-1.4 were issued but delayed in transit"). A
- * correct gap-detection/hold-pending implementation needs either a
- * sender-declared "previous version" field this wire contract doesn't
- * have, or must be built on `sequenceOrNonce` adjacency instead (only
- * when a sender opts into numeric senderSequence mode rather than an
- * opaque replayNonce) -- a genuinely different, larger feature (a bounded
- * per-sender pending-envelope queue with its own drain/expiry logic and
- * a changed evaluateEnvelope return contract, since a caller would need
- * to learn about newly-unblocked pending envelopes, not just the one it
- * just submitted). Building that correctly needs its own dedicated,
- * reviewed slice rather than a rushed addition here.
+ * What SyncCoordinator adds on top, without changing this module's own
+ * behavior: it holds a candidate pending (never calling this function on
+ * it) whenever it can detect, from OTHER already-accepted wire fields, a
+ * genuine unresolved predecessor:
+ *   1. `correlationId` adjacency, for message types the coordinator
+ *      configures as correlation-dependent (PARENT_DECISION on its
+ *      CHILD_REQUEST; RETENTION_RECEIPT on its RETENTION_DELETION_INSTRUCTION)
+ *      -- held until an accepted envelope with messageId === correlationId
+ *      exists, or the candidate expires.
+ *   2. Opt-in numeric `sequenceOrNonce` adjacency, for a (familyId,
+ *      senderKeyId) pair a caller has explicitly declared uses numeric
+ *      sequence mode (see familysync/policy.ts's parseNumericSequence) --
+ *      held whenever the parsed sequence number is more than one past the
+ *      last applied sequence for that sender, of ANY messageType
+ *      including POLICY_UPDATE, so a numeric-sequence sender's
+ *      POLICY_UPDATE stream genuinely gets doc 22 Section 5's gap-hold
+ *      behavior.
+ * Every held candidate is re-run through this exact function (dryRun
+ * screened first, then for real at drain) before ever being treated as
+ * accepted -- a pending item is never pre-trusted.
+ *
+ * REMAINING, INHERENT PROTOCOL LIMITATION (not a missing feature -- a
+ * wire-contract fact): a sender using an opaque `replayNonce` instead of
+ * numeric `sequenceOrNonce`, sending a message type outside the
+ * correlationId-dependent set, has NO adjacency signal on the wire at
+ * all. No implementation at any layer can safely hold such a message
+ * pending on "the message before it," because there is no way to express
+ * what "before it" even means for an opaque nonce. That sender's
+ * messages continue to use only this module's existing anti-downgrade
+ * floor check (never moves backward, but can still skip forward) --
+ * exactly the FAIL-SAFE-but-not-gap-filling behavior this constant used
+ * to describe as the whole system's limitation. Fixing it fully would
+ * require a new wire field (e.g. a sender-declared previous-version or
+ * previous-messageId reference), which PCA-11's brief explicitly forbids
+ * inventing unilaterally.
  */
-export const OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED = false;
+export const OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED = true;
 
 /**
  * Everything a receiving device needs to decide acceptance THAT THIS
@@ -126,6 +140,24 @@ export interface EnvelopeAcceptanceContext {
  * this ledger -- their semanticVersion values live on an unrelated
  * timeline this ledger must not be polluted by.
  */
+export interface EvaluateEnvelopeOptions {
+  /**
+   * MINIMAL, EXPLICITLY-RECORDED ADDITION for PCA-11 (backend/src/familysync):
+   * runs every check below, INCLUDING signature verification, but skips the
+   * three ledger-mutating side effects on acceptance (replayLedger.recordProcessed,
+   * versionLedger.recordAcceptedVersion, messageIdempotencyLedger.recordAccepted).
+   * Lets a caller cheaply screen a candidate envelope (e.g. "is this pending
+   * out-of-order envelope even legitimate before I spend bounded queue
+   * capacity holding it") WITHOUT that screening itself counting as
+   * acceptance -- the same envelope must still pass this function again,
+   * with dryRun false/omitted, to actually be accepted. Defaults to false,
+   * so every pre-existing call site (and its accept-side-effect guarantees)
+   * is completely unchanged. This module's core acceptance semantics are
+   * otherwise untouched by this addition.
+   */
+  dryRun?: boolean;
+}
+
 export async function evaluateEnvelope(
   envelope: FamilyEnvelope,
   context: EnvelopeAcceptanceContext,
@@ -133,6 +165,7 @@ export async function evaluateEnvelope(
   replayLedger: ReplayLedger,
   versionLedger: DataVersionLedger,
   messageIdempotencyLedger: MessageIdempotencyLedger,
+  options: EvaluateEnvelopeOptions = {},
 ): Promise<EnvelopeVerdict> {
   if (!isProtocolCompatible(envelope.protocolMajor)) {
     return { accepted: false, reason: 'UNSUPPORTED_PROTOCOL_MAJOR' };
@@ -169,6 +202,10 @@ export async function evaluateEnvelope(
   const validSignature = await verifier.verify(context.senderPublicKey, canonicalBytes, envelope.signature);
   if (!validSignature) {
     return { accepted: false, reason: 'INVALID_SIGNATURE' };
+  }
+
+  if (options.dryRun) {
+    return { accepted: true, idempotent: false };
   }
 
   replayLedger.recordProcessed(envelope.senderKeyId, envelope.sequenceOrNonce);

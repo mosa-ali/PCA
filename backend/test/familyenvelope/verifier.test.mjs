@@ -174,15 +174,23 @@ test('numeric, not lexicographic, semantic version comparison: 1.9.0 < 1.10.0', 
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
 });
 
-test('KNOWN LIMITATION (doc 22 Section 5, disclosed via OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED): an out-of-order later version is currently applied immediately rather than held pending for its predecessor', async () => {
-  assert.equal(OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED, false, 'this test documents current behavior -- flip it only alongside a real hold-pending implementation');
+test('THIS MODULE ALONE still applies an out-of-order later version immediately -- hold-pending is implemented one layer up, in backend/src/familysync (see OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED doc comment)', async () => {
+  assert.equal(
+    OUT_OF_ORDER_HOLD_PENDING_IMPLEMENTED,
+    true,
+    'PCA-11 (backend/src/familysync/SyncCoordinator.ts) implements hold-pending via correlationId and opt-in numeric-sequence adjacency; this module itself is unchanged and, called directly, still has no gap-detection of its own',
+  );
   const harness = buildHarness();
   await evaluate(buildEnvelope({ semanticVersion: '1.0.0' }), baseContext(), harness);
 
   // N+2 arrives before N+1 (e.g. the receiver was offline for N+1's delivery window).
   const skipsAhead = buildEnvelope({ semanticVersion: '3.0.0' });
   const skipVerdict = await evaluate(skipsAhead, baseContext(), harness);
-  assert.deepEqual(skipVerdict, { accepted: true, idempotent: false }, 'current behavior: accepted immediately, not queued');
+  assert.deepEqual(
+    skipVerdict,
+    { accepted: true, idempotent: false },
+    'this module in isolation: accepted immediately, not queued -- see familysync/coordinator.test.mjs for the coordinator-layer hold-pending behavior',
+  );
 });
 
 test('SAFETY PROPERTY preserved despite the limitation above: a genuinely intervening version that arrives late is still correctly and permanently rejected, never mis-applied out of order', async () => {
@@ -200,6 +208,42 @@ test('SAFETY PROPERTY preserved despite the limitation above: a genuinely interv
   const verdict = await evaluate(lateIntervening, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
   assert.equal(harness.versionLedger.getLastAcceptedVersion(lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
+});
+
+test('dryRun performs every check including signature but records no ledger side effects', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope();
+  const verdict = await evaluateEnvelope(
+    envelope,
+    baseContext(),
+    harness.verifier,
+    harness.replayLedger,
+    harness.versionLedger,
+    harness.messageIdempotencyLedger,
+    { dryRun: true },
+  );
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+  assert.equal(harness.replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce), false);
+  assert.equal(harness.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId), null);
+
+  // The exact same envelope must still be fully acceptable for real afterward -- dryRun never consumes anything.
+  const realVerdict = await evaluate(envelope, baseContext(), harness);
+  assert.deepEqual(realVerdict, { accepted: true, idempotent: false });
+});
+
+test('dryRun still rejects an invalid signature -- it screens, it does not bypass', async () => {
+  const harness = buildHarness();
+  const envelope = { ...buildEnvelope(), signature: 'forged' };
+  const verdict = await evaluateEnvelope(
+    envelope,
+    baseContext(),
+    harness.verifier,
+    harness.replayLedger,
+    harness.versionLedger,
+    harness.messageIdempotencyLedger,
+    { dryRun: true },
+  );
+  assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
 });
 
 test('SIGNED_ROLLBACK is exempt from version monotonicity and moves the floor DOWN to its target version', async () => {
