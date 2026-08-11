@@ -1,4 +1,4 @@
-import type { ClassificationDisposition, SafeExplanation, SafeExplanationKind } from './types.js';
+import type { ClassificationDisposition } from './types.js';
 
 /**
  * doc 23 Section 1, PCA-AI-001's exact order. Index 0 is highest
@@ -89,14 +89,12 @@ export function resolveWithPrecedence(
   return { outcome: decidingOutcome, decidingSource: decidingCandidate.source, supplementaryReviewSignal };
 }
 
-const EXPLANATION_LABELS: Record<SafeExplanationKind, string> = {
-  CATEGORY_RULE_MATCHED: "blocked under your family's category rule",
-  SUPPLEMENTARY_RISK_SIGNAL: 'flagged by a supplementary risk signal for parent review',
-  MODEL_UNAVAILABLE: 'on-device analysis was unavailable for this item',
-  CONFIDENCE_BELOW_THRESHOLD: 'signal confidence was below the configured threshold',
-};
-
-/** doc 23 Section 4: safe, non-psychological explanation text. This is the ONLY function in this module that produces human-readable text -- callers must never construct their own free-text explanation. */
-export function explanationLabel(explanation: SafeExplanation): string {
-  return EXPLANATION_LABELS[explanation.kind];
-}
+// PCA-16A correction (BACKEND_I18N_NOT_WIRED): this module previously defined its own
+// EXPLANATION_LABELS/explanationLabel() English-only text map here -- a second, unsynchronized
+// copy of strings that also lived in backend/src/i18n's catalogue, and which no production
+// caller ever actually invoked (only its own unit test did). Removed outright rather than kept
+// as a redundant wrapper: doc 23 Section 4's safe, non-psychological explanation text now has
+// exactly one source of truth -- backend/src/i18n/messages/{en,ar}.ts's `ai.<SafeExplanationKind>`
+// entries, resolved via translate() at the real production call site
+// (ai/LifecycleGatedClassifier.ts's classify(), which populates ClassificationResult/
+// ModelUnavailableResult.explanationText).

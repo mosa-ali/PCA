@@ -15,6 +15,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'web.SCHEDULE_RULE': 'محظور بواسطة قاعدة الجدول الزمني الخاصة بعائلتك',
   'web.CLASSIFIER': 'محظور بواسطة قاعدة المحتوى الصريح الخاصة بعائلتك',
   'web.DEFAULT': 'لا توجد قاعدة مطابقة؛ مسموح به افتراضيًا',
+  'web.VPN_UNAVAILABLE': 'كانت إمكانية تصفية الشبكة غير متاحة لهذا الطلب',
 
   'ai.CATEGORY_RULE_MATCHED': 'محظور بموجب قاعدة التصنيف الخاصة بعائلتك',
   'ai.SUPPLEMENTARY_RISK_SIGNAL': 'تم وضع علامة عليه بواسطة إشارة خطر تكميلية لمراجعة الوالدين',

@@ -4,6 +4,7 @@ import { canonicalizeDomain } from '../web/canonicalize.js';
 import { resolveEffectiveSafeSearchMode } from '../web/policy.js';
 import type { WebFilterEngine } from '../web/WebFilterEngine.js';
 import type { ClassifierResult, SafeSearchDirective, SafeSearchMode } from '../web/types.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
 export type NavigationOutcome =
   | { status: 'ALLOW'; safeSearchMode: SafeSearchMode }
@@ -30,6 +31,15 @@ export class NavigationPolicyError extends Error {
  * never persisted here: doc 15 "PCA services do not persist readable
  * app-use timelines" extends to this module -- an allowed page is not
  * itself a retained event, only a block/review decision is.
+ *
+ * PCA-16A correction (BACKEND_I18N_NOT_WIRED): `locale` is threaded through
+ * to WebFilterEngine.decide() from HERE -- the real production boundary
+ * where a navigation request is evaluated on behalf of a specific child
+ * profile/device, which is where the presentation locale is actually known
+ * (the caller resolves it from the requesting device/profile's language
+ * preference; this class never guesses or defaults it beyond the explicit
+ * fallback below). The resulting `blockDecision.reasonCode` a parent/child
+ * sees is genuinely localized end-to-end, not just in an unused helper.
  */
 export class SafeBrowserNavigationPolicy {
   private readonly engine: WebFilterEngine;
@@ -45,11 +55,12 @@ export class SafeBrowserNavigationPolicy {
     profileId: OpaqueProfileId,
     url: string,
     options: { pageTitle?: string | null; classifierResult?: ClassifierResult; safeSearch?: SafeSearchDirective } = {},
+    locale: SupportedLocale = 'en',
   ): Promise<NavigationOutcome> {
     const domain = canonicalizeDomain(url);
     if (domain === null) throw new NavigationPolicyError('INVALID_URL');
 
-    const decision = await this.engine.decide(familyId, domain, { classifierResult: options.classifierResult });
+    const decision = await this.engine.decide(familyId, domain, { classifierResult: options.classifierResult }, locale);
 
     if (decision.outcome === 'ALLOW') {
       const safeSearchMode = options.safeSearch ? resolveEffectiveSafeSearchMode(options.safeSearch) : 'OFF';

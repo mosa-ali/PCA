@@ -81,6 +81,7 @@ export class BlockDecisionStateService {
       pageTitle,
       outcome: decision.outcome,
       source: decision.source,
+      reasonId: decision.reasonId,
       reasonCode: decision.reasonCode,
       requestable: decision.outcome !== 'ALLOW' && isBlockRequestable(decision.source),
       createdAt: this.now(),

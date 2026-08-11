@@ -1,4 +1,4 @@
-import type { CanonicalDomain, WebDecisionOutcome, WebRuleSource } from '../web/types.js';
+import type { CanonicalDomain, WebDecisionOutcome, WebReasonId, WebRuleSource } from '../web/types.js';
 
 export type OpaqueFamilyId = string;
 export type OpaqueProfileId = string;
@@ -23,6 +23,9 @@ export interface BlockDecisionState {
   pageTitle: string | null;
   outcome: WebDecisionOutcome;
   source: WebRuleSource | 'CLASSIFIER' | 'DEFAULT';
+  /** Stable machine key (PCA-16A: BACKEND_I18N_NOT_WIRED correction) -- policy/audit code keys off this, never off `reasonCode`'s localized prose. */
+  reasonId: WebReasonId;
+  /** Localized presentation text, resolved at decision time via backend/src/i18n (see BlockDecisionStateService.record's caller, SafeBrowserNavigationPolicy). */
   reasonCode: string;
   /** doc 14: "The child can request a review" -- false for a non-overridable security block (see safebrowser/policy.ts). */
   requestable: boolean;

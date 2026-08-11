@@ -159,6 +159,71 @@ test('the capability object declares requiresNetwork: false -- local inference n
   assert.equal(capability().requiresNetwork, false);
 });
 
+// PCA-16A correction (BACKEND_I18N_NOT_WIRED, section 6): REAL production-path integration
+// tests -- classify() IS the real production call path (not translate() called directly).
+
+test('AR ROUTE: classify() with presentationLocale "ar" returns a genuinely Arabic explanationText through the real classification path', async () => {
+  const repo = new InMemoryModelLifecycleRepository();
+  const service = new ModelLifecycleService(repo, { verify: async () => true }, new InMemoryActionIdempotencyLedger(), () => NOW);
+  await activateModel(service);
+  const classifier = new LifecycleGatedClassifier(capability(), service, PURPOSE, async () => ({
+    modelVersion: '1.0.0',
+    labels: ['PHISHING'],
+    confidence: 'HIGH',
+    disposition: 'BLOCK',
+  }));
+
+  const result = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' }, 'ar');
+  assert.equal(result.explanation.kind, 'SUPPLEMENTARY_RISK_SIGNAL');
+  assert.equal(result.explanationText, 'تم وضع علامة عليه بواسطة إشارة خطر تكميلية لمراجعة الوالدين');
+  assert.ok(/[؀-ۿ]/.test(result.explanationText), 'expected Arabic script, not an English fallback');
+});
+
+test('AR ROUTE: a MODEL_NOT_ACTIVE unavailable result also carries Arabic explanationText through the real path', async () => {
+  const repo = new InMemoryModelLifecycleRepository();
+  const service = new ModelLifecycleService(repo, { verify: async () => true }, new InMemoryActionIdempotencyLedger(), () => NOW);
+  const classifier = new LifecycleGatedClassifier(capability(), service, PURPOSE, async () => {
+    throw new Error('should not be called');
+  });
+  const result = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' }, 'ar');
+  assert.equal(result.reason, 'MODEL_NOT_ACTIVE');
+  assert.equal(result.explanationText, 'تعذر إجراء التحليل على الجهاز لهذا العنصر');
+});
+
+test('EN ROUTE (regression): classify() with no presentationLocale argument (or explicit "en") still returns the exact prior English text', async () => {
+  const repo = new InMemoryModelLifecycleRepository();
+  const service = new ModelLifecycleService(repo, { verify: async () => true }, new InMemoryActionIdempotencyLedger(), () => NOW);
+  await activateModel(service);
+  const classifier = new LifecycleGatedClassifier(capability(), service, PURPOSE, async () => ({
+    modelVersion: '1.0.0',
+    labels: ['PHISHING'],
+    confidence: 'HIGH',
+    disposition: 'BLOCK',
+  }));
+
+  const defaulted = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' });
+  assert.equal(defaulted.explanationText, 'flagged by a supplementary risk signal for parent review');
+
+  const explicit = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' }, 'en');
+  assert.equal(explicit.explanationText, 'flagged by a supplementary risk signal for parent review');
+});
+
+test('explanation.kind (stable machine key) is identical across presentation locales; only explanationText differs', async () => {
+  const repo = new InMemoryModelLifecycleRepository();
+  const service = new ModelLifecycleService(repo, { verify: async () => true }, new InMemoryActionIdempotencyLedger(), () => NOW);
+  await activateModel(service);
+  const classifier = new LifecycleGatedClassifier(capability(), service, PURPOSE, async () => ({
+    modelVersion: '1.0.0',
+    labels: ['PHISHING'],
+    confidence: 'HIGH',
+    disposition: 'BLOCK',
+  }));
+  const en = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' }, 'en');
+  const ar = await classifier.classify({ surface: 'PHISHING_SCAM_SUPPLEMENTARY_SIGNAL', locale: 'en', content: 'x' }, 'ar');
+  assert.equal(en.explanation.kind, ar.explanation.kind);
+  assert.notEqual(en.explanationText, ar.explanationText);
+});
+
 test('classify() never receives or returns the raw content -- the result never echoes the input payload', async () => {
   const repo = new InMemoryModelLifecycleRepository();
   const service = new ModelLifecycleService(repo, { verify: async () => true }, new InMemoryActionIdempotencyLedger(), () => NOW);

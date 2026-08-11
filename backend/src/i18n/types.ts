@@ -12,7 +12,7 @@ import type { ExportOutcomeKind } from '../export/types.js';
 import type { PurgePlanEntry } from '../retention/engine.js';
 import type { ModeBEventErrorCode } from '../youtube/ModeBPlaybackEventService.js';
 import type { ModeBEventType } from '../youtube/types.js';
-import type { WebRuleSource } from '../web/types.js';
+import type { WebReasonId } from '../web/types.js';
 
 /** doc 20 Section 1: launch languages only -- "PCA-FR-110/111." Adding a third locale is a product decision, not a silent code change. */
 export type SupportedLocale = 'en' | 'ar';
@@ -33,7 +33,7 @@ export const SUPPORTED_LOCALES: readonly SupportedLocale[] = ['en', 'ar'];
  * error here until this module's message tables are updated to match -- the same
  * compiler-enforced completeness guarantee the web/ai integration already relies on.
  */
-export type WebDecisionMessageId = `web.${WebRuleSource | 'CLASSIFIER' | 'DEFAULT'}`;
+export type WebDecisionMessageId = `web.${WebReasonId}`;
 export type AiExplanationMessageId = `ai.${SafeExplanationKind}`;
 export type EnrollmentMessageId = `enrollment.${EnrollmentErrorCode}`;
 export type InvitationMessageId = `invitation.${InvitationErrorCode}`;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AI_PRECEDENCE_ORDER, CLOUD_INFERENCE_APPROVED, explanationLabel, resolveWithPrecedence } from '../../dist/ai/policy.js';
+import { AI_PRECEDENCE_ORDER, CLOUD_INFERENCE_APPROVED, resolveWithPrecedence } from '../../dist/ai/policy.js';
 
 test('AI_PRECEDENCE_ORDER matches PCA-AI-001 exactly', () => {
   assert.deepEqual(AI_PRECEDENCE_ORDER, [
@@ -77,10 +77,10 @@ test('resolveWithPrecedence throws rather than silently guessing when nothing de
   assert.throws(() => resolveWithPrecedence([]), RangeError);
 });
 
-test('explanationLabel never produces a psychological/personality conclusion, only the four safe kinds', () => {
-  for (const kind of ['CATEGORY_RULE_MATCHED', 'SUPPLEMENTARY_RISK_SIGNAL', 'MODEL_UNAVAILABLE', 'CONFIDENCE_BELOW_THRESHOLD']) {
-    const label = explanationLabel({ kind });
-    assert.equal(typeof label, 'string');
-    assert.ok(label.length > 0);
-  }
-});
+// PCA-16A correction (BACKEND_I18N_NOT_WIRED): this module's own EXPLANATION_LABELS/
+// explanationLabel() was removed -- it was a duplicate, unused-in-production copy of text that
+// also lived in backend/src/i18n. The equivalent "never psychological/personality language"
+// guarantee is now verified against the single source of truth directly: see
+// test/i18n/translate.test.mjs's 'every SafeExplanationKind-derived message avoids
+// psychological/personality language' test, and test/ai/LifecycleGatedClassifier.test.mjs's
+// real production-path assertions on `explanationText`.

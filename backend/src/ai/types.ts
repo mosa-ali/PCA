@@ -1,6 +1,7 @@
 import type { ClassificationInputSurface } from '../model/types.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
-export type { ClassificationInputSurface };
+export type { ClassificationInputSurface, SupportedLocale };
 
 export type ConfidenceBand = 'LOW' | 'MEDIUM' | 'HIGH';
 export type ClassificationDisposition = 'BLOCK' | 'REVIEW' | 'ALLOW';
@@ -34,7 +35,15 @@ export interface ClassificationInput {
   content: unknown;
 }
 
-/** doc 23 Section 3: "Results should contain only what downstream deterministic policy requires." No raw input, confidence score, or free-text field beyond this. */
+/**
+ * doc 23 Section 3: "Results should contain only what downstream deterministic policy requires."
+ * No raw input, confidence score, or free-text field beyond this. `explanation.kind` is the
+ * stable machine reason (policy/audit code keys off this, never off prose); `explanationText`
+ * is the LOCALIZED presentation string resolved via backend/src/i18n's catalogue against the
+ * presentation locale the caller supplied to classify() (PCA-16A correction,
+ * BACKEND_I18N_NOT_WIRED) -- distinct from `ClassificationInput.locale`, which is the classified
+ * CONTENT's own locale used for model-capability matching, not who is reading this result.
+ */
 export interface ClassificationResult {
   modelId: string;
   modelVersion: string;
@@ -43,6 +52,7 @@ export interface ClassificationResult {
   confidence: ConfidenceBand;
   disposition: ClassificationDisposition;
   explanation: SafeExplanation;
+  explanationText: string;
 }
 
 export type ModelUnavailableReason =
@@ -56,6 +66,7 @@ export type ModelUnavailableReason =
 export interface ModelUnavailableResult {
   reason: ModelUnavailableReason;
   explanation: SafeExplanation;
+  explanationText: string;
 }
 
 /** doc 23 Section 2: "must not make a network call to function." `requiresNetwork` is a literal `false` type, not a boolean -- a capability object claiming otherwise cannot even be constructed as a LocalClassifier. */
@@ -75,7 +86,8 @@ export interface ModelCapability {
  */
 export interface LocalClassifier {
   readonly capability: ModelCapability;
-  classify(input: ClassificationInput): Promise<ClassificationResult | ModelUnavailableResult>;
+  /** `presentationLocale` drives `explanationText` only -- distinct from `input.locale` (the classified content's own locale, used for model-capability matching). Defaults to 'en' so existing callers that never pass it keep receiving English text unchanged. */
+  classify(input: ClassificationInput, presentationLocale?: SupportedLocale): Promise<ClassificationResult | ModelUnavailableResult>;
 }
 
 export function isModelUnavailableResult(

@@ -1,15 +1,19 @@
 import type { MessageId } from '../types.js';
 
 /**
- * English source strings. Reuses the exact wording already accepted in the frozen source
- * modules' own `*_ERROR_MESSAGES` maps / `labelForModeBEvent()` (kept word-for-word so no
- * behavioral meaning drifts between a module's own English text and this presentation-layer
- * table), plus a small number of NEW messages for domains that had no prior English text at all
- * (retention/export deletion-and-export confirmations, doc 20 FR-113) and one placeholder-bearing
- * demo message.
+ * English source strings -- the SOLE presentation-text authority for every id below.
+ * web/WebFilterEngine.ts and ai/policy.ts previously carried their own local English string
+ * maps (REASON_CODES, EXPLANATION_LABELS); both were removed in favor of calling `translate()`
+ * against this table directly (PCA-16A correction: BACKEND_I18N_NOT_WIRED). The wording here is
+ * unchanged from what those maps used to contain, so English output is byte-identical to before
+ * -- this was a wiring fix, not a copy change. Other entries reuse the exact wording already
+ * accepted in the remaining frozen source modules' own `*_ERROR_MESSAGES` maps /
+ * `labelForModeBEvent()`, plus a small number of NEW messages for domains that had no prior
+ * English text at all (retention/export deletion-and-export confirmations, doc 20 FR-113) and
+ * one placeholder-bearing demo message.
  */
 export const EN_MESSAGES: Record<MessageId, string> = {
-  // web/WebFilterEngine.ts REASON_CODES
+  // web filtering decision reasons (formerly web/WebFilterEngine.ts's local REASON_CODES)
   'web.SECURITY_DENYLIST': 'blocked by a security threat rule',
   'web.PARENT_ALLOWLIST': "allowed by your family's allow list",
   'web.PARENT_DENYLIST': "blocked by your family's block list",
@@ -17,6 +21,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'web.SCHEDULE_RULE': "blocked by your family's schedule rule",
   'web.CLASSIFIER': "blocked by your family's explicit-content rule",
   'web.DEFAULT': 'no matching rule; allowed by default',
+  'web.VPN_UNAVAILABLE': 'network filtering capability was unavailable for this request',
 
   // ai/policy.ts EXPLANATION_LABELS
   'ai.CATEGORY_RULE_MATCHED': "blocked under your family's category rule",

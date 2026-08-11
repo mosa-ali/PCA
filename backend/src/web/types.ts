@@ -89,11 +89,24 @@ export interface VpnMetadataDecision {
 
 export type WebDecisionOutcome = 'ALLOW' | 'BLOCK' | 'REVIEW';
 
-/** doc 15's reporting-contract fields, scoped to a single web decision. */
+/** The full set of stable machine reason keys a WebDecision can carry -- one more member (`VPN_UNAVAILABLE`) than `source` alone can express; see WebDecision.reasonId. Defined here (not in i18n/) so i18n/types.ts's MessageId union can import it, never the reverse. */
+export type WebReasonId = WebRuleSource | 'CLASSIFIER' | 'DEFAULT' | 'VPN_UNAVAILABLE';
+
+/**
+ * doc 15's reporting-contract fields, scoped to a single web decision. `source` is the field
+ * that already existed pre-PCA-16A and remains unchanged (matching rule/branch category).
+ * `reasonId` is a NEW, separate stable machine key (PCA-16A correction, BACKEND_I18N_NOT_WIRED):
+ * unlike `source`, it distinguishes the VPN-unavailable default-allow from an ordinary
+ * no-rule-matched default-allow -- two cases `source: 'DEFAULT'` alone cannot tell apart.
+ * `reasonCode` is now LOCALIZED presentation text resolved from backend/src/i18n's catalogue
+ * (see WebFilterEngine.decide's `locale` parameter) -- policy/audit code must key off `source`/
+ * `reasonId`, never parse or compare against `reasonCode`'s prose.
+ */
 export interface WebDecision {
   domain: CanonicalDomain;
   outcome: WebDecisionOutcome;
   source: WebRuleSource | 'CLASSIFIER' | 'DEFAULT';
+  reasonId: WebReasonId;
   reasonCode: string;
   coverage: 'FULL_URL' | 'DOMAIN_ONLY' | 'DESTINATION_ONLY';
 }
