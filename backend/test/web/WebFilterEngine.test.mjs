@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { canonicalizeDomain } from '../../dist/web/canonicalize.js';
 import { InMemoryWebRuleRepository, WebRuleService } from '../../dist/web/WebRuleStore.js';
 import { WebFilterEngine } from '../../dist/web/WebFilterEngine.js';
 
@@ -54,6 +55,25 @@ test('decide never claims FULL_URL coverage from a VPN-layer decision', async ()
   });
   assert.equal(decision.outcome, 'BLOCK');
   assert.equal(decision.coverage, 'DESTINATION_ONLY');
+});
+
+// FINDING-005: a denylist rule authored against the Unicode form of an IDN
+// domain must block a navigation attempt expressed via its punycode
+// A-label (and vice versa) -- both must resolve to the same rule lookup key.
+test('a parent denylist rule authored in Unicode blocks navigation expressed as the A-label', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  await new WebRuleService(repo).setParentRule('fam-1', 'münchen.example', 'DENY', 'PARENT_DENYLIST');
+  const decision = await new WebFilterEngine(repo).decide('fam-1', canonicalizeDomain('xn--mnchen-3ya.example'));
+  assert.equal(decision.outcome, 'BLOCK');
+  assert.equal(decision.source, 'PARENT_DENYLIST');
+});
+
+test('a parent denylist rule authored as an A-label blocks navigation expressed in Unicode', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  await new WebRuleService(repo).setParentRule('fam-1', 'xn--mnchen-3ya.example', 'DENY', 'PARENT_DENYLIST');
+  const decision = await new WebFilterEngine(repo).decide('fam-1', canonicalizeDomain('münchen.example'));
+  assert.equal(decision.outcome, 'BLOCK');
+  assert.equal(decision.source, 'PARENT_DENYLIST');
 });
 
 test('decide allows (never blocks) when the VPN layer reports unavailable coverage', async () => {
