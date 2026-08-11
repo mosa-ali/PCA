@@ -318,17 +318,25 @@ test('distinct entries with genuinely unique deviceId/DSK/DEK material are accep
 
 // --- Recovery acceptance boundary ----------------------------------------
 
-test('recovery-transaction acceptance is explicitly marked as a pending, separate workstream, not silently claimed complete', () => {
-  assert.equal(FTS_RECOVERY_ACCEPTANCE, 'PENDING_RECOVERY_WORKSTREAM');
+test('recovery-transaction acceptance is implemented as a dedicated, separate engine (PCA-13), not a branch of the ordinary path', () => {
+  // FamilyTrustSetRecoveryEngine.acceptRecoveryEpoch (a different exported
+  // function, in a different module) is the recovery-authorized acceptance
+  // path doc 09 Section 10 describes. This engine's own acceptEpoch
+  // deliberately has no recovery branch -- see the next test, which pins
+  // that a recovery-signed epoch still fails closed here.
+  assert.equal(FTS_RECOVERY_ACCEPTANCE, 'IMPLEMENTED_VIA_FamilyTrustSetRecoveryEngine');
 });
 
-test('a recovery-authorized signer (not the previous epoch\'s stored OWNER) fails closed as INVALID_SIGNATURE, never silently accepted, since recovery acceptance is not implemented', async () => {
+test('a recovery-authorized signer (not the previous epoch\'s stored OWNER) still fails closed as INVALID_SIGNATURE here -- the ordinary path has no recovery branch to accidentally take', async () => {
   const { store, verifier } = buildHarness();
   await acceptEpoch(buildEpoch('owner-dsk-pub'), store, verifier);
 
   // A plausible-looking "recovery replacement" epoch signed by a brand-new
   // key that is NOT the current owner's DSK -- ordinary acceptance must
-  // reject it rather than guess at recovery authorization it doesn't implement.
+  // reject it. This is the boundary that makes "a recovery authorization
+  // cannot use the ordinary owner path by accident" true: even now that
+  // recovery acceptance genuinely exists (FamilyTrustSetRecoveryEngine),
+  // it is not reachable through this function.
   const recoveryAttempt = buildEpoch('recovery-authorized-key', {
     trustSetEpoch: 2,
     supersedesEpoch: 1,

@@ -16,24 +16,28 @@ export type FtsRejectionReason =
 export type FtsVerdict = { accepted: true } | { accepted: false; reason: FtsRejectionReason };
 
 /**
- * This baseline implements ONLY the ordinary path: the previous epoch's
- * ACTIVE OWNER DSK signs the next epoch (or, at genesis, the candidate's
- * own claimed OWNER self-certifies). Doc 09 Section 10's recovery
- * transaction -- a DIFFERENT, multi-signer, recovery-authorized
- * acceptance path for replacing a lost/compromised owner -- is NOT
- * implemented here. A recovery-signed epoch is not silently mishandled:
- * it correctly fails this engine's ordinary INVALID_SIGNATURE check
- * (its signer is never the previous epoch's stored OWNER), so nothing
- * unsafe happens -- but the FTS lifecycle is NOT 100% complete without a
- * dedicated recovery-acceptance workstream built on top of this engine.
+ * This engine implements the ORDINARY path: the previous epoch's ACTIVE
+ * OWNER DSK signs the next epoch (or, at genesis, the candidate's own
+ * claimed OWNER self-certifies). Doc 09 Section 10's recovery transaction
+ * -- a DIFFERENT, recovery-authorized acceptance path for replacing a
+ * lost/compromised owner, gated on a successfully-opened recovery
+ * envelope rather than the previous epoch's OWNER signature -- is
+ * implemented separately in FamilyTrustSetRecoveryEngine.ts, on purpose:
+ * keeping it a structurally distinct function (not a branch inside
+ * acceptEpoch) is what makes "a recovery authorization cannot use the
+ * ordinary owner path by accident" true by construction, not just by
+ * convention. A recovery-signed epoch presented to THIS function's
+ * acceptEpoch still correctly fails the ordinary INVALID_SIGNATURE check
+ * (its signer is never the previous epoch's stored OWNER) -- the two
+ * paths cannot be confused for one another in either direction.
  */
-export const FTS_RECOVERY_ACCEPTANCE = 'PENDING_RECOVERY_WORKSTREAM';
+export const FTS_RECOVERY_ACCEPTANCE = 'IMPLEMENTED_VIA_FamilyTrustSetRecoveryEngine';
 
-function activeOwnerCount(entries: FamilyTrustSetEntry[]): number {
+export function activeOwnerCount(entries: FamilyTrustSetEntry[]): number {
   return entries.filter((entry) => entry.role === 'OWNER' && entry.status === 'ACTIVE').length;
 }
 
-function findActiveOwner(epoch: FamilyTrustSetEpoch): FamilyTrustSetEntry | null {
+export function findActiveOwner(epoch: FamilyTrustSetEpoch): FamilyTrustSetEntry | null {
   return epoch.entries.find((entry) => entry.role === 'OWNER' && entry.status === 'ACTIVE') ?? null;
 }
 
@@ -45,7 +49,7 @@ function findActiveOwner(epoch: FamilyTrustSetEpoch): FamilyTrustSetEntry | null
  * role separation intends, even if every individual entry is otherwise
  * well-formed.
  */
-function findDuplicateIdentity(entries: FamilyTrustSetEntry[]): boolean {
+export function findDuplicateIdentity(entries: FamilyTrustSetEntry[]): boolean {
   const deviceIds = new Set<string>();
   const dskKeyIds = new Set<string>();
   const dekKeyIds = new Set<string>();
