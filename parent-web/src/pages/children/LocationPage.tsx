@@ -22,7 +22,7 @@ export default function LocationPage() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('nav.location')}</h3>
+        <h2>{t('nav.location')}</h2>
         <StatusBadge state={data.state} />
         <p>
           {t('dashboard.lastSeen')}: <bdi className="iso">{lastSeenLabel}</bdi>

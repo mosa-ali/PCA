@@ -20,7 +20,7 @@ export default function ProtectionStatus() {
       <div className="card-grid">
         {data.children.map((c) => (
           <article className="card" key={c.childId}>
-            <h3>{c.displayName}</h3>
+            <h2>{c.displayName}</h2>
             <p>
               {t('dashboard.protectionCapability')}: <StatusBadge state={c.protectionCapabilityState} />
             </p>

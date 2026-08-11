@@ -18,7 +18,7 @@ export default function YouTubePage() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('nav.youtube')}</h3>
+        <h2>{t('nav.youtube')}</h2>
         <StatusBadge state={data.visibilityState} />
         <p>Restricted mode: {data.restrictedModeEnabled ? t('common.yes') : t('common.no')}</p>
         <p>Approved channels: {data.approvedChannelCount}</p>

@@ -22,9 +22,9 @@ function ChildCard({ child }: { child: ChildSummary }) {
   const { t, i18n } = useTranslation();
   return (
     <article className="card">
-      <h3>
+      <h2>
         <Link to={`/children/${child.childId}/overview`}>{child.displayName}</Link>
-      </h3>
+      </h2>
       <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '0.4rem', margin: 0 }}>
         <dt>{t('dashboard.deviceState')}</dt>
         <dd><StatusBadge state={child.deviceState} /></dd>

@@ -18,7 +18,7 @@ export default function WebProtectionPage() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('nav.webProtection')}</h3>
+        <h2>{t('nav.webProtection')}</h2>
         <StatusBadge state={data.state} />
         <p>Filtering level: {data.filteringLevel}</p>
         <p>Blocked categories: {data.blockedCategoryCount}</p>

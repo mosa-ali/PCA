@@ -18,7 +18,7 @@ export default function EyeProtectionPage() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('nav.eyeProtection')}</h3>
+        <h2>{t('nav.eyeProtection')}</h2>
         <StatusBadge state={data.state} />
         <p>Reminders: {data.remindersEnabled ? t('common.enable') : t('common.disable')}</p>
       </article>

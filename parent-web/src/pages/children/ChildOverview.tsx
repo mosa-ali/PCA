@@ -21,19 +21,19 @@ export default function ChildOverview() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('dashboard.deviceState')}</h3>
+        <h2>{t('dashboard.deviceState')}</h2>
         <StatusBadge state={data.deviceState} />
       </article>
       <article className="card">
-        <h3>{t('dashboard.protectionCapability')}</h3>
+        <h2>{t('dashboard.protectionCapability')}</h2>
         <StatusBadge state={data.protectionCapabilityState} />
       </article>
       <article className="card">
-        <h3>{t('dashboard.policyDelivery')}</h3>
+        <h2>{t('dashboard.policyDelivery')}</h2>
         <StatusBadge state={data.policyDeliveryState} />
       </article>
       <article className="card">
-        <h3>{t('dashboard.pendingRequests')}</h3>
+        <h2>{t('dashboard.pendingRequests')}</h2>
         <p>{data.pendingRequestCount}</p>
       </article>
     </div>

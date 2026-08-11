@@ -18,7 +18,7 @@ export default function PrayerPage() {
   return (
     <div className="card-grid">
       <article className="card">
-        <h3>{t('nav.prayer')}</h3>
+        <h2>{t('nav.prayer')}</h2>
         <StatusBadge state={data.state} />
         <p>Calculation method: {data.calculationMethod}</p>
         <p>Reminders: {data.remindersEnabled ? t('common.enable') : t('common.disable')}</p>

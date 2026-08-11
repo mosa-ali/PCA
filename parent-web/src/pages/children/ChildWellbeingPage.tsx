@@ -28,7 +28,7 @@ export default function ChildWellbeingPage() {
           const text = m.languageTexts.find((l) => l.languageTag === lang)?.text ?? m.languageTexts[0]?.text;
           return (
             <article className="card" key={m.messageId}>
-              <h3>{m.category}</h3>
+              <h2>{m.category}</h2>
               <p>{text}</p>
             </article>
           );
