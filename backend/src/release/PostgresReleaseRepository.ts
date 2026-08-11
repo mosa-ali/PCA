@@ -65,7 +65,33 @@ export class PostgresReleaseRepository implements ReleaseRepository {
   async publishRelease(record: ReleaseRecord): Promise<PublishResult> {
     try {
       return await runInTransaction(async (client) => {
+        // release_id is always service-derived from (packageType, platform,
+        // version) -- see ReleaseService -- so `release_packages`'s two
+        // independent unique constraints (the release_id PRIMARY KEY and
+        // UNIQUE(package_type, platform, version)) always protect the
+        // exact same logical identity for any request that went through
+        // the normal service API. Under genuine concurrency, Postgres may
+        // detect a collision via EITHER constraint first -- which one
+        // "wins the race" on a given connection is not deterministic and
+        // must not matter: both cases mean "a row for this identity
+        // already exists," so both fall through to the SAME
+        // reconcile-against-existing-row logic below. Previously only the
+        // `ON CONFLICT (release_id) DO NOTHING` path (a collision caught
+        // BEFORE the statement raises an error) reached that logic; a
+        // collision the OTHER constraint caught first raised a raw
+        // 23505 that a narrower catch turned directly into CONFLICT,
+        // skipping the idempotent-match comparison entirely and producing
+        // a spurious CONFLICT for a byte-identical concurrent publish.
+        // A SAVEPOINT is required here, not just a try/catch: once any
+        // statement inside a transaction errors, Postgres aborts the
+        // WHOLE transaction and rejects every subsequent statement with
+        // 25P02 ("current transaction is aborted") until a ROLLBACK. The
+        // reconcile-against-existing-row SELECT below runs in this same
+        // outer transaction, so without rolling back to a savepoint
+        // first, catching the unique_violation and continuing would
+        // itself throw 25P02 on the very next query.
         let inserted;
+        await client.query('SAVEPOINT publish_attempt');
         try {
           inserted = await client.query<ReleaseRow>(
             `INSERT INTO release_packages
@@ -88,21 +114,39 @@ export class PostgresReleaseRepository implements ReleaseRepository {
               record.retiredAt,
             ],
           );
+          await client.query('RELEASE SAVEPOINT publish_attempt');
         } catch (error) {
-          // release_id is always service-derived from (packageType, platform,
-          // version), so this constraint cannot fire through the normal
-          // service API -- but a direct repository caller with a mismatched
-          // releaseId must still get a typed CONFLICT, never a raw DB error.
-          if (isUniqueViolation(error)) throw new SoftFailure<ReleaseSoftCode>('CONFLICT');
-          throw error;
+          if (!isUniqueViolation(error)) throw error;
+          await client.query('ROLLBACK TO SAVEPOINT publish_attempt');
+          inserted = { rows: [] as ReleaseRow[] };
         }
 
         if (!inserted.rows[0]) {
-          const existing = await client.query<ReleaseRow>(`SELECT * FROM release_packages WHERE release_id = $1`, [
-            record.releaseId,
-          ]);
+          // Looked up by the NATURAL key (package_type, platform, version),
+          // not release_id: that is the identity the collision is actually
+          // guaranteed to be about, regardless of which of the two unique
+          // constraints fired. release_id is always service-derived from
+          // this same triple, so this also finds the right row for the
+          // normal (release_id-matches-the-triple) case -- but unlike a
+          // release_id lookup, it still finds the colliding row even for a
+          // direct repository caller that (incorrectly) supplied a
+          // mismatched release_id, which must still resolve to a typed
+          // CONFLICT/IDEMPOTENT_MATCH, never a raw, unhandled Error.
+          const existing = await client.query<ReleaseRow>(
+            `SELECT * FROM release_packages WHERE package_type = $1 AND platform = $2 AND version = $3`,
+            [record.packageType, record.platform, record.version],
+          );
           const row = existing.rows[0];
-          if (!row) throw new Error('release insert conflicted but no existing row was found');
+          // Reachable only when the INSERT's unique_violation fired on the
+          // release_id constraint against an EXISTING row for a DIFFERENT
+          // (package_type, platform, version) triple -- i.e. a direct
+          // repository caller supplied a release_id that collides with an
+          // unrelated release. There is no row under THIS triple to
+          // reconcile against; the requested identity's release_id is
+          // simply already taken by something else. That is itself a
+          // conflict, not an internal invariant violation -- it must
+          // still surface as a typed CONFLICT, never a raw, unhandled Error.
+          if (!row) throw new SoftFailure<ReleaseSoftCode>('CONFLICT');
           const matches =
             row.artifact_digest === record.artifactDigest &&
             Number(row.artifact_size_bytes) === record.artifactSizeBytes &&
