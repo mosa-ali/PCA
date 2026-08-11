@@ -21,6 +21,7 @@ class StandardLocationCapabilitySource(private val context: Context) : LocationC
 
     override fun currentCapability(): LocationCapabilitySnapshot = LocationCapabilitySnapshot(
         permissionState = permissionState(),
+        backgroundState = backgroundState(),
         servicesState = servicesState(),
         providerAvailability = providerAvailability(),
         backgroundExecutionUnrestricted = backgroundExecutionUnrestricted(),
@@ -32,6 +33,20 @@ class StandardLocationCapabilitySource(private val context: Context) : LocationC
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ->
             LocationPermissionState.COARSE_ONLY
         else -> LocationPermissionState.DENIED
+    }
+
+    /**
+     * NF-001: ACCESS_BACKGROUND_LOCATION is a separate runtime permission
+     * since API 29/Q -- checked live, never cached, and never evaluated
+     * unless foreground permission is already confirmed granted (a
+     * background grant is meaningless, and Android itself refuses to grant
+     * it, without foreground permission first).
+     */
+    private fun backgroundState(): BackgroundLocationState {
+        if (permissionState() == LocationPermissionState.DENIED) return BackgroundLocationState.NOT_APPLICABLE_FOREGROUND_DENIED
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return BackgroundLocationState.IMPLICIT_VIA_FOREGROUND_PRE_Q
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return if (granted) BackgroundLocationState.GRANTED else BackgroundLocationState.NOT_GRANTED
     }
 
     private fun servicesState(): LocationServicesState {
