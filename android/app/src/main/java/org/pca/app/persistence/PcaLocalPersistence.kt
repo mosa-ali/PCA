@@ -23,6 +23,25 @@ import org.pca.app.persistence.sync.SyncReceiptRepository
  * Callers elsewhere in the app should depend on this rather than
  * constructing [PcaLocalDatabase] or [AndroidKeystoreLocalRecordCipher]
  * directly, so there is exactly one production instance of each.
+ *
+ * PCA-RUNTIME-PERSIST-1 correction round Finding B, stated explicitly so it
+ * is not mistaken for finished end-to-end wiring:
+ *
+ * `PERSISTENCE_ADAPTERS = READY` -- [usageSessionRepository],
+ * [breakSessionRepository], [proximityEventRepository],
+ * [prayerReminderEventRepository], [policySnapshotRepository], and
+ * [policyReceiptRepository] are production-quality, tested (including real
+ * file-backed close/reopen durability -- see `RepositoryFileBackedDurabilityTest`),
+ * and instantiated here as the one canonical instance of each.
+ *
+ * `PRODUCTION_CALLER_BINDING = COORDINATOR/AGENT11_RUNTIME_INTEGRATION_REQUIRED`
+ * -- none of those six repositories has a real feature-engine caller yet
+ * (the usage/location/proximity/break/prayer collection loops and the
+ * policy-application layer live in other lanes' ownership -- Section 1's
+ * runtime and feature/wellbeing directory exclusion). Do NOT read the
+ * presence of these fields as `ROOM_PRODUCTION_WIRING_COMPLETE`; that claim
+ * requires a real producer calling into each adapter, which is out of this
+ * lane's ownership to add.
  */
 class PcaLocalPersistence private constructor(
     val database: PcaLocalDatabase,

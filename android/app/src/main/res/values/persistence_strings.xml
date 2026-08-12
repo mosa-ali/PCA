@@ -15,13 +15,12 @@
     <string name="delete_now_scope_family">The whole family</string>
 
     <string name="delete_now_confirm_title">Delete permanently?</string>
-    <string name="delete_now_confirm_message">This deletes %1$s local records now. This cannot be undone.</string>
+    <string name="delete_now_confirm_message">This will permanently delete the selected local data now. This cannot be undone.</string>
     <string name="delete_now_confirm_button">Delete now</string>
     <string name="delete_now_cancel_button">Cancel</string>
 
     <string name="delete_now_result_title">Deletion complete</string>
-    <string name="delete_now_result_message">%1$d local records were deleted.</string>
-    <string name="delete_now_result_receipt_id">Receipt: %1$s</string>
+    <string name="delete_now_result_message">%1$d local records were deleted.\nReceipt: %2$s</string>
     <string name="delete_now_close_button">Close</string>
 
     <string name="delete_now_error_title">Delete Now failed</string>

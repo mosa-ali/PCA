@@ -15,13 +15,12 @@
     <string name="delete_now_scope_family">العائلة بالكامل</string>
 
     <string name="delete_now_confirm_title">حذف بشكل نهائي؟</string>
-    <string name="delete_now_confirm_message">سيؤدي هذا إلى حذف %1$s سجل محلي الآن. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="delete_now_confirm_message">سيؤدي هذا إلى حذف البيانات المحلية المحددة نهائيًا الآن. لا يمكن التراجع عن هذا الإجراء.</string>
     <string name="delete_now_confirm_button">الحذف الآن</string>
     <string name="delete_now_cancel_button">إلغاء</string>
 
     <string name="delete_now_result_title">اكتمل الحذف</string>
-    <string name="delete_now_result_message">تم حذف %1$d سجل محلي.</string>
-    <string name="delete_now_result_receipt_id">الإيصال: %1$s</string>
+    <string name="delete_now_result_message">تم حذف %1$d سجل محلي.\nالإيصال: %2$s</string>
     <string name="delete_now_close_button">إغلاق</string>
 
     <string name="delete_now_error_title">فشل الحذف الآن</string>

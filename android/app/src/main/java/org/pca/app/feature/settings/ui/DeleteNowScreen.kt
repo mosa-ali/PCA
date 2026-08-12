@@ -75,7 +75,7 @@ fun DeleteNowScreen(
         AlertDialog(
             onDismissRequest = { pendingScope = null },
             title = { Text(text = stringResource(R.string.delete_now_confirm_title)) },
-            text = { Text(text = stringResource(R.string.delete_now_confirm_message, scopeOptions.getOrNull(selectedIndex)?.label.orEmpty())) },
+            text = { Text(text = stringResource(R.string.delete_now_confirm_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     pendingScope = null
@@ -101,9 +101,7 @@ fun DeleteNowScreen(
             text = {
                 Text(
                     text = when (r) {
-                        is DeleteNowUiResult.Success ->
-                            stringResource(R.string.delete_now_result_message, r.deletedCount) + "\n" +
-                                stringResource(R.string.delete_now_result_receipt_id, r.receiptId)
+                        is DeleteNowUiResult.Success -> stringResource(R.string.delete_now_result_message, r.deletedCount, r.receiptId)
                         is DeleteNowUiResult.Failure -> stringResource(R.string.delete_now_error_message)
                     },
                 )
