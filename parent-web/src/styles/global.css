@@ -285,6 +285,15 @@ textarea {
 .status-EPOCH_STALE .dot { background: var(--color-danger); }
 .status-REVOKED .dot { background: var(--color-danger); }
 
+.policy-status-LOCAL_DRAFT .dot { background: var(--color-offline); }
+.policy-status-PENDING_SYNC .dot { background: var(--color-warning); }
+.policy-status-PENDING_DELIVERY .dot { background: var(--color-warning); }
+.policy-status-DELIVERED .dot { background: var(--color-warning); }
+.policy-status-APPLIED .dot { background: var(--color-success); }
+.policy-status-FAILED .dot { background: var(--color-danger); }
+.policy-status-EXPIRED .dot { background: var(--color-danger); }
+.policy-status-STALE .dot { background: var(--color-danger); }
+
 .status-badge {
   background: var(--color-surface-raised);
   color: var(--color-text);

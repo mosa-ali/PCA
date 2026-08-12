@@ -23,3 +23,13 @@ test('offline/device-offline notice text is translated in Arabic, not left in En
   await expect(page.getByText('جهاز هذا الطفل غير متصل')).toBeVisible();
   await expect(page.getByText(/تستمر الحماية المحلية على الجهاز/)).toBeVisible();
 });
+
+test('saving a policy shows the PolicyStatusBadge translated in Arabic, never the English label', async ({ page }) => {
+  await page.goto('/children/child-amir/screen-time');
+  await page.getByLabel('Language').first().selectOption('ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await page.getByRole('button', { name: 'حفظ' }).click();
+  await expect(page.getByText('في الطابور -- بانتظار التسليم')).toBeVisible();
+  await expect(page.getByText('Queued -- pending delivery')).not.toBeVisible();
+  await expect(page.getByText('مُطبَّق على الجهاز')).not.toBeVisible();
+});

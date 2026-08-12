@@ -7,6 +7,7 @@ import { applyDocumentDirection } from './i18n';
 import i18n from './i18n';
 import { AuthProvider } from './state/AuthContext';
 import { StepUpProvider } from './state/StepUpContext';
+import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 import './styles/global.css';
 
 applyDocumentDirection(i18n.language ?? 'en');
@@ -14,12 +15,14 @@ i18n.on('languageChanged', (lng) => applyDocumentDirection(lng));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <StepUpProvider>
-          <App />
-        </StepUpProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <StepUpProvider>
+            <App />
+          </StepUpProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 );

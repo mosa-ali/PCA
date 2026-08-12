@@ -1,8 +1,29 @@
 // Factory that wires the typed API interfaces to their current
-// implementation. Today only the DEVELOPMENT_ONLY fixture implementation
-// exists; a future real-HTTP implementation set can be swapped in here
-// (behind config.demoMode / config.apiBaseUrl) WITHOUT any UI changes,
-// because every consumer imports only the interfaces from ./interfaces.
+// implementation. Every consumer imports only the interfaces from
+// ./interfaces (plus this factory), so swapping implementations never
+// requires a UI change.
+//
+// Two families of implementation exist today:
+//  - DEVELOPMENT_ONLY fixtures (src/api/dev/*) -- used ONLY when
+//    config.demoMode is explicitly true.
+//  - "Real" implementations (src/api/real/*) -- used whenever demo mode is
+//    off. For ServiceAuthClient this is genuine HTTP-backed code
+//    (RealServiceAuthClient). For every other interface, no real backend
+//    exists yet in this repository slice (there is no backend/ relay and no
+//    contracts/schedule-runtime here -- that is owned by the agent building
+//    the backend relay), so an explicit "unavailable" provider
+//    (src/api/real/unavailableProviders.ts) is used instead. Those
+//    providers never fabricate fixture data and never grant permissions --
+//    they surface a genuine UNAVAILABLE/NOT_IMPLEMENTED condition to the
+//    UI. This is deliberately NOT the same thing as falling back to
+//    fixtures: a real-but-not-yet-implemented backend must never
+//    masquerade as a working demo.
+//
+// KNOWN_BACKEND_INTEGRATION_ACTION: as each interface in
+// src/api/real/unavailableProviders.ts gets a genuine HTTP/relay-backed
+// implementation, replace its construction below the same way
+// RealServiceAuthClient already is, and delete the corresponding
+// Unavailable* class once nothing constructs it anymore.
 import { config } from '../config/env';
 import type {
   DeviceStatusClient,
@@ -23,6 +44,15 @@ import { DevWellbeingMessageAdminClient } from './dev/devWellbeingMessageAdminCl
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
+import {
+  UnavailableDeviceStatusClient,
+  UnavailableFamilyAuthorityGateway,
+  UnavailableParentFamilyDataGateway,
+  UnavailableRequestClient,
+  UnavailableRuntimeSyncClient,
+  UnavailableTrustedBrowserProvider,
+  UnavailableWellbeingMessageAdminClient,
+} from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -33,6 +63,7 @@ export interface PcaApiClients {
   wellbeingMessages: WellbeingMessageAdminClient;
   trustedBrowser: TrustedBrowserProvider;
   runtimeSync: ParentRuntimeSyncClient;
+  /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
 
@@ -50,47 +81,45 @@ function buildDevClients(): PcaApiClients {
   };
 }
 
+/**
+ * Builds the strongest actually-available real implementation for each
+ * interface. serviceAuth is genuinely HTTP-backed and reachable today --
+ * it is never discarded just because sibling interfaces aren't implemented
+ * yet. Every not-yet-implemented interface gets an explicit "unavailable"
+ * provider (see src/api/real/unavailableProviders.ts), never a fixture.
+ * Deliberately has no try/catch: if constructing any of these ever throws
+ * (a genuine programmer error, not an expected condition), that must
+ * propagate to the caller rather than being swallowed -- see
+ * getApiClients() below and src/components/common/AppErrorBoundary.tsx for
+ * where that surfaces.
+ */
 function buildRealClients(): PcaApiClients {
-  // The real, HTTP-backed ServiceAuthClient (./real/realServiceAuthClient.ts)
-  // is genuine working code and safe to construct today against
-  // config.apiBaseUrl -- it is wired in here first so this factory reflects
-  // that it is no longer a stub.
-  //
-  // KNOWN_BACKEND_INTEGRATION_ACTION: every other interface in this bundle
-  // (family authority gateway, family data gateway, device status, requests,
-  // wellbeing messages, trusted-browser pairing, runtime sync) still needs a
-  // real HTTP/relay-backed implementation once a backend exists (there is
-  // currently no backend/ relay and no contracts/schedule-runtime in this
-  // repository slice -- that is owned by the agent building the backend
-  // relay). Once those land, construct them here the same way and return a
-  // full PcaApiClients bundle with isFixtureBacked: false. Until then we
-  // still cannot return a fully-real bundle, so we throw.
-  const serviceAuth: ServiceAuthClient = new RealServiceAuthClient(config.apiBaseUrl);
-  throw new Error(
-    'Real (non-fixture) PCA API clients are not fully implemented yet -- ' +
-      `serviceAuth is real (${serviceAuth.constructor.name}) but the other clients ` +
-      `are pending backend integration at ${config.apiBaseUrl}. ` +
-      'See KNOWN_BACKEND_INTEGRATION_ACTIONS in the parent-web build report.',
-  );
+  return {
+    serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
+    familyAuthority: new UnavailableFamilyAuthorityGateway(),
+    parentFamilyData: new UnavailableParentFamilyDataGateway(),
+    deviceStatus: new UnavailableDeviceStatusClient(),
+    requests: new UnavailableRequestClient(),
+    wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
+    trustedBrowser: new UnavailableTrustedBrowserProvider(),
+    runtimeSync: new UnavailableRuntimeSyncClient(),
+    isFixtureBacked: false,
+  };
 }
 
 let cached: PcaApiClients | null = null;
 
+/**
+ * Demo-mode fixtures are constructed ONLY when config.demoMode is
+ * explicitly true. There is deliberately no catch-all here: a construction
+ * failure while demo mode is off is a real defect and must be visible (see
+ * AppErrorBoundary), never silently masked by a working-looking fixture
+ * bundle. Callers that need resilience against a specific interface being
+ * unavailable should handle that interface's typed error, not rely on this
+ * factory to hide it.
+ */
 export function getApiClients(): PcaApiClients {
   if (cached) return cached;
-  cached = config.demoMode ? buildDevClients() : safeBuildReal();
+  cached = config.demoMode ? buildDevClients() : buildRealClients();
   return cached;
-}
-
-function safeBuildReal(): PcaApiClients {
-  try {
-    return buildRealClients();
-  } catch {
-    // No real backend exists yet in this repository slice; fall back to
-    // fixtures so the app remains usable for UI review, but the demo
-    // banner logic (src/components/common/DemoBanner.tsx) still keys off
-    // `isFixtureBacked`, not off config.demoMode, so this fallback cannot
-    // silently masquerade as production data.
-    return buildDevClients();
-  }
 }

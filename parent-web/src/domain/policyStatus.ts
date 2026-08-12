@@ -75,3 +75,29 @@ export function isUnconfirmedStatus(status: PolicyStatus): boolean {
 export function initialStatusAfterSubmit(wasOffline: boolean): PolicyStatus {
   return wasOffline ? 'LOCAL_DRAFT' : 'PENDING_SYNC';
 }
+
+/**
+ * Seam for a future child-application receipt (Agent 16's backend relay is
+ * not landed in this repository slice -- see ../api/runtimeSyncClient.ts).
+ * No caller in this codebase invokes this today; it exists so a later
+ * integration can flip a snapshot to APPLIED without inventing a second
+ * status model or bypassing the transition table above. Given a current
+ * snapshot and a receipt confirming a specific revision was applied
+ * on-device, returns the updated snapshot -- APPLIED only when the
+ * receipt's revision matches the snapshot's policyRevision AND the
+ * transition is legal from the snapshot's current status; otherwise the
+ * snapshot is returned unchanged (never optimistically applied).
+ */
+export function applyChildApplicationReceipt(
+  snapshot: PolicyStatusSnapshot,
+  receipt: { appliedRevision: number; acknowledgedAtUtc: string },
+): PolicyStatusSnapshot {
+  if (snapshot.policyRevision === null || snapshot.policyRevision !== receipt.appliedRevision) return snapshot;
+  if (!canTransition(snapshot.status, 'APPLIED')) return snapshot;
+  return {
+    ...snapshot,
+    status: 'APPLIED',
+    lastAppliedRevision: receipt.appliedRevision,
+    updatedAtUtc: receipt.acknowledgedAtUtc,
+  };
+}

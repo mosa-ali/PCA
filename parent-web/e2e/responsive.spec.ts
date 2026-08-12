@@ -43,3 +43,23 @@ test('device offline notice does not cause horizontal overflow at 320px width', 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('PolicyStatusBadge after a save does not cause horizontal overflow or truncation at 320px width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  // child-yousef's device is offline (DEV fixture), so this also exercises
+  // the PolicyStatusBadge rendering together with the device-offline
+  // notice on the smallest supported viewport.
+  await page.goto('/children/child-yousef/screen-time');
+  await expect(page.getByText("This child's device is offline")).toBeVisible();
+  await page.getByRole('button', { name: 'Save' }).click();
+  const badge = page.getByText('Queued -- pending delivery');
+  await expect(badge).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  const box = await badge.boundingBox();
+  expect(box).not.toBeNull();
+  expect((box?.x ?? -1)).toBeGreaterThanOrEqual(0);
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(320);
+});

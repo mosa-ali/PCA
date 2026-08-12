@@ -6,6 +6,10 @@
   "demo": {
     "banner": "Development preview -- all data on this screen is synthetic (DEVELOPMENT_ONLY) and not real family data."
   },
+  "errorBoundary": {
+    "title": "Configuration error",
+    "body": "The parent console could not start due to an unexpected internal error. This is not a normal \"backend not reachable yet\" condition -- please report this to the PCA team."
+  },
   "nav": {
     "dashboard": "Dashboard",
     "children": "Children",
@@ -184,6 +188,7 @@
     "status": "Status"
   },
   "policyStatus": {
+    "label": "Policy status:",
     "LOCAL_DRAFT": "Draft (not yet synced)",
     "PENDING_SYNC": "Pending sync",
     "PENDING_DELIVERY": "Queued -- pending delivery",
