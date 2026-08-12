@@ -13,6 +13,15 @@ import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { OfflineDraftNotice } from '../../components/common/OfflineDraftNotice';
 import type { ScreenTimeStatus } from '../../domain/types';
+import {
+  BREAK_DURATION_MAX_MINUTES,
+  BREAK_DURATION_MIN_MINUTES,
+  CONTINUOUS_USE_LIMIT_MAX_MINUTES,
+  CONTINUOUS_USE_LIMIT_MIN_MINUTES,
+  describeScreenTimePolicyError,
+  isBaselineCompliantScreenTimePolicy,
+  validateScreenTimePolicy,
+} from '../../domain/screenTimePolicy';
 
 interface ScreenTimePageData {
   screenTime: ScreenTimeStatus;
@@ -50,6 +59,7 @@ export default function ScreenTimePage() {
   const [saving, setSaving] = useState(false);
   const [limit, setLimit] = useState<number | null>(null);
   const [breakMin, setBreakMin] = useState<number | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -57,8 +67,27 @@ export default function ScreenTimePage() {
 
   const effectiveLimit = limit ?? data.screenTime.continuousUseLimitMinutes;
   const effectiveBreak = breakMin ?? data.screenTime.breakDurationMinutes;
+  // PCA-SCREEN-BASELINE-1: a policy loaded from storage may predate the 60/30 baseline (e.g.
+  // legacy/demo fixture data authored before this rule existed). It is surfaced honestly here --
+  // never silently treated as compliant -- but is not mutated in place; the parent must
+  // explicitly strengthen and re-save it, at which point the same validator below applies.
+  const loadedPolicyPredatesBaseline = !isBaselineCompliantScreenTimePolicy({
+    continuousUseLimitMinutes: data.screenTime.continuousUseLimitMinutes,
+    breakDurationMinutes: data.screenTime.breakDurationMinutes,
+  });
 
   const onSave = async () => {
+    // PCA-SCREEN-BASELINE-1: real validation, run on the actual submission path -- never rely on
+    // the <input min/max> attributes alone, since those are trivially bypassable.
+    const result = validateScreenTimePolicy({
+      continuousUseLimitMinutes: effectiveLimit,
+      breakDurationMinutes: effectiveBreak,
+    });
+    if (!result.valid) {
+      setValidationErrors(result.errors.map(describeScreenTimePolicyError));
+      return;
+    }
+    setValidationErrors([]);
     setSaving(true);
     const wasOffline = !online;
     // Record the honest in-flight state the instant Save is pressed --
@@ -117,13 +146,20 @@ export default function ScreenTimePage() {
           {t('policyStatus.label')} <PolicyStatusBadge status={policyStatus.snapshot.status} />
         </p>
       )}
+      {loadedPolicyPredatesBaseline && (
+        <p role="alert" className="field-warning">
+          This child&apos;s saved screen-time policy predates the mandatory 60/30 anti-gaming
+          baseline and does not meet it. Update the values below and save to bring it into
+          compliance.
+        </p>
+      )}
       <div className="field">
         <label htmlFor="limit">Continuous-use limit (minutes)</label>
         <input
           id="limit"
           type="number"
-          min={15}
-          max={180}
+          min={CONTINUOUS_USE_LIMIT_MIN_MINUTES}
+          max={CONTINUOUS_USE_LIMIT_MAX_MINUTES}
           value={effectiveLimit}
           disabled={!!error}
           onChange={(e) => setLimit(Number(e.target.value))}
@@ -134,12 +170,21 @@ export default function ScreenTimePage() {
         <input
           id="break"
           type="number"
-          min={5}
-          max={90}
+          min={BREAK_DURATION_MIN_MINUTES}
+          max={BREAK_DURATION_MAX_MINUTES}
           value={effectiveBreak}
           onChange={(e) => setBreakMin(Number(e.target.value))}
         />
       </div>
+      {validationErrors.length > 0 && (
+        <p role="alert" className="field-error">
+          {validationErrors.map((message) => (
+            <span key={message} style={{ display: 'block' }}>
+              {message}
+            </span>
+          ))}
+        </p>
+      )}
       <PermissionGate action="EDIT_CHILD_POLICY" showDisabledFallback>
         <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
           {t('common.save')}
