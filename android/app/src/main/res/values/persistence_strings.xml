@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PCA-RUNTIME-PERSIST-1: strings for the Settings > Delete Now local-deletion
+  flow (doc 11 Section 6, PCA-LOCAL-DB-1 Section 21). Follows the doc 20
+  Section 2 string architecture used by strings.xml: stable ASCII keys,
+  typed/positional placeholders, no runtime concatenation of fragments.
+-->
+<resources>
+    <string name="delete_now_title">Delete Now</string>
+    <string name="delete_now_description">Permanently deletes locally stored family data for the scope you choose. This cannot be undone.</string>
+
+    <string name="delete_now_scope_label">What to delete</string>
+    <string name="delete_now_scope_device">This device only</string>
+    <string name="delete_now_scope_child">%1$s (this child, all their devices)</string>
+    <string name="delete_now_scope_family">The whole family</string>
+
+    <string name="delete_now_confirm_title">Delete permanently?</string>
+    <string name="delete_now_confirm_message">This deletes %1$s local records now. This cannot be undone.</string>
+    <string name="delete_now_confirm_button">Delete now</string>
+    <string name="delete_now_cancel_button">Cancel</string>
+
+    <string name="delete_now_result_title">Deletion complete</string>
+    <string name="delete_now_result_message">%1$d local records were deleted.</string>
+    <string name="delete_now_result_receipt_id">Receipt: %1$s</string>
+    <string name="delete_now_close_button">Close</string>
+
+    <string name="delete_now_error_title">Delete Now failed</string>
+    <string name="delete_now_error_message">The deletion could not be completed. No partial deletion was applied.</string>
+</resources>

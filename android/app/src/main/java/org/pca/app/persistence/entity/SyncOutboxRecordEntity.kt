@@ -17,7 +17,10 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "sync_outbox_records",
-    indices = [Index("familyScope"), Index("state"), Index("sequence")],
+    indices = [
+        Index("familyScope"), Index("state"), Index("sequence"),
+        Index("priority"), Index("coalesceKey"),
+    ],
 )
 data class SyncOutboxRecordEntity(
     @PrimaryKey val messageId: String,
@@ -31,4 +34,22 @@ data class SyncOutboxRecordEntity(
     val nextRetryAtEpochMillis: Long?,
     val expiresAtEpochMillis: Long,
     val createdAtEpochMillis: Long,
-)
+    /**
+     * PCA-RUNTIME-PERSIST-1 Section 13: lower value = more urgent local
+     * delivery scheduling (see [org.pca.app.persistence.sync.OutboxPriority]).
+     * Local delivery-ordering metadata only -- never a new wire message type.
+     */
+    val priority: Int = OUTBOX_PRIORITY_DEFAULT,
+    /**
+     * PCA-RUNTIME-PERSIST-1 Section 14: optional local aggregation key (e.g.
+     * "usage_summary:<deviceId>:<hour>"). When non-null and a PENDING row
+     * with the same [coalesceKey] already exists, enqueue coalesces into
+     * that row instead of adding a new one, so a fast timer loop does not
+     * queue one family envelope per tick.
+     */
+    val coalesceKey: String? = null,
+) {
+    companion object {
+        const val OUTBOX_PRIORITY_DEFAULT = 2
+    }
+}

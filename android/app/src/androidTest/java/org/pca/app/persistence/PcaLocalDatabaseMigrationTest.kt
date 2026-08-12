@@ -13,11 +13,11 @@ import org.junit.Test
  * `testDebugUnitTest`; run via `connectedDebugAndroidTest` when a device is
  * available.
  *
- * There is exactly one schema version today (Section 4 -- no migrations
- * exist yet), so this currently only validates that version 1 creates
- * cleanly against its own exported schema. The next migration added to
- * [Migrations.ALL] MUST add a `helper.runMigrationsAndValidate(...)` case
- * here alongside it -- an unhandled schema change failing this test is the
+ * PCA-RUNTIME-PERSIST-1 added [Migrations.MIGRATION_1_2] (outbox
+ * priority/coalesceKey columns, Sections 12-14) -- per this file's own
+ * standing instruction, that migration's `runMigrationsAndValidate` case is
+ * added below alongside it. The next migration added to [Migrations.ALL]
+ * MUST do the same -- an unhandled schema change failing this test is the
  * intended signal, not a test to relax.
  */
 class PcaLocalDatabaseMigrationTest {
@@ -32,6 +32,29 @@ class PcaLocalDatabaseMigrationTest {
     @Test
     fun version1SchemaCreatesCleanly() {
         helper.createDatabase(TEST_DB_NAME, 1).close()
+    }
+
+    @Test
+    fun migrate1To2AddsOutboxPriorityAndCoalesceKeyColumns() {
+        helper.createDatabase(TEST_DB_NAME, 1).apply {
+            execSQL(
+                "INSERT INTO sync_outbox_records (messageId, familyScope, recipientScope, envelopeCipherEnc, " +
+                    "envelopeCipherIv, sequence, state, retryCount, nextRetryAtEpochMillis, expiresAtEpochMillis, " +
+                    "createdAtEpochMillis) VALUES ('msg-1', 'family-1', 'device-1', 'enc', 'iv', 1, 'PENDING', 0, NULL, 999999, 1000)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB_NAME, 2, true, Migrations.MIGRATION_1_2)
+        val cursor = migrated.query("SELECT priority, coalesceKey FROM sync_outbox_records WHERE messageId = 'msg-1'")
+        try {
+            org.junit.Assert.assertTrue(cursor.moveToFirst())
+            org.junit.Assert.assertEquals(2, cursor.getInt(cursor.getColumnIndexOrThrow("priority")))
+            org.junit.Assert.assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("coalesceKey")))
+        } finally {
+            cursor.close()
+            migrated.close()
+        }
     }
 
     private companion object {

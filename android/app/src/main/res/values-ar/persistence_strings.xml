@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Arabic (ar). AUTHORED BY: engineering pass, standard Modern Standard
+  Arabic; PENDING NATIVE REVIEWER SIGN-OFF before release, matching the
+  disclosure already on strings.xml/values-ar. No religious terminology is
+  involved in this file.
+-->
+<resources>
+    <string name="delete_now_title">الحذف الآن</string>
+    <string name="delete_now_description">يحذف بياناتك العائلية المحفوظة محليًا بشكل نهائي للنطاق الذي تحدده. لا يمكن التراجع عن هذا الإجراء.</string>
+
+    <string name="delete_now_scope_label">ما الذي سيتم حذفه</string>
+    <string name="delete_now_scope_device">هذا الجهاز فقط</string>
+    <string name="delete_now_scope_child">%1$s (هذا الطفل، وجميع أجهزته)</string>
+    <string name="delete_now_scope_family">العائلة بالكامل</string>
+
+    <string name="delete_now_confirm_title">حذف بشكل نهائي؟</string>
+    <string name="delete_now_confirm_message">سيؤدي هذا إلى حذف %1$s سجل محلي الآن. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="delete_now_confirm_button">الحذف الآن</string>
+    <string name="delete_now_cancel_button">إلغاء</string>
+
+    <string name="delete_now_result_title">اكتمل الحذف</string>
+    <string name="delete_now_result_message">تم حذف %1$d سجل محلي.</string>
+    <string name="delete_now_result_receipt_id">الإيصال: %1$s</string>
+    <string name="delete_now_close_button">إغلاق</string>
+
+    <string name="delete_now_error_title">فشل الحذف الآن</string>
+    <string name="delete_now_error_message">تعذّر إتمام الحذف. لم يتم تطبيق أي حذف جزئي.</string>
+</resources>

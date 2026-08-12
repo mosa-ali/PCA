@@ -3,13 +3,12 @@ package org.pca.app.persistence
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.persistence.entity.SyncOutboxState
+import org.pca.app.persistence.sync.EnqueueOutcome
 import org.pca.app.persistence.sync.ReceiptOutcome
 import org.pca.app.persistence.sync.SyncOutboxRepository
 import org.pca.app.persistence.sync.SyncReceiptRepository
@@ -36,8 +35,8 @@ class SyncOutboxAndReceiptTest {
         val first = repo.enqueue("msg-1", "family-1", "device-2", "ciphertext-b64", 1L, 999_999L, 1000L)
         val second = repo.enqueue("msg-1", "family-1", "device-2", "different-ciphertext-b64", 1L, 999_999L, 1000L)
 
-        assertTrue(first)
-        assertFalse(second)
+        assertEquals(EnqueueOutcome.ENQUEUED, first)
+        assertEquals(EnqueueOutcome.ALREADY_QUEUED, second)
         assertEquals(1, db.syncOutboxDao().count())
     }
 

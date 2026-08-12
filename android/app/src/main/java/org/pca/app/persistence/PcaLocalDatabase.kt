@@ -102,7 +102,7 @@ abstract class PcaLocalDatabase : RoomDatabase() {
     abstract fun syncReceiptDao(): SyncReceiptDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val DATABASE_NAME = "pca_local.db"
 
         /**

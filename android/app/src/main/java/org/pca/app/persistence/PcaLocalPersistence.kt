@@ -3,8 +3,14 @@ package org.pca.app.persistence
 import android.content.Context
 import org.pca.app.persistence.crypto.AndroidKeystoreLocalRecordCipher
 import org.pca.app.persistence.crypto.LocalRecordCipher
+import org.pca.app.persistence.repository.BreakSessionRepository
 import org.pca.app.persistence.repository.FamilyMemberRepository
 import org.pca.app.persistence.repository.LocationPointRepository
+import org.pca.app.persistence.repository.PolicyReceiptRepository
+import org.pca.app.persistence.repository.PolicySnapshotRepository
+import org.pca.app.persistence.repository.PrayerReminderEventRepository
+import org.pca.app.persistence.repository.ProximityEventRepository
+import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.persistence.repository.WebVisitRepository
 import org.pca.app.persistence.retention.DeleteNowCoordinator
 import org.pca.app.persistence.retention.RetentionEngine
@@ -25,6 +31,12 @@ class PcaLocalPersistence private constructor(
     val familyMemberRepository = FamilyMemberRepository(database.familyMemberDao(), cipher)
     val webVisitRepository = WebVisitRepository(database.webVisitDao(), cipher)
     val locationPointRepository = LocationPointRepository(database.locationPointDao(), cipher)
+    val usageSessionRepository = UsageSessionRepository(database.usageSessionDao(), cipher)
+    val breakSessionRepository = BreakSessionRepository(database.breakSessionDao())
+    val proximityEventRepository = ProximityEventRepository(database.proximityEventDao())
+    val prayerReminderEventRepository = PrayerReminderEventRepository(database.prayerReminderEventDao())
+    val policySnapshotRepository = PolicySnapshotRepository(database.policySnapshotDao(), cipher)
+    val policyReceiptRepository = PolicyReceiptRepository(database.policyReceiptDao())
     val syncOutboxRepository = SyncOutboxRepository(database.syncOutboxDao(), cipher)
     val syncReceiptRepository = SyncReceiptRepository(database.syncReceiptDao())
     val retentionEngine = RetentionEngine(database)
