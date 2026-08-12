@@ -5,10 +5,15 @@ import type { AuthzService } from '../authz/AuthzService.js';
 import type { InvitationService } from '../invitation/InvitationService.js';
 import type { EnrollmentCoordinator } from '../enrollment/EnrollmentCoordinator.js';
 import type { PairingService } from '../pairing/PairingService.js';
+import type { DeviceSessionService } from '../runtime-sync/DeviceSessionService.js';
+import type { OutboundRelayService } from '../runtime-sync/OutboundRelayService.js';
+import type { InboundReconnectService } from '../runtime-sync/InboundReconnectService.js';
+import type { DeviceSyncStatusTracker } from '../runtime-sync/StatusService.js';
 import { createRateLimiter } from './rateLimit.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
+import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext } from './routes/runtimeSyncRoutes.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -16,6 +21,11 @@ export interface ServerDependencies {
   invitationService: InvitationService;
   enrollmentCoordinator: EnrollmentCoordinator;
   pairingService: PairingService;
+  deviceSessionService: DeviceSessionService;
+  outboundRelayService: OutboundRelayService;
+  inboundReconnectService: InboundReconnectService;
+  statusTracker: DeviceSyncStatusTracker;
+  resolveEnvelopeContext: ResolveEnvelopeContext;
 }
 
 /**
@@ -24,10 +34,11 @@ export interface ServerDependencies {
  * constructs real MySQL-backed services and passes them here; tests
  * pass differently-backed (or in-memory) services through the same shape.
  *
- * Only the reviewed Secure Invite/pairing surface is registered here.
- * Relay retrieval, Recovery, and family policy/control routes remain
- * unexposed until their own distinct authentication/authorization
- * requirements are implemented.
+ * The reviewed Secure Invite/pairing surface, and the PCA-16 runtime-sync
+ * surface (its own device-session authentication -- see
+ * runtime-sync/DeviceSessionService.ts), are registered here. Recovery and
+ * family policy/control routes remain unexposed until their own distinct
+ * authentication/authorization requirements are implemented.
  */
 export function buildServer(deps: ServerDependencies): FastifyInstance {
   const app = Fastify({ logger: false });
@@ -83,6 +94,15 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     pairingService: deps.pairingService,
     authService: deps.authService,
     authzService: deps.authzService,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerRuntimeSyncRoutes(app, {
+    deviceSessionService: deps.deviceSessionService,
+    outboundRelayService: deps.outboundRelayService,
+    inboundReconnectService: deps.inboundReconnectService,
+    statusTracker: deps.statusTracker,
+    resolveEnvelopeContext: deps.resolveEnvelopeContext,
     rateLimiter,
     authAttemptLimiter,
   });

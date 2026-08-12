@@ -1,0 +1,22 @@
+{
+  "name": "@pca/parent-sdk-runtime-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCA-16 offline-first runtime sync -- browser-neutral parent client for the runtime-sync HTTP surface (doc 40)",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "typescript": "5.8.3"
+  }
+}

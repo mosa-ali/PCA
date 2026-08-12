@@ -13,6 +13,25 @@ import { MySqlEnrollmentCoordinatorRepository } from '../../dist/enrollment/MySq
 import { PairingService } from '../../dist/pairing/PairingService.js';
 import { MySqlDeviceRepository } from '../../dist/device/MySqlDeviceRepository.js';
 import { closePool, getPool } from '../../dist/db/pool.js';
+import { DeviceAuthService } from '../../dist/deviceauth/DeviceAuthService.js';
+import { MySqlDeviceChallengeRepository } from '../../dist/deviceauth/MySqlDeviceChallengeRepository.js';
+import { MySqlRelayRepository } from '../../dist/relay/MySqlRelayRepository.js';
+import { RelayService } from '../../dist/relay/RelayService.js';
+import { SyncCoordinator } from '../../dist/familysync/SyncCoordinator.js';
+import { InMemoryPendingQueueStore } from '../../dist/familysync/InMemoryPendingQueueStore.js';
+import { InMemorySequenceProgressLedger } from '../../dist/familysync/InMemorySequenceProgressLedger.js';
+import { InMemoryReplayLedger } from '../../dist/familyenvelope/InMemoryReplayLedger.js';
+import { InMemoryDataVersionLedger } from '../../dist/familyenvelope/InMemoryDataVersionLedger.js';
+import { InMemoryMessageIdempotencyLedger } from '../../dist/familyenvelope/InMemoryMessageIdempotencyLedger.js';
+import {
+  DeviceSessionService,
+  InMemoryDeviceSessionRepository,
+  OutboundRelayService,
+  InboundReconnectService,
+  DeviceSyncStatusTracker,
+} from '../../dist/runtime-sync/index.js';
+import { createTestOnlyDeviceSignatureVerifier } from '../support/testOnlyDeviceSignatureVerifier.mjs';
+import { createTestOnlyEnvelopeSignatureVerifier } from '../support/testOnlyEnvelopeSignatureVerifier.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -25,6 +44,31 @@ const invitationService = new InvitationService(invitationRepository);
 const deviceRepository = new MySqlDeviceRepository();
 const pairingService = new PairingService(deviceRepository);
 const enrollmentCoordinator = new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository());
+const relayService = new RelayService(new MySqlRelayRepository());
+const deviceAuthService = new DeviceAuthService(
+  new MySqlDeviceChallengeRepository(),
+  deviceRepository,
+  createTestOnlyDeviceSignatureVerifier(),
+);
+const deviceSessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository());
+const outboundRelayService = new OutboundRelayService(relayService, deviceRepository);
+const syncCoordinator = new SyncCoordinator(
+  new InMemoryPendingQueueStore(),
+  new InMemorySequenceProgressLedger(),
+  new InMemoryReplayLedger(),
+  new InMemoryDataVersionLedger(),
+  new InMemoryMessageIdempotencyLedger(),
+  createTestOnlyEnvelopeSignatureVerifier(),
+  { isNumericSequenceSender: () => false },
+);
+const inboundReconnectService = new InboundReconnectService(relayService, syncCoordinator);
+const statusTracker = new DeviceSyncStatusTracker();
+const resolveEnvelopeContext = (_senderKeyId, _familyId, nowUtc) => ({
+  senderPublicKey: '',
+  minimumAcceptedTrustSetEpoch: 0,
+  minimumAcceptedKeyEpoch: 0,
+  now: nowUtc,
+});
 
 /**
  * A fresh app per test (or per test group needing shared rate-limit state
@@ -37,7 +81,18 @@ const enrollmentCoordinator = new EnrollmentCoordinator(new MySqlEnrollmentCoord
  * (e.g. the burst/concurrency tests below).
  */
 function freshApp() {
-  return buildServer({ authService, authzService, invitationService, enrollmentCoordinator, pairingService });
+  return buildServer({
+    authService,
+    authzService,
+    invitationService,
+    enrollmentCoordinator,
+    pairingService,
+    deviceSessionService,
+    outboundRelayService,
+    inboundReconnectService,
+    statusTracker,
+    resolveEnvelopeContext,
+  });
 }
 
 function key() {

@@ -1,0 +1,64 @@
+{
+  "catalogueVersion": "0.1.0",
+  "contractVersion": 1,
+  "scope": "logical-contract-metadata-only",
+  "representation": "neutral",
+  "authority": "docs/architecture/40_OFFLINE_FIRST_RUNTIME_SYNC.md",
+  "connectionStates": ["OFFLINE", "SYNC_PENDING", "SYNCING", "LIVE", "STALE"],
+  "connectionStateRule": {
+    "liveRequires": ["transportConnected", "recentSuccessfulSync"],
+    "transportConnectedAloneImplies": "not-live"
+  },
+  "outboundBatch": {
+    "maxItemsPerAttempt": 25,
+    "maxRetryCount": 8,
+    "backoff": {
+      "baseMs": 1000,
+      "capMs": 300000,
+      "jitter": "0.5-1.0x-multiplier"
+    }
+  },
+  "priorityTiers": [
+    "TRUST_SECURITY",
+    "POLICY",
+    "DECISION",
+    "APPLICATION_RECEIPT",
+    "CRITICAL_STATE",
+    "ACTIVITY_SUMMARY"
+  ],
+  "priorityMessageTypeMap": {
+    "KEY_ROTATION": "TRUST_SECURITY",
+    "DEVICE_REVOKE": "TRUST_SECURITY",
+    "TAMPER_ALERT": "TRUST_SECURITY",
+    "FTS_UPDATE": "TRUST_SECURITY",
+    "RECOVERY_TRANSACTION": "TRUST_SECURITY",
+    "SIGNED_ROLLBACK": "TRUST_SECURITY",
+    "POLICY_UPDATE": "POLICY",
+    "RETENTION_DELETION_INSTRUCTION": "POLICY",
+    "CHILD_REQUEST": "DECISION",
+    "PARENT_DECISION": "DECISION",
+    "POLICY_RECEIPT": "APPLICATION_RECEIPT",
+    "RETENTION_RECEIPT": "APPLICATION_RECEIPT",
+    "LOCATION_RESPONSE": "CRITICAL_STATE",
+    "STATUS_SNAPSHOT": "CRITICAL_STATE",
+    "ACTIVITY_SUMMARY": "ACTIVITY_SUMMARY"
+  },
+  "httpSurface": {
+    "authority": "backend/src/http/routes/runtimeSyncRoutes.ts",
+    "routes": [
+      { "method": "POST", "path": "/v1/runtime-sync/devices/:deviceId/challenge", "auth": "none-unauthenticated-by-design" },
+      { "method": "POST", "path": "/v1/runtime-sync/devices/:deviceId/session", "auth": "none-proof-of-possession" },
+      { "method": "POST", "path": "/v1/runtime-sync/outbound", "auth": "device-session" },
+      { "method": "GET", "path": "/v1/runtime-sync/inbound", "auth": "device-session" },
+      { "method": "POST", "path": "/v1/runtime-sync/inbound/:messageId/ack", "auth": "device-session" },
+      { "method": "GET", "path": "/v1/runtime-sync/status", "auth": "device-session" }
+    ]
+  },
+  "deviceSessionErrorCodes": ["INVALID_INPUT", "UNAUTHORIZED"],
+  "outboundSubmitErrorCodes": ["INVALID_INPUT", "CROSS_FAMILY_RECIPIENT", "CONFLICT", "BATCH_TOO_LARGE"],
+  "e2eeBoundary": {
+    "serviceVisibility": ["opaque-envelope-metadata", "ciphertext"],
+    "serverDecryption": "forbidden",
+    "cryptoSuiteStatus": "PENDING_HUMAN_SECURITY_REVIEW"
+  }
+}
