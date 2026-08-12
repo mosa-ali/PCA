@@ -1,9 +1,19 @@
 package org.pca.app.feature.wellbeing.model
 
 /**
- * The 13 curated content categories (doc 35, PCA-WELL-006). `FAITH_POSITIVE` is optional and
- * never a condition for anything else (PCA-WELL-004) -- it is toggled exactly like any other
- * category via [WellbeingNudgePolicy.enabledCategories].
+ * The 13 curated content categories (doc 35, PCA-WELL-006), plus [PARENT_CUSTOM_OTHER] (added by
+ * PCA-RUNTIME-WELL-1, doc 38). `FAITH_POSITIVE` is optional and never a condition for anything
+ * else (PCA-WELL-004) -- it is toggled exactly like any other category via
+ * [WellbeingNudgePolicy.enabledCategories].
+ *
+ * [PARENT_CUSTOM_OTHER] is the Android-runtime landing spot for the parent-SDK's generic `CUSTOM`
+ * category (`parent-sdk/wellbeing-control/src/types.ts` `WellbeingCategory`), used only when a
+ * parent-authored custom wellbeing message doesn't fit any of the 12 substantive categories above.
+ * Like [CHILD_SELECTED_FAVORITES] it deliberately has NO pre-authored catalogue entries -- it only
+ * ever appears on parent-authored custom content synced in via the parent-policy adapter (see
+ * `feature/wellbeing/policy/CategoryMapping.kt` and doc 38). It is a *different* concept from
+ * [CHILD_SELECTED_FAVORITES] (which is a dynamic, child-facing, engine-synthesized bucket) and the
+ * two must never be conflated.
  */
 enum class WellbeingCategory {
     SKILLS_AND_LEARNING,
@@ -19,6 +29,7 @@ enum class WellbeingCategory {
     OUTDOOR_OR_OFFSCREEN,
     PLANNING_AND_ORGANIZATION,
     CHILD_SELECTED_FAVORITES,
+    PARENT_CUSTOM_OTHER,
 }
 
 /** Rough time a suggestion is expected to take -- never an enforced/timed duration. */

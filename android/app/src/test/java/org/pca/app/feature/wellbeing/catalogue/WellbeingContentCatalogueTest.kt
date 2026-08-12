@@ -35,18 +35,28 @@ class WellbeingContentCatalogueTest {
         assertEquals(messageIds.size, messageIds.distinct().size)
     }
 
+    /** Categories with deliberately no pre-authored catalogue entries: [CHILD_SELECTED_FAVORITES]
+     * is dynamically synthesized at selection time; [PARENT_CUSTOM_OTHER] (doc 38) only ever
+     * appears on parent-authored custom content synced in via the parent-policy adapter. */
+    private val dynamicOrAdapterOnlyCategories = setOf(
+        WellbeingCategory.CHILD_SELECTED_FAVORITES,
+        WellbeingCategory.PARENT_CUSTOM_OTHER,
+    )
+
     @Test
-    fun `every category except CHILD_SELECTED_FAVORITES has at least four suggestions`() {
+    fun `every catalogue-authored category has at least four suggestions`() {
         for (category in WellbeingCategory.entries) {
-            if (category == WellbeingCategory.CHILD_SELECTED_FAVORITES) continue
+            if (category in dynamicOrAdapterOnlyCategories) continue
             val count = WellbeingContentCatalogue.byCategory(category).size
             assertTrue("category $category has only $count suggestions", count >= 4)
         }
     }
 
     @Test
-    fun `CHILD_SELECTED_FAVORITES has no pre-authored catalogue entries (dynamic category)`() {
-        assertTrue(WellbeingContentCatalogue.byCategory(WellbeingCategory.CHILD_SELECTED_FAVORITES).isEmpty())
+    fun `CHILD_SELECTED_FAVORITES and PARENT_CUSTOM_OTHER have no pre-authored catalogue entries`() {
+        for (category in dynamicOrAdapterOnlyCategories) {
+            assertTrue(WellbeingContentCatalogue.byCategory(category).isEmpty())
+        }
     }
 
     @Test

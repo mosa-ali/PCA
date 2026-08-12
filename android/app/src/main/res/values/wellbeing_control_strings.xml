@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PCA-RUNTIME-WELL-1 (doc 38): strings introduced by the parent-policy adapter that connects
+  parent-sdk/wellbeing-control's WellbeingMessageControlV1 contract to the existing Android
+  feature/wellbeing runtime. Kept in a separate file from strings.xml so the ownership boundary
+  between this worktree's additions and the pre-existing WELL-1 baseline stays visible in source
+  control; Android's resource merging treats these exactly like any other R.string entry.
+-->
+<resources>
+    <!-- Android-side landing category for the parent-SDK's generic "CUSTOM" catch-all category
+         (see feature/wellbeing/policy/CategoryMapping.kt and doc 38). -->
+    <string name="wellbeing_category_parent_custom_other">Family idea</string>
+
+    <!-- Offline policy state machine (doc 38 section "Offline policy state machine"). -->
+    <string name="wellbeing_policy_sync_state_active">Your family\'s current wellbeing settings are active.</string>
+    <string name="wellbeing_policy_sync_state_pending_delivery">A new wellbeing update from a parent is on its way and will apply automatically once it arrives.</string>
+    <string name="wellbeing_policy_sync_stale_update_ignored">An older wellbeing update was ignored because a newer one is already active.</string>
+    <string name="wellbeing_policy_sync_duplicate_update_ignored">This wellbeing update was already applied.</string>
+
+    <!-- Custom (parent-authored) message locale eligibility: shown only in diagnostic/parent-
+         facing surfaces, never implies machine translation (item 7: no auto-translate fallback). -->
+    <string name="wellbeing_custom_message_not_available_in_language">This family message isn\'t available in your current language yet.</string>
+
+    <!-- Movement-safety guard rejection reasons surfaced back to the parent-authoring surface
+         (item 9). Never shown to the child. -->
+    <string name="wellbeing_movement_guard_rejected_calorie_weight_language">Movement suggestions can\'t mention calories, weight, or body-shape goals.</string>
+    <string name="wellbeing_movement_guard_rejected_punitive_language">Movement suggestions can\'t use punishing or \"make up for\" screen-time language.</string>
+</resources>

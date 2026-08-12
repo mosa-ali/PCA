@@ -19,4 +19,7 @@ fun WellbeingCategory.labelRes(): Int = when (this) {
     WellbeingCategory.OUTDOOR_OR_OFFSCREEN -> R.string.wellbeing_category_outdoor_or_offscreen
     WellbeingCategory.PLANNING_AND_ORGANIZATION -> R.string.wellbeing_category_planning_and_organization
     WellbeingCategory.CHILD_SELECTED_FAVORITES -> R.string.wellbeing_category_child_selected_favorites
+    // Defined in wellbeing_control_strings.xml (PCA-RUNTIME-WELL-1, doc 38) rather than the main
+    // strings.xml -- Android resource merging makes this identical to any other R.string reference.
+    WellbeingCategory.PARENT_CUSTOM_OTHER -> R.string.wellbeing_category_parent_custom_other
 }
