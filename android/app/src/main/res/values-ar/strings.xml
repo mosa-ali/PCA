@@ -179,6 +179,21 @@
     <string name="emergency_button_label">طوارئ</string>
     <string name="emergency_button_hint">التواصل مع المساعدة الطارئة فورًا. متاح دائمًا.</string>
 
+    <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. PENDING NATIVE REVIEWER SIGN-OFF, same posture as the rest of this file. -->
+    <string name="enrollment_entry_title">إعداد هذا الجهاز</string>
+    <string name="enrollment_entry_body">اطلب من والدك أو والدتك رابط دعوة، ثم الصقه أدناه.</string>
+    <string name="enrollment_link_input_hint">الصق رابط الدعوة</string>
+    <string name="enrollment_continue_button">متابعة</string>
+    <string name="enrollment_preparing_keys">جارٍ تجهيز هذا الجهاز بأمان…</string>
+    <string name="enrollment_bootstrapping">جارٍ إعداد هذا الجهاز…</string>
+    <string name="enrollment_pairing_pending_title">اقتربنا من الانتهاء</string>
+    <string name="enrollment_pairing_pending_body">بانتظار تأكيد أحد الوالدين لهذا الجهاز.</string>
+    <string name="enrollment_invitation_unavailable">لم تعد الدعوة متاحة. اطلب من أحد الوالدين إنشاء دعوة جديدة.</string>
+    <string name="enrollment_retryable_failure">حدث خطأ ما. يرجى المحاولة مرة أخرى.</string>
+    <string name="enrollment_result_unknown">لم نتمكن من التأكد مما إذا كان الإعداد قد اكتمل. يرجى التحقق مع والدك أو والدتك قبل تجربة هذا الرابط مرة أخرى.</string>
+    <string name="enrollment_crypto_review_required">هذا الإصدار غير معتمد لإعداد جهاز حقيقي بعد (وضع التطوير).</string>
+    <string name="enrollment_revoked">تمت إزالة وصول هذا الجهاز. اطلب دعوة جديدة من أحد الوالدين.</string>
+
     <!-- Reuses the exact same Arabic text already present in PrayerName.kt's arabicName field
          (not re-authored); see PrayerDisplayNames.kt. -->
     <string name="prayer_name_fajr">الفجر</string>

@@ -23,6 +23,13 @@ import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
 import org.pca.app.feature.wellbeing.delivery.WellbeingMessageResolver
 import org.pca.app.feature.wellbeing.delivery.WellbeingNotificationDelivery
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
+import org.pca.app.enrollment.BootstrapEndpointConfig
+import org.pca.app.enrollment.DeviceBootstrapApiClient
+import org.pca.app.enrollment.EnrollmentCoordinator
+import org.pca.app.enrollment.EnrollmentDeepLinkConfig
+import org.pca.app.enrollment.EnrollmentLinkParser
+import org.pca.app.enrollment.HttpDeviceBootstrapApiClient
+import org.pca.app.enrollment.UriEnrollmentLinkParser
 import org.pca.app.feature.wellbeing.persistence.WellbeingPolicyStore
 import org.pca.app.feature.wellbeing.persistence.WellbeingRateStateStore
 import org.pca.app.feature.wellbeing.ports.StandardNotificationCapabilitySource
@@ -41,6 +48,8 @@ import org.pca.app.platform.StandardUsageObservationSource
 import org.pca.app.platform.proximity.HardwareProximitySource
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
+import org.pca.app.security.DeviceKeyPairGenerator
+import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
 import org.pca.app.runtime.PcaRuntime
 import org.pca.app.runtime.boot.AndroidBootInstanceSource
 import org.pca.app.runtime.boot.BootInstanceSource
@@ -139,6 +148,28 @@ class PcaAppGraph private constructor(
      * [startUsageLocationPolling] correctly record nothing rather than fabricate an id. */
     val familyStateStore: FamilyStateStore = PersistentFamilyStateStore(runtimeStateStore)
     val deviceIdentityProvider: DeviceIdentityProvider = PersistentDeviceIdentityProvider(familyStateStore)
+
+    /** PCA-ANDROID-ENROLLMENT-1: the real, production-composed enrollment flow that writes into
+     * [familyStateStore] above -- closing the KNOWN_ARCHITECTURE_GAP [PersistentDeviceIdentityProvider]'s
+     * own doc comment previously described ("no production code path ... calls the backend
+     * enrollment endpoint"). [deviceKeyPairGenerator] is the fail-closed
+     * [NotApprovedDeviceKeyPairGenerator] -- production key generation is still gated behind
+     * PRODUCTION_CRYPTO_SUITE human security review, so [enrollmentCoordinator] can be safely wired
+     * here today: any real bootstrap attempt stops at key preparation
+     * (`EnrollmentState.CryptoReviewRequired`) and never reaches [deviceBootstrapApiClient]. The
+     * endpoint base URL is a placeholder pending real deployment configuration (see
+     * [BootstrapEndpointConfig]'s own doc); HTTPS is enforced unconditionally regardless. */
+    val deviceKeyPairGenerator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator()
+    val deviceBootstrapApiClient: DeviceBootstrapApiClient =
+        HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pca.app"))
+    val enrollmentLinkParser: EnrollmentLinkParser =
+        UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
+    val enrollmentCoordinator = EnrollmentCoordinator(
+        linkParser = enrollmentLinkParser,
+        apiClient = deviceBootstrapApiClient,
+        keyPairGenerator = deviceKeyPairGenerator,
+        familyStateStore = familyStateStore,
+    )
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports
      * [DeviceIdentityState.NotEnrolled] -- read fresh by [UsageSessionRecorder.poll] and

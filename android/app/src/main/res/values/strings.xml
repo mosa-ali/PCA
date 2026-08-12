@@ -173,6 +173,23 @@
     <string name="emergency_button_label">Emergency</string>
     <string name="emergency_button_hint">Reach emergency help immediately. Always available.</string>
 
+    <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. -->
+    <string name="enrollment_entry_title">Set up this device</string>
+    <string name="enrollment_entry_body">Ask your parent for an invitation link, then paste it below.</string>
+    <string name="enrollment_link_input_hint">Paste invitation link</string>
+    <string name="enrollment_continue_button">Continue</string>
+    <string name="enrollment_preparing_keys">Preparing this device securely…</string>
+    <string name="enrollment_bootstrapping">Setting up this device…</string>
+    <string name="enrollment_pairing_pending_title">Almost done</string>
+    <string name="enrollment_pairing_pending_body">Waiting for a parent to confirm this device.</string>
+    <!-- Deliberately generic: the server never distinguishes not-found/expired/revoked/already-redeemed to this client, and this text must not either. -->
+    <string name="enrollment_invitation_unavailable">Invitation is no longer available. Ask the parent to create a new one.</string>
+    <string name="enrollment_retryable_failure">Something went wrong. Please try again.</string>
+    <!-- BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: deliberately does not say "failed" or "succeeded"; the true outcome is unknown, and this app must never auto-retry the same link. -->
+    <string name="enrollment_result_unknown">We couldn\'t confirm whether setup finished. Please check with your parent before trying this link again.</string>
+    <string name="enrollment_crypto_review_required">This build isn\'t approved for real device setup yet (development mode).</string>
+    <string name="enrollment_revoked">This device\'s access has been removed. Ask a parent for a new invitation.</string>
+
     <!-- Prayer names (doc 20 Section 5): presentation-layer display strings only; calculation
          logic uses PrayerName.kt's own fields (untouched by PCA-16). These are what a screen
          reader/UI renders. -->

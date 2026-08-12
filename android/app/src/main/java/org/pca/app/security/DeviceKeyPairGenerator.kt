@@ -33,3 +33,30 @@ data class GeneratedKeyPair(
     val publicKeyBase64: String,
     val privateKeyAlias: String,
 )
+
+/**
+ * Thrown by [NotApprovedDeviceKeyPairGenerator] (and any other pre-approval
+ * [DeviceKeyPairGenerator]) to make the crypto-suite gate a caller-visible,
+ * catchable signal rather than a silent no-op. PCA-ANDROID-ENROLLMENT-1's
+ * [org.pca.app.enrollment.EnrollmentCoordinator] catches exactly this type
+ * to route into `EnrollmentState.CryptoReviewRequired` -- it must never be
+ * caught alongside a generic `Exception` that would also swallow
+ * unrelated bugs.
+ */
+class CryptoSuiteNotApprovedException :
+    IllegalStateException("PRODUCTION_CRYPTO_SUITE = WAITING_HUMAN_SECURITY_REVIEW -- no key pair may be generated yet")
+
+/**
+ * The shipped production default (mirrors [org.pca.app.runtime.sync.envelope
+ * .RejectingEnvelopeSignatureVerifier]'s fail-closed posture): every call
+ * throws [CryptoSuiteNotApprovedException] rather than fabricating or
+ * selecting any concrete algorithm. This exists so production composition
+ * (`PcaAppGraph`) has an explicit, safe binding for [DeviceKeyPairGenerator]
+ * instead of either leaving it unconstructable or silently wiring in a real
+ * (unreviewed) algorithm. Replacing this with a real generator is exactly
+ * the event doc 09 Section 3.1/3.6's human security review gates.
+ */
+class NotApprovedDeviceKeyPairGenerator : DeviceKeyPairGenerator {
+    override fun generateSigningKeyPair(): GeneratedKeyPair = throw CryptoSuiteNotApprovedException()
+    override fun generateEncryptionKeyPair(): GeneratedKeyPair = throw CryptoSuiteNotApprovedException()
+}

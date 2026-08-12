@@ -45,6 +45,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup entry point. The intent-filter's
+             android:scheme/android:host MUST stay in exact sync with
+             org.pca.app.enrollment.EnrollmentDeepLinkConfig (no wildcard host, so an arbitrary
+             foreign link can never be treated as a valid invitation). Also directly launchable
+             (no deep link) for the "Set up this device" entry point, since it declares no data
+             requirement outside the intent-filter below. -->
+        <activity
+            android:name=".enrollment.EnrollmentActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pca" android:host="enroll" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
 
