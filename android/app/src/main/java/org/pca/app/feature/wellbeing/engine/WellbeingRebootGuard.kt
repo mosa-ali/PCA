@@ -24,12 +24,20 @@ import org.pca.app.feature.wellbeing.model.NudgeRateState
 object WellbeingRebootGuard {
 
     fun reconcile(rateState: NudgeRateState, nowMonotonicNanos: Long, currentBootId: String?): NudgeRateState {
-        val rebooted = rateState.lastBootGenerationToken != null &&
+        // PCA-RUNTIME-2R1: same-boot continuity must be POSITIVELY confirmed (both tokens known
+        // and equal) before trusting the persisted monotonic timestamps -- an unavailable token on
+        // either side is NOT evidence of a same-boot restart, and must take the same conservative
+        // reboot-reconciliation path as a confirmed reboot, never silently preserved as-is.
+        val sameBootConfirmed = rateState.lastBootGenerationToken != null &&
             currentBootId != null &&
-            rateState.lastBootGenerationToken != currentBootId
+            rateState.lastBootGenerationToken == currentBootId
 
-        if (!rebooted) {
-            return rateState.copy(lastBootGenerationToken = currentBootId ?: rateState.lastBootGenerationToken)
+        if (sameBootConfirmed) {
+            return rateState.copy(lastBootGenerationToken = currentBootId)
+        }
+        if (rateState.lastBootGenerationToken == null) {
+            // Fresh install / first run -- nothing stale to guard against yet, just stamp the token.
+            return rateState.copy(lastBootGenerationToken = currentBootId)
         }
 
         return rateState.copy(

@@ -22,6 +22,24 @@ class WellbeingRebootGuardTest {
     }
 
     @Test
+    fun `current boot id unknown fails safe to the reboot-conservative path, never assumed same-boot`() {
+        // PCA-RUNTIME-2R1: an unavailable currentBootId is NOT evidence of a same-boot restart --
+        // it must take the same conservative reconciliation path as a confirmed reboot.
+        val state = NudgeRateState(
+            lastNudgeMonotonicNanos = 999_999_999_999L,
+            lastEligibleExitMonotonicNanos = 999_999_999_999L,
+            dailyNudgeCount = 4,
+            lastBootGenerationToken = "boot-1",
+        )
+        val reconciled = WellbeingRebootGuard.reconcile(state, nowMonotonicNanos = 10L, currentBootId = null)
+
+        assertEquals(10L, reconciled.lastNudgeMonotonicNanos)
+        assertNull(reconciled.lastEligibleExitMonotonicNanos)
+        assertEquals(4, reconciled.dailyNudgeCount)
+        assertNull(reconciled.lastBootGenerationToken)
+    }
+
+    @Test
     fun `first run with no prior boot token is a no-op other than stamping the token`() {
         val state = NudgeRateState(lastNudgeMonotonicNanos = 500L)
         val reconciled = WellbeingRebootGuard.reconcile(state, nowMonotonicNanos = 600L, currentBootId = "boot-1")
