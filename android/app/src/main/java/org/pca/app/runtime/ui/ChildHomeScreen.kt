@@ -1,0 +1,233 @@
+package org.pca.app.runtime.ui
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import org.pca.app.R
+import org.pca.app.feature.screentime.engine.ScreenTimeMode
+import org.pca.app.platform.LocationCapabilityLevel
+import org.pca.app.platform.ProtectionMode
+import org.pca.app.platform.UsageAccessState
+import org.pca.app.runtime.port.FamilySyncConnectionState
+import org.pca.app.runtime.port.ScheduleRuntimeStatus
+import org.pca.app.runtime.status.PcaRuntimeStatus
+import java.util.concurrent.TimeUnit
+
+/**
+ * Section 15: replaces the pure launch-shell with an honest child status surface. Every row maps
+ * 1:1 to a real [PcaRuntimeStatus] field -- Section 16 forbids any status here that isn't backed
+ * by a genuine, currently-observed signal. Section 20: headings are marked for accessibility
+ * services, status is never color-only (every row carries a text label), and rows use the default
+ * Material list item minimum touch-target height.
+ */
+@Composable
+fun ChildHomeScreen(
+    status: PcaRuntimeStatus,
+    modifier: Modifier = Modifier,
+    onRequestParentContact: () -> Unit = {},
+    onEmergencyAccess: () -> Unit = {},
+) {
+    val rows = statusRows(status)
+    Surface(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { ScreenHeading() }
+            item { OfflineBanner(status) }
+
+            items(rows) { row -> StatusRow(row) }
+
+            item { EmergencyAccessCard(onClick = onEmergencyAccess) }
+            item { ParentContactCard(onClick = onRequestParentContact) }
+        }
+    }
+}
+
+@Composable
+private fun ScreenHeading() {
+    Text(
+        text = stringResource(R.string.child_home_title),
+        style = MaterialTheme.typography.headlineSmall,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+@Composable
+private fun OfflineBanner(status: PcaRuntimeStatus) {
+    // Section 15: honest, non-alarming offline messaging -- local protection is explicitly
+    // affirmed as active even while remote updates are pending, never the reverse.
+    if (!status.isDeviceOnline || status.areRemoteUpdatesPending) {
+        Card(colors = CardDefaults.cardColors()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.child_home_local_protection_active),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.child_home_remote_updates_pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+private data class StatusRowContent(val label: String, val value: String)
+
+@Composable
+private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listOf(
+    StatusRowContent(stringResource(R.string.child_home_protection_status), protectionModeLabel(status.protectionMode)),
+    StatusRowContent(stringResource(R.string.child_home_screen_time_state), screenTimeModeLabel(status.screenTimeMode, status.remainingActiveMillis)),
+    StatusRowContent(stringResource(R.string.child_home_break_state), breakStateLabel(status.isBreakShieldActive, status.remainingBreakMillis)),
+    StatusRowContent(stringResource(R.string.child_home_schedule_status), scheduleStatusLabel(status.scheduleStatus)),
+    StatusRowContent(stringResource(R.string.child_home_internet_status), internetStatusLabel(status.isDeviceOnline)),
+    StatusRowContent(stringResource(R.string.child_home_sync_status), syncStatusLabel(status.syncConnectionState)),
+    StatusRowContent(stringResource(R.string.child_home_last_sync), lastSyncLabel(status.lastSuccessfulSyncEpochMillis)),
+    StatusRowContent(stringResource(R.string.child_home_usage_permission), usageAccessLabel(status.usageAccessState)),
+    StatusRowContent(stringResource(R.string.child_home_location_capability), locationCapabilityLabel(status.locationCapabilityLevel)),
+    StatusRowContent(stringResource(R.string.child_home_wellbeing_availability), wellbeingLabel(status.wellbeingNotificationsAvailable)),
+    StatusRowContent(stringResource(R.string.child_home_pending_requests), status.pendingChildRequestCount.toString()),
+)
+
+@Composable
+private fun StatusRow(row: StatusRowContent) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${row.label}: ${row.value}"
+            },
+    ) {
+        Text(text = row.label, style = MaterialTheme.typography.labelLarge)
+        Text(text = row.value, style = MaterialTheme.typography.bodyLarge)
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun EmergencyAccessCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Row(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_emergency_access), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun ParentContactCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Row(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_parent_contact), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun protectionModeLabel(mode: ProtectionMode): String = when (mode) {
+    ProtectionMode.PROTECTED -> stringResource(R.string.child_home_protection_protected)
+    ProtectionMode.STANDARD -> stringResource(R.string.child_home_protection_standard)
+}
+
+@Composable
+private fun screenTimeModeLabel(mode: ScreenTimeMode, remainingActiveMillis: Long): String = when (mode) {
+    ScreenTimeMode.ACTIVE -> stringResource(R.string.child_home_screen_time_active, formatMinutes(remainingActiveMillis))
+    ScreenTimeMode.PAUSED -> stringResource(R.string.child_home_screen_time_paused)
+    ScreenTimeMode.BREAK_SHIELD -> stringResource(R.string.child_home_screen_time_break)
+    ScreenTimeMode.EMERGENCY_EXCEPTION -> stringResource(R.string.child_home_screen_time_emergency)
+}
+
+@Composable
+private fun breakStateLabel(active: Boolean, remainingBreakMillis: Long): String =
+    if (active) {
+        stringResource(R.string.child_home_break_active, formatMinutes(remainingBreakMillis))
+    } else {
+        stringResource(R.string.child_home_break_inactive)
+    }
+
+@Composable
+private fun scheduleStatusLabel(scheduleStatus: ScheduleRuntimeStatus): String = when (scheduleStatus) {
+    ScheduleRuntimeStatus.AVAILABLE -> stringResource(R.string.child_home_schedule_available)
+    ScheduleRuntimeStatus.UNAVAILABLE -> stringResource(R.string.child_home_schedule_unavailable)
+    ScheduleRuntimeStatus.NOT_READY -> stringResource(R.string.child_home_schedule_not_ready)
+    ScheduleRuntimeStatus.EPOCH_STALE -> stringResource(R.string.child_home_schedule_epoch_stale)
+}
+
+@Composable
+private fun internetStatusLabel(online: Boolean): String =
+    if (online) stringResource(R.string.child_home_internet_online) else stringResource(R.string.child_home_internet_offline)
+
+@Composable
+private fun syncStatusLabel(state: FamilySyncConnectionState): String = when (state) {
+    FamilySyncConnectionState.OFFLINE -> stringResource(R.string.child_home_sync_offline)
+    FamilySyncConnectionState.SYNCING -> stringResource(R.string.child_home_sync_syncing)
+    FamilySyncConnectionState.SYNC_PENDING -> stringResource(R.string.child_home_sync_pending)
+    FamilySyncConnectionState.STALE -> stringResource(R.string.child_home_sync_stale)
+    FamilySyncConnectionState.LIVE -> stringResource(R.string.child_home_sync_live)
+}
+
+@Composable
+private fun lastSyncLabel(lastSuccessfulSyncEpochMillis: Long?): String =
+    if (lastSuccessfulSyncEpochMillis == null) {
+        stringResource(R.string.child_home_last_sync_never)
+    } else {
+        val agoMinutes = TimeUnit.MILLISECONDS.toMinutes(
+            (System.currentTimeMillis() - lastSuccessfulSyncEpochMillis).coerceAtLeast(0L),
+        )
+        stringResource(R.string.child_home_last_sync_minutes_ago, agoMinutes.toString())
+    }
+
+@Composable
+private fun usageAccessLabel(state: UsageAccessState): String = when (state) {
+    UsageAccessState.GRANTED -> stringResource(R.string.child_home_usage_granted)
+    UsageAccessState.DENIED -> stringResource(R.string.child_home_usage_denied)
+    UsageAccessState.NOT_CONFIGURED -> stringResource(R.string.child_home_usage_not_configured)
+    UsageAccessState.UNAVAILABLE -> stringResource(R.string.child_home_usage_unavailable)
+}
+
+@Composable
+private fun locationCapabilityLabel(level: LocationCapabilityLevel): String = when (level) {
+    LocationCapabilityLevel.USABLE -> stringResource(R.string.child_home_location_usable)
+    LocationCapabilityLevel.LIMITED -> stringResource(R.string.child_home_location_limited)
+    LocationCapabilityLevel.UNUSABLE -> stringResource(R.string.child_home_location_unusable)
+}
+
+@Composable
+private fun wellbeingLabel(available: Boolean): String =
+    if (available) stringResource(R.string.child_home_wellbeing_available) else stringResource(R.string.child_home_wellbeing_unavailable)
+
+private fun formatMinutes(millis: Long): String = TimeUnit.MILLISECONDS.toMinutes(millis.coerceAtLeast(0L)).toString()

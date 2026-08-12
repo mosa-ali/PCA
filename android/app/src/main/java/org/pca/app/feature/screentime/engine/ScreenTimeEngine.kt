@@ -7,9 +7,15 @@ import kotlin.time.Duration.Companion.minutes
 data class ScreenTimeConfig(
     val activeThreshold: Duration = 60.minutes,
     val breakDuration: Duration = 30.minutes,
-    /** How long a non-qualifying-activity pause has to last, measured on the monotonic clock,
-     * before the continuous-use streak is considered broken and reset to zero. A pause shorter
-     * than this preserves the accumulated streak on resume. */
+    /**
+     * PCA-RUNTIME-1 anti-gaming invariant: kept only so a pause of any length is still
+     * distinguishable from zero (a pause always enters [ScreenTimeMode.PAUSED]); it no longer
+     * gates any reset. Recovery of accumulated active-use debt is governed exclusively by
+     * [breakDuration] — a *continuous* off-screen/rest period of that length is required, tracked
+     * on [ScreenTimeState.pauseElapsedNanos] (recovery-progress accumulator). A pause shorter than
+     * [breakDuration] preserves both the accumulated active-use streak AND, on resume, resets only
+     * the recovery-progress accumulator (the active-use debt itself is never touched by a pause).
+     */
     val meaningfulPause: Duration = 5.minutes,
     /** Remaining-active-time thresholds at which an informational (non-resetting) warning
      * should be surfaced, e.g. "10 minutes left". */
@@ -18,6 +24,12 @@ data class ScreenTimeConfig(
     val activeThresholdNanos: Long = activeThreshold.inWholeNanoseconds
     val breakDurationNanos: Long = breakDuration.inWholeNanoseconds
     val meaningfulPauseNanos: Long = meaningfulPause.inWholeNanoseconds
+
+    /** PCA-RUNTIME-1: the continuous recovery-break length required to clear accumulated
+     * active-use debt while in [ScreenTimeMode.PAUSED]. Deliberately the same threshold as
+     * [breakDurationNanos] (Break Shield's own duration) — there is exactly one "what counts as a
+     * real recovery break" concept in this engine, not two competing thresholds. */
+    val recoveryThresholdNanos: Long get() = breakDurationNanos
 
     init {
         require(activeThresholdNanos > 0) { "activeThreshold must be positive" }
@@ -43,8 +55,15 @@ data class ScreenTimeState(
     val mode: ScreenTimeMode,
     val activeElapsedNanos: Long,
     val breakElapsedNanos: Long,
-    /** How long the current non-qualifying-activity pause has lasted so far. Zero whenever
-     * [mode] is not [ScreenTimeMode.PAUSED]. */
+    /**
+     * PCA-RUNTIME-1: how long the CURRENT continuous non-qualifying-activity pause has lasted so
+     * far — this is the recovery-break progress accumulator. Zero whenever [mode] is not
+     * [ScreenTimeMode.PAUSED], and reset to zero every time [mode] re-enters [ScreenTimeMode.PAUSED]
+     * from [ScreenTimeMode.ACTIVE] (a resume-then-pause always starts recovery progress fresh —
+     * recovery must be *continuous* to count, doc PCA-RUNTIME-1 Section 3). This field never
+     * resets [activeElapsedNanos] by itself; only reaching [ScreenTimeConfig.recoveryThresholdNanos]
+     * while continuously PAUSED clears the accumulated active-use debt (Section 1/2).
+     */
     val pauseElapsedNanos: Long,
     val dhikrInteractionCount: Int,
     val completedBreakCount: Int,
@@ -168,15 +187,19 @@ object ScreenTimeEngine {
                     }
                 }
 
-                // A pause (non-qualifying activity) freezes active-time accumulation but tracks
-                // its own duration: once it has lasted >= meaningfulPause, the continuous-use
-                // streak is broken and reset to zero. A pause shorter than that preserves the
-                // streak so it can resume where it left off. This is driven purely by the
-                // monotonic delta, never by wall-clock time.
+                // PCA-RUNTIME-1 anti-gaming invariant: a pause freezes active-time accumulation
+                // (the debt in activeElapsedNanos is PRESERVED, never reset by a pause merely
+                // starting or continuing) and tracks its own CONTINUOUS duration separately in
+                // pauseElapsedNanos (recovery-break progress). Only once recovery progress reaches
+                // the full recoveryThresholdNanos (30 continuous minutes, same as Break Shield's
+                // own duration) does the accumulated active-use debt finally clear to zero — a
+                // child stopping just short of the 60-minute threshold and waiting a few minutes
+                // must gain nothing: on resume, activeElapsedNanos picks back up exactly where it
+                // left off. This is driven purely by the monotonic delta, never by wall-clock time.
                 ScreenTimeMode.PAUSED -> {
                     val newPauseElapsed = current.pauseElapsedNanos + remaining
                     remaining = 0
-                    if (newPauseElapsed >= config.meaningfulPauseNanos) {
+                    if (newPauseElapsed >= config.recoveryThresholdNanos) {
                         current.copy(pauseElapsedNanos = newPauseElapsed, activeElapsedNanos = 0L)
                     } else {
                         current.copy(pauseElapsedNanos = newPauseElapsed)

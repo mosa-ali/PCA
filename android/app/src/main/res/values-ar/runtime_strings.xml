@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PCA-RUNTIME-ANDROID-1 Section 19/20: Arabic (ar) runtime-shell (Child Home / status surface)
+  strings. AUTHORED BY: engineering pass, standard Modern Standard Arabic; PENDING NATIVE
+  REVIEWER SIGN-OFF before release, per doc 20 Section 2, same disclaimer as strings.xml's
+  Arabic counterpart. No religious phrase content is introduced here.
+-->
+<resources>
+    <string name="child_home_title">حالة الحماية</string>
+
+    <string name="child_home_local_protection_active">الحماية نشطة على هذا الجهاز</string>
+    <string name="child_home_remote_updates_pending">التحديثات عن بُعد معلّقة حتى إعادة اتصال هذا الجهاز</string>
+
+    <string name="child_home_protection_status">وضع الحماية</string>
+    <string name="child_home_protection_protected">الوضع المحمي</string>
+    <string name="child_home_protection_standard">الوضع القياسي</string>
+
+    <string name="child_home_screen_time_state">وقت الشاشة</string>
+    <string name="child_home_screen_time_active">نشط — يتبقى %1$s دقيقة</string>
+    <string name="child_home_screen_time_paused">متوقف مؤقتًا</string>
+    <string name="child_home_screen_time_break">وقت الاستراحة</string>
+    <string name="child_home_screen_time_emergency">جارٍ استخدام وصول الطوارئ</string>
+
+    <string name="child_home_break_state">الاستراحة</string>
+    <string name="child_home_break_active">الاستراحة جارية — يتبقى %1$s دقيقة</string>
+    <string name="child_home_break_inactive">لا توجد استراحة جارية</string>
+
+    <string name="child_home_schedule_status">الجدول</string>
+    <string name="child_home_schedule_available">الجدول نشط</string>
+    <string name="child_home_schedule_unavailable">لا ينطبق أي جدول الآن</string>
+    <string name="child_home_schedule_not_ready">لم يتم تحميل الجدول بعد</string>
+    <string name="child_home_schedule_epoch_stale">تحديث الجدول معلّق</string>
+
+    <string name="child_home_internet_status">الإنترنت</string>
+    <string name="child_home_internet_online">متصل</string>
+    <string name="child_home_internet_offline">غير متصل</string>
+
+    <string name="child_home_sync_status">مزامنة العائلة</string>
+    <string name="child_home_sync_offline">غير متصل</string>
+    <string name="child_home_sync_syncing">جارٍ المزامنة</string>
+    <string name="child_home_sync_pending">في انتظار إرسال التحديثات</string>
+    <string name="child_home_sync_stale">تحديث معلّق</string>
+    <string name="child_home_sync_live">محدّث</string>
+
+    <string name="child_home_last_sync">آخر مزامنة ناجحة</string>
+    <string name="child_home_last_sync_never">أبدًا</string>
+    <string name="child_home_last_sync_minutes_ago">منذ %1$s دقيقة</string>
+
+    <string name="child_home_usage_permission">إذن الاستخدام</string>
+    <string name="child_home_usage_granted">ممنوح</string>
+    <string name="child_home_usage_denied">مرفوض</string>
+    <string name="child_home_usage_not_configured">لم يتم إعداده بعد</string>
+    <string name="child_home_usage_unavailable">غير متاح على هذا الجهاز</string>
+
+    <string name="child_home_location_capability">الموقع</string>
+    <string name="child_home_location_usable">متاح</string>
+    <string name="child_home_location_limited">محدود</string>
+    <string name="child_home_location_unusable">غير متاح</string>
+
+    <string name="child_home_wellbeing_availability">اقتراحات العافية</string>
+    <string name="child_home_wellbeing_available">متاح</string>
+    <string name="child_home_wellbeing_unavailable">غير متاح</string>
+
+    <string name="child_home_pending_requests">الطلبات المعلّقة لولي الأمر</string>
+
+    <string name="child_home_emergency_access">وصول الطوارئ</string>
+    <string name="child_home_parent_contact">التواصل مع ولي الأمر</string>
+</resources>

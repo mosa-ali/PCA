@@ -3,46 +3,26 @@ package org.pca.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import org.pca.app.runtime.ui.ChildHomeScreen
 
+/**
+ * PCA-RUNTIME-ANDROID-1 Section 15: the pure launch shell is replaced by the real child status
+ * surface, driven live by [org.pca.app.runtime.PcaRuntime.status] -- the composition root
+ * ([PcaApplication.graph]) is already running by the time this Activity is created (Section 2),
+ * so this screen only ever observes already-live state, never triggers initialization itself.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PcaLaunchShell() }
-    }
-}
-
-@Composable
-fun PcaLaunchShell() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(text = stringResource(R.string.launch_shell_title), style = MaterialTheme.typography.headlineSmall)
-                Text(text = stringResource(R.string.launch_shell_message), style = MaterialTheme.typography.bodyLarge)
+        val runtime = (application as PcaApplication).graph.runtime
+        setContent {
+            val status by runtime.status.collectAsState()
+            MaterialTheme {
+                ChildHomeScreen(status = status)
             }
         }
     }
 }
-
-@Preview(showBackground = true)
-@Composable
-private fun PcaLaunchShellPreview() = PcaLaunchShell()
-

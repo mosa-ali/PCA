@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PCA-RUNTIME-ANDROID-1 Section 19/20: runtime-shell (Child Home / status surface) strings.
+  Same stable, ASCII, semantic message-ID convention as strings.xml, see that file's header
+  comment. Kept in its own file since it is this worktree's own composition/runtime layer, not a
+  single accepted-engine feature slice.
+-->
+<resources>
+    <string name="child_home_title">Protection status</string>
+
+    <string name="child_home_local_protection_active">Protection is active on this device</string>
+    <string name="child_home_remote_updates_pending">Remote updates are pending until this device reconnects</string>
+
+    <string name="child_home_protection_status">Protection mode</string>
+    <string name="child_home_protection_protected">Protected mode</string>
+    <string name="child_home_protection_standard">Standard mode</string>
+
+    <string name="child_home_screen_time_state">Screen time</string>
+    <string name="child_home_screen_time_active">Active — %1$s minutes remaining</string>
+    <string name="child_home_screen_time_paused">Paused</string>
+    <string name="child_home_screen_time_break">Break time</string>
+    <string name="child_home_screen_time_emergency">Emergency access in use</string>
+
+    <string name="child_home_break_state">Break</string>
+    <string name="child_home_break_active">Break in progress — %1$s minutes remaining</string>
+    <string name="child_home_break_inactive">No break in progress</string>
+
+    <string name="child_home_schedule_status">Schedule</string>
+    <string name="child_home_schedule_available">Schedule active</string>
+    <string name="child_home_schedule_unavailable">No schedule applies right now</string>
+    <string name="child_home_schedule_not_ready">Schedule not loaded yet</string>
+    <string name="child_home_schedule_epoch_stale">Schedule update pending</string>
+
+    <string name="child_home_internet_status">Internet</string>
+    <string name="child_home_internet_online">Connected</string>
+    <string name="child_home_internet_offline">Not connected</string>
+
+    <string name="child_home_sync_status">Family sync</string>
+    <string name="child_home_sync_offline">Not connected</string>
+    <string name="child_home_sync_syncing">Syncing</string>
+    <string name="child_home_sync_pending">Waiting to send updates</string>
+    <string name="child_home_sync_stale">Update pending</string>
+    <string name="child_home_sync_live">Up to date</string>
+
+    <string name="child_home_last_sync">Last successful sync</string>
+    <string name="child_home_last_sync_never">Never</string>
+    <string name="child_home_last_sync_minutes_ago">%1$s minutes ago</string>
+
+    <string name="child_home_usage_permission">Usage permission</string>
+    <string name="child_home_usage_granted">Granted</string>
+    <string name="child_home_usage_denied">Denied</string>
+    <string name="child_home_usage_not_configured">Not set up yet</string>
+    <string name="child_home_usage_unavailable">Unavailable on this device</string>
+
+    <string name="child_home_location_capability">Location</string>
+    <string name="child_home_location_usable">Available</string>
+    <string name="child_home_location_limited">Limited</string>
+    <string name="child_home_location_unusable">Unavailable</string>
+
+    <string name="child_home_wellbeing_availability">Wellbeing suggestions</string>
+    <string name="child_home_wellbeing_available">Available</string>
+    <string name="child_home_wellbeing_unavailable">Unavailable</string>
+
+    <string name="child_home_pending_requests">Pending requests to parent</string>
+
+    <string name="child_home_emergency_access">Emergency access</string>
+    <string name="child_home_parent_contact">Contact parent</string>
+</resources>

@@ -20,7 +20,19 @@
          delivery degrades to SUPPRESSED_CAPABILITY_UNAVAILABLE (never a crash) if denied. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- PCA-RUNTIME-ANDROID-1 (org.pca.app.runtime.connectivity.NetworkConnectivityObserver):
+         a normal (non-runtime-prompted) permission used only to report honest connectivity
+         status and to know when a family-sync attempt might succeed. Never gates any local
+         enforcement engine; see Section 0/10 of the runtime brief. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- PCA-RUNTIME-ANDROID-1 (org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler): exact
+         alarms are the only reliable way to fire a prayer-time reminder at its real wall-clock
+         moment. Special access granted via Settings on API 31+, not a runtime permission dialog. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <application
+        android:name=".PcaApplication"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
