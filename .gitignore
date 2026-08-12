@@ -13,6 +13,7 @@ Thumbs.db
 # Build output and platform workspace state
 **/build/
 **/.gradle/
+**/.kotlin/
 **/DerivedData/
 **/xcuserdata/
 **/*.xcuserstate
@@ -28,6 +29,6 @@ Thumbs.db
 *.jks
 local.properties
 
-# Orphaned local agent worktree snapshot (not a registered git worktree;
-# includes a full parent-web node_modules install). See repo hygiene report.
-.claude/worktrees/
+# Claude / agent local worktrees and runtime state
+.agent-runtime/
+.claude/
