@@ -41,11 +41,15 @@ import org.pca.app.runtime.port.NotReadyScheduleRuntimePort
 import org.pca.app.runtime.port.OfflineFamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
+import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
+import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
+import org.pca.app.runtime.schedule.ScheduleRuntime
 import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
+import org.pca.app.runtime.wellbeing.RuntimeWellbeingScheduleContextSource
 import org.pca.app.runtime.wellbeing.WellbeingRuntimeCoordinator
 import java.util.UUID
 
@@ -56,14 +60,18 @@ import java.util.UUID
  * every engine/port this runtime touches. [PcaApplication] holds exactly one [PcaAppGraph] for
  * the process lifetime; nothing else in the app should construct any of these types directly.
  *
- * [scheduleRuntimePort] and [familySyncRuntimePort] default to the conservative NOT_READY/OFFLINE
- * placeholders (Section 8/9) -- the coordinator swaps in Agent 10's and Agent 16's real
- * implementations by constructing this graph with those parameters once those lanes land; nothing
- * else in this graph needs to change for that binding.
+ * [scheduleRuntimePort] defaults to the real Agent 10 binding ([ProductionScheduleRuntimePort],
+ * backed by [ScheduleRuntime]/[PersistentSchedulePolicyStore]) -- pass an explicit override (e.g.
+ * [org.pca.app.runtime.port.NotReadyScheduleRuntimePort] in tests) to bypass it.
+ * [familySyncRuntimePort] still defaults to the conservative OFFLINE placeholder (Section 9):
+ * Agent 16's real transport exists but its crypto verifiers are deliberately fail-closed pending
+ * the separate production-crypto human security review (`PRODUCTION_CRYPTO_SUITE`), so binding it
+ * here would only wrap an always-failing pipeline -- wiring it is deferred, not silently glued
+ * over, until that gate clears.
  */
 class PcaAppGraph private constructor(
     val context: Context,
-    val scheduleRuntimePort: ScheduleRuntimePort,
+    scheduleRuntimePortOverride: ScheduleRuntimePort?,
     val familySyncRuntimePort: FamilySyncRuntimePort,
     runtimeStateStore: PersistentStateStore,
     childRequestStateStore: PersistentStateStore,
@@ -82,6 +90,14 @@ class PcaAppGraph private constructor(
     val childRequestQueue = ChildRequestOfflineQueue(childRequestStateStore)
 
     val connectivityObserver: NetworkConnectivityObserver = AndroidNetworkConnectivityObserver(context)
+
+    /** Agent 10's real schedule authority, durably backed (mission section 12's offline-restart
+     * requirement) -- the single instance both [scheduleRuntimePort]'s status reporting and
+     * [buildWellbeingDispatcher]'s WELL-3 closure read from, so they can never disagree. */
+    val schedulePolicyStore = PersistentSchedulePolicyStore(runtimeStateStore)
+    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore)
+    val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
+        ?: ProductionScheduleRuntimePort(scheduleRuntime, wallClockTimeSource, connectivityObserver)
 
     val usageObservationSource = StandardUsageObservationSource(context, monotonicTimeSource, wallClockTimeSource)
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
@@ -161,6 +177,7 @@ class PcaAppGraph private constructor(
         suppressionContextSource = RuntimeSuppressionContextSource(context) { runtime.screenTimeState.value },
         breakStateSource = RuntimeBreakStateSource { runtime.screenTimeState.value },
         wallClockCalendarSource = wallClockCalendarSource,
+        scheduleContextSource = RuntimeWellbeingScheduleContextSource(scheduleRuntime, wallClockTimeSource),
     )
 
     /**
@@ -204,12 +221,12 @@ class PcaAppGraph private constructor(
          * [PcaLocalPersistence.getInstance] -- exactly one graph per process. */
         fun getInstance(
             context: Context,
-            scheduleRuntimePort: ScheduleRuntimePort = NotReadyScheduleRuntimePort(),
+            scheduleRuntimePort: ScheduleRuntimePort? = null,
             familySyncRuntimePort: FamilySyncRuntimePort = OfflineFamilySyncRuntimePort(),
         ): PcaAppGraph = instance ?: synchronized(this) {
             instance ?: PcaAppGraph(
                 context = context.applicationContext,
-                scheduleRuntimePort = scheduleRuntimePort,
+                scheduleRuntimePortOverride = scheduleRuntimePort,
                 familySyncRuntimePort = familySyncRuntimePort,
                 runtimeStateStore = EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_runtime_state"),
                 childRequestStateStore = EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_child_request_queue"),
@@ -227,12 +244,12 @@ class PcaAppGraph private constructor(
          */
         fun createForTest(
             context: Context,
-            scheduleRuntimePort: ScheduleRuntimePort = NotReadyScheduleRuntimePort(),
+            scheduleRuntimePort: ScheduleRuntimePort? = NotReadyScheduleRuntimePort(),
             familySyncRuntimePort: FamilySyncRuntimePort = OfflineFamilySyncRuntimePort(),
             stateStore: PersistentStateStore = org.pca.app.foundation.InMemoryPersistentStateStore(),
         ): PcaAppGraph = PcaAppGraph(
             context = context.applicationContext,
-            scheduleRuntimePort = scheduleRuntimePort,
+            scheduleRuntimePortOverride = scheduleRuntimePort,
             familySyncRuntimePort = familySyncRuntimePort,
             runtimeStateStore = stateStore,
             childRequestStateStore = stateStore,
