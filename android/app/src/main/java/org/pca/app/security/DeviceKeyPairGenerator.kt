@@ -16,13 +16,22 @@ package org.pca.app.security
  * reviewed concrete generator substituted later without touching callers.
  *
  * The private key is NEVER returned as raw bytes -- only a public key
- * (opaque, base64-encoded, the only thing ever transmitted to the
- * backend/relay per doc 09 Section 5.1's "public keys ... not sensitive
- * on their own") and a [SecureKeyStore] alias referencing where the
- * private key material lives. A concrete implementation backed by
- * hardware-backed Android Keystore may never be ABLE to export the
- * private key at all, by platform design -- this interface's shape does
- * not assume otherwise.
+ * (opaque, the only thing ever transmitted to the backend/relay per doc 09
+ * Section 5.1's "public keys ... not sensitive on their own") and a
+ * [SecureKeyStore] alias referencing where the private key material lives.
+ * A concrete implementation backed by hardware-backed Android Keystore may
+ * never be ABLE to export the private key at all, by platform design --
+ * this interface's shape does not assume otherwise.
+ *
+ * [GeneratedKeyPair.publicKeyBase64] MUST be base64url-encoded (RFC 4648
+ * §5, no `+`/`/`/padding `=`), never standard base64 -- confirmed against
+ * the backend's actual validator (backend/src/device/publicKey.ts's
+ * `isPlausiblePublicKey`, which round-trips through `Buffer.from(x,
+ * 'base64url')` and rejects anything that doesn't match exactly). A
+ * standard-base64-encoded key is silently rejected as 400 invalid_request
+ * whenever the encoder happens to emit `+`, `/`, or `=` -- discovered via
+ * a real live-backend conformance run, not merely a spec reading, so any
+ * future concrete implementation must use a url-safe base64 encoder.
  */
 interface DeviceKeyPairGenerator {
     fun generateSigningKeyPair(): GeneratedKeyPair
