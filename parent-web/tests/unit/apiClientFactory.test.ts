@@ -46,26 +46,26 @@ describe('getApiClients demo-mode discipline', () => {
     expect(clients.serviceAuth).toBeInstanceOf(RealServiceAuthClient);
   });
 
-  it('demoMode false: not-yet-implemented interfaces are explicit unavailable providers, not dev fixtures', async () => {
+  it('demoMode false: parentFamilyData is the real, crypto-gated provider, not a dev fixture', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
     const { DevParentFamilyDataGateway } = await import('../../src/api/dev/devParentFamilyDataGateway');
-    const { UnavailableParentFamilyDataGateway } = await import('../../src/api/real/unavailableProviders');
+    const { RealParentFamilyDataGateway } = await import('../../src/api/real/realParentFamilyDataGateway');
     const clients = getApiClients();
-    expect(clients.parentFamilyData).toBeInstanceOf(UnavailableParentFamilyDataGateway);
+    expect(clients.parentFamilyData).toBeInstanceOf(RealParentFamilyDataGateway);
     expect(clients.parentFamilyData).not.toBeInstanceOf(DevParentFamilyDataGateway);
   });
 
-  it('demoMode false: an unavailable parentFamilyData provider rejects rather than returning fixture-shaped data', async () => {
+  it('demoMode false: the real parentFamilyData provider rejects with EndpointNotTrustedError rather than returning fixture-shaped data (this browser has never paired)', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
     const clients = getApiClients();
     await expect(clients.parentFamilyData.getScreenTime('child-amir')).rejects.toMatchObject({
-      code: 'NOT_IMPLEMENTED',
+      code: 'ENDPOINT_NOT_TRUSTED',
     });
   });
 
@@ -89,7 +89,7 @@ describe('getApiClients demo-mode discipline', () => {
       );
       return {
         ...actual,
-        UnavailableParentFamilyDataGateway: class {
+        UnavailableFamilyAuthorityGateway: class {
           constructor() {
             throw new Error('simulated programmer-error construction failure');
           }
@@ -103,7 +103,25 @@ describe('getApiClients demo-mode discipline', () => {
   it('the runtime sync client and real service auth client are both wired into the module (no missing exports)', async () => {
     const runtimeSyncModule = await import('../../src/api/dev/devRuntimeSyncClient');
     const realAuthModule = await import('../../src/api/real/realServiceAuthClient');
+    const realSyncModule = await import('../../src/api/real/realParentRuntimeSyncClient');
     expect(runtimeSyncModule.DevRuntimeSyncClient).toBeTypeOf('function');
     expect(realAuthModule.RealServiceAuthClient).toBeTypeOf('function');
+    expect(realSyncModule.RealParentRuntimeSyncClient).toBeTypeOf('function');
+  });
+
+  it('demoMode false: trustedBrowser and runtimeSync are the real implementations, not Unavailable* stand-ins', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
+    }));
+    const { getApiClients } = await import('../../src/api/client');
+    const { RealTrustedBrowserProvider } = await import('../../src/api/real/realTrustedBrowserProvider');
+    const { RealParentRuntimeSyncClient } = await import('../../src/api/real/realParentRuntimeSyncClient');
+    const { RealDeviceStatusClient } = await import('../../src/api/real/realDeviceStatusClient');
+    const { RealRequestClient } = await import('../../src/api/real/realRequestClient');
+    const clients = getApiClients();
+    expect(clients.trustedBrowser).toBeInstanceOf(RealTrustedBrowserProvider);
+    expect(clients.runtimeSync).toBeInstanceOf(RealParentRuntimeSyncClient);
+    expect(clients.deviceStatus).toBeInstanceOf(RealDeviceStatusClient);
+    expect(clients.requests).toBeInstanceOf(RealRequestClient);
   });
 });

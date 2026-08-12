@@ -7,23 +7,36 @@
 //  - DEVELOPMENT_ONLY fixtures (src/api/dev/*) -- used ONLY when
 //    config.demoMode is explicitly true.
 //  - "Real" implementations (src/api/real/*) -- used whenever demo mode is
-//    off. For ServiceAuthClient this is genuine HTTP-backed code
-//    (RealServiceAuthClient). For every other interface, no real backend
-//    exists yet in this repository slice (there is no backend/ relay and no
-//    contracts/schedule-runtime here -- that is owned by the agent building
-//    the backend relay), so an explicit "unavailable" provider
-//    (src/api/real/unavailableProviders.ts) is used instead. Those
-//    providers never fabricate fixture data and never grant permissions --
-//    they surface a genuine UNAVAILABLE/NOT_IMPLEMENTED condition to the
-//    UI. This is deliberately NOT the same thing as falling back to
-//    fixtures: a real-but-not-yet-implemented backend must never
-//    masquerade as a working demo.
+//    off. These fall into two honest-but-different categories:
+//     (a) genuinely HTTP-backed code with no live backend to answer it yet
+//         (RealServiceAuthClient, RealParentRuntimeSyncClient) -- same
+//         status as before: safe to construct/call, will fail at runtime
+//         until a backend exists.
+//     (b) trusted-browser E2EE family-content providers
+//         (RealTrustedBrowserProvider, RealParentFamilyDataGateway,
+//         RealDeviceStatusClient, RealRequestClient) -- these perform real
+//         local WebCrypto (endpoint key generation) and real trust-state
+//         checks, but are additionally gated on
+//         @pca/parent-sdk-browser-runtime's crypto-review gate, which is
+//         hardcoded not-ready until a human security review approves the
+//         production E2EE suite (see that package's src/cryptoGate.ts).
+//         Until then they honestly reject with EndpointNotTrustedError or
+//         CryptoReviewRequiredError rather than ever fabricating family
+//         data -- see src/api/real/realParentFamilyDataGateway.ts.
+//    For familyAuthority and wellbeingMessages, no real implementation
+//    exists yet in this repository slice at all, so an explicit
+//    "unavailable" provider (src/api/real/unavailableProviders.ts) is used.
+//    Those providers never fabricate fixture data and never grant
+//    permissions -- they surface a genuine UNAVAILABLE/NOT_IMPLEMENTED
+//    condition to the UI. This is deliberately NOT the same thing as
+//    falling back to fixtures: a real-but-not-yet-implemented backend must
+//    never masquerade as a working demo.
 //
-// KNOWN_BACKEND_INTEGRATION_ACTION: as each interface in
+// KNOWN_BACKEND_INTEGRATION_ACTION: as each remaining interface in
 // src/api/real/unavailableProviders.ts gets a genuine HTTP/relay-backed
-// implementation, replace its construction below the same way
-// RealServiceAuthClient already is, and delete the corresponding
-// Unavailable* class once nothing constructs it anymore.
+// implementation, replace its construction below the same way the others
+// already are, and delete the corresponding Unavailable* class once nothing
+// constructs it anymore.
 import { config } from '../config/env';
 import type {
   DeviceStatusClient,
@@ -44,13 +57,13 @@ import { DevWellbeingMessageAdminClient } from './dev/devWellbeingMessageAdminCl
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
+import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
+import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
+import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
+import { RealRequestClient } from './real/realRequestClient';
+import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
 import {
-  UnavailableDeviceStatusClient,
   UnavailableFamilyAuthorityGateway,
-  UnavailableParentFamilyDataGateway,
-  UnavailableRequestClient,
-  UnavailableRuntimeSyncClient,
-  UnavailableTrustedBrowserProvider,
   UnavailableWellbeingMessageAdminClient,
 } from './real/unavailableProviders';
 
@@ -94,15 +107,20 @@ function buildDevClients(): PcaApiClients {
  * where that surfaces.
  */
 function buildRealClients(): PcaApiClients {
+  // trustedBrowser is constructed first and shared with the family-content
+  // gateways below (parentFamilyData/deviceStatus/requests) -- they all
+  // check the SAME trust snapshot, so "trusted" can never mean something
+  // different to one gateway than another.
+  const trustedBrowser = new RealTrustedBrowserProvider();
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     familyAuthority: new UnavailableFamilyAuthorityGateway(),
-    parentFamilyData: new UnavailableParentFamilyDataGateway(),
-    deviceStatus: new UnavailableDeviceStatusClient(),
-    requests: new UnavailableRequestClient(),
+    parentFamilyData: new RealParentFamilyDataGateway(trustedBrowser),
+    deviceStatus: new RealDeviceStatusClient(trustedBrowser),
+    requests: new RealRequestClient(trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
-    trustedBrowser: new UnavailableTrustedBrowserProvider(),
-    runtimeSync: new UnavailableRuntimeSyncClient(),
+    trustedBrowser,
+    runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl),
     isFixtureBacked: false,
   };
 }
