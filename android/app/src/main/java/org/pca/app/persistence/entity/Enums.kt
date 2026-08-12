@@ -23,7 +23,17 @@ enum class DeviceKeyState { ACTIVE, ROTATED_OUT, REVOKED }
 /** doc 10 Section 4.1 -- distinguishes a platform-reported value from an inferred one. */
 enum class SourceConfidence { PLATFORM_API, HEURISTIC }
 
-enum class WebVisitAction { ALLOWED, BLOCKED }
+/**
+ * `REVIEW` added by PCA-ANDROID-WEB-YOUTUBE-1: mirrors backend
+ * `WebDecisionOutcome`'s three-way ALLOW/BLOCK/REVIEW outcome (doc 14's
+ * classifier-held-for-review case is distinct from an outright block --
+ * the child can request review on either, but a REVIEW-held page was never
+ * definitively blocked by a rule/security source). Stored as [Converters]
+ * already stores every enum here: by `.name` string, so this is not a
+ * Room schema change (column type/shape is unaffected) and needs no
+ * migration.
+ */
+enum class WebVisitAction { ALLOWED, BLOCKED, REVIEW }
 
 /**
  * doc 10 Section 4.6 -- bucketed proximity signal only, never a
