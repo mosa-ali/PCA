@@ -27,3 +27,7 @@ Thumbs.db
 *.keystore
 *.jks
 local.properties
+
+# Orphaned local agent worktree snapshot (not a registered git worktree;
+# includes a full parent-web node_modules install). See repo hygiene report.
+.claude/worktrees/
