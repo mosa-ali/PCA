@@ -14,10 +14,10 @@ import { MySqlDeviceChallengeRepository } from './deviceauth/MySqlDeviceChalleng
 import { MySqlRelayRepository } from './relay/MySqlRelayRepository.js';
 import { RelayService } from './relay/RelayService.js';
 import { InMemoryPendingQueueStore } from './familysync/InMemoryPendingQueueStore.js';
-import { InMemorySequenceProgressLedger } from './familysync/InMemorySequenceProgressLedger.js';
-import { InMemoryReplayLedger } from './familyenvelope/InMemoryReplayLedger.js';
-import { InMemoryDataVersionLedger } from './familyenvelope/InMemoryDataVersionLedger.js';
-import { InMemoryMessageIdempotencyLedger } from './familyenvelope/InMemoryMessageIdempotencyLedger.js';
+import { MySqlSequenceProgressLedger } from './familysync/MySqlSequenceProgressLedger.js';
+import { MySqlReplayLedger } from './familyenvelope/MySqlReplayLedger.js';
+import { MySqlDataVersionLedger } from './familyenvelope/MySqlDataVersionLedger.js';
+import { MySqlMessageIdempotencyLedger } from './familyenvelope/MySqlMessageIdempotencyLedger.js';
 import { SyncCoordinator } from './familysync/SyncCoordinator.js';
 import {
   DeviceSessionService,
@@ -49,11 +49,26 @@ async function start(): Promise<void> {
     new RejectingDeviceSignatureVerifier(),
   );
   const syncCoordinator = new SyncCoordinator(
+    // PCA-SYNC-DURABILITY-1: PendingQueueStore stays in-memory -- a held,
+    // dependency-gated envelope is never pre-trusted (it is always re-run
+    // through the full acceptance pipeline, including every ledger below,
+    // before being applied), so losing it on restart is a liveness/
+    // resubmission cost only, never a security regression. See
+    // backend/migrations/0002_sync_durability.sql's header and this lane's
+    // final report for the full reasoning.
     new InMemoryPendingQueueStore(),
-    new InMemorySequenceProgressLedger(),
-    new InMemoryReplayLedger(),
-    new InMemoryDataVersionLedger(),
-    new InMemoryMessageIdempotencyLedger(),
+    // The four ledgers below are the actual replay/anti-downgrade/
+    // idempotency SECURITY authorities -- each is now durable (MySQL-
+    // backed), so a backend-process restart can no longer reopen a replay,
+    // policy-rollback, or message-id-conflict hole. This durability change
+    // is independent of, and does not alter, the crypto gate immediately
+    // below: RejectingEnvelopeSignatureVerifier still fails every
+    // signature check closed, so inbound envelope acceptance remains
+    // completely non-functional in production today, exactly as before.
+    new MySqlSequenceProgressLedger(),
+    new MySqlReplayLedger(),
+    new MySqlDataVersionLedger(),
+    new MySqlMessageIdempotencyLedger(),
     // Same crypto gate as above -- inbound envelope acceptance is
     // correctly non-functional until a reviewed EnvelopeSignatureVerifier
     // replaces this.

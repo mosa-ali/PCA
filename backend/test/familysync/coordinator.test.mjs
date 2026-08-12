@@ -367,21 +367,45 @@ test('predecessor + successor arriving CONCURRENTLY (floor already established):
   // pending queue only when a new envelope for that family is accepted --
   // there is no background timer. A successor whose dependency became
   // satisfied WHILE it was still mid-flight (e.g. still running its own
-  // pending-admission security screen) is not retroactively drained by a
-  // predecessor that already finished draining moments earlier; it is
-  // held, and safely applies on the family's next activity or its own
-  // resubmission -- never lost, never applied out of order.
-  assert.equal(succResult.decision.kind, 'HOLD_PENDING');
+  // pending-admission security screen) may or may not be retroactively
+  // drained by the predecessor's OWN concurrent drainFamily call -- this is
+  // a genuine race between two independent submit() calls (different
+  // messageIds are never serialized against each other -- see
+  // SyncCoordinator's chainByKey doc comment), and PCA-SYNC-DURABILITY-1's
+  // ledger-durability change (every ledger call is now async, an
+  // additional microtask tick even for the in-memory implementations)
+  // legitimately shifts which side of that race wins on a given run. Both
+  // outcomes are safe and already covered by this coordinator's own
+  // contract: EITHER the successor is drained already, as a side effect of
+  // the predecessor's own submit() (successor kind === 'APPLY_NOW', or
+  // present in predResult.drained), OR it is still genuinely held and
+  // safely applies on the family's next activity or its own resubmission.
+  // What must NEVER happen, regardless of which side of the race wins: the
+  // successor is lost, or applied more than once.
+  const succAppliedInline = succResult.decision.kind === 'APPLY_NOW';
+  const succDrainedByPredecessor = predResult.drained.some((d) => d.messageId === 'succ-concurrent');
+  assert.ok(
+    succAppliedInline || succDrainedByPredecessor || succResult.decision.kind === 'HOLD_PENDING',
+    `successor must be applied or held pending, never rejected/lost -- got ${succResult.decision.kind}`,
+  );
 
   // Any subsequent accepted envelope for the SAME FAMILY (any sender) drains
   // the whole family's pending queue -- exactly the "next family activity"
   // convergence trigger described above. A first-ever message from an
   // unrelated sender in the same family applies immediately and, as a side
-  // effect, now finds the previously-orphaned successor eligible.
+  // effect, drains anything still genuinely pending (including the
+  // successor, if it was not already applied above).
   const unrelatedSenderMessage = buildEnvelope({ senderKeyId: 'key-unrelated', sequenceOrNonce: 'n/a' });
   const triggerResult = await coordinator.submit(unrelatedSenderMessage, baseContext());
   assert.equal(triggerResult.decision.kind, 'APPLY_NOW');
-  assert.deepEqual(triggerResult.drained, [{ messageId: 'succ-concurrent', decision: { kind: 'APPLY_NOW', idempotent: false } }]);
+  const succDrainedByTrigger = triggerResult.drained.some((d) => d.messageId === 'succ-concurrent');
+
+  // CONVERGENCE (never lost): the successor must have been applied through
+  // EXACTLY ONE of these three paths -- inline in its own submit() call,
+  // as a side effect of the predecessor's concurrent drain, or as a side
+  // effect of the later trigger's drain.
+  const applyPaths = [succAppliedInline, succDrainedByPredecessor, succDrainedByTrigger].filter(Boolean);
+  assert.equal(applyPaths.length, 1, `successor must converge to applied through exactly one path, saw ${applyPaths.length}`);
 });
 
 test('expiry racing dependency arrival: the predecessor arriving exactly at the successor expiry threshold does not resurrect it', async () => {

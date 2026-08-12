@@ -21,11 +21,11 @@ export class InMemoryMessageIdempotencyLedger implements MessageIdempotencyLedge
     this.capacity = capacity;
   }
 
-  getAcceptedCanonicalBytes(messageId: MessageId): string | null {
+  async getAcceptedCanonicalBytes(messageId: MessageId): Promise<string | null> {
     return this.canonicalBytesByMessageId.get(messageId) ?? null;
   }
 
-  recordAccepted(messageId: MessageId, canonicalBytes: string): void {
+  async recordAccepted(messageId: MessageId, canonicalBytes: string): Promise<void> {
     if (this.capacity <= 0) return;
     if (this.canonicalBytesByMessageId.has(messageId)) {
       this.canonicalBytesByMessageId.set(messageId, canonicalBytes);

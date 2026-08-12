@@ -19,8 +19,9 @@ import type { MessageId } from './types.js';
  * -- recording on any rejection path would let a forged or malformed
  * envelope poison a legitimate future messageId.
  */
+/** PCA-SYNC-DURABILITY-1: async, see ReplayLedger.ts's identical note. */
 export interface MessageIdempotencyLedger {
   /** Returns the canonical bytes previously accepted under this messageId, or null if none. */
-  getAcceptedCanonicalBytes(messageId: MessageId): string | null;
-  recordAccepted(messageId: MessageId, canonicalBytes: string): void;
+  getAcceptedCanonicalBytes(messageId: MessageId): Promise<string | null>;
+  recordAccepted(messageId: MessageId, canonicalBytes: string): Promise<void>;
 }

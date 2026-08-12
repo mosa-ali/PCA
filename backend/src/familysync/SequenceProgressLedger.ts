@@ -9,7 +9,8 @@ import type { OpaqueFamilyId, SenderKeyId } from '../familyenvelope/types.js';
  * exact sequenceOrNonce string been processed," not "what is the last
  * consecutive applied number."
  */
+/** PCA-SYNC-DURABILITY-1: async, see familyenvelope/ReplayLedger.ts's identical note. */
 export interface SequenceProgressLedger {
-  getLastAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId): number | null;
-  recordAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequence: number): void;
+  getLastAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId): Promise<number | null>;
+  recordAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequence: number): Promise<void>;
 }

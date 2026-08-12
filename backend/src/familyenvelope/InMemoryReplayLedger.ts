@@ -29,11 +29,11 @@ export class InMemoryReplayLedger implements ReplayLedger {
     this.capacityPerSender = capacityPerSender;
   }
 
-  hasProcessed(senderKeyId: SenderKeyId, sequenceOrNonce: string): boolean {
+  async hasProcessed(senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<boolean> {
     return this.seenBySender.get(senderKeyId)?.has(sequenceOrNonce) ?? false;
   }
 
-  recordProcessed(senderKeyId: SenderKeyId, sequenceOrNonce: string): void {
+  async recordProcessed(senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<void> {
     // A cap of 0 (or less) means "remember nothing" -- without this guard,
     // an empty set's eviction step is a no-op (nothing to evict yet) and
     // the entry would still be added, silently admitting one entry despite

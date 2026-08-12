@@ -2,18 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryDataVersionLedger } from '../../dist/familyenvelope/InMemoryDataVersionLedger.js';
 
-test('getLastAcceptedVersion is null before anything is recorded', () => {
+test('getLastAcceptedVersion is null before anything is recorded', async () => {
   const ledger = new InMemoryDataVersionLedger();
-  assert.equal(ledger.getLastAcceptedVersion('key-1'), null);
+  assert.equal(await ledger.getLastAcceptedVersion('key-1'), null);
 });
 
-test('recordAcceptedVersion then getLastAcceptedVersion reflects it', () => {
+test('recordAcceptedVersion then getLastAcceptedVersion reflects it', async () => {
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', '1.0.0');
-  assert.equal(ledger.getLastAcceptedVersion('key-1'), '1.0.0');
+  await ledger.recordAcceptedVersion('key-1', '1.0.0');
+  assert.equal(await ledger.getLastAcceptedVersion('key-1'), '1.0.0');
 });
 
-test('recordAcceptedVersion unconditionally sets the value -- it does NOT enforce a max-only/forward-only floor itself', () => {
+test('recordAcceptedVersion unconditionally sets the value -- it does NOT enforce a max-only/forward-only floor itself', async () => {
   // The ledger trusts its caller (FamilyEnvelopeVerifier.evaluateEnvelope)
   // to invoke this only on full acceptance, which already enforces
   // monotonicity for POLICY_UPDATE before this is ever called. A
@@ -21,13 +21,13 @@ test('recordAcceptedVersion unconditionally sets the value -- it does NOT enforc
   // authorized target version -- a ledger that silently refused to
   // record a lower value would defeat that.
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', '5.0.0');
-  ledger.recordAcceptedVersion('key-1', '3.0.0');
-  assert.equal(ledger.getLastAcceptedVersion('key-1'), '3.0.0');
+  await ledger.recordAcceptedVersion('key-1', '5.0.0');
+  await ledger.recordAcceptedVersion('key-1', '3.0.0');
+  assert.equal(await ledger.getLastAcceptedVersion('key-1'), '3.0.0');
 });
 
-test('versions are scoped per sender key', () => {
+test('versions are scoped per sender key', async () => {
   const ledger = new InMemoryDataVersionLedger();
-  ledger.recordAcceptedVersion('key-1', '5.0.0');
-  assert.equal(ledger.getLastAcceptedVersion('key-2'), null);
+  await ledger.recordAcceptedVersion('key-1', '5.0.0');
+  assert.equal(await ledger.getLastAcceptedVersion('key-2'), null);
 });

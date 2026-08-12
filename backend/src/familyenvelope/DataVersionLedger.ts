@@ -18,7 +18,8 @@ import type { SenderKeyId } from './types.js';
  * enforced ordinary monotonicity before ever reaching this call for a
  * POLICY_UPDATE.
  */
+/** PCA-SYNC-DURABILITY-1: async, see ReplayLedger.ts's identical note. */
 export interface DataVersionLedger {
-  getLastAcceptedVersion(senderKeyId: SenderKeyId): string | null;
-  recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): void;
+  getLastAcceptedVersion(senderKeyId: SenderKeyId): Promise<string | null>;
+  recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): Promise<void>;
 }

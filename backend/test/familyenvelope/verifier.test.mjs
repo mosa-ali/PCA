@@ -207,7 +207,7 @@ test('SAFETY PROPERTY preserved despite the limitation above: a genuinely interv
   const lateIntervening = buildEnvelope({ semanticVersion: '2.0.0' });
   const verdict = await evaluate(lateIntervening, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-  assert.equal(harness.versionLedger.getLastAcceptedVersion(lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion(lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
 });
 
 test('dryRun performs every check including signature but records no ledger side effects', async () => {
@@ -223,8 +223,8 @@ test('dryRun performs every check including signature but records no ledger side
     { dryRun: true },
   );
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
-  assert.equal(harness.replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce), false);
-  assert.equal(harness.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId), null);
+  assert.equal(await harness.replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce), false);
+  assert.equal(await harness.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId), null);
 
   // The exact same envelope must still be fully acceptable for real afterward -- dryRun never consumes anything.
   const realVerdict = await evaluate(envelope, baseContext(), harness);
@@ -281,7 +281,7 @@ test('non-POLICY_UPDATE, non-SIGNED_ROLLBACK message types never consult or upda
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
 
   // And the POLICY_UPDATE floor must be unaffected by it.
-  assert.equal(harness.versionLedger.getLastAcceptedVersion('key-1'), '5.0.0');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion('key-1'), '5.0.0');
 });
 
 test('a rejected (EXPIRED) envelope never advances the replay ledger -- a corrected legitimate resubmission with the same sequence/nonce can still succeed', async () => {
@@ -315,7 +315,7 @@ test('a STALE_TRUST_SET_EPOCH rejection never advances the replay ledger', async
   const envelope = buildEnvelope({ sequenceOrNonce: 'seq-epoch', trustSetEpoch: 1 });
   const staleVerdict = await evaluate(envelope, baseContext({ minimumAcceptedTrustSetEpoch: 2 }), harness);
   assert.deepEqual(staleVerdict, { accepted: false, reason: 'STALE_TRUST_SET_EPOCH' });
-  assert.equal(harness.replayLedger.hasProcessed(envelope.senderKeyId, 'seq-epoch'), false);
+  assert.equal(await harness.replayLedger.hasProcessed(envelope.senderKeyId, 'seq-epoch'), false);
 
   const verdict = await evaluate(envelope, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
@@ -329,7 +329,7 @@ test('a REPLAYED rejection never advances the semantic-version ledger', async ()
   const replay = buildEnvelope({ sequenceOrNonce: 'seq-1', semanticVersion: '99.0.0' });
   const replayVerdict = await evaluate(replay, baseContext(), harness);
   assert.deepEqual(replayVerdict, { accepted: false, reason: 'REPLAYED' });
-  assert.equal(harness.versionLedger.getLastAcceptedVersion(first.senderKeyId), '5.0.0');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion(first.senderKeyId), '5.0.0');
 });
 
 test('a VERSION_NOT_MONOTONIC rejection never advances the replay ledger', async () => {
@@ -339,7 +339,7 @@ test('a VERSION_NOT_MONOTONIC rejection never advances the replay ledger', async
   const nonMonotonic = buildEnvelope({ sequenceOrNonce: 'seq-2', semanticVersion: '3.0.0' });
   const rejected = await evaluate(nonMonotonic, baseContext(), harness);
   assert.deepEqual(rejected, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-  assert.equal(harness.replayLedger.hasProcessed(nonMonotonic.senderKeyId, 'seq-2'), false);
+  assert.equal(await harness.replayLedger.hasProcessed(nonMonotonic.senderKeyId, 'seq-2'), false);
 });
 
 test('expiry is boundary-inclusive: now exactly equal to expiresAt is rejected', async () => {

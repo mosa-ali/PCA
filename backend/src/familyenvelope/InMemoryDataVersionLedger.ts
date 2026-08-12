@@ -11,7 +11,7 @@ import type { DataVersionLedger } from './DataVersionLedger.js';
 export class InMemoryDataVersionLedger implements DataVersionLedger {
   private readonly lastVersionBySender = new Map<SenderKeyId, string>();
 
-  getLastAcceptedVersion(senderKeyId: SenderKeyId): string | null {
+  async getLastAcceptedVersion(senderKeyId: SenderKeyId): Promise<string | null> {
     return this.lastVersionBySender.get(senderKeyId) ?? null;
   }
 
@@ -27,7 +27,7 @@ export class InMemoryDataVersionLedger implements DataVersionLedger {
    * incorrectly rejected as non-monotonic against the stale,
    * pre-rollback floor.
    */
-  recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): void {
+  async recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): Promise<void> {
     this.lastVersionBySender.set(senderKeyId, semanticVersion);
   }
 }

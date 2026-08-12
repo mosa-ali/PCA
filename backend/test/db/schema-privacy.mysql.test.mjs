@@ -21,7 +21,7 @@ const PROHIBITED_TERMS = [
 
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
-const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id', 'key_purpose']);
+const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id', 'key_purpose', 'sender_key_id']);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
   const [[tables], [columns]] = await Promise.all([
@@ -66,6 +66,7 @@ test('MySQL SCHEMA PRIVACY: ciphertext/opaque-blob columns are a BLOB family typ
     ['relay_envelopes', 'ciphertext'],
     ['recovery_envelopes', 'ciphertext'],
     ['release_packages', 'signed_metadata'],
+    ['envelope_message_idempotency_ledger', 'canonical_bytes'],
   ];
   for (const [table, column] of opaqueColumns) {
     const [rows] = await getPool().query(
@@ -81,7 +82,7 @@ test('MySQL SCHEMA PRIVACY: no index is built over ciphertext/opaque-blob column
     SELECT DISTINCT table_name, index_name, column_name
     FROM information_schema.statistics
     WHERE table_schema = DATABASE()
-      AND column_name IN ('ciphertext', 'signed_metadata')
+      AND column_name IN ('ciphertext', 'signed_metadata', 'canonical_bytes')
   `);
   assert.deepEqual(rows, [], 'no index may be built over ciphertext or opaque signed-metadata content');
 });

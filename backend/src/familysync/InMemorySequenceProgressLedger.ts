@@ -23,11 +23,11 @@ export class InMemorySequenceProgressLedger implements SequenceProgressLedger {
     return `${Buffer.byteLength(familyId, 'utf8')}:${familyId}${Buffer.byteLength(senderKeyId, 'utf8')}:${senderKeyId}`;
   }
 
-  getLastAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId): number | null {
+  async getLastAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId): Promise<number | null> {
     return this.lastApplied.get(this.key(familyId, senderKeyId)) ?? null;
   }
 
-  recordAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequence: number): void {
+  async recordAppliedSequence(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequence: number): Promise<void> {
     const key = this.key(familyId, senderKeyId);
     const current = this.lastApplied.get(key) ?? -Infinity;
     if (sequence > current) this.lastApplied.set(key, sequence);

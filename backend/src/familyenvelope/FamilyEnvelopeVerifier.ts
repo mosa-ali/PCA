@@ -172,7 +172,7 @@ export async function evaluateEnvelope(
   }
 
   const canonicalBytes = canonicalizeEnvelope(envelope);
-  const priorAccepted = messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId);
+  const priorAccepted = await messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId);
   if (priorAccepted !== null) {
     if (priorAccepted === canonicalBytes) {
       return { accepted: true, idempotent: true };
@@ -189,11 +189,11 @@ export async function evaluateEnvelope(
   if (envelope.keyEpoch < context.minimumAcceptedKeyEpoch) {
     return { accepted: false, reason: 'STALE_KEY_EPOCH' };
   }
-  if (replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce)) {
+  if (await replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce)) {
     return { accepted: false, reason: 'REPLAYED' };
   }
   if (requiresStrictVersionIncrease(envelope.messageType)) {
-    const lastVersion = versionLedger.getLastAcceptedVersion(envelope.senderKeyId);
+    const lastVersion = await versionLedger.getLastAcceptedVersion(envelope.senderKeyId);
     if (lastVersion !== null && compareSemanticVersions(envelope.semanticVersion, lastVersion) <= 0) {
       return { accepted: false, reason: 'VERSION_NOT_MONOTONIC' };
     }
@@ -208,11 +208,11 @@ export async function evaluateEnvelope(
     return { accepted: true, idempotent: false };
   }
 
-  replayLedger.recordProcessed(envelope.senderKeyId, envelope.sequenceOrNonce);
+  await replayLedger.recordProcessed(envelope.senderKeyId, envelope.sequenceOrNonce);
   if (envelope.messageType === 'POLICY_UPDATE' || envelope.messageType === 'SIGNED_ROLLBACK') {
-    versionLedger.recordAcceptedVersion(envelope.senderKeyId, envelope.semanticVersion);
+    await versionLedger.recordAcceptedVersion(envelope.senderKeyId, envelope.semanticVersion);
   }
-  messageIdempotencyLedger.recordAccepted(envelope.messageId, canonicalBytes);
+  await messageIdempotencyLedger.recordAccepted(envelope.messageId, canonicalBytes);
 
   return { accepted: true, idempotent: false };
 }

@@ -201,9 +201,9 @@ export class SyncCoordinator {
       return { decision: { kind: 'REJECT', reason: 'PENDING_MESSAGE_ID_CONFLICT' }, drained: [] };
     }
 
-    const alreadyAccepted = this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId) !== null;
+    const alreadyAccepted = (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId)) !== null;
     if (!alreadyAccepted) {
-      const dependency = this.resolveDependency(envelope);
+      const dependency = await this.resolveDependency(envelope);
       if (dependency?.kind === 'REJECT') {
         return { decision: { kind: 'REJECT', reason: dependency.reason }, drained: [] };
       }
@@ -266,7 +266,7 @@ export class SyncCoordinator {
       return { decision: { kind: 'REJECT', reason: verdict.reason }, drained: [] };
     }
 
-    this.recordSequenceIfApplicable(envelope);
+    await this.recordSequenceIfApplicable(envelope);
     const drained = await this.drainFamily(envelope.familyId, context);
     return { decision: { kind: 'APPLY_NOW', idempotent: verdict.idempotent }, drained };
   }
@@ -283,9 +283,9 @@ export class SyncCoordinator {
     return results;
   }
 
-  private resolveDependency(envelope: FamilyEnvelope): DependencyVerdict | null {
+  private async resolveDependency(envelope: FamilyEnvelope): Promise<DependencyVerdict | null> {
     if (requiresCorrelationPredecessor(envelope.messageType) && envelope.correlationId !== null) {
-      const predecessorAccepted = this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.correlationId) !== null;
+      const predecessorAccepted = (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.correlationId)) !== null;
       if (!predecessorAccepted) {
         return { kind: 'HOLD', reason: 'MISSING_CORRELATION_PREDECESSOR', waitingOnMessageId: envelope.correlationId };
       }
@@ -293,7 +293,7 @@ export class SyncCoordinator {
     if (this.options.isNumericSequenceSender(envelope.familyId, envelope.senderKeyId)) {
       const sequence = parseNumericSequence(envelope.sequenceOrNonce);
       if (sequence !== null) {
-        const lastApplied = this.sequenceLedger.getLastAppliedSequence(envelope.familyId, envelope.senderKeyId);
+        const lastApplied = await this.sequenceLedger.getLastAppliedSequence(envelope.familyId, envelope.senderKeyId);
         if (lastApplied !== null) {
           if (sequence <= lastApplied) return { kind: 'REJECT', reason: 'SEQUENCE_NOT_MONOTONIC' };
           if (sequence > lastApplied + 1) {
@@ -354,10 +354,10 @@ export class SyncCoordinator {
     return inserted ? null : (this.checkPendingCapacity(envelope, canonicalBytes) ?? 'PENDING_FAMILY_QUEUE_FULL');
   }
 
-  private recordSequenceIfApplicable(envelope: FamilyEnvelope): void {
+  private async recordSequenceIfApplicable(envelope: FamilyEnvelope): Promise<void> {
     if (!this.options.isNumericSequenceSender(envelope.familyId, envelope.senderKeyId)) return;
     const sequence = parseNumericSequence(envelope.sequenceOrNonce);
-    if (sequence !== null) this.sequenceLedger.recordAppliedSequence(envelope.familyId, envelope.senderKeyId, sequence);
+    if (sequence !== null) await this.sequenceLedger.recordAppliedSequence(envelope.familyId, envelope.senderKeyId, sequence);
   }
 
   /**
@@ -372,7 +372,7 @@ export class SyncCoordinator {
    * candidate eligible now."
    */
   private async resolvePendingCandidate(record: PendingEnvelopeRecord, context: EnvelopeAcceptanceContext): Promise<SyncDecision> {
-    const dependency = this.resolveDependency(record.envelope);
+    const dependency = await this.resolveDependency(record.envelope);
     if (dependency === null) {
       this.pendingStore.remove(record.familyId, record.messageId);
       const verdict = await evaluateEnvelope(
@@ -384,7 +384,7 @@ export class SyncCoordinator {
         this.messageIdempotencyLedger,
       );
       if (verdict.accepted) {
-        this.recordSequenceIfApplicable(record.envelope);
+        await this.recordSequenceIfApplicable(record.envelope);
         return { kind: 'APPLY_NOW', idempotent: verdict.idempotent };
       }
       return { kind: 'REJECT', reason: verdict.reason };
