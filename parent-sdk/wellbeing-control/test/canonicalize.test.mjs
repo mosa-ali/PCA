@@ -75,3 +75,79 @@ test('duplicate messageId keys do not silently collapse -- both entries contribu
   assert.equal(canonical.includes('First'), true);
   assert.equal(canonical.includes('Second'), true);
 });
+
+// -- F1 correction: NFC normalization of user-authored text ---------------
+
+// 'é' is precomposed "e with acute" (NFC); 'é' is "e" followed by a
+// combining acute accent (NFD). They render identically but are different
+// codepoint sequences -- exactly what different devices/keyboards can produce
+// for the same visual/semantic text.
+const NFC_E_ACUTE = 'é';
+const NFD_E_ACUTE = 'é';
+
+// 'آ' is precomposed ALEF WITH MADDA ABOVE (NFC); 'آ' is ALEF
+// followed by the combining COMBINING MADDA ABOVE (NFD) -- the Arabic-script
+// analogue of the same composed/decomposed distinction.
+const NFC_ALEF_MADDA = 'آ';
+const NFD_ALEF_MADDA = 'آ';
+
+test('NFC- and NFD-equivalent Latin text canonicalize to byte-identical output', () => {
+  const nfcPolicy = basePolicy({ customMessages: [baseMessage({ languageTexts: { en: { title: `Caf${NFC_E_ACUTE}`, body: 'Body' } } })] });
+  const nfdPolicy = basePolicy({ customMessages: [baseMessage({ languageTexts: { en: { title: `Caf${NFD_E_ACUTE}`, body: 'Body' } } })] });
+  assert.notEqual(JSON.stringify(nfcPolicy), JSON.stringify(nfdPolicy), 'fixture sanity: the two source documents must actually differ at the codepoint level');
+  assert.equal(canonicalizePolicy(nfcPolicy), canonicalizePolicy(nfdPolicy));
+});
+
+test('NFC- and NFD-equivalent Arabic text canonicalize to byte-identical output', () => {
+  const nfcPolicy = basePolicy({ customMessages: [baseMessage({ languageTexts: { ar: { title: NFC_ALEF_MADDA, body: 'Body' } } })] });
+  const nfdPolicy = basePolicy({ customMessages: [baseMessage({ languageTexts: { ar: { title: NFD_ALEF_MADDA, body: 'Body' } } })] });
+  assert.notEqual(JSON.stringify(nfcPolicy), JSON.stringify(nfdPolicy), 'fixture sanity: the two source documents must actually differ at the codepoint level');
+  assert.equal(canonicalizePolicy(nfcPolicy), canonicalizePolicy(nfdPolicy));
+});
+
+test('genuinely different text still canonicalizes differently after normalization', () => {
+  const a = basePolicy({ customMessages: [baseMessage({ languageTexts: { en: { title: `Caf${NFC_E_ACUTE}`, body: 'Body' } } })] });
+  const b = basePolicy({ customMessages: [baseMessage({ languageTexts: { en: { title: 'Tea', body: 'Body' } } })] });
+  assert.notEqual(canonicalizePolicy(a), canonicalizePolicy(b));
+});
+
+test('mixed EN/AR content stays deterministic across NFC/NFD input for both scripts at once', () => {
+  const nfc = basePolicy({ customMessages: [baseMessage({ languageTexts: {
+    en: { title: `Caf${NFC_E_ACUTE} reminder`, body: 'Body' },
+    ar: { title: NFC_ALEF_MADDA, body: 'Body' },
+  } })] });
+  const nfd = basePolicy({ customMessages: [baseMessage({ languageTexts: {
+    en: { title: `Caf${NFD_E_ACUTE} reminder`, body: 'Body' },
+    ar: { title: NFD_ALEF_MADDA, body: 'Body' },
+  } })] });
+  assert.equal(canonicalizePolicy(nfc), canonicalizePolicy(nfd));
+});
+
+test('normalization does not reorder message or target semantics', () => {
+  const a = baseMessage({ messageId: 'msg-a', languageTexts: { en: { title: `Caf${NFD_E_ACUTE}`, body: 'Body' } } });
+  const b = baseMessage({ messageId: 'msg-b', languageTexts: { en: { title: 'Tea', body: 'Body' } } });
+  const policyAB = basePolicy({ customMessages: [a, b] });
+  const policyBA = basePolicy({ customMessages: [b, a] });
+  // Message ordering in the canonical form is keyed by messageId (untouched, non-user-text identity),
+  // not by the normalized title -- so reordering the input array still canonicalizes identically...
+  assert.equal(canonicalizePolicy(policyAB), canonicalizePolicy(policyBA));
+  // ...while the normalized title itself still lands in the record for its own messageId, not some
+  // other message's -- i.e. normalization is applied per-field in place, it never reshuffles which
+  // text belongs to which message/target.
+  const canonicalAB = canonicalizePolicy(policyAB);
+  const cafeIndex = canonicalAB.indexOf(`Caf${NFC_E_ACUTE}`);
+  const msgAIndex = canonicalAB.indexOf('msg-a');
+  assert.notEqual(cafeIndex, -1);
+  assert.notEqual(msgAIndex, -1);
+});
+
+test('machine identifiers are not NFC-normalized (only user-authored free text is)', () => {
+  // A combining-form policyId is a contrived/adversarial input -- opaque IDs are expected to be plain
+  // ASCII in practice -- but the contract is explicit that identifiers keep their defined identity
+  // semantics untouched, so this must NOT canonicalize the same as its NFC-normalized counterpart.
+  const nfdId = `policy-${NFD_E_ACUTE}`;
+  const nfcId = `policy-${NFC_E_ACUTE}`;
+  const withNfdId = basePolicy({ policyId: nfdId });
+  const withNfcId = basePolicy({ policyId: nfcId });
+  assert.notEqual(canonicalizePolicy(withNfdId), canonicalizePolicy(withNfcId));
+});

@@ -96,3 +96,66 @@ test('a duplicate operationId applied twice is a no-op the second time', () => {
   assert.equal(editor.currentPolicy.policyRevision, 2);
   assert.equal(editor.currentPolicy.customMessages.length, 1);
 });
+
+// -- F2 correction: UPDATE_TARGETS must validate command.payload.targets, --
+// -- not (only) command.targetScope -----------------------------------------
+
+test('UPDATE_TARGETS rejects an invalid payload.targets even when targetScope is valid, and leaves state unchanged', () => {
+  const originalTargets = { mode: 'ALL_CHILDREN', childProfileIds: [] };
+  const editor = new PolicyEditorService(basePolicy({ targets: originalTargets }));
+  const validAuditScope = { mode: 'ALL_CHILDREN', childProfileIds: [] };
+  const invalidPayloadTargets = { mode: 'ONE_CHILD', childProfileIds: [] };
+  const command = updateTargetsCommand(baseIdentity({ targetScope: validAuditScope }), invalidPayloadTargets);
+
+  assert.throws(() => editor.apply(command, NOW), WellbeingValidationError);
+  assert.deepEqual(editor.currentPolicy.targets, originalTargets);
+  assert.equal(editor.currentPolicy.policyRevision, 1);
+});
+
+test('UPDATE_TARGETS: ONE_CHILD with exactly one opaque id is accepted', () => {
+  const editor = new PolicyEditorService(basePolicy());
+  const targets = { mode: 'ONE_CHILD', childProfileIds: ['child-a'] };
+  const result = editor.apply(updateTargetsCommand(baseIdentity({ targetScope: targets }), targets), NOW);
+  assert.equal(result.kind, 'APPLIED');
+  assert.deepEqual(result.policy.targets, targets);
+});
+
+test('UPDATE_TARGETS: MULTIPLE_CHILDREN with an empty id list is rejected', () => {
+  const editor = new PolicyEditorService(basePolicy());
+  const targets = { mode: 'MULTIPLE_CHILDREN', childProfileIds: [] };
+  assert.throws(() => editor.apply(updateTargetsCommand(baseIdentity({ targetScope: targets }), targets), NOW), WellbeingValidationError);
+  assert.equal(editor.currentPolicy.policyRevision, 1);
+});
+
+test('UPDATE_TARGETS: MULTIPLE_CHILDREN with valid unique ids is accepted', () => {
+  const editor = new PolicyEditorService(basePolicy());
+  const targets = { mode: 'MULTIPLE_CHILDREN', childProfileIds: ['child-a', 'child-b'] };
+  const result = editor.apply(updateTargetsCommand(baseIdentity({ targetScope: targets }), targets), NOW);
+  assert.equal(result.kind, 'APPLIED');
+  assert.deepEqual(result.policy.targets, targets);
+});
+
+test('UPDATE_TARGETS: ALL_CHILDREN with an explicit (prohibited) id list is rejected', () => {
+  const editor = new PolicyEditorService(basePolicy());
+  const targets = { mode: 'ALL_CHILDREN', childProfileIds: ['child-a'] };
+  assert.throws(() => editor.apply(updateTargetsCommand(baseIdentity({ targetScope: targets }), targets), NOW), WellbeingValidationError);
+  assert.equal(editor.currentPolicy.policyRevision, 1);
+});
+
+test('UPDATE_TARGETS: duplicate child ids are rejected (this contract rejects rather than dedupes)', () => {
+  const editor = new PolicyEditorService(basePolicy());
+  const targets = { mode: 'MULTIPLE_CHILDREN', childProfileIds: ['child-a', 'child-a'] };
+  assert.throws(() => editor.apply(updateTargetsCommand(baseIdentity({ targetScope: targets }), targets), NOW), WellbeingValidationError);
+  assert.equal(editor.currentPolicy.policyRevision, 1);
+});
+
+test('UPDATE_TARGETS: a valid payload.targets is still rejected when the separately-checked audit targetScope is invalid', () => {
+  // payload.targets and command.targetScope are validated independently (doc 36 correction F2) --
+  // a valid persisted-state target does not exempt the command from also carrying a valid audit scope.
+  const editor = new PolicyEditorService(basePolicy());
+  const validPayloadTargets = { mode: 'ONE_CHILD', childProfileIds: ['child-a'] };
+  const invalidAuditScope = { mode: 'ONE_CHILD', childProfileIds: [] };
+  const command = updateTargetsCommand(baseIdentity({ targetScope: invalidAuditScope }), validPayloadTargets);
+  assert.throws(() => editor.apply(command, NOW), WellbeingValidationError);
+  assert.equal(editor.currentPolicy.policyRevision, 1);
+});

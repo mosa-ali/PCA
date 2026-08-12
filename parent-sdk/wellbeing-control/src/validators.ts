@@ -49,6 +49,9 @@ export function validateTargetScope(target: TargetScope): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   if (target.mode === 'ONE_CHILD' && target.childProfileIds.length !== 1) issues.push({ kind: 'invalid-target-scope' });
   if (target.mode === 'MULTIPLE_CHILDREN' && target.childProfileIds.length < 2) issues.push({ kind: 'invalid-target-scope' });
+  // ALL_CHILDREN is resolved to the family's current child set at delivery time (doc 36 section 4) --
+  // it never carries an explicit id list, so a non-empty list here is a contradictory/ambiguous target.
+  if (target.mode === 'ALL_CHILDREN' && target.childProfileIds.length !== 0) issues.push({ kind: 'invalid-target-scope' });
   if (target.mode === 'ONE_CHILD' || target.mode === 'MULTIPLE_CHILDREN') {
     if (target.childProfileIds.some((id) => id.trim().length === 0)) issues.push({ kind: 'invalid-target-scope' });
     if (new Set(target.childProfileIds).size !== target.childProfileIds.length) issues.push({ kind: 'invalid-target-scope' });
@@ -156,5 +159,10 @@ export function validateCustomMessage(message: CustomWellbeingMessage): Validati
 
 export function assertValidCustomMessage(message: CustomWellbeingMessage): void {
   const issues = validateCustomMessage(message);
+  if (issues.length > 0) throw new WellbeingValidationError(issues);
+}
+
+export function assertValidTargetScope(target: TargetScope): void {
+  const issues = validateTargetScope(target);
   if (issues.length > 0) throw new WellbeingValidationError(issues);
 }

@@ -4,7 +4,7 @@ import type {
   WellbeingCommand,
   WellbeingMessageControlV1,
 } from './types.js';
-import { assertValidCustomMessage, validateTargetScope, WellbeingValidationError } from './validators.js';
+import { assertValidCustomMessage, assertValidTargetScope, validateTargetScope, WellbeingValidationError } from './validators.js';
 
 export type ApplyCommandResult =
   | { readonly kind: 'APPLIED'; readonly policy: WellbeingMessageControlV1; readonly audit: WellbeingAuditEntry }
@@ -35,6 +35,10 @@ export class PolicyEditorService {
     const outcome = this.guard.evaluate(command.operationId, command.expectedRevision, command.newRevision);
     if (outcome.kind !== 'ACCEPTED') return outcome;
 
+    // command.targetScope is the audit/action-authorization scope (who this operation is allowed to
+    // affect); it is validated here but is NOT a stand-in for validating whatever this command actually
+    // persists. Each command's own payload (e.g. UPDATE_TARGETS's payload.targets) is validated inside
+    // reduce() below, before this.policy is reassigned, so an invalid payload never reaches state.
     const nextPolicy = this.reduce(command);
     const issues = validateTargetScope(command.targetScope);
     if (issues.length > 0) throw new WellbeingValidationError(issues);
@@ -101,6 +105,7 @@ export class PolicyEditorService {
         };
       }
       case 'UPDATE_TARGETS': {
+        assertValidTargetScope(command.payload.targets);
         return { ...this.policy, targets: command.payload.targets };
       }
     }

@@ -10,6 +10,19 @@
  * backend/src/familyenvelope/canonicalize.ts, so that no field value can be
  * crafted to make two different logical policy documents canonicalize to
  * the same byte string, and so JSON key ordering is never load-bearing.
+ *
+ * Every user-authored free-text field (custom message title/body, per
+ * language variant) is normalized to Unicode NFC before it is
+ * length-prefixed. Different devices/keyboards/platforms may produce
+ * visually and semantically identical text as either precomposed (NFC) or
+ * decomposed (NFD) codepoint sequences -- without normalization those
+ * would canonicalize to different byte strings for what is the same
+ * signed content, breaking cross-device signature/hash verification.
+ * Machine identifiers, enum values, and opaque IDs (messageId, policyId,
+ * familyScopeRef, category, language tag, childProfileIds, suggestionId,
+ * dates, timezoneId) are NOT user-authored Unicode text under this
+ * contract and are canonicalized as-is -- normalizing them would risk
+ * changing their defined identity semantics.
  */
 
 import type {
@@ -22,6 +35,11 @@ import type {
 
 function field(value: string): string {
   return `${Buffer.byteLength(value, 'utf8')}:${value}`;
+}
+
+/** Normalizes user-authored free text to Unicode NFC before it enters the canonical form. */
+function userTextField(value: string): string {
+  return field(value.normalize('NFC'));
 }
 
 function canonicalizeTargetScope(target: TargetScope): string {
@@ -56,8 +74,8 @@ function canonicalizeCustomMessage(message: CustomWellbeingMessage): string {
     field(String(languageTags.length)),
     ...languageTags.flatMap((tag) => [
       field(tag),
-      field(message.languageTexts[tag].title),
-      field(message.languageTexts[tag].body),
+      userTextField(message.languageTexts[tag].title),
+      userTextField(message.languageTexts[tag].body),
     ]),
     canonicalizeSchedule(message.schedule),
     field(String(triggers.length)),
