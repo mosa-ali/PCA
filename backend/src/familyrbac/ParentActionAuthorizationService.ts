@@ -2,7 +2,13 @@ import { resolveOperationAuthorization, requiresStepUp, STEP_UP_MAX_FRESHNESS_MS
 import type { ActionIdempotencyLedger } from './ActionIdempotencyLedger.js';
 import { isActorResolutionFailure, type TrustSetRoleResolver } from './TrustSetRoleResolver.js';
 import type { FamilyRbacPolicyConfig, ParentOperation, StepUpAssertion, TargetScope } from './types.js';
+import {
+  UnavailableChildProfileMembershipResolver,
+  type ChildProfileMembershipResolver,
+} from '../childprofiles/ChildProfileMembershipResolver.js';
+import { isPlausibleChildProfileId } from '../childprofiles/policy.js';
 
+/** doc 18 Section 6 / PCA10 error-oracle requirement: CROSS_FAMILY_TARGET is the ONE public reason for every DEVICE/MEMBER/CHILD_PROFILE target-resolution failure shape (wrong family, unknown, malformed, or resolver-unavailable) -- never branched on internally to produce a distinct public reason, so a caller cannot distinguish "exists in another family" from "doesn't exist" from "couldn't be checked." */
 export type AuthorizationDenyReason =
   | 'UNRECOGNIZED_OPERATION'
   | 'ACTOR_NOT_RESOLVABLE'
@@ -47,27 +53,35 @@ export class ParentActionAuthorizationService {
   private readonly configProvider: () => FamilyRbacPolicyConfig;
   private readonly idempotency: ActionIdempotencyLedger;
   private readonly now: () => Date;
+  private readonly childProfileMembership: ChildProfileMembershipResolver;
 
   constructor(
     roleResolver: TrustSetRoleResolver,
     configProvider: () => FamilyRbacPolicyConfig,
     idempotency: ActionIdempotencyLedger,
     now: () => Date = () => new Date(),
+    // PCA10: defaults to fail-closed (UNAVAILABLE -> DENY for every CHILD_PROFILE target) when no trustworthy
+    // resolver has been injected -- see UnavailableChildProfileMembershipResolver. Callers that DO have a
+    // verified family-state source must inject a real resolver explicitly; forgetting to never silently
+    // reopens the IDOR this closes.
+    childProfileMembership: ChildProfileMembershipResolver = new UnavailableChildProfileMembershipResolver(),
   ) {
     this.roleResolver = roleResolver;
     this.configProvider = configProvider;
     this.idempotency = idempotency;
     this.now = now;
+    this.childProfileMembership = childProfileMembership;
   }
 
   authorize(request: AuthorizeRequest): AuthorizationDecision {
+    const fingerprint = fingerprintRequest(request);
     const cached = this.idempotency.getRecorded(request.idempotencyKey);
-    if (cached !== null && cached.actionId === request.actionId) {
+    if (cached !== null && cached.actionId === request.actionId && cached.requestFingerprint === fingerprint) {
       return JSON.parse(cached.outcome) as AuthorizationDecision;
     }
 
     const decision = this.evaluate(request);
-    this.idempotency.record(request.idempotencyKey, { actionId: request.actionId, outcome: JSON.stringify(decision) });
+    this.idempotency.record(request.idempotencyKey, { actionId: request.actionId, requestFingerprint: fingerprint, outcome: JSON.stringify(decision) });
     return decision;
   }
 
@@ -90,12 +104,26 @@ export class ParentActionAuthorizationService {
     // DEVICE/MEMBER targets are cross-checked against the SAME verified trust set the actor was resolved
     // from -- a target device id belonging to a different family (or no family at all) must never be
     // reachable just because the actor themself is a legitimately resolved Owner/Administrator of THEIR
-    // OWN family. (CHILD_PROFILE targets cannot be validated here: this module has no child-profile
-    // directory of its own -- that remains a residual gap pending an injected directory port from
-    // whichever lane owns child-profile identity, not silently declared safe.)
+    // OWN family.
     if (request.targetScope.kind === 'DEVICE' || request.targetScope.kind === 'MEMBER') {
       const targetResolution = this.roleResolver.resolveActor(request.familyId, request.targetScope.id);
       if (isActorResolutionFailure(targetResolution)) {
+        return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
+      }
+    }
+
+    // PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: a CHILD_PROFILE target is cross-checked against the
+    // SAME verified family the actor was resolved from, via the injected ChildProfileMembershipResolver --
+    // never trusted merely because the actor themself resolved to a legitimate Owner/Administrator role.
+    // Malformed ids, unknown profiles, cross-family profiles, and resolver-unavailable ALL collapse to the
+    // same public CROSS_FAMILY_TARGET denial (see the error-oracle note on AuthorizationDenyReason above) --
+    // fail-closed on every branch, no branch distinguishable from another by the caller.
+    if (request.targetScope.kind === 'CHILD_PROFILE') {
+      if (!isPlausibleChildProfileId(request.targetScope.id)) {
+        return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
+      }
+      const membership = this.childProfileMembership.resolveMembership(request.familyId, request.targetScope.id);
+      if (membership.status !== 'MEMBER_OF_FAMILY') {
         return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
       }
     }
@@ -133,4 +161,16 @@ export class ParentActionAuthorizationService {
       }
     }
   }
+}
+
+/**
+ * Binds an idempotency-ledger record to the exact security-relevant shape
+ * of the request it was computed for. An idempotencyKey/actionId pair
+ * reused with a DIFFERENT familyId, actor, operation, or -- most
+ * importantly for PCA10 -- a mutated targetScope must never be treated as a
+ * replay of the original decision; authorize() falls through to fresh
+ * evaluation whenever this fingerprint doesn't match the cached one.
+ */
+function fingerprintRequest(request: AuthorizeRequest): string {
+  return [request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id].join('|');
 }

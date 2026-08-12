@@ -14,6 +14,11 @@ import type { ActionId, IdempotencyKey } from './types.js';
  */
 export interface RecordedAuthorization {
   actionId: ActionId;
+  // Optional: this ledger type is also reused by unrelated directive-replay callers outside familyrbac that
+  // never populate it. ParentActionAuthorizationService always sets and checks it to bind a cached outcome
+  // to the exact request shape (family/actor/operation/target) it was computed for -- an idempotencyKey/
+  // actionId pair reused with a MUTATED target (see PCA10) must never ride the ORIGINAL target's verdict.
+  requestFingerprint?: string;
   outcome: string; // opaque, caller-defined serialized AuthorizationDecision
 }
 

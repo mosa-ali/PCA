@@ -5,6 +5,10 @@ import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleRe
 import { InMemoryActionIdempotencyLedger } from '../../dist/familyrbac/ActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
 import { defaultFamilyRbacPolicyConfig } from '../../dist/familyrbac/types.js';
+import {
+  StaticChildProfileMembershipResolver,
+  UnavailableChildProfileMembershipResolver,
+} from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 
 const T0 = new Date('2026-01-01T00:00:00Z');
 
@@ -27,13 +31,15 @@ function epoch(overrides = {}) {
   };
 }
 
-function makeService(nowFn = () => T0) {
+function makeService(nowFn = () => T0, childProfileResolver = undefined) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch(epoch());
   const resolver = new FamilyTrustSetRoleResolver(store);
   const ledger = new InMemoryActionIdempotencyLedger();
-  const service = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, nowFn);
-  return { store, service };
+  const service = childProfileResolver === undefined
+    ? new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, nowFn)
+    : new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, nowFn, childProfileResolver);
+  return { store, service, ledger };
 }
 
 function baseRequest(overrides = {}) {
@@ -309,4 +315,203 @@ test('ownership transfer cannot be emulated by a CHANGE_ROLE action targeting OW
   assert.equal(decision.verdict, 'DENY');
   // CHANGE_ROLE itself is the only path that could touch a role, and it is Owner-only + step-up -- there is no
   // separate lower-privilege operation an Administrator could use to reach the same effect.
+});
+
+// =====================================================================
+// PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION
+// =====================================================================
+
+function childProfileRequest(overrides = {}) {
+  return baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, ...overrides });
+}
+
+test('CHILD_PROFILE: Owner A acting on child A (own family, own child) is allowed', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1']]));
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-1', actionId: 'act-cp-1' }));
+  assert.deepEqual(decision, { verdict: 'ALLOW' });
+});
+
+test('CHILD_PROFILE: Owner A acting on child B (a DIFFERENT family\'s child) is denied (IDOR)', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-cp-2', actionId: 'act-cp-2' }),
+  );
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: Administrator A acting on child B (a DIFFERENT family\'s child) is denied (IDOR)', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    childProfileRequest({
+      actorDeviceId: 'dev-admin',
+      targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' },
+      idempotencyKey: 'idem-cp-3',
+      actionId: 'act-cp-3',
+    }),
+  );
+  assert.equal(decision.verdict, 'DENY');
+});
+
+test('CHILD_PROFILE: a Viewer is denied EDIT_CHILD_POLICY on their OWN family\'s child -- role check, not membership, is the reason', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1']]));
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    childProfileRequest({ actorDeviceId: 'dev-viewer', idempotencyKey: 'idem-cp-4', actionId: 'act-cp-4' }),
+  );
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'ROLE_NOT_PERMITTED' });
+});
+
+test('CHILD_PROFILE: an unknown profile id (NOT_FOUND) is denied with the SAME public reason as a cross-family target', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map());
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-5', actionId: 'act-cp-5' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: a resolver-UNAVAILABLE outcome fails closed (denied), never treated as an implicit ALLOW', () => {
+  const resolver = new UnavailableChildProfileMembershipResolver();
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-6', actionId: 'act-cp-6' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: the DEFAULT resolver (none injected) fails closed for every CHILD_PROFILE target', () => {
+  const { service } = makeService(); // no 5th arg -- exercises the UnavailableChildProfileMembershipResolver default
+  const decision = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-7', actionId: 'act-cp-7' }));
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: a malformed (empty) profile id is denied without ever reaching the resolver', () => {
+  let resolverCalled = false;
+  const resolver = { resolveMembership: () => { resolverCalled = true; return { status: 'MEMBER_OF_FAMILY' }; } };
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: '' }, idempotencyKey: 'idem-cp-8', actionId: 'act-cp-8' }),
+  );
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+  assert.equal(resolverCalled, false);
+});
+
+test('CHILD_PROFILE: an oversized profile id is denied (malformed) without ever reaching the resolver', () => {
+  let resolverCalled = false;
+  const resolver = { resolveMembership: () => { resolverCalled = true; return { status: 'MEMBER_OF_FAMILY' }; } };
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'x'.repeat(200) }, idempotencyKey: 'idem-cp-9', actionId: 'act-cp-9' }),
+  );
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+  assert.equal(resolverCalled, false);
+});
+
+test('CHILD_PROFILE: the resolver is re-consulted fresh on every authorize() call -- a family reassignment mid-session is reflected immediately, not served from a stale cache', () => {
+  let owningFamily = 'fam-1';
+  const resolver = { resolveMembership: (familyId) => ({ status: owningFamily === familyId ? 'MEMBER_OF_FAMILY' : 'NOT_MEMBER' }) };
+  const { service } = makeService(() => T0, resolver);
+
+  const first = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-10a', actionId: 'act-cp-10a' }));
+  assert.deepEqual(first, { verdict: 'ALLOW' });
+
+  // The child profile is reassigned to a different family between the two authorize() calls (e.g. a
+  // transfer/offboarding completed on the trusted backing store this resolver represents).
+  owningFamily = 'fam-OTHER';
+  const second = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-10b', actionId: 'act-cp-10b' }));
+  assert.deepEqual(second, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE: wrong family + a valid FRESH step-up is still denied -- step-up never overrides family scope', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+  const decision = service.authorize(
+    baseRequest({
+      operation: 'EXPORT_FAMILY_DATA', // an ALLOW_WITH_STEP_UP operation, so step-up alone cannot be what denies this
+      targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' },
+      stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+      idempotencyKey: 'idem-cp-11',
+      actionId: 'act-cp-11',
+    }),
+  );
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' }); // membership is checked before step-up is ever consulted
+});
+
+test('CHILD_PROFILE idempotency: same idempotencyKey + different target is NOT treated as a replay -- re-evaluated fresh', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1'], ['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+
+  const first = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, idempotencyKey: 'idem-cp-mutate', actionId: 'act-cp-mutate-1' }),
+  );
+  assert.deepEqual(first, { verdict: 'ALLOW' });
+
+  const second = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-cp-mutate', actionId: 'act-cp-mutate-2' }),
+  );
+  assert.deepEqual(second, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE idempotency: the SAME actionId AND idempotencyKey reused with a MUTATED target does NOT ride the cached verdict for the original target', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1'], ['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+
+  const first = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, idempotencyKey: 'idem-cp-samekey', actionId: 'act-cp-samekey' }),
+  );
+  assert.deepEqual(first, { verdict: 'ALLOW' });
+
+  // SAME actionId, SAME idempotencyKey, but the target has been mutated to a cross-family child profile. A
+  // caching scheme keyed on (idempotencyKey, actionId) alone would incorrectly replay the ORIGINAL ALLOW.
+  const replay = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-cp-samekey', actionId: 'act-cp-samekey' }),
+  );
+  assert.deepEqual(replay, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+});
+
+test('CHILD_PROFILE idempotency: a genuinely identical replay (offline retry / duplicate reconnect delivery) still returns the SAME cached outcome', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1']]));
+  const { service } = makeService(() => T0, resolver);
+  const request = childProfileRequest({ idempotencyKey: 'idem-cp-identical', actionId: 'act-cp-identical' });
+
+  const first = service.authorize(request);
+  assert.deepEqual(first, { verdict: 'ALLOW' });
+
+  const duplicateDelivery = service.authorize(request); // e.g. the queued offline action's delivery ack was lost and the client retried
+  assert.deepEqual(duplicateDelivery, first);
+});
+
+test('CHILD_PROFILE idempotency: a denied cross-family attempt cannot be laundered into an ALLOW by replaying with a legitimate target under the SAME actionId/idempotencyKey', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1'], ['child-B', 'fam-OTHER']]));
+  const { service } = makeService(() => T0, resolver);
+
+  const denied = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-cp-launder', actionId: 'act-cp-launder' }),
+  );
+  assert.deepEqual(denied, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' });
+
+  const relabeled = service.authorize(
+    childProfileRequest({ targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, idempotencyKey: 'idem-cp-launder', actionId: 'act-cp-launder' }),
+  );
+  assert.deepEqual(relabeled, { verdict: 'ALLOW' }); // re-evaluated fresh against the NEW (legitimate) target, not blocked by the prior denial either
+});
+
+// Offline/reconnect: the receiving/deciding endpoint always calls authorize() live at APPLICATION time (see
+// ChildRequestService.decide()), reading the CURRENT trust set and CURRENT child-profile membership -- there
+// is no separate "offline decision cache" in this module for a reconnect to trust instead. This test pins
+// that guarantee at the authorization-service level: two calls separated by a family/trust-set change
+// between them (simulating queue-time vs. apply-time) independently reflect apply-time truth.
+test('offline/reconnect re-validation: trust-set state at APPLY time governs, not state at (hypothetical) queue time', () => {
+  const resolver = new StaticChildProfileMembershipResolver(new Map([['child-A', 'fam-1']]));
+  const { store, service } = makeService(() => T0, resolver);
+
+  const queueTimeDecision = service.authorize(childProfileRequest({ idempotencyKey: 'idem-cp-reco-1', actionId: 'act-cp-reco-1' }));
+  assert.deepEqual(queueTimeDecision, { verdict: 'ALLOW' });
+
+  // Simulate the actor's authority being revoked while the action sat queued offline.
+  store.setCurrentEpoch(epoch({ trustSetEpoch: 9, entries: epoch().entries.filter((e) => e.deviceId !== 'dev-owner') }));
+
+  const applyTimeDecision = service.authorize(
+    childProfileRequest({ idempotencyKey: 'idem-cp-reco-2', actionId: 'act-cp-reco-2' }), // a DIFFERENT action/idempotency pair -- a fresh apply-time re-check, not a replay
+  );
+  assert.deepEqual(applyTimeDecision, { verdict: 'DENY', reason: 'ACTOR_NOT_RESOLVABLE' });
 });

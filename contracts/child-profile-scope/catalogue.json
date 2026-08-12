@@ -1,0 +1,61 @@
+{
+  "catalogueVersion": "0.1.0",
+  "contractVersion": 1,
+  "scope": "logical-contract-metadata-only",
+  "representation": "neutral",
+  "authority": "docs/architecture/39_CHILD_PROFILE_SCOPE_AUTHORITY.md",
+  "membershipStatuses": ["MEMBER_OF_FAMILY", "NOT_MEMBER", "NOT_FOUND", "UNAVAILABLE"],
+  "allowingStatus": "MEMBER_OF_FAMILY",
+  "denyingStatuses": ["NOT_MEMBER", "NOT_FOUND", "UNAVAILABLE"],
+  "publicDenyReason": {
+    "value": "CROSS_FAMILY_TARGET",
+    "appliesTo": ["NOT_MEMBER", "NOT_FOUND", "UNAVAILABLE", "MALFORMED_TARGET_ID"],
+    "distinctReasonPerStatus": "forbidden"
+  },
+  "defaultResolverBehavior": {
+    "noResolverInjected": "UNAVAILABLE",
+    "unavailableResolvesTo": "DENY",
+    "implicitAllowOnMissingResolver": "forbidden"
+  },
+  "centralDirectory": {
+    "readableCentralChildProfileDirectory": "forbidden",
+    "resolverMayBeBackedByLaterBinding": true,
+    "runtimeResolverBinding": "separate-coordinator-owned"
+  },
+  "familyIdSource": {
+    "trustedSource": "actor-already-resolved-family",
+    "clientAssertedFamilyIdAsProof": "forbidden"
+  },
+  "malformedIdHandling": {
+    "checkedBeforeResolverCall": true,
+    "maxLength": 128,
+    "emptyOrOversizedResolvesTo": "deny-without-resolver-call"
+  },
+  "reEvaluationFreshness": {
+    "membershipCachedByAuthorizationService": false,
+    "consultedOnEveryAuthorizeCall": true
+  },
+  "offlineReconnect": {
+    "authorityCheckedAt": "application-time",
+    "queueTimeStateTrusted": false,
+    "revalidatedFields": ["family", "actorRole", "targetMembership", "expiry", "trustSetEpoch", "stepUpFreshness"]
+  },
+  "stepUpInteraction": {
+    "membershipCheckedBeforeStepUp": true,
+    "stepUpCanOverrideFamilyScope": false
+  },
+  "idempotency": {
+    "cacheKeyFields": ["idempotencyKey", "actionId"],
+    "cacheValidityAlsoRequires": "requestFingerprintMatch",
+    "requestFingerprintFields": ["familyId", "actorDeviceId", "operation", "targetScopeKind", "targetScopeId"],
+    "mutatedTargetUnderSameKeyPair": "re-evaluate-fresh",
+    "identicalReplayUnderSameKeyPair": "return-cached-outcome"
+  },
+  "childRequestPaths": {
+    "submit": "no-authorization-check",
+    "decide": "always-calls-authorize-with-caller-supplied-targetScope",
+    "cancel": "requester-identity-check-only-no-family-scope-check",
+    "acknowledgeApplied": "requester-identity-check-only-no-family-scope-check",
+    "selfApprovalPossible": false
+  }
+}

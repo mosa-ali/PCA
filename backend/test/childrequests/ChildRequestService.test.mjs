@@ -5,8 +5,15 @@ import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleRe
 import { InMemoryActionIdempotencyLedger } from '../../dist/familyrbac/ActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
 import { defaultFamilyRbacPolicyConfig } from '../../dist/familyrbac/types.js';
+import { StaticChildProfileMembershipResolver } from '../../dist/childprofiles/ChildProfileMembershipResolver.js';
 import { InMemoryChildRequestRepository } from '../../dist/childrequests/ChildRequestRepository.js';
 import { ChildRequestError, ChildRequestService } from '../../dist/childrequests/ChildRequestService.js';
+
+// PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: this harness's requests all target childProfileId
+// 'child-1', which this map declares as belonging to 'fam-1' -- the SAME family every fixture device below is
+// enrolled in. This is a test-only static resolver (see StaticChildProfileMembershipResolver docstring); it
+// is what makes 'child-1' a legitimate, in-family target rather than an unvalidated passthrough.
+const CHILD_PROFILE_FAMILY_MAP = new Map([['child-1', 'fam-1']]);
 
 const T0 = new Date('2026-01-01T00:00:00Z');
 
@@ -29,7 +36,8 @@ function makeHarness(nowFn = () => T0) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch(epoch());
   const resolver = new FamilyTrustSetRoleResolver(store);
-  const authz = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, new InMemoryActionIdempotencyLedger(), nowFn);
+  const childProfileResolver = new StaticChildProfileMembershipResolver(CHILD_PROFILE_FAMILY_MAP);
+  const authz = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, new InMemoryActionIdempotencyLedger(), nowFn, childProfileResolver);
   const repo = new InMemoryChildRequestRepository();
   const service = new ChildRequestService(repo, authz, nowFn);
   return { store, repo, service };
@@ -144,4 +152,47 @@ test('DENIED and CANCELLED and EXPIRED are terminal -- no further transition is 
   const denied = await service.decide(pending.requestId, 'dev-owner', 'DENIED', 'act-8', 'idem-8');
   assert.equal(denied.state, 'DENIED');
   await assert.rejects(() => service.acknowledgeApplied(pending.requestId, 'dev-child'), ChildRequestError);
+});
+
+// PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION -- an Owner legitimately resolved in their OWN family
+// (fam-1) must not be able to decide a request whose targetScope names a CHILD_PROFILE belonging to a
+// DIFFERENT family, even though the deciding device itself is perfectly valid.
+test('deciding a request targeting a CHILD_PROFILE from a DIFFERENT family is denied (IDOR)', async () => {
+  const { service } = makeHarness();
+  const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-in-other-family' });
+  const pending = await service.submit(draft);
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-cross-family', 'idem-cross-family'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+});
+
+// Lane brief Section 8 "Stale Authority": if no trustworthy child-profile membership resolver is wired at
+// all (the ParentActionAuthorizationService default), CHILD_PROFILE-targeted decisions must fail closed
+// rather than defaulting to ALLOW.
+test('deciding a CHILD_PROFILE-targeted request with NO membership resolver wired fails closed', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch({
+    familyId: 'fam-1',
+    trustSetEpoch: 5,
+    keyEpoch: 3,
+    entries: [
+      { deviceId: 'dev-owner', role: 'OWNER', dskKeyId: 'k1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' },
+      { deviceId: 'dev-child', role: 'CHILD', dskKeyId: 'k3', dskPublicKey: 'pk3', dekKeyId: 'k4', dekPublicKey: 'pk4', status: 'ACTIVE' },
+    ],
+    issuedAt: T0,
+    supersedesEpoch: null,
+    signature: 'sig',
+  });
+  const resolver = new FamilyTrustSetRoleResolver(store);
+  const authz = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, new InMemoryActionIdempotencyLedger(), () => T0);
+  const repo = new InMemoryChildRequestRepository();
+  const service = new ChildRequestService(repo, authz, () => T0);
+
+  const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' });
+  const pending = await service.submit(draft);
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-no-resolver', 'idem-no-resolver'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
 });
