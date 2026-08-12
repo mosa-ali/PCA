@@ -4,14 +4,46 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { DeviceOfflineNotice } from '../../components/common/DeviceOfflineNotice';
+import type { CapabilityState } from '../../domain/types';
+
+interface ChildOverviewData {
+  childId: string;
+  displayName: string;
+  deviceState: CapabilityState;
+  protectionCapabilityState: CapabilityState;
+  policyDeliveryState: CapabilityState;
+  pendingRequestCount: number;
+  lastAppliedPolicyRevision: number | null;
+  lastSuccessfulSyncUtc: string | null;
+  hasPendingPolicyDelivery: boolean;
+}
 
 export default function ChildOverview() {
   const { t } = useTranslation();
   const { childId = '' } = useParams();
   const clients = getApiClients();
-  const { data, loading, error, reload } = useAsync(async () => {
+  const { data, loading, error, reload } = useAsync(async (): Promise<ChildOverviewData | null> => {
     const dashboard = await clients.parentFamilyData.getDashboard();
-    return dashboard.children.find((c) => c.childId === childId) ?? null;
+    const child = dashboard.children.find((c) => c.childId === childId);
+    if (!child) return null;
+    const deviceId = `device-${childId}`;
+    const [device, lastSuccessfulSyncUtc, pendingDelivery] = await Promise.all([
+      clients.deviceStatus.getDeviceStatus(deviceId),
+      clients.runtimeSync.getLastSuccessfulSync(),
+      clients.runtimeSync.getPendingDeliveryStatus(deviceId),
+    ]);
+    return {
+      childId: child.childId,
+      displayName: child.displayName,
+      deviceState: child.deviceState,
+      protectionCapabilityState: child.protectionCapabilityState,
+      policyDeliveryState: child.policyDeliveryState,
+      pendingRequestCount: child.pendingRequestCount,
+      lastAppliedPolicyRevision: device?.lastAcknowledgedPolicyRevision ?? null,
+      lastSuccessfulSyncUtc,
+      hasPendingPolicyDelivery: pendingDelivery.pendingCount > 0,
+    };
   }, [childId]);
 
   if (loading) return <LoadingState />;
@@ -20,6 +52,13 @@ export default function ChildOverview() {
 
   return (
     <div className="card-grid">
+      {data.deviceState === 'OFFLINE' && (
+        <DeviceOfflineNotice
+          lastSuccessfulSyncUtc={data.lastSuccessfulSyncUtc}
+          lastAppliedPolicyRevision={data.lastAppliedPolicyRevision}
+          hasPendingPolicyDelivery={data.hasPendingPolicyDelivery}
+        />
+      )}
       <article className="card">
         <h2>{t('dashboard.deviceState')}</h2>
         <StatusBadge state={data.deviceState} />

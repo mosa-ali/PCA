@@ -12,6 +12,7 @@ import type {
   ServiceAuthClient,
   WellbeingMessageAdminClient,
 } from './interfaces';
+import type { ParentRuntimeSyncClient } from './runtimeSyncClient';
 import type { TrustedBrowserProvider } from '../domain/trustedBrowser';
 import { DevServiceAuthClient } from './dev/devServiceAuthClient';
 import { DevFamilyAuthorityGateway } from './dev/devFamilyAuthorityGateway';
@@ -20,6 +21,8 @@ import { DevDeviceStatusClient } from './dev/devDeviceStatusClient';
 import { DevRequestClient } from './dev/devRequestClient';
 import { DevWellbeingMessageAdminClient } from './dev/devWellbeingMessageAdminClient';
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
+import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
+import { RealServiceAuthClient } from './real/realServiceAuthClient';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -29,6 +32,7 @@ export interface PcaApiClients {
   requests: RequestClient;
   wellbeingMessages: WellbeingMessageAdminClient;
   trustedBrowser: TrustedBrowserProvider;
+  runtimeSync: ParentRuntimeSyncClient;
   isFixtureBacked: boolean;
 }
 
@@ -41,19 +45,31 @@ function buildDevClients(): PcaApiClients {
     requests: new DevRequestClient(),
     wellbeingMessages: new DevWellbeingMessageAdminClient(),
     trustedBrowser: new DevTrustedBrowserProvider(),
+    runtimeSync: new DevRuntimeSyncClient(),
     isFixtureBacked: true,
   };
 }
 
 function buildRealClients(): PcaApiClients {
-  // KNOWN_BACKEND_INTEGRATION_ACTION: implement real HTTP-backed classes
-  // satisfying each interface in ./interfaces (using config.apiBaseUrl),
-  // and swap this function in once the backend HTTP API exists. Until then
-  // the app always uses fixtures regardless of demoMode being false in a
-  // build that has no backend to talk to yet.
+  // The real, HTTP-backed ServiceAuthClient (./real/realServiceAuthClient.ts)
+  // is genuine working code and safe to construct today against
+  // config.apiBaseUrl -- it is wired in here first so this factory reflects
+  // that it is no longer a stub.
+  //
+  // KNOWN_BACKEND_INTEGRATION_ACTION: every other interface in this bundle
+  // (family authority gateway, family data gateway, device status, requests,
+  // wellbeing messages, trusted-browser pairing, runtime sync) still needs a
+  // real HTTP/relay-backed implementation once a backend exists (there is
+  // currently no backend/ relay and no contracts/schedule-runtime in this
+  // repository slice -- that is owned by the agent building the backend
+  // relay). Once those land, construct them here the same way and return a
+  // full PcaApiClients bundle with isFixtureBacked: false. Until then we
+  // still cannot return a fully-real bundle, so we throw.
+  const serviceAuth: ServiceAuthClient = new RealServiceAuthClient(config.apiBaseUrl);
   throw new Error(
-    'Real (non-fixture) PCA API clients are not implemented yet. ' +
-      `Backend integration pending at ${config.apiBaseUrl}. ` +
+    'Real (non-fixture) PCA API clients are not fully implemented yet -- ' +
+      `serviceAuth is real (${serviceAuth.constructor.name}) but the other clients ` +
+      `are pending backend integration at ${config.apiBaseUrl}. ` +
       'See KNOWN_BACKEND_INTEGRATION_ACTIONS in the parent-web build report.',
   );
 }

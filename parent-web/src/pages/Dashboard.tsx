@@ -4,6 +4,7 @@ import { getApiClients } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../components/common/States';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { DeviceOfflineNotice } from '../components/common/DeviceOfflineNotice';
 import type { ChildSummary } from '../domain/types';
 
 function relativeTime(iso: string | null, locale: string): string {
@@ -18,6 +19,31 @@ function relativeTime(iso: string | null, locale: string): string {
   return rtf.format(-days, 'day');
 }
 
+/** Fetches and shows the child-offline notice for a specific device. Kept separate from the main dashboard fetch so one offline child does not delay the others. */
+function ChildOfflineSyncNotice({ deviceId }: { deviceId: string }) {
+  const clients = getApiClients();
+  const { data } = useAsync(async () => {
+    const [lastSuccessfulSyncUtc, device, pending] = await Promise.all([
+      clients.runtimeSync.getLastSuccessfulSync(),
+      clients.deviceStatus.getDeviceStatus(deviceId),
+      clients.runtimeSync.getPendingDeliveryStatus(deviceId),
+    ]);
+    return {
+      lastSuccessfulSyncUtc,
+      lastAppliedPolicyRevision: device?.lastAcknowledgedPolicyRevision ?? null,
+      hasPendingPolicyDelivery: pending.pendingCount > 0,
+    };
+  }, [deviceId]);
+  if (!data) return null;
+  return (
+    <DeviceOfflineNotice
+      lastSuccessfulSyncUtc={data.lastSuccessfulSyncUtc}
+      lastAppliedPolicyRevision={data.lastAppliedPolicyRevision}
+      hasPendingPolicyDelivery={data.hasPendingPolicyDelivery}
+    />
+  );
+}
+
 function ChildCard({ child }: { child: ChildSummary }) {
   const { t, i18n } = useTranslation();
   return (
@@ -25,6 +51,7 @@ function ChildCard({ child }: { child: ChildSummary }) {
       <h2>
         <Link to={`/children/${child.childId}/overview`}>{child.displayName}</Link>
       </h2>
+      {child.deviceState === 'OFFLINE' && <ChildOfflineSyncNotice deviceId={`device-${child.childId}`} />}
       <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '0.4rem', margin: 0 }}>
         <dt>{t('dashboard.deviceState')}</dt>
         <dd><StatusBadge state={child.deviceState} /></dd>

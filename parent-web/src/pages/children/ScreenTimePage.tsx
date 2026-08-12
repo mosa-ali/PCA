@@ -7,6 +7,7 @@ import { LoadingState, ErrorState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
+import { OfflineDraftNotice } from '../../components/common/OfflineDraftNotice';
 
 export default function ScreenTimePage() {
   const { t } = useTranslation();
@@ -44,6 +45,7 @@ export default function ScreenTimePage() {
 
   return (
     <div className="card">
+      <OfflineDraftNotice />
       <p>
         {t('dashboard.screenTime')}: <StatusBadge state={data.state} /> ({data.continuousUseElapsedMinutes}m /{' '}
         {data.continuousUseLimitMinutes}m)

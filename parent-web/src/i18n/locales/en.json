@@ -182,5 +182,40 @@
     "reason": "Reason",
     "created": "Created",
     "status": "Status"
+  },
+  "policyStatus": {
+    "LOCAL_DRAFT": "Draft (not yet synced)",
+    "PENDING_SYNC": "Pending sync",
+    "PENDING_DELIVERY": "Queued -- pending delivery",
+    "DELIVERED": "Delivered to device",
+    "APPLIED": "Applied on device",
+    "FAILED": "Failed to sync",
+    "EXPIRED": "Delivery expired",
+    "STALE": "Stale -- superseded or unconfirmed"
+  },
+  "offline": {
+    "appOfflineNote": "You're offline. The app shell still works, but data cannot refresh until you reconnect.",
+    "deviceOfflineTitle": "This child's device is offline",
+    "staleDataNote": "Remote data may be stale -- this console cannot currently confirm what is happening on the device.",
+    "protectionContinuesNote": "Local protection continues on the device using its last-applied policy; it is not disabled by this device being unreachable.",
+    "lastSuccessfulSync": "Last successful sync",
+    "lastAppliedRevision": "Last known applied policy revision",
+    "pendingDeliveryNote": "A new policy change is pending delivery and will apply once the device reconnects.",
+    "neverSynced": "Never synced",
+    "unknown": "Unknown",
+    "editWillSyncWhenReconnected": "You're offline. This edit is saved locally as a draft and will sync once you reconnect.",
+    "requiresTrustedBrowser": "Signing and queuing a policy change while offline requires a trusted browser and is not yet available (pending security review)."
+  },
+  "reconnect": {
+    "completed": "Back online -- synced.",
+    "relayUnreachable": "Back online, but the sync service is still unreachable. Retrying automatically.",
+    "failed": "Reconnect sync did not complete. Will retry on the next connectivity change."
+  },
+  "serviceAuth": {
+    "invalidCredentials": "Email or password is incorrect.",
+    "accountDisabled": "This account has been disabled.",
+    "unauthorizedFamilyScope": "This account is not authorized for the requested family scope.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "networkError": "Could not reach the PCA account service. Check your connection and try again."
   }
 }

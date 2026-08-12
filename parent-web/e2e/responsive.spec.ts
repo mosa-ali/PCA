@@ -35,3 +35,11 @@ test('mobile drawer is usable at 320px width', async ({ page }) => {
   await expect(page.locator('#app-sidebar')).toHaveClass(/drawer-open/);
   await expect(page.getByRole('link', { name: 'Requests' })).toBeVisible();
 });
+
+test('device offline notice does not cause horizontal overflow at 320px width', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/dashboard');
+  await expect(page.getByText("This child's device is offline")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});

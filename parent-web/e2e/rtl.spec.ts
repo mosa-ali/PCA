@@ -16,3 +16,10 @@ test('Arabic sidebar renders on the logical "end" side (RTL layout, no horizonta
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('offline/device-offline notice text is translated in Arabic, not left in English', async ({ page }) => {
+  await page.goto('/dashboard');
+  await page.getByLabel('Language').first().selectOption('ar');
+  await expect(page.getByText('جهاز هذا الطفل غير متصل')).toBeVisible();
+  await expect(page.getByText(/تستمر الحماية المحلية على الجهاز/)).toBeVisible();
+});

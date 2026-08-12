@@ -8,6 +8,18 @@
       name="description"
       content="PCA Parent Console - manage family screen time, protection and wellbeing settings."
     />
+    <!--
+      Baseline security headers (CSP + referrer policy) are injected here as
+      <meta> tags only for the PRODUCTION build, by the securityHeadersPlugin
+      in vite.config.ts (apply: 'build') -- not hardcoded in this source file.
+      That is because Vite's dev server (`npm run dev`) injects its own
+      inline <script type="module"> React Fast Refresh preamble ahead of
+      this <head>, which a strict `script-src 'self'` CSP (correctly) blocks
+      -- so a CSP baked directly into this file would break local dev
+      entirely. See vite.config.ts for the actual policy content, the
+      X-Frame-Options/X-Content-Type-Options/Permissions-Policy caveat, and
+      why connect-src is deliberately 'self' only.
+    -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>PCA Parent Console</title>

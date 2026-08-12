@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Breadcrumb } from './Breadcrumb';
 import { DemoBanner } from '../common/DemoBanner';
+import { ConnectionStatusBanner } from '../common/ConnectionStatusBanner';
 
 export function AppLayout() {
   const { t } = useTranslation();
@@ -31,6 +32,7 @@ export function AppLayout() {
           sidebarCollapsed={collapsed}
         />
         <DemoBanner />
+        <ConnectionStatusBanner />
         <Breadcrumb />
         <main id="main-content" className="main-content" tabIndex={-1}>
           <Outlet />
