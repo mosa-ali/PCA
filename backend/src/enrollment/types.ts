@@ -7,6 +7,18 @@ export interface EnrollDeviceInput {
   signingPublicKey: string;
   /** Device Encryption/Key-Agreement Key public half -- doc 09 Section 3.1. Never used to sign. */
   encryptionPublicKey: string;
+  /**
+   * Client-generated, high-entropy, NON-secret correlator for retries of one
+   * logical enrollment attempt (PCA-ENROLLMENT-RUNTIME-2). Never itself an
+   * authority -- see attempt.ts.
+   */
+  attemptId: string;
+  /**
+   * Client-generated, high-entropy SECRET, distinct from the invitation
+   * token, that proves a later recovery caller is the same party that made
+   * this request. The server stores only its hash. See attempt.ts.
+   */
+  attemptRecoveryToken: string;
 }
 
 /**
@@ -22,5 +34,17 @@ export interface EnrollDeviceResult {
   encryptionKeyId: string;
   familyId: string;
   invitationId: string;
+  status: 'PAIRING_PENDING';
+}
+
+/** Input to EnrollmentCoordinator.recoverAttempt -- see EnrollmentCoordinator.ts. */
+export interface RecoverAttemptInput {
+  attemptId: string;
+  attemptRecoveryToken: string;
+}
+
+/** Same shape as a successful bootstrap so the HTTP layer can reuse one DTO for both. */
+export interface RecoverAttemptResult {
+  deviceId: string;
   status: 'PAIRING_PENDING';
 }

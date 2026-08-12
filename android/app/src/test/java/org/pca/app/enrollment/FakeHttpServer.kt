@@ -78,6 +78,7 @@ class FakeHttpServer private constructor(private val serverSocket: ServerSocket)
 
         val (status, responseBytes) = respond(body)
         val statusText = when (status) {
+            200 -> "OK"
             201 -> "Created"
             400 -> "Bad Request"
             404 -> "Not Found"

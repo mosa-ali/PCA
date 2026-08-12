@@ -103,6 +103,29 @@ function family() {
   return `family-${randomUUID()}`;
 }
 
+// PCA-ENROLLMENT-RUNTIME-2: client-generated attempt correlator (non-secret)
+// and attempt recovery secret (client-held, hashed server-side).
+function attemptId() {
+  return randomBytes(24).toString('base64url');
+}
+
+function recoveryToken() {
+  return randomBytes(32).toString('base64url');
+}
+
+/** Default full bootstrap payload shape, with per-test overrides. */
+function bootstrapPayload(overrides = {}) {
+  return {
+    rawInvitationToken: overrides.rawInvitationToken,
+    platform: 'ANDROID',
+    signingPublicKey: key(),
+    encryptionPublicKey: key(),
+    bootstrapAttemptId: attemptId(),
+    attemptRecoveryToken: recoveryToken(),
+    ...overrides,
+  };
+}
+
 async function createAccountWithSession() {
   const { rawToken, session } = await authService.issueSession({ accountReferenceHash: randomBytes(32) });
   return { rawToken, accountId: session.accountId };
@@ -362,7 +385,7 @@ test('MySQL HTTP: valid bootstrap returns PAIRING_PENDING', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: rawToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: rawToken }),
   });
   assert.equal(response.statusCode, 201);
   assert.equal(response.json().status, 'PAIRING_PENDING');
@@ -372,9 +395,43 @@ test('MySQL HTTP: malformed token is 400', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: 'x', platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: 'x' }),
   });
   assert.equal(response.statusCode, 400);
+});
+
+test('MySQL HTTP: missing bootstrapAttemptId/attemptRecoveryToken is 400', async () => {
+  const { rawToken } = await createRealInvitation();
+  const missingAttemptId = await freshApp().inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: { rawInvitationToken: rawToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key(), attemptRecoveryToken: recoveryToken() },
+  });
+  assert.equal(missingAttemptId.statusCode, 400);
+
+  const missingRecoveryToken = await freshApp().inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: { rawInvitationToken: rawToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key(), bootstrapAttemptId: attemptId() },
+  });
+  assert.equal(missingRecoveryToken.statusCode, 400);
+});
+
+test('MySQL HTTP: malformed bootstrapAttemptId (too short, too long, wrong charset) is 400', async () => {
+  const app = freshApp();
+  const tooShort = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: (await createRealInvitation()).rawToken, bootstrapAttemptId: 'short' }),
+  });
+  assert.equal(tooShort.statusCode, 400);
+
+  const tooLong = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: (await createRealInvitation()).rawToken, bootstrapAttemptId: 'a'.repeat(500) }),
+  });
+  assert.equal(tooLong.statusCode, 400);
 });
 
 test('MySQL HTTP: expired/revoked/consumed/unknown invitation all collapse to the same generic 404, never a distinguishing detail', async () => {
@@ -384,7 +441,7 @@ test('MySQL HTTP: expired/revoked/consumed/unknown invitation all collapse to th
   const expired = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: expiredToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: expiredToken }),
   });
 
   const { rawToken: revokedToken, record: revokedRecord } = await createRealInvitation();
@@ -392,25 +449,27 @@ test('MySQL HTTP: expired/revoked/consumed/unknown invitation all collapse to th
   const revoked = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: revokedToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: revokedToken }),
   });
 
   const { rawToken: consumedToken } = await createRealInvitation();
   await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: consumedToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: consumedToken }),
   });
+  // Retry with a DIFFERENT attempt id -- this must be a genuine
+  // already-redeemed collision, not a replay, and still collapse generically.
   const consumed = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: consumedToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: consumedToken }),
   });
 
   const unknown = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: randomBytes(32).toString('base64url'), platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: randomBytes(32).toString('base64url') }),
   });
 
   for (const response of [expired, revoked, consumed, unknown]) {
@@ -424,7 +483,7 @@ test('MySQL HTTP: wrong platform is a distinguishable 400 (caller\'s own request
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: rawToken, platform: 'IOS', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: rawToken, platform: 'IOS' }),
   });
   assert.equal(response.statusCode, 400);
 });
@@ -435,7 +494,7 @@ test('MySQL HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', 
   const badDsk = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: t1, platform: 'ANDROID', signingPublicKey: 'not a key', encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: t1, signingPublicKey: 'not a key' }),
   });
   assert.equal(badDsk.statusCode, 400);
 
@@ -443,7 +502,7 @@ test('MySQL HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', 
   const badDek = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: t2, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: 'not a key' },
+    payload: bootstrapPayload({ rawInvitationToken: t2, encryptionPublicKey: 'not a key' }),
   });
   assert.equal(badDek.statusCode, 400);
 
@@ -452,7 +511,7 @@ test('MySQL HTTP: invalid DSK, invalid DEK, and identical DSK/DEK are all 400', 
   const equal = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: t3, platform: 'ANDROID', signingPublicKey: sharedKey, encryptionPublicKey: sharedKey },
+    payload: bootstrapPayload({ rawInvitationToken: t3, signingPublicKey: sharedKey, encryptionPublicKey: sharedKey }),
   });
   assert.equal(equal.statusCode, 400);
 });
@@ -464,14 +523,14 @@ test('MySQL HTTP: duplicate tombstoned DSK/DEK rejected as 400', async () => {
   await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: firstToken, platform: 'ANDROID', signingPublicKey: sharedKey, encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: firstToken, signingPublicKey: sharedKey }),
   });
 
   const { rawToken: secondToken } = await createRealInvitation();
   const duplicateAsDsk = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: secondToken, platform: 'ANDROID', signingPublicKey: sharedKey, encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: secondToken, signingPublicKey: sharedKey }),
   });
   assert.equal(duplicateAsDsk.statusCode, 400);
 
@@ -479,12 +538,12 @@ test('MySQL HTTP: duplicate tombstoned DSK/DEK rejected as 400', async () => {
   const duplicateAsDek = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: thirdToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: sharedKey },
+    payload: bootstrapPayload({ rawInvitationToken: thirdToken, encryptionPublicKey: sharedKey }),
   });
   assert.equal(duplicateAsDek.statusCode, 400);
 });
 
-test('MySQL HTTP CONCURRENCY: 30 bootstrap attempts against one invitation -- exactly one pairing request created', async () => {
+test('MySQL HTTP CONCURRENCY: 30 bootstrap attempts (distinct attempt ids) against one invitation -- exactly one pairing request created', async () => {
   const app = freshApp(); // fresh 'bootstrap' rate-limit budget (max 30/min) sized to exactly this burst
   const { rawToken } = await createRealInvitation();
   const attempts = await Promise.allSettled(
@@ -492,7 +551,7 @@ test('MySQL HTTP CONCURRENCY: 30 bootstrap attempts against one invitation -- ex
       app.inject({
         method: 'POST',
         url: '/v1/enrollment/bootstrap',
-        payload: { rawInvitationToken: rawToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+        payload: bootstrapPayload({ rawInvitationToken: rawToken }),
       }),
     ),
   );
@@ -510,12 +569,272 @@ test('MySQL HTTP: bootstrap bucket itself rate-limits independently of invitatio
       await app.inject({
         method: 'POST',
         url: '/v1/enrollment/bootstrap',
-        payload: { rawInvitationToken: randomBytes(32).toString('base64url'), platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+        payload: bootstrapPayload({ rawInvitationToken: randomBytes(32).toString('base64url') }),
       }),
     );
   }
   const rateLimited = responses.filter((r) => r.statusCode === 429);
   assert.ok(rateLimited.length > 0, 'the bootstrap bucket must itself trip a 429 once its own budget (30/min) is exceeded');
+});
+
+// --- PCA-ENROLLMENT-RUNTIME-2: ambiguous-retry / idempotent-recovery HTTP tests ---
+
+test('MySQL HTTP RETRY: same attempt id + same token + same keys replays the original 201, not ALREADY_REDEEMED', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+  const first = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  const retry = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(first.statusCode, 201);
+  assert.equal(retry.statusCode, 201);
+  assert.equal(retry.json().deviceId, first.json().deviceId);
+
+  const [rows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE device_id = ?`, [first.json().deviceId]);
+  assert.equal(rows[0].n, 1);
+});
+
+test('MySQL HTTP RETRY: DEVICE_COUNT_AFTER_RETRIES -- 10 sequential retries of the same attempt create exactly one device', async () => {
+  const app = freshApp();
+  const { rawToken, record } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+  let deviceId;
+  for (let i = 0; i < 10; i++) {
+    const response = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+    assert.equal(response.statusCode, 201);
+    if (!deviceId) deviceId = response.json().deviceId;
+    assert.equal(response.json().deviceId, deviceId);
+  }
+  const [rows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  assert.equal(rows[0].n, 1, 'exactly one device may ever exist for this invitation regardless of retry count');
+});
+
+test('MySQL HTTP: recovery endpoint returns the same deviceId after a bootstrap success', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+  const bootstrap = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(bootstrap.statusCode, 201);
+
+  const recovery = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payload.bootstrapAttemptId, attemptRecoveryToken: payload.attemptRecoveryToken },
+  });
+  assert.equal(recovery.statusCode, 200);
+  assert.equal(recovery.json().deviceId, bootstrap.json().deviceId);
+  assert.equal(recovery.json().status, 'PAIRING_PENDING');
+});
+
+test('MySQL HTTP: recovery with an unknown attempt id is a generic 404', async () => {
+  const response = await freshApp().inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: attemptId(), attemptRecoveryToken: recoveryToken() },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'invitation_unavailable' });
+});
+
+test('MySQL HTTP: recovery with the correct attempt id but WRONG recovery token is the same generic 404 -- no oracle', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+  const payload = bootstrapPayload({ rawInvitationToken: rawToken });
+  const bootstrap = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload });
+  assert.equal(bootstrap.statusCode, 201);
+
+  const wrongSecret = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payload.bootstrapAttemptId, attemptRecoveryToken: recoveryToken() },
+  });
+  assert.equal(wrongSecret.statusCode, 404);
+  assert.deepEqual(wrongSecret.json(), { error: 'invitation_unavailable' });
+});
+
+test('MySQL HTTP: recovery with malformed attempt id / recovery token is a distinguishable 400', async () => {
+  const app = freshApp();
+  const badAttemptId = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: 'x', attemptRecoveryToken: recoveryToken() },
+  });
+  assert.equal(badAttemptId.statusCode, 400);
+
+  const badRecoveryToken = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: attemptId(), attemptRecoveryToken: 'x' },
+  });
+  assert.equal(badRecoveryToken.statusCode, 400);
+});
+
+test('MySQL HTTP: a DIFFERENT attempt id against an already-redeemed invitation is the same generic 404 (never a replay)', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+  await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: bootstrapPayload({ rawInvitationToken: rawToken }) });
+  const secondAttempt = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: rawToken }),
+  });
+  assert.equal(secondAttempt.statusCode, 404);
+  assert.deepEqual(secondAttempt.json(), { error: 'invitation_unavailable' });
+});
+
+test('MySQL HTTP ADVERSARIAL: same attempt id reused across two DIFFERENT invitations is rejected generically, not replayed', async () => {
+  const app = freshApp();
+  const sharedAttemptId = attemptId();
+  const { rawToken: tokenA } = await createRealInvitation();
+  const first = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: tokenA, bootstrapAttemptId: sharedAttemptId }),
+  });
+  assert.equal(first.statusCode, 201);
+
+  const { rawToken: tokenB } = await createRealInvitation();
+  const second = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: tokenB, bootstrapAttemptId: sharedAttemptId }),
+  });
+  assert.equal(second.statusCode, 404);
+  assert.deepEqual(second.json(), { error: 'invitation_unavailable' });
+});
+
+test('MySQL HTTP ADVERSARIAL: cross-family recovery -- attemptRecoveryToken from family A never discloses family B\'s attempts (different id space entirely)', async () => {
+  const app = freshApp();
+  const { rawToken: tokenA } = await createRealInvitation();
+  const payloadA = bootstrapPayload({ rawInvitationToken: tokenA });
+  await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: payloadA });
+
+  const { rawToken: tokenB } = await createRealInvitation();
+  const payloadB = bootstrapPayload({ rawInvitationToken: tokenB });
+  const bootstrapB = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: payloadB });
+  assert.equal(bootstrapB.statusCode, 201);
+
+  // Family A's recovery secret must never recover family B's attempt, even
+  // though both exist in the same table.
+  const crossRecovery = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: payloadB.bootstrapAttemptId, attemptRecoveryToken: payloadA.attemptRecoveryToken },
+  });
+  assert.equal(crossRecovery.statusCode, 404);
+});
+
+test('MySQL HTTP ADVERSARIAL: authority injection -- caller-supplied familyId/role/memberId/childId are ignored by bootstrap', async () => {
+  const { rawToken, record } = await createRealInvitation();
+  const response = await freshApp().inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: {
+      ...bootstrapPayload({ rawInvitationToken: rawToken }),
+      familyId: 'attacker-controlled-family',
+      role: 'PARENT',
+      memberId: 'attacker-member',
+      childId: 'attacker-child',
+      policy: { fullTrust: true },
+    },
+  });
+  assert.equal(response.statusCode, 201);
+  const [rows] = await getPool().query(`SELECT family_id FROM devices WHERE device_id = ?`, [response.json().deviceId]);
+  assert.equal(rows[0].family_id, record.familyId);
+  assert.notEqual(rows[0].family_id, 'attacker-controlled-family');
+});
+
+test('MySQL HTTP OLD-ENROLLMENT BACKWARD COMPATIBILITY: a redeemed invitation with no attempt row (simulating a pre-migration record) fails safely, no crash, generic 404', async () => {
+  const app = freshApp();
+  const { rawToken, record } = await createRealInvitation();
+  // Redeem it directly via the DB, bypassing the attempt-recording path
+  // entirely -- this simulates an invitation redeemed by the Runtime-1
+  // coordinator before this migration existed, i.e. no matching row in
+  // enrollment_bootstrap_attempts.
+  await getPool().query(`UPDATE enrollment_invitations SET status = 'REDEEMED', redeemed_at = NOW(3) WHERE invitation_id = ?`, [
+    record.invitationId,
+  ]);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: rawToken }),
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'invitation_unavailable' });
+});
+
+// --- PCA-ENROLLMENT-RUNTIME-2: end-to-end ambiguous-retry recovery scenario ---
+
+test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commits -> client response is discarded -> Android recovers the SAME deviceId -> parent sees exactly one pairing request -> parent confirms -> PAIRED', async () => {
+  const app = freshApp();
+  const parent = await authorizedParent();
+
+  // Parent creates a real invitation (Secure Invite HTTP, unchanged by this migration).
+  const invitationResponse = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/invitations`,
+    headers: authHeader(parent.rawToken),
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+  });
+  assert.equal(invitationResponse.statusCode, 201);
+  const rawInvitationToken = invitationResponse.json().rawInvitationToken;
+
+  // Android generates its DSK/DEK using the TEST/CONFORMANCE-equivalent generator (here: plain
+  // CSPRNG-backed base64url keys, matching the shape TestConformanceDeviceKeyPairGenerator
+  // produces -- no production crypto suite involved anywhere in this test) plus its own
+  // attemptId/attemptRecoveryToken, exactly mirroring HttpDeviceBootstrapApiClient's real request
+  // body contract.
+  const androidPayload = bootstrapPayload({ rawInvitationToken });
+
+  // Android sends the bootstrap request. The server fully commits (invitation redeemed, device +
+  // DSK/DEK created, attempt/result row persisted) -- but we deliberately never read/trust this
+  // response body, simulating exactly what HttpDeviceBootstrapApiClientTest's
+  // "startAndDropEveryConnection" proves happens on the wire: the server's actual commit and the
+  // client's ability to observe it are two independent facts.
+  const serverSideResponse = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: androidPayload });
+  assert.equal(serverSideResponse.statusCode, 201, 'test precondition: the server-side commit must actually have happened');
+  const deviceIdTheClientNeverSaw = serverSideResponse.json().deviceId;
+
+  // Android (this process, or a freshly-restarted one -- recoverAttempt never needs the raw
+  // invitation token either way) recovers using ONLY attemptId + attemptRecoveryToken, exactly
+  // EnrollmentCoordinator.recoverAttempt's contract.
+  const recovery = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap/recover',
+    payload: { bootstrapAttemptId: androidPayload.bootstrapAttemptId, attemptRecoveryToken: androidPayload.attemptRecoveryToken },
+  });
+  assert.equal(recovery.statusCode, 200);
+  assert.equal(recovery.json().deviceId, deviceIdTheClientNeverSaw, 'recovery must surface the SAME deviceId the lost response would have carried');
+  assert.equal(recovery.json().status, 'PAIRING_PENDING');
+
+  // A retry of the ORIGINAL bootstrap request (same attemptId/token/keys, e.g. same-process retry
+  // while the raw token was still in memory) must ALSO agree -- and must never create a second
+  // device.
+  const bootstrapRetry = await app.inject({ method: 'POST', url: '/v1/enrollment/bootstrap', payload: androidPayload });
+  assert.equal(bootstrapRetry.statusCode, 201);
+  assert.equal(bootstrapRetry.json().deviceId, deviceIdTheClientNeverSaw);
+
+  const [deviceCountRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [parent.familyId]);
+  assert.equal(deviceCountRows[0].n, 1, 'DEVICE_COUNT_AFTER_RETRIES: exactly one device, regardless of the lost response + two recovery/retry calls');
+
+  // Parent sees EXACTLY ONE pairing request -- not two, not zero.
+  const view = await app.inject({
+    method: 'GET',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}`,
+    headers: authHeader(parent.rawToken),
+  });
+  assert.equal(view.statusCode, 200);
+  assert.equal(view.json().status, 'PAIRING_PENDING');
+
+  // Parent confirms -> PAIRED. Never ACTIVE (still requires first-policy delivery via the Family
+  // Trust Set, out of scope for bootstrap/pairing).
+  const confirm = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/pairing-requests/${deviceIdTheClientNeverSaw}/confirm`,
+    headers: authHeader(parent.rawToken),
+  });
+  assert.equal(confirm.statusCode, 200);
+  assert.equal(confirm.json().status, 'PAIRED');
+  assert.notEqual(confirm.json().status, 'ACTIVE');
 });
 
 // --- Pairing --------------------------------------------------------------
@@ -529,7 +848,7 @@ async function bootstrapDevice(app, familyId) {
   const bootstrapResponse = await app.inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: { rawInvitationToken: invitation.rawToken, platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key() },
+    payload: bootstrapPayload({ rawInvitationToken: invitation.rawToken }),
   });
   assert.equal(bootstrapResponse.statusCode, 201, 'test setup precondition: bootstrap must succeed before a pairing test can proceed');
   return bootstrapResponse.json().deviceId;
@@ -651,16 +970,11 @@ test('MySQL HTTP: oversized invitation-creation body rejected', async () => {
   assert.equal(response.statusCode, 413);
 });
 
-test('MySQL HTTP: oversized bootstrap token/keys rejected as 400', async () => {
+test('MySQL HTTP: oversized bootstrap token/keys/attemptId rejected as 400', async () => {
   const response = await freshApp().inject({
     method: 'POST',
     url: '/v1/enrollment/bootstrap',
-    payload: {
-      rawInvitationToken: 'a'.repeat(1000),
-      platform: 'ANDROID',
-      signingPublicKey: key(),
-      encryptionPublicKey: key(),
-    },
+    payload: bootstrapPayload({ rawInvitationToken: 'a'.repeat(1000) }),
   });
   assert.equal(response.statusCode, 400);
 });
@@ -691,6 +1005,22 @@ test('MySQL HTTP: rate limiting kicks in on repeated invitation-creation request
   }
   const rateLimited = attempts.filter((r) => r.statusCode === 429);
   assert.ok(rateLimited.length > 0, 'at least one request in a 25-request burst must be rate-limited (budget is 20/min)');
+});
+
+test('MySQL HTTP: the recovery endpoint has its own independent rate-limit bucket', async () => {
+  const app = freshApp();
+  const responses = [];
+  for (let i = 0; i < 31; i++) {
+    responses.push(
+      await app.inject({
+        method: 'POST',
+        url: '/v1/enrollment/bootstrap/recover',
+        payload: { bootstrapAttemptId: attemptId(), attemptRecoveryToken: recoveryToken() },
+      }),
+    );
+  }
+  const rateLimited = responses.filter((r) => r.statusCode === 429);
+  assert.ok(rateLimited.length > 0, 'the recovery bucket must itself trip a 429 once its own budget (30/min) is exceeded');
 });
 
 // --- Privacy ----------------------------------------------------------

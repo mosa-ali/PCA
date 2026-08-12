@@ -40,6 +40,9 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'enrollment.ALREADY_REDEEMED': 'Invitation was already redeemed.',
   'enrollment.PLATFORM_MISMATCH': 'Device platform does not match the invitation.',
   'enrollment.DUPLICATE_KEY': 'This public key is already registered to a device.',
+  'enrollment.INVALID_ATTEMPT_ID': 'Bootstrap attempt id is malformed.',
+  'enrollment.INVALID_RECOVERY_TOKEN': 'Attempt recovery token is malformed.',
+  'enrollment.ATTEMPT_CONFLICT': 'This bootstrap attempt id cannot be used for this request.',
 
   // invitation/InvitationService.ts INVITATION_ERROR_MESSAGES
   'invitation.INVALID_TOKEN': 'Invitation token is malformed.',

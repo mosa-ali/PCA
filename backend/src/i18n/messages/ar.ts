@@ -32,6 +32,9 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'enrollment.ALREADY_REDEEMED': 'تم استخدام الدعوة مسبقًا.',
   'enrollment.PLATFORM_MISMATCH': 'منصة الجهاز لا تطابق الدعوة.',
   'enrollment.DUPLICATE_KEY': 'هذا المفتاح العام مسجل بالفعل لجهاز آخر.',
+  'enrollment.INVALID_ATTEMPT_ID': 'معرّف محاولة التسجيل غير صالح.',
+  'enrollment.INVALID_RECOVERY_TOKEN': 'رمز استرداد المحاولة غير صالح.',
+  'enrollment.ATTEMPT_CONFLICT': 'لا يمكن استخدام معرّف محاولة التسجيل هذا لهذا الطلب.',
 
   'invitation.INVALID_TOKEN': 'رمز الدعوة غير صالح.',
   'invitation.NOT_FOUND': 'لم يتم العثور على الدعوة.',

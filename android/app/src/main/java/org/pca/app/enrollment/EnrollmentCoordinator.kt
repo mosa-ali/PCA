@@ -8,6 +8,9 @@ import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.GeneratedKeyPair
 import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.LocalFamilyState
+import org.pca.app.storage.PendingEnrollmentAttempt
+import org.pca.app.storage.PendingEnrollmentAttemptStatus
+import org.pca.app.storage.PendingEnrollmentAttemptStore
 
 /**
  * Drives the child-device enrollment flow end to end: parses an invitation deep link (via the
@@ -16,20 +19,39 @@ import org.pca.app.storage.LocalFamilyState
  * persists the server-issued identity via [FamilyStateStore]. Never sends or infers familyId,
  * role, or any authority claim -- the request body this coordinator builds mirrors
  * bootstrapRoutes.ts's verified shape exactly (rawInvitationToken/platform/signingPublicKey/
- * encryptionPublicKey only).
+ * encryptionPublicKey/bootstrapAttemptId/attemptRecoveryToken only).
  *
  * The raw invitation token is held ONLY in [rawInvitationToken], an in-memory field, for the
- * duration of one active attempt. It is never written to [FamilyStateStore] or any other
- * persistent store, never logged, and is cleared on success and on every terminal (non-ambiguous)
- * failure. It is deliberately NOT cleared on [EnrollmentState.BootstrapResultUnknown] -- see that
- * state's own doc; this does not mean the coordinator will reuse it automatically (it never does),
- * only that a human-directed retry has the option without asking the user to re-scan/re-paste.
+ * duration of one active attempt. It is never written to [FamilyStateStore],
+ * [PendingEnrollmentAttemptStore], or any other persistent store, never logged, and is cleared on
+ * success and on every DEFINITIVE (non-ambiguous) failure. It is deliberately NOT cleared on
+ * [EnrollmentState.BootstrapResultUnknown] -- see that state's own doc; this does not mean the
+ * coordinator will reuse it automatically (it never does), only that [retryBootstrap] has the
+ * option without asking the user to re-scan/re-paste, as long as this process has not restarted.
+ *
+ * PCA-ENROLLMENT-RUNTIME-2 (BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP closure): before ANY network
+ * call, [beginBootstrap] durably persists a narrow [PendingEnrollmentAttempt] via
+ * [pendingAttemptStore] -- attemptId, attemptRecoveryToken, server base URL, DSK/DEK public keys
+ * + [org.pca.app.security.SecureKeyStore] aliases, and lifecycle status. This survives process
+ * death, app restart, and device reboot. [restoreInitialState] checks it on construction:
+ * - No local family state AND a pending attempt exists -> [EnrollmentState.RecoveryPending]:
+ *   the raw token is gone, but [recoverAttempt] can still resolve the outcome using only the
+ *   durably-held attemptId + attemptRecoveryToken.
+ * - Local family state already exists -> that remains authoritative (unchanged behavior); a
+ *   pending-attempt record left over from that same successful attempt is simply stale (already
+ *   cleared by [persistSuccess]'s caller in the ordinary case).
+ *
+ * Bootstrap authority remains ONLY "possession of the valid one-time invitation token" --
+ * attemptId and attemptRecoveryToken are never authority to redeem anything; they only let a
+ * retry of the SAME already-authorized attempt be recognized as such (server-side) and let this
+ * client recover its own prior outcome (nothing else's) without the raw token.
  */
 class EnrollmentCoordinator(
     private val linkParser: EnrollmentLinkParser,
     private val apiClient: DeviceBootstrapApiClient,
     private val keyPairGenerator: DeviceKeyPairGenerator,
     private val familyStateStore: FamilyStateStore,
+    private val pendingAttemptStore: PendingEnrollmentAttemptStore,
     private val platform: String = "ANDROID",
 ) {
     private val _state = MutableStateFlow(restoreInitialState())
@@ -38,16 +60,23 @@ class EnrollmentCoordinator(
     private var rawInvitationToken: String? = null
 
     private fun restoreInitialState(): EnrollmentState {
-        val persisted = familyStateStore.currentState() ?: return EnrollmentState.NotEnrolled
-        return if (persisted.pairingState == PairingState.REVOKED) {
-            EnrollmentState.Revoked
-        } else {
-            // Deliberately never PAIRED/ACTIVE here regardless of the persisted PairingState --
-            // this coordinator's own model only distinguishes "not enrolled," "revoked," and
-            // "enrolled" (PairingPending). A future status-refresh feature that reads the real,
-            // authenticated pairing status is the only thing allowed to expose PAIRED/ACTIVE.
-            EnrollmentState.PairingPending(persisted.deviceId)
+        val persisted = familyStateStore.currentState()
+        if (persisted != null) {
+            return if (persisted.pairingState == PairingState.REVOKED) {
+                EnrollmentState.Revoked
+            } else {
+                // Deliberately never PAIRED/ACTIVE here regardless of the persisted PairingState --
+                // this coordinator's own model only distinguishes "not enrolled," "revoked," and
+                // "enrolled" (PairingPending). A future status-refresh feature that reads the real,
+                // authenticated pairing status is the only thing allowed to expose PAIRED/ACTIVE.
+                EnrollmentState.PairingPending(persisted.deviceId)
+            }
         }
+        val pending = pendingAttemptStore.current() ?: return EnrollmentState.NotEnrolled
+        // A durably-persisted attempt survived a process/app restart (or device reboot) with no
+        // confirmed local success yet -- the raw invitation token is gone (never persisted), so
+        // only recoverAttempt() (not retryBootstrap()) can resolve this from here.
+        return EnrollmentState.RecoveryPending(pending.serverBaseUrl)
     }
 
     /**
@@ -70,11 +99,14 @@ class EnrollmentCoordinator(
     /**
      * Runs key preparation + bootstrap from [EnrollmentState.InvitationReady]. No-op (reports
      * [EnrollmentState.FailedInvitationInvalid]) if called from any other state -- a caller bug,
-     * not a network/crypto outcome.
+     * not a network/crypto outcome. Generates a NEW attemptId/attemptRecoveryToken and a NEW
+     * DSK/DEK key pair -- this is the only place either is minted; every retry
+     * ([retryBootstrap], [recoverAttempt]) reuses what this call persists.
      */
     suspend fun beginBootstrap() {
         val token = rawInvitationToken
-        if (token == null || _state.value !is EnrollmentState.InvitationReady) {
+        val readyState = _state.value as? EnrollmentState.InvitationReady
+        if (token == null || readyState == null) {
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         }
@@ -86,52 +118,163 @@ class EnrollmentCoordinator(
             signingKey = keyPairGenerator.generateSigningKeyPair()
             encryptionKey = keyPairGenerator.generateEncryptionKeyPair()
         } catch (e: CryptoSuiteNotApprovedException) {
-            // Never proceeds to the network call from here -- no apiClient.bootstrap() call exists
-            // on this path.
+            // Never proceeds to the network call from here -- no apiClient.bootstrap() call
+            // exists on this path, and nothing is persisted to pendingAttemptStore either.
             _state.value = EnrollmentState.CryptoReviewRequired
             return
         }
 
+        val pending = PendingEnrollmentAttempt(
+            attemptId = AttemptIdentifiers.newAttemptId(),
+            attemptRecoveryToken = AttemptIdentifiers.newAttemptRecoveryToken(),
+            serverBaseUrl = readyState.serverBaseUrl,
+            platform = platform,
+            signingPublicKeyBase64 = signingKey.publicKeyBase64,
+            signingPrivateKeyAlias = signingKey.privateKeyAlias,
+            encryptionPublicKeyBase64 = encryptionKey.publicKeyBase64,
+            encryptionPrivateKeyAlias = encryptionKey.privateKeyAlias,
+            status = PendingEnrollmentAttemptStatus.BOOTSTRAPPING,
+        )
+        // Durably persisted BEFORE the network call -- section 4 of the mission brief: this must
+        // survive process death/app restart/device reboot/network loss/response loss.
+        pendingAttemptStore.save(pending)
+
+        sendBootstrapRequest(token, pending)
+    }
+
+    /**
+     * Re-sends the SAME already-prepared bootstrap request (same attemptId, same DSK/DEK) after
+     * an ambiguous or definitively-retryable outcome, while [rawInvitationToken] is still held in
+     * memory (same process, no restart since the original attempt). Relies entirely on the
+     * server's idempotent replay of (attemptId, token, DSK, DEK) -- see
+     * MySqlEnrollmentCoordinatorRepository -- so this is always safe to call again even if the
+     * previous attempt actually succeeded server-side; it never mints new keys.
+     *
+     * Callable only from [EnrollmentState.BootstrapResultUnknown] or [EnrollmentState.FailedRetryable]
+     * with a still-durably-persisted pending attempt; otherwise a no-op reporting
+     * [EnrollmentState.FailedInvitationInvalid] (a caller-sequencing bug, not a network outcome).
+     */
+    suspend fun retryBootstrap() {
+        val token = rawInvitationToken
+        val pending = pendingAttemptStore.current()
+        val validState = _state.value is EnrollmentState.BootstrapResultUnknown || _state.value is EnrollmentState.FailedRetryable
+        if (token == null || pending == null || !validState) {
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        }
+        sendBootstrapRequest(token, pending)
+    }
+
+    private suspend fun sendBootstrapRequest(token: String, pending: PendingEnrollmentAttempt) {
         _state.value = EnrollmentState.Bootstrapping
         val result = try {
             apiClient.bootstrap(
                 rawInvitationToken = token,
-                platform = platform,
-                signingPublicKeyBase64 = signingKey.publicKeyBase64,
-                encryptionPublicKeyBase64 = encryptionKey.publicKeyBase64,
+                platform = pending.platform,
+                signingPublicKeyBase64 = pending.signingPublicKeyBase64,
+                encryptionPublicKeyBase64 = pending.encryptionPublicKeyBase64,
+                bootstrapAttemptId = pending.attemptId,
+                attemptRecoveryToken = pending.attemptRecoveryToken,
             )
         } catch (e: BootstrapError.InvitationUnavailable) {
+            // Definitive: this invitation (or attempt id) is unusable. Section 12: abandon the
+            // pending attempt -- its key material is unused and safe to stop tracking. A fresh
+            // invitation from the parent is required.
             rawInvitationToken = null
+            pendingAttemptStore.clear()
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         } catch (e: BootstrapError.InvalidRequest) {
+            // Our own request shape was malformed (should not happen from a correct client) --
+            // retrying with the same malformed shape cannot help.
             rawInvitationToken = null
+            pendingAttemptStore.clear()
             _state.value = EnrollmentState.FailedRetryable
             return
         } catch (e: BootstrapError.UnexpectedServerError) {
+            // Ordinary transient failure -- token AND pending-attempt state are both preserved so
+            // a later retryBootstrap() can safely try again.
             _state.value = EnrollmentState.FailedRetryable
             return
         } catch (e: BootstrapError.AmbiguousOutcome) {
             // BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP -- see EnrollmentState.BootstrapResultUnknown.
-            // Deliberately does NOT clear rawInvitationToken and does NOT retry automatically.
+            // Deliberately does NOT clear rawInvitationToken or pendingAttemptStore, and does NOT
+            // retry automatically.
             _state.value = EnrollmentState.BootstrapResultUnknown
             return
         }
 
         persistSuccess(result)
+        pendingAttemptStore.clear()
         rawInvitationToken = null
         _state.value = EnrollmentState.PairingPending(result.deviceId)
     }
 
     /**
+     * Recovers the outcome of a previously-sent bootstrap attempt using ONLY the durably-held
+     * attemptId + attemptRecoveryToken -- never the raw invitation token, which this process may
+     * no longer hold (restart after an ambiguous response). Callable from
+     * [EnrollmentState.RecoveryPending] or [EnrollmentState.BootstrapResultUnknown] with a
+     * pending attempt still on record; otherwise a no-op reporting
+     * [EnrollmentState.FailedInvitationInvalid].
+     *
+     * Section 20 (offline handling): a transient failure here ([RecoveryError.AmbiguousOutcome]/
+     * [RecoveryError.UnexpectedServerError]) preserves [pendingAttemptStore] and returns to
+     * [EnrollmentState.RecoveryPending] honestly -- it never claims success or failure, and never
+     * auto-retries in a loop; the caller (UI / connectivity-change handler) decides when to call
+     * this again, giving a bounded, explicit resume rather than a retry storm.
+     */
+    suspend fun recoverAttempt() {
+        val pending = pendingAttemptStore.current()
+        val validState = _state.value is EnrollmentState.RecoveryPending || _state.value is EnrollmentState.BootstrapResultUnknown
+        if (pending == null || !validState) {
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        }
+
+        val result = try {
+            apiClient.recoverAttempt(
+                bootstrapAttemptId = pending.attemptId,
+                attemptRecoveryToken = pending.attemptRecoveryToken,
+            )
+        } catch (e: RecoveryError.NotFound) {
+            // DEFINITIVE: the server actually answered -- no completed attempt exists under this
+            // (attemptId, attemptRecoveryToken) pair. Section 12: abandon; this attempt's key
+            // material is unused and safe to stop tracking. The one-time invitation token itself
+            // is unrecoverable by design (never persisted) -- a fresh invitation is required.
+            pendingAttemptStore.clear()
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        } catch (e: RecoveryError.InvalidRequest) {
+            // Our own persisted attempt state is malformed (should not normally happen) --
+            // retrying the same malformed request cannot help.
+            pendingAttemptStore.clear()
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        } catch (e: RecoveryError.AmbiguousOutcome) {
+            _state.value = EnrollmentState.RecoveryPending(pending.serverBaseUrl)
+            return
+        } catch (e: RecoveryError.UnexpectedServerError) {
+            _state.value = EnrollmentState.RecoveryPending(pending.serverBaseUrl)
+            return
+        }
+
+        persistSuccess(result)
+        pendingAttemptStore.clear()
+        _state.value = EnrollmentState.PairingPending(result.deviceId)
+    }
+
+    /**
      * Atomic local-commit boundary: a single [FamilyStateStore.save] call, executed only after
-     * the server has confirmed success (HTTP 201, parsed body) and only after
-     * [keyPairGenerator]'s calls above have already durably stored this device's key material
-     * (both key-pair generation calls, and therefore their [SecureKeyStore][org.pca.app.security
-     * .SecureKeyStore] writes, complete before this method is ever reached). A persisted
-     * [LocalFamilyState] can therefore never reference key material that was not actually stored,
-     * nor can key material be stored without this call eventually reflecting the device as
-     * enrolled -- there is exactly one write here, not several that could partially apply.
+     * the server has confirmed success (201/200, parsed body) and only after
+     * [keyPairGenerator]'s calls in [beginBootstrap] have already durably stored this device's
+     * key material (both key-pair generation calls, and therefore their
+     * [SecureKeyStore][org.pca.app.security.SecureKeyStore] writes, complete before this method
+     * is ever reached, whether reached via a fresh bootstrap, a same-process retry, or a
+     * post-restart recovery). A persisted [LocalFamilyState] can therefore never reference key
+     * material that was not actually stored, nor can key material be stored without this call
+     * eventually reflecting the device as enrolled -- there is exactly one write here, not
+     * several that could partially apply.
      */
     private fun persistSuccess(result: DeviceBootstrapResult) {
         val serverPairingState = runCatching { PairingState.valueOf(result.status) }

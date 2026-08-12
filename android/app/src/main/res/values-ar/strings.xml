@@ -190,7 +190,10 @@
     <string name="enrollment_pairing_pending_body">بانتظار تأكيد أحد الوالدين لهذا الجهاز.</string>
     <string name="enrollment_invitation_unavailable">لم تعد الدعوة متاحة. اطلب من أحد الوالدين إنشاء دعوة جديدة.</string>
     <string name="enrollment_retryable_failure">حدث خطأ ما. يرجى المحاولة مرة أخرى.</string>
-    <string name="enrollment_result_unknown">لم نتمكن من التأكد مما إذا كان الإعداد قد اكتمل. يرجى التحقق مع والدك أو والدتك قبل تجربة هذا الرابط مرة أخرى.</string>
+    <string name="enrollment_result_unknown">لم نتمكن من التأكد مما إذا كان الإعداد قد اكتمل. اضغط أدناه للتحقق، أو اسأل والديك قبل تجربة هذا الرابط مرة أخرى.</string>
+    <string name="enrollment_check_status_button">التحقق من الحالة</string>
+    <string name="enrollment_recovery_pending_title">جارٍ إنهاء الإعداد…</string>
+    <string name="enrollment_recovery_pending_body">قد يكون الإعداد قد اكتمل بالفعل على الخادم. اضغط أدناه للتحقق.</string>
     <string name="enrollment_crypto_review_required">هذا الإصدار غير معتمد لإعداد جهاز حقيقي بعد (وضع التطوير).</string>
     <string name="enrollment_revoked">تمت إزالة وصول هذا الجهاز. اطلب دعوة جديدة من أحد الوالدين.</string>
 

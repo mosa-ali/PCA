@@ -39,19 +39,37 @@ sealed interface EnrollmentState {
     data object Revoked : EnrollmentState
 
     /**
-     * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: the bootstrap request was sent and a definitive
-     * outcome could not be determined -- see [BootstrapError.AmbiguousOutcome]'s own doc for the
-     * exact conditions (network/timeout/connection-reset, or an unparseable 201 body). The
-     * server-confirmed fact (independently verified by reading EnrollmentRepository.ts,
-     * MySqlEnrollmentCoordinatorRepository.ts, and bootstrapRoutes.ts) is that there is no
-     * idempotency key in the request DTO and no recovery path for an already-redeemed invitation:
-     * a client-side retry of the same token after a true success returns a bare 404
-     * invitation_unavailable, indistinguishable from the token never having been valid at all.
+     * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP, SAME PROCESS: the bootstrap request was sent and a
+     * definitive outcome could not be determined -- see [BootstrapError.AmbiguousOutcome]'s own
+     * doc for the exact conditions (network/timeout/connection-reset, or an unparseable 201
+     * body). Reachable only while [rawInvitationToken][EnrollmentCoordinator] is still held in
+     * memory (this process has not restarted since the ambiguous attempt).
      *
-     * This state deliberately asserts neither success nor failure. [EnrollmentCoordinator] never
-     * auto-transitions out of it by retrying the same token; the only correct next step is a
-     * human-directed one (ask the parent whether pairing shows up on their side, or issue a fresh
-     * invitation) -- something this client cannot determine on its own from a bare 404.
+     * PCA-ENROLLMENT-RUNTIME-2 CLOSES the prior gap here: [EnrollmentCoordinator.retryBootstrap]
+     * safely re-sends the SAME (attemptId, token, DSK, DEK) tuple -- the backend
+     * (MySqlEnrollmentCoordinatorRepository) recognizes the retry and replays the original
+     * result idempotently rather than creating a second device, or a fresh success if the
+     * original request never actually reached the server. This state never auto-retries on its
+     * own; the caller (UI) decides when to call [EnrollmentCoordinator.retryBootstrap].
      */
     data object BootstrapResultUnknown : EnrollmentState
+
+    /**
+     * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP, AFTER PROCESS/APP RESTART (or device reboot):
+     * [EnrollmentCoordinator] restored a durably-persisted
+     * [org.pca.app.storage.PendingEnrollmentAttempt] on construction -- the raw invitation token
+     * is gone (never persisted, by design), so a plain retry of the original request is
+     * impossible. [EnrollmentCoordinator.recoverAttempt] instead calls the dedicated recovery
+     * endpoint (`POST /v1/enrollment/bootstrap/recover`) using only the durably-held
+     * attemptId + attemptRecoveryToken, recovering the SAME deviceId if the original attempt
+     * actually succeeded server-side, without ever re-presenting the invitation token.
+     *
+     * Deliberately distinct from [BootstrapResultUnknown] only for observability (which recovery
+     * path is available) -- both represent "an attempt may or may not have succeeded server-side,
+     * a definitive answer has not yet been obtained." If offline, callers should show this
+     * honestly rather than claim success or failure, and resume recovery explicitly on
+     * reconnect (bounded, not a retry storm) -- see [EnrollmentCoordinator.recoverAttempt]'s own
+     * doc.
+     */
+    data class RecoveryPending(val serverBaseUrl: String) : EnrollmentState
 }

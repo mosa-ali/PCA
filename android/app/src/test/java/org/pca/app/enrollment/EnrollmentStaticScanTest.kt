@@ -9,7 +9,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.security.TestConformanceDeviceKeyPairGenerator
+import org.pca.app.storage.InMemoryPendingEnrollmentAttemptStore
 import org.pca.app.storage.PersistentFamilyStateStore
+import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
 
 /**
  * Static, source-scanning proofs (same technique as
@@ -52,10 +54,13 @@ class EnrollmentStaticScanTest {
     }
 
     @Test
-    fun `no Log call in HttpDeviceBootstrapApiClient or EnrollmentCoordinator source references the token or key variables`() {
+    fun `no Log call in the enrollment HTTP client, coordinator, or attempt-persistence sources references the token or key variables`() {
         val files = listOf(
             "src/main/java/org/pca/app/enrollment/HttpDeviceBootstrapApiClient.kt",
             "src/main/java/org/pca/app/enrollment/EnrollmentCoordinator.kt",
+            "src/main/java/org/pca/app/enrollment/AttemptIdentifiers.kt",
+            "src/main/java/org/pca/app/storage/PendingEnrollmentAttemptStore.kt",
+            "src/main/java/org/pca/app/storage/PersistentPendingEnrollmentAttemptStore.kt",
         )
         val logCallPattern = Regex("""(?i)(Log\.[a-z]+|println|System\.out)\s*\(""")
         for (path in files) {
@@ -64,47 +69,96 @@ class EnrollmentStaticScanTest {
         }
     }
 
-    // -- Runtime companion to the static scans above: the raw token is provably never written to
-    // the persistent store's backing map at any point in a full successful flow. --
     @Test
-    fun `raw invitation token never appears anywhere in the persisted family-state backing store`() = runTest {
+    fun `PendingEnrollmentAttempt has no field capable of carrying the raw invitation token`() {
+        val text = locateMainDir("src/main/java/org/pca/app/storage/PendingEnrollmentAttemptStore.kt").readText()
+        // The data class must never gain a field literally named for the raw token -- this is the
+        // structural guarantee behind "the raw invitation token is never persisted."
+        assertFalse(Regex("""(?i)val\s+rawInvitationToken""").containsMatchIn(text))
+        assertFalse(Regex("""(?i)val\s+rawToken""").containsMatchIn(text))
+    }
+
+    // -- Runtime companions to the static scans above: the raw token is provably never written to
+    // either persistent store's backing map at any point across a full successful flow, an
+    // ambiguous flow, or a recovered flow. --
+
+    private fun apiClientReturning(rawTokenExpectation: String?, result: DeviceBootstrapResult) = object : DeviceBootstrapApiClient {
+        override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+            if (rawTokenExpectation != null) assertEquals(rawTokenExpectation, rawInvitationToken)
+            return result
+        }
+        override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult = result
+    }
+
+    @Test
+    fun `raw invitation token never appears anywhere in the persisted family-state OR pending-attempt backing store`() = runTest {
         val backing = InMemoryPersistentStateStore()
         val familyStateStore = PersistentFamilyStateStore(backing)
+        val pendingAttemptStore = PersistentPendingEnrollmentAttemptStore(backing)
         val rawToken = "super-secret-raw-token-should-never-be-persisted"
-        val apiClient = object : DeviceBootstrapApiClient {
-            override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String): DeviceBootstrapResult {
-                assertEquals(rawToken, rawInvitationToken)
-                return DeviceBootstrapResult("device-id-1", "PAIRING_PENDING")
-            }
-        }
+        val apiClient = apiClientReturning(rawToken, DeviceBootstrapResult("device-id-1", "PAIRING_PENDING"))
         val coordinator = EnrollmentCoordinator(
             UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST),
             apiClient,
             TestConformanceDeviceKeyPairGenerator(),
             familyStateStore,
+            pendingAttemptStore,
         )
         coordinator.submitInvitationLink("pca://enroll?token=$rawToken")
 
         coordinator.beginBootstrap()
 
-        // Reach into the backing store's own persisted string for every key it holds.
-        val persisted = backing.getString("family_state_v1")
-        assertFalse(persisted?.contains(rawToken) ?: false)
+        // Reach into the backing store's own persisted strings for every key it holds.
+        assertFalse(backing.getString("family_state_v1")?.contains(rawToken) ?: false)
+        assertFalse(backing.getString("pending_enrollment_attempt_v1")?.contains(rawToken) ?: false)
     }
 
     @Test
-    fun `the coordinator clears the in-memory token reference after a terminal invitation-invalid outcome`() = runTest {
-        val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+    fun `raw invitation token never appears in the pending-attempt backing store even mid-flight (before the response arrives)`() = runTest {
+        val backing = InMemoryPersistentStateStore()
+        val pendingAttemptStore = PersistentPendingEnrollmentAttemptStore(backing)
+        val rawToken = "another-secret-raw-token-mid-flight"
+        var sawDuringCall = ""
         val apiClient = object : DeviceBootstrapApiClient {
-            override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String): DeviceBootstrapResult {
+            override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
+                // The pending attempt is already durably persisted by the time the network call
+                // happens (section 4) -- check its raw backing string right now, mid-call.
+                sawDuringCall = backing.getString("pending_enrollment_attempt_v1") ?: ""
+                return DeviceBootstrapResult("device-id-2", "PAIRING_PENDING")
+            }
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String) = throw AssertionError()
+        }
+        val coordinator = EnrollmentCoordinator(
+            UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST),
+            apiClient,
+            TestConformanceDeviceKeyPairGenerator(),
+            PersistentFamilyStateStore(InMemoryPersistentStateStore()),
+            pendingAttemptStore,
+        )
+        coordinator.submitInvitationLink("pca://enroll?token=$rawToken")
+
+        coordinator.beginBootstrap()
+
+        assertTrue(sawDuringCall.isNotEmpty())
+        assertFalse(sawDuringCall.contains(rawToken))
+    }
+
+    @Test
+    fun `the coordinator clears the in-memory token reference AND the pending attempt after a terminal invitation-invalid outcome`() = runTest {
+        val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
+        val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
+        val apiClient = object : DeviceBootstrapApiClient {
+            override suspend fun bootstrap(rawInvitationToken: String, platform: String, signingPublicKeyBase64: String, encryptionPublicKeyBase64: String, bootstrapAttemptId: String, attemptRecoveryToken: String): DeviceBootstrapResult {
                 throw BootstrapError.InvitationUnavailable
             }
+            override suspend fun recoverAttempt(bootstrapAttemptId: String, attemptRecoveryToken: String) = throw AssertionError()
         }
         val coordinator = EnrollmentCoordinator(
             UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST),
             apiClient,
             TestConformanceDeviceKeyPairGenerator(),
             familyStateStore,
+            pendingAttemptStore,
         )
         coordinator.submitInvitationLink("pca://enroll?token=abc")
         coordinator.beginBootstrap()
@@ -116,5 +170,6 @@ class EnrollmentStaticScanTest {
         coordinator.beginBootstrap()
         assertEquals(EnrollmentState.FailedInvitationInvalid, coordinator.state.value)
         assertNull(familyStateStore.currentState())
+        assertNull(pendingAttemptStore.current())
     }
 }

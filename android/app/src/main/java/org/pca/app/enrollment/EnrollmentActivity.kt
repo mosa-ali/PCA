@@ -33,6 +33,19 @@ class EnrollmentActivity : ComponentActivity() {
                     state = state,
                     onLinkSubmitted = { link -> coordinator.submitInvitationLink(link) },
                     onContinue = { lifecycleScope.launch { coordinator.beginBootstrap() } },
+                    // PCA-ENROLLMENT-RUNTIME-2: one explicit, human-directed action covers both
+                    // ambiguous-outcome recovery paths -- same-process retry (BootstrapResultUnknown,
+                    // token still in memory) and post-restart recovery (RecoveryPending, token
+                    // gone). Never invoked automatically; never a retry loop.
+                    onCheckStatus = {
+                        lifecycleScope.launch {
+                            when (state) {
+                                is EnrollmentState.BootstrapResultUnknown -> coordinator.retryBootstrap()
+                                is EnrollmentState.RecoveryPending -> coordinator.recoverAttempt()
+                                else -> Unit
+                            }
+                        }
+                    },
                 )
             }
         }

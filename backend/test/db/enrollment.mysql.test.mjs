@@ -22,8 +22,23 @@ function key() {
   return randomBytes(32).toString('base64url');
 }
 
+function attemptId() {
+  return randomBytes(24).toString('base64url');
+}
+
+function recoveryToken() {
+  return randomBytes(32).toString('base64url');
+}
+
 function deviceKeysInput(overrides = {}) {
-  return { platform: 'ANDROID', signingPublicKey: key(), encryptionPublicKey: key(), ...overrides };
+  return {
+    platform: 'ANDROID',
+    signingPublicKey: key(),
+    encryptionPublicKey: key(),
+    attemptId: attemptId(),
+    attemptRecoveryToken: recoveryToken(),
+    ...overrides,
+  };
 }
 
 async function createInvitation(overrides = {}) {
@@ -59,6 +74,10 @@ test('MySQL: successful enrollment creates a PAIRING_PENDING device with DSK+DEK
 
   const [rows] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [record.invitationId]);
   assert.equal(rows[0].status, 'REDEEMED');
+
+  const [attemptRows] = await getPool().query(`SELECT device_id, status FROM enrollment_bootstrap_attempts WHERE device_id = ?`, [result.deviceId]);
+  assert.equal(attemptRows.length, 1, 'exactly one bootstrap-attempt row must be persisted atomically with the device it created');
+  assert.equal(attemptRows[0].status, 'COMPLETED');
 });
 
 test('MySQL: identical signing and encryption keys rejected', async () => {
@@ -71,7 +90,7 @@ test('MySQL: identical signing and encryption keys rejected', async () => {
   );
 });
 
-test('MySQL: already-redeemed invitation rejected, no second device created', async () => {
+test('MySQL: already-redeemed invitation rejected with a NEW attempt id, no second device created', async () => {
   const coordinator = buildCoordinator();
   const { rawToken } = await createInvitation();
   const first = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() });
@@ -115,15 +134,16 @@ test('MySQL: platform mismatch rejected, invitation remains usable afterward', a
   assert.ok(result.deviceId);
 });
 
-test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOLE transaction -- no orphan device, invitation stays unredeemed', async () => {
+test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOLE transaction -- no orphan device, invitation stays unredeemed, no attempt row', async () => {
   const coordinator = buildCoordinator();
   const sharedKey = key();
   const first = await createInvitation();
   await coordinator.enrollDevice({ rawInvitationToken: first.rawToken, ...deviceKeysInput({ signingPublicKey: sharedKey }) });
 
   const second = await createInvitation();
+  const secondAttemptId = attemptId();
   await assert.rejects(
-    () => coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...deviceKeysInput({ encryptionPublicKey: sharedKey }) }),
+    () => coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...deviceKeysInput({ attemptId: secondAttemptId, encryptionPublicKey: sharedKey }) }),
     { code: 'DUPLICATE_KEY' },
   );
 
@@ -136,6 +156,9 @@ test('MySQL FAILURE INJECTION: duplicate public key (DSK or DEK) aborts the WHOL
   // single multi-row INSERT statement are atomic together).
   const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [second.record.familyId]);
   assert.equal(deviceRows[0].n, 0, 'no orphan device may survive a rolled-back enrollment transaction');
+
+  const [attemptRows] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`, [secondAttemptId]);
+  assert.equal(attemptRows[0].n, 0, 'no orphan attempt row may survive a rolled-back enrollment transaction');
 
   // The invitation can still be redeemed with fresh keys.
   const retry = await coordinator.enrollDevice({ rawInvitationToken: second.rawToken, ...deviceKeysInput() });
@@ -182,7 +205,7 @@ test('MySQL: device never becomes ACTIVE from bootstrap alone', async () => {
   assert.equal(device.status, 'PAIRING_PENDING');
 });
 
-test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts against ONE invitation -- exactly one PAIRING_PENDING device, no orphans, no duplicates', async () => {
+test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts (distinct attempt ids) against ONE invitation -- exactly one PAIRING_PENDING device, no orphans, no duplicates', async () => {
   // Note: the connection pool defaults to connectionLimit: 10 (see
   // backend/src/db/pool.ts), so this arrives as several overlapping waves
   // of up to 10 truly concurrent DB round-trips rather than one instant of
@@ -221,6 +244,141 @@ test('MySQL REQUIRED CONCURRENCY: 30 simultaneous enrollment attempts against ON
 
   const [invitationRows] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [record.invitationId]);
   assert.equal(invitationRows[0].status, 'REDEEMED');
+
+  const [attemptRows] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE invitation_id = ?`, [record.invitationId]);
+  assert.equal(attemptRows[0].n, 1, 'exactly one attempt row must be persisted -- the winner\'s');
+});
+
+// --- PCA-ENROLLMENT-RUNTIME-2: ambiguous-retry / idempotent-recovery MySQL tests ---
+
+test('MySQL RETRY: same (attemptId, token, DSK, DEK) tuple replays the original device, never creates a second one', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken, record } = await createInvitation();
+  const input = deviceKeysInput();
+  const first = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
+  const retry = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
+  assert.equal(retry.deviceId, first.deviceId);
+  assert.equal(retry.signingKeyId, first.signingKeyId);
+  assert.equal(retry.encryptionKeyId, first.encryptionKeyId);
+
+  const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  assert.equal(deviceRows[0].n, 1, 'DEVICE_COUNT_AFTER_RETRIES: exactly one device after a retry of the same attempt');
+});
+
+test('MySQL RETRY: 20 concurrent retries of the SAME attempt id -- exactly one device, all responses agree', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken, record } = await createInvitation();
+  const input = deviceKeysInput();
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input })),
+  );
+  const uniqueDeviceIds = new Set(results.map((r) => r.deviceId));
+  assert.equal(uniqueDeviceIds.size, 1, 'all 20 concurrent retries of the same attempt must agree on one deviceId');
+
+  const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [record.familyId]);
+  assert.equal(deviceRows[0].n, 1, 'MULTI_PROCESS/CONCURRENT_DUPLICATE: exactly one device after 20 concurrent duplicate requests');
+});
+
+test('MySQL: a DIFFERENT attempt id against an already-redeemed invitation is genuine ALREADY_REDEEMED, not a replay', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken } = await createInvitation();
+  await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() });
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() }),
+    { code: 'ALREADY_REDEEMED' },
+  );
+});
+
+test('MySQL ADVERSARIAL: same attempt id reused against a DIFFERENT invitation token is ATTEMPT_CONFLICT, no device created for the loser', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken: firstToken } = await createInvitation();
+  const sharedAttemptId = attemptId();
+  await coordinator.enrollDevice({ rawInvitationToken: firstToken, ...deviceKeysInput({ attemptId: sharedAttemptId }) });
+
+  const { rawToken: secondToken, record: secondRecord } = await createInvitation();
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: secondToken, ...deviceKeysInput({ attemptId: sharedAttemptId }) }),
+    { code: 'ATTEMPT_CONFLICT' },
+  );
+  const [deviceRows] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [secondRecord.familyId]);
+  assert.equal(deviceRows[0].n, 0, 'the losing conflicting attempt must not create a device');
+  const [invitationRows] = await getPool().query(`SELECT status FROM enrollment_invitations WHERE invitation_id = ?`, [secondRecord.invitationId]);
+  assert.equal(invitationRows[0].status, 'CREATED', 'the second invitation must remain unredeemed after the conflicting attempt rolls back');
+});
+
+test('MySQL ADVERSARIAL CONCURRENCY: same attempt id, two DIFFERENT invitation tokens, truly concurrent -- exactly one may ever win', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken: tokenA, record: recordA } = await createInvitation();
+  const { rawToken: tokenB, record: recordB } = await createInvitation();
+  const sharedAttemptId = attemptId();
+
+  const results = await Promise.allSettled([
+    coordinator.enrollDevice({ rawInvitationToken: tokenA, ...deviceKeysInput({ attemptId: sharedAttemptId }) }),
+    coordinator.enrollDevice({ rawInvitationToken: tokenB, ...deviceKeysInput({ attemptId: sharedAttemptId }) }),
+  ]);
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  assert.equal(fulfilled.length, 1, 'exactly one of two competing attempt-id claims across different tokens may succeed');
+
+  const [attemptRows] = await getPool().query(`SELECT COUNT(*) AS n FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`, [sharedAttemptId]);
+  assert.equal(attemptRows[0].n, 1, 'exactly one attempt row for the shared attempt id, regardless of which token won');
+
+  const [deviceRowsA] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [recordA.familyId]);
+  const [deviceRowsB] = await getPool().query(`SELECT COUNT(*) AS n FROM devices WHERE family_id = ?`, [recordB.familyId]);
+  assert.equal(Number(deviceRowsA[0].n) + Number(deviceRowsB[0].n), 1, 'exactly one device total across both families -- never two, never zero');
+});
+
+test('MySQL RECOVERY: recoverAttempt returns the original deviceId after a lost response, using only attemptId+attemptRecoveryToken', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken } = await createInvitation();
+  const input = deviceKeysInput();
+  const original = await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
+
+  // Simulate total loss of the original in-memory rawInvitationToken/response:
+  // recovery uses only attemptId + attemptRecoveryToken.
+  const recovered = await coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: input.attemptRecoveryToken });
+  assert.equal(recovered.deviceId, original.deviceId);
+  assert.equal(recovered.status, 'PAIRING_PENDING');
+});
+
+test('MySQL RECOVERY: unknown attempt id and wrong recovery token both raise the identical NOT_FOUND error -- no oracle', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken } = await createInvitation();
+  const input = deviceKeysInput();
+  await coordinator.enrollDevice({ rawInvitationToken: rawToken, ...input });
+
+  await assert.rejects(() => coordinator.recoverAttempt({ attemptId: attemptId(), attemptRecoveryToken: recoveryToken() }), { code: 'NOT_FOUND' });
+  await assert.rejects(
+    () => coordinator.recoverAttempt({ attemptId: input.attemptId, attemptRecoveryToken: recoveryToken() }),
+    { code: 'NOT_FOUND' },
+  );
+});
+
+test('MySQL RECOVERY: cross-family -- a recovery secret from one family\'s attempt never recovers a different family\'s attempt', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken: tokenA } = await createInvitation();
+  const { rawToken: tokenB } = await createInvitation();
+  const inputA = deviceKeysInput();
+  const inputB = deviceKeysInput();
+  await coordinator.enrollDevice({ rawInvitationToken: tokenA, ...inputA });
+  await coordinator.enrollDevice({ rawInvitationToken: tokenB, ...inputB });
+
+  await assert.rejects(
+    () => coordinator.recoverAttempt({ attemptId: inputB.attemptId, attemptRecoveryToken: inputA.attemptRecoveryToken }),
+    { code: 'NOT_FOUND' },
+  );
+});
+
+test('MySQL BACKWARD COMPATIBILITY: a REDEEMED invitation with no attempt row (pre-migration record) fails safely to ALREADY_REDEEMED', async () => {
+  const coordinator = buildCoordinator();
+  const { rawToken, record } = await createInvitation();
+  // Simulate a Runtime-1-era redemption: invitation marked REDEEMED directly,
+  // with no corresponding enrollment_bootstrap_attempts row (that table did
+  // not exist before this migration).
+  await getPool().query(`UPDATE enrollment_invitations SET status = 'REDEEMED', redeemed_at = NOW(3) WHERE invitation_id = ?`, [record.invitationId]);
+  await assert.rejects(
+    () => coordinator.enrollDevice({ rawInvitationToken: rawToken, ...deviceKeysInput() }),
+    { code: 'ALREADY_REDEEMED' },
+  );
 });
 
 test.after(async () => {

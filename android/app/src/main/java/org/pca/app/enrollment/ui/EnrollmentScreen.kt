@@ -31,6 +31,7 @@ fun EnrollmentScreen(
     state: EnrollmentState,
     onLinkSubmitted: (String) -> Unit,
     onContinue: () -> Unit,
+    onCheckStatus: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -93,9 +94,24 @@ fun EnrollmentScreen(
             }
 
             is EnrollmentState.BootstrapResultUnknown -> {
-                // BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: no retry button here -- the copy itself
-                // tells the user to check with their parent first, never a silent auto-retry.
+                // PCA-ENROLLMENT-RUNTIME-2: BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP is now closed
+                // -- "Check status" is an explicit, human-directed action (never automatic) that
+                // safely re-sends/recovers the SAME attempt; it can never create a second device.
                 Text(stringResource(R.string.enrollment_result_unknown))
+                Button(onClick = onCheckStatus) {
+                    Text(stringResource(R.string.enrollment_check_status_button))
+                }
+            }
+
+            is EnrollmentState.RecoveryPending -> {
+                // Restored after a process/app restart or device reboot with an unresolved
+                // ambiguous attempt on record -- honest, no claim of success or failure; recovery
+                // is explicit/bounded, never an automatic retry loop (mission Section 20).
+                Text(stringResource(R.string.enrollment_recovery_pending_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.enrollment_recovery_pending_body))
+                Button(onClick = onCheckStatus) {
+                    Text(stringResource(R.string.enrollment_check_status_button))
+                }
             }
         }
     }

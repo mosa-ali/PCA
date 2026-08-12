@@ -28,6 +28,14 @@ data class DeviceBootstrapResult(val deviceId: String, val status: String)
  * possession of the one-time invitation bearer token, never by any local
  * app state. Never sends familyId, role, or any authority claim; the
  * server derives those entirely from the redeemed invitation record.
+ *
+ * PCA-ENROLLMENT-RUNTIME-2: [bootstrap] also carries [bootstrapAttemptId] (a client-generated,
+ * high-entropy, non-secret retry correlator) and [attemptRecoveryToken] (a client-generated
+ * high-entropy secret, distinct from the invitation token, that authorizes [recoverAttempt]
+ * later). Neither is authority to redeem an invitation -- see EnrollmentCoordinator.ts's own doc
+ * comment server-side. [recoverAttempt] never needs [rawInvitationToken] at all: it exists
+ * specifically for the case where this process no longer holds it in memory (restart after an
+ * ambiguous response).
  */
 interface DeviceBootstrapApiClient {
     suspend fun bootstrap(
@@ -35,5 +43,12 @@ interface DeviceBootstrapApiClient {
         platform: String,
         signingPublicKeyBase64: String,
         encryptionPublicKeyBase64: String,
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
+    ): DeviceBootstrapResult
+
+    suspend fun recoverAttempt(
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
     ): DeviceBootstrapResult
 }

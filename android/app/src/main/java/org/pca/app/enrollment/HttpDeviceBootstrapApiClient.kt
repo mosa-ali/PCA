@@ -43,12 +43,12 @@ data class BootstrapEndpointConfig(
 /**
  * External outcomes of a bootstrap attempt, mirroring bootstrapRoutes.ts's own deliberately
  * narrow error vocabulary exactly -- this client must never attempt to further distinguish
- * [InvitationUnavailable]'s NOT_FOUND/EXPIRED/REVOKED/ALREADY_REDEEMED causes (the backend
- * collapses them on purpose, an anti-enumeration measure; re-splitting them client-side would
- * defeat it).
+ * [InvitationUnavailable]'s NOT_FOUND/EXPIRED/REVOKED/ALREADY_REDEEMED/ATTEMPT_CONFLICT causes
+ * (the backend collapses them on purpose, an anti-enumeration measure; re-splitting them
+ * client-side would defeat it).
  */
 sealed class BootstrapError(message: String) : Exception(message) {
-    /** Server responded 404 -- token invalid, expired, revoked, or already redeemed. Indistinguishable by design. */
+    /** Server responded 404 -- token invalid, expired, revoked, already redeemed, or a conflicting attempt id. Indistinguishable by design. */
     object InvitationUnavailable : BootstrapError("invitation_unavailable")
 
     /** Server responded 400 -- malformed request shape on this client's own side (a caller bug, not a user-recoverable state). */
@@ -58,12 +58,14 @@ sealed class BootstrapError(message: String) : Exception(message) {
      * BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP: no HTTP response was received at all (timeout,
      * connection reset, I/O failure), OR a 201 was received but its body could not be parsed into
      * a valid deviceId/status. In either case the true server-side outcome is unknown -- the
-     * device+keys may already have been created and the invitation already marked REDEEMED. The
-     * backend (confirmed via EnrollmentRepository.ts / MySqlEnrollmentCoordinatorRepository.ts /
-     * bootstrapRoutes.ts) has no idempotency key and no way to recover a deviceId from a retry: a
-     * retry with the same token after a true success returns a bare 404 invitation_unavailable,
-     * indistinguishable from "this token was never valid." Callers MUST NOT automatically retry
-     * the same token on this error and MUST NOT treat it as success or as ordinary failure.
+     * device+keys may already have been created and the invitation already marked REDEEMED.
+     *
+     * PCA-ENROLLMENT-RUNTIME-2: this is no longer a dead end. The same-process caller
+     * ([EnrollmentCoordinator.retryBootstrap]) can safely resend the SAME (attemptId, token,
+     * DSK, DEK) tuple -- the backend replays the original result idempotently rather than
+     * creating a second device (MySqlEnrollmentCoordinatorRepository). If the process has since
+     * restarted (rawInvitationToken no longer in memory), [recoverAttempt] recovers the same
+     * outcome using only the durably-persisted attemptId + attemptRecoveryToken.
      */
     object AmbiguousOutcome : BootstrapError("bootstrap_result_unknown")
 
@@ -72,21 +74,44 @@ sealed class BootstrapError(message: String) : Exception(message) {
 }
 
 /**
+ * External outcomes of a call to `POST /v1/enrollment/bootstrap/recover`. Deliberately mirrors
+ * [BootstrapError]'s shape -- see that class's own doc for why NotFound covers several distinct
+ * server-side causes collapsed into one generic response (no existence oracle).
+ */
+sealed class RecoveryError(message: String) : Exception(message) {
+    /**
+     * Server responded 404 -- either no attempt exists under this attemptId, or the
+     * attemptRecoveryToken presented does not match (byte-for-byte indistinguishable responses,
+     * per EnrollmentCoordinator.ts's own doc: "no existence oracle"). This is a DEFINITIVE
+     * answer -- the server actually processed the request and gave a real response -- unlike
+     * [AmbiguousOutcome] below.
+     */
+    object NotFound : RecoveryError("invitation_unavailable")
+
+    /** Server responded 400 -- malformed persisted attempt state on this client's own side (should not normally happen; a corrupted/legacy local record, not a network outcome). */
+    object InvalidRequest : RecoveryError("invalid_request")
+
+    /** No HTTP response was received at all (timeout, connection reset, I/O failure), or a 200 body could not be parsed. Transient -- callers must preserve pending-attempt state and may retry later (bounded, not a storm), never treat this as a definitive answer. */
+    object AmbiguousOutcome : RecoveryError("recovery_result_unknown")
+
+    /** Any other/unexpected status code (5xx, etc) -- a response was received, treated as an ordinary transient/retryable failure, same posture as [BootstrapError.UnexpectedServerError]. */
+    object UnexpectedServerError : RecoveryError("unexpected_server_error")
+}
+
+/**
  * Real HTTP implementation of [DeviceBootstrapApiClient], calling
- * `POST /v1/enrollment/bootstrap` exactly per bootstrapRoutes.ts's verified
- * contract. Uses `java.net.HttpURLConnection` (JDK/Android SDK, no new
- * Gradle dependency), matching the sole existing precedent in this codebase
+ * `POST /v1/enrollment/bootstrap` and `POST /v1/enrollment/bootstrap/recover` exactly per
+ * bootstrapRoutes.ts's verified contract. Uses `java.net.HttpURLConnection` (JDK/Android SDK, no
+ * new Gradle dependency), matching the sole existing precedent in this codebase
  * ([org.pca.app.runtime.sync.transport.HttpUrlConnectionRelayHttpClient]).
  *
- * Never logs [rawInvitationToken] or either public key -- they are read
- * once from the method parameters directly into the outgoing JSON body and
- * touched nowhere else (no `Log.*` call anywhere in this class; grep-
- * provable). Cancellation-safe: `withContext(Dispatchers.IO)` propagates
- * coroutine cancellation normally, and every catch clause here explicitly
- * re-throws [CancellationException] before falling through to broader
- * exception handling, unlike the pre-existing RelayHttpClient precedent
- * (which does not do this) -- deliberately hardened here per this lane's
- * mission brief.
+ * Never logs [rawInvitationToken], either public key, or attemptRecoveryToken -- they are read
+ * once from the method parameters directly into the outgoing JSON body and touched nowhere else
+ * (no `Log.*` call anywhere in this class; grep-provable). Cancellation-safe:
+ * `withContext(Dispatchers.IO)` propagates coroutine cancellation normally, and every catch
+ * clause here explicitly re-throws [CancellationException] before falling through to broader
+ * exception handling, unlike the pre-existing RelayHttpClient precedent (which does not do this)
+ * -- deliberately hardened here per this lane's mission brief.
  */
 class HttpDeviceBootstrapApiClient(
     private val config: BootstrapEndpointConfig,
@@ -99,15 +124,24 @@ class HttpDeviceBootstrapApiClient(
         platform: String,
         signingPublicKeyBase64: String,
         encryptionPublicKeyBase64: String,
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
     ): DeviceBootstrapResult = withContext(Dispatchers.IO) {
-        val connection = openConnection()
+        val connection = openConnection(BOOTSTRAP_PATH) { BootstrapError.AmbiguousOutcome }
         try {
             configureRequest(connection)
-            writeRequestBody(connection, rawInvitationToken, platform, signingPublicKeyBase64, encryptionPublicKeyBase64)
+            val body = JSONObject()
+                .put("rawInvitationToken", rawInvitationToken)
+                .put("platform", platform)
+                .put("signingPublicKey", signingPublicKeyBase64)
+                .put("encryptionPublicKey", encryptionPublicKeyBase64)
+                .put("bootstrapAttemptId", bootstrapAttemptId)
+                .put("attemptRecoveryToken", attemptRecoveryToken)
+            writeRequestBody(connection, body) { BootstrapError.AmbiguousOutcome }
 
-            val status = readStatusCode(connection)
+            val status = readStatusCode(connection) { BootstrapError.AmbiguousOutcome }
             when (status) {
-                201 -> parseSuccessBody(readBoundedBody(connection.inputStream))
+                201 -> parseSuccessBody(readBoundedBody(connection.inputStream) { BootstrapError.AmbiguousOutcome }) { BootstrapError.AmbiguousOutcome }
                 404 -> { drainQuietly(connection.errorStream); throw BootstrapError.InvitationUnavailable }
                 400 -> { drainQuietly(connection.errorStream); throw BootstrapError.InvalidRequest }
                 else -> { drainQuietly(connection.errorStream); throw BootstrapError.UnexpectedServerError }
@@ -117,12 +151,40 @@ class HttpDeviceBootstrapApiClient(
         }
     }
 
-    private fun openConnection(): HttpURLConnection = try {
-        URL("${config.baseUrl}$BOOTSTRAP_PATH").openConnection() as HttpURLConnection
+    /**
+     * Response-loss recovery: never sends [rawInvitationToken] (the caller may not even hold it
+     * in memory anymore) -- authority here is solely possession of [attemptRecoveryToken].
+     */
+    override suspend fun recoverAttempt(
+        bootstrapAttemptId: String,
+        attemptRecoveryToken: String,
+    ): DeviceBootstrapResult = withContext(Dispatchers.IO) {
+        val connection = openConnection(RECOVER_PATH) { RecoveryError.AmbiguousOutcome }
+        try {
+            configureRequest(connection)
+            val body = JSONObject()
+                .put("bootstrapAttemptId", bootstrapAttemptId)
+                .put("attemptRecoveryToken", attemptRecoveryToken)
+            writeRequestBody(connection, body) { RecoveryError.AmbiguousOutcome }
+
+            val status = readStatusCode(connection) { RecoveryError.AmbiguousOutcome }
+            when (status) {
+                200 -> parseSuccessBody(readBoundedBody(connection.inputStream) { RecoveryError.AmbiguousOutcome }) { RecoveryError.AmbiguousOutcome }
+                404 -> { drainQuietly(connection.errorStream); throw RecoveryError.NotFound }
+                400 -> { drainQuietly(connection.errorStream); throw RecoveryError.InvalidRequest }
+                else -> { drainQuietly(connection.errorStream); throw RecoveryError.UnexpectedServerError }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun openConnection(path: String, onAmbiguous: () -> Exception): HttpURLConnection = try {
+        URL("${config.baseUrl}$path").openConnection() as HttpURLConnection
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        throw BootstrapError.AmbiguousOutcome
+        throw onAmbiguous()
     }
 
     private fun configureRequest(connection: HttpURLConnection) {
@@ -134,51 +196,41 @@ class HttpDeviceBootstrapApiClient(
         connection.doOutput = true
     }
 
-    /** The invitation token and both public keys pass through this JSONObject only -- never assigned to a field, never logged. */
-    private fun writeRequestBody(
-        connection: HttpURLConnection,
-        rawInvitationToken: String,
-        platform: String,
-        signingPublicKeyBase64: String,
-        encryptionPublicKeyBase64: String,
-    ) {
-        val body = JSONObject()
-            .put("rawInvitationToken", rawInvitationToken)
-            .put("platform", platform)
-            .put("signingPublicKey", signingPublicKeyBase64)
-            .put("encryptionPublicKey", encryptionPublicKeyBase64)
+    /** [body]'s sensitive fields (token/keys/recovery secret) pass through this JSONObject only -- never assigned to a field, never logged. */
+    private fun writeRequestBody(connection: HttpURLConnection, body: JSONObject, onAmbiguous: () -> Exception) {
         try {
             OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             // The request may or may not have reached/been processed by the server -- see
-            // BootstrapError.AmbiguousOutcome's own doc (BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP).
-            throw BootstrapError.AmbiguousOutcome
+            // BootstrapError.AmbiguousOutcome / RecoveryError.AmbiguousOutcome's own docs
+            // (BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP).
+            throw onAmbiguous()
         }
     }
 
-    private fun readStatusCode(connection: HttpURLConnection): Int = try {
+    private fun readStatusCode(connection: HttpURLConnection, onAmbiguous: () -> Exception): Int = try {
         connection.responseCode
     } catch (e: CancellationException) {
         throw e
     } catch (e: IOException) {
         // No response arrived at all (timeout / connection reset) -- the true server-side
-        // outcome is unknown. See BootstrapError.AmbiguousOutcome.
-        throw BootstrapError.AmbiguousOutcome
+        // outcome is unknown.
+        throw onAmbiguous()
     }
 
-    private fun parseSuccessBody(bodyText: String): DeviceBootstrapResult {
+    private fun parseSuccessBody(bodyText: String, onAmbiguous: () -> Exception): DeviceBootstrapResult {
         val json = try {
             JSONObject(bodyText)
         } catch (e: JSONException) {
-            // Server said 201 (created) but the body could not be parsed -- something WAS
-            // created server-side, but its deviceId cannot be recovered from this response.
-            throw BootstrapError.AmbiguousOutcome
+            // Server said success but the body could not be parsed -- something WAS
+            // created/found server-side, but its deviceId cannot be recovered from this response.
+            throw onAmbiguous()
         }
         val deviceId = json.optString("deviceId", "")
         val status = json.optString("status", "")
-        if (deviceId.isBlank() || status.isBlank()) throw BootstrapError.AmbiguousOutcome
+        if (deviceId.isBlank() || status.isBlank()) throw onAmbiguous()
         return DeviceBootstrapResult(deviceId = deviceId, status = status)
     }
 
@@ -191,7 +243,7 @@ class HttpDeviceBootstrapApiClient(
      * a simple non-keep-alive test server); filling the bound exactly is already conservative
      * enough to distrust the body without further reads.
      */
-    private fun readBoundedBody(stream: InputStream?): String {
+    private fun readBoundedBody(stream: InputStream?, onAmbiguous: () -> Exception): String {
         if (stream == null) return ""
         val buffer = ByteArray(MAX_RESPONSE_BYTES)
         var total = 0
@@ -206,9 +258,9 @@ class HttpDeviceBootstrapApiClient(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            throw BootstrapError.AmbiguousOutcome
+            throw onAmbiguous()
         }
-        if (total >= MAX_RESPONSE_BYTES) throw BootstrapError.AmbiguousOutcome
+        if (total >= MAX_RESPONSE_BYTES) throw onAmbiguous()
         return String(buffer, 0, total, Charsets.UTF_8)
     }
 
@@ -227,6 +279,7 @@ class HttpDeviceBootstrapApiClient(
 
     private companion object {
         const val BOOTSTRAP_PATH = "/v1/enrollment/bootstrap"
+        const val RECOVER_PATH = "/v1/enrollment/bootstrap/recover"
         const val MAX_RESPONSE_BYTES = 8 * 1024
         const val DEFAULT_TIMEOUT_MILLIS = 15_000
     }

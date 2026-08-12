@@ -1,5 +1,5 @@
-import { execute, isDuplicateEntry, runInTransaction, SoftFailure } from '../db/pool.js';
-import type { EnrollDeviceOutcome, EnrollmentRepository } from './EnrollmentRepository.js';
+import { execute, getPool, isDuplicateEntry, runInTransaction, SoftFailure } from '../db/pool.js';
+import type { AttemptRecoveryRow, EnrollDeviceOutcome, EnrollmentRepository } from './EnrollmentRepository.js';
 import type { Platform } from './types.js';
 
 interface InvitationRow {
@@ -10,19 +10,56 @@ interface InvitationRow {
   expires_at: Date;
 }
 
-type EnrollmentSoftCode = 'NOT_FOUND' | 'EXPIRED' | 'REVOKED' | 'ALREADY_REDEEMED' | 'PLATFORM_MISMATCH' | 'DUPLICATE_KEY';
+interface AttemptRow {
+  attempt_id: string;
+  token_hash: string;
+  signing_public_key: string;
+  encryption_public_key: string;
+  device_id: string;
+  signing_key_id: string;
+  encryption_key_id: string;
+  invitation_id: string;
+  family_id: string;
+}
+
+interface AttemptRecoveryDbRow {
+  device_id: string;
+  recovery_token_hash: string;
+}
+
+type EnrollmentSoftCode =
+  | 'NOT_FOUND'
+  | 'EXPIRED'
+  | 'REVOKED'
+  | 'ALREADY_REDEEMED'
+  | 'PLATFORM_MISMATCH'
+  | 'DUPLICATE_KEY'
+  | 'ATTEMPT_CONFLICT';
 
 export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepository {
   /**
-   * ONE transaction spans both the invitation and device tables. The
-   * invitation row is locked with SELECT ... FOR UPDATE (the row already
-   * exists by construction -- invitations are always created ahead of
-   * enrollment). Concurrent enrollment attempts against the same invitation
-   * serialize on this InnoDB row lock: the first to acquire it redeems the
-   * invitation and creates the device, PAIRING_PENDING; every other
-   * concurrent caller blocks, then (once unblocked) observes the
-   * now-REDEEMED row and cleanly reports ALREADY_REDEEMED without creating
-   * any device/key row.
+   * ONE transaction spans the invitation, device, and bootstrap-attempt
+   * tables. The invitation row is locked with SELECT ... FOR UPDATE (the
+   * row already exists by construction -- invitations are always created
+   * ahead of enrollment). Concurrent enrollment attempts against the same
+   * invitation serialize on this InnoDB row lock: the first to acquire it
+   * redeems the invitation, creates the device, and records the
+   * (attemptId -> device) mapping; every other concurrent caller blocks,
+   * then (once unblocked) observes the now-REDEEMED row.
+   *
+   * PCA-ENROLLMENT-RUNTIME-2 idempotency/recovery: once REDEEMED is
+   * observed, this method no longer assumes the caller is a stranger --
+   * it looks up enrollment_bootstrap_attempts by attemptId. If a completed
+   * attempt exists there with the SAME token/DSK/DEK, this is a retry of
+   * the very same logical attempt: the original result is replayed
+   * verbatim and NO new device is created. If attemptId collides with a
+   * completed attempt bound to different token/DSK/DEK, that is a
+   * conflicting reuse of the attempt id (ATTEMPT_CONFLICT, collapsed to the
+   * same generic response as every other non-authorized outcome at the
+   * HTTP layer -- never distinguishable, never an oracle). Only if no
+   * attempt row exists at all is this genuinely ALREADY_REDEEMED (someone
+   * else's redemption, or a different attemptId presented against an
+   * already-redeemed invitation, per spec Section 6).
    *
    * The device is inserted PAIRING_PENDING, never ACTIVE or PAIRED --
    * claiming an invitation and submitting DSK/DEK material is not, by
@@ -37,6 +74,8 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
     signingKeyId: string,
     encryptionKeyId: string,
     now: Date,
+    attemptId: string,
+    attemptRecoveryTokenHash: string,
   ): Promise<EnrollDeviceOutcome> {
     try {
       return await runInTransaction(async (conn) => {
@@ -51,7 +90,35 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
         const invitation = invitationResult.rows[0];
         if (!invitation) throw new SoftFailure<EnrollmentSoftCode>('NOT_FOUND');
         if (invitation.status === 'REVOKED') throw new SoftFailure<EnrollmentSoftCode>('REVOKED');
-        if (invitation.status === 'REDEEMED') throw new SoftFailure<EnrollmentSoftCode>('ALREADY_REDEEMED');
+
+        if (invitation.status === 'REDEEMED') {
+          const attemptResult = await execute<AttemptRow>(
+            conn,
+            `SELECT attempt_id, token_hash, signing_public_key, encryption_public_key,
+                    device_id, signing_key_id, encryption_key_id, invitation_id, family_id
+             FROM enrollment_bootstrap_attempts
+             WHERE attempt_id = ?`,
+            [attemptId],
+          );
+          const attempt = attemptResult.rows[0];
+          if (attempt) {
+            const isExactReplay =
+              attempt.token_hash === tokenHash &&
+              attempt.signing_public_key === signingPublicKey &&
+              attempt.encryption_public_key === encryptionPublicKey;
+            if (!isExactReplay) throw new SoftFailure<EnrollmentSoftCode>('ATTEMPT_CONFLICT');
+            return {
+              outcome: 'PAIRING_REQUEST_CREATED',
+              deviceId: attempt.device_id,
+              signingKeyId: attempt.signing_key_id,
+              encryptionKeyId: attempt.encryption_key_id,
+              familyId: attempt.family_id,
+              invitationId: attempt.invitation_id,
+            } as const;
+          }
+          throw new SoftFailure<EnrollmentSoftCode>('ALREADY_REDEEMED');
+        }
+
         if (now.getTime() >= invitation.expires_at.getTime()) throw new SoftFailure<EnrollmentSoftCode>('EXPIRED');
         if (invitation.platform !== platform) throw new SoftFailure<EnrollmentSoftCode>('PLATFORM_MISMATCH');
 
@@ -80,6 +147,40 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
           [now, invitation.invitation_id],
         );
 
+        try {
+          await execute(
+            conn,
+            `INSERT INTO enrollment_bootstrap_attempts
+               (attempt_id, token_hash, recovery_token_hash, platform, signing_public_key, encryption_public_key,
+                device_id, signing_key_id, encryption_key_id, invitation_id, family_id, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETED', ?)`,
+            [
+              attemptId,
+              tokenHash,
+              attemptRecoveryTokenHash,
+              platform,
+              signingPublicKey,
+              encryptionPublicKey,
+              deviceId,
+              signingKeyId,
+              encryptionKeyId,
+              invitation.invitation_id,
+              invitation.family_id,
+              now,
+            ],
+          );
+        } catch (error) {
+          // A concurrent competing request won the race for this exact
+          // attempt_id (different token/DSK/DEK) between our earlier
+          // "REDEEMED?" check and this insert, or the recovery-token hash
+          // collided (astronomically unlikely for a 256-bit secret). Either
+          // way this whole transaction rolls back -- including the
+          // invitation redemption and device/key inserts above -- so no
+          // orphan device or wasted invitation survives.
+          if (isDuplicateEntry(error)) throw new SoftFailure<EnrollmentSoftCode>('ATTEMPT_CONFLICT');
+          throw error;
+        }
+
         return {
           outcome: 'PAIRING_REQUEST_CREATED',
           deviceId,
@@ -93,5 +194,24 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
       if (error instanceof SoftFailure) return { outcome: error.outcome } as EnrollDeviceOutcome;
       throw error;
     }
+  }
+
+  /**
+   * Read-only lookup by the non-secret attemptId. No transaction/locking is
+   * needed: enrollment_bootstrap_attempts rows are write-once (inserted
+   * exactly once, in enrollDevice's transaction above, and never updated).
+   * The security boundary is enforced by the CALLER (EnrollmentCoordinator)
+   * comparing the caller-supplied attemptRecoveryToken against
+   * recoveryTokenHash -- this method alone must never be treated as an
+   * authorization check.
+   */
+  async findAttemptForRecovery(attemptId: string): Promise<AttemptRecoveryRow | null> {
+    const [rows] = await getPool().query(
+      `SELECT device_id, recovery_token_hash FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`,
+      [attemptId],
+    );
+    const row = (rows as AttemptRecoveryDbRow[])[0];
+    if (!row) return null;
+    return { deviceId: row.device_id, recoveryTokenHash: row.recovery_token_hash };
   }
 }

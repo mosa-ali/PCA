@@ -74,7 +74,9 @@ import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
 import org.pca.app.runtime.usage.UsageSessionRecorder
 import org.pca.app.storage.FamilyStateStore
+import org.pca.app.storage.PendingEnrollmentAttemptStore
 import org.pca.app.storage.PersistentFamilyStateStore
+import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
@@ -164,11 +166,17 @@ class PcaAppGraph private constructor(
         HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pca.app"))
     val enrollmentLinkParser: EnrollmentLinkParser =
         UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
+    /** PCA-ENROLLMENT-RUNTIME-2: durable pending-attempt state, backed by the same encrypted
+     * [runtimeStateStore] as [familyStateStore] above -- survives process death/app restart/
+     * device reboot so an ambiguous bootstrap response can be recovered instead of silently lost.
+     * See [PersistentPendingEnrollmentAttemptStore]'s own doc comment. */
+    val pendingEnrollmentAttemptStore: PendingEnrollmentAttemptStore = PersistentPendingEnrollmentAttemptStore(runtimeStateStore)
     val enrollmentCoordinator = EnrollmentCoordinator(
         linkParser = enrollmentLinkParser,
         apiClient = deviceBootstrapApiClient,
         keyPairGenerator = deviceKeyPairGenerator,
         familyStateStore = familyStateStore,
+        pendingAttemptStore = pendingEnrollmentAttemptStore,
     )
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports
