@@ -97,7 +97,12 @@ class ScreenTimeRestorerTest {
     }
 
     @Test
-    fun `restore without a bootId on either side falls back conservatively to process-restart handling`() {
+    fun `restore without a bootId on either side fails safe to the reboot-conservative path, never process-restart`() {
+        // PCA-RUNTIME-2R1: same-boot continuity must be POSITIVELY confirmed. An unavailable
+        // bootId on either side is NOT evidence of a same-boot restart -- it must take the same
+        // conservative path as a confirmed reboot (accumulated progress preserved exactly, only
+        // the monotonic reference re-anchored), never fabricate/discard time across an unverified
+        // boot boundary by running it through the engine as if the process merely restarted.
         val stateAtCrash = ScreenTimeEngine.reduce(
             ScreenTimeState.initial(0L),
             ScreenTimeEvent.Tick(20.minutes.inWholeNanoseconds),
@@ -107,8 +112,10 @@ class ScreenTimeRestorerTest {
 
         val restored = ScreenTimeRestorer.restore(snapshot, nowNanos = 70.minutes.inWholeNanoseconds, currentBootId = null, config = config)
 
-        assertEquals(ScreenTimeMode.BREAK_SHIELD, restored.mode)
-        assertEquals(10.minutes.inWholeNanoseconds, restored.breakElapsedNanos)
+        assertEquals(ScreenTimeMode.ACTIVE, restored.mode)
+        assertEquals(20.minutes.inWholeNanoseconds, restored.activeElapsedNanos)
+        assertEquals(0L, restored.breakElapsedNanos)
+        assertEquals(70.minutes.inWholeNanoseconds, restored.lastTickMonotonicNanos)
     }
 
     @Test

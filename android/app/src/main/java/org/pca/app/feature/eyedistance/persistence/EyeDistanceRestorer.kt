@@ -54,9 +54,11 @@ object EyeDistanceRestorer {
     }
 
     /**
-     * Picks the correct path automatically. A reboot is detected only when both the snapshot and
-     * the current environment can supply a [EyeDistanceSnapshot.bootId] and they differ; if
-     * either is unavailable, an ordinary process restart is assumed (the common case).
+     * Picks the correct path automatically. Same-boot continuity (the process-restart path) is
+     * only taken when both the snapshot and the current environment can supply a
+     * [EyeDistanceSnapshot.bootId] and they are equal -- PCA-RUNTIME-2R1: if either is
+     * unavailable, that is NOT evidence of a same-boot restart, so the conservative
+     * reboot-re-anchor path is used instead.
      */
     fun restore(
         snapshot: EyeDistanceSnapshot,
@@ -64,11 +66,11 @@ object EyeDistanceRestorer {
         currentBootId: String?,
         config: EyeDistanceConfig = EyeDistanceConfig(),
     ): EyeDistanceState {
-        val rebooted = snapshot.bootId != null && currentBootId != null && snapshot.bootId != currentBootId
-        return if (rebooted) {
-            restoreAfterReboot(snapshot, nowNanos)
-        } else {
+        val sameBootConfirmed = snapshot.bootId != null && currentBootId != null && snapshot.bootId == currentBootId
+        return if (sameBootConfirmed) {
             restoreAfterProcessRestart(snapshot, nowNanos, config)
+        } else {
+            restoreAfterReboot(snapshot, nowNanos)
         }
     }
 

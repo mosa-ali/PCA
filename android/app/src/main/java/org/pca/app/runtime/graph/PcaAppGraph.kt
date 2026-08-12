@@ -2,7 +2,6 @@ package org.pca.app.runtime.graph
 
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -43,9 +42,15 @@ import org.pca.app.platform.proximity.HardwareProximitySource
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
 import org.pca.app.runtime.PcaRuntime
+import org.pca.app.runtime.boot.AndroidBootInstanceSource
+import org.pca.app.runtime.boot.BootInstanceSource
+import org.pca.app.runtime.boot.asNullableId
 import org.pca.app.runtime.child.ChildRequestOfflineQueue
 import org.pca.app.runtime.connectivity.AndroidNetworkConnectivityObserver
 import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
+import org.pca.app.runtime.identity.DeviceIdentityProvider
+import org.pca.app.runtime.identity.DeviceIdentityState
+import org.pca.app.runtime.identity.PersistentDeviceIdentityProvider
 import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.pca.app.runtime.port.NotReadyScheduleRuntimePort
 import org.pca.app.runtime.port.OfflineFamilySyncRuntimePort
@@ -59,6 +64,8 @@ import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
 import org.pca.app.runtime.usage.UsageSessionRecorder
+import org.pca.app.storage.FamilyStateStore
+import org.pca.app.storage.PersistentFamilyStateStore
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
@@ -92,9 +99,14 @@ class PcaAppGraph private constructor(
     val monotonicTimeSource = SystemMonotonicTimeSource()
     val wallClockTimeSource = SystemWallClockTimeSource()
 
-    val bootId: String? = runCatching {
-        Settings.Secure.getString(context.contentResolver, "android_id")
-    }.getOrNull()
+    /** PCA-RUNTIME-2R1: the sole reboot-vs-process-restart discriminator, deliberately distinct
+     * from [deviceIdentityProvider] below -- see [BootInstanceSource]'s own doc comment for why
+     * conflating the two (as this graph previously did via `ANDROID_ID`) is wrong. [bootId] is
+     * the nullable-`String` shape every existing restorer (`ScreenTimeRestorer`,
+     * `EyeDistanceRestorer`, `UsageObservationRestorer`) already accepts as `currentBootId`. */
+    val bootInstanceSource: BootInstanceSource = AndroidBootInstanceSource(context)
+    val currentBootInstance = bootInstanceSource.currentBootInstance()
+    val bootId: String? = currentBootInstance.asNullableId()
 
     val persistence: PcaLocalPersistence = PcaLocalPersistence.getInstance(context)
 
@@ -116,12 +128,24 @@ class PcaAppGraph private constructor(
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(StandardDevicePolicyCapabilitySource(context))
 
-    /** PCA-RUNTIME-2 Coordinator glue: this device's own stable local identifier, reusing the
-     * same `android_id` this graph already resolves as [bootId] -- not a new identity concept.
-     * Falls back to a random per-process id only in the (test-only/rooted-device) case where the
-     * platform genuinely returns none, so [usageSessionRecorder]/[locationSampleRecorder] always
-     * have a stable key to record against. */
-    private val localDeviceId: String = bootId ?: UUID.randomUUID().toString()
+    /** PCA-RUNTIME-2R1: this device's PCA-enrolled identity authority -- separate from
+     * [bootInstanceSource] and never derived from `ANDROID_ID`. Backed by the same durable,
+     * encrypted [runtimeStateStore] every other runtime snapshot in this graph uses.
+     *
+     * KNOWN_ARCHITECTURE_GAP: no production code path in this repository yet performs enrollment
+     * (calls the backend and writes its result here) -- see [PersistentDeviceIdentityProvider]'s
+     * own doc comment. Until that exists, [deviceIdentityProvider] honestly reports
+     * [DeviceIdentityState.NotEnrolled] in production, and [usageSessionRecorder]/
+     * [startUsageLocationPolling] correctly record nothing rather than fabricate an id. */
+    val familyStateStore: FamilyStateStore = PersistentFamilyStateStore(runtimeStateStore)
+    val deviceIdentityProvider: DeviceIdentityProvider = PersistentDeviceIdentityProvider(familyStateStore)
+
+    /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports
+     * [DeviceIdentityState.NotEnrolled] -- read fresh by [UsageSessionRecorder.poll] and
+     * [startUsageLocationPolling] on every tick, never cached, so enrollment completing after
+     * this graph was constructed is picked up without an app restart. */
+    private fun enrolledDeviceIdOrNull(): String? =
+        (deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId
 
     /** PCA-ANDROID-USAGE-LOCATION-1 (Agent 18) real production bindings: local-only, offline-safe
      * app-usage and location capture, feeding the same encrypted Room repositories every other
@@ -130,7 +154,9 @@ class PcaAppGraph private constructor(
      * mirroring [PcaRuntime]'s own tick-loop discipline. Sync-payload wiring into the real E2EE
      * outbox remains a separate follow-up gated on Agent 16's production crypto (see
      * [familySyncRuntimePort]'s own doc comment) -- these recorders only ever write to local,
-     * on-device, encrypted-at-rest storage today. */
+     * on-device, encrypted-at-rest storage today. Usage and location deliberately share the exact
+     * same [enrolledDeviceIdOrNull] resolver (mission Section 17: "usage deviceId = location
+     * deviceId = PCA enrolled device identity"), never a boot-instance or random per-process id. */
     val usageObservationSnapshotStore = PersistentUsageObservationSnapshotStore(runtimeStateStore)
     val usageSessionRecorder = UsageSessionRecorder(
         usageObservationSource = usageObservationSource,
@@ -138,7 +164,7 @@ class PcaAppGraph private constructor(
         monotonicTimeSource = monotonicTimeSource,
         wallClockTimeSource = wallClockTimeSource,
         snapshotStore = usageObservationSnapshotStore,
-        deviceId = localDeviceId,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
         currentBootId = bootId,
     )
     val locationSampleRecorder = LocationSampleRecorder(
@@ -285,7 +311,10 @@ class PcaAppGraph private constructor(
         coroutineScope.launch {
             while (true) {
                 runCatching { usageSessionRecorder.poll() }
-                runCatching { locationSampleRecorder.captureSample(localDeviceId, RetentionPolicy.FOURTEEN_DAYS) }
+                val deviceId = enrolledDeviceIdOrNull()
+                if (deviceId != null) {
+                    runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
+                }
                 delay(USAGE_LOCATION_POLL_INTERVAL_MILLIS)
             }
         }

@@ -8,6 +8,7 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pca.app.runtime.identity.DeviceIdentityState
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import org.robolectric.RobolectricTestRunner
@@ -55,6 +56,13 @@ class PcaAppGraphTest {
         // Conservative placeholders (Section 8/9) until Agent 10/16 bind real implementations.
         assertEquals(ScheduleRuntimeStatus.NOT_READY, graph.scheduleRuntimePort.currentStatus())
         assertEquals(FamilySyncConnectionState.OFFLINE, graph.familySyncRuntimePort.currentConnectionState())
+        // PCA-RUNTIME-2R1: boot-instance detection and PCA device identity are real, composed,
+        // and distinct authorities -- never the same value, never ANDROID_ID.
+        assertNotNull(graph.bootInstanceSource)
+        assertNotNull(graph.deviceIdentityProvider)
+        // A freshly-composed graph over an empty store has no enrollment yet -- this must be
+        // reported honestly as NotEnrolled, never a fabricated id.
+        assertEquals(DeviceIdentityState.NotEnrolled, graph.deviceIdentityProvider.currentIdentity())
     }
 
     @Test

@@ -108,7 +108,11 @@ class PersistentUsageObservationSnapshotStore(
 object UsageObservationRestorer {
     fun restore(snapshot: UsageObservationSnapshot?, currentBootId: String?): UsageSessionEngineState {
         if (snapshot == null) return UsageSessionEngineState.INITIAL
-        val rebooted = snapshot.bootId != null && currentBootId != null && snapshot.bootId != currentBootId
-        return if (rebooted) UsageSessionEngineState.INITIAL else snapshot.engineState
+        // PCA-RUNTIME-2R1: same-boot continuity must be POSITIVELY confirmed (both ids known and
+        // equal) before trusting the persisted elapsed-realtime cursor -- if either side is
+        // unknown, that is NOT evidence of a same-boot restart, and comparing a possibly-stale
+        // cursor against an unverified boot boundary is exactly the bug this fixes.
+        val sameBootConfirmed = snapshot.bootId != null && currentBootId != null && snapshot.bootId == currentBootId
+        return if (sameBootConfirmed) snapshot.engineState else UsageSessionEngineState.INITIAL
     }
 }

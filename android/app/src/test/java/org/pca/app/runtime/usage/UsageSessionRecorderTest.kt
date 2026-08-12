@@ -44,8 +44,11 @@ class UsageSessionRecorderTest {
         db.close()
     }
 
-    private fun newRecorder(bootId: String? = "boot-1", store: UsageObservationSnapshotStore = InMemoryUsageObservationSnapshotStore()) =
-        UsageSessionRecorder(source, repository, monotonic, wallClock, store, "device-1", bootId)
+    private fun newRecorder(
+        bootId: String? = "boot-1",
+        store: UsageObservationSnapshotStore = InMemoryUsageObservationSnapshotStore(),
+        deviceIdProvider: () -> String? = { "device-1" },
+    ) = UsageSessionRecorder(source, repository, monotonic, wallClock, store, deviceIdProvider, bootId)
 
     // -- permission missing --------------------------------------------------------------------
 
@@ -60,6 +63,43 @@ class UsageSessionRecorderTest {
         assertEquals(UsageAccessState.DENIED, result.accessState)
         assertEquals(0, result.recordedSessionCount)
         assertTrue(repository.getForDevice("device-1").isEmpty())
+    }
+
+    // -- pre-enrollment: no PCA device id yet ----------------------------------------------------
+
+    @Test
+    fun `device not enrolled -- poll reports deviceEnrolled=false and fabricates no record under any id`() = runTest {
+        source.accessState = UsageAccessState.GRANTED
+        source.events = listOf(
+            UsageEvent("com.example.preenroll", UsageEventType.FOREGROUND, 0L),
+            UsageEvent("com.example.preenroll", UsageEventType.BACKGROUND, 1_000L),
+        )
+        val recorder = newRecorder(deviceIdProvider = { null })
+
+        val result = recorder.poll()
+
+        assertEquals(0, result.recordedSessionCount)
+        assertFalse(result.deviceEnrolled)
+        assertTrue(repository.getForDevice("device-1").isEmpty())
+    }
+
+    @Test
+    fun `enrollment completing after construction is picked up on the next poll without recreating the recorder`() = runTest {
+        source.accessState = UsageAccessState.GRANTED
+        var enrolledId: String? = null
+        val recorder = newRecorder(deviceIdProvider = { enrolledId })
+
+        source.events = listOf(UsageEvent("com.example.late", UsageEventType.FOREGROUND, 0L))
+        val beforeEnrollment = recorder.poll()
+        assertFalse(beforeEnrollment.deviceEnrolled)
+
+        enrolledId = "device-late"
+        source.events = listOf(UsageEvent("com.example.late", UsageEventType.BACKGROUND, 1_000L))
+        val afterEnrollment = recorder.poll()
+
+        assertEquals(1, afterEnrollment.recordedSessionCount)
+        assertTrue(afterEnrollment.deviceEnrolled)
+        assertEquals("device-late", repository.getForDevice("device-late").single().deviceId)
     }
 
     // -- realistic synthetic observation flow end to end ----------------------------------------

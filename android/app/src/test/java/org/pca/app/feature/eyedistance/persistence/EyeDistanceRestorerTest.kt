@@ -110,7 +110,11 @@ class EyeDistanceRestorerTest {
     }
 
     @Test
-    fun `restore falls back to process-restart path when bootId is unavailable`() {
+    fun `restore fails safe to the reboot-conservative path when bootId is unavailable on either side, never process-restart`() {
+        // PCA-RUNTIME-2R1: an unavailable bootId is NOT evidence of same-boot continuity -- it
+        // must take the same conservative path as a confirmed reboot (progress preserved
+        // exactly, only the monotonic reference re-anchored), never run the real-gap-accounting
+        // process-restart path across an unverified boot boundary.
         val snapshot = EyeDistanceSnapshot(
             state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE, restElapsedNanos = 10.seconds.inWholeNanoseconds, lastTickMonotonicNanos = 100L),
             snapshotWallClockMillis = 0L,
@@ -118,6 +122,7 @@ class EyeDistanceRestorerTest {
         )
         val nowNanos = 100L + 5.seconds.inWholeNanoseconds
         val restored = EyeDistanceRestorer.restore(snapshot, nowNanos, currentBootId = null, config = config)
-        assertEquals(15.seconds.inWholeNanoseconds, restored.restElapsedNanos)
+        assertEquals(10.seconds.inWholeNanoseconds, restored.restElapsedNanos)
+        assertEquals(nowNanos, restored.lastTickMonotonicNanos)
     }
 }

@@ -18,6 +18,11 @@ import org.pca.app.platform.UsageObservationSource
 data class UsagePollResult(
     val accessState: UsageAccessState,
     val recordedSessionCount: Int,
+    /** PCA-RUNTIME-2R1: false when this poll recorded nothing because the device has no PCA
+     * enrolled identity yet (see [org.pca.app.runtime.identity.DeviceIdentityProvider]) -- a
+     * separate, orthogonal reason from [accessState] (platform permission), so a caller can tell
+     * "no permission" apart from "not enrolled" rather than conflating them. */
+    val deviceEnrolled: Boolean = true,
 )
 
 /**
@@ -51,7 +56,13 @@ class UsageSessionRecorder(
     private val monotonicTimeSource: MonotonicTimeSource,
     private val wallClockTimeSource: WallClockTimeSource,
     private val snapshotStore: UsageObservationSnapshotStore,
-    private val deviceId: String,
+    /** PCA-RUNTIME-2R1: resolved fresh on every [poll] rather than fixed at construction, since
+     * this recorder is a long-lived singleton and enrollment can complete after it -- returns
+     * null when the device has no PCA enrolled identity yet (see
+     * [org.pca.app.runtime.identity.DeviceIdentityProvider]). Never a random/platform-derived
+     * substitute id: when null, [poll] records nothing rather than misattribute local records to
+     * an identity nothing on the family side recognizes. */
+    private val deviceIdProvider: () -> String?,
     currentBootId: String?,
 ) {
     @Volatile
@@ -79,13 +90,24 @@ class UsageSessionRecorder(
         val rawEvents = usageObservationSource.queryEventsSince(state.lastProcessedElapsedMillis)
         val timestamped = rawEvents.map { it.toTimestamped(nowElapsed, nowEpoch) }
 
+        // Session-boundary tracking (the engine/cursor/snapshot below) runs unconditionally, even
+        // pre-enrollment -- PCA-RUNTIME-2R1: only the actual persistence step is gated on having a
+        // real PCA device id, so an in-progress session is never lost or mis-tracked merely
+        // because enrollment hasn't completed yet. A session that DOES complete while unenrolled
+        // is deliberately not persisted under any id (fabricating one would misattribute it; the
+        // observation is honestly dropped rather than attached to nothing the family recognizes).
         val result = UsageSessionEngine.apply(state, timestamped)
         state = result.state
         snapshotStore.save(UsageObservationSnapshot(state, bootId))
 
+        val deviceId = deviceIdProvider()
+        if (deviceId == null) {
+            return UsagePollResult(accessState = accessState, recordedSessionCount = 0, deviceEnrolled = false)
+        }
+
         for (session in result.completedSessions) {
             usageSessionRepository.record(
-                id = sessionId(session),
+                id = sessionId(deviceId, session),
                 deviceId = deviceId,
                 appOrCategoryToken = session.appToken,
                 startedAtEpochMillis = session.startedAtEpochMillis,
@@ -113,7 +135,7 @@ class UsageSessionRecorder(
      * (e.g. a restart-time re-poll that reprocesses an event already applied to the persisted
      * engine state, or a duplicate call) always yields the same id -- upserted, never duplicated.
      */
-    private fun sessionId(session: CompletedUsageSession): String =
+    private fun sessionId(deviceId: String, session: CompletedUsageSession): String =
         UUID.nameUUIDFromBytes("$deviceId|${session.appToken}|${session.startedAtEpochMillis}".toByteArray(Charsets.UTF_8)).toString()
 
     private fun opaqueToken(packageName: String): String {
