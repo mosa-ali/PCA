@@ -25,6 +25,7 @@ import org.pca.app.feature.screentime.persistence.ScreenTimeRestorer
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
+import org.pca.app.feature.wellbeing.model.NudgeTrigger
 import org.pca.app.feature.wellbeing.ports.NotificationCapabilitySource
 import org.pca.app.foundation.MonotonicTimeSource
 import org.pca.app.foundation.WallClockTimeSource
@@ -40,7 +41,9 @@ import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
+import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.status.PcaRuntimeStatus
+import org.pca.app.runtime.wellbeing.WellbeingRuntimeCoordinator
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -74,6 +77,8 @@ class PcaRuntime(
     private val notificationCapabilitySource: NotificationCapabilitySource,
     private val proximitySource: ProximitySource,
     private val wellbeingDispatcherProvider: () -> WellbeingTriggerDispatcher,
+    private val wellbeingCoordinator: WellbeingRuntimeCoordinator,
+    private val screenStateObserver: ScreenStateObserver,
     private val childRequestQueue: ChildRequestOfflineQueue,
     private val externalScope: CoroutineScope,
     private val screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
@@ -83,6 +88,7 @@ class PcaRuntime(
     private val startedOnce = AtomicBoolean(false)
     private var tickJob: Job? = null
     private var connectivityJob: Job? = null
+    private var screenStateJob: Job? = null
 
     private val nowNanos: Long get() = monotonicTimeSource.elapsedRealtimeNanos()
 
@@ -128,13 +134,31 @@ class PcaRuntime(
                 attemptChildRequestFlush()
             }
         }
+
+        // Section 2/3 (correction round): the real device screen-use signal now actually drives
+        // pause/resume, closing the "Pause/Resume exist but have no production caller" defect.
+        // Each transition also feeds a bounded, real wellbeing trigger (Section 10/11) -- never a
+        // spamming timer, only genuine screen-state transitions.
+        screenStateJob = externalScope.launch {
+            screenStateObserver.observe().collect { active ->
+                if (active) {
+                    resumeScreenTime()
+                    wellbeingCoordinator.onTrigger(NudgeTrigger.AFTER_SCREEN_UNLOCK)
+                } else {
+                    pauseScreenTime()
+                    wellbeingCoordinator.onTrigger(NudgeTrigger.SCREEN_LOCKED_BEST_EFFORT)
+                }
+            }
+        }
     }
 
     fun stop() {
         tickJob?.cancel()
         connectivityJob?.cancel()
+        screenStateJob?.cancel()
         tickJob = null
         connectivityJob = null
+        screenStateJob = null
         startedOnce.set(false)
     }
 
@@ -162,12 +186,27 @@ class PcaRuntime(
     }
 
     private fun applyScreenTimeEvent(event: ScreenTimeEvent) {
-        val next = ScreenTimeEngine.reduce(screenTimeStateFlow.value, event, screenTimeConfig)
+        val previous = screenTimeStateFlow.value
+        val next = ScreenTimeEngine.reduce(previous, event, screenTimeConfig)
         screenTimeStateFlow.value = next
         screenTimeSnapshotStore.save(
             ScreenTimeSnapshot(state = next, snapshotWallClockMillis = wallClockTimeSource.currentTimeMillis(), bootId = currentBootId),
         )
         statusFlow.update { buildStatus() }
+        notifyWellbeingOfScreenTimeTransition(previous.mode, next.mode)
+    }
+
+    /** Section 10/11 (correction round): the second of this runtime's two real, bounded wellbeing
+     * trigger sources (the first is the screen-state transition in [start]). Fires only on an
+     * actual mode change, never once per [tick] -- a 60-minute-long ACTIVE session produces
+     * exactly one BREAK_STARTED, not one per tick. */
+    private fun notifyWellbeingOfScreenTimeTransition(previousMode: ScreenTimeMode, nextMode: ScreenTimeMode) {
+        if (previousMode == nextMode) return
+        when {
+            nextMode == ScreenTimeMode.BREAK_SHIELD -> wellbeingCoordinator.onTrigger(NudgeTrigger.BREAK_STARTED)
+            previousMode == ScreenTimeMode.BREAK_SHIELD && nextMode == ScreenTimeMode.ACTIVE ->
+                wellbeingCoordinator.onTrigger(NudgeTrigger.BREAK_COMPLETED)
+        }
     }
 
     private fun applyEyeDistanceEvent(event: EyeDistanceEvent) {
@@ -222,6 +261,14 @@ class PcaRuntime(
      * production [WellbeingTriggerDispatcher] built by [wellbeingDispatcherProvider]. Kept as a
      * thin pass-through rather than duplicating WELL-1's own dispatch logic. */
     fun currentWellbeingDispatcher(): WellbeingTriggerDispatcher = wellbeingDispatcherProvider()
+
+    /** The child's own explicit "give me an idea" pull -- CHILD_REQUESTED_IDEA (doc 35), one of
+     * the legitimate WELL-1-supported trigger sources (Section 10). A UI entry point calls this
+     * directly rather than the dispatcher, so the anti-spam persist-before-next-call contract
+     * stays entirely inside [WellbeingRuntimeCoordinator]. */
+    fun requestWellbeingIdea() {
+        wellbeingCoordinator.onTrigger(NudgeTrigger.CHILD_REQUESTED_IDEA)
+    }
 
     fun buildStatus(): PcaRuntimeStatus {
         val screenTime = screenTimeStateFlow.value

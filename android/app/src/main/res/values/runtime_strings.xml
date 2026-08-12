@@ -64,5 +64,8 @@
     <string name="child_home_pending_requests">Pending requests to parent</string>
 
     <string name="child_home_emergency_access">Emergency access</string>
+    <string name="child_home_emergency_access_active">Emergency access is on</string>
+    <string name="child_home_emergency_access_exit">Tap to end emergency access</string>
     <string name="child_home_parent_contact">Contact parent</string>
+    <string name="child_home_parent_contact_pending">%1$s request(s) pending until this device syncs</string>
 </resources>

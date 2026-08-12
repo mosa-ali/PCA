@@ -48,6 +48,10 @@ class PcaAppGraphTest {
         assertNotNull(graph.usageObservationSource)
         assertNotNull(graph.locationCapabilitySource)
         assertNotNull(graph.connectivityObserver)
+        // Correction round Section 2/3/10/11: the real screen-state observer and wellbeing
+        // production trigger coordinator are now part of the composed graph.
+        assertNotNull(graph.screenStateObserver)
+        assertNotNull(graph.wellbeingCoordinator)
         // Conservative placeholders (Section 8/9) until Agent 10/16 bind real implementations.
         assertEquals(ScheduleRuntimeStatus.NOT_READY, graph.scheduleRuntimePort.currentStatus())
         assertEquals(FamilySyncConnectionState.OFFLINE, graph.familySyncRuntimePort.currentConnectionState())

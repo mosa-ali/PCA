@@ -11,7 +11,12 @@ import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshot
 import org.pca.app.feature.prayer.model.PrayerName
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
+import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
+import org.pca.app.feature.wellbeing.delivery.WellbeingMessageResolver
+import org.pca.app.feature.wellbeing.delivery.WellbeingNotificationDelivery
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
+import org.pca.app.feature.wellbeing.persistence.WellbeingPolicyStore
+import org.pca.app.feature.wellbeing.persistence.WellbeingRateStateStore
 import org.pca.app.feature.wellbeing.ports.StandardNotificationCapabilitySource
 import org.pca.app.feature.wellbeing.ports.StandardScreenLockStateSource
 import org.pca.app.feature.wellbeing.ports.StandardWallClockCalendarSource
@@ -36,9 +41,12 @@ import org.pca.app.runtime.port.NotReadyScheduleRuntimePort
 import org.pca.app.runtime.port.OfflineFamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
+import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
+import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
+import org.pca.app.runtime.wellbeing.WellbeingRuntimeCoordinator
 import java.util.UUID
 
 /**
@@ -90,12 +98,37 @@ class PcaAppGraph private constructor(
     private val screenLockStateSource = StandardScreenLockStateSource(context)
     private val wallClockCalendarSource = StandardWallClockCalendarSource()
 
+    /** Correction round Section 2/3: the real device screen-use signal that drives
+     * [PcaRuntime.pauseScreenTime]/[PcaRuntime.resumeScreenTime]. */
+    val screenStateObserver: ScreenStateObserver = AndroidScreenStateObserver(context, screenLockStateSource)
+
     /** Family-policy predicate for which packages count as wellbeing-eligible. Empty by default
      * (no nudging until a real catalogue/policy source is wired) rather than fabricating a
      * default eligible-app list this lane has no policy authority to invent. */
     private val eligibleAppPackages: () -> Set<String> = { emptySet() }
 
     val eligibleAppSignalSource = RuntimeEligibleAppSignalSource(usageObservationSource, monotonicTimeSource, eligibleAppPackages)
+
+    // Correction round Section 10/11: the real production caller of
+    // WellbeingTriggerDispatcher.dispatch -- reuses the same encrypted runtimeStateStore as
+    // screen-time/eye-distance snapshots (PCA-WELL-011/019's own durable-storage requirement),
+    // and the existing accepted WellbeingNotificationDelivery/WellbeingContentCatalogue rather
+    // than reimplementing delivery or content selection here.
+    private val wellbeingPolicyStore = WellbeingPolicyStore(runtimeStateStore)
+    private val wellbeingRateStateStore = WellbeingRateStateStore(runtimeStateStore)
+    private val wellbeingMessageResolver = WellbeingMessageResolver(context)
+    private val wellbeingNotificationDelivery = WellbeingNotificationDelivery(context, wellbeingMessageResolver)
+
+    val wellbeingCoordinator = WellbeingRuntimeCoordinator(
+        dispatcherProvider = { buildWellbeingDispatcher() },
+        policyStore = wellbeingPolicyStore,
+        rateStateStore = wellbeingRateStateStore,
+        monotonicTimeSource = monotonicTimeSource,
+        catalogueEntries = WellbeingContentCatalogue.entries,
+        deliver = { delivery, suggestions, nowMonotonicNanos ->
+            wellbeingNotificationDelivery.deliver(delivery, suggestions, nowMonotonicNanos)
+        },
+    )
 
     val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob())
 
@@ -114,6 +147,8 @@ class PcaAppGraph private constructor(
         notificationCapabilitySource = notificationCapabilitySource,
         proximitySource = proximitySource,
         wellbeingDispatcherProvider = { buildWellbeingDispatcher() },
+        wellbeingCoordinator = wellbeingCoordinator,
+        screenStateObserver = screenStateObserver,
         childRequestQueue = childRequestQueue,
         externalScope = coroutineScope,
     )

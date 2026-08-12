@@ -61,8 +61,8 @@ fun ChildHomeScreen(
 
             items(rows) { row -> StatusRow(row) }
 
-            item { EmergencyAccessCard(onClick = onEmergencyAccess) }
-            item { ParentContactCard(onClick = onRequestParentContact) }
+            item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
+            item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
         }
     }
 }
@@ -129,30 +129,56 @@ private fun StatusRow(row: StatusRowContent) {
     HorizontalDivider()
 }
 
+/**
+ * Correction round Section 6/7: wired to the real runtime emergency exception, and toggles
+ * label/description to give a clear, always-visible exit path while active -- never an
+ * indefinite hidden bypass; the child (or a parent looking at the device) can always see and
+ * reverse the state from this same control.
+ */
 @Composable
-private fun EmergencyAccessCard(onClick: () -> Unit) {
+private fun EmergencyAccessCard(isActive: Boolean, onClick: () -> Unit) {
+    val activeLabel = stringResource(R.string.child_home_emergency_access_active)
+    val exitLabel = stringResource(R.string.child_home_emergency_access_exit)
+    val startLabel = stringResource(R.string.child_home_emergency_access)
+    val description = if (isActive) "$activeLabel — $exitLabel" else startLabel
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .semantics { role = Role.Button },
+            .semantics {
+                role = Role.Button
+                contentDescription = description
+            },
     ) {
-        Row(modifier = Modifier.padding(16.dp)) {
-            Text(text = stringResource(R.string.child_home_emergency_access), style = MaterialTheme.typography.titleMedium)
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = if (isActive) exitLabel else startLabel, style = MaterialTheme.typography.titleMedium)
+            if (isActive) {
+                Text(text = activeLabel, style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }
 
+/** Correction round Section 9: honestly shows PENDING_SYNC_LOCAL-equivalent local state -- the
+ * button's own subtitle reflects [pendingCount] rather than silently pretending a request already
+ * reached a parent. */
 @Composable
-private fun ParentContactCard(onClick: () -> Unit) {
+private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .semantics { role = Role.Button },
     ) {
-        Row(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(text = stringResource(R.string.child_home_parent_contact), style = MaterialTheme.typography.titleMedium)
+            if (pendingCount > 0) {
+                Text(
+                    text = stringResource(R.string.child_home_parent_contact_pending, pendingCount.toString()),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }

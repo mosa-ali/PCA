@@ -34,6 +34,7 @@ import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
+import org.pca.app.runtime.screenstate.ScreenStateObserver
 
 class FakeMonotonicTimeSource(var nowNanos: Long = 0L) : MonotonicTimeSource {
     override fun elapsedRealtimeMillis(): Long = nowNanos / 1_000_000L
@@ -156,4 +157,24 @@ class FakeBreakStateSource(var active: Boolean = false) : BreakStateSource {
 
 class FakeWallClockCalendarSource(var minute: Int = 0) : WallClockCalendarSource {
     override fun minuteOfDay(): Int = minute
+}
+
+/** Test double for [ScreenStateObserver] -- lets a test drive real screen lock/unlock
+ * transitions deterministically without a real `BroadcastReceiver`. [observeCallCount] proves
+ * [org.pca.app.runtime.PcaRuntime.start]'s idempotency guard actually prevents a second collector
+ * from ever being registered (Section 13/M). */
+class FakeScreenStateObserver(initiallyActive: Boolean = true) : ScreenStateObserver {
+    private val flow = MutableStateFlow(initiallyActive)
+    var observeCallCount: Int = 0
+        private set
+
+    override fun observe(): Flow<Boolean> {
+        observeCallCount++
+        return flow
+    }
+
+    override fun isCurrentlyActive(): Boolean = flow.value
+    fun setActive(active: Boolean) {
+        flow.value = active
+    }
 }
