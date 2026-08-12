@@ -1,0 +1,679 @@
+{
+  "contractVersion": "1.0.0",
+  "description": "Shared TS/Kotlin conformance vectors for the PCA-RUNTIME-SCHEDULE-1 evaluator (SchedulePolicyV1 / ScheduleEvaluationInput -> ScheduleDecision). Ground truth for decision precedence and boundary semantics is backend/src/schedule/engine.ts, policy.ts and timezone.ts (read-only reference for this contract), cross-checked against the pre-existing backend/test/schedule/engine.test.mjs assertions where a vector reuses that scenario (noted per-vector). Do not hand-edit expected fields without re-deriving them from the documented precedence in engine.ts's evaluateSchedule doc comment.",
+  "notes": [
+    "Weekday indices are 0=Sunday .. 6=Saturday, matching Date.prototype.getDay() in UTC (see backend/src/schedule/timezone.ts WeekdayIndex).",
+    "All *AtUtc / nowUtc / lastPolicySyncAtUtc fields are ISO-8601 instants; null means absent (e.g. lastPolicySyncAtUtc: null represents a device that has never completed a policy sync).",
+    "expected.reason is intentionally NOT part of this contract: reason strings are documentation-quality free text and may differ verbatim between the TS reference and the Kotlin conforming implementation without being a semantic mismatch. Only decision, matchedWindowId, matchedWindowIds, intendedDecision, remainingMinutesToday and hasConfigErrors are compared.",
+    "expected.matchedWindowIds, when present, is always pre-sorted lexicographically by window id -- conforming implementations must not rely on array/insertion order."
+  ],
+  "vectors": [
+    {
+      "id": "bedtime-blocks-before-midnight",
+      "description": "Cross-midnight bedtime window blocks before local midnight.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: cross-midnight bedtime blocks both before and after midnight, but not midday",
+      "input": {
+        "nowUtc": "2026-01-07T20:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [3], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "bedtime-blocks-after-midnight",
+      "description": "Same cross-midnight bedtime window still blocks after local midnight, anchored to the Wednesday start day.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: cross-midnight bedtime blocks both before and after midnight, but not midday",
+      "input": {
+        "nowUtc": "2026-01-07T23:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [3], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "bedtime-allows-midday",
+      "description": "Cross-midnight bedtime window does not block at local midday.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: cross-midnight bedtime blocks both before and after midnight, but not midday",
+      "input": {
+        "nowUtc": "2026-01-07T09:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [3], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "weekday-boundary-blocks-day-after-start",
+      "description": "A Friday-only cross-midnight bedtime still blocks in the early hours of Saturday (the calendar day after the matching start day).",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: weekday rollover only blocks the calendar day after a matching start day",
+      "input": {
+        "nowUtc": "2026-01-09T22:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [5], "start": { "hour": 23, "minute": 0 }, "end": { "hour": 7, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "weekday-boundary-does-not-block-unconfigured-following-day",
+      "description": "The same window does NOT block the early hours of Sunday, since Saturday is not a configured start day.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: weekday rollover only blocks the calendar day after a matching start day",
+      "input": {
+        "nowUtc": "2026-01-10T22:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [5], "start": { "hour": 23, "minute": 0 }, "end": { "hour": 7, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "overlapping-block-periods-both-block",
+      "description": "Two overlapping BLOCK_PERIOD windows for the same app both apply without ambiguity or crash.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: overlapping block-period windows both block without ambiguity or crash",
+      "input": {
+        "nowUtc": "2026-01-07T08:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 8, "minute": 0 }, "end": { "hour": 12, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" },
+          { "id": "w2", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 10, "minute": 0 }, "end": { "hour": 14, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_PERIOD" }
+    },
+    {
+      "id": "school-mode-blocks-app-outside-single-window-scope",
+      "description": "A single active SCHOOL_MODE window blocks any app not in its allow scope, even with no BLOCK_PERIOD configured.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: precedence: school mode blocks an app not on its allow scope even without any block period",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "game-app",
+        "windows": [
+          { "id": "school", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_SCHOOL_MODE", "matchedWindowId": "school", "matchedWindowIds": ["school"] }
+    },
+    {
+      "id": "school-mode-allows-app-in-single-window-scope",
+      "description": "A single active SCHOOL_MODE window allows an app that IS in its allow scope.",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "homework-app",
+        "windows": [
+          { "id": "school", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "school-mode-intersection-blocks-order-independent",
+      "description": "Two overlapping SCHOOL_MODE windows with different allow scopes combine by intersection; an app allowed by only one is still blocked, and the matched-window attribution is order-independent.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 two overlapping school windows with different allow scopes -- app allowed by only one is blocked (intersection)",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "homework-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["calculator-app"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_SCHOOL_MODE", "matchedWindowId": "school-b", "matchedWindowIds": ["school-b"] }
+    },
+    {
+      "id": "school-mode-intersection-allows-app-in-every-window",
+      "description": "An app included in the allow scope of EVERY simultaneously-active SCHOOL_MODE window is allowed.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 app allowed by every simultaneously-active school window is allowed (intersection includes it)",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "calculator-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["homework-app", "calculator-app"] }, "timezone": "Asia/Riyadh" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["calculator-app"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "school-mode-intersection-both-exclude-attributes-both",
+      "description": "When an app is excluded by both simultaneously-active SCHOOL_MODE windows, both contribute to matchedWindowIds (neither is dropped as \"not authoritative\"), sorted lexicographically.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 \"same priority\" -- neither window is treated as authoritative; both contribute to the block reason",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "game-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["calculator-app"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_SCHOOL_MODE", "matchedWindowId": "school-a", "matchedWindowIds": ["school-a", "school-b"] }
+    },
+    {
+      "id": "school-mode-cross-midnight-overlap-blocks",
+      "description": "Two cross-midnight SCHOOL_MODE windows overlapping after local midnight still combine by intersection.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 cross-midnight overlap between two school windows still combines by intersection",
+      "input": {
+        "nowUtc": "2026-01-07T23:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "game-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [3], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [3], "start": { "hour": 23, "minute": 0 }, "end": { "hour": 5, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_SCHOOL_MODE", "matchedWindowId": "school-a", "matchedWindowIds": ["school-a"] }
+    },
+    {
+      "id": "school-mode-cross-midnight-overlap-allows-included-app",
+      "description": "Same cross-midnight overlap, but the homework app (in window A's scope, and window B is ALL) is allowed.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 cross-midnight overlap between two school windows still combines by intersection",
+      "input": {
+        "nowUtc": "2026-01-07T23:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "homework-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [3], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": { "apps": ["homework-app"] }, "timezone": "Asia/Riyadh" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [3], "start": { "hour": 23, "minute": 0 }, "end": { "hour": 5, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "school-mode-dst-affected-overlap-blocks",
+      "description": "Two SCHOOL_MODE windows authored in America/New_York, evaluated after a DST spring-forward, still combine by intersection.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: FINDING-006 DST-affected overlap between two school windows still combines by intersection",
+      "input": {
+        "nowUtc": "2026-03-15T13:30:00.000Z",
+        "timezone": "America/New_York",
+        "appToken": "game-app",
+        "windows": [
+          { "id": "school-a", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 8, "minute": 0 }, "end": { "hour": 10, "minute": 0 }, "appScope": { "apps": ["homework-app"] }, "timezone": "America/New_York" },
+          { "id": "school-b", "kind": "SCHOOL_MODE", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 8, "minute": 0 }, "end": { "hour": 10, "minute": 0 }, "appScope": "ALL", "timezone": "America/New_York" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_SCHOOL_MODE", "matchedWindowId": "school-a", "matchedWindowIds": ["school-a"] }
+    },
+    {
+      "id": "allow-period-outside-blocks",
+      "description": "An app that has a configured ALLOW_PERIOD is blocked outside of it, even with no explicit BLOCK_PERIOD.",
+      "input": {
+        "nowUtc": "2026-01-07T05:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "allow-1", "kind": "ALLOW_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 16, "minute": 0 }, "end": { "hour": 18, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_OUTSIDE_ALLOW_PERIOD" }
+    },
+    {
+      "id": "allow-period-inside-allows",
+      "description": "The same app is allowed while inside its configured ALLOW_PERIOD.",
+      "input": {
+        "nowUtc": "2026-01-07T13:30:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "allow-1", "kind": "ALLOW_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 16, "minute": 0 }, "end": { "hour": 18, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "no-allow-period-configured-for-app-defaults-allowed",
+      "description": "An app with no ALLOW_PERIOD windows at all is unaffected by the allow-period restriction (only apps with at least one configured ALLOW_PERIOD are confined to it).",
+      "input": {
+        "nowUtc": "2026-01-07T05:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-b",
+        "windows": [
+          { "id": "allow-1", "kind": "ALLOW_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 16, "minute": 0 }, "end": { "hour": 18, "minute": 0 }, "appScope": { "apps": ["app-a"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "parent-exception-overrides-bedtime",
+      "description": "An active parent exception overrides an otherwise-active bedtime window.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: precedence: parent exception overrides an active bedtime window",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [],
+        "exceptions": [
+          { "id": "exc-1", "appScope": "ALL", "startAtUtc": "2026-01-07T11:00:00.000Z", "endAtUtc": "2026-01-07T13:00:00.000Z", "reason": "family event" }
+        ],
+        "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED_EXCEPTION" }
+    },
+    {
+      "id": "expired-exception-does-not-override-bedtime",
+      "description": "A parent exception whose window has already ended no longer overrides bedtime.",
+      "input": {
+        "nowUtc": "2026-01-07T14:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [],
+        "exceptions": [
+          { "id": "exc-1", "appScope": "ALL", "startAtUtc": "2026-01-07T11:00:00.000Z", "endAtUtc": "2026-01-07T13:00:00.000Z", "reason": "family event" }
+        ],
+        "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "not-yet-started-exception-does-not-override-bedtime",
+      "description": "A parent exception whose window has not started yet does not override a currently-active bedtime.",
+      "input": {
+        "nowUtc": "2026-01-07T09:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [],
+        "exceptions": [
+          { "id": "exc-1", "appScope": "ALL", "startAtUtc": "2026-01-07T11:00:00.000Z", "endAtUtc": "2026-01-07T13:00:00.000Z", "reason": "family event" }
+        ],
+        "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "bonus-grant-active-extends-limit",
+      "description": "An active bonus grant extends the effective daily limit, producing ALLOWED_BONUS while remaining minutes are positive.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: bonus grant extends the limit only while active, then reverts on expiry",
+      "input": {
+        "nowUtc": "2026-01-07T09:05:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [],
+        "bonusGrants": [
+          { "id": "bonus-1", "appScope": "ALL", "extraMinutes": 15, "grantedAtUtc": "2026-01-07T09:00:00.000Z", "expiresAtUtc": "2026-01-07T09:15:00.000Z" }
+        ],
+        "dailyLimit": { "appScope": "ALL", "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED_BONUS", "remainingMinutesToday": 15 }
+    },
+    {
+      "id": "bonus-grant-expired-reverts-to-limit-reached",
+      "description": "The same bonus grant no longer applies once expired, reverting the app to BLOCKED_LIMIT_REACHED.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: bonus grant extends the limit only while active, then reverts on expiry",
+      "input": {
+        "nowUtc": "2026-01-07T09:20:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [],
+        "bonusGrants": [
+          { "id": "bonus-1", "appScope": "ALL", "extraMinutes": 15, "grantedAtUtc": "2026-01-07T09:00:00.000Z", "expiresAtUtc": "2026-01-07T09:15:00.000Z" }
+        ],
+        "dailyLimit": { "appScope": "ALL", "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_LIMIT_REACHED", "remainingMinutesToday": 0 }
+    },
+    {
+      "id": "daily-limit-reached-blocks-same-timezone",
+      "description": "Used minutes at or above the plain daily limit, anchored to today's local date, blocks the app.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: timezone change alone can flip the daily-limit local-date reset",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [], "bonusGrants": [],
+        "dailyLimit": { "appScope": "ALL", "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_LIMIT_REACHED", "remainingMinutesToday": 0 }
+    },
+    {
+      "id": "daily-limit-reset-by-travelled-timezone",
+      "description": "The exact same instant, evaluated in a different current timezone (travel), no longer matches the limit's anchorLocalDate, so the used-minutes figure is treated as reset and the app is allowed.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: timezone change alone can flip the daily-limit local-date reset",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Pacific/Kiritimati",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [], "bonusGrants": [],
+        "dailyLimit": { "appScope": "ALL", "limitMinutes": 30, "usedMinutesToday": 30, "anchorLocalDate": "2026-01-07" },
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "travel-does-not-relax-window-anchored-to-family-timezone",
+      "description": "A bedtime window is always evaluated in ITS OWN authored timezone (Asia/Riyadh), never the evaluation input's current timezone (America/Los_Angeles) -- a travelling child cannot relax a family-authored bedtime just by the device reporting a different local timezone.",
+      "input": {
+        "nowUtc": "2026-01-07T20:00:00.000Z",
+        "timezone": "America/Los_Angeles",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 22, "minute": 0 }, "end": { "hour": 6, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "dst-spring-forward-before-shift-blocks",
+      "description": "Before the America/New_York spring-forward, local 02:30-03:30 is within a fixed 02:00-03:00 window's absolute UTC mapping (offset -05:00).",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: DST transition shifts which UTC instant maps to a fixed local bedtime hour",
+      "input": {
+        "nowUtc": "2026-03-01T07:30:00.000Z",
+        "timezone": "America/New_York",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 2, "minute": 0 }, "end": { "hour": 3, "minute": 0 }, "appScope": "ALL", "timezone": "America/New_York" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "dst-spring-forward-after-shift-no-longer-blocks-same-utc-instant",
+      "description": "The identical UTC wall-clock-of-day, evaluated after the spring-forward, now falls outside the window in local time because the UTC offset shifted -- proving the engine tracks local wall time via IANA zone data, not a fixed UTC offset.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: DST transition shifts which UTC instant maps to a fixed local bedtime hour",
+      "input": {
+        "nowUtc": "2026-03-15T07:30:00.000Z",
+        "timezone": "America/New_York",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 2, "minute": 0 }, "end": { "hour": 3, "minute": 0 }, "appScope": "ALL", "timezone": "America/New_York" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "dst-fall-back-before-transition-blocks",
+      "description": "Before the America/New_York fall-back (2026-11-01), local 01:30 EDT (UTC-04:00) is inside a fixed 01:00-02:00 window.",
+      "input": {
+        "nowUtc": "2026-10-01T05:30:00.000Z",
+        "timezone": "America/New_York",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 1, "minute": 0 }, "end": { "hour": 2, "minute": 0 }, "appScope": "ALL", "timezone": "America/New_York" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "dst-fall-back-after-transition-still-blocks-same-local-time",
+      "description": "After the fall-back, local 01:30 EST (UTC-05:00, a different absolute UTC offset) is still inside the same fixed 01:00-02:00 window -- the engine's local-wall-clock semantics are unaffected by the standard/daylight offset change.",
+      "input": {
+        "nowUtc": "2026-11-08T06:30:00.000Z",
+        "timezone": "America/New_York",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 1, "minute": 0 }, "end": { "hour": 2, "minute": 0 }, "appScope": "ALL", "timezone": "America/New_York" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "all-apps-scope-blocks-any-app-token",
+      "description": "A BLOCK_PERIOD with appScope ALL blocks an arbitrary app token.",
+      "input": {
+        "nowUtc": "2026-01-07T08:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "any-random-app",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_PERIOD", "matchedWindowId": "w1" }
+    },
+    {
+      "id": "specific-app-scope-does-not-block-other-app",
+      "description": "A BLOCK_PERIOD scoped to one specific app token does not affect a different app token.",
+      "input": {
+        "nowUtc": "2026-01-07T08:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-b",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["app-a"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "specific-app-scope-blocks-named-app",
+      "description": "The same BLOCK_PERIOD blocks the app token it names.",
+      "input": {
+        "nowUtc": "2026-01-07T08:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": { "apps": ["app-a"] }, "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_PERIOD", "matchedWindowId": "w1" }
+    },
+    {
+      "id": "capability-degraded-reports-enforcement-unavailable",
+      "description": "When the enforcement capability is not ENFORCED and the intended decision is restrictive, the engine reports ENFORCEMENT_UNAVAILABLE with the honest intended decision rather than a bare block.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: precedence: enforcement-unavailable reports the intended decision instead of a bare block",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "UNAVAILABLE", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ENFORCEMENT_UNAVAILABLE", "intendedDecision": "BLOCKED_BEDTIME" }
+    },
+    {
+      "id": "capability-degraded-blocks-restrictive-decision",
+      "description": "DEGRADED capability, like UNAVAILABLE, suppresses a restrictive intended decision in favor of an honest ENFORCEMENT_UNAVAILABLE verdict.",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "DEGRADED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ENFORCEMENT_UNAVAILABLE", "intendedDecision": "BLOCKED_BEDTIME" }
+    },
+    {
+      "id": "capability-unavailable-does-not-suppress-allowed",
+      "description": "A non-ENFORCED capability never suppresses an ALLOWED verdict -- only restrictive verdicts require confirmed enforcement.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: enforcement-unavailable does not suppress an ALLOWED verdict",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [], "bonusGrants": [], "dailyLimit": null,
+        "enforcementCapability": "UNAVAILABLE", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "offline-evaluation-matches-online-for-same-cached-policy",
+      "description": "OFFLINE connectivity produces the identical decision to ONLINE given the same cached policy inputs -- connectivity is never itself an input to the decision.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: offline evaluation is identical to online evaluation given the same cached policy",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "bedtime", "kind": "BEDTIME", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "OFFLINE", "lastPolicySyncAtUtc": "2026-01-06T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_BEDTIME", "matchedWindowId": "bedtime" }
+    },
+    {
+      "id": "offline-restart-with-no-policy-sync-yet-evaluates-deterministically",
+      "description": "A device offline since before its first policy sync (lastPolicySyncAtUtc null) still evaluates deterministically off whatever cached (here, empty) policy it holds -- it never blocks or allows purely because sync status is unknown.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: offline restart with no policy sync yet still evaluates deterministically off cached (empty) policy",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [], "exceptions": [], "bonusGrants": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "OFFLINE", "lastPolicySyncAtUtc": null
+      },
+      "expected": { "decision": "ALLOWED" }
+    },
+    {
+      "id": "invalid-config-out-of-range-hour-rejected",
+      "description": "A window with an out-of-range start hour is rejected as INVALID_CONFIG without crashing and without silently allowing.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: invalid window configuration is rejected without crashing and without silently allowing",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 99, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "INVALID_CONFIG", "hasConfigErrors": true }
+    },
+    {
+      "id": "invalid-config-empty-days-of-week-rejected",
+      "description": "A window with an empty daysOfWeek list is rejected as INVALID_CONFIG.",
+      "sourceScenario": "backend/test/schedule/engine.test.mjs: empty daysOfWeek is rejected as invalid configuration",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "INVALID_CONFIG", "hasConfigErrors": true }
+    },
+    {
+      "id": "invalid-config-unrecognized-timezone-rejected",
+      "description": "A window with an unrecognized IANA timezone string is rejected as INVALID_CONFIG rather than silently falling back to UTC or the input timezone.",
+      "input": {
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [0,1,2,3,4,5,6], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 23, "minute": 59 }, "appScope": "ALL", "timezone": "Not/ARealZone" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "INVALID_CONFIG", "hasConfigErrors": true }
+    },
+    {
+      "id": "exact-start-boundary-is-inclusive",
+      "description": "A window is active at the exact instant equal to its local start time (inclusive lower bound).",
+      "input": {
+        "nowUtc": "2026-01-08T05:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [4], "start": { "hour": 8, "minute": 0 }, "end": { "hour": 9, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "BLOCKED_PERIOD", "matchedWindowId": "w1" }
+    },
+    {
+      "id": "exact-end-boundary-is-exclusive",
+      "description": "The same window is NOT active at the exact instant equal to its local end time (exclusive upper bound).",
+      "input": {
+        "nowUtc": "2026-01-08T06:00:00.000Z",
+        "timezone": "Asia/Riyadh",
+        "appToken": "app-a",
+        "windows": [
+          { "id": "w1", "kind": "BLOCK_PERIOD", "daysOfWeek": [4], "start": { "hour": 8, "minute": 0 }, "end": { "hour": 9, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" }
+        ],
+        "bonusGrants": [], "exceptions": [], "dailyLimit": null,
+        "enforcementCapability": "ENFORCED", "connectivity": "ONLINE", "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "decision": "ALLOWED" }
+    }
+  ]
+}

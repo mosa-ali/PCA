@@ -1,0 +1,206 @@
+{
+  "contractVersion": "1.0.0",
+  "description": "Shared TS/Kotlin conformance vectors for the schedule-runtime policy-acceptance gate (SchedulePolicyValidator / ScheduleRuntimeState). This layer sits IN FRONT OF the evaluator: it decides which locally-persisted SchedulePolicyV1 record the evaluator should be fed for a given evaluation, distinguishing CURRENT / STALE_REMOTE / INVALID / EPOCH_STALE / NO_ACCEPTED_POLICY (mission section 11). Unlike schedule-conformance-v1.json this has no pre-existing backend/src/schedule reference implementation -- it is new logic invented for this mission, defined once here and mirrored by a same-semantics reference implementation in backend/test/runtime-schedule-conformance (test-only, NOT backend/src) and the production Kotlin implementation in android/.../runtime/schedule.",
+  "notes": [
+    "effectivePolicy is the policyId+policyRevision the evaluator should actually be fed for this tick; it is expressed here as one of null | \"candidate\" | \"lastKnownGood\" (never a full inline policy) to keep vectors compact -- conformance tests resolve those tags against the vector's own candidatePolicy / lastKnownGoodPolicy fields.",
+    "Fail-safe rule under test throughout: INVALID and EPOCH_STALE never resolve to an *unrestricted* outcome merely by returning null when a previously-accepted-valid policy is available as a fallback -- they only resolve to null when nothing has ever been validly accepted, which is behaviorally identical to NO_ACCEPTED_POLICY at the evaluator (empty windows => ALLOWED), never to a smaller/different restriction set.",
+    "STALE_REMOTE never changes effectivePolicy from the candidate -- it is a labeling-only state for honest parent-facing sync-freshness UI; enforcement is unaffected by connectivity per PCA-4 offline-first."
+  ],
+  "remoteStalenessThresholdMillis": 259200000,
+  "policyAcceptanceVectors": [
+    {
+      "id": "no-accepted-policy-ever",
+      "description": "No candidate policy has ever been locally accepted.",
+      "input": {
+        "candidatePolicy": null,
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": null
+      },
+      "expected": { "state": "NO_ACCEPTED_POLICY", "effectivePolicy": null }
+    },
+    {
+      "id": "current-online-fresh",
+      "description": "A structurally valid, unexpired, epoch-matching candidate policy while online is CURRENT.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 2, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "CURRENT", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "current-offline-within-staleness-threshold",
+      "description": "Offline, but the last successful sync is well inside the staleness threshold -- still CURRENT, not STALE_REMOTE.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "OFFLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T10:00:00.000Z"
+      },
+      "expected": { "state": "CURRENT", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "epoch-exact-match-is-current-not-stale",
+      "description": "A candidate policy whose epochs exactly equal the device's current known epochs is CURRENT -- \"behind\" requires strictly less than, not not-equal.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 5, "trustSetEpoch": 4, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 4,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:59:00.000Z"
+      },
+      "expected": { "state": "CURRENT", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "stale-remote-offline-beyond-threshold-still-enforces-candidate",
+      "description": "Offline with a last sync older than the staleness threshold is STALE_REMOTE for UI purposes, but the candidate policy is still the effective (fully enforced) one -- offline duration alone never relaxes control.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-10T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "OFFLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T00:00:00.000Z"
+      },
+      "expected": { "state": "STALE_REMOTE", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "stale-remote-offline-with-unknown-sync-timestamp-still-enforces-candidate",
+      "description": "Offline with no recorded lastPolicySyncAtUtc at all (freshness genuinely unknown) is also STALE_REMOTE, and still fully enforces the candidate.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "OFFLINE",
+        "lastPolicySyncAtUtc": null
+      },
+      "expected": { "state": "STALE_REMOTE", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "invalid-malformed-window-falls-back-to-last-known-good",
+      "description": "A candidate whose window configuration fails structural validation is INVALID, but the runtime fails safe onto the last previously-accepted-valid policy rather than going unrestricted.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [ { "id": "w1", "kind": "BEDTIME", "daysOfWeek": [], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 1, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" } ] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": "lastKnownGood" }
+    },
+    {
+      "id": "invalid-malformed-window-no-fallback-resolves-to-no-restrictions-not-a-crash",
+      "description": "The same malformed candidate with no fallback available at all resolves to a null effective policy (behaviorally identical to NO_ACCEPTED_POLICY at the evaluator), never a crash and never a fabricated restriction.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 1, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [ { "id": "w1", "kind": "BEDTIME", "daysOfWeek": [9], "start": { "hour": 0, "minute": 0 }, "end": { "hour": 1, "minute": 0 }, "appScope": "ALL", "timezone": "Asia/Riyadh" } ] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": null }
+    },
+    {
+      "id": "invalid-expired-policy-falls-back-to-last-known-good",
+      "description": "A structurally valid candidate whose own expiresAt has passed is INVALID (its stated validity period is over), and fails safe onto the last-known-good policy rather than defaulting to unrestricted merely because it expired.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": "2026-01-06T00:00:00.000Z", "windows": [] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "INVALID", "effectivePolicy": "lastKnownGood" }
+    },
+    {
+      "id": "current-not-yet-expired-is-still-current",
+      "description": "A candidate with an expiresAt strictly in the future is not expired -- still CURRENT.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": "2026-01-08T00:00:00.000Z", "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 1,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "CURRENT", "effectivePolicy": "candidate" }
+    },
+    {
+      "id": "epoch-stale-trust-set-epoch-behind-falls-back-to-last-known-good",
+      "description": "A structurally valid candidate authored under an older trustSetEpoch than the device currently knows (e.g. a device revoke happened since) is EPOCH_STALE, and fails safe onto the last-known-good policy.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 4, "trustSetEpoch": 1, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": { "policyId": "p1", "policyRevision": 3, "trustSetEpoch": 2, "keyEpoch": 2, "expiresAt": null, "windows": [] },
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 2,
+        "deviceKeyEpoch": 2,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "EPOCH_STALE", "effectivePolicy": "lastKnownGood" }
+    },
+    {
+      "id": "epoch-stale-key-epoch-behind-no-fallback-still-enforces-candidate",
+      "description": "A candidate behind on keyEpoch with NO last-known-good fallback available still fails safe onto ITSELF (its windows are structurally fine, just possibly trust-stale) rather than opening up to unrestricted.",
+      "input": {
+        "candidatePolicy": { "policyId": "p1", "policyRevision": 1, "trustSetEpoch": 1, "keyEpoch": 1, "expiresAt": null, "windows": [] },
+        "lastKnownGoodPolicy": null,
+        "nowUtc": "2026-01-07T12:00:00.000Z",
+        "deviceTrustSetEpoch": 1,
+        "deviceKeyEpoch": 3,
+        "connectivity": "ONLINE",
+        "lastPolicySyncAtUtc": "2026-01-07T11:55:00.000Z"
+      },
+      "expected": { "state": "EPOCH_STALE", "effectivePolicy": "candidate" }
+    }
+  ],
+  "revisionAcceptanceVectors": [
+    {
+      "id": "revision-accepted-when-no-previous-policy",
+      "description": "The very first accepted revision for a family/child is always acceptable.",
+      "input": { "candidateRevision": 1, "previouslyAcceptedRevision": null },
+      "expected": { "acceptable": true }
+    },
+    {
+      "id": "revision-accepted-when-strictly-greater",
+      "description": "A strictly greater revision than the previously accepted one is acceptable.",
+      "input": { "candidateRevision": 8, "previouslyAcceptedRevision": 7 },
+      "expected": { "acceptable": true }
+    },
+    {
+      "id": "revision-rejected-when-equal",
+      "description": "An equal revision (e.g. an idempotent redelivery) is not a new acceptable update at this local merge check.",
+      "input": { "candidateRevision": 7, "previouslyAcceptedRevision": 7 },
+      "expected": { "acceptable": false }
+    },
+    {
+      "id": "revision-rejected-when-stale",
+      "description": "A lower (stale/out-of-order) revision than the previously accepted one is rejected.",
+      "input": { "candidateRevision": 5, "previouslyAcceptedRevision": 7 },
+      "expected": { "acceptable": false }
+    }
+  ]
+}
