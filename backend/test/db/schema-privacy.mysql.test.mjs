@@ -21,7 +21,15 @@ const PROHIBITED_TERMS = [
 
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
-const ALLOWED_KEY_COLUMNS = new Set(['public_key', 'key_id', 'signing_key_id', 'key_purpose', 'sender_key_id']);
+// signing_key_id/encryption_key_id/signing_public_key/encryption_public_key
+// (enrollment_bootstrap_attempts, PCA-ENROLLMENT-RUNTIME-2) are
+// denormalized copies of the same device_public_keys.key_id/public_key
+// values already approved here -- opaque references to PUBLIC key rows,
+// never private key material.
+const ALLOWED_KEY_COLUMNS = new Set([
+  'public_key', 'key_id', 'signing_key_id', 'encryption_key_id', 'key_purpose', 'sender_key_id',
+  'signing_public_key', 'encryption_public_key',
+]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
   const [[tables], [columns]] = await Promise.all([

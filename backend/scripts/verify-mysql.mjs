@@ -29,7 +29,7 @@ try {
   );
   const actual = rows.map((row) => row.table_name).join(',');
   const expected =
-    'device_challenges,device_public_keys,devices,enrollment_invitations,envelope_data_version_ledger,envelope_message_idempotency_ledger,envelope_replay_ledger,families,licenses,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions,sync_sequence_progress_ledger';
+    'device_challenges,device_public_keys,devices,enrollment_bootstrap_attempts,enrollment_invitations,envelope_data_version_ledger,envelope_message_idempotency_ledger,envelope_replay_ledger,families,licenses,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions,sync_sequence_progress_ledger';
   if (actual !== expected) throw new Error(`Unexpected schema: ${actual}`);
   console.log(`MySQL migration/privacy gate passed (${files.length} migration(s)).`);
 } finally {

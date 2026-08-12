@@ -49,3 +49,28 @@ test('sync-durability migration does not introduce prohibited readable or secret
 test('sync-durability migration stores canonical envelope bytes as an opaque BLOB-family column, never TEXT/VARCHAR', () => {
   assert.match(syncMigration, /canonical_bytes MEDIUMBLOB NOT NULL/);
 });
+
+// PCA-ENROLLMENT-RUNTIME-2: 0003_enrollment_bootstrap_attempts.sql adds the durable
+// (bootstrapAttemptId -> device) mapping that closes BOOTSTRAP_AMBIGUOUS_RETRY_PROTOCOL_GAP (see
+// that migration's own header). Same static gate, same prohibited-term list, applied to the new
+// migration file independently of 0001's/0002's.
+const enrollmentRetryMigration = await readFile(new URL('../migrations/0003_enrollment_bootstrap_attempts.sql', import.meta.url), 'utf8');
+const enrollmentRetryRequiredTables = ['enrollment_bootstrap_attempts'];
+
+test('enrollment-bootstrap-attempts migration contains exactly the approved retry/recovery table', () => {
+  for (const table of enrollmentRetryRequiredTables) assert.match(enrollmentRetryMigration, new RegExp(`CREATE TABLE ${table} \\(`));
+});
+
+test('enrollment-bootstrap-attempts migration does not introduce prohibited readable or secret fields', () => {
+  const schema = enrollmentRetryMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+});
+
+test('enrollment-bootstrap-attempts migration stores only hashes for token/recovery secrets, never a raw-token-shaped column', () => {
+  // The raw invitation token is never persisted anywhere (see enrollment_invitations.token_hash,
+  // unchanged by this migration); this table's own client-generated recovery secret is likewise
+  // stored ONLY as a fixed-length hex hash column, never as a variable-length raw-secret column.
+  assert.match(enrollmentRetryMigration, /token_hash CHAR\(64\)/);
+  assert.match(enrollmentRetryMigration, /recovery_token_hash CHAR\(64\)/);
+  assert.equal(/raw_?(invitation_?)?token\b/i.test(enrollmentRetryMigration.replace(/--[^\n]*/g, '')), false);
+});
