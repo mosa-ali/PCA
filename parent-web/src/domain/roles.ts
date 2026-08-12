@@ -7,6 +7,17 @@
 
 export type FamilyRole = 'OWNER' | 'ADMINISTRATOR' | 'VIEWER' | 'CHILD';
 
+// NOTE on VIEW_DEVICE_ENROLLMENT / CREATE_DEVICE_INVITATION /
+// REVOKE_DEVICE_INVITATION / CONFIRM_DEVICE_PAIRING: the real backend
+// authorization for these (backend/src/authz/policy.ts) is account
+// family-scope + license based (AuthzService), NOT this client-side
+// FamilyRole model -- there is no server-side mapping from
+// OWNER/ADMINISTRATOR/VIEWER/CHILD to CREATE_INVITATION etc. today. The
+// evaluation below is therefore a conservative client-side UX heuristic
+// only (same tier as device revocation/policy edits), never authoritative
+// -- the server's 403 (AuthzError) is the real rejection signal and every
+// caller must handle it explicitly rather than trust this gate alone.
+
 export type FamilyAction =
   | 'VIEW_DASHBOARD'
   | 'EDIT_CHILD_POLICY'
@@ -23,7 +34,11 @@ export type FamilyAction =
   | 'TRANSFER_OWNERSHIP'
   | 'REVEAL_RECOVERY_MATERIAL'
   | 'MANAGE_WELLBEING_MESSAGES'
-  | 'CREATE_CHILD_REQUEST';
+  | 'CREATE_CHILD_REQUEST'
+  | 'VIEW_DEVICE_ENROLLMENT'
+  | 'CREATE_DEVICE_INVITATION'
+  | 'REVOKE_DEVICE_INVITATION'
+  | 'CONFIRM_DEVICE_PAIRING';
 
 export type PermissionResult =
   | { allowed: true; requiresStepUp: boolean }
@@ -57,6 +72,9 @@ const STEP_UP_ACTIONS: ReadonlySet<FamilyAction> = new Set<FamilyAction>([
   'REVEAL_RECOVERY_MATERIAL',
   'ADD_VIEWER',
   'REMOVE_NON_OWNER_PARENT',
+  'CREATE_DEVICE_INVITATION',
+  'REVOKE_DEVICE_INVITATION',
+  'CONFIRM_DEVICE_PAIRING',
 ]);
 
 /**
@@ -114,6 +132,21 @@ export function evaluatePermission(
           : deny('Owner has not delegated device revocation to Administrators.');
       }
       return deny('Only the Owner (or a delegated Administrator) may revoke devices or disable protection.');
+    case 'VIEW_DEVICE_ENROLLMENT':
+      if (role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'VIEWER') return allow();
+      return deny('Device enrollment status is a parent-management surface, not shown to a Child.');
+    case 'CREATE_DEVICE_INVITATION':
+      if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
+      return deny('Only the Owner or an Administrator may invite a new child device.');
+    case 'REVOKE_DEVICE_INVITATION':
+    case 'CONFIRM_DEVICE_PAIRING':
+      if (role === 'OWNER') return allow();
+      if (role === 'ADMINISTRATOR') {
+        return delegation.administratorsCanRevokeDevices
+          ? allow()
+          : deny('Owner has not delegated device revocation/pairing to Administrators.');
+      }
+      return deny('Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.');
     default:
       return deny('Unrecognised action.');
   }

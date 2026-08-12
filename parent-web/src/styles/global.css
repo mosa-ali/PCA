@@ -543,3 +543,49 @@ bdi.iso {
   margin-inline: auto;
   background: var(--color-bg);
 }
+
+/* ---------- Device enrollment (invitations / pairing) ---------- */
+
+.enrollment-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-block-end: var(--space-4);
+  background: var(--color-surface);
+}
+
+/* Long opaque strings (tokens, links, fingerprints) must wrap or be
+   copyable without breaking layout at any width -- never overflow the
+   container or force horizontal scroll of the page. */
+.copyable-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.copyable-value code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  background: var(--color-surface-raised);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.token-reveal-once {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--color-surface-raised);
+  margin-block-end: var(--space-3);
+}
+
+.fingerprint-grid {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}

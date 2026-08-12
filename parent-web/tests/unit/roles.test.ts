@@ -65,4 +65,37 @@ describe('evaluatePermission', () => {
     expect(evaluatePermission('CHILD', 'CREATE_CHILD_REQUEST').allowed).toBe(true);
     expect(evaluatePermission('OWNER', 'CREATE_CHILD_REQUEST').allowed).toBe(false);
   });
+
+  describe('device enrollment actions (client-side UX heuristic only -- server AuthzService is authoritative)', () => {
+    it('Owner and Administrator can view device enrollment status; Child cannot', () => {
+      expect(evaluatePermission('OWNER', 'VIEW_DEVICE_ENROLLMENT').allowed).toBe(true);
+      expect(evaluatePermission('ADMINISTRATOR', 'VIEW_DEVICE_ENROLLMENT').allowed).toBe(true);
+      expect(evaluatePermission('VIEWER', 'VIEW_DEVICE_ENROLLMENT').allowed).toBe(true);
+      expect(evaluatePermission('CHILD', 'VIEW_DEVICE_ENROLLMENT').allowed).toBe(false);
+    });
+
+    it('only Owner or Administrator can create a device invitation, with step-up required', () => {
+      const owner = evaluatePermission('OWNER', 'CREATE_DEVICE_INVITATION');
+      expect(owner.allowed).toBe(true);
+      if (owner.allowed) expect(owner.requiresStepUp).toBe(true);
+      expect(evaluatePermission('ADMINISTRATOR', 'CREATE_DEVICE_INVITATION').allowed).toBe(true);
+      expect(evaluatePermission('VIEWER', 'CREATE_DEVICE_INVITATION').allowed).toBe(false);
+      expect(evaluatePermission('CHILD', 'CREATE_DEVICE_INVITATION').allowed).toBe(false);
+    });
+
+    it('revoking an invitation or confirming pairing requires Owner, or a delegated Administrator', () => {
+      for (const action of ['REVOKE_DEVICE_INVITATION', 'CONFIRM_DEVICE_PAIRING'] as const) {
+        expect(evaluatePermission('OWNER', action).allowed).toBe(true);
+        expect(evaluatePermission('VIEWER', action).allowed).toBe(false);
+        expect(evaluatePermission('ADMINISTRATOR', action, {
+          administratorsCanManageViewers: false,
+          administratorsCanRevokeDevices: false,
+        }).allowed).toBe(false);
+        expect(evaluatePermission('ADMINISTRATOR', action, {
+          administratorsCanManageViewers: false,
+          administratorsCanRevokeDevices: true,
+        }).allowed).toBe(true);
+      }
+    });
+  });
 });

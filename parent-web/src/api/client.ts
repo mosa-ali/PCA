@@ -48,6 +48,7 @@ import type {
 } from './interfaces';
 import type { ParentRuntimeSyncClient } from './runtimeSyncClient';
 import type { TrustedBrowserProvider } from '../domain/trustedBrowser';
+import type { DeviceEnrollmentClient } from './deviceEnrollmentClient';
 import { DevServiceAuthClient } from './dev/devServiceAuthClient';
 import { DevFamilyAuthorityGateway } from './dev/devFamilyAuthorityGateway';
 import { DevParentFamilyDataGateway } from './dev/devParentFamilyDataGateway';
@@ -56,12 +57,14 @@ import { DevRequestClient } from './dev/devRequestClient';
 import { DevWellbeingMessageAdminClient } from './dev/devWellbeingMessageAdminClient';
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
+import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
 import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
 import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
+import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import {
   UnavailableFamilyAuthorityGateway,
   UnavailableWellbeingMessageAdminClient,
@@ -76,6 +79,7 @@ export interface PcaApiClients {
   wellbeingMessages: WellbeingMessageAdminClient;
   trustedBrowser: TrustedBrowserProvider;
   runtimeSync: ParentRuntimeSyncClient;
+  deviceEnrollment: DeviceEnrollmentClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
@@ -90,6 +94,7 @@ function buildDevClients(): PcaApiClients {
     wellbeingMessages: new DevWellbeingMessageAdminClient(),
     trustedBrowser: new DevTrustedBrowserProvider(),
     runtimeSync: new DevRuntimeSyncClient(),
+    deviceEnrollment: new DevDeviceEnrollmentClient(),
     isFixtureBacked: true,
   };
 }
@@ -121,6 +126,14 @@ function buildRealClients(): PcaApiClients {
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
     trustedBrowser,
     runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl),
+    // KNOWN_BACKEND_INTEGRATION_ACTION: noServiceBearerTokenAvailable is a
+    // placeholder -- parent-web has no browser-reachable flow yet that
+    // issues this backend's Authorization: Bearer session token (see
+    // ../real/realDeviceEnrollmentClient.ts file header). The HTTP
+    // plumbing itself is genuine and verified against
+    // backend/src/http/routes/{invitationRoutes,pairingRoutes}.ts; replace
+    // this accessor with a real one once a token-issuance flow exists.
+    deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noServiceBearerTokenAvailable),
     isFixtureBacked: false,
   };
 }
