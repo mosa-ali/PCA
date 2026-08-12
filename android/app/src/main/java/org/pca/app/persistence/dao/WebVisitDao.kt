@@ -29,6 +29,9 @@ interface WebVisitDao {
     @Query("DELETE FROM web_visits WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM web_visits WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("SELECT COUNT(*) FROM web_visits")
     suspend fun count(): Int
 }

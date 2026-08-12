@@ -24,6 +24,15 @@ interface DeviceDao {
     @Query("DELETE FROM devices WHERE deviceId = :deviceId")
     suspend fun deleteById(deviceId: String): Int
 
+    /**
+     * Family-scoped by `memberId` directly (devices have no `familyId` column
+     * of their own) -- MUST run before `family_members` rows for this family
+     * are deleted, and after every table whose own `deleteAllForFamily` joins
+     * through `devices` (Section 21 ordering: children before this parent).
+     */
+    @Query("DELETE FROM devices WHERE memberId IN " + FamilyScopeSql.MEMBER_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("DELETE FROM devices")
     suspend fun deleteAll(): Int
 }

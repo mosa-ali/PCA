@@ -26,6 +26,9 @@ interface PolicySnapshotDao {
     @Query("DELETE FROM policy_snapshots WHERE childDeviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM policy_snapshots WHERE childDeviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("DELETE FROM policy_snapshots")
     suspend fun deleteAll(): Int
 }

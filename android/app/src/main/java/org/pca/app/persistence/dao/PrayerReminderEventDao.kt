@@ -29,6 +29,9 @@ interface PrayerReminderEventDao {
     @Query("DELETE FROM prayer_reminder_events WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM prayer_reminder_events WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("SELECT COUNT(*) FROM prayer_reminder_events")
     suspend fun count(): Int
 }

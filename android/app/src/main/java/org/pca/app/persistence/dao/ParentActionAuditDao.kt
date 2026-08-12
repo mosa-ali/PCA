@@ -29,4 +29,7 @@ interface ParentActionAuditDao {
 
     @Query("DELETE FROM parent_action_audits WHERE actorMemberId = :memberId")
     suspend fun deleteAllForActor(memberId: String): Int
+
+    @Query("DELETE FROM parent_action_audits WHERE actorMemberId IN " + FamilyScopeSql.MEMBER_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
 }

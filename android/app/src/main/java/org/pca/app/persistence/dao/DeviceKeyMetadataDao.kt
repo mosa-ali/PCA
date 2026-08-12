@@ -17,6 +17,9 @@ interface DeviceKeyMetadataDao {
     @Query("DELETE FROM device_key_metadata WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM device_key_metadata WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("DELETE FROM device_key_metadata")
     suspend fun deleteAll(): Int
 }

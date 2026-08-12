@@ -29,6 +29,9 @@ interface BreakSessionDao {
     @Query("DELETE FROM break_sessions WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM break_sessions WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("SELECT COUNT(*) FROM break_sessions")
     suspend fun count(): Int
 }

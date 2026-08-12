@@ -29,6 +29,9 @@ interface ContentBlockEventDao {
     @Query("DELETE FROM content_block_events WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM content_block_events WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("SELECT COUNT(*) FROM content_block_events")
     suspend fun count(): Int
 }

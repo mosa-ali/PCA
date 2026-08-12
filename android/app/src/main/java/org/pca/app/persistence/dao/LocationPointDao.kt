@@ -39,6 +39,9 @@ interface LocationPointDao {
     @Query("DELETE FROM location_points WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM location_points WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("SELECT COUNT(*) FROM location_points")
     suspend fun count(): Int
 }

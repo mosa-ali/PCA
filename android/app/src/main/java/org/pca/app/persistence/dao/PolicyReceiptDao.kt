@@ -20,6 +20,9 @@ interface PolicyReceiptDao {
     @Query("DELETE FROM policy_receipts WHERE deviceId = :deviceId")
     suspend fun deleteAllForDevice(deviceId: String): Int
 
+    @Query("DELETE FROM policy_receipts WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY)
+    suspend fun deleteAllForFamily(familyId: String): Int
+
     @Query("DELETE FROM policy_receipts")
     suspend fun deleteAll(): Int
 }
