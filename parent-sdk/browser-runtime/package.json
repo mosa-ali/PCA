@@ -1,0 +1,22 @@
+{
+  "name": "@pca/parent-sdk-browser-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCA-21 trusted-browser E2EE family-data architecture -- browser-neutral logic for local endpoint trust state, Family Trust Set (FTS) verification, and encrypted-envelope receipt plumbing. Contains NO decryption: the actual decrypt step is a seam that reports NOT_READY_CRYPTO_REVIEW until a human security review approves the production crypto suite. See src/cryptoGate.ts.",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.30",
+    "typescript": "5.8.3"
+  }
+}
