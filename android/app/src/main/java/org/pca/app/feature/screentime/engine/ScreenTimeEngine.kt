@@ -2,6 +2,7 @@ package org.pca.app.feature.screentime.engine
 
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import org.pca.app.feature.screentime.policy.ScreenTimeBaselinePolicy
 
 /** Tunable thresholds. Durations only — never wall-clock instants. */
 data class ScreenTimeConfig(
@@ -36,6 +37,14 @@ data class ScreenTimeConfig(
         require(breakDurationNanos > 0) { "breakDuration must be positive" }
         require(meaningfulPauseNanos > 0) { "meaningfulPause must be positive" }
         require(warningThresholds.all { it.inWholeNanoseconds > 0 }) { "warningThresholds must be positive" }
+        // PCA-SCREEN-BASELINE-1 (Coordinator glue): a structural guarantee, on top of
+        // ScreenTimePolicyApplier's own reject-in-entirety path, that no ScreenTimeConfig
+        // anywhere in this codebase -- today's callers or a future policy-delivery path -- can
+        // ever be constructed weaker than the non-weakenable 60/30 anti-gaming baseline.
+        require(ScreenTimeBaselinePolicy.isBaselineCompliant(activeThreshold, breakDuration)) {
+            "ScreenTimeConfig violates the non-weakenable 60/30 baseline: " +
+                "activeThreshold=$activeThreshold, breakDuration=$breakDuration"
+        }
     }
 }
 

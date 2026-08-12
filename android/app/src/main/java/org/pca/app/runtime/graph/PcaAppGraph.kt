@@ -6,11 +6,20 @@ import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
 import org.pca.app.feature.prayer.model.PrayerName
+import org.pca.app.feature.screentime.engine.ScreenTimeConfig
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
+import org.pca.app.feature.screentime.policy.ScreenTimePolicyApplier
+import org.pca.app.feature.webprotection.engine.PersistentWebRuleRepository
+import org.pca.app.feature.webprotection.engine.WebFilterEngine
+import org.pca.app.feature.webprotection.safebrowser.SafeBrowserNavigationPolicy
+import org.pca.app.feature.youtube.engine.ModeAAndroidUsageAdapter
+import org.pca.app.feature.youtube.policy.ModeBFeatureFlagLocalStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
 import org.pca.app.feature.wellbeing.delivery.WellbeingMessageResolver
 import org.pca.app.feature.wellbeing.delivery.WellbeingNotificationDelivery
@@ -25,6 +34,7 @@ import org.pca.app.foundation.PersistentStateStore
 import org.pca.app.foundation.SystemMonotonicTimeSource
 import org.pca.app.foundation.SystemWallClockTimeSource
 import org.pca.app.persistence.PcaLocalPersistence
+import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
 import org.pca.app.platform.StandardDevicePolicyCapabilitySource
 import org.pca.app.platform.StandardLocationCapabilitySource
@@ -40,12 +50,15 @@ import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.pca.app.runtime.port.NotReadyScheduleRuntimePort
 import org.pca.app.runtime.port.OfflineFamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
+import org.pca.app.runtime.location.LocationSampleRecorder
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
 import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
+import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
+import org.pca.app.runtime.usage.UsageSessionRecorder
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
@@ -103,6 +116,64 @@ class PcaAppGraph private constructor(
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(StandardDevicePolicyCapabilitySource(context))
 
+    /** PCA-RUNTIME-2 Coordinator glue: this device's own stable local identifier, reusing the
+     * same `android_id` this graph already resolves as [bootId] -- not a new identity concept.
+     * Falls back to a random per-process id only in the (test-only/rooted-device) case where the
+     * platform genuinely returns none, so [usageSessionRecorder]/[locationSampleRecorder] always
+     * have a stable key to record against. */
+    private val localDeviceId: String = bootId ?: UUID.randomUUID().toString()
+
+    /** PCA-ANDROID-USAGE-LOCATION-1 (Agent 18) real production bindings: local-only, offline-safe
+     * app-usage and location capture, feeding the same encrypted Room repositories every other
+     * local record in this app uses. Neither is wired to a periodic caller by Agent 18 itself
+     * (explicitly out of that lane's scope); [start] below drives both on a conservative interval,
+     * mirroring [PcaRuntime]'s own tick-loop discipline. Sync-payload wiring into the real E2EE
+     * outbox remains a separate follow-up gated on Agent 16's production crypto (see
+     * [familySyncRuntimePort]'s own doc comment) -- these recorders only ever write to local,
+     * on-device, encrypted-at-rest storage today. */
+    val usageObservationSnapshotStore = PersistentUsageObservationSnapshotStore(runtimeStateStore)
+    val usageSessionRecorder = UsageSessionRecorder(
+        usageObservationSource = usageObservationSource,
+        usageSessionRepository = persistence.usageSessionRepository,
+        monotonicTimeSource = monotonicTimeSource,
+        wallClockTimeSource = wallClockTimeSource,
+        snapshotStore = usageObservationSnapshotStore,
+        deviceId = localDeviceId,
+        currentBootId = bootId,
+    )
+    val locationSampleRecorder = LocationSampleRecorder(
+        locationCapabilitySource = locationCapabilitySource,
+        locationPointRepository = persistence.locationPointRepository,
+        monotonicTimeSource = monotonicTimeSource,
+        wallClockTimeSource = wallClockTimeSource,
+    )
+
+    /** PCA-ANDROID-WEB-YOUTUBE-1 (Agent 19) real production bindings: the deterministic,
+     * offline-first web-filter/Safe Browser engine and Mode A's aggregate-only YouTube usage
+     * adapter. Neither is wired to a live navigation surface (a WebView/VPN integration) or a
+     * parent-authored rule-delivery transport by Agent 19 itself (explicitly out of scope, and
+     * out of scope for this narrow Coordinator pass too -- building either would be a new
+     * subsystem, not glue); both are real, reachable, production-composed objects ready for that
+     * follow-up wiring rather than dead code reachable only from tests. */
+    val webRuleRepository = PersistentWebRuleRepository(runtimeStateStore)
+    val webFilterEngine = WebFilterEngine(webRuleRepository)
+    val safeBrowserNavigationPolicy = SafeBrowserNavigationPolicy(webFilterEngine, persistence.webVisitRepository)
+    val modeAAndroidUsageAdapter = ModeAAndroidUsageAdapter(
+        usageSessions = persistence.usageSessionRepository,
+        accessState = { usageObservationSource.accessState() },
+    )
+    val modeBFeatureFlagLocalStore = ModeBFeatureFlagLocalStore(runtimeStateStore)
+
+    /** PCA-SCREEN-BASELINE-1 (Agent 17) Coordinator glue: [PcaRuntime] is handed the applier's own
+     * safe 60/30 default explicitly, rather than relying on [ScreenTimeConfig]'s constructor
+     * default matching it by coincidence -- [ScreenTimePolicyApplier] is the single source of
+     * truth for "the currently effective, baseline-compliant screen-time config" everywhere in
+     * this app (also now enforced structurally by [ScreenTimeConfig]'s own `init` block). A future
+     * parent-authored policy-delivery path (gated on the same production-crypto review as every
+     * other incoming signed policy) must call [ScreenTimePolicyApplier.apply] and persist its
+     * result as the next `lastKnownGoodConfig`, never construct a [ScreenTimeConfig] directly. */
+    val screenTimeConfig: ScreenTimeConfig = ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
+
     private val hardwareProximitySource = HardwareProximitySource(context, monotonicTimeSource)
     val proximitySource: ProximitySource = PrioritizedProximitySource(listOf(hardwareProximitySource))
 
@@ -151,6 +222,7 @@ class PcaAppGraph private constructor(
     val runtime: PcaRuntime = PcaRuntime(
         monotonicTimeSource = monotonicTimeSource,
         wallClockTimeSource = wallClockTimeSource,
+        screenTimeConfig = screenTimeConfig,
         screenTimeSnapshotStore = screenTimeSnapshotStore,
         eyeDistanceSnapshotStore = eyeDistanceSnapshotStore,
         currentBootId = bootId,
@@ -200,6 +272,23 @@ class PcaAppGraph private constructor(
     fun start() {
         hardwareProximitySource.start()
         runtime.start()
+        startUsageLocationPolling()
+    }
+
+    /** PCA-ANDROID-USAGE-LOCATION-1 Coordinator glue: drives [usageSessionRecorder]/
+     * [locationSampleRecorder] on a conservative, battery-appropriate interval -- far slower than
+     * [PcaRuntime]'s own screen-time tick, since neither usage-session boundaries nor location
+     * need second-level freshness. Safe to call repeatedly (both recorders are internally
+     * idempotent against duplicate/out-of-order events); each poll is independent and a failure
+     * in one never cancels the loop, matching this app's "never crash the caller" tick discipline. */
+    private fun startUsageLocationPolling() {
+        coroutineScope.launch {
+            while (true) {
+                runCatching { usageSessionRecorder.poll() }
+                runCatching { locationSampleRecorder.captureSample(localDeviceId, RetentionPolicy.FOURTEEN_DAYS) }
+                delay(USAGE_LOCATION_POLL_INTERVAL_MILLIS)
+            }
+        }
     }
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the
@@ -214,6 +303,7 @@ class PcaAppGraph private constructor(
     companion object {
         private const val PRAYER_REMINDER_ACTION = "org.pca.app.action.PRAYER_REMINDER"
         private const val PRAYER_EXTRA_NAME = "prayer_name"
+        private const val USAGE_LOCATION_POLL_INTERVAL_MILLIS = 5 * 60 * 1000L
 
         @Volatile private var instance: PcaAppGraph? = null
 
