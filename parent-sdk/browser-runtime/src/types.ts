@@ -70,6 +70,7 @@ export type EnvelopeReceiptState =
   | 'DECRYPT_BLOCKED_CRYPTO_REVIEW'
   | 'DECRYPT_BLOCKED_UNTRUSTED_ENDPOINT'
   | 'DECRYPT_BLOCKED_STALE_FTS'
+  | 'DECRYPT_BLOCKED_FAMILY_MISMATCH'
   | 'DECRYPTED';
 
 export interface EnvelopeReceipt {

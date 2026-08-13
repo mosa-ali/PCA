@@ -37,8 +37,13 @@ export interface AttemptDecryptInput {
 /**
  * Advances a receipt one step. Order of checks is deliberate and fail-closed:
  * 1. Endpoint must be TRUSTED (not merely service-authenticated).
- * 2. The FTS supplied must locally verify as current for this endpoint.
- * 3. Only then is the crypto gate consulted -- today that always reports
+ * 2. The envelope's familyId must match the FTS's familyId -- an envelope
+ *    from a different family paired with a locally-cached FTS must never be
+ *    allowed to proceed toward decrypt, even though the FTS's own local
+ *    checks (epoch/expiry/endpoint-authorization) say nothing about which
+ *    family it belongs to.
+ * 3. The FTS supplied must locally verify as current for this endpoint.
+ * 4. Only then is the crypto gate consulted -- today that always reports
  *    NOT_READY_CRYPTO_REVIEW, so `decryptor` is never actually reached with
  *    real, unreviewed cryptography from this repository slice
  *    (NotReadyDecryptor is the only decryptor this repo ships).
@@ -53,6 +58,10 @@ export async function attemptDecrypt(input: AttemptDecryptInput): Promise<Envelo
 
   if (!input.fts) {
     return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
+  }
+
+  if (input.receipt.envelope.familyId !== input.fts.familyId) {
+    return { ...input.receipt, state: 'DECRYPT_BLOCKED_FAMILY_MISMATCH', lastAttemptAtUtc: attemptedAt };
   }
 
   const ftsResult = verifyFamilyTrustSet({
