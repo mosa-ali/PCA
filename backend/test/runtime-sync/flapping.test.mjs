@@ -41,7 +41,7 @@ function buildEnvelope(overrides = {}) {
 }
 
 function resolveContext(nowUtc) {
-  return () => ({ senderPublicKey: SENDER_PUBLIC_KEY, minimumAcceptedTrustSetEpoch: 0, minimumAcceptedKeyEpoch: 0, now: nowUtc });
+  return () => ({ senderPublicKey: SENDER_PUBLIC_KEY, minimumAcceptedTrustSetEpoch: 0, minimumAcceptedKeyEpoch: 0, familyId: 'family-1', now: nowUtc });
 }
 
 test('flapping reconnect: the same envelope redelivered across repeated online/offline/online cycles is applied exactly once', async () => {

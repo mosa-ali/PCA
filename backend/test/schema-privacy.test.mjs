@@ -74,3 +74,32 @@ test('enrollment-bootstrap-attempts migration stores only hashes for token/recov
   assert.match(enrollmentRetryMigration, /recovery_token_hash CHAR\(64\)/);
   assert.equal(/raw_?(invitation_?)?token\b/i.test(enrollmentRetryMigration.replace(/--[^\n]*/g, '')), false);
 });
+
+// PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: 0004_envelope_ledger_family_scope.sql
+// closes a cross-family isolation gap in the three acceptance ledgers
+// migration 0002 created without family scoping (see that migration's own
+// header). It is an ALTER-only migration (no new CREATE TABLE), so it gets
+// its own, differently-shaped static gate rather than reusing the
+// CREATE-TABLE-name assertion pattern above.
+const familyScopeMigration = await readFile(new URL('../migrations/0004_envelope_ledger_family_scope.sql', import.meta.url), 'utf8');
+const familyScopeAlteredTables = [
+  'envelope_replay_ledger', 'envelope_data_version_ledger', 'envelope_message_idempotency_ledger',
+];
+
+test('envelope-ledger-family-scope migration alters exactly the three previously-unscoped acceptance ledgers, adding a family_id column to each', () => {
+  for (const table of familyScopeAlteredTables) {
+    assert.match(familyScopeMigration, new RegExp(`ALTER TABLE ${table}\\b`));
+  }
+  const columnAdditions = familyScopeMigration.match(/ADD COLUMN family_id/g) ?? [];
+  assert.equal(columnAdditions.length, familyScopeAlteredTables.length, 'every altered table must add exactly one family_id column');
+});
+
+test('envelope-ledger-family-scope migration does not introduce prohibited readable or secret fields', () => {
+  const schema = familyScopeMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+});
+
+test('envelope-ledger-family-scope migration does not touch sync_sequence_progress_ledger (already correctly family-scoped since 0002) or any table outside the three named ledgers', () => {
+  assert.equal(/ALTER TABLE sync_sequence_progress_ledger/.test(familyScopeMigration), false);
+  assert.equal(/CREATE TABLE|DROP TABLE/.test(familyScopeMigration), false, 'this migration must be purely additive ALTER statements on existing tables, never a table creation or drop');
+});

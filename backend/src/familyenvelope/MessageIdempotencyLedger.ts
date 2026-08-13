@@ -1,11 +1,23 @@
-import type { MessageId } from './types.js';
+import type { MessageId, OpaqueFamilyId } from './types.js';
 
 /**
- * Per-messageId record of the canonical bytes of the envelope that was
- * fully ACCEPTED under that id (doc 22 Section 3: messageId is "globally
- * unique for idempotency," "stable across relay retransmission"; Section
- * 7's contract test: "valid signed policy delivered twice -> exactly one
- * application and stable receipt").
+ * Per-(family, messageId) record of the canonical bytes of the envelope
+ * that was fully ACCEPTED under that id (doc 22 Section 3: messageId is
+ * "globally unique for idempotency," "stable across relay
+ * retransmission"; Section 7's contract test: "valid signed policy
+ * delivered twice -> exactly one application and stable receipt").
+ *
+ * PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: `familyId` is now a REQUIRED,
+ * explicit parameter -- see ReplayLedger.ts's identical note on why this
+ * MUST be the caller's authoritative, session-derived family identity, not
+ * envelope.familyId. Doc 22's "globally unique for idempotency" describes
+ * messageId's intended WIRE-PROTOCOL contract for a well-behaved sender; it
+ * is not a security property this ledger may rely on to key its acceptance
+ * state, since a malicious or compromised sender's self-declared messageId
+ * (and familyId) are both untrusted input. Scoping by the authoritative
+ * familyId means a messageId collision across two different families -- an
+ * accidental duplicate or a deliberately forged reuse attempt -- can never
+ * share idempotency/conflict state.
  *
  * This is deliberately separate from ReplayLedger: ReplayLedger is a
  * SECURITY control (a captured-and-replayed old sequence/nonce must
@@ -21,7 +33,17 @@ import type { MessageId } from './types.js';
  */
 /** PCA-SYNC-DURABILITY-1: async, see ReplayLedger.ts's identical note. */
 export interface MessageIdempotencyLedger {
-  /** Returns the canonical bytes previously accepted under this messageId, or null if none. */
-  getAcceptedCanonicalBytes(messageId: MessageId): Promise<string | null>;
-  recordAccepted(messageId: MessageId, canonicalBytes: string): Promise<void>;
+  /** Returns the canonical bytes previously accepted under this (familyId, messageId), or null if none. */
+  getAcceptedCanonicalBytes(familyId: OpaqueFamilyId, messageId: MessageId): Promise<string | null>;
+  /**
+   * Records acceptance. Implementations MUST make this genuinely atomic
+   * ACROSS CONCURRENT CALLERS/PROCESSES for a given (familyId, messageId):
+   * if a conflicting canonicalBytes value is already durably recorded, this
+   * must signal MESSAGE_ID_CONFLICT rather than silently overwriting it --
+   * see MySqlMessageIdempotencyLedger's doc comment for the concrete
+   * mechanism. A byte-identical redelivery is always a safe, silent no-op.
+   */
+  recordAccepted(familyId: OpaqueFamilyId, messageId: MessageId, canonicalBytes: string): Promise<RecordAcceptedResult>;
 }
+
+export type RecordAcceptedResult = { outcome: 'recorded' } | { outcome: 'already-idempotent' } | { outcome: 'conflict' };

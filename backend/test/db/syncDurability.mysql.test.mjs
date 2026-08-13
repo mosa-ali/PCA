@@ -34,17 +34,32 @@ import {
 // which remain the production default in src/main.ts, unconditionally
 // rejecting every real signature. Durable persistence and production crypto
 // gating are independent concerns; this suite proves only the former.
+//
+// PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: every envelope's familyId must
+// now match its EnvelopeAcceptanceContext.familyId (the AUTHORITATIVE,
+// caller-established family identity) or evaluateEnvelope rejects with
+// FAMILY_ID_MISMATCH before touching any ledger -- see
+// FamilyEnvelopeVerifier.ts. `makeEnvelope`/`baseContext` below default to
+// the SAME shared DEFAULT_FAMILY_ID unless a test explicitly overrides
+// both together (or is specifically exercising cross-family isolation, in
+// which case each side supplies its own consistent family). The three
+// acceptance ledgers (replay, version, idempotency) are now genuinely
+// family-scoped in the database (migration 0004) -- this file's own new
+// "CROSS-FAMILY ISOLATION" and "CROSS-INSTANCE CONCURRENCY" sections below
+// are this lane's primary proof that the fix is real against a live MySQL
+// 8.4 database, not merely unit-tested against the in-memory ledgers.
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
 const SENDER_PUBLIC_KEY = 'sender-public-key-1';
+const DEFAULT_FAMILY_ID = `family-default-${randomUUID()}`;
 
 function makeEnvelope(overrides = {}) {
   const unsigned = {
     protocolMajor: 1,
     protocolMinor: 0,
     messageId: overrides.messageId ?? `msg-${randomUUID()}`,
-    familyId: overrides.familyId ?? `family-${randomUUID()}`,
+    familyId: overrides.familyId ?? DEFAULT_FAMILY_ID,
     senderDeviceId: 'device-1',
     recipient: { kind: 'DEVICE', recipientDeviceId: 'recipient-1' },
     senderKeyId: overrides.senderKeyId ?? `sender-${randomUUID()}`,
@@ -68,6 +83,7 @@ function baseContext(overrides = {}) {
     senderPublicKey: SENDER_PUBLIC_KEY,
     minimumAcceptedTrustSetEpoch: 0,
     minimumAcceptedKeyEpoch: 0,
+    familyId: DEFAULT_FAMILY_ID,
     now: new Date('2026-01-01T00:30:00.000Z'),
     ...overrides,
   };
@@ -167,12 +183,12 @@ test('RESTART: a "process B" rejects a stale/non-monotonic numeric sequence "pro
   const familyId = `family-${randomUUID()}`;
 
   const processA = buildCoordinator(newDurableLedgers());
-  await processA.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext());
-  await processA.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '2' }), baseContext());
+  await processA.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext({ familyId }));
+  await processA.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '2' }), baseContext({ familyId }));
 
   const processB = buildCoordinator(newDurableLedgers());
   const stale = makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' });
-  const result = await processB.submit(stale, baseContext());
+  const result = await processB.submit(stale, baseContext({ familyId }));
   assert.deepEqual(
     result.decision,
     { kind: 'REJECT', reason: 'SEQUENCE_NOT_MONOTONIC' },
@@ -181,7 +197,114 @@ test('RESTART: a "process B" rejects a stale/non-monotonic numeric sequence "pro
 });
 
 // ---------------------------------------------------------------------
-// CONCURRENCY
+// PCA-17C: AUTHORITATIVE FAMILY IDENTITY
+// ---------------------------------------------------------------------
+
+test('PCA-17C: SyncCoordinator rejects an envelope whose self-declared familyId does not match the AUTHORITATIVE context.familyId, against real durable ledgers', async () => {
+  const coordinator = buildCoordinator(newDurableLedgers());
+  const forged = makeEnvelope({ familyId: `family-attacker-${randomUUID()}` });
+  const result = await coordinator.submit(forged, baseContext({ familyId: `family-victim-${randomUUID()}` }));
+  assert.deepEqual(result.decision, { kind: 'REJECT', reason: 'FAMILY_ID_MISMATCH' });
+});
+
+test('PCA-17C: evaluateEnvelope rejects FAMILY_ID_MISMATCH before ever touching the durable ledgers (no row is written for the rejected attempt)', async () => {
+  const ledgers = newDurableLedgers();
+  const verifier = createTestOnlyEnvelopeSignatureVerifier();
+  const messageId = `msg-${randomUUID()}`;
+  const forged = makeEnvelope({ familyId: `family-attacker-${randomUUID()}`, messageId });
+
+  const verdict = await evaluateEnvelope(
+    forged,
+    baseContext({ familyId: `family-victim-${randomUUID()}` }),
+    verifier,
+    ledgers.replayLedger,
+    ledgers.versionLedger,
+    ledgers.messageIdempotencyLedger,
+  );
+  assert.deepEqual(verdict, { accepted: false, reason: 'FAMILY_ID_MISMATCH' });
+  assert.equal(await ledgers.messageIdempotencyLedger.getAcceptedCanonicalBytes(forged.familyId, messageId), null);
+});
+
+// ---------------------------------------------------------------------
+// PCA-17C: CROSS-FAMILY ISOLATION (against a real, live-migrated MySQL 8.4
+// database -- migration 0004_envelope_ledger_family_scope.sql)
+// ---------------------------------------------------------------------
+
+test('PCA-17C CROSS-FAMILY: identical (senderKeyId, sequenceOrNonce) accepted for family A never REPLAYs for family B, durably', async () => {
+  const familyA = `family-A-${randomUUID()}`;
+  const familyB = `family-B-${randomUUID()}`;
+  const senderKeyId = `shared-key-${randomUUID()}`;
+  const sequenceOrNonce = `shared-seq-${randomUUID()}`;
+
+  const processA = buildCoordinator(newDurableLedgers());
+  const resultA = await processA.submit(
+    makeEnvelope({ familyId: familyA, senderKeyId, sequenceOrNonce }),
+    baseContext({ familyId: familyA }),
+  );
+  assert.deepEqual(resultA.decision, { kind: 'APPLY_NOW', idempotent: false });
+
+  // A genuinely fresh "process" (simulating a restart) for family B.
+  const processB = buildCoordinator(newDurableLedgers());
+  const resultB = await processB.submit(
+    makeEnvelope({ familyId: familyB, senderKeyId, sequenceOrNonce }),
+    baseContext({ familyId: familyB }),
+  );
+  assert.deepEqual(
+    resultB.decision,
+    { kind: 'APPLY_NOW', idempotent: false },
+    'family B\'s independent envelope must never be rejected as REPLAYED just because family A used the identical (senderKeyId, sequenceOrNonce) pair',
+  );
+});
+
+test('PCA-17C CROSS-FAMILY: identical messageId with DIFFERENT content in two different families never conflicts, durably', async () => {
+  const familyA = `family-A-${randomUUID()}`;
+  const familyB = `family-B-${randomUUID()}`;
+  const messageId = `shared-msg-${randomUUID()}`;
+
+  const processA = buildCoordinator(newDurableLedgers());
+  const resultA = await processA.submit(
+    makeEnvelope({ familyId: familyA, messageId, payload: Buffer.from('family-A-content') }),
+    baseContext({ familyId: familyA }),
+  );
+  assert.deepEqual(resultA.decision, { kind: 'APPLY_NOW', idempotent: false });
+
+  const processB = buildCoordinator(newDurableLedgers());
+  const resultB = await processB.submit(
+    makeEnvelope({ familyId: familyB, messageId, payload: Buffer.from('family-B-DIFFERENT-content') }),
+    baseContext({ familyId: familyB }),
+  );
+  assert.deepEqual(
+    resultB.decision,
+    { kind: 'APPLY_NOW', idempotent: false },
+    'family B\'s DIFFERENT content under the identical messageId must never be treated as MESSAGE_ID_CONFLICT against family A\'s unrelated acceptance',
+  );
+});
+
+test('PCA-17C CROSS-FAMILY: identical senderKeyId POLICY_UPDATE version floors are fully independent per family, durably', async () => {
+  const familyA = `family-A-${randomUUID()}`;
+  const familyB = `family-B-${randomUUID()}`;
+  const senderKeyId = `shared-key-${randomUUID()}`;
+
+  const processA = buildCoordinator(newDurableLedgers());
+  await processA.submit(
+    makeEnvelope({ familyId: familyA, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '9.0.0' }),
+    baseContext({ familyId: familyA }),
+  );
+
+  const processB = buildCoordinator(newDurableLedgers());
+  const resultB = await processB.submit(
+    makeEnvelope({ familyId: familyB, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '1.0.0' }),
+    baseContext({ familyId: familyB }),
+  );
+  assert.deepEqual(
+    resultB.decision,
+    { kind: 'APPLY_NOW', idempotent: false },
+    'family B must have its own independent version floor, never rejected as VERSION_NOT_MONOTONIC against family A\'s unrelated higher floor for the same senderKeyId',
+  );
+});
+
+// ---------------------------------------------------------------------
+// CONCURRENCY (pre-existing, within-family)
 // ---------------------------------------------------------------------
 
 test('CONCURRENCY: many concurrent identical-envelope submissions (same messageId, same bytes) all resolve consistently, none corrupt the ledger', async () => {
@@ -208,26 +331,16 @@ test('CONCURRENCY: same numeric sequence delivered concurrently by many "process
 });
 
 test('CONCURRENCY: duplicate-envelope (same senderKeyId+sequenceOrNonce) recordProcessed calls from many concurrent callers are all idempotent, never throw, never double-count', async () => {
+  const familyId = `family-${randomUUID()}`;
   const senderKeyId = `sender-${randomUUID()}`;
   const sequenceOrNonce = `seq-${randomUUID()}`;
   const ledger = new MySqlReplayLedger();
 
   const attempts = await Promise.allSettled(
-    Array.from({ length: 20 }, () => ledger.recordProcessed(senderKeyId, sequenceOrNonce)),
+    Array.from({ length: 20 }, () => ledger.recordProcessed(familyId, senderKeyId, sequenceOrNonce)),
   );
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true);
-  assert.equal(await ledger.hasProcessed(senderKeyId, sequenceOrNonce), true);
-});
-
-test('CONCURRENCY: conflicting same-messageId recordAccepted calls never throw or corrupt state -- exactly one consistent value is stored afterward', async () => {
-  const messageId = `msg-${randomUUID()}`;
-  const ledger = new MySqlMessageIdempotencyLedger();
-
-  const candidates = Array.from({ length: 10 }, (_, i) => `bytes-variant-${i}`);
-  const attempts = await Promise.allSettled(candidates.map((bytes) => ledger.recordAccepted(messageId, bytes)));
-  assert.equal(attempts.every((a) => a.status === 'fulfilled'), true);
-  const stored = await ledger.getAcceptedCanonicalBytes(messageId);
-  assert.ok(candidates.includes(stored), 'the stored value must be exactly one of the concurrently-written candidates, not a corrupted mix');
+  assert.equal(await ledger.hasProcessed(familyId, senderKeyId, sequenceOrNonce), true);
 });
 
 test('CONCURRENCY: out-of-order dependent envelopes (N+2 before N+1) still hold-then-drain correctly against durable ledgers', async () => {
@@ -235,13 +348,13 @@ test('CONCURRENCY: out-of-order dependent envelopes (N+2 before N+1) still hold-
   const senderKeyId = `sender-${randomUUID()}`;
   const familyId = `family-${randomUUID()}`;
 
-  await coordinator.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext());
+  await coordinator.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext({ familyId }));
   const nPlus2 = makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '3', messageId: `msg-n-plus-2-${randomUUID()}` });
-  const holdResult = await coordinator.submit(nPlus2, baseContext());
+  const holdResult = await coordinator.submit(nPlus2, baseContext({ familyId }));
   assert.deepEqual(holdResult.decision, { kind: 'HOLD_PENDING', reason: 'MISSING_SEQUENCE_PREDECESSOR', waitingOnSequence: 2 });
 
   const nPlus1 = makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '2', messageId: `msg-n-plus-1-${randomUUID()}` });
-  const applyResult = await coordinator.submit(nPlus1, baseContext());
+  const applyResult = await coordinator.submit(nPlus1, baseContext({ familyId }));
   assert.deepEqual(applyResult.decision, { kind: 'APPLY_NOW', idempotent: false });
   assert.equal(applyResult.drained.length, 1);
   assert.deepEqual(applyResult.drained[0].decision, { kind: 'APPLY_NOW', idempotent: false });
@@ -260,13 +373,13 @@ test('CONCURRENCY: multiple independent repository-instance "processes" racing t
   // MySqlReplayLedger's own doc comments).
   const processes = [buildCoordinator(newDurableLedgers()), buildCoordinator(newDurableLedgers()), buildCoordinator(newDurableLedgers())];
 
-  await processes[0].submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext());
+  await processes[0].submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1' }), baseContext({ familyId }));
 
   // All three "processes" concurrently attempt sequence 2 with DIFFERENT
   // messageIds (a genuine concurrent-delivery race, not a simple resubmit).
   const attempts = await Promise.allSettled(
     processes.map((p) =>
-      p.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '2', messageId: `msg-race-${randomUUID()}` }), baseContext()),
+      p.submit(makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '2', messageId: `msg-race-${randomUUID()}` }), baseContext({ familyId })),
     ),
   );
   assert.equal(attempts.every((a) => a.status === 'fulfilled'), true);
@@ -281,9 +394,113 @@ test('CONCURRENCY: multiple independent repository-instance "processes" racing t
   const processFour = buildCoordinator(newDurableLedgers());
   const staleReplay = await processFour.submit(
     makeEnvelope({ senderKeyId, familyId, sequenceOrNonce: '1', messageId: `msg-stale-${randomUUID()}` }),
-    baseContext(),
+    baseContext({ familyId }),
   );
   assert.deepEqual(staleReplay.decision, { kind: 'REJECT', reason: 'SEQUENCE_NOT_MONOTONIC' });
+});
+
+// ---------------------------------------------------------------------
+// PCA-17C: CROSS-INSTANCE CONCURRENCY -- the crux of the MySQL
+// message-idempotency-ledger fix (MySqlMessageIdempotencyLedger's plain
+// INSERT + duplicate-key-readback conflict resolution, replacing the old
+// unconditional ON DUPLICATE KEY UPDATE). Every ledger instance below is a
+// genuinely separate object graph (simulating a separate backend process),
+// racing via TRUE Promise.all concurrency against the SAME live MySQL 8.4
+// database -- the correctness guarantee under test is enforced entirely by
+// InnoDB's own unique-index locking, not by anything in this Node process.
+// ---------------------------------------------------------------------
+
+test('PCA-17C CROSS-INSTANCE (a): many independent ledger instances racing to accept the SAME messageId with IDENTICAL canonicalBytes all converge to success (recorded XOR already-idempotent), never a spurious conflict', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const messageId = `msg-${randomUUID()}`;
+  const canonicalBytes = `identical-canonical-bytes-${randomUUID()}`;
+  const instances = Array.from({ length: 8 }, () => new MySqlMessageIdempotencyLedger());
+
+  const results = await Promise.all(instances.map((ledger) => ledger.recordAccepted(familyId, messageId, canonicalBytes)));
+  assert.equal(results.every((r) => r.outcome === 'recorded' || r.outcome === 'already-idempotent'), true, `every concurrent identical-content acceptance must succeed (recorded or already-idempotent), got: ${JSON.stringify(results)}`);
+  assert.equal(results.filter((r) => r.outcome === 'recorded').length, 1, 'exactly one instance durably wins the INSERT race; every other instance observes already-idempotent, never a second physical row');
+
+  const finalReadBack = await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyId, messageId);
+  assert.equal(finalReadBack, canonicalBytes, 'a genuinely fresh instance reading the DB afterward must see exactly the content every racer agreed on');
+});
+
+test('PCA-17C CROSS-INSTANCE (b): independent ledger instances racing to accept the SAME messageId with DIFFERENT canonicalBytes: exactly one wins as recorded, every other is a conflict -- content is never silently overwritten', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const messageId = `msg-${randomUUID()}`;
+  const candidates = Array.from({ length: 8 }, (_, i) => `distinct-canonical-bytes-variant-${i}-${randomUUID()}`);
+
+  const results = await Promise.all(
+    candidates.map((bytes) => new MySqlMessageIdempotencyLedger().recordAccepted(familyId, messageId, bytes)),
+  );
+  const recordedCount = results.filter((r) => r.outcome === 'recorded').length;
+  const conflictCount = results.filter((r) => r.outcome === 'conflict').length;
+  assert.equal(recordedCount, 1, `exactly one concurrent DIFFERENT-content acceptance must win as 'recorded', got ${recordedCount} of ${JSON.stringify(results)}`);
+  assert.equal(conflictCount, candidates.length - 1, 'every other concurrent DIFFERENT-content acceptance must be an honest conflict, never silently absorbed or silently overwriting the winner');
+
+  // The durably stored content must be EXACTLY the one winning candidate --
+  // never a corrupted mix, never the LAST writer silently clobbering an
+  // EARLIER committed winner (the old unconditional
+  // `ON DUPLICATE KEY UPDATE canonical_bytes = VALUES(...)` behavior this
+  // lane replaced).
+  const finalReadBack = await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyId, messageId);
+  assert.ok(candidates.includes(finalReadBack), 'the stored value must be exactly one of the concurrently-attempted candidates');
+  const winnerIndex = results.findIndex((r) => r.outcome === 'recorded');
+  assert.equal(finalReadBack, candidates[winnerIndex], 'the durably stored content must be exactly the SAME candidate that won as recorded, proving no later loser silently overwrote it');
+});
+
+test('PCA-17C CROSS-INSTANCE (c): independent ledger instances racing on the IDENTICAL messageId but DIFFERENT authoritative families never collide -- both families independently win as recorded', async () => {
+  const familyA = `family-A-${randomUUID()}`;
+  const familyB = `family-B-${randomUUID()}`;
+  const messageId = `shared-msg-${randomUUID()}`;
+
+  const [resultA, resultB] = await Promise.all([
+    new MySqlMessageIdempotencyLedger().recordAccepted(familyA, messageId, 'family-A-content'),
+    new MySqlMessageIdempotencyLedger().recordAccepted(familyB, messageId, 'family-B-DIFFERENT-content'),
+  ]);
+  assert.deepEqual(resultA, { outcome: 'recorded' }, 'family A\'s acceptance of this messageId must never be blocked or converted to a conflict by family B\'s concurrent, unrelated acceptance of the identical messageId');
+  assert.deepEqual(resultB, { outcome: 'recorded' });
+
+  assert.equal(await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyA, messageId), 'family-A-content');
+  assert.equal(await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyB, messageId), 'family-B-DIFFERENT-content');
+});
+
+test('PCA-17C CROSS-INSTANCE: a large, MIXED concurrent race (identical-content duplicates interleaved with genuinely conflicting content, across two families) resolves with no throw, no corruption, and the correct per-family winner', async () => {
+  const familyA = `family-A-${randomUUID()}`;
+  const familyB = `family-B-${randomUUID()}`;
+  const messageId = `msg-${randomUUID()}`;
+
+  const attempts = [
+    ...Array.from({ length: 5 }, () => ({ familyId: familyA, bytes: 'family-A-agreed-content' })), // 5 identical-content racers for family A
+    ...Array.from({ length: 3 }, (_, i) => ({ familyId: familyA, bytes: `family-A-conflicting-${i}` })), // genuine conflicts for family A
+    ...Array.from({ length: 4 }, () => ({ familyId: familyB, bytes: 'family-B-agreed-content' })), // identical-content racers for family B
+  ];
+
+  const settled = await Promise.allSettled(
+    attempts.map(({ familyId, bytes }) => new MySqlMessageIdempotencyLedger().recordAccepted(familyId, messageId, bytes)),
+  );
+  assert.equal(settled.every((s) => s.status === 'fulfilled'), true, 'no concurrent call may throw -- every outcome is a typed result, never an unhandled DB error');
+  const results = settled.map((s) => s.value);
+
+  const familyAResults = results.slice(0, 8);
+  const familyBResults = results.slice(8);
+
+  // Family A: exactly one of the 8 total attempts (5 identical + 3
+  // conflicting) durably wins as 'recorded'; the rest are either
+  // 'already-idempotent' (if the winner happened to be 'family-A-agreed-content')
+  // or 'conflict'.
+  const familyARecorded = familyAResults.filter((r) => r.outcome === 'recorded');
+  assert.equal(familyARecorded.length, 1, `family A must have exactly one durable winner, got ${JSON.stringify(familyAResults)}`);
+
+  // Family B: all 4 attempts share identical content, so all must succeed
+  // (recorded XOR already-idempotent), never a conflict.
+  assert.equal(familyBResults.every((r) => r.outcome !== 'conflict'), true, 'family B\'s identical-content racers must never see a conflict');
+  assert.equal(familyBResults.filter((r) => r.outcome === 'recorded').length, 1);
+
+  // Final durable state is exactly one consistent value per family.
+  const finalA = await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyA, messageId);
+  const finalB = await new MySqlMessageIdempotencyLedger().getAcceptedCanonicalBytes(familyB, messageId);
+  assert.ok(attempts.filter((a) => a.familyId === familyA).some((a) => a.bytes === finalA));
+  assert.equal(finalB, 'family-B-agreed-content');
 });
 
 // ---------------------------------------------------------------------

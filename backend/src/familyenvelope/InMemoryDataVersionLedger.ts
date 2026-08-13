@@ -1,4 +1,4 @@
-import type { SenderKeyId } from './types.js';
+import type { OpaqueFamilyId, SenderKeyId } from './types.js';
 import type { DataVersionLedger } from './DataVersionLedger.js';
 
 /**
@@ -7,12 +7,17 @@ import type { DataVersionLedger } from './DataVersionLedger.js';
  * a real, usable default -- not a test-only stand-in. Production device
  * storage may substitute a persistent implementation of the same
  * interface.
+ *
+ * PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: keyed by a nested Map
+ * (familyId -> senderKeyId -> version), not a delimiter-joined string key
+ * -- see InMemoryReplayLedger.ts's identical doc comment on why a joined
+ * string key is unsafe here (opaque ids have no charset restriction).
  */
 export class InMemoryDataVersionLedger implements DataVersionLedger {
-  private readonly lastVersionBySender = new Map<SenderKeyId, string>();
+  private readonly lastVersionByFamily = new Map<OpaqueFamilyId, Map<SenderKeyId, string>>();
 
-  async getLastAcceptedVersion(senderKeyId: SenderKeyId): Promise<string | null> {
-    return this.lastVersionBySender.get(senderKeyId) ?? null;
+  async getLastAcceptedVersion(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId): Promise<string | null> {
+    return this.lastVersionByFamily.get(familyId)?.get(senderKeyId) ?? null;
   }
 
   /**
@@ -27,7 +32,12 @@ export class InMemoryDataVersionLedger implements DataVersionLedger {
    * incorrectly rejected as non-monotonic against the stale,
    * pre-rollback floor.
    */
-  async recordAcceptedVersion(senderKeyId: SenderKeyId, semanticVersion: string): Promise<void> {
-    this.lastVersionBySender.set(senderKeyId, semanticVersion);
+  async recordAcceptedVersion(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, semanticVersion: string): Promise<void> {
+    let bySender = this.lastVersionByFamily.get(familyId);
+    if (!bySender) {
+      bySender = new Map();
+      this.lastVersionByFamily.set(familyId, bySender);
+    }
+    bySender.set(senderKeyId, semanticVersion);
   }
 }

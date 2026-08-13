@@ -64,10 +64,11 @@ function buildApp() {
     outboundRelayService,
     inboundReconnectService,
     statusTracker,
-    resolveEnvelopeContext: (_senderKeyId, _familyId, nowUtc) => ({
+    resolveEnvelopeContext: (_senderKeyId, familyId, nowUtc) => ({
       senderPublicKey: '',
       minimumAcceptedTrustSetEpoch: 0,
       minimumAcceptedKeyEpoch: 0,
+      familyId,
       now: nowUtc,
     }),
   });
@@ -251,10 +252,11 @@ test('POST /v1/runtime-sync/inbound/:messageId/ack surfaces a genuine (non-Relay
     outboundRelayService: failingOutboundRelayService,
     inboundReconnectService,
     statusTracker,
-    resolveEnvelopeContext: (_senderKeyId, _familyId, nowUtc) => ({
+    resolveEnvelopeContext: (_senderKeyId, familyId, nowUtc) => ({
       senderPublicKey: '',
       minimumAcceptedTrustSetEpoch: 0,
       minimumAcceptedKeyEpoch: 0,
+      familyId,
       now: nowUtc,
     }),
   });

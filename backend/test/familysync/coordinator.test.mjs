@@ -61,6 +61,7 @@ function baseContext(overrides = {}) {
     senderPublicKey: SENDER_PUBLIC_KEY,
     minimumAcceptedTrustSetEpoch: 0,
     minimumAcceptedKeyEpoch: 0,
+    familyId: 'family-1',
     now: new Date('2026-01-01T00:30:00.000Z'),
     ...overrides,
   };
@@ -271,12 +272,46 @@ test('multiple family/sender isolation: one sender at its cap does not block ano
   // real senderKeyId is a device signing-key identifier, globally unique,
   // never legitimately reused across two different families) is an
   // entirely independent (family, sender) pair for sequence tracking.
-  await coordinator.submit(buildEnvelope({ familyId: 'family-2', senderKeyId: 'key-c', sequenceOrNonce: '10' }), baseContext());
+  // context.familyId is the AUTHORITATIVE family identity (PCA-17C) -- it
+  // must match each envelope's own familyId here for these to be accepted
+  // at all, exactly like a real second family's own device session would
+  // supply its own authoritative context.
+  const family2Context = baseContext({ familyId: 'family-2' });
+  await coordinator.submit(buildEnvelope({ familyId: 'family-2', senderKeyId: 'key-c', sequenceOrNonce: '10' }), family2Context);
   const otherFamily = await coordinator.submit(
     buildEnvelope({ familyId: 'family-2', senderKeyId: 'key-c', sequenceOrNonce: '20' }),
-    baseContext(),
+    family2Context,
   );
   assert.equal(otherFamily.decision.kind, 'HOLD_PENDING');
+});
+
+// ---------------------------------------------------------------------
+// PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY
+// ---------------------------------------------------------------------
+
+test('PCA-17C: SyncCoordinator rejects an envelope whose self-declared familyId does not match the AUTHORITATIVE context.familyId, never applying or queueing it', async () => {
+  const coordinator = buildHarness();
+  const forged = buildEnvelope({ familyId: 'family-1', sequenceOrNonce: '1' });
+  const result = await coordinator.submit(forged, baseContext({ familyId: 'family-VICTIM' }));
+  assert.deepEqual(result.decision, { kind: 'REJECT', reason: 'FAMILY_ID_MISMATCH' });
+  assert.deepEqual(result.drained, []);
+});
+
+test('PCA-17C: a family-mismatched envelope never gets queued as a trusted pending candidate even when it looks like a genuine out-of-order gap', async () => {
+  const coordinator = buildHarness();
+  // Establish a real floor for the VICTIM family so sequence 3 below would
+  // otherwise look like a legitimate out-of-order gap (HOLD_PENDING) if the
+  // family check were not enforced first.
+  await coordinator.submit(buildEnvelope({ familyId: 'family-VICTIM', sequenceOrNonce: '1' }), baseContext({ familyId: 'family-VICTIM' }));
+
+  const forged = buildEnvelope({ familyId: 'family-ATTACKER', sequenceOrNonce: '3' });
+  const result = await coordinator.submit(forged, baseContext({ familyId: 'family-VICTIM' }));
+  assert.deepEqual(result.decision, { kind: 'REJECT', reason: 'FAMILY_ID_MISMATCH' }, 'must reject on the family check, never HOLD_PENDING it as if it were a genuine gap in the victim family\'s sequence');
+
+  // Prove it was never queued: the legitimate seq=2 arrives for the victim
+  // family and its drain is empty, not containing the forged seq=3.
+  const legitimateTwo = await coordinator.submit(buildEnvelope({ familyId: 'family-VICTIM', sequenceOrNonce: '2' }), baseContext({ familyId: 'family-VICTIM' }));
+  assert.deepEqual(legitimateTwo.drained, []);
 });
 
 // ---- concurrency red-team ----

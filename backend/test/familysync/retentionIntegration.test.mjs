@@ -68,6 +68,7 @@ function baseContext(overrides = {}) {
     senderPublicKey: SENDER_PUBLIC_KEY,
     minimumAcceptedTrustSetEpoch: 0,
     minimumAcceptedKeyEpoch: 0,
+    familyId: 'family-1',
     now: new Date('2026-01-01T00:30:00.000Z'),
     ...overrides,
   };

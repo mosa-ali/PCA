@@ -67,7 +67,7 @@ async function queueForRecipient(relayService, envelope) {
 }
 
 function resolveContext(nowUtc = new Date('2026-01-01T01:00:00.000Z')) {
-  return () => ({ senderPublicKey: SENDER_PUBLIC_KEY, minimumAcceptedTrustSetEpoch: 0, minimumAcceptedKeyEpoch: 0, now: nowUtc });
+  return () => ({ senderPublicKey: SENDER_PUBLIC_KEY, minimumAcceptedTrustSetEpoch: 0, minimumAcceptedKeyEpoch: 0, familyId: 'family-1', now: nowUtc });
 }
 
 test('a valid queued envelope is applied, receipted, and acknowledged in relay', async () => {
