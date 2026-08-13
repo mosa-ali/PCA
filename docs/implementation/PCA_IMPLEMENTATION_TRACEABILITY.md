@@ -4,10 +4,9 @@
 
 | Inventory | Count | Authority | Status |
 |---|---:|---|---|
-| Base A-100 | 199 | [Architecture traceability matrix](../architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md) | Immutable accepted baseline; implementation evidence pending for some, in-progress for others — see `docs/architecture/30_IMPLEMENTATION_PROGRAMME.md`'s realigned phase table (`PCA-DOC-REALIGN-1`, 2026-08-14) for current `SOURCE_COMPLETE` status by phase |
-| Addendum 001 | 25 | [Secure invite/protected enrollment addendum](addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md) | Owner approved; implementation evidence pending. Note (`PCA-DOC-REALIGN-1`, 2026-08-14): source now exists in `backend/src/{invitation,pairing,deviceauth}` that plausibly implements some rows below, but this realignment pass did not re-verify requirement-by-requirement, so the `NOT_IMPLEMENTED` marks below are left as the last independently-confirmed state pending that dedicated review |
-| Addendum 002 | 98 (51 `PCA-ADD-PA-*` + 47 `PCA-ADD-BILL-*`) | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved (`PCA-DEC-022`/`023`/`024`, doc 31); architecture-only, no implementation started — confirmed by repository survey finding no billing/payment/subscription backend module and only a static placeholder at `parent-web/src/pages/Subscription.tsx` |
-| Total implementation authority | 322 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
+| Base A-100 | 199 | [Architecture traceability matrix](../architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md) | Immutable accepted baseline; implementation evidence pending |
+| Addendum 001 | 25 | [Secure invite/protected enrollment addendum](addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md) | Owner approved; implementation evidence pending |
+| Total implementation authority | 224 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
 
 `BASE_A100_REQUIREMENTS = 199` is not edited or recounted by this file. This is the implementation-facing index for approved addenda and eventual evidence. IDs are exact: duplicate IDs, missing IDs, orphan IDs, or a status claiming evidence without linked artifacts are gate failures.
 
