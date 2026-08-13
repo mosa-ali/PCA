@@ -2,6 +2,7 @@ import { computeKeyFingerprint } from './fingerprint.js';
 import type { DeviceRepository } from '../device/DeviceRepository.js';
 import type { DeviceId, OpaqueFamilyId } from '../device/types.js';
 import type { PairingRequestView } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type PairingErrorCode = 'NOT_FOUND' | 'INVALID_STATE';
 
@@ -31,10 +32,16 @@ const PAIRING_ERROR_MESSAGES: Record<PairingErrorCode, string> = {
 export class PairingService {
   private readonly deviceRepository: DeviceRepository;
   private readonly now: () => Date;
+  private readonly auditService: FamilyAuditService;
 
-  constructor(deviceRepository: DeviceRepository, now: () => Date = () => new Date()) {
+  constructor(
+    deviceRepository: DeviceRepository,
+    now: () => Date = () => new Date(),
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+  ) {
     this.deviceRepository = deviceRepository;
     this.now = now;
+    this.auditService = auditService;
   }
 
   async getPairingRequest(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId): Promise<PairingRequestView> {
@@ -62,6 +69,23 @@ export class PairingService {
     const result = await this.deviceRepository.confirmPairing(authorizedFamilyId, deviceId, confirmedByAccountId, this.now());
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new PairingError('NOT_FOUND');
     if (result.outcome === 'INVALID_STATE') throw new PairingError('INVALID_STATE');
+    await this.auditService.record({
+      familyId: authorizedFamilyId,
+      actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+      actorDeviceId: confirmedByAccountId,
+      actorMemberId: null,
+      targetScope: { kind: 'DEVICE', id: deviceId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: null,
+      correlationId: null,
+      actionId: null,
+      freeTextNote: 'PAIRING_PENDING -> PAIRED',
+    });
     return this.getPairingRequest(authorizedFamilyId, deviceId);
   }
 }

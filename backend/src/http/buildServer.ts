@@ -14,10 +14,15 @@ import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
 import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext } from './routes/runtimeSyncRoutes.js';
+import { registerRetentionRoutes } from './routes/retentionRoutes.js';
+import type { AuthzRepository } from '../authz/AuthzRepository.js';
+import type { DeleteNowLedger } from '../retention/DeleteNowLedger.js';
+import type { FamilyAuditService } from '../familyrbac/FamilyAuditStore.js';
 
 export interface ServerDependencies {
   authService: AuthService;
   authzService: AuthzService;
+  authzRepository: AuthzRepository;
   invitationService: InvitationService;
   enrollmentCoordinator: EnrollmentCoordinator;
   pairingService: PairingService;
@@ -26,6 +31,8 @@ export interface ServerDependencies {
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
   resolveEnvelopeContext: ResolveEnvelopeContext;
+  deleteNowLedger: DeleteNowLedger;
+  familyAuditService: FamilyAuditService;
 }
 
 /**
@@ -103,6 +110,14 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     inboundReconnectService: deps.inboundReconnectService,
     statusTracker: deps.statusTracker,
     resolveEnvelopeContext: deps.resolveEnvelopeContext,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerRetentionRoutes(app, {
+    authService: deps.authService,
+    authzRepository: deps.authzRepository,
+    deleteNowLedger: deps.deleteNowLedger,
+    auditService: deps.familyAuditService,
     rateLimiter,
     authAttemptLimiter,
   });

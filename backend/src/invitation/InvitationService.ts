@@ -9,6 +9,7 @@ import type {
   Platform,
   RequestedProtectionMode,
 } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type InvitationErrorCode =
   | 'INVALID_TOKEN'
@@ -55,10 +56,24 @@ type InvitationStatusLike = InvitationRecord['status'];
 export class InvitationService {
   private readonly repository: InvitationRepository;
   private readonly now: () => Date;
+  private readonly auditService: FamilyAuditService;
 
-  constructor(repository: InvitationRepository, now: () => Date = () => new Date()) {
+  /**
+   * `auditService` defaults to a private, per-instance in-memory reference
+   * store when not supplied -- production wiring (main.ts) should inject a
+   * SHARED FamilyAuditService instance so records from every family-rbac
+   * event source land in one place. See FamilyAuditStore.ts's own doc
+   * comment: this is never a PCA server audit log or a durable store, only
+   * the in-memory reference implementation the audit domain itself ships.
+   */
+  constructor(
+    repository: InvitationRepository,
+    now: () => Date = () => new Date(),
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+  ) {
     this.repository = repository;
     this.now = now;
+    this.auditService = auditService;
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
@@ -79,6 +94,22 @@ export class InvitationService {
       revokedAt: null,
     };
     await this.repository.create(record);
+    await this.auditService.record({
+      familyId: record.familyId,
+      actionType: 'ROLE_INVITATION',
+      actorDeviceId: 'SERVICE_SESSION',
+      actorMemberId: null,
+      targetScope: { kind: 'FAMILY', id: record.familyId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: null,
+      correlationId: record.invitationId,
+      actionId: null,
+    });
     return { record, rawToken };
   }
 
@@ -132,6 +163,22 @@ export class InvitationService {
   async revokeInvitationForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord> {
     const record = await this.repository.revokeForFamily(familyId, invitationId, this.now());
     if (!record) throw new InvitationError('NOT_FOUND');
+    await this.auditService.record({
+      familyId,
+      actionType: 'ROLE_REVOKE',
+      actorDeviceId: 'SERVICE_SESSION',
+      actorMemberId: null,
+      targetScope: { kind: 'FAMILY', id: familyId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: null,
+      correlationId: invitationId,
+      actionId: null,
+    });
     return record;
   }
 

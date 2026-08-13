@@ -1,6 +1,7 @@
 import { isPlausibleEnvelopeCiphertext, isPlausibleOpaqueId } from './policy.js';
 import type { DeleteEnvelopeResult, RecoveryRepository, StoreEnvelopeResult } from './RecoveryRepository.js';
 import type { OpaqueFamilyId, RecoveryEnvelopeRecord } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type RecoveryErrorCode = 'INVALID_INPUT' | 'VERSION_MISMATCH' | 'NOT_FOUND';
 
@@ -25,10 +26,16 @@ const RECOVERY_ERROR_MESSAGES: Record<RecoveryErrorCode, string> = {
 export class RecoveryService {
   private readonly repository: RecoveryRepository;
   private readonly now: () => Date;
+  private readonly auditService: FamilyAuditService;
 
-  constructor(repository: RecoveryRepository, now: () => Date = () => new Date()) {
+  constructor(
+    repository: RecoveryRepository,
+    now: () => Date = () => new Date(),
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+  ) {
     this.repository = repository;
     this.now = now;
+    this.auditService = auditService;
   }
 
   async fetchEnvelope(familyId: OpaqueFamilyId): Promise<RecoveryEnvelopeRecord> {
@@ -60,6 +67,23 @@ export class RecoveryService {
       this.now(),
     );
     if (result.outcome === 'VERSION_MISMATCH') throw new RecoveryError('VERSION_MISMATCH', result.currentVersion);
+    await this.auditService.record({
+      familyId,
+      actionType: 'RECOVERY_EVENT',
+      actorDeviceId: 'RECOVERY_ENVELOPE_WRITER',
+      actorMemberId: null,
+      targetScope: { kind: 'FAMILY', id: familyId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: result.record.version,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: 'RECOVERY',
+      correlationId: null,
+      actionId: null,
+      freeTextNote: 'RECOVERY_ENVELOPE_STORED',
+    });
     return result.record;
   }
 
@@ -67,5 +91,22 @@ export class RecoveryService {
     if (!isPlausibleOpaqueId(familyId)) throw new RecoveryError('INVALID_INPUT');
     const result: DeleteEnvelopeResult = await this.repository.deleteEnvelope(familyId);
     if (result.outcome === 'NOT_FOUND') throw new RecoveryError('NOT_FOUND');
+    await this.auditService.record({
+      familyId,
+      actionType: 'RECOVERY_EVENT',
+      actorDeviceId: 'RECOVERY_ENVELOPE_WRITER',
+      actorMemberId: null,
+      targetScope: { kind: 'FAMILY', id: familyId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: 'RECOVERY',
+      correlationId: null,
+      actionId: null,
+      freeTextNote: 'RECOVERY_ENVELOPE_DELETED',
+    });
   }
 }

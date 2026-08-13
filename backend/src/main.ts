@@ -28,6 +28,8 @@ import {
   RejectingDeviceSignatureVerifier,
   RejectingEnvelopeSignatureVerifier,
 } from './runtime-sync/index.js';
+import { InMemoryDeleteNowLedger } from './retention/InMemoryDeleteNowLedger.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -39,6 +41,14 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
 async function start(): Promise<void> {
   const deviceRepository = new MySqlDeviceRepository();
   const relayService = new RelayService(new MySqlRelayRepository());
+  const authzRepository = new MySqlAuthzRepository();
+  // Single shared in-memory reference audit store for every family-rbac
+  // event source (invitation/enrollment/pairing/device/recovery/parent
+  // authorization/retention). See FamilyAuditStore.ts's doc comment: this
+  // is deliberately never a durable PCA server audit log, only the
+  // in-memory reference implementation the audit domain itself ships.
+  const familyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository());
+  const deleteNowLedger = new InMemoryDeleteNowLedger();
   const deviceAuthService = new DeviceAuthService(
     new MySqlDeviceChallengeRepository(),
     deviceRepository,
@@ -78,14 +88,17 @@ async function start(): Promise<void> {
 
   const app = buildServer({
     authService: new AuthService(new MySqlAuthRepository()),
-    authzService: new AuthzService(new MySqlAuthzRepository()),
-    invitationService: new InvitationService(new MySqlInvitationRepository()),
-    enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository()),
-    pairingService: new PairingService(deviceRepository),
-    deviceSessionService: new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository()),
+    authzService: new AuthzService(authzRepository),
+    authzRepository,
+    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService),
+    enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService),
+    pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
+    deviceSessionService: new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService),
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
     inboundReconnectService: new InboundReconnectService(relayService, syncCoordinator),
     statusTracker: new DeviceSyncStatusTracker(),
+    deleteNowLedger,
+    familyAuditService,
     // FTS/key-epoch resolution is a separate workstream (src/familytrustset)
     // this lane does not own -- until it is wired in here, every envelope's
     // signature check runs against RejectingEnvelopeSignatureVerifier above

@@ -4,6 +4,7 @@ import { isPlausiblePublicKey } from '../device/publicKey.js';
 import { hashAttemptRecoveryToken, isPlausibleAttemptId, isPlausibleAttemptRecoveryToken } from './attempt.js';
 import type { EnrollDeviceOutcome, EnrollmentRepository } from './EnrollmentRepository.js';
 import type { EnrollDeviceInput, EnrollDeviceResult, Platform, RecoverAttemptInput, RecoverAttemptResult } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type EnrollmentErrorCode =
   | 'INVALID_TOKEN'
@@ -75,10 +76,16 @@ const VALID_PLATFORMS: ReadonlySet<string> = new Set(['ANDROID', 'IOS']);
 export class EnrollmentCoordinator {
   private readonly repository: EnrollmentRepository;
   private readonly now: () => Date;
+  private readonly auditService: FamilyAuditService;
 
-  constructor(repository: EnrollmentRepository, now: () => Date = () => new Date()) {
+  constructor(
+    repository: EnrollmentRepository,
+    now: () => Date = () => new Date(),
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+  ) {
     this.repository = repository;
     this.now = now;
+    this.auditService = auditService;
   }
 
   async enrollDevice(input: EnrollDeviceInput): Promise<EnrollDeviceResult> {
@@ -116,6 +123,22 @@ export class EnrollmentCoordinator {
 
     switch (result.outcome) {
       case 'PAIRING_REQUEST_CREATED':
+        await this.auditService.record({
+          familyId: result.familyId,
+          actionType: 'ROLE_ACCEPT',
+          actorDeviceId: result.deviceId,
+          actorMemberId: null,
+          targetScope: { kind: 'DEVICE', id: result.deviceId },
+          authorizationRole: null,
+          trustSetEpoch: 0,
+          policyRevision: null,
+          clientMonotonicSequence: null,
+          resultStatus: 'SUCCESS',
+          targetAcknowledgementCount: 0,
+          reasonCategory: null,
+          correlationId: result.invitationId,
+          actionId: null,
+        });
         return {
           deviceId: result.deviceId,
           signingKeyId: result.signingKeyId,
