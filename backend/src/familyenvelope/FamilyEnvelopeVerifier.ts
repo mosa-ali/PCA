@@ -2,6 +2,7 @@ import { canonicalizeEnvelope } from './canonicalize.js';
 import { isProtocolCompatible } from './protocolCompatibility.js';
 import { compareSemanticVersions, requiresStrictVersionIncrease } from './policy.js';
 import type { DataVersionLedger } from './DataVersionLedger.js';
+import type { EnvelopeAcceptanceTransaction } from './EnvelopeAcceptanceTransaction.js';
 import type { EnvelopeSignatureVerifier } from './EnvelopeSignatureVerifier.js';
 import type { MessageIdempotencyLedger } from './MessageIdempotencyLedger.js';
 import type { ReplayLedger } from './ReplayLedger.js';
@@ -178,6 +179,19 @@ export interface EvaluateEnvelopeOptions {
    * otherwise untouched by this addition.
    */
   dryRun?: boolean;
+  /**
+   * PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: when supplied, evaluateEnvelope
+   * delegates EVERY accept-side-effect (message-id record, replay claim,
+   * version advance/rollback) to this single atomic call instead of the
+   * legacy three-step saga below -- see EnvelopeAcceptanceTransaction.ts's
+   * doc comment for the defect this closes and why it must always be
+   * supplied in production (MySqlEnvelopeAcceptanceTransaction). Ignored
+   * when `dryRun` is true (dry-run never reaches any accept side effect).
+   * Omitting this parameter falls back to the pre-PCA-17F saga, which
+   * remains correct ONLY for in-memory, single-process ledgers with no
+   * cross-transaction visibility window to close.
+   */
+  atomicAcceptance?: EnvelopeAcceptanceTransaction;
 }
 
 export async function evaluateEnvelope(
@@ -285,6 +299,36 @@ export async function evaluateEnvelope(
   // recordAuthorizedRollbackVersion's own doc comment: it is exempt from
   // monotonicity entirely and always succeeds), so it has nothing to
   // compensate for.
+  //
+  // PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: when the caller supplies
+  // `options.atomicAcceptance`, ALL THREE steps below run as ONE atomic
+  // database transaction (see EnvelopeAcceptanceTransaction.ts) instead of
+  // this saga -- no message-id row (or replay/version write) is ever
+  // externally visible until the full decision has committed, so a
+  // concurrent byte-identical redelivery can never observe a false
+  // idempotent accept for an envelope this call goes on to reject. This is
+  // the production path (MySqlEnvelopeAcceptanceTransaction, wired in
+  // src/main.ts). The saga below is retained ONLY as the fallback for
+  // in-memory, single-process ledger implementations (tests, and any
+  // caller that does not supply an atomic transaction), where each step's
+  // own per-ledger atomicity is already sufficient because there is no
+  // cross-process/cross-transaction visibility window to close.
+  if (options.atomicAcceptance) {
+    const commitResult = await options.atomicAcceptance.commitAcceptance({
+      familyId: context.familyId,
+      messageId: envelope.messageId,
+      canonicalBytes,
+      senderKeyId: envelope.senderKeyId,
+      sequenceOrNonce: envelope.sequenceOrNonce,
+      messageType: envelope.messageType,
+      semanticVersion: envelope.semanticVersion,
+    });
+    if (commitResult.outcome === 'rejected') {
+      return { accepted: false, reason: commitResult.reason };
+    }
+    return { accepted: true, idempotent: commitResult.idempotent };
+  }
+
   const recordResult = await messageIdempotencyLedger.recordAccepted(context.familyId, envelope.messageId, canonicalBytes);
   if (recordResult.outcome === 'conflict') {
     return { accepted: false, reason: 'MESSAGE_ID_CONFLICT' };

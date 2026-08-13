@@ -58,6 +58,17 @@ export interface MessageIdempotencyLedger {
    * as "accepted," so a future genuine retry of that exact messageId would
    * incorrectly short-circuit to a stable idempotent accept instead of
    * being re-evaluated and correctly rejected again.
+   *
+   * PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: on the production MySQL
+   * acceptance path (evaluateEnvelope called with `options.atomicAcceptance`
+   * set -- see EnvelopeAcceptanceTransaction.ts), this method is NEVER
+   * called: MySqlEnvelopeAcceptanceTransaction commits message-id/replay/
+   * version writes as one database transaction and lets ROLLBACK undo a
+   * rejected candidate's message-id row atomically, so no separate
+   * compensating DELETE is needed or invoked. This method remains callable
+   * ONLY for the legacy saga fallback evaluateEnvelope uses when no atomic
+   * transaction is supplied -- correct for in-memory, single-process
+   * ledgers, never wired into production composition (src/main.ts).
    */
   releaseAccepted(familyId: OpaqueFamilyId, messageId: MessageId): Promise<void>;
 }

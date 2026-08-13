@@ -63,6 +63,12 @@ export interface ReplayLedger {
    * comment. Releasing a claim that was never truly ours to release would
    * be a correctness bug (undoing a DIFFERENT caller's legitimate claim),
    * so this must only ever be invoked on a key this exact call just won.
+   *
+   * PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: never called on the production
+   * MySQL acceptance path -- see MessageIdempotencyLedger.releaseAccepted's
+   * identical note. MySqlEnvelopeAcceptanceTransaction's single transaction
+   * makes this compensating DELETE unnecessary in production; it remains
+   * callable only for the legacy in-memory saga fallback.
    */
   releaseClaim(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<void>;
 }

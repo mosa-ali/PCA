@@ -65,6 +65,22 @@ export function isDuplicateEntry(error: unknown): error is { code: 'ER_DUP_ENTRY
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ER_DUP_ENTRY';
 }
 
+/**
+ * MySQL/InnoDB error 1213 (ER_LOCK_DEADLOCK) -- InnoDB detected a lock
+ * cycle and has ALREADY rolled back this transaction itself (this is not
+ * something the caller needs to, or should, roll back again). Safe and
+ * correct to retry the entire transaction attempt from scratch: no partial
+ * state from the aborted attempt survives. Used by callers that hold more
+ * than one keyed row lock within a single transaction (e.g.
+ * MySqlEnvelopeAcceptanceTransaction), where a consistent lock-acquisition
+ * order bounds deadlock risk but cannot eliminate it outright, since a
+ * COMMIT vs. a fresh lock attempt on another connection can still interleave
+ * mid-transaction.
+ */
+export function isDeadlock(error: unknown): error is { code: 'ER_LOCK_DEADLOCK'; errno: 1213 } {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ER_LOCK_DEADLOCK';
+}
+
 export interface QueryResult<T> {
   rows: T[];
   rowCount: number;

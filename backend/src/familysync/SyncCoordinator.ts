@@ -2,6 +2,7 @@ import { canonicalizeEnvelope } from '../familyenvelope/canonicalize.js';
 import { evaluateEnvelope } from '../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { EnvelopeAcceptanceContext } from '../familyenvelope/FamilyEnvelopeVerifier.js';
 import type { DataVersionLedger } from '../familyenvelope/DataVersionLedger.js';
+import type { EnvelopeAcceptanceTransaction } from '../familyenvelope/EnvelopeAcceptanceTransaction.js';
 import type { EnvelopeSignatureVerifier } from '../familyenvelope/EnvelopeSignatureVerifier.js';
 import type { MessageIdempotencyLedger } from '../familyenvelope/MessageIdempotencyLedger.js';
 import type { ReplayLedger } from '../familyenvelope/ReplayLedger.js';
@@ -35,6 +36,17 @@ export interface SyncCoordinatorOptions {
   maxPendingPerSender?: number;
   maxPendingPerFamily?: number;
   maxPendingGlobal?: number;
+  /**
+   * PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: forwarded verbatim to every
+   * REAL (non-dry-run) evaluateEnvelope call this coordinator makes -- see
+   * FamilyEnvelopeVerifier.ts's EvaluateEnvelopeOptions.atomicAcceptance
+   * doc comment. Never forwarded to the dry-run screening call in
+   * submitInternal (dry-run performs no accept side effects, so there is
+   * nothing for it to atomically commit). Production composition
+   * (src/main.ts) always supplies MySqlEnvelopeAcceptanceTransaction here;
+   * omitting it is only correct for in-memory, single-process ledgers.
+   */
+  atomicAcceptance?: EnvelopeAcceptanceTransaction;
 }
 
 export interface DrainedOutcome {
@@ -283,6 +295,7 @@ export class SyncCoordinator {
       this.replayLedger,
       this.versionLedger,
       this.messageIdempotencyLedger,
+      { atomicAcceptance: this.options.atomicAcceptance },
     );
     if (!verdict.accepted) {
       return { decision: { kind: 'REJECT', reason: verdict.reason }, drained: [] };
@@ -423,6 +436,7 @@ export class SyncCoordinator {
         this.replayLedger,
         this.versionLedger,
         this.messageIdempotencyLedger,
+        { atomicAcceptance: this.options.atomicAcceptance },
       );
       if (verdict.accepted) {
         await this.recordSequenceIfApplicable(record.envelope, record.familyId);

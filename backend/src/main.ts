@@ -18,6 +18,7 @@ import { MySqlSequenceProgressLedger } from './familysync/MySqlSequenceProgressL
 import { MySqlReplayLedger } from './familyenvelope/MySqlReplayLedger.js';
 import { MySqlDataVersionLedger } from './familyenvelope/MySqlDataVersionLedger.js';
 import { MySqlMessageIdempotencyLedger } from './familyenvelope/MySqlMessageIdempotencyLedger.js';
+import { MySqlEnvelopeAcceptanceTransaction } from './familyenvelope/MySqlEnvelopeAcceptanceTransaction.js';
 import { SyncCoordinator } from './familysync/SyncCoordinator.js';
 import {
   DeviceSessionService,
@@ -83,7 +84,16 @@ async function start(): Promise<void> {
     // correctly non-functional until a reviewed EnvelopeSignatureVerifier
     // replaces this.
     new RejectingEnvelopeSignatureVerifier(),
-    { isNumericSequenceSender: () => false },
+    {
+      isNumericSequenceSender: () => false,
+      // PCA-17F ATOMIC_ENVELOPE_ACCEPTANCE_RACE: the production acceptance
+      // authority -- every accept-side-effect (message-id record, replay
+      // claim, version advance/rollback) commits as ONE MySQL transaction,
+      // never independently, so a message-id row is never externally
+      // visible as "accepted" until the full decision has committed. See
+      // EnvelopeAcceptanceTransaction.ts's doc comment.
+      atomicAcceptance: new MySqlEnvelopeAcceptanceTransaction(),
+    },
   );
 
   const app = buildServer({
