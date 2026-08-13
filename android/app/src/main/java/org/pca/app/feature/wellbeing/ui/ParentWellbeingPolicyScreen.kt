@@ -3,12 +3,16 @@ package org.pca.app.feature.wellbeing.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.R
 import org.pca.app.feature.wellbeing.model.WellbeingCategory
@@ -26,7 +30,11 @@ fun ParentWellbeingPolicyScreen(
     onPolicyChange: (WellbeingNudgePolicy) -> Unit,
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
-        Text(text = stringResource(R.string.wellbeing_parent_policy_title), style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = stringResource(R.string.wellbeing_parent_policy_title),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.semantics { heading() },
+        )
 
         PolicyToggleRow(stringResource(R.string.wellbeing_policy_toggle_enabled), policy.enabled) { onPolicyChange(policy.copy(enabled = it)) }
         PolicyToggleRow(stringResource(R.string.wellbeing_policy_toggle_periodic), policy.periodicNudgesEnabled) { onPolicyChange(policy.copy(periodicNudgesEnabled = it)) }
@@ -50,10 +58,25 @@ fun ParentWellbeingPolicyScreen(
     }
 }
 
+/**
+ * PCA-16B: the label and [Switch] are merged into a single accessibility node via
+ * [Modifier.toggleable] + `mergeDescendants` so TalkBack announces "<label>, switch, on/off" as
+ * one control, and the whole row (not just the small switch thumb) is the tappable/touch target
+ * -- both a screen-reader-usability and a touch-target-size fix over a bare, unlabeled `Switch`.
+ */
 @Composable
 private fun PolicyToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.padding(vertical = 4.dp)) {
+    Row(
+        modifier = Modifier
+            .padding(vertical = 4.dp)
+            .toggleable(
+                value = checked,
+                onValueChange = onCheckedChange,
+                role = Role.Switch,
+            )
+            .semantics(mergeDescendants = true) {},
+    ) {
         Text(text = label, modifier = Modifier.padding(end = 8.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
