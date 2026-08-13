@@ -11,17 +11,17 @@ export default function Retention() {
   const save = async () => {
     try {
       await runFamilyAction('CHANGE_RETENTION', async () => {
-        setStatus('Retention updated (dev stub -- no real backend yet).');
+        setStatus(t('retention.updatedStatus'));
       });
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Denied');
+      setStatus(e instanceof Error ? e.message : t('common.deniedGeneric'));
     }
   };
 
   return (
     <section aria-labelledby="retention-title">
       <h1 id="retention-title">{t('nav.retention')}</h1>
-      <p>Retention/deletion of family activity is enforced locally by the device holding the plaintext; this screen only sets the family-level policy value that devices honor.</p>
+      <p>{t('retention.description')}</p>
       {status && <p role="status">{status}</p>}
       <PermissionGate action="CHANGE_RETENTION" showDisabledFallback>
         <button type="button" className="btn btn-primary" onClick={save}>

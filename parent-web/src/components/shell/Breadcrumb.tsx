@@ -7,7 +7,7 @@ export function Breadcrumb() {
   const segments = location.pathname.split('/').filter(Boolean);
 
   return (
-    <nav className="breadcrumb" aria-label="Breadcrumb">
+    <nav className="breadcrumb" aria-label={t('shell.breadcrumbNav')}>
       <ol style={{ display: 'flex', gap: '0.4rem', listStyle: 'none', padding: 0, margin: 0, flexWrap: 'wrap' }}>
         <li>
           <Link to="/dashboard">{t('shell.breadcrumbHome')}</Link>

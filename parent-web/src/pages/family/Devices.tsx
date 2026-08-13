@@ -27,25 +27,25 @@ export default function Devices() {
         <table className="data-table responsive-cards">
           <thead>
             <tr>
-              <th scope="col">Device</th>
-              <th scope="col">OS</th>
-              <th scope="col">Protection</th>
-              <th scope="col">Policy revision</th>
-              <th scope="col">Epoch</th>
-              <th scope="col" />
+              <th scope="col">{t('devicesTable.device')}</th>
+              <th scope="col">{t('devicesTable.os')}</th>
+              <th scope="col">{t('devicesTable.protection')}</th>
+              <th scope="col">{t('devicesTable.policyRevision')}</th>
+              <th scope="col">{t('devicesTable.epoch')}</th>
+              <th scope="col" aria-label={t('common.actions')} />
             </tr>
           </thead>
           <tbody>
             {data.map((d) => (
               <tr key={d.deviceId}>
-                <td data-label="Device">{d.deviceLabel}</td>
-                <td data-label="OS">{d.osFamily}</td>
-                <td data-label="Protection">
+                <td data-label={t('devicesTable.device')}>{d.deviceLabel}</td>
+                <td data-label={t('devicesTable.os')}>{d.osFamily}</td>
+                <td data-label={t('devicesTable.protection')}>
                   <StatusBadge state={d.protectionState} />
                 </td>
-                <td data-label="Policy revision">{d.lastAcknowledgedPolicyRevision}</td>
-                <td data-label="Epoch">
-                  trust {d.trustSetEpoch} / key {d.keyEpoch}
+                <td data-label={t('devicesTable.policyRevision')}>{d.lastAcknowledgedPolicyRevision}</td>
+                <td data-label={t('devicesTable.epoch')}>
+                  {t('devicesTable.epochValue', { trust: d.trustSetEpoch, key: d.keyEpoch })}
                 </td>
                 <td>
                   <PermissionGate action="REMOVE_OR_REVOKE_DEVICE" showDisabledFallback>

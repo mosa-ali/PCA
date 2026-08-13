@@ -60,7 +60,7 @@ export default function RolesMatrix() {
             {ACTIONS.map((action) => (
               <tr key={action}>
                 <th scope="row" style={{ textAlign: 'start', fontWeight: 400 }}>
-                  {action.replaceAll('_', ' ').toLowerCase()}
+                  {t(`rbac.actions.${action}`)}
                 </th>
                 {ROLES.map((role) => (
                   <td key={role}>

@@ -20,8 +20,8 @@ export default function YouTubePage() {
       <article className="card">
         <h2>{t('nav.youtube')}</h2>
         <StatusBadge state={data.visibilityState} />
-        <p>Restricted mode: {data.restrictedModeEnabled ? t('common.yes') : t('common.no')}</p>
-        <p>Approved channels: {data.approvedChannelCount}</p>
+        <p>{t('youtube.restrictedMode', { status: data.restrictedModeEnabled ? t('common.yes') : t('common.no') })}</p>
+        <p>{t('youtube.approvedChannels', { count: data.approvedChannelCount })}</p>
       </article>
     </div>
   );

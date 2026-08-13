@@ -19,23 +19,23 @@ export default function Audit() {
         <table className="data-table responsive-cards">
           <thead>
             <tr>
-              <th scope="col">Action</th>
-              <th scope="col">Actor</th>
-              <th scope="col">Target scope</th>
-              <th scope="col">Result</th>
-              <th scope="col">Timestamp</th>
+              <th scope="col">{t('audit.action')}</th>
+              <th scope="col">{t('audit.actor')}</th>
+              <th scope="col">{t('audit.targetScope')}</th>
+              <th scope="col">{t('audit.result')}</th>
+              <th scope="col">{t('audit.timestamp')}</th>
             </tr>
           </thead>
           <tbody>
             {data.map((a) => (
               <tr key={a.eventId}>
-                <td data-label="Action">{a.actionType}</td>
-                <td data-label="Actor">{a.actorMemberId}</td>
-                <td data-label="Target scope">
+                <td data-label={t('audit.action')}>{a.actionType}</td>
+                <td data-label={t('audit.actor')}>{a.actorMemberId}</td>
+                <td data-label={t('audit.targetScope')}>
                   <bdi className="iso">{a.targetScope}</bdi>
                 </td>
-                <td data-label="Result">{a.resultStatus}</td>
-                <td data-label="Timestamp">
+                <td data-label={t('audit.result')}>{a.resultStatus}</td>
+                <td data-label={t('audit.timestamp')}>
                   {new Intl.DateTimeFormat(i18n.language, { dateStyle: 'short', timeStyle: 'short' }).format(
                     new Date(a.timestampUtc),
                   )}
@@ -45,9 +45,7 @@ export default function Audit() {
           </tbody>
         </table>
       </div>
-      <p style={{ color: 'var(--color-text-muted)' }}>
-        Audit entries never carry URLs, locations, activity detail, or recovery secrets.
-      </p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('audit.note')}</p>
     </section>
   );
 }

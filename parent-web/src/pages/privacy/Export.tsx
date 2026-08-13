@@ -11,17 +11,17 @@ export default function Export() {
   const doExport = async () => {
     try {
       await runFamilyAction('EXPORT_DATA', async () => {
-        setStatus('Export generated locally in this browser (dev stub) -- never proxied through a server.');
+        setStatus(t('export.generatedStatus'));
       });
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Denied');
+      setStatus(e instanceof Error ? e.message : t('common.deniedGeneric'));
     }
   };
 
   return (
     <section aria-labelledby="export-title">
       <h1 id="export-title">{t('nav.export')}</h1>
-      <p>An export is generated and encrypted entirely on this device; only the family&rsquo;s own key material can open it.</p>
+      <p>{t('export.description')}</p>
       {status && <p role="status">{status}</p>}
       <PermissionGate action="EXPORT_DATA" showDisabledFallback>
         <button type="button" className="btn btn-primary" onClick={doExport}>

@@ -36,7 +36,7 @@ export default function Requests() {
               <th scope="col">{t('requestsPage.reason')}</th>
               <th scope="col">{t('requestsPage.created')}</th>
               <th scope="col">{t('requestsPage.status')}</th>
-              <th scope="col" />
+              <th scope="col" aria-label={t('common.actions')} />
             </tr>
           </thead>
           <tbody>

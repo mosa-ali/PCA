@@ -31,19 +31,19 @@ export default function AppsPage() {
       <table className="data-table responsive-cards">
         <thead>
           <tr>
-            <th scope="col">App</th>
-            <th scope="col">Category</th>
-            <th scope="col">Daily limit</th>
-            <th scope="col">Allowed</th>
+            <th scope="col">{t('appsTable.app')}</th>
+            <th scope="col">{t('appsTable.category')}</th>
+            <th scope="col">{t('appsTable.dailyLimit')}</th>
+            <th scope="col">{t('appsTable.allowed')}</th>
           </tr>
         </thead>
         <tbody>
           {data.map((rule) => (
             <tr key={rule.appId}>
-              <td data-label="App">{rule.appName}</td>
-              <td data-label="Category">{rule.category}</td>
-              <td data-label="Daily limit">{rule.dailyLimitMinutes ? `${rule.dailyLimitMinutes}m` : '--'}</td>
-              <td data-label="Allowed">
+              <td data-label={t('appsTable.app')}>{rule.appName}</td>
+              <td data-label={t('appsTable.category')}>{rule.category}</td>
+              <td data-label={t('appsTable.dailyLimit')}>{rule.dailyLimitMinutes ? `${rule.dailyLimitMinutes}m` : '--'}</td>
+              <td data-label={t('appsTable.allowed')}>
                 <PermissionGate action="EDIT_CHILD_POLICY" showDisabledFallback>
                   <label className="checkbox-row">
                     <input

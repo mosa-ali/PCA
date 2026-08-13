@@ -6,8 +6,8 @@ export default function Subscription() {
     <section aria-labelledby="subscription-title">
       <h1 id="subscription-title">{t('nav.subscription')}</h1>
       <div className="card">
-        <p>Plan: Family (DEV fixture)</p>
-        <p>Status: Active</p>
+        <p>{t('subscription.planLabel', { plan: t('subscription.planFamilyDev') })}</p>
+        <p>{t('subscription.statusLabel', { status: t('subscription.statusActive') })}</p>
       </div>
     </section>
   );

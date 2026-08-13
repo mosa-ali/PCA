@@ -22,13 +22,13 @@ export default function ChildWellbeingPage() {
       <p>
         <Link to="/wellbeing-messages">{t('wellbeing.title')}</Link>
       </p>
-      {targeted.length === 0 && <EmptyState message="No custom wellbeing messages target this child yet." />}
+      {targeted.length === 0 && <EmptyState message={t('childWellbeing.noMessages')} />}
       <div className="card-grid">
         {targeted.map((m) => {
           const text = m.languageTexts.find((l) => l.languageTag === lang)?.text ?? m.languageTexts[0]?.text;
           return (
             <article className="card" key={m.messageId}>
-              <h2>{m.category}</h2>
+              <h2>{t(`wellbeing.categories.${m.category}`)}</h2>
               <p>{text}</p>
             </article>
           );

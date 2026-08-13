@@ -122,9 +122,9 @@ export default function WellbeingAdmin() {
         <label htmlFor="cat-filter">{t('wellbeing.category')}</label>
         <select id="cat-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           <option value="">{t('wellbeing.allCategories')}</option>
-          <option value="ENCOURAGEMENT">ENCOURAGEMENT</option>
-          <option value="BREAK_REMINDER">BREAK_REMINDER</option>
-          <option value="SAFETY_CHECK_IN">SAFETY_CHECK_IN</option>
+          <option value="ENCOURAGEMENT">{t('wellbeing.categories.ENCOURAGEMENT')}</option>
+          <option value="BREAK_REMINDER">{t('wellbeing.categories.BREAK_REMINDER')}</option>
+          <option value="SAFETY_CHECK_IN">{t('wellbeing.categories.SAFETY_CHECK_IN')}</option>
         </select>
       </div>
       <div className="card-grid">
@@ -134,7 +134,7 @@ export default function WellbeingAdmin() {
           const enabled = control.selectedCuratedSuggestionIds.includes(c.curatedId);
           return (
             <article className="card" key={c.curatedId}>
-              <h3>{c.category}</h3>
+              <h3>{t(`wellbeing.categories.${c.category}`)}</h3>
               <p>{text}</p>
               {c.requiresAdultSupervision && <p role="note">{t('wellbeing.supervisionNote')}</p>}
               <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -176,7 +176,7 @@ export default function WellbeingAdmin() {
           const text = m.languageTexts.find((l) => l.languageTag === lang)?.text ?? m.languageTexts[0]?.text ?? '';
           return (
             <article className="card" key={m.messageId}>
-              <h3>{m.category}</h3>
+              <h3>{t(`wellbeing.categories.${m.category}`)}</h3>
               <p>
                 <bdi className="iso">{text}</bdi>
               </p>
@@ -214,7 +214,7 @@ export default function WellbeingAdmin() {
           <div className="card-grid">
             {archived.map((m) => (
               <article className="card" key={m.messageId}>
-                <h3>{m.category}</h3>
+                <h3>{t(`wellbeing.categories.${m.category}`)}</h3>
                 <PermissionGate action="MANAGE_WELLBEING_MESSAGES" showDisabledFallback>
                   <button type="button" className="btn" onClick={() => restore(m.messageId)}>
                     {t('common.restore')}

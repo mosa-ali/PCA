@@ -43,9 +43,11 @@
     "openMenu": "فتح قائمة التنقل",
     "closeMenu": "إغلاق قائمة التنقل",
     "breadcrumbHome": "الرئيسية",
+    "breadcrumbNav": "مسار التنقل",
     "toggleSidebar": "طي الشريط الجانبي",
     "expandSidebar": "توسيع الشريط الجانبي",
     "language": "اللغة",
+    "demoRoleSwitcher": "مبدّل الدور التجريبي",
     "signedInAs": "تم تسجيل الدخول باسم {{name}}",
     "role": "الدور: {{role}}"
   },
@@ -91,7 +93,13 @@
     "batteryUnknown": "البطارية غير معروفة",
     "confirm": "تأكيد",
     "yes": "نعم",
-    "no": "لا"
+    "no": "لا",
+    "deniedGeneric": "مرفوض",
+    "actions": "الإجراءات"
+  },
+  "notFound": {
+    "title": "الصفحة غير موجودة",
+    "back": "العودة إلى لوحة التحكم"
   },
   "dashboard": {
     "title": "لوحة التحكم",
@@ -114,7 +122,23 @@
     "denied": "غير مسموح به لدورك",
     "deniedTitle": "الإجراء غير مسموح به",
     "deniedBody": "دورك ({{role}}) لا يسمح بهذا الإجراء. يتم تطبيق هذا عبر بوابة سلطة العائلة، وليس مجرد إخفاء في الواجهة.",
-    "viewOnlyBanner": "لديك صلاحية مُشاهد -- للقراءة فقط. عناصر التحكم في التعديل معطّلة لدورك."
+    "viewOnlyBanner": "لديك صلاحية مُشاهد -- للقراءة فقط. عناصر التحكم في التعديل معطّلة لدورك.",
+    "actions": {
+      "EDIT_CHILD_POLICY": "تعديل سياسة الطفل",
+      "APPROVE_REQUEST": "الموافقة على الطلب",
+      "ADD_VIEWER": "إضافة مُشاهد",
+      "REMOVE_NON_OWNER_PARENT": "إزالة والد غير مالك",
+      "ADD_ADMINISTRATOR": "إضافة مسؤول",
+      "CHANGE_ANY_ROLE": "تغيير أي دور",
+      "CHANGE_RETENTION": "تغيير مدة الاحتفاظ",
+      "DELETE_HISTORY": "حذف السجل",
+      "EXPORT_DATA": "تصدير البيانات",
+      "REMOVE_OR_REVOKE_DEVICE": "إزالة أو إلغاء جهاز",
+      "DISABLE_PROTECTION_POLICY": "تعطيل سياسة الحماية",
+      "TRANSFER_OWNERSHIP": "نقل الملكية",
+      "REVEAL_RECOVERY_MATERIAL": "الكشف عن مواد الاسترداد",
+      "MANAGE_WELLBEING_MESSAGES": "إدارة رسائل الرفاهية"
+    }
   },
   "stepUp": {
     "title": "أعد المصادقة للمتابعة",
@@ -135,7 +159,11 @@
     "simulateStale": "محاكاة تقادم الحقبة (تطوير)",
     "simulateRevoke": "محاكاة الإلغاء (تطوير)",
     "reset": "إعادة تعيين (تطوير)",
-    "note": "تسجيل الدخول إلى خدمة الحساب لا يمنح بحد ذاته صلاحية فك تشفير بيانات العائلة -- هما حدّا ثقة منفصلان."
+    "resync": "إعادة المزامنة (تطوير)",
+    "note": "تسجيل الدخول إلى خدمة الحساب لا يمنح بحد ذاته صلاحية فك تشفير بيانات العائلة -- هما حدّا ثقة منفصلان.",
+    "serviceAuthenticated": "الخدمة موثقة",
+    "browserEndpoint": "نقطة نهاية المتصفح",
+    "trustSetEpoch": "حقبة مجموعة الثقة"
   },
   "wellbeing": {
     "title": "رسائل الرفاهية",
@@ -165,7 +193,36 @@
     "dismissible": "يمكن للطفل إغلاقها",
     "snoozable": "يمكن للطفل تأجيلها",
     "requiresSupervision": "يتطلب إشراف أحد الوالدين",
-    "archived": "مؤرشف"
+    "archived": "مؤرشف",
+    "newMessageAvailable": "توجد رسالة جديدة",
+    "unlockToView": "افتح القفل للعرض",
+    "englishText": "النص الإنجليزي",
+    "arabicText": "النص العربي",
+    "categories": {
+      "ENCOURAGEMENT": "تشجيع",
+      "BREAK_REMINDER": "تذكير بالاستراحة",
+      "FOCUS": "التركيز",
+      "GRATITUDE": "الامتنان",
+      "SAFETY_CHECK_IN": "تحقق من السلامة",
+      "CUSTOM": "مخصص"
+    },
+    "triggerLabels": {
+      "BREAK_DUE": "حان وقت الاستراحة",
+      "CONTINUOUS_USE_WARNING": "تحذير الاستخدام المستمر",
+      "APP_LAUNCH": "تشغيل التطبيق",
+      "SCHEDULED_TIME_WINDOW": "نافذة زمنية مجدولة",
+      "LOCK_SCREEN": "شاشة القفل",
+      "MANUAL": "يدوي"
+    },
+    "dayNames": {
+      "MON": "الاثنين",
+      "TUE": "الثلاثاء",
+      "WED": "الأربعاء",
+      "THU": "الخميس",
+      "FRI": "الجمعة",
+      "SAT": "السبت",
+      "SUN": "الأحد"
+    }
   },
   "family": {
     "member": "العضو",
@@ -177,7 +234,9 @@
     "inviteViewer": "دعوة مُشاهد",
     "removeMember": "إزالة",
     "changeRole": "تغيير الدور",
-    "transferOwnership": "نقل الملكية"
+    "transferOwnership": "نقل الملكية",
+    "newAdministratorName": "مسؤول جديد",
+    "newViewerName": "مُشاهد جديد"
   },
   "deviceEnrollment": {
     "title": "إضافة جهاز للطفل",
@@ -295,5 +354,81 @@
       "FAILED": "فشل التسليم",
       "STALE": "تم استبداله بتغيير أحدث"
     }
+  },
+  "subscription": {
+    "planLabel": "الخطة: {{plan}}",
+    "statusLabel": "الحالة: {{status}}",
+    "planFamilyDev": "عائلة (نموذج تطوير)",
+    "statusActive": "نشط"
+  },
+  "notifications": {
+    "emailAlerts": "أرسل لي بريداً إلكترونياً للتنبيهات الهامة",
+    "pushRequests": "إشعارات فورية للطلبات",
+    "payloadNote": "لا تحتوي حمولات الإشعارات أبداً على تفاصيل نشاط العائلة -- فقط إشارة إيقاظ عامة (docs/architecture/09_SECURITY_PRIVACY_E2EE.md القسم 6)."
+  },
+  "devicesTable": {
+    "device": "الجهاز",
+    "os": "نظام التشغيل",
+    "protection": "الحماية",
+    "policyRevision": "مراجعة السياسة",
+    "epoch": "الحقبة",
+    "epochValue": "الثقة {{trust}} / المفتاح {{key}}"
+  },
+  "appsTable": {
+    "app": "التطبيق",
+    "category": "الفئة",
+    "dailyLimit": "الحد اليومي",
+    "allowed": "مسموح"
+  },
+  "audit": {
+    "action": "الإجراء",
+    "actor": "الفاعل",
+    "targetScope": "النطاق المستهدف",
+    "result": "النتيجة",
+    "timestamp": "الطابع الزمني",
+    "note": "لا تحمل إدخالات سجل التدقيق أبداً عناوين مواقع أو مواقع جغرافية أو تفاصيل نشاط أو أسرار الاسترداد."
+  },
+  "screenTime": {
+    "continuousLimit": "الحد الأقصى للاستخدام المستمر (دقائق)",
+    "breakDuration": "مدة الاستراحة (دقائق)",
+    "baselineWarning": "سياسة وقت الشاشة المحفوظة لهذا الطفل سابقة للحد الأساسي الإلزامي 60/30 لمكافحة التحايل ولا تستوفيه. حدّث القيم أدناه واحفظها لتصبح متوافقة."
+  },
+  "location": {
+    "accuracy": "الدقة: {{value}}",
+    "accuracyUnknown": "الدقة: --",
+    "stale": "بيانات الموقع هذه غير محدثة."
+  },
+  "eyeProtection": {
+    "reminders": "التذكيرات: {{status}}"
+  },
+  "youtube": {
+    "restrictedMode": "الوضع المقيد: {{status}}",
+    "approvedChannels": "القنوات المعتمدة: {{count}}"
+  },
+  "prayer": {
+    "calculationMethod": "طريقة الحساب: {{method}}"
+  },
+  "protectionStatus": {
+    "epochSummary": "حقبة مجموعة ثقة العائلة {{trustSetEpoch}}، حقبة المفتاح {{keyEpoch}}."
+  },
+  "export": {
+    "description": "يتم إنشاء التصدير وتشفيره بالكامل على هذا الجهاز؛ فقط مواد المفتاح الخاصة بالعائلة يمكنها فتحه.",
+    "generatedStatus": "تم إنشاء التصدير محلياً في هذا المتصفح (نموذج تطوير) -- لم يمرّ أبداً عبر خادم."
+  },
+  "retention": {
+    "description": "يتم فرض الاحتفاظ بنشاط العائلة وحذفه محلياً بواسطة الجهاز الذي يحمل النص الصريح؛ تحدد هذه الشاشة فقط قيمة السياسة على مستوى العائلة التي تلتزم بها الأجهزة.",
+    "updatedStatus": "تم تحديث مدة الاحتفاظ (نموذج تطوير -- لا توجد خلفية حقيقية بعد)."
+  },
+  "deleteNow": {
+    "description": "يصدر هذا تعليمات حذف موقّعة لمرة واحدة إلى أجهزة العائلة. لا يمكنه محو جهاز يبقى غير متصل بأثر رجعي.",
+    "confirmBody": "لا يمكن التراجع عن هذا الإجراء بمجرد أن تقر الأجهزة به.",
+    "issuedStatus": "تم إصدار تعليمات الحذف (نموذج تطوير) -- موقّعة ومدققة، وتم تسليمها مشفرة من طرف إلى طرف إلى الأجهزة."
+  },
+  "childWellbeing": {
+    "noMessages": "لا توجد رسائل رفاهية مخصصة تستهدف هذا الطفل بعد."
+  },
+  "recovery": {
+    "description": "لا تُعرض مواد الاسترداد (سر الاسترداد) أبداً بواسطة بنية PCA التحتية ولا تُعرض هنا أبداً بشكل مقروء. تتيح هذه الشاشة للمالك فقط بدء معاملة استرداد موثقة.",
+    "startTransaction": "بدء معاملة الاسترداد (نموذج تطوير)"
   }
 }

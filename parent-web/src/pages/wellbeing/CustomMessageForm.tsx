@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DayOfWeek, WellbeingCategory, WellbeingCustomMessage, WellbeingTrigger } from '../../domain/wellbeing';
 import type { ChildSummary } from '../../domain/types';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 
 const CATEGORIES: WellbeingCategory[] = ['ENCOURAGEMENT', 'BREAK_REMINDER', 'FOCUS', 'GRATITUDE', 'SAFETY_CHECK_IN', 'CUSTOM'];
 const TRIGGERS: WellbeingTrigger[] = ['BREAK_DUE', 'CONTINUOUS_USE_WARNING', 'APP_LAUNCH', 'SCHEDULED_TIME_WINDOW', 'LOCK_SCREEN', 'MANUAL'];
@@ -19,6 +20,14 @@ interface CustomMessageFormProps {
 export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }: CustomMessageFormProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<DraftMessage>(initial);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const firstFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    firstFieldRef.current?.focus();
+  }, []);
+
+  useModalFocusTrap(dialogRef, true);
 
   const textFor = (lang: 'en' | 'ar') => draft.languageTexts.find((l) => l.languageTag === lang)?.text ?? '';
   const setText = (lang: 'en' | 'ar', text: string) => {
@@ -51,16 +60,16 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }:
 
   return (
     <div className="modal-overlay" role="presentation" onKeyDown={(e) => e.key === 'Escape' && onCancel()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="custom-message-title" style={{ maxWidth: '40rem', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="custom-message-title" style={{ maxWidth: '40rem', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 id="custom-message-title">{t('wellbeing.createCustom')}</h2>
         <p style={{ color: 'var(--color-text-muted)' }}>{t('wellbeing.privateNote')}</p>
 
         <div className="field">
-          <label htmlFor="text-en">English text</label>
-          <textarea id="text-en" dir="ltr" value={textFor('en')} onChange={(e) => setText('en', e.target.value)} rows={2} />
+          <label htmlFor="text-en">{t('wellbeing.englishText')}</label>
+          <textarea ref={firstFieldRef} id="text-en" dir="ltr" value={textFor('en')} onChange={(e) => setText('en', e.target.value)} rows={2} />
         </div>
         <div className="field">
-          <label htmlFor="text-ar">Arabic text (نص عربي)</label>
+          <label htmlFor="text-ar">{t('wellbeing.arabicText')}</label>
           <textarea id="text-ar" dir="rtl" lang="ar" value={textFor('ar')} onChange={(e) => setText('ar', e.target.value)} rows={2} />
         </div>
 
@@ -69,7 +78,7 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }:
           <select id="category" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as WellbeingCategory })}>
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {t(`wellbeing.categories.${c}`)}
               </option>
             ))}
           </select>
@@ -90,7 +99,7 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }:
           {TRIGGERS.map((tr) => (
             <label key={tr} className="checkbox-row">
               <input type="checkbox" checked={draft.triggers.includes(tr)} onChange={() => toggleTrigger(tr)} />
-              {tr}
+              {t(`wellbeing.triggerLabels.${tr}`)}
             </label>
           ))}
         </fieldset>
@@ -100,7 +109,7 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }:
           {DAYS.map((day) => (
             <label key={day} className="checkbox-row">
               <input type="checkbox" checked={draft.daysOfWeek.includes(day)} onChange={() => toggleDay(day)} />
-              {day}
+              {t(`wellbeing.dayNames.${day}`)}
             </label>
           ))}
         </fieldset>

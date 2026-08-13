@@ -20,7 +20,7 @@ export default function EyeProtectionPage() {
       <article className="card">
         <h2>{t('nav.eyeProtection')}</h2>
         <StatusBadge state={data.state} />
-        <p>Reminders: {data.remindersEnabled ? t('common.enable') : t('common.disable')}</p>
+        <p>{t('eyeProtection.reminders', { status: data.remindersEnabled ? t('common.enable') : t('common.disable') })}</p>
       </article>
     </div>
   );
