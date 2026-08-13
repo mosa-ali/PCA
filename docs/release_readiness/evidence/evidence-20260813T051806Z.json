@@ -1,0 +1,103 @@
+{
+  "generatedUtc": "2026-08-13T05:17:20.9055052Z",
+  "repositoryRoot": "D:\\PCA\\pca-app\\.agent-runtime\\worktrees\\claude-33-release-readiness",
+  "git": {
+    "sha": "fcf80e6d0ce0451ee4351122ebb5003dc50d2df7",
+    "branch": "HEAD",
+    "dirty": true,
+    "dirtyFileCount": 2
+  },
+  "releaseGate": {
+    "exitCode": 1,
+    "ready": false,
+    "output": "\r\n=== PCA Release Gate ===\r\nPRODUCTION_CRYPTO_SUITE: PENDING_HUMAN_SECURITY_REVIEW\r\nREAL_UAT: NOT_EXECUTED (0/50 cases logged)\r\nExternal gate CRYPTO_SECURITY_REVIEW: BLOCKED\r\nExternal gate ANDROID_REAL_DEVICE_UAT: BLOCKED\r\nExternal gate IOS_MAC_XCODE: EXTERNAL\r\nExternal gate IOS_FAMILY_CONTROLS_ENTITLEMENT: EXTERNAL\r\nExternal gate IOS_PHYSICAL_DEVICE: EXTERNAL\r\nExternal gate YOUTUBE_MODE_B_POLICY_REVIEW: BLOCKED\r\nExternal gate CLOUD_AI_OWNER_DECISION: BLOCKED\r\n\r\nVERDICT: NOT READY\r\n  - PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW (Rejecting verifier(s) still wired in backend/src/main.ts; device-session issuance and/or inbound envelope acceptance are non-functional by design).\r\n  - REAL_UAT = NOT_EXECUTED (docs/release_readiness/uat_execution_log.json status must be COMPLETE with a recorded go/no-go decision; cases logged: 0 of 50).\r\n  - External gate CRYPTO_SECURITY_REVIEW is BLOCKED (owner: External security reviewer (not yet assigned)).\r\n  - External gate ANDROID_REAL_DEVICE_UAT is BLOCKED (owner: Android device owner / QA (not yet assigned)).\r\n  - External gate IOS_MAC_XCODE is EXTERNAL (owner: iOS build owner (not yet assigned)).\r\n  - External gate IOS_FAMILY_CONTROLS_ENTITLEMENT is EXTERNAL (owner: Apple Developer Program account holder (not yet assigned)).\r\n  - External gate IOS_PHYSICAL_DEVICE is EXTERNAL (owner: iOS device owner (not yet assigned)).\r\n  - External gate YOUTUBE_MODE_B_POLICY_REVIEW is BLOCKED (owner: Compliance/legal owner (not yet assigned)).\r\n  - External gate CLOUD_AI_OWNER_DECISION is BLOCKED (owner: Product/privacy owner (not yet assigned)).\r\n"
+  },
+  "dependencyAudits": {
+    "backend": {
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      }
+    },
+    "parent-web": {
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      }
+    },
+    "parent-sdk/browser-runtime": {
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      }
+    },
+    "parent-sdk/runtime-sync": {
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      }
+    },
+    "parent-sdk/wellbeing-control": {
+      "exitCode": 0,
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      }
+    }
+  },
+  "testCounts": {
+    "backendUnit": {
+      "tests": 956,
+      "pass": 956,
+      "fail": 0,
+      "tapBlocks": 3,
+      "exitCode": 0
+    },
+    "backendDb": {
+      "tests": 159,
+      "pass": 159,
+      "fail": 0,
+      "tapBlocks": 1,
+      "exitCode": 0
+    },
+    "parentWeb": {
+      "testFilesFailed": 0,
+      "testFilesPassed": 35,
+      "testsFailed": 0,
+      "testsPassed": 259,
+      "exitCode": 1
+    },
+    "android": {
+      "skipped": true,
+      "reason": "-RunAndroid not passed"
+    }
+  },
+  "notes": [
+    "Android instrumented tests (androidTest/) and real-device UAT (docs/release_readiness/UAT_TEST_PLAN.md) are NOT covered by this script and require physical/emulated hardware and, for UAT, a human tester.",
+    "iOS has no automated evidence path in this environment (no macOS/Xcode) -- see EXTERNAL_GATE_MATRIX.md IOS_MAC_XCODE."
+  ]
+}
