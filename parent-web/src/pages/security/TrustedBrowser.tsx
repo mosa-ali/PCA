@@ -26,11 +26,11 @@ export default function TrustedBrowser() {
           <strong>{t(`trustedBrowser.${data.state}`)}</strong>
         </p>
         <dl>
-          <dt>Service authenticated</dt>
+          <dt>{t('trustedBrowser.serviceAuthenticated')}</dt>
           <dd>{data.serviceAuthenticated ? t('common.yes') : t('common.no')}</dd>
-          <dt>Browser endpoint</dt>
+          <dt>{t('trustedBrowser.browserEndpoint')}</dt>
           <dd>{data.browserEndpointId ?? '--'}</dd>
-          <dt>Trust-set epoch</dt>
+          <dt>{t('trustedBrowser.trustSetEpoch')}</dt>
           <dd>{data.trustSetEpoch ?? '--'}</dd>
         </dl>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -61,7 +61,7 @@ export default function TrustedBrowser() {
           )}
           {data.state === 'EPOCH_STALE' && (
             <button type="button" className="btn btn-primary" onClick={() => act(() => clients.trustedBrowser.simulateParentApproval())}>
-              Resync (dev)
+              {t('trustedBrowser.resync')}
             </button>
           )}
           {data.state === 'REVOKED' && (

@@ -16,7 +16,7 @@ export default function ProtectionStatus() {
   return (
     <section aria-labelledby="protection-title">
       <h1 id="protection-title">{t('nav.protectionStatus')}</h1>
-      <p>Family trust-set epoch {data.familyEpoch.trustSetEpoch}, key epoch {data.familyEpoch.keyEpoch}.</p>
+      <p>{t('protectionStatus.epochSummary', { trustSetEpoch: data.familyEpoch.trustSetEpoch, keyEpoch: data.familyEpoch.keyEpoch })}</p>
       <div className="card-grid">
         {data.children.map((c) => (
           <article className="card" key={c.childId}>

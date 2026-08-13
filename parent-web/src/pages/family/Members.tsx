@@ -22,11 +22,11 @@ export default function Members() {
     setActionError(null);
     try {
       await runFamilyAction(role === 'ADMINISTRATOR' ? 'ADD_ADMINISTRATOR' : 'ADD_VIEWER', () =>
-        clients.familyAuthority.inviteMember(role, role === 'ADMINISTRATOR' ? 'New Admin' : 'New Viewer'),
+        clients.familyAuthority.inviteMember(role, role === 'ADMINISTRATOR' ? t('family.newAdministratorName') : t('family.newViewerName')),
       );
       reload();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Denied');
+      setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));
     }
   };
 
@@ -36,7 +36,7 @@ export default function Members() {
       await runFamilyAction('REMOVE_NON_OWNER_PARENT', () => clients.familyAuthority.removeMember(memberId));
       reload();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Denied');
+      setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));
     }
   };
 
@@ -65,7 +65,7 @@ export default function Members() {
               <th scope="col">{t('family.endpoint')}</th>
               <th scope="col">{t('family.status')}</th>
               <th scope="col">{t('family.lastAcknowledged')}</th>
-              <th scope="col" />
+              <th scope="col" aria-label={t('common.actions')} />
             </tr>
           </thead>
           <tbody>

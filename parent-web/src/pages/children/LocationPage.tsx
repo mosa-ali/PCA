@@ -27,8 +27,8 @@ export default function LocationPage() {
         <p>
           {t('dashboard.lastSeen')}: <bdi className="iso">{lastSeenLabel}</bdi>
         </p>
-        <p>Accuracy: {data.accuracyMeters ? `${data.accuracyMeters}m` : '--'}</p>
-        {data.isStale && <p role="status">This location data is stale.</p>}
+        <p>{data.accuracyMeters ? t('location.accuracy', { value: `${data.accuracyMeters}m` }) : t('location.accuracyUnknown')}</p>
+        {data.isStale && <p role="status">{t('location.stale')}</p>}
       </article>
     </div>
   );

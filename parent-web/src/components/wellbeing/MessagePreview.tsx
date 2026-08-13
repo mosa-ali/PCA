@@ -32,15 +32,15 @@ export function MessagePreview({ text, languageTag, surface }: MessagePreviewPro
       case 'STANDARD_NOTIFICATION':
         return (
           <div className="preview-notification" dir={dir} lang={languageTag}>
-            <strong>{t('app.name')}</strong>
+            <strong>{t('app.name', { lng: languageTag })}</strong>
             <p style={{ margin: '0.25rem 0 0' }}>{safeText}</p>
           </div>
         );
       case 'LOCK_SCREEN_REDACTED':
         return (
           <div className="preview-lockscreen" dir={dir} lang={languageTag}>
-            <p style={{ margin: 0, fontSize: '0.85rem' }}>New message available</p>
-            <p style={{ margin: 0, fontSize: '0.7rem', opacity: 0.7 }}>Unlock to view</p>
+            <p style={{ margin: 0, fontSize: '0.85rem' }}>{t('wellbeing.newMessageAvailable', { lng: languageTag })}</p>
+            <p style={{ margin: 0, fontSize: '0.7rem', opacity: 0.7 }}>{t('wellbeing.unlockToView', { lng: languageTag })}</p>
           </div>
         );
       case 'MOBILE_VIEWPORT':

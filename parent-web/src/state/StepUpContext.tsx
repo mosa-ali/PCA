@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../api/client';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 interface PendingStepUp {
   actionId: string;
@@ -24,6 +25,8 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (pending) confirmButtonRef.current?.focus();
   }, [pending]);
+
+  useModalFocusTrap(dialogRef, !!pending);
 
   const requestStepUp = useCallback((actionId: string) => {
     return new Promise<boolean>((resolve) => {

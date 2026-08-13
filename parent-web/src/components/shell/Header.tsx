@@ -47,7 +47,7 @@ export function Header({ onToggleSidebar, onToggleDrawer, sidebarCollapsed }: He
         <label>
           <span className="visually-hidden">{t('shell.role')}</span>
           <select
-            aria-label="Demo role switcher"
+            aria-label={t('shell.demoRoleSwitcher')}
             value={session?.role ?? 'OWNER'}
             onChange={(e) => setDemoRole(e.target.value as FamilyRole)}
           >

@@ -43,9 +43,11 @@
     "openMenu": "Open navigation menu",
     "closeMenu": "Close navigation menu",
     "breadcrumbHome": "Home",
+    "breadcrumbNav": "Breadcrumb",
     "toggleSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
     "language": "Language",
+    "demoRoleSwitcher": "Demo role switcher",
     "signedInAs": "Signed in as {{name}}",
     "role": "Role: {{role}}"
   },
@@ -91,7 +93,13 @@
     "batteryUnknown": "Battery unknown",
     "confirm": "Confirm",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "deniedGeneric": "Denied",
+    "actions": "Actions"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "back": "Back to dashboard"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -114,7 +122,23 @@
     "denied": "Not permitted for your role",
     "deniedTitle": "Action not permitted",
     "deniedBody": "Your role ({{role}}) does not permit this action. This is enforced by the family authority gateway, not just hidden in the UI.",
-    "viewOnlyBanner": "You have Viewer access -- read-only. Editing controls are disabled for your role."
+    "viewOnlyBanner": "You have Viewer access -- read-only. Editing controls are disabled for your role.",
+    "actions": {
+      "EDIT_CHILD_POLICY": "Edit child policy",
+      "APPROVE_REQUEST": "Approve request",
+      "ADD_VIEWER": "Add viewer",
+      "REMOVE_NON_OWNER_PARENT": "Remove non-owner parent",
+      "ADD_ADMINISTRATOR": "Add administrator",
+      "CHANGE_ANY_ROLE": "Change any role",
+      "CHANGE_RETENTION": "Change retention",
+      "DELETE_HISTORY": "Delete history",
+      "EXPORT_DATA": "Export data",
+      "REMOVE_OR_REVOKE_DEVICE": "Remove or revoke device",
+      "DISABLE_PROTECTION_POLICY": "Disable protection policy",
+      "TRANSFER_OWNERSHIP": "Transfer ownership",
+      "REVEAL_RECOVERY_MATERIAL": "Reveal recovery material",
+      "MANAGE_WELLBEING_MESSAGES": "Manage wellbeing messages"
+    }
   },
   "stepUp": {
     "title": "Re-authenticate to continue",
@@ -135,7 +159,11 @@
     "simulateStale": "Simulate epoch gone stale (dev)",
     "simulateRevoke": "Simulate revoke (dev)",
     "reset": "Reset (dev)",
-    "note": "Signing in to the account service does NOT by itself grant family decryption authority -- those are separate trust boundaries."
+    "resync": "Resync (dev)",
+    "note": "Signing in to the account service does NOT by itself grant family decryption authority -- those are separate trust boundaries.",
+    "serviceAuthenticated": "Service authenticated",
+    "browserEndpoint": "Browser endpoint",
+    "trustSetEpoch": "Trust-set epoch"
   },
   "wellbeing": {
     "title": "Wellbeing Messages",
@@ -165,7 +193,36 @@
     "dismissible": "Child can dismiss",
     "snoozable": "Child can snooze",
     "requiresSupervision": "Requires adult supervision",
-    "archived": "Archived"
+    "archived": "Archived",
+    "newMessageAvailable": "New message available",
+    "unlockToView": "Unlock to view",
+    "englishText": "English text",
+    "arabicText": "Arabic text (نص عربي)",
+    "categories": {
+      "ENCOURAGEMENT": "Encouragement",
+      "BREAK_REMINDER": "Break reminder",
+      "FOCUS": "Focus",
+      "GRATITUDE": "Gratitude",
+      "SAFETY_CHECK_IN": "Safety check-in",
+      "CUSTOM": "Custom"
+    },
+    "triggerLabels": {
+      "BREAK_DUE": "Break due",
+      "CONTINUOUS_USE_WARNING": "Continuous-use warning",
+      "APP_LAUNCH": "App launch",
+      "SCHEDULED_TIME_WINDOW": "Scheduled time window",
+      "LOCK_SCREEN": "Lock screen",
+      "MANUAL": "Manual"
+    },
+    "dayNames": {
+      "MON": "Monday",
+      "TUE": "Tuesday",
+      "WED": "Wednesday",
+      "THU": "Thursday",
+      "FRI": "Friday",
+      "SAT": "Saturday",
+      "SUN": "Sunday"
+    }
   },
   "family": {
     "member": "Member",
@@ -177,7 +234,9 @@
     "inviteViewer": "Invite Viewer",
     "removeMember": "Remove",
     "changeRole": "Change role",
-    "transferOwnership": "Transfer ownership"
+    "transferOwnership": "Transfer ownership",
+    "newAdministratorName": "New Admin",
+    "newViewerName": "New Viewer"
   },
   "deviceEnrollment": {
     "title": "Add a child device",
@@ -295,5 +354,81 @@
       "FAILED": "Delivery failed",
       "STALE": "Superseded by a newer change"
     }
+  },
+  "subscription": {
+    "planLabel": "Plan: {{plan}}",
+    "statusLabel": "Status: {{status}}",
+    "planFamilyDev": "Family (DEV fixture)",
+    "statusActive": "Active"
+  },
+  "notifications": {
+    "emailAlerts": "Email me for important alerts",
+    "pushRequests": "Push notifications for requests",
+    "payloadNote": "Notification payloads never contain family activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6)."
+  },
+  "devicesTable": {
+    "device": "Device",
+    "os": "OS",
+    "protection": "Protection",
+    "policyRevision": "Policy revision",
+    "epoch": "Epoch",
+    "epochValue": "trust {{trust}} / key {{key}}"
+  },
+  "appsTable": {
+    "app": "App",
+    "category": "Category",
+    "dailyLimit": "Daily limit",
+    "allowed": "Allowed"
+  },
+  "audit": {
+    "action": "Action",
+    "actor": "Actor",
+    "targetScope": "Target scope",
+    "result": "Result",
+    "timestamp": "Timestamp",
+    "note": "Audit entries never carry URLs, locations, activity detail, or recovery secrets."
+  },
+  "screenTime": {
+    "continuousLimit": "Continuous-use limit (minutes)",
+    "breakDuration": "Break duration (minutes)",
+    "baselineWarning": "This child's saved screen-time policy predates the mandatory 60/30 anti-gaming baseline and does not meet it. Update the values below and save to bring it into compliance."
+  },
+  "location": {
+    "accuracy": "Accuracy: {{value}}",
+    "accuracyUnknown": "Accuracy: --",
+    "stale": "This location data is stale."
+  },
+  "eyeProtection": {
+    "reminders": "Reminders: {{status}}"
+  },
+  "youtube": {
+    "restrictedMode": "Restricted mode: {{status}}",
+    "approvedChannels": "Approved channels: {{count}}"
+  },
+  "prayer": {
+    "calculationMethod": "Calculation method: {{method}}"
+  },
+  "protectionStatus": {
+    "epochSummary": "Family trust-set epoch {{trustSetEpoch}}, key epoch {{keyEpoch}}."
+  },
+  "export": {
+    "description": "An export is generated and encrypted entirely on this device; only the family's own key material can open it.",
+    "generatedStatus": "Export generated locally in this browser (dev stub) -- never proxied through a server."
+  },
+  "retention": {
+    "description": "Retention/deletion of family activity is enforced locally by the device holding the plaintext; this screen only sets the family-level policy value that devices honor.",
+    "updatedStatus": "Retention updated (dev stub -- no real backend yet)."
+  },
+  "deleteNow": {
+    "description": "This issues a signed, one-time deletion instruction to family devices. It cannot retroactively erase a device that stays offline.",
+    "confirmBody": "This action cannot be undone once devices acknowledge it.",
+    "issuedStatus": "Deletion instruction issued (dev stub) -- signed and audited, delivered E2EE to devices."
+  },
+  "childWellbeing": {
+    "noMessages": "No custom wellbeing messages target this child yet."
+  },
+  "recovery": {
+    "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",
+    "startTransaction": "Start recovery transaction (dev stub)"
   }
 }

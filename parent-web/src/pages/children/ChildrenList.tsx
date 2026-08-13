@@ -24,7 +24,7 @@ export default function ChildrenList() {
                 <th scope="col">{t('dashboard.children')}</th>
                 <th scope="col">{t('dashboard.deviceState')}</th>
                 <th scope="col">{t('dashboard.protectionCapability')}</th>
-                <th scope="col" />
+                <th scope="col" aria-label={t('common.actions')} />
               </tr>
             </thead>
             <tbody>

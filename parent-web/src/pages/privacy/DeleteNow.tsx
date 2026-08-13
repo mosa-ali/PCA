@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 
 export default function DeleteNow() {
   const { t } = useTranslation();
@@ -9,18 +10,21 @@ export default function DeleteNow() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (confirmOpen) confirmButtonRef.current?.focus();
   }, [confirmOpen]);
 
+  useModalFocusTrap(dialogRef, confirmOpen);
+
   const confirmDelete = async () => {
     try {
       await runFamilyAction('DELETE_HISTORY', async () => {
-        setStatus('Deletion instruction issued (dev stub) -- signed and audited, delivered E2EE to devices.');
+        setStatus(t('deleteNow.issuedStatus'));
       });
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Denied');
+      setStatus(e instanceof Error ? e.message : t('common.deniedGeneric'));
     } finally {
       setConfirmOpen(false);
     }
@@ -29,7 +33,7 @@ export default function DeleteNow() {
   return (
     <section aria-labelledby="delete-title">
       <h1 id="delete-title">{t('nav.deleteNow')}</h1>
-      <p>This issues a signed, one-time deletion instruction to family devices. It cannot retroactively erase a device that stays offline.</p>
+      <p>{t('deleteNow.description')}</p>
       {status && <p role="status">{status}</p>}
       <PermissionGate action="DELETE_HISTORY" showDisabledFallback>
         <button type="button" className="btn" onClick={() => setConfirmOpen(true)}>
@@ -38,9 +42,9 @@ export default function DeleteNow() {
       </PermissionGate>
       {confirmOpen && (
         <div className="modal-overlay" role="presentation" onKeyDown={(e) => e.key === 'Escape' && setConfirmOpen(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
+          <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
             <h2 id="delete-confirm-title">{t('common.confirm')}</h2>
-            <p>This action cannot be undone once devices acknowledge it.</p>
+            <p>{t('deleteNow.confirmBody')}</p>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setConfirmOpen(false)}>
                 {t('common.cancel')}

@@ -148,13 +148,11 @@ export default function ScreenTimePage() {
       )}
       {loadedPolicyPredatesBaseline && (
         <p role="alert" className="field-warning">
-          This child&apos;s saved screen-time policy predates the mandatory 60/30 anti-gaming
-          baseline and does not meet it. Update the values below and save to bring it into
-          compliance.
+          {t('screenTime.baselineWarning')}
         </p>
       )}
       <div className="field">
-        <label htmlFor="limit">Continuous-use limit (minutes)</label>
+        <label htmlFor="limit">{t('screenTime.continuousLimit')}</label>
         <input
           id="limit"
           type="number"
@@ -166,7 +164,7 @@ export default function ScreenTimePage() {
         />
       </div>
       <div className="field">
-        <label htmlFor="break">Break duration (minutes)</label>
+        <label htmlFor="break">{t('screenTime.breakDuration')}</label>
         <input
           id="break"
           type="number"

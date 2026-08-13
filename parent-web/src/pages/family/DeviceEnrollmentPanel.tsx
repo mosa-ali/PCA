@@ -247,7 +247,7 @@ export default function DeviceEnrollmentPanel() {
                 <th scope="col">{t('deviceEnrollment.protectionMode')}</th>
                 <th scope="col">{t('family.status')}</th>
                 <th scope="col">{t('deviceEnrollment.expiresAt')}</th>
-                <th scope="col" />
+                <th scope="col" aria-label={t('common.actions')} />
               </tr>
             </thead>
             <tbody>
