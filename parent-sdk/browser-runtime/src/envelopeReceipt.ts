@@ -74,6 +74,20 @@ export async function attemptDecrypt(input: AttemptDecryptInput): Promise<Envelo
     return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
   }
 
+  // The envelope's own claimed ftsEpoch must be COVERED BY the locally-
+  // verified current epoch (envelope.ftsEpoch <= fts.epoch), never ahead of
+  // it. An envelope claiming a newer epoch than what this endpoint has
+  // locally verified as current means the locally-cached FTS is itself
+  // stale relative to this envelope -- we cannot know whether this endpoint
+  // is even still authorized at that future epoch, so this must fail
+  // closed exactly like any other stale-FTS condition rather than proceed.
+  // An envelope from an OLDER epoch than fts.epoch is not rejected here:
+  // whether an older-epoch envelope remains decryptable is a key-selection
+  // question for the (not yet reviewed) crypto suite, not this module.
+  if (input.receipt.envelope.ftsEpoch > input.fts.epoch) {
+    return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
+  }
+
   const gate = getCryptoGateDecision();
   if (gate.status !== 'READY') {
     return { ...input.receipt, state: 'DECRYPT_BLOCKED_CRYPTO_REVIEW', lastAttemptAtUtc: attemptedAt };
