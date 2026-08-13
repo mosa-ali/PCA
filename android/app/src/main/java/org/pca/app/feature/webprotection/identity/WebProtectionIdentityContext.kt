@@ -51,6 +51,13 @@ class RealWebProtectionIdentityContextProvider(
     override fun current(): WebProtectionIdentity {
         val familyState = familyStateStore.currentState()
             ?: return WebProtectionIdentity.TrustedFamilyContextUnavailable
+        // Coordinator correction: EnrollmentCoordinator.persistSuccess() currently persists
+        // familyId = "" as an explicitly documented placeholder (the bootstrap response today
+        // carries only deviceId/status, not a real family identifier) -- a non-null LocalFamilyState
+        // therefore does NOT by itself mean a trusted family identity exists. A blank familyId must
+        // never be treated as real authority (doc 13); `.isBlank()` also catches an all-whitespace
+        // value, not just the exact empty string.
+        if (familyState.familyId.isBlank()) return WebProtectionIdentity.TrustedFamilyContextUnavailable
         val enrolledDeviceId = (deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId
             ?: return WebProtectionIdentity.TrustedFamilyContextUnavailable
         // Defensive consistency check: these two ports must agree on deviceId, or neither is trustworthy enough to evaluate family-scoped rules under.

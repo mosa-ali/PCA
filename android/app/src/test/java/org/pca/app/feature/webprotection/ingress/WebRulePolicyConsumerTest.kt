@@ -63,6 +63,39 @@ class WebRulePolicyConsumerTest {
         assertEquals(1, repository.findMatching("family-1", "example.test").size)
     }
 
+    /**
+     * Coordinator correction: an [expectedFamilyId] of `""` (the same placeholder
+     * `EnrollmentCoordinator.persistSuccess()` currently persists) must never be trusted
+     * authority for a family-scoped rule payload, even if the payload itself also claims
+     * `familyId = ""` -- defense in depth alongside the identity-provider-level fix.
+     */
+    @Test
+    fun `a blank expectedFamilyId is never trusted authority, even if the payload also claims a blank familyId`() {
+        val (consumer, repository) = consumer()
+        val payload = FamilyWebRulePayload(
+            familyId = "",
+            revision = 1L,
+            rules = listOf(WebRule("example.test", WebRuleListType.DENY, WebRuleSource.PARENT_DENYLIST, "", 0L)),
+        )
+
+        val outcome = consumer.apply("", payload)
+
+        assertTrue(outcome is WebRuleIngressOutcome.RejectedNoTrustedFamilyAuthority)
+        assertEquals(null, repository.parentRulesRevision)
+        assertTrue(repository.snapshot().isEmpty())
+    }
+
+    @Test
+    fun `a whitespace-only expectedFamilyId is never trusted authority`() {
+        val (consumer, repository) = consumer()
+        val payload = FamilyWebRulePayload(familyId = "   ", revision = 1L, rules = emptyList())
+
+        val outcome = consumer.apply("   ", payload)
+
+        assertTrue(outcome is WebRuleIngressOutcome.RejectedNoTrustedFamilyAuthority)
+        assertEquals(null, repository.parentRulesRevision)
+    }
+
     @Test
     fun `end-to-end conformance scenario, doc 47 -- deny then explicit replace, never leaking rules to the security feed`() {
         val (consumer, repository) = consumer()

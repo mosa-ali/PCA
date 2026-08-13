@@ -35,6 +35,8 @@ sealed class WebRuleIngressOutcome {
     object RejectedForbiddenSource : WebRuleIngressOutcome()
     /** The payload's own `familyId` does not match [expectedFamilyId] -- never applied, regardless of how trusted the transport claimed to be, since a wrong-family payload must never overwrite this device's own family's rules (doc 45 "wrong family -> rejected"). */
     object RejectedWrongFamily : WebRuleIngressOutcome()
+    /** Coordinator correction: [expectedFamilyId] itself was blank/whitespace-only -- there is no trusted family authority to apply ANY family-scoped payload under, regardless of what the payload claims. */
+    object RejectedNoTrustedFamilyAuthority : WebRuleIngressOutcome()
 }
 
 class WebRulePolicyConsumer(private val repository: PersistentWebRuleRepository) {
@@ -43,8 +45,14 @@ class WebRulePolicyConsumer(private val repository: PersistentWebRuleRepository)
      * [expectedFamilyId] must come from [org.pca.app.feature.webprotection.identity.WebProtectionIdentityContextProvider]
      * (this device's own trusted identity), never from the payload itself --
      * a payload claiming to be for a different family is rejected outright.
+     * Coordinator correction: a blank [expectedFamilyId] is never trusted
+     * authority either -- [org.pca.app.feature.webprotection.identity.RealWebProtectionIdentityContextProvider]
+     * already refuses to report [org.pca.app.feature.webprotection.identity.WebProtectionIdentity.Trusted]
+     * for a blank familyId, but this consumer does not rely on that alone
+     * (defense in depth against a future/misbehaving caller passing one directly).
      */
     fun apply(expectedFamilyId: OpaqueFamilyId, payload: FamilyWebRulePayload): WebRuleIngressOutcome {
+        if (expectedFamilyId.isBlank()) return WebRuleIngressOutcome.RejectedNoTrustedFamilyAuthority
         if (payload.familyId != expectedFamilyId) return WebRuleIngressOutcome.RejectedWrongFamily
         for (rule in payload.rules) {
             if (rule.familyId != expectedFamilyId) return WebRuleIngressOutcome.RejectedWrongFamily
