@@ -44,6 +44,7 @@ import type {
   ParentFamilyDataGateway,
   RequestClient,
   ServiceAuthClient,
+  WebRuleAdminClient,
   WellbeingMessageAdminClient,
 } from './interfaces';
 import type { ParentRuntimeSyncClient } from './runtimeSyncClient';
@@ -55,6 +56,7 @@ import { DevParentFamilyDataGateway } from './dev/devParentFamilyDataGateway';
 import { DevDeviceStatusClient } from './dev/devDeviceStatusClient';
 import { DevRequestClient } from './dev/devRequestClient';
 import { DevWellbeingMessageAdminClient } from './dev/devWellbeingMessageAdminClient';
+import { DevWebRuleAdminClient } from './dev/devWebRuleAdminClient';
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
@@ -65,6 +67,7 @@ import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
 import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
+import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import {
   UnavailableFamilyAuthorityGateway,
   UnavailableWellbeingMessageAdminClient,
@@ -77,6 +80,7 @@ export interface PcaApiClients {
   deviceStatus: DeviceStatusClient;
   requests: RequestClient;
   wellbeingMessages: WellbeingMessageAdminClient;
+  webRuleAdmin: WebRuleAdminClient;
   trustedBrowser: TrustedBrowserProvider;
   runtimeSync: ParentRuntimeSyncClient;
   deviceEnrollment: DeviceEnrollmentClient;
@@ -92,6 +96,7 @@ function buildDevClients(): PcaApiClients {
     deviceStatus: new DevDeviceStatusClient(),
     requests: new DevRequestClient(),
     wellbeingMessages: new DevWellbeingMessageAdminClient(),
+    webRuleAdmin: new DevWebRuleAdminClient(),
     trustedBrowser: new DevTrustedBrowserProvider(),
     runtimeSync: new DevRuntimeSyncClient(),
     deviceEnrollment: new DevDeviceEnrollmentClient(),
@@ -124,6 +129,7 @@ function buildRealClients(): PcaApiClients {
     deviceStatus: new RealDeviceStatusClient(trustedBrowser),
     requests: new RealRequestClient(trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
+    webRuleAdmin: new RealWebRuleAdminClient(trustedBrowser),
     trustedBrowser,
     runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl),
     // KNOWN_BACKEND_INTEGRATION_ACTION: noServiceBearerTokenAvailable is a

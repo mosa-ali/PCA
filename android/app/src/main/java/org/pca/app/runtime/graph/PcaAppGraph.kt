@@ -16,7 +16,16 @@ import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.policy.ScreenTimePolicyApplier
 import org.pca.app.feature.webprotection.engine.PersistentWebRuleRepository
 import org.pca.app.feature.webprotection.engine.WebFilterEngine
+import org.pca.app.feature.webprotection.identity.RealWebProtectionIdentityContextProvider
+import org.pca.app.feature.webprotection.identity.WebProtectionIdentityContextProvider
+import org.pca.app.feature.webprotection.ingress.WebRulePolicyConsumer
+import org.pca.app.feature.webprotection.safebrowser.ParentUnblockRequestService
+import org.pca.app.feature.webprotection.safebrowser.PersistentParentUnblockRequestRepository
 import org.pca.app.feature.webprotection.safebrowser.SafeBrowserNavigationPolicy
+import org.pca.app.feature.webprotection.securityfeed.NotApprovedSignedRulePackageVerifier
+import org.pca.app.feature.webprotection.securityfeed.SignedRulePackageConsumer
+import org.pca.app.feature.webprotection.vpn.VpnMetadataDecisionAdapter
+import org.pca.app.platform.StandardVpnCapabilitySource
 import org.pca.app.feature.youtube.engine.ModeAAndroidUsageAdapter
 import org.pca.app.feature.youtube.policy.ModeBFeatureFlagLocalStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
@@ -213,16 +222,34 @@ class PcaAppGraph private constructor(
         wallClockTimeSource = wallClockTimeSource,
     )
 
-    /** PCA-ANDROID-WEB-YOUTUBE-1 (Agent 19) real production bindings: the deterministic,
-     * offline-first web-filter/Safe Browser engine and Mode A's aggregate-only YouTube usage
-     * adapter. Neither is wired to a live navigation surface (a WebView/VPN integration) or a
-     * parent-authored rule-delivery transport by Agent 19 itself (explicitly out of scope, and
-     * out of scope for this narrow Coordinator pass too -- building either would be a new
-     * subsystem, not glue); both are real, reachable, production-composed objects ready for that
-     * follow-up wiring rather than dead code reachable only from tests. */
+    /** PCA-ANDROID-WEB-YOUTUBE-1 (Agent 19) + PCA-WEB-RUNTIME-1 (Agent 27) real production
+     * bindings: the deterministic, offline-first web-filter/Safe Browser engine, now wired to a
+     * real navigation surface ([org.pca.app.feature.webprotection.ui.SafeBrowserActivity]),
+     * honest identity context, LKG-durable rule storage, and both rule-ingress consumers.
+     *
+     * [webProtectionIdentityContextProvider] is the ONLY source of family/profile/device identity
+     * any Safe Browser caller may use (doc 13) -- never a blank/fabricated id.
+     *
+     * [webRulePolicyConsumer] and [signedRulePackageConsumer] are real, reachable, production-
+     * composed objects, but PRODUCTION_PARENT_RULE_DELIVERY remains
+     * SOURCE_READY_WITH_CRYPTO_GATE (doc 30/31): no production caller here feeds either consumer
+     * a real decrypted family transport or an approved package-signature verifier -- both fail
+     * closed ([NotApprovedSignedRulePackageVerifier] never approves a package) until the separate
+     * PRODUCTION_CRYPTO_SUITE human security review clears, exactly like [deviceKeyPairGenerator]
+     * above. The only current caller of [webRulePolicyConsumer] is the conformance/test injection
+     * path (doc 32), never production. */
     val webRuleRepository = PersistentWebRuleRepository(runtimeStateStore)
     val webFilterEngine = WebFilterEngine(webRuleRepository)
     val safeBrowserNavigationPolicy = SafeBrowserNavigationPolicy(webFilterEngine, persistence.webVisitRepository)
+    val webProtectionIdentityContextProvider: WebProtectionIdentityContextProvider =
+        RealWebProtectionIdentityContextProvider(familyStateStore, deviceIdentityProvider)
+    val webRulePolicyConsumer = WebRulePolicyConsumer(webRuleRepository)
+    val signedRulePackageVerifier = NotApprovedSignedRulePackageVerifier()
+    val signedRulePackageConsumer = SignedRulePackageConsumer(webRuleRepository, signedRulePackageVerifier)
+    val vpnCapabilitySource = StandardVpnCapabilitySource(context)
+    val vpnMetadataDecisionAdapter = VpnMetadataDecisionAdapter(vpnCapabilitySource)
+    val parentUnblockRequestRepository = PersistentParentUnblockRequestRepository(runtimeStateStore)
+    val parentUnblockRequestService = ParentUnblockRequestService(parentUnblockRequestRepository)
     val modeAAndroidUsageAdapter = ModeAAndroidUsageAdapter(
         usageSessions = persistence.usageSessionRepository,
         accessState = { usageObservationSource.accessState() },

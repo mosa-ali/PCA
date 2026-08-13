@@ -30,6 +30,7 @@ import type {
   WellbeingCustomMessage,
   WellbeingMessageControlV1,
 } from '../domain/wellbeing';
+import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../domain/webRulePolicy';
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -89,6 +90,23 @@ export interface DeviceStatusClient {
 export interface RequestClient {
   listRequests(status?: RequestStatus): Promise<FamilyRequest[]>;
   decide(requestId: string, decision: 'APPROVED' | 'DENIED'): Promise<{ auditEventId: string }>;
+}
+
+/**
+ * doc 34: a narrow family Web Rule authoring interface -- deliberately NOT
+ * routed through a central plaintext family-rule API (doc 34/52/53: no
+ * MySQL-backed, centrally-readable family web-rule table exists or should
+ * exist; family policy content stays E2EE). `revision` on every returned
+ * entry is this child's current accepted local revision (doc 36's
+ * LOCAL_DRAFT/PENDING_DELIVERY/DELIVERED/APPLIED/FAILED/STALE lifecycle) --
+ * a caller must never treat a successful `setRule`/`removeRule` call here as
+ * proof the child device has applied it (doc 36: "parent saved != child
+ * applied").
+ */
+export interface WebRuleAdminClient {
+  listRules(childId: string): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus; revision: number | null }>;
+  setRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }>;
+  removeRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }>;
 }
 
 export interface WellbeingMessageAdminClient {

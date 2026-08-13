@@ -48,6 +48,7 @@ fun ChildHomeScreen(
     modifier: Modifier = Modifier,
     onRequestParentContact: () -> Unit = {},
     onEmergencyAccess: () -> Unit = {},
+    onOpenSafeBrowser: () -> Unit = {},
 ) {
     val rows = statusRows(status)
     Surface(modifier = modifier.fillMaxSize()) {
@@ -61,8 +62,24 @@ fun ChildHomeScreen(
 
             items(rows) { row -> StatusRow(row) }
 
+            item { SafeBrowserEntryCard(onClick = onOpenSafeBrowser) }
             item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
+        }
+    }
+}
+
+/** PCA-WEB-RUNTIME-1: the real, reachable child entry point into [org.pca.app.feature.webprotection.ui.SafeBrowserActivity] -- without this, that Activity would be declared but unlaunchable, which doc 48 explicitly forbids counting as a closed navigation surface. */
+@Composable
+private fun SafeBrowserEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_safe_browser), style = MaterialTheme.typography.titleMedium)
         }
     }
 }

@@ -62,6 +62,14 @@
                 <data android:scheme="pca" android:host="enroll" />
             </intent-filter>
         </activity>
+
+        <!-- PCA-WEB-RUNTIME-1: the real child-facing Safe Browser surface. Not exported (launched
+             only from within this app, e.g. a future ChildHomeScreen entry point) and declares no
+             intent-filter of its own, so it can never collide with the enrollment deep link above
+             or be launched by an arbitrary external app/link. -->
+        <activity
+            android:name=".feature.webprotection.ui.SafeBrowserActivity"
+            android:exported="false" />
     </application>
 </manifest>
 

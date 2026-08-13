@@ -205,4 +205,17 @@
     <string name="prayer_name_asr">العصر</string>
     <string name="prayer_name_maghrib">المغرب</string>
     <string name="prayer_name_isha">العشاء</string>
+
+    <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
+    <string name="child_home_safe_browser">المتصفح الآمن</string>
+    <string name="safe_browser_address_bar_hint">عنوان الموقع</string>
+    <string name="safe_browser_go_button">اذهب</string>
+    <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات العائلة، لذا فإن قواعد السلامة الأساسية فقط هي المفعّلة.</string>
+    <string name="safe_browser_held_block_title">هذا الموقع محظور</string>
+    <string name="safe_browser_held_review_title">هذا الموقع يحتاج إلى مراجعة أحد الوالدين</string>
+    <string name="safe_browser_ask_parent_button">اسأل أحد الوالدين</string>
+    <string name="safe_browser_ask_parent_pending_offline">سيتم إرسال الطلب عند الاتصال بالإنترنت</string>
+    <string name="safe_browser_ask_parent_submitted">تم الإرسال إلى أحد الوالدين — بانتظار القرار</string>
+    <string name="safe_browser_ask_parent_already_pending">هناك طلب سابق لهذا الموقع بانتظار أحد الوالدين</string>
+    <string name="safe_browser_ask_parent_not_requestable">هذه قاعدة أمان لا يمكن طلب مراجعتها</string>
 </resources>

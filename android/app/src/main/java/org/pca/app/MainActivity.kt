@@ -1,11 +1,13 @@
 package org.pca.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
 import org.pca.app.runtime.graph.newLocalRequestId
 import org.pca.app.runtime.ui.ChildHomeScreen
 
@@ -42,6 +44,9 @@ class MainActivity : ComponentActivity() {
                             kind = "PARENT_CONTACT",
                             detail = "Child requested to contact parent",
                         )
+                    },
+                    onOpenSafeBrowser = {
+                        startActivity(Intent(this@MainActivity, SafeBrowserActivity::class.java))
                     },
                 )
             }

@@ -202,4 +202,17 @@
     <string name="prayer_name_asr">Asr</string>
     <string name="prayer_name_maghrib">Maghrib</string>
     <string name="prayer_name_isha">Isha</string>
+
+    <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
+    <string name="child_home_safe_browser">Safe Browser</string>
+    <string name="safe_browser_address_bar_hint">Website address</string>
+    <string name="safe_browser_go_button">Go</string>
+    <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your family\'s settings right now, so only basic safety rules are active.</string>
+    <string name="safe_browser_held_block_title">This site is blocked</string>
+    <string name="safe_browser_held_review_title">This site needs a parent\'s review</string>
+    <string name="safe_browser_ask_parent_button">Ask a parent</string>
+    <string name="safe_browser_ask_parent_pending_offline">Request will be sent when connected</string>
+    <string name="safe_browser_ask_parent_submitted">Sent to a parent — waiting for a decision</string>
+    <string name="safe_browser_ask_parent_already_pending">A request for this site is already waiting for a parent</string>
+    <string name="safe_browser_ask_parent_not_requestable">This is a safety rule that can\'t be requested</string>
 </resources>

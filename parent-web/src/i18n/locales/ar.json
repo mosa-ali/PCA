@@ -267,5 +267,33 @@
     "unauthorizedFamilyScope": "هذا الحساب غير مخوَّل لنطاق العائلة المطلوب.",
     "sessionExpired": "انتهت صلاحية جلستك. يرجى تسجيل الدخول مرة أخرى.",
     "networkError": "تعذّر الوصول إلى خدمة حساب PCA. تحقق من اتصالك وحاول مرة أخرى."
+  },
+  "webProtection": {
+    "filteringLevel": "مستوى التصفية: {{level}}",
+    "deliveryStatus": "حالة التسليم",
+    "revision": "المراجعة {{revision}}",
+    "offlineNotice": "أنت غير متصل بالإنترنت -- لا يمكن إرسال التغييرات إلى هذا الجهاز الآن.",
+    "pendingOffline": "هذا المتصفح غير متصل؛ لم يتم إرسال التغيير.",
+    "addDomainLabel": "عنوان الموقع",
+    "addDomainPlaceholder": "example.com",
+    "listTypeLabel": "القائمة",
+    "addButton": "إضافة",
+    "removeButton": "إزالة",
+    "denylistTitle": "المواقع المحظورة",
+    "denylistEmpty": "لا توجد مواقع محظورة.",
+    "allowlistTitle": "المواقع المسموح بها دائمًا",
+    "allowlistEmpty": "لا توجد مواقع في قائمة السماح الدائم.",
+    "listType": {
+      "ALLOW": "السماح دائمًا",
+      "DENY": "حظر"
+    },
+    "status": {
+      "LOCAL_DRAFT": "مسودة (لم يتم إرسالها بعد)",
+      "PENDING_DELIVERY": "بانتظار التسليم",
+      "DELIVERED": "تم التسليم",
+      "APPLIED": "تم التطبيق على الجهاز",
+      "FAILED": "فشل التسليم",
+      "STALE": "تم استبداله بتغيير أحدث"
+    }
   }
 }

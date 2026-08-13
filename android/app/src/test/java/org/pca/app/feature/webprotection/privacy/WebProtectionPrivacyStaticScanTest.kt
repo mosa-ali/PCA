@@ -73,4 +73,34 @@ class WebProtectionPrivacyStaticScanTest {
 
         assertTrue("non-Safe-Browser files declaring a raw url/pageTitle field: $offenders", offenders.isEmpty())
     }
+
+    /** doc 10/42: `onReceivedSslError` may exist only to fail closed -- this scan fails the build the moment any `.proceed()` call is added anywhere in this lane, so a future "development fallback" cannot silently reintroduce a TLS bypass. */
+    @Test
+    fun `no source file in the webprotection module ever calls SslErrorHandler proceed`() {
+        val root = mainSourceRoot()
+        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
+
+        val offenders = root!!.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { it.readText().contains(".proceed(") }
+            .map { it.name }
+            .toList()
+
+        assertTrue("files calling .proceed() (a potential TLS-error bypass): $offenders", offenders.isEmpty())
+    }
+
+    /** doc 43: no raw/full URL may ever reach a production log/analytics/telemetry call anywhere in this lane. */
+    @Test
+    fun `no source file in the webprotection module logs, prints or sends telemetry`() {
+        val root = mainSourceRoot()
+        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
+        val forbiddenLoggingTokens = listOf("Log.", "println(", "printStackTrace(", "analytics", "telemetry")
+
+        val offenders = root!!.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .flatMap { file -> forbiddenLoggingTokens.filter { file.readText().contains(it) }.map { file.name to it } }
+            .toList()
+
+        assertTrue("files referencing a logging/telemetry API: $offenders", offenders.isEmpty())
+    }
 }

@@ -267,5 +267,33 @@
     "unauthorizedFamilyScope": "This account is not authorized for the requested family scope.",
     "sessionExpired": "Your session has expired. Please sign in again.",
     "networkError": "Could not reach the PCA account service. Check your connection and try again."
+  },
+  "webProtection": {
+    "filteringLevel": "Filtering level: {{level}}",
+    "deliveryStatus": "Delivery status",
+    "revision": "revision {{revision}}",
+    "offlineNotice": "You're offline -- changes cannot be sent to this device right now.",
+    "pendingOffline": "This browser is offline; the change was not sent.",
+    "addDomainLabel": "Website address",
+    "addDomainPlaceholder": "example.com",
+    "listTypeLabel": "List",
+    "addButton": "Add",
+    "removeButton": "Remove",
+    "denylistTitle": "Blocked sites",
+    "denylistEmpty": "No sites are blocked.",
+    "allowlistTitle": "Always-allowed sites",
+    "allowlistEmpty": "No sites are on the always-allow list.",
+    "listType": {
+      "ALLOW": "Always allow",
+      "DENY": "Block"
+    },
+    "status": {
+      "LOCAL_DRAFT": "Draft (not yet sent)",
+      "PENDING_DELIVERY": "Pending delivery",
+      "DELIVERED": "Delivered",
+      "APPLIED": "Applied on device",
+      "FAILED": "Delivery failed",
+      "STALE": "Superseded by a newer change"
+    }
   }
 }
