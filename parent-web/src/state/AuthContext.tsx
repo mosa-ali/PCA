@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- context module intentionally exports hooks alongside the provider */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getApiClients } from '../api/client';
 import type { AuthenticatedSession } from '../api/interfaces';
 import type { FamilyRole } from '../domain/roles';
@@ -19,9 +19,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clients = getApiClients();
   const [session, setSession] = useState<AuthenticatedSession | null>(null);
   const [loading, setLoading] = useState(true);
+  // Guards against setting state from a getSession() resolution that lands
+  // after this provider has unmounted (e.g. React 18 test teardown racing an
+  // in-flight promise) -- avoids an unhandled "window is not defined" style
+  // rejection/state-update-after-unmount without hiding a real error.
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const refresh = useCallback(() => {
     clients.serviceAuth.getSession().then((s) => {
+      if (!mountedRef.current) return;
       setSession(s);
       setLoading(false);
     });
