@@ -1,6 +1,8 @@
 # PCA Architecture Master v1.0
 
-**Package:** v1.0 · **Lifecycle:** `VERIFIED_COMPLETE` · **Implementation:** `NOT_STARTED`; PCA-0 only is authorized.
+**Package:** v1.0 · **ARCHITECTURE_BASELINE:** `VERIFIED_COMPLETE` / `HISTORICAL_ACCEPTED` (the v1.0 document set itself; unchanged since acceptance) · **CURRENT_IMPLEMENTATION:** `ACTIVE` / `ADVANCED` (substantial, in-progress build-out against this baseline is now underway across backend, Android, Parent Web, and — to a lesser extent — iOS; see `docs/architecture/30_IMPLEMENTATION_PROGRAMME.md` for the phase-by-phase `SOURCE_COMPLETE` / `VALIDATED_COMPLETE` / `PRODUCTION_READY` status).
+
+This "Implementation" field previously read `NOT_STARTED; PCA-0 only is authorized`. That is now out of date and has been corrected as part of a controlled documentation-realignment pass (`PCA-DOC-REALIGN-1`, 2026-08-14): implementation has progressed well past PCA-0 in several domains. Correcting this field is a status-accuracy fix, not a re-acceptance of the architecture baseline and not a new implementation authorization — see the unchanged acceptance record in Section "Assurance and next gate" below, which is preserved verbatim.
 
 This is the executive navigation summary. The controlled detail is the 35-document set in [docs/architecture/README.md](docs/architecture/README.md); it must be read before implementation or product commitments.
 

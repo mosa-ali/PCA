@@ -12,6 +12,6 @@ This is a local reconciliation manifest, not publication evidence. It intentiona
 | A_100 | OWNER_ACCEPTED |
 | Owner acceptance | ACCEPTED |
 | Publication | Owner-accepted published baseline `fda523...` |
-| Implementation | NOT_STARTED; NOT GRANTED |
+| Implementation (corrected 2026-08-14) | CURRENT_IMPLEMENTATION = ACTIVE / ADVANCED; IMPLEMENTATION_AUTHORIZATION = PARTIALLY_GRANTED (see `34_ARCHITECTURE_COMPLETION_GATE.md` and `30_IMPLEMENTATION_PROGRAMME.md`) |
 
-The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. The repository-root checksum artifact remains the authoritative hash inventory. This state records owner acceptance only; it does not authorize implementation.
+The final manifest must list each controlled file and SHA-256, identify the published commit SHA, and be regenerated rather than hand-edited. The repository-root checksum artifact remains the authoritative hash inventory. This state records owner acceptance of the architecture documentation only; it does not, by itself, constitute a blanket implementation authorization for every future phase — see doc 31 for phase-specific gates.

@@ -2,10 +2,10 @@
 
 **Version:** 1.0  
 **Date:** 2026-08-10  
-**Status:** VERIFIED_COMPLETE v1.0; owner accepted published baseline `fda523...`.
-**Implementation:** NOT_STARTED; authorization remains NOT_GRANTED.
+**Status:** ARCHITECTURE_BASELINE = VERIFIED_COMPLETE / HISTORICAL_ACCEPTED v1.0; owner accepted published baseline `fda523...` (unchanged, historical fact).
+**Implementation:** CURRENT_IMPLEMENTATION = ACTIVE / ADVANCED. Substantial, in-progress implementation now exists across backend, Android, and Parent Web, with earlier-stage iOS work — see `30_IMPLEMENTATION_PROGRAMME.md` for phase-by-phase `SOURCE_COMPLETE` / `VALIDATED_COMPLETE` / `PRODUCTION_READY` status. This corrects a prior `NOT_STARTED` field that had gone stale relative to the actual repository state (realignment `PCA-DOC-REALIGN-1`, 2026-08-14); it is a status-accuracy correction, not a new authorization event.
 
-This package is the controlled architecture baseline for PCA before implementation. `A_100 = OWNER_ACCEPTED`; implementation remains separately unauthorized.
+This package is the controlled architecture baseline PCA's implementation builds against. `A_100 = OWNER_ACCEPTED` for the architecture documentation itself; see `00_DOCUMENT_CONTROL.md` Section 8A for the three-tier completion framework (`SOURCE_COMPLETE`/`VALIDATED_COMPLETE`/`PRODUCTION_READY`) now used to describe implementation status precisely, and Section 5.1 for how the pre-A-100 implementation freeze relates to A-100's declared acceptance.
 
 | # | Document | Purpose |
 |---|---|---|
@@ -51,4 +51,4 @@ The architecture is intentionally **platform-honest**. PCA must never promise ca
 
 ## Gate rule
 
-`A-100 DOCUMENTATION ACCEPTED` must be recorded before creation of production source trees. Current state: `A_100 = PENDING_INDEPENDENT_REVIEW`, `IMPLEMENTATION_STATUS = NOT_STARTED`, `IMPLEMENTATION_AUTHORIZATION = NOT_GRANTED`.
+`A-100 DOCUMENTATION ACCEPTED` must be recorded before creation of production source trees. Per doc 34, `A_100 = OWNER_ACCEPTED` has been recorded. Current state (corrected 2026-08-14, `PCA-DOC-REALIGN-1`): `CURRENT_IMPLEMENTATION = ACTIVE / ADVANCED` (see `30_IMPLEMENTATION_PROGRAMME.md`); `IMPLEMENTATION_AUTHORIZATION = PARTIALLY_GRANTED` — de facto implementation is underway and evidenced in-repo across backend, Android, Parent Web, and iOS scaffolding, and specific phases have owner-level decision records (e.g. `docs/implementation/decisions/PCA_IMPL_DECISION_001_BACKEND_STACK.md`, Addendum 001's `OWNER_APPROVED` status), but this is not a claim that every future phase in doc 30 or in Addendum 002 is blanket-authorized — later phases remain subject to their own gates (doc 31, Addendum 002 Section 19).

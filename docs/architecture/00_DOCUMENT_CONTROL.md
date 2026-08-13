@@ -82,6 +82,10 @@ Permitted during freeze: documentation, diagrams, architecture decision records 
 
 **PCA-FR-000** The repository MUST NOT contain merged production application source (Kotlin/Swift/Compose/SwiftUI/Gradle/Xcode/Node service code implementing family-activity handling) before `A-100` is declared, except read-only feasibility spikes explicitly excluded from the freeze and deleted before merge.
 
+### 5.1 Freeze status note (added by `PCA-DOC-REALIGN-1`, 2026-08-14)
+
+`docs/architecture/34_ARCHITECTURE_COMPLETION_GATE.md` records `A_100 = OWNER_ACCEPTED`, and this repository now contains substantial production application/backend source (Android, backend, Parent Web, and iOS scaffolding — see `docs/architecture/30_IMPLEMENTATION_PROGRAMME.md` for the current per-phase status). This freeze section is therefore satisfied/lifted in the sense doc 34 describes: it was a pre-A-100 gate, and A-100 has been declared. This note does not alter this document's own `DRAFT_RECONCILIATION` lifecycle declaration in the header above, which concerns ongoing architecture-documentation reconciliation and is a separate question from implementation authorization; a full reconciliation of that apparent tension between this document's self-declared lifecycle state and doc 34's `OWNER_ACCEPTED` record is out of scope for this realignment pass and is flagged here rather than silently resolved, per this section's own change-control discipline (Section 9).
+
 ## 6. Versioning
 
 - **Architecture major version**: breaking product/security/privacy decisions (e.g. changing the E2EE trust boundary, removing a privacy commitment, changing default retention).
@@ -122,6 +126,16 @@ Any claim of platform capability must be labeled with one of:
 - `REQUIRES_USER_PERMISSION` — capability requires a runtime permission grant the user/parent/child can deny or revoke.
 - `REQUIRES_FURTHER_OWNER_DECISION` — claim is currently unverified/uncertain pending a live documentation check (LOOP-2) or a product-owner decision; must not be asserted as fact until resolved.
 
+## 8A. Implementation completion definitions (added by `PCA-DOC-REALIGN-1`, 2026-08-14)
+
+Every status report anywhere in this package, in `docs/implementation/**`, and in any implementation addendum (e.g. `docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md`) MUST use exactly three distinct completion tiers and MUST NOT collapse them into one ambiguous "100% complete" claim:
+
+- **`SOURCE_COMPLETE`** — code exists in the repository implementing the requirement. This is a statement about presence, not correctness: source can be `SOURCE_COMPLETE` while still buggy, untested, or incomplete in edge cases.
+- **`VALIDATED_COMPLETE`** — the implementation has been tested and verified against its acceptance criteria (doc 28's test layers, or an addendum's equivalent test plan) with recorded, reproducible evidence (traced per doc 32). A requirement can be `SOURCE_COMPLETE` without being `VALIDATED_COMPLETE`.
+- **`PRODUCTION_READY`** — the requirement has cleared every applicable external gate (doc 31's preserved gates — `CRYPTO_SECURITY_REVIEW`, `ANDROID_REAL_DEVICE_UAT`, `IOS_MAC_XCODE`, `IOS_FAMILY_CONTROLS_ENTITLEMENT`, `IOS_PHYSICAL_DEVICE`, `YOUTUBE_MODE_B_POLICY_REVIEW`, `CLOUD_AI_OWNER_DECISION`, plus any addendum-specific gates such as Addendum 002's `PAYMENT_PROVIDER_SELECTION` family) and every applicable release criterion (doc 25 evidence pack, doc 28 release gates, doc 29 go/no-go), in addition to being `VALIDATED_COMPLETE`. A requirement can be `VALIDATED_COMPLETE` in a test/sandbox environment without being `PRODUCTION_READY`.
+
+This three-tier framework replaces any prior practice of reporting a single, ambiguous "implementation complete" status. It does not retroactively change what any historical acceptance record (e.g. `A-100` in doc 34) meant at the time it was recorded — `A-100` was, and remains, a `CONTENT_STATE = VERIFIED_COMPLETE` acceptance of the **architecture documentation itself**, not a claim about any implementation tier defined here.
+
 ## 9. Change log for this document (00)
 
 | Date | Change | Author (agent) |
@@ -131,6 +145,7 @@ Any claim of platform capability must be labeled with one of:
 | 2026-08-10 | Added dated official-source handoffs for Apple Family Controls, Android DPC authority, and the YouTube watch-history-source discrepancy; assigned canonical-register reconciliation to doc 33's owner | PCA-DOC-A |
 | 2026-08-10 | Corrected lifecycle/version wording: package remains v1.0 in `DRAFT_RECONCILIATION`; converted owned-document acceptance lists into explicit future-evidence gates | PCA-DOC-A |
 | 2026-08-10 | Closed R1-001: retired the provisional generic YouTube sample-request handoff; delegated current watch-history accessibility determination exclusively to doc 33's canonical method-specific and revision-tracked sources | PCA-DOC-A |
+| 2026-08-14 | Documentation realignment (`PCA-DOC-REALIGN-1`): added Section 5.1 freeze-status note (A-100 declared, substantial implementation source now exists) and Section 8A completion-definitions framework (`SOURCE_COMPLETE`/`VALIDATED_COMPLETE`/`PRODUCTION_READY`); no change to this document's own `DRAFT_RECONCILIATION` lifecycle field or to any historical acceptance date | PCA-DOC-REALIGN-1 |
 
 ## 10. Source freshness
 

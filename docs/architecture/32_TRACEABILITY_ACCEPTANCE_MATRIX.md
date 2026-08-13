@@ -222,3 +222,14 @@ $families = $defined | % { ($_ -split '-')[1] } | Group-Object | Sort-Object Nam
 ```
 
 **Recorded local evidence, 2026-08-10:** `defined normative IDs = 199; traceability rows = 199; duplicate IDs = 0; missing IDs = 0; orphan matrix IDs = 0; family breakdown = AI=1; AND=3; DATA=17; FR=112; IOS=3; NFR=43; PRIV=2; SEC=18`. Re-run after any controlled-document change and before independent review.
+
+## Approved addenda (tracked separately, added by `PCA-DOC-REALIGN-1`, 2026-08-14)
+
+This matrix's "Canonical normative inventory" above is the accepted A-100 baseline (199 requirements) and is not edited to add addendum requirement IDs, consistent with how `docs/implementation/addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md`'s 25 `PCA-ADD-ENR-*` requirements were already tracked outside this file, in `docs/implementation/PCA_IMPLEMENTATION_TRACEABILITY.md`, rather than appended here. The same convention applies to the new Addendum 002:
+
+| Addendum | Normative inventory | Programme workstreams (see doc 30) | Tracked in |
+|---|---|---|---|
+| `PCA-ADDENDUM-001` (Secure Invite, Protected Enrollment, Admin PIN) | `PCA-ADD-ENR-001`–`025` (25 requirements) | PCA-1, PCA-2, PCA-10, PCA-11, PCA-13, PCA-15 | `docs/implementation/PCA_IMPLEMENTATION_TRACEABILITY.md` |
+| `PCA-ADDENDUM-002` (Platform Administration and Billing) | `PCA-ADD-PA-001`–`054` (51 distinct IDs) and `PCA-ADD-BILL-001`–`047` (47 distinct IDs, including `PCA-ADD-BILL-005A`) — 98 requirements total | `PCA-PA-1`–`6`, `PCA-PA-UAT`, `PCA-BILL-1`–`3`, `PCA-BILL-UAT`, `PCA-MYKIDS-BILL-1` (see `docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md` Section 21) | `docs/implementation/PCA_IMPLEMENTATION_TRACEABILITY.md` (Addendum 002 rows to be added when implementation of that programme begins) |
+
+No requirement from either addendum is implemented merely by appearing in this cross-reference table, matching the discipline `PCA_IMPLEMENTATION_TRACEABILITY.md` already states for Addendum 001.
