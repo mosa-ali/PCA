@@ -1,0 +1,11 @@
+{
+  "$schemaNote": "Machine-readable UAT execution state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. status must be one of: NOT_EXECUTED | IN_PROGRESS | PARTIAL | COMPLETE. Only an authorized owner may change status away from NOT_EXECUTED, and only after real cases in docs/release_readiness/UAT_TEST_PLAN.md were actually run on real hardware and logged in the cases array below. Fabricating or rounding up this file's status is a direct violation of the PCA release gate.",
+  "status": "NOT_EXECUTED",
+  "lastUpdatedUtc": null,
+  "lastUpdatedBy": null,
+  "deviceMatrixPopulated": false,
+  "totalCasesInPlan": 50,
+  "casesLogged": 0,
+  "cases": [],
+  "goNoGoDecision": null
+}

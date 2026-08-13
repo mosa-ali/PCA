@@ -1,0 +1,55 @@
+{
+  "$schemaNote": "Machine-readable external/human gate state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. Every gate here is BLOCKED or EXTERNAL by definition until an owner outside this repository-editing lane closes it and records evidence. Do not set status to CLOSED/GREEN from within an automated script or an agent lane -- it must be updated by hand by the accountable human owner with an evidence reference.",
+  "lastUpdatedUtc": "2026-08-13T00:00:00Z",
+  "gates": [
+    {
+      "id": "CRYPTO_SECURITY_REVIEW",
+      "status": "BLOCKED",
+      "description": "Human security review of the production crypto suite (DeviceSignatureVerifier, EnvelopeSignatureVerifier) has not occurred. See docs/security/production-crypto-review/. Backend currently wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier which fail closed by design.",
+      "owner": "External security reviewer (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "ANDROID_REAL_DEVICE_UAT",
+      "status": "BLOCKED",
+      "description": "No real Android hardware has run the UAT_TEST_PLAN.md case catalogue. This lane has JVM unit-test evidence only (see evidence pack), which does not satisfy this gate.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "IOS_MAC_XCODE",
+      "status": "EXTERNAL",
+      "description": "No macOS/Xcode build environment is available in this environment. iOS build/test/signing cannot be performed here.",
+      "owner": "iOS build owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "IOS_FAMILY_CONTROLS_ENTITLEMENT",
+      "status": "EXTERNAL",
+      "description": "Apple Family Controls entitlement has not been granted/confirmed. Required before any real iOS parental-control capability can ship.",
+      "owner": "Apple Developer Program account holder (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "IOS_PHYSICAL_DEVICE",
+      "status": "EXTERNAL",
+      "description": "No physical iPhone/iPad is available for UAT or Family Controls testing (simulator cannot exercise Family Controls/Screen Time APIs).",
+      "owner": "iOS device owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "YOUTUBE_MODE_B_POLICY_REVIEW",
+      "status": "BLOCKED",
+      "description": "YouTube Mode B (PCA-controlled playback) policy/compliance review with YouTube API Terms of Service has not been completed. Backend feature flag defaults disabled and unreviewed (see ModeBFeatureFlagStore tests).",
+      "owner": "Compliance/legal owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "CLOUD_AI_OWNER_DECISION",
+      "status": "BLOCKED",
+      "description": "Owner decision on cloud-based AI classifier usage (vs. on-device only) has not been made. On-device model lifecycle/package verification gate exists but cloud-provider decision is unresolved.",
+      "owner": "Product/privacy owner (not yet assigned)",
+      "evidence": null
+    }
+  ]
+}
