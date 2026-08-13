@@ -133,12 +133,16 @@ private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listO
 
 @Composable
 private fun StatusRow(row: StatusRowContent) {
+    // PCA-16B: locale-owned format string (child_home_status_row_description) instead of a
+    // code-level "${label}: ${value}" concatenation, so a translator controls the
+    // label/value separator and order per locale rather than it being fixed by app code.
+    val description = stringResource(R.string.child_home_status_row_description, row.label, row.value)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "${row.label}: ${row.value}"
+                contentDescription = description
             },
     ) {
         Text(text = row.label, style = MaterialTheme.typography.labelLarge)

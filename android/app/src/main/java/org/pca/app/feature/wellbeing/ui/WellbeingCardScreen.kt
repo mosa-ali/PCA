@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.R
@@ -31,7 +32,11 @@ fun WellbeingCardScreen(
     onDismiss: () -> Unit,
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
-        Text(text = stringResource(R.string.wellbeing_card_title), style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = stringResource(R.string.wellbeing_card_title),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() },
+        )
         for ((suggestion, text) in state.suggestions) {
             Column(modifier = Modifier.padding(vertical = 8.dp).semantics { contentDescription = text }) {
                 Text(text = text, style = MaterialTheme.typography.bodyLarge)

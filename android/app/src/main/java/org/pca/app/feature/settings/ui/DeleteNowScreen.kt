@@ -17,6 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.R
 import org.pca.app.feature.settings.data.DeleteNowScope
@@ -48,17 +51,30 @@ fun DeleteNowScreen(
     var pendingScope by remember { mutableStateOf<DeleteNowScope?>(null) }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        Text(text = stringResource(R.string.delete_now_title), style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = stringResource(R.string.delete_now_title),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.semantics { heading() },
+        )
         Text(text = stringResource(R.string.delete_now_description), modifier = Modifier.padding(vertical = 8.dp))
 
         Text(text = stringResource(R.string.delete_now_scope_label), style = MaterialTheme.typography.titleMedium)
         scopeOptions.forEachIndexed { index, option ->
+            // PCA-16B: label + RadioButton merged into one accessibility node (mirrors the
+            // PolicyToggleRow fix in ParentWellbeingPolicyScreen) so TalkBack announces
+            // "<label>, radio button, selected/not selected" as one control, and the whole row
+            // is the tappable/touch target rather than just the small radio dot.
             Row(
                 modifier = Modifier
-                    .selectable(selected = index == selectedIndex, onClick = { selectedIndex = index })
-                    .padding(vertical = 4.dp),
+                    .selectable(
+                        selected = index == selectedIndex,
+                        onClick = { selectedIndex = index },
+                        role = Role.RadioButton,
+                    )
+                    .padding(vertical = 4.dp)
+                    .semantics(mergeDescendants = true) {},
             ) {
-                RadioButton(selected = index == selectedIndex, onClick = { selectedIndex = index })
+                RadioButton(selected = index == selectedIndex, onClick = null)
                 Text(text = option.label, modifier = Modifier.padding(start = 8.dp))
             }
         }

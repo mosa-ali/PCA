@@ -62,6 +62,10 @@
     <string name="child_home_wellbeing_unavailable">Unavailable</string>
 
     <string name="child_home_pending_requests">Pending requests to parent</string>
+    <!-- PCA-16B: locale-owned format for a status row's merged accessibility description
+         (label + value), so translators control punctuation/order per locale instead of a
+         code-level concatenation. -->
+    <string name="child_home_status_row_description">%1$s: %2$s</string>
 
     <string name="child_home_emergency_access">Emergency access</string>
     <string name="child_home_emergency_access_active">Emergency access is on</string>
