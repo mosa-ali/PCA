@@ -86,6 +86,70 @@ test('missing FTS is rejected as stale rather than attempting decrypt', async ()
   assert.equal(result.state, 'DECRYPT_BLOCKED_STALE_FTS');
 });
 
+test('an envelope from a different family than the locally-cached FTS is blocked, even though the FTS itself is otherwise valid and current', async () => {
+  const receipt = receiveEnvelope(envelope({ familyId: 'family-OTHER' }));
+  const result = await attemptDecrypt({
+    receipt,
+    endpointState: 'TRUSTED',
+    fts: fts({ familyId: 'family-1' }),
+    acceptedMinEpoch: 4,
+    localEndpointId: 'endpoint-a',
+    decryptor: new NotReadyDecryptor(),
+  });
+  assert.equal(result.state, 'DECRYPT_BLOCKED_FAMILY_MISMATCH');
+  assert.equal(result.decryptedPayload, null);
+});
+
+test('a same-family envelope+FTS pairing is not blocked by the family check and proceeds to the crypto gate as before', async () => {
+  const receipt = receiveEnvelope(envelope({ familyId: 'family-1' }));
+  const result = await attemptDecrypt({
+    receipt,
+    endpointState: 'TRUSTED',
+    fts: fts({ familyId: 'family-1' }),
+    acceptedMinEpoch: 4,
+    localEndpointId: 'endpoint-a',
+    decryptor: new NotReadyDecryptor(),
+  });
+  assert.notEqual(result.state, 'DECRYPT_BLOCKED_FAMILY_MISMATCH');
+  assert.equal(result.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
+});
+
+test('an envelope claiming a newer ftsEpoch than the locally-verified current FTS epoch is blocked as stale, not proceeded with', async () => {
+  const receipt = receiveEnvelope(envelope({ ftsEpoch: 9 }));
+  const result = await attemptDecrypt({
+    receipt,
+    endpointState: 'TRUSTED',
+    fts: fts({ epoch: 5 }),
+    acceptedMinEpoch: 4,
+    localEndpointId: 'endpoint-a',
+    decryptor: new NotReadyDecryptor(),
+  });
+  assert.equal(result.state, 'DECRYPT_BLOCKED_STALE_FTS');
+  assert.equal(result.decryptedPayload, null);
+});
+
+test('an envelope whose ftsEpoch is at or below the locally-verified current FTS epoch is not blocked by the epoch-coverage check', async () => {
+  const atEpoch = await attemptDecrypt({
+    receipt: receiveEnvelope(envelope({ ftsEpoch: 5 })),
+    endpointState: 'TRUSTED',
+    fts: fts({ epoch: 5 }),
+    acceptedMinEpoch: 4,
+    localEndpointId: 'endpoint-a',
+    decryptor: new NotReadyDecryptor(),
+  });
+  assert.equal(atEpoch.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
+
+  const belowEpoch = await attemptDecrypt({
+    receipt: receiveEnvelope(envelope({ ftsEpoch: 3 })),
+    endpointState: 'TRUSTED',
+    fts: fts({ epoch: 5 }),
+    acceptedMinEpoch: 4,
+    localEndpointId: 'endpoint-a',
+    decryptor: new NotReadyDecryptor(),
+  });
+  assert.equal(belowEpoch.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
+});
+
 test('a TRUSTED endpoint with a current FTS still cannot decrypt today -- surfaces DECRYPT_BLOCKED_CRYPTO_REVIEW, never fake data', async () => {
   const receipt = receiveEnvelope(envelope());
   const result = await attemptDecrypt({

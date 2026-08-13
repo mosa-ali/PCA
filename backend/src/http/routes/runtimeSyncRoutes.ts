@@ -3,6 +3,7 @@ import type { EnvelopeAcceptanceContext } from '../../familyenvelope/FamilyEnvel
 import type { InboundReconnectService } from '../../runtime-sync/InboundReconnectService.js';
 import type { OutboundEnvelopeItem, OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import { RelayError } from '../../relay/RelayService.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
@@ -207,8 +208,16 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       try {
         await deps.outboundRelayService.acknowledgeAsRecipient(request.runtimeSyncDeviceId as string, messageId);
         return reply.send({ acknowledged: true });
-      } catch {
-        return reply.code(404).send({ error: 'not_found' });
+      } catch (error) {
+        // Only a domain-level RelayError (unknown/not-this-recipient's/already
+        // resolved messageId -- indistinguishable by design, see
+        // OutboundRelayService.acknowledgeAsRecipient's doc comment) collapses
+        // to a generic 404. Any other error (e.g. a genuine DB/infra failure)
+        // must reach the global error handler as a 5xx, matching every other
+        // route in this file -- swallowing it here would mask real incidents
+        // as a client-facing 404.
+        if (error instanceof RelayError) return reply.code(404).send({ error: 'not_found' });
+        throw error;
       }
     },
   );

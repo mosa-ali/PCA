@@ -37,8 +37,13 @@ export interface AttemptDecryptInput {
 /**
  * Advances a receipt one step. Order of checks is deliberate and fail-closed:
  * 1. Endpoint must be TRUSTED (not merely service-authenticated).
- * 2. The FTS supplied must locally verify as current for this endpoint.
- * 3. Only then is the crypto gate consulted -- today that always reports
+ * 2. The envelope's familyId must match the FTS's familyId -- an envelope
+ *    from a different family paired with a locally-cached FTS must never be
+ *    allowed to proceed toward decrypt, even though the FTS's own local
+ *    checks (epoch/expiry/endpoint-authorization) say nothing about which
+ *    family it belongs to.
+ * 3. The FTS supplied must locally verify as current for this endpoint.
+ * 4. Only then is the crypto gate consulted -- today that always reports
  *    NOT_READY_CRYPTO_REVIEW, so `decryptor` is never actually reached with
  *    real, unreviewed cryptography from this repository slice
  *    (NotReadyDecryptor is the only decryptor this repo ships).
@@ -55,6 +60,10 @@ export async function attemptDecrypt(input: AttemptDecryptInput): Promise<Envelo
     return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
   }
 
+  if (input.receipt.envelope.familyId !== input.fts.familyId) {
+    return { ...input.receipt, state: 'DECRYPT_BLOCKED_FAMILY_MISMATCH', lastAttemptAtUtc: attemptedAt };
+  }
+
   const ftsResult = verifyFamilyTrustSet({
     fts: input.fts,
     acceptedMinEpoch: input.acceptedMinEpoch,
@@ -62,6 +71,20 @@ export async function attemptDecrypt(input: AttemptDecryptInput): Promise<Envelo
     nowUtc,
   });
   if (!ftsResult.ok) {
+    return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
+  }
+
+  // The envelope's own claimed ftsEpoch must be COVERED BY the locally-
+  // verified current epoch (envelope.ftsEpoch <= fts.epoch), never ahead of
+  // it. An envelope claiming a newer epoch than what this endpoint has
+  // locally verified as current means the locally-cached FTS is itself
+  // stale relative to this envelope -- we cannot know whether this endpoint
+  // is even still authorized at that future epoch, so this must fail
+  // closed exactly like any other stale-FTS condition rather than proceed.
+  // An envelope from an OLDER epoch than fts.epoch is not rejected here:
+  // whether an older-epoch envelope remains decryptable is a key-selection
+  // question for the (not yet reviewed) crypto suite, not this module.
+  if (input.receipt.envelope.ftsEpoch > input.fts.epoch) {
     return { ...input.receipt, state: 'DECRYPT_BLOCKED_STALE_FTS', lastAttemptAtUtc: attemptedAt };
   }
 
