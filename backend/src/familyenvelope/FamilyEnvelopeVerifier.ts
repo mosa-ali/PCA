@@ -165,8 +165,9 @@ export interface EvaluateEnvelopeOptions {
   /**
    * MINIMAL, EXPLICITLY-RECORDED ADDITION for PCA-11 (backend/src/familysync):
    * runs every check below, INCLUDING signature verification, but skips the
-   * three ledger-mutating side effects on acceptance (replayLedger.recordProcessed,
-   * versionLedger.recordAcceptedVersion, messageIdempotencyLedger.recordAccepted).
+   * three ledger-mutating side effects on acceptance (replayLedger.claimProcessed,
+   * versionLedger.advancePolicyVersionIfNewer/recordAuthorizedRollbackVersion,
+   * messageIdempotencyLedger.recordAccepted).
    * Lets a caller cheaply screen a candidate envelope (e.g. "is this pending
    * out-of-order envelope even legitimate before I spend bounded queue
    * capacity holding it") WITHOUT that screening itself counting as
@@ -240,33 +241,74 @@ export async function evaluateEnvelope(
     return { accepted: true, idempotent: false };
   }
 
-  // PCA-17C: the message-idempotency ledger's recordAccepted is attempted
-  // FIRST, before either of the other two ledgers is mutated, and its
-  // result is authoritative for whether this call ultimately accepts --
-  // see MessageIdempotencyLedger.ts's RecordAcceptedResult doc comment.
-  // This matters ONLY for a genuine cross-BACKEND-INSTANCE race (the
-  // getAcceptedCanonicalBytes check above already excludes every
-  // single-process race, and SyncCoordinator's chainByKey excludes every
-  // race within one process): two different backend processes can both
-  // pass every check above (each observed `priorAccepted === null` before
-  // either had written anything) and both reach this point believing they
-  // are the first acceptor. The database's unique (family_id, message_id)
-  // constraint is the only thing that can arbitrate that race atomically;
-  // recordAccepted leans on it and reports back which of 'recorded'
-  // (this call durably won), 'already-idempotent' (a concurrent winner
-  // recorded byte-identical content -- also a safe accept), or 'conflict'
-  // (a concurrent winner recorded DIFFERENT content -- this call must
-  // reject, and must not have mutated replayLedger/versionLedger first,
-  // which is exactly why this call happens before those two below).
+  // PCA-17E ACCEPTANCE-ORDERING (REPLAY_MULTI_INSTANCE_TOCTOU /
+  // POLICY_VERSION_MULTI_INSTANCE_TOCTOU): the message-idempotency claim
+  // is still attempted FIRST (unchanged from PCA-17C, see below), but the
+  // replay claim and version CAS that follow are now themselves genuinely
+  // atomic per-ledger operations (claimProcessed / advancePolicyVersionIfNewer),
+  // not the old check-then-act hasProcessed/recordProcessed and
+  // read-then-unconditionally-set pair. A rejected race LOSER must not
+  // leave any of these three ledgers in a state that would incorrectly
+  // affect a FUTURE, genuinely legitimate submission -- so every claim
+  // this call itself wins is explicitly released (compensating undo, a
+  // saga, not a single cross-ledger DB transaction -- each ledger's own
+  // atomicity guarantee is per-ledger, exactly as
+  // MessageIdempotencyLedger.ts's interface doc already required before
+  // this lane) the moment a LATER step in this same sequence determines
+  // the envelope must, after all, be rejected. Ordering:
+  //
+  //  1. messageIdempotencyLedger.recordAccepted -- unchanged from PCA-17C
+  //     (see its own doc comment below): arbitrates the cross-instance
+  //     SAME-messageId race. 'conflict' rejects immediately (nothing was
+  //     written by us to undo). 'already-idempotent' means a concurrent
+  //     winner ALREADY fully accepted this exact envelope (replay + any
+  //     version write already recorded by THAT winner) -- this call must
+  //     not re-claim replay/version on the winner's behalf, so it returns
+  //     immediately as a safe accept.
+  //  2. replayLedger.claimProcessed -- only reached once this call is the
+  //     durable winner of step 1 ('recorded'). 'already-claimed' means a
+  //     DIFFERENT envelope (necessarily a different messageId, since this
+  //     messageId's idempotency claim just succeeded) already won this
+  //     exact (senderKeyId, sequenceOrNonce) slot -- a genuine replay/
+  //     collision. This call must release its own just-won idempotency
+  //     row before rejecting, or a future legitimate retry of THIS
+  //     messageId would incorrectly short-circuit to a stable accept for
+  //     an envelope that was actually rejected as replayed.
+  //  3. versionLedger.advancePolicyVersionIfNewer -- only reached for
+  //     POLICY_UPDATE, once both prior claims are durably ours. 'stale'
+  //     means a concurrent winner already advanced the floor past this
+  //     envelope's version between this module's early, non-authoritative
+  //     monotonicity pre-check (above) and this atomic CAS -- this call
+  //     must release BOTH prior claims before rejecting.
+  //
+  // SIGNED_ROLLBACK never reaches step 3's CAS (see
+  // recordAuthorizedRollbackVersion's own doc comment: it is exempt from
+  // monotonicity entirely and always succeeds), so it has nothing to
+  // compensate for.
   const recordResult = await messageIdempotencyLedger.recordAccepted(context.familyId, envelope.messageId, canonicalBytes);
   if (recordResult.outcome === 'conflict') {
     return { accepted: false, reason: 'MESSAGE_ID_CONFLICT' };
   }
-
-  await replayLedger.recordProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce);
-  if (envelope.messageType === 'POLICY_UPDATE' || envelope.messageType === 'SIGNED_ROLLBACK') {
-    await versionLedger.recordAcceptedVersion(context.familyId, envelope.senderKeyId, envelope.semanticVersion);
+  if (recordResult.outcome === 'already-idempotent') {
+    return { accepted: true, idempotent: true };
   }
 
-  return { accepted: true, idempotent: recordResult.outcome === 'already-idempotent' };
+  const replayClaim = await replayLedger.claimProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce);
+  if (replayClaim === 'already-claimed') {
+    await messageIdempotencyLedger.releaseAccepted(context.familyId, envelope.messageId);
+    return { accepted: false, reason: 'REPLAYED' };
+  }
+
+  if (envelope.messageType === 'POLICY_UPDATE') {
+    const versionResult = await versionLedger.advancePolicyVersionIfNewer(context.familyId, envelope.senderKeyId, envelope.semanticVersion);
+    if (versionResult === 'stale') {
+      await replayLedger.releaseClaim(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce);
+      await messageIdempotencyLedger.releaseAccepted(context.familyId, envelope.messageId);
+      return { accepted: false, reason: 'VERSION_NOT_MONOTONIC' };
+    }
+  } else if (envelope.messageType === 'SIGNED_ROLLBACK') {
+    await versionLedger.recordAuthorizedRollbackVersion(context.familyId, envelope.senderKeyId, envelope.semanticVersion);
+  }
+
+  return { accepted: true, idempotent: false };
 }

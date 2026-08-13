@@ -140,6 +140,22 @@ export class MySqlMessageIdempotencyLedger implements MessageIdempotencyLedger {
   }
 
   /**
+   * PCA-17E ACCEPTANCE-ORDERING: compensating undo for a row THIS caller
+   * just won via `recordAccepted` returning `{ outcome: 'recorded' }` --
+   * see MessageIdempotencyLedger.ts's doc comment on why this must only
+   * ever target a row this exact call just won. A plain DELETE keyed by
+   * (family_id, message_id); best-effort is not appropriate here for the
+   * same reason as MySqlReplayLedger.releaseClaim -- a failed release would
+   * leave a rejected envelope's messageId permanently, incorrectly marked
+   * "accepted."
+   */
+  async releaseAccepted(familyId: OpaqueFamilyId, messageId: MessageId): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(conn, `DELETE FROM envelope_message_idempotency_ledger WHERE family_id = ? AND message_id = ?`, [familyId, messageId]),
+    );
+  }
+
+  /**
    * Bounded GLOBAL eviction: keep only the newest `capacity` rows (by
    * insertion order / id), deleting any older overflow -- deliberately
    * left GLOBAL, not narrowed to per-family, by this lane; see migration

@@ -1,6 +1,6 @@
-import { execute, runInTransaction } from '../db/pool.js';
+import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
 import type { OpaqueFamilyId, SenderKeyId } from './types.js';
-import type { ReplayLedger } from './ReplayLedger.js';
+import type { ClaimReplayResult, ReplayLedger } from './ReplayLedger.js';
 import { REPLAY_LEDGER_CAPACITY_PER_SENDER } from './policy.js';
 
 interface ReplayRow {
@@ -81,6 +81,62 @@ export class MySqlReplayLedger implements ReplayLedger {
       ),
     );
     await this.trimIfOverCapacity(familyId, senderKeyId);
+  }
+
+  /**
+   * PCA-17E REPLAY_MULTI_INSTANCE_TOCTOU: unlike `recordProcessed` above
+   * (an unconditional, always-succeeds UPSERT -- fine for its own
+   * best-effort "mark processed" contract, but useless as a cross-instance
+   * race arbiter since it never tells the caller whether IT won), this
+   * issues a PLAIN INSERT with no `ON DUPLICATE KEY UPDATE`. MySQL/InnoDB's
+   * UNIQUE KEY on (family_id, sender_key_id, sequence_or_nonce) -- the same
+   * key `hasProcessed`/`recordProcessed` already rely on -- is the actual
+   * cross-process arbiter: exactly one concurrent INSERT for a given key
+   * can ever succeed; every other concurrent INSERT for that same key
+   * blocks on the unique index's row/gap lock until the winner's
+   * transaction resolves, then itself fails with ER_DUP_ENTRY once the
+   * winner commits (the ordinary case) -- see
+   * MySqlMessageIdempotencyLedger's identical mechanism/reasoning for the
+   * message-idempotency ledger.
+   */
+  async claimProcessed(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<ClaimReplayResult> {
+    if (this.capacityPerSender <= 0) return 'claimed'; // "remember nothing" -- see recordProcessed's identical guard.
+    const now = new Date();
+    try {
+      await runInTransaction((conn) =>
+        execute(
+          conn,
+          `INSERT INTO envelope_replay_ledger (family_id, sender_key_id, sequence_or_nonce, recorded_at) VALUES (?, ?, ?, ?)`,
+          [familyId, senderKeyId, sequenceOrNonce, now],
+        ),
+      );
+    } catch (error) {
+      if (!isDuplicateEntry(error)) throw error;
+      return 'already-claimed';
+    }
+    await this.trimIfOverCapacity(familyId, senderKeyId);
+    return 'claimed';
+  }
+
+  /**
+   * Compensating undo for a claim THIS caller just won -- see
+   * ReplayLedger.ts's doc comment on why this must only ever target a key
+   * this exact call won. A plain DELETE on the same unique key; best-effort
+   * is not appropriate here (unlike trimIfOverCapacity) because a failed
+   * release would leave a nonce permanently, incorrectly burned for a
+   * legitimate future retransmission -- if this throws, the caller's
+   * rejection decision still stands (the envelope is still correctly
+   * rejected), but the stuck claim itself is a real, surfaced failure the
+   * caller should propagate rather than silently swallow.
+   */
+  async releaseClaim(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `DELETE FROM envelope_replay_ledger WHERE family_id = ? AND sender_key_id = ? AND sequence_or_nonce = ?`,
+        [familyId, senderKeyId, sequenceOrNonce],
+      ),
+    );
   }
 
   /**

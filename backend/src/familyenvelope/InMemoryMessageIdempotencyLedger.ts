@@ -63,4 +63,12 @@ export class InMemoryMessageIdempotencyLedger implements MessageIdempotencyLedge
     this.insertionOrder.push({ familyId, messageId });
     return { outcome: 'recorded' };
   }
+
+  async releaseAccepted(familyId: OpaqueFamilyId, messageId: MessageId): Promise<void> {
+    const bucket = this.canonicalBytesByFamily.get(familyId);
+    bucket?.delete(messageId);
+    if (bucket && bucket.size === 0) this.canonicalBytesByFamily.delete(familyId);
+    const idx = this.insertionOrder.findIndex((e) => e.familyId === familyId && e.messageId === messageId);
+    if (idx !== -1) this.insertionOrder.splice(idx, 1);
+  }
 }

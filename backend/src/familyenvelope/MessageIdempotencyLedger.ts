@@ -44,6 +44,22 @@ export interface MessageIdempotencyLedger {
    * mechanism. A byte-identical redelivery is always a safe, silent no-op.
    */
   recordAccepted(familyId: OpaqueFamilyId, messageId: MessageId, canonicalBytes: string): Promise<RecordAcceptedResult>;
+  /**
+   * PCA-17E ACCEPTANCE-ORDERING: compensating undo for a row THIS SAME
+   * CALLER just durably won with `recordAccepted` returning
+   * `{ outcome: 'recorded' }` (never a row some OTHER caller won, and
+   * never after an `'already-idempotent'` outcome, where nothing new was
+   * written by this caller). Used only when a LATER step in the same
+   * acceptance decision (the atomic replay claim, or the semantic-version
+   * CAS) subsequently determines the envelope must, after all, be
+   * rejected -- see FamilyEnvelopeVerifier.evaluateEnvelope's
+   * acceptance-ordering doc comment for why: without this, a rejected
+   * (e.g. REPLAYED) envelope's messageId would remain permanently recorded
+   * as "accepted," so a future genuine retry of that exact messageId would
+   * incorrectly short-circuit to a stable idempotent accept instead of
+   * being re-evaluated and correctly rejected again.
+   */
+  releaseAccepted(familyId: OpaqueFamilyId, messageId: MessageId): Promise<void>;
 }
 
 export type RecordAcceptedResult = { outcome: 'recorded' } | { outcome: 'already-idempotent' } | { outcome: 'conflict' };

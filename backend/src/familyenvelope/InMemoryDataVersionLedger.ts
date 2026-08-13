@@ -1,5 +1,6 @@
+import { compareSemanticVersions } from './policy.js';
 import type { OpaqueFamilyId, SenderKeyId } from './types.js';
-import type { DataVersionLedger } from './DataVersionLedger.js';
+import type { AdvancePolicyVersionResult, DataVersionLedger } from './DataVersionLedger.js';
 
 /**
  * In-memory reference DataVersionLedger. Like InMemoryReplayLedger, this is
@@ -21,18 +22,41 @@ export class InMemoryDataVersionLedger implements DataVersionLedger {
   }
 
   /**
-   * Unconditionally sets the recorded version -- this ledger trusts its
-   * caller (FamilyEnvelopeVerifier.evaluateEnvelope) to invoke this ONLY
-   * on full envelope acceptance, which already enforces monotonicity for
-   * an ordinary POLICY_UPDATE before ever reaching this call. A max-only
-   * ("only advance forward") guard here would be wrong: it would silently
-   * defeat SIGNED_ROLLBACK's entire purpose by never letting an accepted
-   * rollback to a LOWER version actually become the new floor, so a
-   * legitimate post-rollback envelope at an intermediate version would be
-   * incorrectly rejected as non-monotonic against the stale,
-   * pre-rollback floor.
+   * A single JS process's synchronous Map access is trivially atomic
+   * between one `await` and the next -- see MySqlDataVersionLedger's doc
+   * comment for why the durable backend needs a genuine read-compare-write
+   * CAS loop to get the same guarantee across processes. Still enforces
+   * the same "strictly newer than the CURRENT value" contract as the real
+   * implementation, not merely "always succeeds," so callers written
+   * against one backend behave the same against the other.
    */
-  async recordAcceptedVersion(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, semanticVersion: string): Promise<void> {
+  async advancePolicyVersionIfNewer(
+    familyId: OpaqueFamilyId,
+    senderKeyId: SenderKeyId,
+    candidateVersion: string,
+  ): Promise<AdvancePolicyVersionResult> {
+    const current = await this.getLastAcceptedVersion(familyId, senderKeyId);
+    if (current !== null && compareSemanticVersions(candidateVersion, current) <= 0) {
+      return 'stale';
+    }
+    this.setVersion(familyId, senderKeyId, candidateVersion);
+    return 'advanced';
+  }
+
+  /**
+   * Unconditionally sets the recorded version -- reserved for the
+   * SIGNED_ROLLBACK acceptance path. A max-only ("only advance forward")
+   * guard here would be wrong: it would silently defeat SIGNED_ROLLBACK's
+   * entire purpose by never letting an accepted rollback to a LOWER
+   * version actually become the new floor, so a legitimate post-rollback
+   * envelope at an intermediate version would be incorrectly rejected as
+   * non-monotonic against the stale, pre-rollback floor.
+   */
+  async recordAuthorizedRollbackVersion(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, rollbackVersion: string): Promise<void> {
+    this.setVersion(familyId, senderKeyId, rollbackVersion);
+  }
+
+  private setVersion(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, semanticVersion: string): void {
     let bySender = this.lastVersionByFamily.get(familyId);
     if (!bySender) {
       bySender = new Map();

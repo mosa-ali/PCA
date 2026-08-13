@@ -1,5 +1,5 @@
 import type { OpaqueFamilyId, SenderKeyId } from './types.js';
-import type { ReplayLedger } from './ReplayLedger.js';
+import type { ClaimReplayResult, ReplayLedger } from './ReplayLedger.js';
 import { REPLAY_LEDGER_CAPACITY_PER_SENDER } from './policy.js';
 
 /**
@@ -65,5 +65,22 @@ export class InMemoryReplayLedger implements ReplayLedger {
       if (oldest !== undefined) seen.delete(oldest);
     }
     seen.add(sequenceOrNonce);
+  }
+
+  /**
+   * A single JS process's synchronous Map/Set access is trivially atomic
+   * between one `await` and the next (no other ledger I/O interleaves a
+   * check with its own set here) -- see MySqlReplayLedger's doc comment for
+   * why the durable backend needs a genuine DB-level unique-key INSERT to
+   * get the same guarantee across processes.
+   */
+  async claimProcessed(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<ClaimReplayResult> {
+    if (await this.hasProcessed(familyId, senderKeyId, sequenceOrNonce)) return 'already-claimed';
+    await this.recordProcessed(familyId, senderKeyId, sequenceOrNonce);
+    return 'claimed';
+  }
+
+  async releaseClaim(familyId: OpaqueFamilyId, senderKeyId: SenderKeyId, sequenceOrNonce: string): Promise<void> {
+    this.seenByFamily.get(familyId)?.get(senderKeyId)?.delete(sequenceOrNonce);
   }
 }

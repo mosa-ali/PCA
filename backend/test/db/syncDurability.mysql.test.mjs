@@ -537,6 +537,167 @@ test('evaluateEnvelope: durable ledgers correctly gate accept -> replay -> rejec
   assert.deepEqual(replayVerdict, { accepted: false, reason: 'REPLAYED' });
 });
 
+// ---------------------------------------------------------------------
+// PCA-17E: REPLAY_MULTI_INSTANCE_TOCTOU -- a TRUE cross-instance race:
+// two independent MySqlReplayLedger/MySqlMessageIdempotencyLedger/
+// SyncCoordinator object graphs, sharing one live MySQL 8.4 database,
+// racing the SAME (familyId, senderKeyId, sequenceOrNonce) under TWO
+// DIFFERENT messageIds via genuine Promise.all concurrency. Before this
+// lane, `hasProcessed` + `recordProcessed` were separate DB calls -- both
+// racers could observe `hasProcessed === false` before either had written
+// anything, letting both be accepted. `claimProcessed`'s atomic INSERT
+// against the (family_id, sender_key_id, sequence_or_nonce) unique key is
+// what this test proves closes that gap for real, not merely in a
+// single-process unit test.
+// ---------------------------------------------------------------------
+
+test('PCA-17E REPLAY_MULTI_INSTANCE_TOCTOU: two independent instances racing the SAME (family, sender, nonce) under DIFFERENT messageIds -- exactly one APPLY_NOW, one REPLAYED, every round', async () => {
+  const ROUNDS = 20;
+  for (let round = 0; round < ROUNDS; round += 1) {
+    const familyId = `family-${randomUUID()}`;
+    const senderKeyId = `sender-${randomUUID()}`;
+    const sequenceOrNonce = `nonce-${randomUUID()}`;
+
+    const coordinatorA = buildCoordinator(newDurableLedgers());
+    const coordinatorB = buildCoordinator(newDurableLedgers());
+    const envelopeA = makeEnvelope({ familyId, senderKeyId, sequenceOrNonce, messageId: `msg-A-${randomUUID()}` });
+    const envelopeB = makeEnvelope({ familyId, senderKeyId, sequenceOrNonce, messageId: `msg-B-${randomUUID()}` });
+
+    const [resultA, resultB] = await Promise.all([
+      coordinatorA.submit(envelopeA, baseContext({ familyId })),
+      coordinatorB.submit(envelopeB, baseContext({ familyId })),
+    ]);
+    const decisions = [resultA.decision, resultB.decision];
+    const applied = decisions.filter((d) => d.kind === 'APPLY_NOW');
+    const replayed = decisions.filter((d) => d.kind === 'REJECT' && d.reason === 'REPLAYED');
+    assert.equal(applied.length, 1, `round ${round}: exactly one APPLY_NOW expected, got ${JSON.stringify(decisions)}`);
+    assert.equal(replayed.length, 1, `round ${round}: exactly one REPLAYED rejection expected -- never two APPLY_NOW, got ${JSON.stringify(decisions)}`);
+
+    // The REPLAYED loser's own messageId must NOT be left durably
+    // "accepted" (see FamilyEnvelopeVerifier's releaseAccepted compensation)
+    // -- otherwise a future genuine retry of that exact messageId would
+    // incorrectly short-circuit to a stable idempotent accept instead of
+    // being correctly re-rejected.
+    const loserMessageId = resultA.decision.kind === 'REJECT' ? envelopeA.messageId : envelopeB.messageId;
+    const freshCheck = new MySqlMessageIdempotencyLedger();
+    assert.equal(
+      await freshCheck.getAcceptedCanonicalBytes(familyId, loserMessageId),
+      null,
+      `round ${round}: the REPLAYED loser's messageId must never be left recorded as accepted`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------
+// PCA-17E: POLICY_VERSION_MULTI_INSTANCE_TOCTOU -- a TRUE cross-instance
+// race: two independent instances concurrently accepting DIFFERENT
+// POLICY_UPDATE versions (2.0.0 and 3.0.0) against the SAME durable floor
+// (1.0.0). Before this lane, MySqlDataVersionLedger.recordAcceptedVersion
+// was an unconditional `ON DUPLICATE KEY UPDATE` -- pure last-write-wins,
+// so commit ORDER alone (not version magnitude) could leave the durable
+// floor at the LOWER value if v2's write landed after v3's. This test
+// proves `advancePolicyVersionIfNewer`'s read-compare-write CAS converges
+// to the correct maximum regardless of commit order, and that a race
+// LOSER is honestly reported, never silently accepted while contradicting
+// the durable floor.
+// ---------------------------------------------------------------------
+
+test('PCA-17E POLICY_VERSION_MULTI_INSTANCE_TOCTOU: two independent instances racing DIFFERENT POLICY_UPDATE versions against the same floor converge to the correct maximum, never a downgrade', async () => {
+  const ROUNDS = 10;
+  for (let round = 0; round < ROUNDS; round += 1) {
+    const familyId = `family-${randomUUID()}`;
+    const senderKeyId = `sender-${randomUUID()}`;
+
+    const seedCoordinator = buildCoordinator(newDurableLedgers());
+    const seedResult = await seedCoordinator.submit(
+      makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '1.0.0' }),
+      baseContext({ familyId }),
+    );
+    assert.deepEqual(seedResult.decision, { kind: 'APPLY_NOW', idempotent: false });
+
+    const coordinatorV2 = buildCoordinator(newDurableLedgers());
+    const coordinatorV3 = buildCoordinator(newDurableLedgers());
+    const envelopeV2 = makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '2.0.0', messageId: `msg-v2-${randomUUID()}` });
+    const envelopeV3 = makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '3.0.0', messageId: `msg-v3-${randomUUID()}` });
+
+    const [resultV2, resultV3] = await Promise.all([
+      coordinatorV2.submit(envelopeV2, baseContext({ familyId })),
+      coordinatorV3.submit(envelopeV3, baseContext({ familyId })),
+    ]);
+
+    // v3 (the higher candidate) can never be legitimately rejected as
+    // stale by a race against a LOWER concurrent candidate.
+    assert.equal(resultV3.decision.kind, 'APPLY_NOW', `round ${round}: v3 must always be accepted, got ${JSON.stringify(resultV3.decision)}`);
+    // v2 either genuinely wins too (both applied; final floor still ends
+    // at 3.0.0 either way -- see below) or is an honest race loser once
+    // v3's commit becomes durable first -- both are correct depending on
+    // real execution/commit order, but v2 must never silently "succeed"
+    // while contradicting what the durable floor now says.
+    assert.ok(
+      resultV2.decision.kind === 'APPLY_NOW' || (resultV2.decision.kind === 'REJECT' && resultV2.decision.reason === 'VERSION_NOT_MONOTONIC'),
+      `round ${round}: v2 must either be genuinely applied or honestly rejected as stale, got ${JSON.stringify(resultV2.decision)}`,
+    );
+
+    const finalFloor = await new MySqlDataVersionLedger().getLastAcceptedVersion(familyId, senderKeyId);
+    assert.equal(finalFloor, '3.0.0', `round ${round}: final durable floor must equal the highest raced version regardless of commit order`);
+
+    // A late, genuinely stale POLICY_UPDATE from a FOURTH fresh "process"
+    // must still be rejected against the now-durable floor.
+    const staleCoordinator = buildCoordinator(newDurableLedgers());
+    const staleResult = await staleCoordinator.submit(
+      makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '2.0.0', messageId: `msg-stale-${randomUUID()}` }),
+      baseContext({ familyId }),
+    );
+    assert.deepEqual(staleResult.decision, { kind: 'REJECT', reason: 'VERSION_NOT_MONOTONIC' });
+  }
+});
+
+// ---------------------------------------------------------------------
+// PCA-17E: SIGNED_ROLLBACK_SEPARATION regression -- re-proves ordinary
+// POLICY_UPDATE cannot move backwards, SIGNED_ROLLBACK can move backwards
+// only through its own explicit path, and post-rollback ordinary updates
+// still require a strict increase from the rollback floor -- against the
+// REAL durable MySQL-backed ledgers (not just the in-memory unit tests in
+// test/familyenvelope/dataVersionLedger.test.mjs and verifier.test.mjs).
+// ---------------------------------------------------------------------
+
+test('PCA-17E SIGNED_ROLLBACK_SEPARATION: durable ledgers -- ordinary POLICY_UPDATE never regresses, SIGNED_ROLLBACK moves the floor down, and post-rollback updates still require strict increase', async () => {
+  const familyId = `family-${randomUUID()}`;
+  const senderKeyId = `sender-${randomUUID()}`;
+
+  const c1 = buildCoordinator(newDurableLedgers());
+  await c1.submit(makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '5.0.0' }), baseContext({ familyId }));
+
+  const c2 = buildCoordinator(newDurableLedgers());
+  const regressAttempt = await c2.submit(
+    makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '4.0.0' }),
+    baseContext({ familyId }),
+  );
+  assert.deepEqual(regressAttempt.decision, { kind: 'REJECT', reason: 'VERSION_NOT_MONOTONIC' });
+
+  const c3 = buildCoordinator(newDurableLedgers());
+  const rollback = await c3.submit(
+    makeEnvelope({ familyId, senderKeyId, messageType: 'SIGNED_ROLLBACK', semanticVersion: '2.0.0' }),
+    baseContext({ familyId }),
+  );
+  assert.deepEqual(rollback.decision, { kind: 'APPLY_NOW', idempotent: false });
+  assert.equal(await new MySqlDataVersionLedger().getLastAcceptedVersion(familyId, senderKeyId), '2.0.0');
+
+  const c4 = buildCoordinator(newDurableLedgers());
+  const staleAgainstRollback = await c4.submit(
+    makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '2.0.0' }),
+    baseContext({ familyId }),
+  );
+  assert.deepEqual(staleAgainstRollback.decision, { kind: 'REJECT', reason: 'VERSION_NOT_MONOTONIC' }, 'a post-rollback ordinary update still requires a STRICT increase from the rollback floor');
+
+  const c5 = buildCoordinator(newDurableLedgers());
+  const postRollback = await c5.submit(
+    makeEnvelope({ familyId, senderKeyId, messageType: 'POLICY_UPDATE', semanticVersion: '3.0.0' }),
+    baseContext({ familyId }),
+  );
+  assert.deepEqual(postRollback.decision, { kind: 'APPLY_NOW', idempotent: false });
+});
+
 test.after(async () => {
   await closePool();
 });
