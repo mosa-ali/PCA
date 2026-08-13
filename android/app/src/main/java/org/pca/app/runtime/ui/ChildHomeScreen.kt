@@ -18,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -127,7 +128,7 @@ private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listO
     StatusRowContent(stringResource(R.string.child_home_usage_permission), usageAccessLabel(status.usageAccessState)),
     StatusRowContent(stringResource(R.string.child_home_location_capability), locationCapabilityLabel(status.locationCapabilityLevel)),
     StatusRowContent(stringResource(R.string.child_home_wellbeing_availability), wellbeingLabel(status.wellbeingNotificationsAvailable)),
-    StatusRowContent(stringResource(R.string.child_home_pending_requests), status.pendingChildRequestCount.toString()),
+    StatusRowContent(stringResource(R.string.child_home_pending_requests), localizedNumber(status.pendingChildRequestCount.toLong())),
 )
 
 @Composable
@@ -157,7 +158,14 @@ private fun EmergencyAccessCard(isActive: Boolean, onClick: () -> Unit) {
     val activeLabel = stringResource(R.string.child_home_emergency_access_active)
     val exitLabel = stringResource(R.string.child_home_emergency_access_exit)
     val startLabel = stringResource(R.string.child_home_emergency_access)
-    val description = if (isActive) "$activeLabel — $exitLabel" else startLabel
+    // PCA-16B: the active-state description is a locale-owned format string (not a
+    // code-level concatenation of two independently-translated fragments), so a translator
+    // can adjust punctuation/order per locale.
+    val description = if (isActive) {
+        stringResource(R.string.child_home_emergency_access_active_description, activeLabel, exitLabel)
+    } else {
+        startLabel
+    }
 
     Card(
         modifier = Modifier
@@ -192,7 +200,7 @@ private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
             Text(text = stringResource(R.string.child_home_parent_contact), style = MaterialTheme.typography.titleMedium)
             if (pendingCount > 0) {
                 Text(
-                    text = stringResource(R.string.child_home_parent_contact_pending, pendingCount.toString()),
+                    text = stringResource(R.string.child_home_parent_contact_pending, localizedNumber(pendingCount.toLong())),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -251,7 +259,7 @@ private fun lastSyncLabel(lastSuccessfulSyncEpochMillis: Long?): String =
         val agoMinutes = TimeUnit.MILLISECONDS.toMinutes(
             (System.currentTimeMillis() - lastSuccessfulSyncEpochMillis).coerceAtLeast(0L),
         )
-        stringResource(R.string.child_home_last_sync_minutes_ago, agoMinutes.toString())
+        stringResource(R.string.child_home_last_sync_minutes_ago, localizedNumber(agoMinutes))
     }
 
 @Composable
@@ -273,4 +281,18 @@ private fun locationCapabilityLabel(level: LocationCapabilityLevel): String = wh
 private fun wellbeingLabel(available: Boolean): String =
     if (available) stringResource(R.string.child_home_wellbeing_available) else stringResource(R.string.child_home_wellbeing_unavailable)
 
-private fun formatMinutes(millis: Long): String = TimeUnit.MILLISECONDS.toMinutes(millis.coerceAtLeast(0L)).toString()
+@Composable
+private fun formatMinutes(millis: Long): String = localizedNumber(TimeUnit.MILLISECONDS.toMinutes(millis.coerceAtLeast(0L)))
+
+/**
+ * PCA-16B: renders a plain count/duration number honoring the device locale's own digit
+ * shape (e.g. Arabic-Indic digits under an ar-* locale that prefers them), matching the
+ * precedent already established in [org.pca.app.feature.breakshield.formatDuration] (doc 20
+ * Section 4) -- a raw `Long.toString()` interpolated into a translated string would otherwise
+ * always render Latin digits regardless of locale.
+ */
+@Composable
+private fun localizedNumber(value: Long): String {
+    val locale = LocalConfiguration.current.locales[0]
+    return String.format(locale, "%d", value)
+}

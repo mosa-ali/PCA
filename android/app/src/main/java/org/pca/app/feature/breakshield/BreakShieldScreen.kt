@@ -27,6 +27,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -100,7 +101,11 @@ fun BreakShieldScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(text = stringResource(R.string.break_shield_title), style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        text = stringResource(R.string.break_shield_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.semantics { heading() },
+                    )
                     Text(
                         text = stringResource(R.string.break_shield_remaining_time, remainingBreakText),
                         style = MaterialTheme.typography.bodyLarge,

@@ -16,9 +16,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.R
 import org.pca.app.enrollment.EnrollmentState
+
+/** PCA-16B: shared modifier marking a screen's main title as an accessibility heading, so
+ * TalkBack/switch-access users can navigate the enrollment flow by heading. */
+private val headingModifier = Modifier.semantics { heading() }
 
 /**
  * Honest, minimal setup UI (mission Section 9): every state this composable renders reflects only
@@ -40,7 +46,7 @@ fun EnrollmentScreen(
         when (state) {
             is EnrollmentState.NotEnrolled -> {
                 var link by remember { mutableStateOf("") }
-                Text(stringResource(R.string.enrollment_entry_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.enrollment_entry_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
                 Text(stringResource(R.string.enrollment_entry_body))
                 OutlinedTextField(
                     value = link,
@@ -53,7 +59,7 @@ fun EnrollmentScreen(
             }
 
             is EnrollmentState.InvitationReady -> {
-                Text(stringResource(R.string.enrollment_entry_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.enrollment_entry_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
                 Button(onClick = onContinue) {
                     Text(stringResource(R.string.enrollment_continue_button))
                 }
@@ -70,7 +76,7 @@ fun EnrollmentScreen(
             }
 
             is EnrollmentState.PairingPending -> {
-                Text(stringResource(R.string.enrollment_pairing_pending_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.enrollment_pairing_pending_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
                 Text(stringResource(R.string.enrollment_pairing_pending_body))
             }
 
@@ -107,7 +113,7 @@ fun EnrollmentScreen(
                 // Restored after a process/app restart or device reboot with an unresolved
                 // ambiguous attempt on record -- honest, no claim of success or failure; recovery
                 // is explicit/bounded, never an automatic retry loop (mission Section 20).
-                Text(stringResource(R.string.enrollment_recovery_pending_title), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.enrollment_recovery_pending_title), style = MaterialTheme.typography.headlineSmall, modifier = headingModifier)
                 Text(stringResource(R.string.enrollment_recovery_pending_body))
                 Button(onClick = onCheckStatus) {
                     Text(stringResource(R.string.enrollment_check_status_button))

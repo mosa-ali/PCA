@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -218,6 +220,7 @@ private fun HeldPage(held: SafeBrowserScreenState.Held, locale: WebLocale, onAsk
                 if (decision.outcome == WebDecisionOutcome.REVIEW) R.string.safe_browser_held_review_title else R.string.safe_browser_held_block_title,
             ),
             style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.semantics { heading() },
         )
         Text(text = decision.domain, style = MaterialTheme.typography.titleMedium)
         Text(text = decision.reasonCode, style = MaterialTheme.typography.bodyLarge)
