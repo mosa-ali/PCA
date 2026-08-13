@@ -6,7 +6,15 @@
     "publishedBase": "5b9d76a4d11edd5e480df1e19f5eea8030139ee5",
     "protectedMain": "f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd",
     "generatedAtNote": "Timestamp intentionally omitted, see git commit metadata for this file for the actual generation time.",
-    "scopeLimitation": "Base A-100 requirements (199 IDs) were NOT individually re-derived at the normative-text level in this pass; they retain their prior architecture-doc status (DEFINED; IMPLEMENTATION TEST PENDING, represented here as NOT_STARTED) unless flagged otherwise. The 25 Addendum-001 requirements and the PCA-0..19 / PCA-WELL-1 phase matrix WERE evidence-based re-derived from actual source and tests via three read-only discovery sub-agents (backend, Android, web/iOS/release) covering backend/src, backend/test, backend/migrations, android/app/src, parent-web/src, parent-web/tests, ios/**, contracts/**, and docs/release_readiness/**."
+    "scopeLimitation": "Base A-100 requirements (199 IDs) were NOT individually re-derived at the normative-text level in this pass; they retain their prior architecture-doc status (DEFINED; IMPLEMENTATION TEST PENDING, represented here as NOT_STARTED) unless flagged otherwise. The 25 Addendum-001 requirements and the PCA-0..19 / PCA-WELL-1 phase matrix WERE evidence-based re-derived from actual source and tests via three read-only discovery sub-agents (backend, Android, web/iOS/release) covering backend/src, backend/test, backend/migrations, android/app/src, parent-web/src, parent-web/tests, ios/**, contracts/**, and docs/release_readiness/**. This correction pass (R1) additionally reconciles the newly integrated Addendum 002 (Platform Administration and Billing, 98 requirement IDs: PCA-ADD-PA-001..054 non-contiguous 51 IDs, PCA-ADD-BILL-001..047 non-contiguous 47 IDs including lettered PCA-ADD-BILL-005A) against docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md, now integrated and controlled architecture authority at base 6fba8e000614e772414ba973631fbfe2f20aef20. All 98 Addendum-002 requirements are NOT_STARTED, matching the addendum's own Section 21/22 self-declaration that no PCA-PA-*/PCA-BILL-*/PCA-MYKIDS-BILL-* source exists yet -- confirmed independently by this correction's own targeted repository search (zero billing/payment/platform-admin source found). The PCA-0..19/PCA-WELL-1 phase matrix and Addendum-001 findings from the prior pass (R0) were preserved unchanged; this is a narrow correction, not a second full implementation audit.",
+    "correctionHistory": [
+      {
+        "revision": "R1",
+        "mission": "PCA-TRACEABILITY-REALIGN-1-R1",
+        "base": "6fba8e000614e772414ba973631fbfe2f20aef20",
+        "reason": "Addendum 002 (Platform Administration/Billing) was integrated into pca-dev after the R0 pass. R0's documents still described it as PENDING_PARALLEL_CONTROLLED_ADDENDUM/not yet integrated, and its 98 requirement IDs were absent from the requirement inventory. This correction reconciles both facts without re-scoring R0's existing PCA-0..19/PCA-WELL-1/Addendum-001 findings."
+      }
+    ]
   },
   "publishedBase": "5b9d76a4d11edd5e480df1e19f5eea8030139ee5",
   "requirements": [
@@ -2559,6 +2567,1109 @@
       "testEvidence": [],
       "externalGate": [],
       "notes": "Cross-cutting meta-requirement: per-row backend+DB+security+test evidence is not recorded for most of the 25 requirements (see per-ID rows above); this requirement itself therefore cannot be marked implemented."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-001",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-002",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-003",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-004",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-005",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-006",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 2 (Trust boundary). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-007",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 3 (Platform Administration roles). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-008",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 3 (Platform Administration roles). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-009",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 3 (Platform Administration roles). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-010",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-011",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-012",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-013",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-014",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-015",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-016",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-017",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-018",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-019",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-020",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 4 (Platform Administration authority). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-021",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 5 (Free Starter entitlement). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-022",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 5 (Free Starter entitlement). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-023",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 5 (Free Starter entitlement). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-024",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 5 (Free Starter entitlement). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-025",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-026",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-027",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-028",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-054",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-029",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 6 (Entitlement model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-030",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-031",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-032",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-049",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-050",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-033",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-034",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-035",
+      "phase": [
+        "PCA-PA-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 7 (Increase request flow). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-036",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-037",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-038",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-039",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-040",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-046",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-047",
+      "phase": [
+        "PCA-PA-2",
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 8 (Concurrency-safe device slots). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-001",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-045",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-002",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-005A",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-003",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-004",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-005",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-006",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-007",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-008",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-009",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-010",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-011",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-012",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-013",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-014",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-043",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-044",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-015",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-016",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 9 (Billing domain entities). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-017",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-018",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-019",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-020",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-021",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-022",
+      "phase": [
+        "PCA-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 10 (Money model). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-023",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 11 (Payment security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-024",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 11 (Payment security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-025",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 11 (Payment security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-026",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 11 (Payment security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-027",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "PAYMENT_PROVIDER_SELECTION",
+        "MERCHANT_ACCOUNT_APPROVAL"
+      ],
+      "notes": "Addendum 002 requirement, Section 12 (Payment provider abstraction). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-028",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "PAYMENT_PROVIDER_SELECTION",
+        "MERCHANT_ACCOUNT_APPROVAL"
+      ],
+      "notes": "Addendum 002 requirement, Section 12 (Payment provider abstraction). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-029",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "PAYMENT_PROVIDER_SELECTION",
+        "MERCHANT_ACCOUNT_APPROVAL"
+      ],
+      "notes": "Addendum 002 requirement, Section 12 (Payment provider abstraction). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-030",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-031",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-032",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-033",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-034",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-035",
+      "phase": [
+        "PCA-BILL-2"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 13 (Webhook security). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-036",
+      "phase": [
+        "PCA-BILL-3"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "SETTLEMENT_BANK_CONFIGURATION",
+        "SUPPORTED_SETTLEMENT_CURRENCIES"
+      ],
+      "notes": "Addendum 002 requirement, Section 14 (Settlement and banking). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-037",
+      "phase": [
+        "PCA-BILL-3"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "SETTLEMENT_BANK_CONFIGURATION",
+        "SUPPORTED_SETTLEMENT_CURRENCIES"
+      ],
+      "notes": "Addendum 002 requirement, Section 14 (Settlement and banking). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-038",
+      "phase": [
+        "PCA-BILL-3"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [
+        "SETTLEMENT_BANK_CONFIGURATION",
+        "SUPPORTED_SETTLEMENT_CURRENCIES"
+      ],
+      "notes": "Addendum 002 requirement, Section 14 (Settlement and banking). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-041",
+      "phase": [
+        "PCA-PA-4"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 15 (Platform dashboard). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-042",
+      "phase": [
+        "PCA-PA-4"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 15 (Platform dashboard). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-043",
+      "phase": [
+        "PCA-PA-3"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 16 (Platform settings). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-044",
+      "phase": [
+        "PCA-PA-3"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 16 (Platform settings). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-045",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 17 (Admin audit). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-046",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 17 (Admin audit). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-039",
+      "phase": [
+        "PCA-MYKIDS-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 18 (MyKids commercial self-service). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-047",
+      "phase": [
+        "PCA-MYKIDS-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 18 (MyKids commercial self-service). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-040",
+      "phase": [
+        "PCA-MYKIDS-BILL-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 18 (MyKids commercial self-service). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-BILL-041",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 19 (External gates). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
+    },
+    {
+      "requirementId": "PCA-ADD-PA-048",
+      "phase": [
+        "PCA-PA-1"
+      ],
+      "status": "NOT_STARTED",
+      "sourceEvidence": [],
+      "testEvidence": [],
+      "externalGate": [],
+      "notes": "Addendum 002 requirement, Section 21 (Implementation Programme V2). Architecture-accepted, no implementation source exists in the repository (confirmed by repository survey referenced in the addendum itself and by this correction's own targeted search). Status NOT_STARTED per the addendum's own Section 21/22 self-declaration; not independently upgraded."
     }
   ],
   "phases": [
@@ -2830,6 +3941,127 @@
         "Parent Web wellbeing admin (WellbeingAdmin.tsx / ChildWellbeingPage.tsx) is backed by UnavailableWellbeingMessageAdminClient in production -- no real server-side wellbeing admin implementation yet",
         "Parent-authored policy delivery to Android (ParentPolicySyncCoordinator) depends on the same blocked enrollment/crypto/sync path as every other family-policy feature"
       ]
+    },
+    {
+      "phaseId": "PCA-PA-1",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Admin Identity/RBAC/Audit (Addendum 002 Sections 3, 4, 17): Platform Administration accounts, role model, MFA/step-up, session separation, audit log. Foundational -- every other PA/BILL workstream depends on this existing first. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-2",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Entitlements/Enrollment Limits (Addendum 002 Sections 5-8): FREE_STARTER, entitlement model, increase-request flow, concurrency-safe slot reservation. Depends on PCA-PA-1. Slot-concurrency correctness (PCA-ADD-PA-038/039) is release-blocking within this workstream. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-3",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Platform Admin Web (operator-facing UI for Addendum 002 Sections 3, 6, 7, 15, 16, 17). Depends on PCA-PA-1/2. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-4",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Operations/Reporting (Addendum 002 Section 15 dashboard, cross-currency reporting). Depends on PCA-PA-1/2 and PCA-BILL-1. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-5",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Security/Financial Red Team (threat-model extension of doc 24 covering Addendum 002 Sections 4, 11-13, 17). Required before PCA-BILL-UAT. No work has begun."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-6",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "UX/i18n/a11y parity for Platform Admin Web and MyKids Section 18 additions. No work has begun."
+      ]
+    },
+    {
+      "phaseId": "PCA-PA-UAT",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Platform Administration acceptance/UAT. Depends on PCA-PA-1 through PCA-PA-6."
+      ]
+    },
+    {
+      "phaseId": "PCA-BILL-1",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Billing Core (Addendum 002 Section 9 entities including PriceBook/Quote/CommercialMarket, Section 10 money model, price-book versioning and quote-snapshot immutability). Depends on PCA-PA-1. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-BILL-2",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Payment Provider (Addendum 002 Sections 11-13: provider-safe tokenization, provider abstraction, webhook security, idempotent payment-confirmed entitlement activation). Blocked externally on PAYMENT_PROVIDER_SELECTION before a concrete adapter can be built. No source exists."
+      ],
+      "note": "Provider-agnostic abstraction interface (Section 12) can be designed before PAYMENT_PROVIDER_SELECTION closes, but no concrete adapter can."
+    },
+    {
+      "phaseId": "PCA-BILL-3",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Settlements/Reconciliation (Addendum 002 Section 14). Blocked externally on SETTLEMENT_BANK_CONFIGURATION/SUPPORTED_SETTLEMENT_CURRENCIES for production use; data model/reconciliation logic could be built and tested against provider sandbox data first. No source exists."
+      ]
+    },
+    {
+      "phaseId": "PCA-BILL-UAT",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Billing acceptance/UAT including a full sandbox-provider end-to-end payment/refund/webhook/settlement drill. Depends on PCA-BILL-1 through PCA-BILL-3, PCA-MYKIDS-BILL-1, and PCA-PA-5. Production go-live additionally requires all Section 19.2 commercial gates closed."
+      ]
+    },
+    {
+      "phaseId": "PCA-MYKIDS-BILL-1",
+      "status": "NOT_STARTED",
+      "sourceComplete": false,
+      "validatedComplete": false,
+      "productionReady": false,
+      "openItems": [
+        "Parent Self-Service (Addendum 002 Section 18 additions to Parent Web, full ordered self-service flow in Section 18.1). Depends on PCA-PA-2 and PCA-BILL-1. parent-web/src/pages/Subscription.tsx currently exists only as a static placeholder and is not a starting implementation of this workstream."
+      ]
     }
   ],
   "externalGates": [
@@ -2901,6 +4133,54 @@
       "status": "BLOCKED",
       "description": "No repository evidence of an approved Owner decision on cloud AI usage; no cloud AI implementation found.",
       "evidence": []
+    },
+    {
+      "gateId": "PAYMENT_PROVIDER_SELECTION",
+      "status": "OPEN",
+      "description": "Which payment provider(s) PCA integrates with is an owner/commercial decision, not an architecture decision (Addendum 002 Section 19.2). Not yet decided.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
+    },
+    {
+      "gateId": "MERCHANT_ACCOUNT_APPROVAL",
+      "status": "OPEN",
+      "description": "PCA must be approved as a merchant by its selected provider(s) and applicable card networks/banking partners, per region/currency. External to engineering; not self-certifiable.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
+    },
+    {
+      "gateId": "SUPPORTED_CHARGE_CURRENCIES",
+      "status": "OPEN",
+      "description": "Which of the architecturally-supported currencies (USD/SAR/YER) are actually enabled for customer charging is gated on MERCHANT_ACCOUNT_APPROVAL and provider capability per region.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
+    },
+    {
+      "gateId": "SUPPORTED_SETTLEMENT_CURRENCIES",
+      "status": "OPEN",
+      "description": "Which currencies PCA can actually receive settlement in is gated on banking-partner/provider capability.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
+    },
+    {
+      "gateId": "SETTLEMENT_BANK_CONFIGURATION",
+      "status": "OPEN",
+      "description": "Actual bank account(s)/settlement destination(s) require real banking-relationship setup (account opening, verification) external to this architecture.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
+    },
+    {
+      "gateId": "PAYMENT_PRODUCTION_CERTIFICATION",
+      "status": "OPEN",
+      "description": "Production go-live for real-money payment processing requires the provider's own production certification/review process (security questionnaire, PCI-DSS scope confirmation for PCA's tokenization-only posture, live-transaction test), independent of internal PCA-BILL-UAT.",
+      "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 19.2"
+      ]
     }
   ],
   "ownerDecisions": [
@@ -2943,10 +4223,10 @@
   "futureProgrammeTracks": [
     {
       "trackId": "PLATFORM_ADMIN_BILLING",
-      "status": "PENDING_PARALLEL_CONTROLLED_ADDENDUM",
-      "description": "Platform Administration and Billing are architected in a parallel Addendum-002 lane (Agent 39) not yet integrated at this frozen base. No requirement IDs are invented here.",
+      "status": "ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED",
+      "description": "Platform Administration and Billing architecture (Addendum 002) is now integrated and accepted controlled architecture authority at base 6fba8e000614e772414ba973631fbfe2f20aef20 -- see docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md. Implementation source has NOT started for any of the 98 PCA-ADD-PA-*/PCA-ADD-BILL-* requirements (confirmed both by the addendum's own Section 21/22 self-declaration and by this correction's independent targeted search).",
       "dimensions": {
-        "PLATFORM_ADMIN_ARCHITECTURE": "PENDING_PARALLEL_CONTROLLED_ADDENDUM",
+        "PLATFORM_ADMIN_ARCHITECTURE": "ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED",
         "PLATFORM_ADMIN_SOURCE": "NOT_STARTED",
         "PLATFORM_ADMIN_WEB": "NOT_STARTED",
         "PLATFORM_ADMIN_AUTH_RBAC": "NOT_STARTED",
@@ -2956,8 +4236,9 @@
         "MYKIDS_BILLING_SELF_SERVICE": "NOT_STARTED"
       },
       "evidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md (integrated, controlled architecture authority; Section 21 table self-declares every PCA-PA-*/PCA-BILL-*/PCA-MYKIDS-BILL-* workstream NOT_STARTED across SOURCE_COMPLETE/VALIDATED_COMPLETE/PRODUCTION_READY tiers)",
         "parent-web/src/pages/Subscription.tsx is a static placeholder with no backend wiring",
-        "Zero matches for billing, payment, invoice, stripe, platform-admin, entitlement-sku, or paywall terms across parent-web, parent-sdk, docs/release_readiness, and tooling"
+        "Zero matches for billing, payment, invoice, stripe, platform-admin, entitlement-sku, or paywall terms across parent-web, parent-sdk, backend/src, docs/release_readiness, and tooling (re-confirmed this pass)"
       ],
       "ownerApprovedCommercialDecisions": {
         "FREE_STARTER": {
@@ -2989,6 +4270,11 @@
           "managedDeviceLimit"
         ],
         "note": "These are Owner-approved future commercial decisions, recorded for continuity only. Not implemented. No requirement IDs assigned pending Addendum 002 integration."
+      },
+      "addendumRequirementCount": {
+        "platformAdministration": 51,
+        "billing": 47,
+        "total": 98
       }
     }
   ]

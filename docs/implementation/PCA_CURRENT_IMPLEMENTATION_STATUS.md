@@ -9,13 +9,15 @@
 | Mission | PCA-TRACEABILITY-REALIGN-1 |
 | Method | Full source/test/schema re-derivation via three read-only discovery sub-agents (backend/MySQL/security/enrollment/relay/retention/release; Android/runtime/web-protection/screen-time/location/eye/prayer/wellbeing/YouTube; parent-web/parent-SDK/iOS/i18n/UAT/release-readiness/external gates), synthesized by the writing agent. No status was upgraded on file-existence alone; every SOURCE_COMPLETE claim below is backed by function/class/test-file evidence collected during discovery. |
 | Companion files | [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json), [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md) |
-| Scope limitation | Base A-100 (199 IDs) were **not** individually re-derived at the normative-text level this pass — see §15 and the matrix's `documentControl.scopeLimitation`. The PCA-0..19 / PCA-WELL-1 phase matrix and the 25 Addendum-001 requirements **were** evidence-based re-derived. |
+| Scope limitation | Base A-100 (199 IDs) were **not** individually re-derived at the normative-text level this pass — see §15 and the matrix's `documentControl.scopeLimitation`. The PCA-0..19 / PCA-WELL-1 phase matrix and the 25 Addendum-001 requirements **were** evidence-based re-derived in the original (R0) pass. |
+| Correction R1 | Mission `PCA-TRACEABILITY-REALIGN-1-R1`, base `6fba8e000614e772414ba973631fbfe2f20aef20`. Addendum 002 (Platform Administration and Billing) was integrated into `pca-dev` after the R0 pass; this correction reconciles §12–13 and the requirement inventory to reflect that (98 new requirement IDs added, all `NOT_STARTED`). The PCA-0..19/PCA-WELL-1 phase matrix (§4) and Addendum-001 findings (§5) below are unchanged from R0 — this was a narrow correction, not a second full implementation audit. |
 
 ## 2. Published base SHA
 
-- Frozen base / `origin/pca-dev`: `5b9d76a4d11edd5e480df1e19f5eea8030139ee5`
+- R0 frozen base / `origin/pca-dev` at time of original pass: `5b9d76a4d11edd5e480df1e19f5eea8030139ee5`
+- R1 correction base / `origin/pca-dev` at time of this correction: `6fba8e000614e772414ba973631fbfe2f20aef20`
 - Protected `origin/main`: `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd`
-- This lane's HEAD matched the frozen base exactly at start; worktree was clean throughout.
+- Both lanes' HEAD matched their respective required base exactly at start; worktrees were clean throughout.
 
 ## 3. Executive status
 
@@ -118,8 +120,14 @@ See the phase matrix (§4) for the full list. The recurring pattern across most 
 | IOS_PHYSICAL_DEVICE | EXTERNAL — no physical device available |
 | YOUTUBE_MODE_B_POLICY_REVIEW | BLOCKED — feature flag has no mutator, permanently defaults blocked |
 | CLOUD_AI_OWNER_DECISION | BLOCKED — no approved decision found |
+| PAYMENT_PROVIDER_SELECTION | OPEN — Addendum 002 Section 19.2; owner/commercial decision, not yet made |
+| MERCHANT_ACCOUNT_APPROVAL | OPEN — Addendum 002 Section 19.2; external to engineering, not self-certifiable |
+| SUPPORTED_CHARGE_CURRENCIES | OPEN — Addendum 002 Section 19.2; gated on MERCHANT_ACCOUNT_APPROVAL and provider capability per region |
+| SUPPORTED_SETTLEMENT_CURRENCIES | OPEN — Addendum 002 Section 19.2; gated on banking-partner/provider capability |
+| SETTLEMENT_BANK_CONFIGURATION | OPEN — Addendum 002 Section 19.2; requires real banking-relationship setup |
+| PAYMENT_PRODUCTION_CERTIFICATION | OPEN — Addendum 002 Section 19.2; requires the payment provider's own production certification process |
 
-None of these gates are closed by this document. None should be treated as closed until independently re-verified with dated, human-signed evidence.
+None of these gates are closed by this document. None should be treated as closed until independently re-verified with dated, human-signed evidence. The six commercial gates were added by the R1 correction (Addendum 002 Section 19.2); the first eight are preserved unchanged from R0.
 
 ## 10. Owner decisions (open, not resolved here)
 
@@ -135,17 +143,21 @@ None of these gates are closed by this document. None should be treated as close
 
 ## 12. Platform Administration status
 
+Addendum 002 (Platform Administration and Billing) is now **integrated and accepted controlled architecture authority** at base `6fba8e000614e772414ba973631fbfe2f20aef20` — see [PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md). Its 51 `PCA-ADD-PA-*` requirement IDs are now part of the controlled inventory (see [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md) and [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json)). Architecture acceptance is not implementation evidence: source status below remains conservative and unchanged by the architecture landing.
+
 | Dimension | Status |
 |---|---|
-| PLATFORM_ADMIN_ARCHITECTURE | PENDING_PARALLEL_CONTROLLED_ADDENDUM (Agent 39 / Addendum 002, not yet integrated at this base) |
+| PLATFORM_ADMIN_ARCHITECTURE | ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED — integrated and controlled, no implementation source exists |
 | PLATFORM_ADMIN_SOURCE | NOT_STARTED |
 | PLATFORM_ADMIN_WEB | NOT_STARTED |
 | PLATFORM_ADMIN_AUTH_RBAC | NOT_STARTED |
 | PLATFORM_ENTITLEMENTS | NOT_STARTED |
 
-No requirement IDs are invented for Platform Administration in this document; it will be reconciled to Addendum-002 IDs after Coordinator integration.
+All 51 `PCA-ADD-PA-*` requirements are individually reconciled as `NOT_STARTED` in the traceability document and matrix, consistent with the addendum's own Section 21/22 self-declaration that no `PCA-PA-*` source exists in the repository, independently confirmed by this correction's targeted search.
 
 ## 13. Billing/payment status
+
+The 47 `PCA-ADD-BILL-*` requirement IDs (including lettered `PCA-ADD-BILL-005A`) are now part of the controlled inventory. All are `NOT_STARTED`.
 
 | Dimension | Status |
 |---|---|
@@ -153,18 +165,18 @@ No requirement IDs are invented for Platform Administration in this document; it
 | PAYMENT_PROVIDER_SOURCE | NOT_STARTED |
 | MYKIDS_BILLING_SELF_SERVICE | NOT_STARTED |
 
-Confirmed via targeted search: zero matches for billing/payment/invoice/stripe/platform-admin/entitlement-sku/paywall terms across `parent-web`, `parent-sdk`, `docs/release_readiness`, and `tooling`. `parent-web/src/pages/Subscription.tsx` is a static placeholder with no backend wiring.
+Confirmed via targeted search (re-run this correction pass): zero matches for billing/payment/invoice/stripe/platform-admin/entitlement-sku/paywall terms across `backend/src`, `parent-web`, `parent-sdk`, `docs/release_readiness`, and `tooling`. `parent-web/src/pages/Subscription.tsx` is a static placeholder with no backend wiring — explicitly noted in the addendum itself as not a starting implementation of the `PCA-MYKIDS-BILL-1` workstream.
 
-### Owner-approved future commercial requirements (not implemented — recorded for continuity only)
+### Owner-approved future commercial requirements (architecture-accepted via Addendum 002; not implemented)
 
-- `FREE_STARTER`: managedDeviceLimit = 1, price = FREE.
-- Pricing above 1 device: App Owner configurable, no hard-coded price, versioned price book as pricing authority.
-- Accepted initial currencies: USD (global/default), SAR (Gulf market), YER (Yemen). EUR not in initial scope. No automatic FX required for initial release.
-- Paid upgrade flow: select/request target managed-device limit → quote → display price → payment → server/provider-verified confirmation → entitlement activation → parent notification → updated allowance visible. Browser redirect alone is NOT payment authority.
-- Custom quantity: `PENDING_ADMIN_QUOTE` → App Owner quote → parent payment → verified activation.
-- `parentMemberLimit` and `managedDeviceLimit` are kept as separate concepts; paid phone pricing currently applies to `managedDeviceLimit`.
+- `FREE_STARTER`: managedDeviceLimit = 1, price = FREE. (`PCA-ADD-PA-021`–`024`)
+- Pricing above 1 device: App Owner configurable, no hard-coded price, versioned price book as pricing authority. (`PCA-ADD-BILL-002`, `PCA-ADD-BILL-044`)
+- Accepted initial currencies: USD (global/default), SAR (Gulf market), YER (Yemen). EUR not in initial scope. No automatic FX required for initial release. (`PCA-ADD-BILL-019`–`020`)
+- Paid upgrade flow: select/request target managed-device limit → quote → display price → payment → server/provider-verified confirmation → entitlement activation → parent notification → updated allowance visible. Browser redirect alone is NOT payment authority. (`PCA-ADD-PA-030`–`035`, `PCA-ADD-BILL-035`, Section 18.1)
+- Custom quantity: `PENDING_ADMIN_QUOTE` → App Owner quote → parent payment → verified activation. (`PCA-ADD-PA-050`, `PCA-ADD-BILL-005A`/`045`)
+- `parentMemberLimit` and `managedDeviceLimit` are kept as separate concepts; paid pricing applies exclusively to `managedDeviceLimit` — `parentMemberLimit` increases are explicitly out of commercial scope pending a future, separate owner decision. (`PCA-ADD-PA-025`, `PCA-ADD-PA-054`)
 
-No requirement IDs are assigned to these decisions until Addendum 002 is integrated.
+These decisions now have assigned Addendum-002 requirement IDs (shown above) since integration. They remain architecture-only — no implementation source exists for any of them.
 
 ## 14. Next implementation programme (suggested, not directive)
 
