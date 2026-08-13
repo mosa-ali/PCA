@@ -6,6 +6,7 @@ import { generateSessionToken, hashSessionToken, isPlausibleSessionToken } from 
 import { DEVICE_SESSION_TTL_MS } from './policy.js';
 import type { DeviceSessionRepository } from './DeviceSessionRepository.js';
 import type { DeviceSessionRecord } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type RuntimeSyncAuthErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED';
 
@@ -47,6 +48,7 @@ export class DeviceSessionService {
     private readonly deviceAuthService: DeviceAuthService,
     private readonly sessionRepository: DeviceSessionRepository,
     private readonly now: () => Date = () => new Date(),
+    private readonly auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
   ) {}
 
   /**
@@ -114,9 +116,36 @@ export class DeviceSessionService {
     return { deviceId: result.session.deviceId, familyId: result.session.familyId };
   }
 
-  /** Idempotent: revoking an unknown/already-revoked/expired token is never an error. */
+  /**
+   * Idempotent: revoking an unknown/already-revoked/expired token is never
+   * an error. Best-effort audits the transition when the session was still
+   * identifiable just before revocation -- an unknown/already-revoked
+   * token produces no identity to audit, which is fine: nothing actually
+   * transitioned.
+   */
   async revokeSession(rawToken: string): Promise<void> {
     if (!isPlausibleSessionToken(rawToken)) throw new RuntimeSyncAuthError('UNAUTHORIZED');
-    await this.sessionRepository.revoke(hashSessionToken(rawToken), this.now());
+    const tokenHash = hashSessionToken(rawToken);
+    const priorState = await this.sessionRepository.validate(tokenHash, this.now());
+    await this.sessionRepository.revoke(tokenHash, this.now());
+    if (priorState.outcome === 'VALID') {
+      await this.auditService.record({
+        familyId: priorState.session.familyId,
+        actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+        actorDeviceId: priorState.session.deviceId,
+        actorMemberId: null,
+        targetScope: { kind: 'DEVICE', id: priorState.session.deviceId },
+        authorizationRole: null,
+        trustSetEpoch: 0,
+        policyRevision: null,
+        clientMonotonicSequence: null,
+        resultStatus: 'SUCCESS',
+        targetAcknowledgementCount: 0,
+        reasonCategory: null,
+        correlationId: null,
+        actionId: null,
+        freeTextNote: 'DEVICE_SESSION_REVOKED',
+      });
+    }
   }
 }

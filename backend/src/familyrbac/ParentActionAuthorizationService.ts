@@ -7,6 +7,15 @@ import {
   type ChildProfileMembershipResolver,
 } from '../childprofiles/ChildProfileMembershipResolver.js';
 import { isPlausibleChildProfileId } from '../childprofiles/policy.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from './FamilyAuditStore.js';
+
+const STEP_UP_DENY_REASONS: ReadonlySet<AuthorizationDenyReason> = new Set([
+  'STEP_UP_REQUIRED_BUT_ABSENT',
+  'STEP_UP_NOT_FRESH',
+  'STEP_UP_FAILED',
+  'STEP_UP_UNSUPPORTED',
+  'STEP_UP_CANCELLED',
+]);
 
 /** doc 18 Section 6 / PCA10 error-oracle requirement: CROSS_FAMILY_TARGET is the ONE public reason for every DEVICE/MEMBER/CHILD_PROFILE target-resolution failure shape (wrong family, unknown, malformed, or resolver-unavailable) -- never branched on internally to produce a distinct public reason, so a caller cannot distinguish "exists in another family" from "doesn't exist" from "couldn't be checked." */
 export type AuthorizationDenyReason =
@@ -54,6 +63,7 @@ export class ParentActionAuthorizationService {
   private readonly idempotency: ActionIdempotencyLedger;
   private readonly now: () => Date;
   private readonly childProfileMembership: ChildProfileMembershipResolver;
+  private readonly auditService: FamilyAuditService;
 
   constructor(
     roleResolver: TrustSetRoleResolver,
@@ -65,12 +75,18 @@ export class ParentActionAuthorizationService {
     // verified family-state source must inject a real resolver explicitly; forgetting to never silently
     // reopens the IDOR this closes.
     childProfileMembership: ChildProfileMembershipResolver = new UnavailableChildProfileMembershipResolver(),
+    // See FamilyAuditStore.ts's doc comment: this is the in-memory REFERENCE
+    // implementation only, never a durable PCA server audit log. Production
+    // wiring (main.ts) should inject a SHARED FamilyAuditService so records
+    // from this and every other family-rbac event source land together.
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
   ) {
     this.roleResolver = roleResolver;
     this.configProvider = configProvider;
     this.idempotency = idempotency;
     this.now = now;
     this.childProfileMembership = childProfileMembership;
+    this.auditService = auditService;
   }
 
   authorize(request: AuthorizeRequest): AuthorizationDecision {
@@ -82,7 +98,69 @@ export class ParentActionAuthorizationService {
 
     const decision = this.evaluate(request);
     this.idempotency.record(request.idempotencyKey, { actionId: request.actionId, requestFingerprint: fingerprint, outcome: JSON.stringify(decision) });
+    // Fire-and-forget: authorize() is, and remains, synchronous (many
+    // existing callers depend on that) -- the in-memory reference audit
+    // append() has no real I/O to await, so this never introduces an
+    // unhandled-rejection risk under normal operation, only under a
+    // caller-supplied auditService that itself throws synchronously-shaped
+    // errors, which is a caller defect, not this method's concern.
+    void this.recordAudit(request, decision);
     return decision;
+  }
+
+  private async recordAudit(request: AuthorizeRequest, decision: AuthorizationDecision): Promise<void> {
+    const resolved = this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
+    const role = isActorResolutionFailure(resolved) ? null : resolved.role;
+    const trustSetEpoch = isActorResolutionFailure(resolved) ? 0 : resolved.trustSetEpoch;
+
+    if (decision.verdict === 'DENY') {
+      const isStepUpDenial = STEP_UP_DENY_REASONS.has(decision.reason);
+      await this.auditService.record({
+        familyId: request.familyId,
+        actionType: isStepUpDenial ? 'STEP_UP_FAILURE' : 'DENIED_AUTHORIZATION_ATTEMPT',
+        actorDeviceId: request.actorDeviceId,
+        actorMemberId: null,
+        targetScope: request.targetScope,
+        authorizationRole: role,
+        trustSetEpoch,
+        policyRevision: null,
+        clientMonotonicSequence: null,
+        resultStatus: 'DENIED',
+        targetAcknowledgementCount: 0,
+        reasonCategory: null,
+        correlationId: null,
+        actionId: request.actionId,
+        freeTextNote: `${request.operation}: ${decision.reason}`,
+      });
+      return;
+    }
+
+    // ALLOW/etc.: only log when step-up was actually presented and required
+    // -- an ordinary read/allow (e.g. VIEW_DASHBOARD) is not itself one of
+    // doc 18 Section 5's required audit examples, and logging every single
+    // advisory pre-check would make the reference store unusable as a
+    // signal. STEP_UP_SUCCESS covers the "step-up success" required
+    // example; the operation itself (a valid ParentOperation, and thus a
+    // valid actionType) covers sensitive non-step-up-required ALLOWs.
+    if (request.stepUp !== null) {
+      await this.auditService.record({
+        familyId: request.familyId,
+        actionType: 'STEP_UP_SUCCESS',
+        actorDeviceId: request.actorDeviceId,
+        actorMemberId: null,
+        targetScope: request.targetScope,
+        authorizationRole: role,
+        trustSetEpoch,
+        policyRevision: null,
+        clientMonotonicSequence: null,
+        resultStatus: 'SUCCESS',
+        targetAcknowledgementCount: 0,
+        reasonCategory: null,
+        correlationId: null,
+        actionId: request.actionId,
+        freeTextNote: request.operation,
+      });
+    }
   }
 
   private evaluate(request: AuthorizeRequest): AuthorizationDecision {

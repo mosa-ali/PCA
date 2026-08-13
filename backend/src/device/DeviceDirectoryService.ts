@@ -10,6 +10,7 @@ import type {
   OpaqueFamilyId,
   Platform,
 } from './types.js';
+import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
 export type DeviceDirectoryErrorCode =
   | 'INVALID_PUBLIC_KEY'
@@ -55,10 +56,16 @@ export interface RegisteredDevice {
 export class DeviceDirectoryService {
   private readonly repository: DeviceRepository;
   private readonly now: () => Date;
+  private readonly auditService: FamilyAuditService;
 
-  constructor(repository: DeviceRepository, now: () => Date = () => new Date()) {
+  constructor(
+    repository: DeviceRepository,
+    now: () => Date = () => new Date(),
+    auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+  ) {
     this.repository = repository;
     this.now = now;
+    this.auditService = auditService;
   }
 
   /**
@@ -139,6 +146,23 @@ export class DeviceDirectoryService {
   async revokeDevice(authorizedFamilyId: OpaqueFamilyId, deviceId: DeviceId): Promise<DeviceRecord> {
     const result = await this.repository.revokeDeviceAndKeysAtomically(authorizedFamilyId, deviceId, this.now());
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
+    await this.auditService.record({
+      familyId: authorizedFamilyId,
+      actionType: 'DEVICE_LIFECYCLE_TRANSITION',
+      actorDeviceId: deviceId,
+      actorMemberId: null,
+      targetScope: { kind: 'DEVICE', id: deviceId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: null,
+      correlationId: null,
+      actionId: null,
+      freeTextNote: 'DEVICE_REVOKED',
+    });
     return result.device;
   }
 
