@@ -91,10 +91,23 @@ async function start(): Promise<void> {
     // signature check runs against RejectingEnvelopeSignatureVerifier above
     // regardless of what senderPublicKey this returns, so the placeholder
     // value below is inert, not a real credential.
-    resolveEnvelopeContext: (_senderKeyId, _familyId, nowUtc) => ({
+    //
+    // PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: `familyId` (the caller's
+    // AUTHORITATIVE, session-derived family identity -- see
+    // runtimeSyncRoutes.ts's requireDeviceSession, which resolves this from
+    // a verified session token, never client-supplied data) was PREVIOUSLY
+    // discarded here (`_familyId`, unused) even though it was already being
+    // passed in -- EnvelopeAcceptanceContext had no field to carry it, so
+    // envelope acceptance never cross-checked a submitted envelope's own
+    // self-declared familyId against the authoritative one at all. Now
+    // threaded straight into the context; see
+    // FamilyEnvelopeVerifier.EnvelopeAcceptanceContext's familyId doc
+    // comment for the full acceptance-boundary reasoning.
+    resolveEnvelopeContext: (_senderKeyId, familyId, nowUtc) => ({
       senderPublicKey: '',
       minimumAcceptedTrustSetEpoch: 0,
       minimumAcceptedKeyEpoch: 0,
+      familyId,
       now: nowUtc,
     }),
   });

@@ -52,6 +52,7 @@ function baseContext(overrides = {}) {
     senderPublicKey: SENDER_PUBLIC_KEY,
     minimumAcceptedTrustSetEpoch: 0,
     minimumAcceptedKeyEpoch: 0,
+    familyId: 'family-1',
     now: new Date('2026-01-01T00:30:00.000Z'),
     ...overrides,
   };
@@ -207,7 +208,7 @@ test('SAFETY PROPERTY preserved despite the limitation above: a genuinely interv
   const lateIntervening = buildEnvelope({ semanticVersion: '2.0.0' });
   const verdict = await evaluate(lateIntervening, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-  assert.equal(await harness.versionLedger.getLastAcceptedVersion(lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion('family-1', lateIntervening.senderKeyId), '3.0.0', 'the floor must remain exactly where it was, never perturbed by a rejected late-arriving envelope');
 });
 
 test('dryRun performs every check including signature but records no ledger side effects', async () => {
@@ -223,8 +224,8 @@ test('dryRun performs every check including signature but records no ledger side
     { dryRun: true },
   );
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
-  assert.equal(await harness.replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce), false);
-  assert.equal(await harness.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId), null);
+  assert.equal(await harness.replayLedger.hasProcessed('family-1', envelope.senderKeyId, envelope.sequenceOrNonce), false);
+  assert.equal(await harness.messageIdempotencyLedger.getAcceptedCanonicalBytes('family-1', envelope.messageId), null);
 
   // The exact same envelope must still be fully acceptable for real afterward -- dryRun never consumes anything.
   const realVerdict = await evaluate(envelope, baseContext(), harness);
@@ -281,7 +282,7 @@ test('non-POLICY_UPDATE, non-SIGNED_ROLLBACK message types never consult or upda
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
 
   // And the POLICY_UPDATE floor must be unaffected by it.
-  assert.equal(await harness.versionLedger.getLastAcceptedVersion('key-1'), '5.0.0');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion('family-1', 'key-1'), '5.0.0');
 });
 
 test('a rejected (EXPIRED) envelope never advances the replay ledger -- a corrected legitimate resubmission with the same sequence/nonce can still succeed', async () => {
@@ -315,7 +316,7 @@ test('a STALE_TRUST_SET_EPOCH rejection never advances the replay ledger', async
   const envelope = buildEnvelope({ sequenceOrNonce: 'seq-epoch', trustSetEpoch: 1 });
   const staleVerdict = await evaluate(envelope, baseContext({ minimumAcceptedTrustSetEpoch: 2 }), harness);
   assert.deepEqual(staleVerdict, { accepted: false, reason: 'STALE_TRUST_SET_EPOCH' });
-  assert.equal(await harness.replayLedger.hasProcessed(envelope.senderKeyId, 'seq-epoch'), false);
+  assert.equal(await harness.replayLedger.hasProcessed('family-1', envelope.senderKeyId, 'seq-epoch'), false);
 
   const verdict = await evaluate(envelope, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: true, idempotent: false });
@@ -329,7 +330,7 @@ test('a REPLAYED rejection never advances the semantic-version ledger', async ()
   const replay = buildEnvelope({ sequenceOrNonce: 'seq-1', semanticVersion: '99.0.0' });
   const replayVerdict = await evaluate(replay, baseContext(), harness);
   assert.deepEqual(replayVerdict, { accepted: false, reason: 'REPLAYED' });
-  assert.equal(await harness.versionLedger.getLastAcceptedVersion(first.senderKeyId), '5.0.0');
+  assert.equal(await harness.versionLedger.getLastAcceptedVersion('family-1', first.senderKeyId), '5.0.0');
 });
 
 test('a VERSION_NOT_MONOTONIC rejection never advances the replay ledger', async () => {
@@ -339,7 +340,7 @@ test('a VERSION_NOT_MONOTONIC rejection never advances the replay ledger', async
   const nonMonotonic = buildEnvelope({ sequenceOrNonce: 'seq-2', semanticVersion: '3.0.0' });
   const rejected = await evaluate(nonMonotonic, baseContext(), harness);
   assert.deepEqual(rejected, { accepted: false, reason: 'VERSION_NOT_MONOTONIC' });
-  assert.equal(await harness.replayLedger.hasProcessed(nonMonotonic.senderKeyId, 'seq-2'), false);
+  assert.equal(await harness.replayLedger.hasProcessed('family-1', nonMonotonic.senderKeyId, 'seq-2'), false);
 });
 
 test('expiry is boundary-inclusive: now exactly equal to expiresAt is rejected', async () => {
@@ -381,4 +382,71 @@ test('a present correlationId is covered by the signature -- tampering it invali
   const tampered = { ...envelope, correlationId: 'corr-2' };
   const verdict = await evaluate(tampered, baseContext(), harness);
   assert.deepEqual(verdict, { accepted: false, reason: 'INVALID_SIGNATURE' });
+});
+
+// ---------------------------------------------------------------------
+// PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: authoritative family-identity
+// enforcement and cross-family ledger isolation.
+// ---------------------------------------------------------------------
+
+test('PCA-17C: an envelope whose self-declared familyId does not match the AUTHORITATIVE context.familyId is rejected as FAMILY_ID_MISMATCH, even with a genuinely valid signature', async () => {
+  const harness = buildHarness();
+  // The envelope is validly signed and internally consistent -- it
+  // self-declares familyId "family-1", but the caller's authoritative,
+  // session-derived family identity (context.familyId) is "family-OTHER".
+  // A malicious or compromised family-1 device could construct exactly
+  // this envelope to try to have it applied against family-OTHER's state.
+  const envelope = buildEnvelope({ familyId: 'family-1' });
+  const verdict = await evaluate(envelope, baseContext({ familyId: 'family-OTHER' }), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'FAMILY_ID_MISMATCH' });
+});
+
+test('PCA-17C: FAMILY_ID_MISMATCH is checked before any ledger is consulted or mutated -- it never leaks or perturbs another family\'s idempotency/replay/version state', async () => {
+  const harness = buildHarness();
+  // Pre-seed family-OTHER's ledgers with unrelated legitimate state.
+  await harness.messageIdempotencyLedger.recordAccepted('family-OTHER', 'unrelated-msg', 'unrelated-bytes');
+
+  const forged = buildEnvelope({ familyId: 'family-1', messageId: 'unrelated-msg' });
+  const verdict = await evaluate(forged, baseContext({ familyId: 'family-OTHER' }), harness);
+  assert.deepEqual(verdict, { accepted: false, reason: 'FAMILY_ID_MISMATCH' }, 'must reject on the family check, never fall through to a MESSAGE_ID_CONFLICT/idempotent-accept against family-OTHER\'s unrelated ledger row');
+  // family-OTHER's pre-seeded state must be completely untouched.
+  assert.equal(await harness.messageIdempotencyLedger.getAcceptedCanonicalBytes('family-OTHER', 'unrelated-msg'), 'unrelated-bytes');
+});
+
+test('PCA-17C: an envelope whose familyId genuinely matches the authoritative context.familyId is accepted normally (the mismatch check never false-positives)', async () => {
+  const harness = buildHarness();
+  const envelope = buildEnvelope({ familyId: 'family-1' });
+  const verdict = await evaluate(envelope, baseContext({ familyId: 'family-1' }), harness);
+  assert.deepEqual(verdict, { accepted: true, idempotent: false });
+});
+
+test('PCA-17C: cross-family REPLAY isolation at the evaluateEnvelope level -- the identical (senderKeyId, sequenceOrNonce) accepted for family A never causes a REPLAYED rejection for family B', async () => {
+  const harness = buildHarness();
+  const forFamilyA = buildEnvelope({ familyId: 'family-A', senderKeyId: 'shared-key', sequenceOrNonce: 'shared-seq' });
+  const verdictA = await evaluate(forFamilyA, baseContext({ familyId: 'family-A' }), harness);
+  assert.deepEqual(verdictA, { accepted: true, idempotent: false });
+
+  const forFamilyB = buildEnvelope({ familyId: 'family-B', senderKeyId: 'shared-key', sequenceOrNonce: 'shared-seq' });
+  const verdictB = await evaluate(forFamilyB, baseContext({ familyId: 'family-B' }), harness);
+  assert.deepEqual(verdictB, { accepted: true, idempotent: false }, 'family B\'s independent envelope must never be rejected as REPLAYED just because family A happened to use the identical (senderKeyId, sequenceOrNonce) pair');
+});
+
+test('PCA-17C: cross-family MESSAGE_ID_CONFLICT isolation -- the identical messageId with DIFFERENT content in two different families never conflicts', async () => {
+  const harness = buildHarness();
+  const forFamilyA = buildEnvelope({ familyId: 'family-A', messageId: 'shared-msg-id', payload: Buffer.from('family-A-content') });
+  await evaluate(forFamilyA, baseContext({ familyId: 'family-A' }), harness);
+
+  const forFamilyB = buildEnvelope({ familyId: 'family-B', messageId: 'shared-msg-id', payload: Buffer.from('family-B-DIFFERENT-content') });
+  const verdictB = await evaluate(forFamilyB, baseContext({ familyId: 'family-B' }), harness);
+  assert.deepEqual(verdictB, { accepted: true, idempotent: false }, 'family B\'s DIFFERENT content under the identical messageId must never be treated as MESSAGE_ID_CONFLICT against family A\'s unrelated acceptance');
+});
+
+test('PCA-17C: cross-family VERSION_NOT_MONOTONIC isolation -- family B\'s lower POLICY_UPDATE version for the same senderKeyId is unaffected by family A\'s higher floor', async () => {
+  const harness = buildHarness();
+  const highForFamilyA = buildEnvelope({ familyId: 'family-A', senderKeyId: 'shared-key', semanticVersion: '9.0.0' });
+  await evaluate(highForFamilyA, baseContext({ familyId: 'family-A' }), harness);
+
+  const lowForFamilyB = buildEnvelope({ familyId: 'family-B', senderKeyId: 'shared-key', semanticVersion: '1.0.0' });
+  const verdictB = await evaluate(lowForFamilyB, baseContext({ familyId: 'family-B' }), harness);
+  assert.deepEqual(verdictB, { accepted: true, idempotent: false }, 'family B must have its own independent version floor, never rejected against family A\'s unrelated higher floor for the same senderKeyId');
 });

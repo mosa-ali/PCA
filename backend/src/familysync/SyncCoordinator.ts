@@ -143,7 +143,17 @@ export class SyncCoordinator {
 
   async submit(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext): Promise<SubmitResult> {
     const canonicalBytes = canonicalizeEnvelope(envelope);
-    const key = `${envelope.familyId} ${envelope.messageId}`;
+    // PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: keyed by context.familyId
+    // (the caller's AUTHORITATIVE, session-derived family identity), never
+    // envelope.familyId (a self-declared, untrusted field a forged
+    // envelope could set to any value) -- see
+    // FamilyEnvelopeVerifier.EnvelopeAcceptanceContext's familyId doc
+    // comment. Every pending-queue/sequence-ledger operation below is
+    // likewise scoped by context.familyId, never envelope.familyId, so a
+    // forged-family envelope can never touch another family's queue or
+    // sequence state even before evaluateEnvelope's own FAMILY_ID_MISMATCH
+    // check (run inside every evaluateEnvelope call below) rejects it.
+    const key = `${context.familyId} ${envelope.messageId}`;
 
     const identicalInFlight = this.inFlightIdenticalByKey.get(key);
     if (identicalInFlight && identicalInFlight.canonicalBytes === canonicalBytes) {
@@ -183,8 +193,17 @@ export class SyncCoordinator {
 
   private async submitInternal(envelope: FamilyEnvelope, context: EnvelopeAcceptanceContext, canonicalBytes: string): Promise<SubmitResult> {
     this.sweepExpired(context.now);
+    // PCA-17C: every bookkeeping/queueing operation below uses
+    // context.familyId (authoritative), never envelope.familyId -- see the
+    // doc comment on submit()'s `key` above. A forged-family envelope is
+    // scoped, for pending-queue/sequence/idempotency-lookup purposes, as if
+    // it belonged to the AUTHORITATIVE family, and is always ultimately
+    // rejected by evaluateEnvelope's FAMILY_ID_MISMATCH check below (in
+    // either the dry-run screen or the real evaluation) -- it can never
+    // reach APPLY_NOW, and never touches any other family's state.
+    const familyId = context.familyId;
 
-    const existingPending = this.pendingStore.get(envelope.familyId, envelope.messageId);
+    const existingPending = this.pendingStore.get(familyId, envelope.messageId);
     if (existingPending) {
       if (existingPending.canonicalBytes === canonicalBytes) {
         // PCA11_ORDERING_CONCURRENCY red-team finding: resubmitting the exact
@@ -195,15 +214,15 @@ export class SyncCoordinator {
         // apply a candidate whose dependency has since resolved, exactly like
         // drainFamily would.
         const decision = await this.resolvePendingCandidate(existingPending, context);
-        const drained = decision.kind === 'APPLY_NOW' ? await this.drainFamily(envelope.familyId, context) : [];
+        const drained = decision.kind === 'APPLY_NOW' ? await this.drainFamily(familyId, context) : [];
         return { decision, drained };
       }
       return { decision: { kind: 'REJECT', reason: 'PENDING_MESSAGE_ID_CONFLICT' }, drained: [] };
     }
 
-    const alreadyAccepted = (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId)) !== null;
+    const alreadyAccepted = (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(familyId, envelope.messageId)) !== null;
     if (!alreadyAccepted) {
-      const dependency = await this.resolveDependency(envelope);
+      const dependency = await this.resolveDependency(envelope, familyId);
       if (dependency?.kind === 'REJECT') {
         return { decision: { kind: 'REJECT', reason: dependency.reason }, drained: [] };
       }
@@ -216,7 +235,7 @@ export class SyncCoordinator {
         // told "queue full" afterward). The dry-run screen and the real
         // insert() below both still independently re-check capacity -- this
         // is a fast-fail, not the sole enforcement point.
-        const capacityRejection = this.checkPendingCapacity(envelope, canonicalBytes);
+        const capacityRejection = this.checkPendingCapacity(envelope, familyId, canonicalBytes);
         if (capacityRejection) {
           return { decision: { kind: 'REJECT', reason: capacityRejection }, drained: [] };
         }
@@ -226,7 +245,10 @@ export class SyncCoordinator {
         // never queue as trusted" (PCA-11 test matrix). Dry-run performs no
         // ledger side effects, so this candidate is re-evaluated for real,
         // unconditionally, at drain time -- screening here is a queue-admission
-        // filter, never a second acceptance path.
+        // filter, never a second acceptance path. This is also where a
+        // forged-family envelope (envelope.familyId !== context.familyId)
+        // gets caught and rejected as FAMILY_ID_MISMATCH before it could
+        // ever be queued as a trusted pending candidate.
         const screen = await evaluateEnvelope(
           envelope,
           context,
@@ -239,7 +261,7 @@ export class SyncCoordinator {
         if (!screen.accepted) {
           return { decision: { kind: 'REJECT', reason: screen.reason }, drained: [] };
         }
-        const rejection = this.tryEnqueuePending(envelope, canonicalBytes, dependency, context.now);
+        const rejection = this.tryEnqueuePending(envelope, familyId, canonicalBytes, dependency, context.now);
         if (rejection) return { decision: { kind: 'REJECT', reason: rejection }, drained: [] };
         return {
           decision: {
@@ -266,8 +288,8 @@ export class SyncCoordinator {
       return { decision: { kind: 'REJECT', reason: verdict.reason }, drained: [] };
     }
 
-    await this.recordSequenceIfApplicable(envelope);
-    const drained = await this.drainFamily(envelope.familyId, context);
+    await this.recordSequenceIfApplicable(envelope, familyId);
+    const drained = await this.drainFamily(familyId, context);
     return { decision: { kind: 'APPLY_NOW', idempotent: verdict.idempotent }, drained };
   }
 
@@ -283,17 +305,24 @@ export class SyncCoordinator {
     return results;
   }
 
-  private async resolveDependency(envelope: FamilyEnvelope): Promise<DependencyVerdict | null> {
+  /**
+   * `familyId` is always the caller's AUTHORITATIVE family identity
+   * (context.familyId, or a pending record's already-authoritative
+   * record.familyId), never envelope.familyId -- see submit()'s doc
+   * comment above.
+   */
+  private async resolveDependency(envelope: FamilyEnvelope, familyId: OpaqueFamilyId): Promise<DependencyVerdict | null> {
     if (requiresCorrelationPredecessor(envelope.messageType) && envelope.correlationId !== null) {
-      const predecessorAccepted = (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.correlationId)) !== null;
+      const predecessorAccepted =
+        (await this.messageIdempotencyLedger.getAcceptedCanonicalBytes(familyId, envelope.correlationId)) !== null;
       if (!predecessorAccepted) {
         return { kind: 'HOLD', reason: 'MISSING_CORRELATION_PREDECESSOR', waitingOnMessageId: envelope.correlationId };
       }
     }
-    if (this.options.isNumericSequenceSender(envelope.familyId, envelope.senderKeyId)) {
+    if (this.options.isNumericSequenceSender(familyId, envelope.senderKeyId)) {
       const sequence = parseNumericSequence(envelope.sequenceOrNonce);
       if (sequence !== null) {
-        const lastApplied = await this.sequenceLedger.getLastAppliedSequence(envelope.familyId, envelope.senderKeyId);
+        const lastApplied = await this.sequenceLedger.getLastAppliedSequence(familyId, envelope.senderKeyId);
         if (lastApplied !== null) {
           if (sequence <= lastApplied) return { kind: 'REJECT', reason: 'SEQUENCE_NOT_MONOTONIC' };
           if (sequence > lastApplied + 1) {
@@ -307,13 +336,14 @@ export class SyncCoordinator {
 
   private checkPendingCapacity(
     envelope: FamilyEnvelope,
+    familyId: OpaqueFamilyId,
     canonicalBytes: string,
   ): 'PENDING_ENVELOPE_TOO_LARGE' | 'PENDING_SENDER_QUEUE_FULL' | 'PENDING_FAMILY_QUEUE_FULL' | 'PENDING_GLOBAL_QUEUE_FULL' | null {
     if (canonicalBytes.length > MAX_PENDING_CANONICAL_BYTES) return 'PENDING_ENVELOPE_TOO_LARGE';
-    if (this.pendingStore.countForSender(envelope.familyId, envelope.senderKeyId) >= this.maxPendingPerSender) {
+    if (this.pendingStore.countForSender(familyId, envelope.senderKeyId) >= this.maxPendingPerSender) {
       return 'PENDING_SENDER_QUEUE_FULL';
     }
-    if (this.pendingStore.countForFamily(envelope.familyId) >= this.maxPendingPerFamily) {
+    if (this.pendingStore.countForFamily(familyId) >= this.maxPendingPerFamily) {
       return 'PENDING_FAMILY_QUEUE_FULL';
     }
     if (this.pendingStore.countGlobal() >= this.maxPendingGlobal) {
@@ -324,17 +354,18 @@ export class SyncCoordinator {
 
   private tryEnqueuePending(
     envelope: FamilyEnvelope,
+    familyId: OpaqueFamilyId,
     canonicalBytes: string,
     dependency: Extract<DependencyVerdict, { kind: 'HOLD' }>,
     receivedAt: Date,
   ): 'PENDING_ENVELOPE_TOO_LARGE' | 'PENDING_SENDER_QUEUE_FULL' | 'PENDING_FAMILY_QUEUE_FULL' | 'PENDING_GLOBAL_QUEUE_FULL' | null {
-    const capacityRejection = this.checkPendingCapacity(envelope, canonicalBytes);
+    const capacityRejection = this.checkPendingCapacity(envelope, familyId, canonicalBytes);
     if (capacityRejection) return capacityRejection;
     const effectiveExpiresAt = new Date(
       Math.min(envelope.expiresAt.getTime(), receivedAt.getTime() + this.maxPendingLifetimeMs),
     );
     const record: PendingEnvelopeRecord = {
-      familyId: envelope.familyId,
+      familyId,
       senderKeyId: envelope.senderKeyId,
       messageId: envelope.messageId,
       envelope,
@@ -351,13 +382,13 @@ export class SyncCoordinator {
     // concurrent submission growing the same bound in between) is the only
     // way `inserted` is false here; re-running the same check immediately
     // after names exactly which bound it was.
-    return inserted ? null : (this.checkPendingCapacity(envelope, canonicalBytes) ?? 'PENDING_FAMILY_QUEUE_FULL');
+    return inserted ? null : (this.checkPendingCapacity(envelope, familyId, canonicalBytes) ?? 'PENDING_FAMILY_QUEUE_FULL');
   }
 
-  private async recordSequenceIfApplicable(envelope: FamilyEnvelope): Promise<void> {
-    if (!this.options.isNumericSequenceSender(envelope.familyId, envelope.senderKeyId)) return;
+  private async recordSequenceIfApplicable(envelope: FamilyEnvelope, familyId: OpaqueFamilyId): Promise<void> {
+    if (!this.options.isNumericSequenceSender(familyId, envelope.senderKeyId)) return;
     const sequence = parseNumericSequence(envelope.sequenceOrNonce);
-    if (sequence !== null) await this.sequenceLedger.recordAppliedSequence(envelope.familyId, envelope.senderKeyId, sequence);
+    if (sequence !== null) await this.sequenceLedger.recordAppliedSequence(familyId, envelope.senderKeyId, sequence);
   }
 
   /**
@@ -372,7 +403,17 @@ export class SyncCoordinator {
    * candidate eligible now."
    */
   private async resolvePendingCandidate(record: PendingEnvelopeRecord, context: EnvelopeAcceptanceContext): Promise<SyncDecision> {
-    const dependency = await this.resolveDependency(record.envelope);
+    // record.familyId is already the AUTHORITATIVE family identity (set
+    // from context.familyId at enqueue time in tryEnqueuePending, never
+    // envelope.familyId) -- reused here rather than context.familyId only
+    // because resolvePendingCandidate is also called from drainFamily,
+    // where the CURRENT context is for whichever envelope triggered the
+    // drain, not necessarily this specific record's own original context.
+    // Both are required to agree for this record to ever have been queued
+    // at all (drainFamily only iterates one family's queue at a time), so
+    // record.familyId and context.familyId are always equal in practice
+    // here -- record.familyId is used as the unambiguous source of truth.
+    const dependency = await this.resolveDependency(record.envelope, record.familyId);
     if (dependency === null) {
       this.pendingStore.remove(record.familyId, record.messageId);
       const verdict = await evaluateEnvelope(
@@ -384,7 +425,7 @@ export class SyncCoordinator {
         this.messageIdempotencyLedger,
       );
       if (verdict.accepted) {
-        await this.recordSequenceIfApplicable(record.envelope);
+        await this.recordSequenceIfApplicable(record.envelope, record.familyId);
         return { kind: 'APPLY_NOW', idempotent: verdict.idempotent };
       }
       return { kind: 'REJECT', reason: verdict.reason };

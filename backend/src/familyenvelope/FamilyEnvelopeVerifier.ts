@@ -5,10 +5,11 @@ import type { DataVersionLedger } from './DataVersionLedger.js';
 import type { EnvelopeSignatureVerifier } from './EnvelopeSignatureVerifier.js';
 import type { MessageIdempotencyLedger } from './MessageIdempotencyLedger.js';
 import type { ReplayLedger } from './ReplayLedger.js';
-import type { FamilyEnvelope } from './types.js';
+import type { FamilyEnvelope, OpaqueFamilyId } from './types.js';
 
 export type EnvelopeRejectionReason =
   | 'UNSUPPORTED_PROTOCOL_MAJOR'
+  | 'FAMILY_ID_MISMATCH'
   | 'MESSAGE_ID_CONFLICT'
   | 'EXPIRED'
   | 'STALE_TRUST_SET_EPOCH'
@@ -90,6 +91,26 @@ export interface EnvelopeAcceptanceContext {
   senderPublicKey: string;
   minimumAcceptedTrustSetEpoch: number;
   minimumAcceptedKeyEpoch: number;
+  /**
+   * PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY. The AUTHORITATIVE family
+   * identity the caller has already established for this acceptance
+   * decision (in production: the caller's device session -- see
+   * backend/src/http/routes/runtimeSyncRoutes.ts's requireDeviceSession,
+   * which resolves `request.runtimeSyncFamilyId` from a cryptographically
+   * verified session token, never from client-supplied request data). This
+   * is NEVER the same thing as `envelope.familyId`, which is merely a
+   * self-declared field inside the (possibly forged) envelope the sender
+   * supplied -- signed by the SENDER's own key, which says nothing about
+   * whether that sender is authorized to submit on behalf of the family it
+   * claims. evaluateEnvelope below rejects with FAMILY_ID_MISMATCH
+   * whenever `envelope.familyId !== familyId`, and every ledger
+   * lookup/write this module performs is keyed by THIS familyId, never
+   * envelope.familyId -- so even if that check were ever bypassed by a
+   * future caller, cross-family ledger state still cannot collide (see
+   * ReplayLedger/DataVersionLedger/MessageIdempotencyLedger's own
+   * family-scoping).
+   */
+  familyId: OpaqueFamilyId;
   now: Date;
 }
 
@@ -171,8 +192,19 @@ export async function evaluateEnvelope(
     return { accepted: false, reason: 'UNSUPPORTED_PROTOCOL_MAJOR' };
   }
 
+  // PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: the envelope's OWN
+  // self-declared familyId is untrusted sender input -- it is signed by the
+  // SENDER's key, which proves who sent it, never which family it is
+  // authorized to submit for. Checked cheaply, before any ledger I/O or
+  // signature verification, and before the messageId-idempotency
+  // short-circuit below (a forged-family envelope must never be able to
+  // probe or short-circuit against another family's idempotency state).
+  if (envelope.familyId !== context.familyId) {
+    return { accepted: false, reason: 'FAMILY_ID_MISMATCH' };
+  }
+
   const canonicalBytes = canonicalizeEnvelope(envelope);
-  const priorAccepted = await messageIdempotencyLedger.getAcceptedCanonicalBytes(envelope.messageId);
+  const priorAccepted = await messageIdempotencyLedger.getAcceptedCanonicalBytes(context.familyId, envelope.messageId);
   if (priorAccepted !== null) {
     if (priorAccepted === canonicalBytes) {
       return { accepted: true, idempotent: true };
@@ -189,11 +221,11 @@ export async function evaluateEnvelope(
   if (envelope.keyEpoch < context.minimumAcceptedKeyEpoch) {
     return { accepted: false, reason: 'STALE_KEY_EPOCH' };
   }
-  if (await replayLedger.hasProcessed(envelope.senderKeyId, envelope.sequenceOrNonce)) {
+  if (await replayLedger.hasProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce)) {
     return { accepted: false, reason: 'REPLAYED' };
   }
   if (requiresStrictVersionIncrease(envelope.messageType)) {
-    const lastVersion = await versionLedger.getLastAcceptedVersion(envelope.senderKeyId);
+    const lastVersion = await versionLedger.getLastAcceptedVersion(context.familyId, envelope.senderKeyId);
     if (lastVersion !== null && compareSemanticVersions(envelope.semanticVersion, lastVersion) <= 0) {
       return { accepted: false, reason: 'VERSION_NOT_MONOTONIC' };
     }
@@ -208,11 +240,33 @@ export async function evaluateEnvelope(
     return { accepted: true, idempotent: false };
   }
 
-  await replayLedger.recordProcessed(envelope.senderKeyId, envelope.sequenceOrNonce);
-  if (envelope.messageType === 'POLICY_UPDATE' || envelope.messageType === 'SIGNED_ROLLBACK') {
-    await versionLedger.recordAcceptedVersion(envelope.senderKeyId, envelope.semanticVersion);
+  // PCA-17C: the message-idempotency ledger's recordAccepted is attempted
+  // FIRST, before either of the other two ledgers is mutated, and its
+  // result is authoritative for whether this call ultimately accepts --
+  // see MessageIdempotencyLedger.ts's RecordAcceptedResult doc comment.
+  // This matters ONLY for a genuine cross-BACKEND-INSTANCE race (the
+  // getAcceptedCanonicalBytes check above already excludes every
+  // single-process race, and SyncCoordinator's chainByKey excludes every
+  // race within one process): two different backend processes can both
+  // pass every check above (each observed `priorAccepted === null` before
+  // either had written anything) and both reach this point believing they
+  // are the first acceptor. The database's unique (family_id, message_id)
+  // constraint is the only thing that can arbitrate that race atomically;
+  // recordAccepted leans on it and reports back which of 'recorded'
+  // (this call durably won), 'already-idempotent' (a concurrent winner
+  // recorded byte-identical content -- also a safe accept), or 'conflict'
+  // (a concurrent winner recorded DIFFERENT content -- this call must
+  // reject, and must not have mutated replayLedger/versionLedger first,
+  // which is exactly why this call happens before those two below).
+  const recordResult = await messageIdempotencyLedger.recordAccepted(context.familyId, envelope.messageId, canonicalBytes);
+  if (recordResult.outcome === 'conflict') {
+    return { accepted: false, reason: 'MESSAGE_ID_CONFLICT' };
   }
-  await messageIdempotencyLedger.recordAccepted(envelope.messageId, canonicalBytes);
 
-  return { accepted: true, idempotent: false };
+  await replayLedger.recordProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce);
+  if (envelope.messageType === 'POLICY_UPDATE' || envelope.messageType === 'SIGNED_ROLLBACK') {
+    await versionLedger.recordAcceptedVersion(context.familyId, envelope.senderKeyId, envelope.semanticVersion);
+  }
+
+  return { accepted: true, idempotent: recordResult.outcome === 'already-idempotent' };
 }
