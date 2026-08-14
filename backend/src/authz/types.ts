@@ -24,7 +24,20 @@ export type ServiceOperation =
   | 'VIEW_PAIRING_REQUEST'
   | 'CONFIRM_PAIRING_REQUEST'
   | 'LICENSE_LOOKUP'
-  | 'RELEASE_METADATA_LOOKUP';
+  | 'RELEASE_METADATA_LOOKUP'
+  // PCA-BILL-2A: family-facing billing checkout/status operations, added
+  // additively (no existing member removed or renamed). Both are gated on
+  // the SAME "service account has an ACTIVE family scope" primitive as
+  // every operation above -- see checkoutRoutes.ts's own header comment
+  // for the disclosed KNOWN GAP this implies: this layer cannot
+  // distinguish a Family Owner from a family-scoped Administrator/Viewer
+  // service account (that distinction is device-plane/E2EE-envelope-only
+  // today, backend/src/familyrbac/TrustSetRoleResolver.ts, unreachable
+  // from ordinary parent-web HTTP) -- true Family-Owner-only enforcement
+  // per PCA-ADD-BILL-040 is NOT closed by this lane; it remains
+  // PCA-MYKIDS-BILL-1's scope.
+  | 'INITIATE_CHECKOUT'
+  | 'VIEW_OWN_BILLING_STATUS';
 
 export type ScopeStatus = 'ACTIVE' | 'REVOKED';
 

@@ -22,6 +22,10 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   CONFIRM_PAIRING_REQUEST: { requiresFamilyScope: true, requiresLicense: false },
   LICENSE_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   RELEASE_METADATA_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
+  // PCA-BILL-2A: a paid device-limit-increase checkout requires an active
+  // license, matching CREATE_INVITATION's requirement shape.
+  INITIATE_CHECKOUT: { requiresFamilyScope: true, requiresLicense: true },
+  VIEW_OWN_BILLING_STATUS: { requiresFamilyScope: true, requiresLicense: false },
 };
 
 export function resolveRequirements(operation: ServiceOperation): OperationRequirements {

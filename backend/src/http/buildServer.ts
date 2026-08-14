@@ -25,6 +25,20 @@ import type { FamilyAuditService } from '../familyrbac/FamilyAuditStore.js';
 // registerXRoutes below -- no other part of this file is touched.
 import { registerPlatformAdminAuthRoutes } from './routes/platformAdminAuthRoutes.js';
 import type { PlatformAdminAuthService } from '../platformadmin/auth/PlatformAdminAuthService.js';
+// PCA-BILL-2A: payment orchestration (checkout/webhook/refund) -- a fourth
+// structurally independent surface layered ON TOP OF PCA-PA-1 (identity/
+// RBAC/audit), PCA-PA-2 (entitlements), and PCA-BILL-1 (billing core
+// domain entities), never modifying any of their accepted source files.
+// Registered here exactly like every other domain's registerXRoutes call.
+import { registerBillingCheckoutRoutes } from './routes/billingCheckoutRoutes.js';
+import { registerBillingWebhookRoutes } from './routes/billingWebhookRoutes.js';
+import { registerBillingRefundRoutes } from './routes/billingRefundRoutes.js';
+import type { CheckoutService } from '../billing/checkout/CheckoutService.js';
+import type { WebhookService } from '../billing/webhook/WebhookService.js';
+import type { RefundService } from '../billing/refund.js';
+import type { PaymentRepository } from '../billing/payment.js';
+import type { PaymentProviderRegistry } from '../billing/provider/providerRegistry.js';
+import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformAdminAuditService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -42,6 +56,13 @@ export interface ServerDependencies {
   familyAuditService: FamilyAuditService;
   /** PCA-PA-1: independent Platform Administration auth plane -- see registerPlatformAdminAuthRoutes below. */
   platformAdminAuthService: PlatformAdminAuthService;
+  /** PCA-BILL-2A: payment orchestration -- see registerBillingCheckoutRoutes/registerBillingWebhookRoutes/registerBillingRefundRoutes below. */
+  billingCheckoutService: CheckoutService;
+  billingWebhookService: WebhookService;
+  billingProviderRegistry: PaymentProviderRegistry;
+  billingRefundService: RefundService;
+  billingPaymentRepository: PaymentRepository;
+  billingAuditService: PlatformAdminAuditService;
 }
 
 /**
@@ -132,6 +153,26 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerPlatformAdminAuthRoutes(app, {
     authService: deps.platformAdminAuthService,
+    rateLimiter,
+  });
+  registerBillingCheckoutRoutes(app, {
+    checkoutService: deps.billingCheckoutService,
+    authService: deps.authService,
+    authzService: deps.authzService,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerBillingWebhookRoutes(app, {
+    webhookService: deps.billingWebhookService,
+    providerRegistry: deps.billingProviderRegistry,
+    rateLimiter,
+  });
+  registerBillingRefundRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    providerRegistry: deps.billingProviderRegistry,
+    refundService: deps.billingRefundService,
+    paymentRepository: deps.billingPaymentRepository,
+    auditService: deps.billingAuditService,
     rateLimiter,
   });
 

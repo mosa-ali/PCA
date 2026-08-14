@@ -34,6 +34,31 @@ import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/
 import { PlatformAdminAuthService } from './platformadmin/auth/PlatformAdminAuthService.js';
 import { MySqlPlatformAdminAuthRepository } from './platformadmin/auth/MySqlAuthRepository.js';
 import { LoggingAlertAdapter } from './platformadmin/auth/alertPort.js';
+import { PlatformAdminAuditService } from './platformadmin/audit/PlatformAdminAuditService.js';
+import { MySqlPlatformAdminAuditRepository } from './platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
+// PCA-BILL-2A: payment orchestration wiring. Every service below is real,
+// durable, MySQL-backed -- the only thing NOT wired to a real
+// implementation is a production PaymentProvider (PAYMENT_PROVIDER_SELECTION
+// is this codebase's external commercial gate, Section 19.2): in
+// production (NODE_ENV neither 'test' nor 'development'),
+// createDefaultProviderRegistry() returns an EMPTY registry, so every
+// checkout/webhook/refund call fails closed with UnknownProviderError
+// rather than silently using the TEST_SANDBOX adapter or any other
+// default.
+import { PriceBookRepository } from './billing/priceBook.js';
+import { QuoteRepository, QuoteService } from './billing/quote.js';
+import { PaymentRepository, PaymentService } from './billing/payment.js';
+import { RefundRepository, RefundService } from './billing/refund.js';
+import { ProviderEventRepository, ProviderEventService } from './billing/providerEvent.js';
+import { createDefaultProviderRegistry } from './billing/provider/providerRegistry.js';
+import { CheckoutService } from './billing/checkout/CheckoutService.js';
+import { WebhookService } from './billing/webhook/WebhookService.js';
+import { MySqlEntitlementRepository } from './entitlements/MySqlEntitlementRepository.js';
+import { MySqlChangeRequestRepository } from './entitlements/requests/MySqlChangeRequestRepository.js';
+import { EntitlementService } from './entitlements/EntitlementService.js';
+import { ChangeRequestService } from './entitlements/requests/ChangeRequestService.js';
+import { NoPriceBookQuotePort } from './entitlements/quote/QuotePort.js';
+import { PaymentConfirmationService } from './entitlements/payment/PaymentConfirmationService.js';
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -99,6 +124,42 @@ async function start(): Promise<void> {
     },
   );
 
+  // PCA-BILL-2A wiring -- see this block's own imports above for the
+  // external-gate note on PaymentProvider selection.
+  const platformAdminAuditService = new PlatformAdminAuditService(new MySqlPlatformAdminAuditRepository());
+  const priceBookRepository = new PriceBookRepository();
+  const quoteRepository = new QuoteRepository();
+  const quoteService = new QuoteService(priceBookRepository, quoteRepository, platformAdminAuditService);
+  const paymentRepository = new PaymentRepository();
+  const paymentService = new PaymentService(paymentRepository, quoteService, platformAdminAuditService);
+  const refundRepository = new RefundRepository();
+  const refundService = new RefundService(refundRepository, paymentRepository, platformAdminAuditService);
+  const providerEventRepository = new ProviderEventRepository();
+  const providerEventService = new ProviderEventService(providerEventRepository);
+  const providerRegistry = createDefaultProviderRegistry();
+
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
+  // NoPriceBookQuotePort: entitlements' own QuotePort has no real
+  // PriceBook-backed implementation in this repository yet (see
+  // entitlements/quote/QuotePort.ts's header) -- every standard-quantity
+  // increase request therefore routes through the custom-quote
+  // (PENDING_ADMIN_QUOTE) path today, unrelated to and unaffected by this
+  // lane's own billing-core QuoteService above.
+  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new NoPriceBookQuotePort());
+  const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
+
+  const billingCheckoutService = new CheckoutService(changeRequestRepository, changeRequestService, paymentService, paymentRepository, providerRegistry);
+  const billingWebhookService = new WebhookService(
+    providerRegistry,
+    providerEventService,
+    providerEventRepository,
+    paymentService,
+    paymentConfirmationService,
+    platformAdminAuditService,
+  );
+
   const app = buildServer({
     authService: new AuthService(new MySqlAuthRepository()),
     authzService: new AuthzService(authzRepository),
@@ -139,6 +200,13 @@ async function start(): Promise<void> {
     // PCA-PA-1: independent Platform Administration auth plane -- no
     // shared repository, session type, or RBAC with anything above.
     platformAdminAuthService: new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new LoggingAlertAdapter()),
+    // PCA-BILL-2A: payment orchestration -- see the wiring block above.
+    billingCheckoutService,
+    billingWebhookService,
+    billingProviderRegistry: providerRegistry,
+    billingRefundService: refundService,
+    billingPaymentRepository: paymentRepository,
+    billingAuditService: platformAdminAuditService,
   });
   await app.listen({ host, port });
 }
