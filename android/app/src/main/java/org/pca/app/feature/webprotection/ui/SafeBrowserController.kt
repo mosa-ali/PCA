@@ -120,8 +120,10 @@ class SafeBrowserController(
 
         when (outcome) {
             is NavigationOutcome.Allow -> {
-                pendingApprovedLoad = url
-                _screenState.update { SafeBrowserScreenState.Browsing(currentUrl = url, canGoBack = true, isLoading = true) }
+                // outcome.loadUrl is the URL to actually load -- identical to `url` unless a
+                // provider-supported SafeSearch rewrite applied (see SafeSearchUrlRewriter).
+                pendingApprovedLoad = outcome.loadUrl
+                _screenState.update { SafeBrowserScreenState.Browsing(currentUrl = outcome.loadUrl, canGoBack = true, isLoading = true) }
             }
             is NavigationOutcome.Held -> {
                 _screenState.update { SafeBrowserScreenState.Held(outcome.blockDecision, AskParentState.NONE) }

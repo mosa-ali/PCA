@@ -31,6 +31,16 @@
          moment. Special access granted via Settings on API 31+, not a runtime permission dialog. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
+    <!-- PCA-5 (org.pca.app.feature.webprotection.vpn.WebProtectionVpnService): user consent for the
+         VPN itself is obtained at runtime via VpnService.prepare() (see
+         org.pca.app.platform.VpnCapabilitySource), never assumed from a manifest entry.
+         FOREGROUND_SERVICE(_SPECIAL_USE) is required on API 34+ to legally run the persistent,
+         non-hideable enforcement notification doc 25 Section 2 requires while the tunnel is
+         active; the service itself (below) declares android:permission="BIND_VPN_SERVICE", the
+         standard restriction that only the system may bind a VpnService. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <application
         android:name=".PcaApplication"
         android:allowBackup="false"
@@ -70,6 +80,26 @@
         <activity
             android:name=".feature.webprotection.ui.SafeBrowserActivity"
             android:exported="false" />
+
+        <!-- PCA-5 (doc 14 layer 2): real, user-consented device-wide DNS-only web-filtering VPN.
+             android:permission restricts binding to the system (standard VpnService contract);
+             exported="true" is required for the system to bind it, but the intent-filter's action
+             is the ONLY way it can be invoked; no other app-facing entry point exists. See
+             org.pca.app.feature.webprotection.vpn.WebProtectionVpnService's own doc comment for the
+             DNS-only scope decision and org.pca.app.feature.webprotection.vpn.VpnEnforcementController
+             for the real start/stop orchestration seam. -->
+        <service
+            android:name=".feature.webprotection.vpn.WebProtectionVpnService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="web_protection_vpn_content_filtering" />
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
 

@@ -41,7 +41,19 @@ data class BlockDecisionState(
 )
 
 sealed class NavigationOutcome {
-    data class Allow(val safeSearchMode: org.pca.app.feature.webprotection.policy.SafeSearchMode) : NavigationOutcome()
+    /**
+     * [loadUrl] is the URL the WebView chrome must actually load -- either [SafeSearchDirective]-
+     * driven-and-provider-supported (in which case it differs from the originally requested URL by
+     * exactly one query parameter, see [applySafeSearchQueryParameter]) or, in every other case
+     * (mode OFF, no directive supplied, unsupported provider), identical to the requested URL.
+     * [safeSearchApplied] makes that distinction inspectable rather than silent -- doc 14's
+     * SafeSearch note requires enforcement to never be silently claimed OR silently skipped.
+     */
+    data class Allow(
+        val safeSearchMode: org.pca.app.feature.webprotection.policy.SafeSearchMode,
+        val loadUrl: String,
+        val safeSearchApplied: Boolean,
+    ) : NavigationOutcome()
     data class Held(val blockDecision: BlockDecisionState) : NavigationOutcome()
 }
 

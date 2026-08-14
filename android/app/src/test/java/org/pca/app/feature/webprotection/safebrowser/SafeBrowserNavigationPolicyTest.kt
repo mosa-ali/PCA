@@ -3,6 +3,7 @@ package org.pca.app.feature.webprotection.safebrowser
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -13,6 +14,8 @@ import org.pca.app.feature.webprotection.policy.ClassifierConfidenceBand
 import org.pca.app.feature.webprotection.policy.ClassifierDisposition
 import org.pca.app.feature.webprotection.policy.ClassifierModality
 import org.pca.app.feature.webprotection.policy.ClassifierResult
+import org.pca.app.feature.webprotection.policy.SafeSearchDirective
+import org.pca.app.feature.webprotection.policy.SafeSearchMode
 import org.pca.app.feature.webprotection.policy.WebDecisionOutcome
 import org.pca.app.feature.webprotection.policy.WebRule
 import org.pca.app.feature.webprotection.policy.WebRuleListType
@@ -108,6 +111,43 @@ class SafeBrowserNavigationPolicyTest {
 
         val stored = webVisits.getForDevice(DEVICE).single()
         assertEquals(WebVisitAction.REVIEW, stored.action)
+    }
+
+    @Test
+    fun `an allowed navigation on a SafeSearch-supported provider is rewritten with the provider's documented parameter`() = runTest {
+        val outcome = policy().evaluateNavigation(
+            FAMILY, PROFILE, DEVICE,
+            url = "https://www.google.com/search?q=cats",
+            safeSearch = SafeSearchDirective(mode = SafeSearchMode.STRICT, serviceSupportsSafeSearch = true),
+        )
+
+        val allow = outcome as NavigationOutcome.Allow
+        assertEquals(SafeSearchMode.STRICT, allow.safeSearchMode)
+        assertTrue(allow.safeSearchApplied)
+        assertTrue(allow.loadUrl.contains("safe=active"))
+    }
+
+    @Test
+    fun `an allowed navigation on a SafeSearch-unsupported provider is never silently rewritten`() = runTest {
+        val outcome = policy().evaluateNavigation(
+            FAMILY, PROFILE, DEVICE,
+            url = "https://safe-site.example/page",
+            safeSearch = SafeSearchDirective(mode = SafeSearchMode.STRICT, serviceSupportsSafeSearch = true),
+        )
+
+        val allow = outcome as NavigationOutcome.Allow
+        assertFalse(allow.safeSearchApplied)
+        assertEquals("https://safe-site.example/page", allow.loadUrl)
+    }
+
+    @Test
+    fun `no SafeSearch directive supplied at all -- mode OFF, URL untouched`() = runTest {
+        val outcome = policy().evaluateNavigation(FAMILY, PROFILE, DEVICE, "https://www.google.com/search?q=cats")
+
+        val allow = outcome as NavigationOutcome.Allow
+        assertEquals(SafeSearchMode.OFF, allow.safeSearchMode)
+        assertFalse(allow.safeSearchApplied)
+        assertEquals("https://www.google.com/search?q=cats", allow.loadUrl)
     }
 
     @Test

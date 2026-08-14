@@ -18,6 +18,12 @@
     <string name="wellbeing_notification_generic_body">Open the app when you\'re ready to see it.</string>
     <string name="wellbeing_card_title">Here\'s an idea</string>
     <string name="wellbeing_card_dismiss">Not now</string>
+
+    <!-- Web Protection VPN (PCA-5) -->
+    <string name="web_protection_vpn_channel_name">Web protection</string>
+    <string name="web_protection_vpn_channel_description">Shows while device-wide domain filtering is active.</string>
+    <string name="web_protection_vpn_notification_title">PCA Web Protection is active</string>
+    <string name="web_protection_vpn_notification_text">Filtering domain requests on this device.</string>
     <string name="wellbeing_card_helpful">I liked this</string>
     <string name="wellbeing_card_not_for_me">Not for me</string>
     <string name="wellbeing_card_remind_later">Remind me later</string>

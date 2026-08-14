@@ -57,7 +57,8 @@ class SafeBrowserNavigationPolicy(
 
         if (decision.outcome == WebDecisionOutcome.ALLOW) {
             val safeSearchMode = safeSearch?.let(::resolveEffectiveSafeSearchMode) ?: SafeSearchMode.OFF
-            return NavigationOutcome.Allow(safeSearchMode)
+            val rewrite = applySafeSearchQueryParameter(url, domain, safeSearchMode)
+            return NavigationOutcome.Allow(safeSearchMode, rewrite.url, rewrite.applied)
         }
 
         val id = idGenerator()

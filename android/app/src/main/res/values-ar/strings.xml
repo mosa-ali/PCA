@@ -22,6 +22,12 @@
     <string name="wellbeing_card_dismiss">ليس الآن</string>
     <string name="wellbeing_card_helpful">أعجبتني هذه الفكرة</string>
     <string name="wellbeing_card_not_for_me">ليست مناسبة لي</string>
+
+    <!-- Web Protection VPN (PCA-5) -->
+    <string name="web_protection_vpn_channel_name">حماية الويب</string>
+    <string name="web_protection_vpn_channel_description">تظهر أثناء تفعيل تصفية النطاقات على مستوى الجهاز.</string>
+    <string name="web_protection_vpn_notification_title">حماية الويب من PCA نشطة</string>
+    <string name="web_protection_vpn_notification_text">تتم تصفية طلبات النطاقات على هذا الجهاز.</string>
     <string name="wellbeing_card_remind_later">ذكّرني لاحقًا</string>
     <string name="wellbeing_card_done">قمت بذلك</string>
     <string name="wellbeing_card_requires_adult_supervision">افعل هذا مع شخص بالغ.</string>
