@@ -57,6 +57,15 @@ const ALLOWED_KEY_COLUMNS = new Set([
   'open_active_key', 'active_account_key', 'key_epoch',
   'genesis_dsk_key_id', 'genesis_dsk_public_key', 'owner_dsk_key_id', 'owner_dsk_public_key',
   'signer_dsk_key_id', 'signer_dsk_public_key', 'head_attestation_id',
+  // dedupe_key (commercial_notifications, PCA-COMMERCIAL-NOTIFY-1) is a
+  // UNIQUE-constrained idempotency key derived from the source commercial
+  // event (e.g. PAYMENT_CONFIRMED:<provider_event_row_id>) -- same class as
+  // idempotency_key above, never cryptographic key material.
+  // message_key (commercial_notifications) is a bounded localization
+  // identifier (e.g. "commercial_notification.payment_confirmed") paired
+  // with structured params_json -- a lookup key for client-side i18n
+  // rendering, never key material of any kind.
+  'dedupe_key', 'message_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {

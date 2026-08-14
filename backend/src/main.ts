@@ -45,7 +45,7 @@ import { MySqlPlatformAdminAuditRepository } from './platformadmin/audit/MySqlPl
 // checkout/webhook/refund call fails closed with UnknownProviderError
 // rather than silently using the TEST_SANDBOX adapter or any other
 // default.
-import { PriceBookRepository } from './billing/priceBook.js';
+import { PriceBookRepository, PriceBookService } from './billing/priceBook.js';
 import { QuoteRepository, QuoteService } from './billing/quote.js';
 import { PaymentRepository, PaymentService } from './billing/payment.js';
 import { RefundRepository, RefundService } from './billing/refund.js';
@@ -57,12 +57,10 @@ import { WebhookService } from './billing/webhook/WebhookService.js';
 // orchestration, and FIX 4's fail-closed family-owner-authority default --
 // see each module's own header for the full rationale.
 import { RefundOperationRepository, RefundOrchestrationService } from './billing/refundOrchestration/RefundOrchestrationService.js';
-import { UnavailableFamilyCommercialAuthorityResolver } from './billing/authority/FamilyCommercialAuthorityResolver.js';
 import { MySqlEntitlementRepository } from './entitlements/MySqlEntitlementRepository.js';
 import { MySqlChangeRequestRepository } from './entitlements/requests/MySqlChangeRequestRepository.js';
 import { EntitlementService } from './entitlements/EntitlementService.js';
 import { ChangeRequestService } from './entitlements/requests/ChangeRequestService.js';
-import { NoPriceBookQuotePort } from './entitlements/quote/QuotePort.js';
 import { PaymentConfirmationService } from './entitlements/payment/PaymentConfirmationService.js';
 // PCA-COMMERCIAL-NOTIFY-1: durable commercial-notification event/read
 // model. No production PAYMENT_PROVIDER_SELECTION-style external gate
@@ -76,6 +74,32 @@ import { PaymentConfirmationService } from './entitlements/payment/PaymentConfir
 import { CommercialNotificationRepository } from './commercialnotifications/CommercialNotificationRepository.js';
 import { CommercialNotificationService, CommercialNotificationSupportService } from './commercialnotifications/CommercialNotificationService.js';
 import { MySqlCommercialNotificationPublisher } from './commercialnotifications/CommercialNotificationPublisher.js';
+// PCA-PA-3B: Platform Administration operational/commercial API wiring.
+import { PlatformAdminAccountService } from './platformadmin/auth/PlatformAdminAccountService.js';
+import { PlatformAdminEntitlementService } from './platformadmin/entitlements/PlatformAdminEntitlementService.js';
+import { SlotReservationService } from './entitlements/slots/SlotReservationService.js';
+import { MySqlSlotReservationRepository } from './entitlements/slots/MySqlSlotReservationRepository.js';
+import { PlanRepository, PlanService } from './billing/plan.js';
+// PCA-MYKIDS-BILL-2: family commercial API + the real PriceBook-backed
+// QuotePort adapter, replacing NoPriceBookQuotePort.
+import { FamilyCommercialService } from './familycommercial/FamilyCommercialService.js';
+import { SubscriptionRepository } from './billing/subscription.js';
+import { PaymentMethodRepository } from './billing/paymentMethod.js';
+import { PriceBookQuotePort } from './entitlements/quote/PriceBookQuotePort.js';
+// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, OWNER_APPROVED_OPTION_A): the real,
+// genesis-anchored Owner-attestation chain resolver, replacing the
+// fail-closed UnavailableFamilyCommercialAuthorityResolver placeholder.
+// Signature verification still runs through the SAME
+// RejectingDeviceSignatureVerifier used everywhere else in this file
+// (deviceAuthService/syncCoordinator above) -- CRYPTO_SUITE remains
+// PENDING_HUMAN_SECURITY_REVIEW, so this wiring is real and structurally
+// correct but every signature check still fails closed today, exactly
+// like every other crypto-gated surface in this file. This is a deliberate
+// continuation of that existing posture, not a new gap.
+import { AttestationChainFamilyCommercialAuthorityResolver } from './billing/authority/FamilyCommercialAuthorityResolver.js';
+import { FamilyOwnerAttestationChainEngine } from './familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
+import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/authority/MySqlAttestationChainStore.js';
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -141,6 +165,12 @@ async function start(): Promise<void> {
     },
   );
 
+  // PCA-PA-1: single shared Platform Administration auth-service instance
+  // -- every downstream Platform Admin surface (billing refunds below,
+  // PCA-PA-3B operational routes, buildServer's own auth route) reuses
+  // this ONE instance rather than each constructing its own.
+  const platformAdminAuthService = new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new LoggingAlertAdapter());
+
   // PCA-BILL-2A wiring -- see this block's own imports above for the
   // external-gate note on PaymentProvider selection.
   const platformAdminAuditService = new PlatformAdminAuditService(new MySqlPlatformAdminAuditRepository());
@@ -156,23 +186,54 @@ async function start(): Promise<void> {
   const providerRegistry = createDefaultProviderRegistry();
   const refundOperationRepository = new RefundOperationRepository();
   const refundOrchestrationService = new RefundOrchestrationService(refundOperationRepository, refundService, paymentRepository, providerRegistry);
-  // FIX 4: PRODUCTION default is the fail-closed resolver -- see that
-  // class's own header and billingCheckoutRoutes.ts's header for why this
-  // is the honest, correct posture today (no genuine server-side trust-set
-  // source exists yet), not a placeholder to "finish later" casually.
-  const familyCommercialAuthorityResolver = new UnavailableFamilyCommercialAuthorityResolver();
+  // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025/Option A): the real, server-verifiable
+  // resolver -- see this block's own import comment above for why it is
+  // still functionally fail-closed today (RejectingDeviceSignatureVerifier,
+  // pending CRYPTO_SUITE human security review), exactly like device-session
+  // issuance and envelope acceptance elsewhere in this file.
+  const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
+    new MySqlFamilyAuthorityGenesisStore(),
+    new MySqlFamilyAuthorityAttestationChainStore(),
+    new RejectingDeviceSignatureVerifier(),
+    () => new Date(),
+  );
+  const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
 
   const entitlementRepository = new MySqlEntitlementRepository();
   const changeRequestRepository = new MySqlChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
-  // NoPriceBookQuotePort: entitlements' own QuotePort has no real
-  // PriceBook-backed implementation in this repository yet (see
-  // entitlements/quote/QuotePort.ts's header) -- every standard-quantity
-  // increase request therefore routes through the custom-quote
-  // (PENDING_ADMIN_QUOTE) path today, unrelated to and unaffected by this
-  // lane's own billing-core QuoteService above.
-  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new NoPriceBookQuotePort());
+  // PCA-MYKIDS-BILL-2: the real PriceBook-backed QuotePort adapter,
+  // replacing NoPriceBookQuotePort -- standard-quantity increase requests
+  // now resolve against the live billing_price_books row when one exists,
+  // falling through to PENDING_ADMIN_QUOTE (never invented pricing)
+  // exactly as PriceBookQuotePort.ts documents.
+  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new PriceBookQuotePort(priceBookRepository));
   const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
+
+  // PCA-PA-3B wiring.
+  const platformAdminAccountService = new PlatformAdminAccountService(new MySqlPlatformAdminAuthRepository());
+  const slotReservationService = new SlotReservationService(new MySqlSlotReservationRepository(entitlementRepository));
+  const platformAdminEntitlementService = new PlatformAdminEntitlementService(
+    platformAdminAuthService,
+    entitlementRepository,
+    changeRequestRepository,
+    entitlementService,
+    changeRequestService,
+    slotReservationService,
+  );
+  const planService = new PlanService(new PlanRepository());
+  const priceBookService = new PriceBookService(priceBookRepository, platformAdminAuditService);
+
+  // PCA-MYKIDS-BILL-2 wiring -- composes the SAME entitlement/billing-core
+  // repositories already constructed above; reuses (never duplicates)
+  // Agent45A's checkout/webhook/refund routes.
+  const familyCommercialService = new FamilyCommercialService(
+    entitlementService,
+    changeRequestRepository,
+    changeRequestService,
+    new SubscriptionRepository(),
+    new PaymentMethodRepository(),
+  );
 
   // PCA-COMMERCIAL-NOTIFY-1 wiring. `commercialNotificationPublisher` is
   // constructed here and exported nowhere yet -- no accepted Quote/Payment/
@@ -234,7 +295,7 @@ async function start(): Promise<void> {
     }),
     // PCA-PA-1: independent Platform Administration auth plane -- no
     // shared repository, session type, or RBAC with anything above.
-    platformAdminAuthService: new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new LoggingAlertAdapter()),
+    platformAdminAuthService,
     // PCA-BILL-2A: payment orchestration -- see the wiring block above.
     billingCheckoutService,
     billingWebhookService,
@@ -245,6 +306,15 @@ async function start(): Promise<void> {
     billingFamilyCommercialAuthorityResolver: familyCommercialAuthorityResolver,
     commercialNotificationService,
     commercialNotificationSupportService,
+    // PCA-PA-3B: Platform Administration operational/commercial API.
+    platformAdminAccountService,
+    platformAdminEntitlementService,
+    changeRequestRepository,
+    entitlementRepository,
+    priceBookService,
+    planService,
+    // PCA-MYKIDS-BILL-2: family-facing commercial API.
+    familyCommercialService,
   });
   await app.listen({ host, port });
 }

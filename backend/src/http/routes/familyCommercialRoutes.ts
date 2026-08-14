@@ -116,12 +116,12 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
   const requireViewBillingRecords = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'VIEW_BILLING_RECORDS');
 
   /** Shared inline Owner-authority gate for every mutation route -- see this file's header. */
-  function resolveOwnerOrReject(reply: FastifyReply, familyId: string, actorDeviceId: unknown): boolean {
+  async function resolveOwnerOrReject(reply: FastifyReply, familyId: string, actorDeviceId: unknown): Promise<boolean> {
     if (!isValidActorDeviceId(actorDeviceId)) {
       reply.code(400).send({ error: 'invalid_request' });
       return false;
     }
-    const outcome = checkOwnerAuthority(deps.familyCommercialAuthorityResolver, familyId, actorDeviceId);
+    const outcome = await checkOwnerAuthority(deps.familyCommercialAuthorityResolver, familyId, actorDeviceId);
     if (!outcome.authorized) {
       if (outcome.denialStatus === 'AUTHORITY_UNAVAILABLE') {
         reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
@@ -195,7 +195,7 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
       if (currencyCode !== undefined && (typeof currencyCode !== 'string' || currencyCode.length === 0 || currencyCode.length > MAX_CURRENCY_LENGTH)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (!resolveOwnerOrReject(reply, familyId, actorDeviceId)) return;
+      if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
 
       // See this file's header (item 4): only the billable managed-device
       // path requires an active license -- checked here, inline, against
@@ -234,7 +234,7 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
       }
       const body = request.body;
       const actorDeviceId = isPlainObject(body) ? body.actorDeviceId : undefined;
-      if (!resolveOwnerOrReject(reply, familyId, actorDeviceId)) return;
+      if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
       try {
         const record = await svc.cancelRequest(familyId, requestId);
         return changeRequestToJson(record);

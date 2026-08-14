@@ -52,6 +52,23 @@ import type { FamilyCommercialAuthorityResolver } from '../billing/authority/Fam
 // every other domain's registerXRoutes call.
 import { registerCommercialNotificationRoutes } from './routes/commercialNotificationRoutes.js';
 import type { CommercialNotificationService, CommercialNotificationSupportService } from '../commercialnotifications/CommercialNotificationService.js';
+// PCA-PA-3B: Platform Administration operational/commercial API -- a fifth
+// structurally independent surface exposing existing PCA-PA-2/PCA-BILL-1/
+// PCA-PA-1 domains through Platform-Admin-authenticated read models and
+// routes. This lane does not self-register (see its own index.ts header);
+// wired here exactly like every other domain's registerXRoutes call.
+import { registerPlatformAdminOperationalRoutes } from './routes/platformadmin/index.js';
+import type { PlatformAdminAccountService } from '../platformadmin/auth/PlatformAdminAccountService.js';
+import type { PlatformAdminEntitlementService } from '../platformadmin/entitlements/PlatformAdminEntitlementService.js';
+import type { ChangeRequestRepository } from '../entitlements/requests/ChangeRequestRepository.js';
+import type { EntitlementRepository } from '../entitlements/EntitlementRepository.js';
+import type { PriceBookService } from '../billing/priceBook.js';
+import type { PlanService } from '../billing/plan.js';
+// PCA-MYKIDS-BILL-2: family-facing commercial read/request-workflow API --
+// composes PCA-PA-2/PCA-BILL-1 exactly like billingCheckoutRoutes.ts
+// already does; reuses the SAME FamilyCommercialAuthorityResolver.
+import { registerFamilyCommercialRoutes } from './routes/familyCommercialRoutes.js';
+import type { FamilyCommercialService } from '../familycommercial/FamilyCommercialService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -81,6 +98,15 @@ export interface ServerDependencies {
   /** PCA-COMMERCIAL-NOTIFY-1: durable commercial notifications -- see registerCommercialNotificationRoutes below. */
   commercialNotificationService: CommercialNotificationService;
   commercialNotificationSupportService: CommercialNotificationSupportService;
+  /** PCA-PA-3B: Platform Administration operational/commercial API -- see registerPlatformAdminOperationalRoutes below. */
+  platformAdminAccountService: PlatformAdminAccountService;
+  platformAdminEntitlementService: PlatformAdminEntitlementService;
+  changeRequestRepository: ChangeRequestRepository;
+  entitlementRepository: EntitlementRepository;
+  priceBookService: PriceBookService;
+  planService: PlanService;
+  /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
+  familyCommercialService: FamilyCommercialService;
 }
 
 /**
@@ -200,6 +226,24 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authService: deps.authService,
     authzService: deps.authzService,
     platformAdminAuthService: deps.platformAdminAuthService,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerPlatformAdminOperationalRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    platformAdminAccountService: deps.platformAdminAccountService,
+    platformAdminEntitlementService: deps.platformAdminEntitlementService,
+    changeRequestRepository: deps.changeRequestRepository,
+    entitlementRepository: deps.entitlementRepository,
+    priceBookService: deps.priceBookService,
+    planService: deps.planService,
+    rateLimiter,
+  });
+  registerFamilyCommercialRoutes(app, {
+    familyCommercialService: deps.familyCommercialService,
+    authService: deps.authService,
+    authzRepository: deps.authzRepository,
+    familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
     rateLimiter,
     authAttemptLimiter,
   });

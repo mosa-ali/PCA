@@ -113,10 +113,15 @@ test('device present but REVOKED (not ACTIVE), even claiming OWNER: AUTHORITY_UN
 // caught here, not discovered live.
 // ---------------------------------------------------------------------------
 
-test('PRODUCTION WIRING: main.ts constructs UnavailableFamilyCommercialAuthorityResolver and passes it as billingFamilyCommercialAuthorityResolver', async () => {
+// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, Option A) Coordinator composition:
+// production now wires the REAL, genesis-anchored chain resolver rather
+// than the fail-closed placeholder -- see FamilyOwnerAttestationChainEngine's
+// own header on why this remains functionally inert (RejectingDeviceSignatureVerifier,
+// CRYPTO_SUITE pending human security review) without being a placeholder.
+test('PRODUCTION WIRING: main.ts constructs the real AttestationChainFamilyCommercialAuthorityResolver and passes it as billingFamilyCommercialAuthorityResolver', async () => {
   const mainTs = await readFile(new URL('../../src/main.ts', import.meta.url), 'utf8');
-  assert.match(mainTs, /import\s*\{\s*UnavailableFamilyCommercialAuthorityResolver\s*\}\s*from\s*'\.\/billing\/authority\/FamilyCommercialAuthorityResolver\.js'/);
-  assert.match(mainTs, /new UnavailableFamilyCommercialAuthorityResolver\(\)/);
+  assert.match(mainTs, /import\s*\{\s*AttestationChainFamilyCommercialAuthorityResolver\s*\}\s*from\s*'\.\/billing\/authority\/FamilyCommercialAuthorityResolver\.js'/);
+  assert.match(mainTs, /new AttestationChainFamilyCommercialAuthorityResolver\(familyAuthorityChainEngine\)/);
   assert.match(mainTs, /billingFamilyCommercialAuthorityResolver:\s*familyCommercialAuthorityResolver/);
 });
 

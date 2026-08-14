@@ -89,23 +89,23 @@ test('preHandler: cross-family denial (IDOR) -- an account scoped to fam-A is re
 // checkOwnerAuthority -- AUTHORITY_UNAVAILABLE is never "is Owner"
 // ---------------------------------------------------------------------------
 
-test('checkOwnerAuthority: the safe production-default resolver (always AUTHORITY_UNAVAILABLE) is NEVER authorized', () => {
+test('checkOwnerAuthority: the safe production-default resolver (always AUTHORITY_UNAVAILABLE) is NEVER authorized', async () => {
   const resolver = new UnavailableFamilyCommercialAuthorityResolver();
-  const outcome = checkOwnerAuthority(resolver, 'fam-1', 'device-1');
+  const outcome = await checkOwnerAuthority(resolver, 'fam-1', 'device-1');
   assert.equal(outcome.authorized, false);
   assert.equal(outcome.denialStatus, 'AUTHORITY_UNAVAILABLE');
 });
 
-test('checkOwnerAuthority: OWNER_AUTHORIZED passes through as authorized', () => {
-  const resolver = { resolveOwnerAuthority: () => ({ status: 'OWNER_AUTHORIZED' }) };
-  const outcome = checkOwnerAuthority(resolver, 'fam-1', 'device-1');
+test('checkOwnerAuthority: OWNER_AUTHORIZED passes through as authorized', async () => {
+  const resolver = { resolveOwnerAuthority: async () => ({ status: 'OWNER_AUTHORIZED' }) };
+  const outcome = await checkOwnerAuthority(resolver, 'fam-1', 'device-1');
   assert.equal(outcome.authorized, true);
   assert.equal(outcome.denialStatus, undefined);
 });
 
-test('checkOwnerAuthority: ROLE_DENIED is distinct from AUTHORITY_UNAVAILABLE, and neither is ever authorized', () => {
-  const resolver = { resolveOwnerAuthority: () => ({ status: 'ROLE_DENIED' }) };
-  const outcome = checkOwnerAuthority(resolver, 'fam-1', 'device-1');
+test('checkOwnerAuthority: ROLE_DENIED is distinct from AUTHORITY_UNAVAILABLE, and neither is ever authorized', async () => {
+  const resolver = { resolveOwnerAuthority: async () => ({ status: 'ROLE_DENIED' }) };
+  const outcome = await checkOwnerAuthority(resolver, 'fam-1', 'device-1');
   assert.equal(outcome.authorized, false);
   assert.equal(outcome.denialStatus, 'ROLE_DENIED');
 });

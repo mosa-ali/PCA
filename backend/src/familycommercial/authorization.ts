@@ -144,12 +144,12 @@ export interface OwnerAuthorityCheckOutcome {
  * is NEVER treated as authorized (fail closed): only an explicit
  * OWNER_AUTHORIZED result passes.
  */
-export function checkOwnerAuthority(
+export async function checkOwnerAuthority(
   resolver: FamilyCommercialAuthorityResolver,
   familyId: string,
   actorDeviceId: string,
-): OwnerAuthorityCheckOutcome {
-  const result = resolver.resolveOwnerAuthority(familyId, actorDeviceId);
+): Promise<OwnerAuthorityCheckOutcome> {
+  const result = await resolver.resolveOwnerAuthority(familyId, actorDeviceId);
   if (result.status === 'OWNER_AUTHORIZED') return { authorized: true };
   return { authorized: false, denialStatus: result.status };
 }
