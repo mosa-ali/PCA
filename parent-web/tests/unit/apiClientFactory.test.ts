@@ -79,6 +79,29 @@ describe('getApiClients demo-mode discipline', () => {
     expect(result.allowed).toBe(false);
   });
 
+  it('demoMode false: billing is UnavailableBillingClient -- no entitlement/billing HTTP route exists in this repository (PCA-MYKIDS-BILL-1 BACKEND_GAP_REQUIRED)', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
+    }));
+    const { getApiClients } = await import('../../src/api/client');
+    const { UnavailableBillingClient } = await import('../../src/api/real/unavailableProviders');
+    const clients = getApiClients();
+    expect(clients.billing).toBeInstanceOf(UnavailableBillingClient);
+    expect(clients.billing.isPaymentProviderAvailable()).toBe(false);
+    await expect(clients.billing.getEntitlement()).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  });
+
+  it('demoMode true: billing is the fixture-backed DevBillingClient', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: true },
+    }));
+    const { getApiClients } = await import('../../src/api/client');
+    const { DevBillingClient } = await import('../../src/api/dev/devBillingClient');
+    const clients = getApiClients();
+    expect(clients.billing).toBeInstanceOf(DevBillingClient);
+    expect(clients.billing.isPaymentProviderAvailable()).toBe(true);
+  });
+
   it('demoMode false + a forced real-client construction failure surfaces as a thrown error, NOT a silent fixture fallback', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },

@@ -137,7 +137,11 @@
       "DISABLE_PROTECTION_POLICY": "Disable protection policy",
       "TRANSFER_OWNERSHIP": "Transfer ownership",
       "REVEAL_RECOVERY_MATERIAL": "Reveal recovery material",
-      "MANAGE_WELLBEING_MESSAGES": "Manage wellbeing messages"
+      "MANAGE_WELLBEING_MESSAGES": "Manage wellbeing messages",
+      "VIEW_BILLING": "View billing and subscription",
+      "REQUEST_DEVICE_INCREASE": "Request device allowance increase",
+      "REQUEST_PARENT_MEMBER_INCREASE": "Request parent member allowance increase",
+      "MANAGE_PAYMENT_METHOD": "Manage payment method"
     }
   },
   "stepUp": {
@@ -356,10 +360,116 @@
     }
   },
   "subscription": {
+    "planSectionTitle": "Your plan",
+    "freeStarterBadge": "Free Starter",
+    "freeStarterIncluded": "{{count}} managed device included",
+    "freeStarterPrice": "Price: Free",
+    "freeStarterExplain": "Additional managed devices beyond your Free Starter allowance may require a paid increase, priced at the time you request it.",
     "planLabel": "Plan: {{plan}}",
     "statusLabel": "Status: {{status}}",
-    "planFamilyDev": "Family (DEV fixture)",
-    "statusActive": "Active"
+    "status": {
+      "FREE_STARTER": "Free Starter",
+      "TRIALING": "Trialing",
+      "ACTIVE": "Active",
+      "PAST_DUE": "Past due",
+      "CANCELED": "Canceled",
+      "EXPIRED": "Expired"
+    },
+    "renewsOn": "Renews on {{date}}",
+    "expiresOn": "Expires on {{date}} (auto-renew is off)",
+    "cancelAutoRenew": "Cancel auto-renew",
+    "deviceAllowanceTitle": "Managed device allowance",
+    "devicesActive": "Active devices",
+    "devicesReserved": "Pending invitations (reserved)",
+    "devicesLimit": "Device limit",
+    "devicesAvailable": "Available slots",
+    "overLimitDevices": "Your family is over your managed-device limit. Existing devices remain enrolled and functional, but you cannot enroll a new device until you are back within your entitlement.",
+    "requestMoreDevices": "Request more devices",
+    "memberAllowanceTitle": "Parent member allowance",
+    "membersUsed": "Parent members used",
+    "membersLimit": "Parent member limit",
+    "overLimitMembers": "Your family is over your parent-member limit. Existing members remain in the family, but you cannot add a new one until you are back within your entitlement.",
+    "requestMoreMembers": "Request more parent members",
+    "openRequestsTitle": "Open requests",
+    "limitType": {
+      "PARENT_MEMBER_LIMIT": "Parent members",
+      "MANAGED_DEVICE_LIMIT": "Managed devices"
+    },
+    "viewRequest": "View request",
+    "paymentMethodTitle": "Payment method",
+    "noPaymentMethod": "No payment method on file.",
+    "paymentProviderUnavailable": "Online payment is not available yet. This action is disabled until PCA's payment provider integration is live -- no charge can be started right now.",
+    "viewInvoices": "View invoices and receipts",
+    "requestState": {
+      "PENDING": "Pending",
+      "PENDING_ADMIN_QUOTE": "Pending quote review",
+      "QUOTED": "Quoted -- ready for payment",
+      "PAYMENT_PENDING": "Payment pending",
+      "APPROVED": "Approved",
+      "DENIED": "Denied",
+      "CANCELLED": "Cancelled"
+    },
+    "increaseDevices": {
+      "title": "Increase managed device allowance",
+      "invalidTarget": "Enter a whole number greater than your current limit ({{current}}).",
+      "current": "Current limit",
+      "requested": "Requested limit",
+      "awaitingAdminQuote": "Your requested quantity does not have a standard price. It has been sent for a pricing review -- you'll be notified with the exact price once a quote is ready. Payment is not possible until then.",
+      "price": "Price",
+      "quoteExpires": "This quote expires {{date}}",
+      "quoteExpired": "This quote has expired. Cancel this request and submit a new one to get a current price.",
+      "proceedToPayment": "Proceed to payment",
+      "confirmingPayment": "We're confirming your payment. This can take a moment -- your allowance will update automatically once payment is confirmed.",
+      "approved": "Payment confirmed. Your managed-device allowance has been increased. You are now using {{used}} of {{limit}} managed devices.",
+      "denied": "This request was denied: {{reason}}",
+      "denialUnspecified": "No reason was provided.",
+      "cancelled": "This request was cancelled.",
+      "cancelRequest": "Cancel this request",
+      "currentAllowance": "Your current managed-device allowance is {{count}}.",
+      "chooseTarget": "Choose a new total managed-device limit",
+      "suggestedTarget": "{{count}} devices",
+      "customTargetLabel": "Or enter a custom total",
+      "submit": "Request this quantity"
+    },
+    "increaseMembers": {
+      "title": "Increase parent member allowance",
+      "neverBillable": "Parent-member increases are never priced or charged -- they are reviewed and decided directly, at no charge.",
+      "invalidTarget": "Enter a whole number greater than your current limit ({{current}}).",
+      "current": "Current limit",
+      "requested": "Requested limit",
+      "approved": "Your request was approved. Your parent-member limit is now {{limit}}.",
+      "denied": "This request was denied: {{reason}}",
+      "currentAllowance": "Your current parent-member allowance is {{count}}.",
+      "targetLabel": "New total parent-member limit",
+      "submit": "Submit request"
+    },
+    "invoices": {
+      "title": "Invoices and receipts",
+      "empty": "You have no invoices yet.",
+      "date": "Date",
+      "statusLabel": "Status",
+      "total": "Total",
+      "viewDetail": "View",
+      "notFound": "This invoice could not be found.",
+      "detailTitle": "Invoice {{id}}",
+      "lineItems": "Line items",
+      "quantity": "x{{count}}",
+      "status": {
+        "DRAFT": "Draft",
+        "OPEN": "Open",
+        "PAID": "Paid",
+        "VOID": "Void",
+        "UNCOLLECTIBLE": "Uncollectible"
+      }
+    },
+    "checkoutReturn": {
+      "title": "Payment status",
+      "missingRequest": "No request was specified for this payment return.",
+      "confirming": "We're confirming your payment. Please don't close this page -- we'll update your allowance automatically once payment is confirmed by the server.",
+      "confirmed": "Payment confirmed. Your allowance has been updated.",
+      "failed": "This request was denied. No payment was completed.",
+      "refreshStatus": "Refresh status"
+    }
   },
   "notifications": {
     "emailAlerts": "Email me for important alerts",

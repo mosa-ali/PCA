@@ -37,7 +37,6 @@ const PUBLIC_ROUTES = [
   '/security/trusted-browser',
   '/security/audit',
   '/notifications',
-  '/subscription',
   '/settings',
   '/not-permitted',
 ] as const;
@@ -51,6 +50,14 @@ const GUARDED_ROUTES: Array<{ path: string; action: string }> = [
   { path: '/privacy/delete', action: 'DELETE_HISTORY' },
   { path: '/security/recovery', action: 'REVEAL_RECOVERY_MATERIAL' },
   { path: '/wellbeing-messages', action: 'MANAGE_WELLBEING_MESSAGES' },
+  // PCA-MYKIDS-BILL-1: billing/subscription self-service is Family-Owner-only
+  // by default (PCA-ADD-BILL-040) -- every subscription route is RouteGuard-gated.
+  { path: '/subscription', action: 'VIEW_BILLING' },
+  { path: '/subscription/increase-devices', action: 'REQUEST_DEVICE_INCREASE' },
+  { path: '/subscription/increase-parent-members', action: 'REQUEST_PARENT_MEMBER_INCREASE' },
+  { path: '/subscription/invoices', action: 'VIEW_BILLING' },
+  { path: '/subscription/invoices/invoice-does-not-exist', action: 'VIEW_BILLING' },
+  { path: '/subscription/checkout-return?requestId=does-not-exist', action: 'VIEW_BILLING' },
 ];
 
 // Roles that are denied for every guarded route above (none of these

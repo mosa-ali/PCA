@@ -26,6 +26,11 @@ import TrustedBrowser from './pages/security/TrustedBrowser';
 import WellbeingAdmin from './pages/wellbeing/WellbeingAdmin';
 import Notifications from './pages/Notifications';
 import Subscription from './pages/Subscription';
+import DeviceIncreaseRequest from './pages/billing/DeviceIncreaseRequest';
+import ParentMemberIncreaseRequest from './pages/billing/ParentMemberIncreaseRequest';
+import Invoices from './pages/billing/Invoices';
+import InvoiceDetail from './pages/billing/InvoiceDetail';
+import CheckoutReturn from './pages/billing/CheckoutReturn';
 import Settings from './pages/Settings';
 import NotPermitted from './pages/NotPermitted';
 import NotFound from './pages/NotFound';
@@ -119,7 +124,54 @@ export default function App() {
         />
 
         <Route path="notifications" element={<Notifications />} />
-        <Route path="subscription" element={<Subscription />} />
+        <Route
+          path="subscription"
+          element={
+            <RouteGuard action="VIEW_BILLING">
+              <Subscription />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="subscription/increase-devices"
+          element={
+            <RouteGuard action="REQUEST_DEVICE_INCREASE">
+              <DeviceIncreaseRequest />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="subscription/increase-parent-members"
+          element={
+            <RouteGuard action="REQUEST_PARENT_MEMBER_INCREASE">
+              <ParentMemberIncreaseRequest />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="subscription/invoices"
+          element={
+            <RouteGuard action="VIEW_BILLING">
+              <Invoices />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="subscription/invoices/:invoiceId"
+          element={
+            <RouteGuard action="VIEW_BILLING">
+              <InvoiceDetail />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="subscription/checkout-return"
+          element={
+            <RouteGuard action="VIEW_BILLING">
+              <CheckoutReturn />
+            </RouteGuard>
+          }
+        />
         <Route path="settings" element={<Settings />} />
         <Route path="not-permitted" element={<NotPermitted />} />
         <Route path="*" element={<NotFound />} />

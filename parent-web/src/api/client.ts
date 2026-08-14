@@ -39,6 +39,7 @@
 // constructs it anymore.
 import { config } from '../config/env';
 import type {
+  BillingClient,
   DeviceStatusClient,
   FamilyAuthorityGateway,
   ParentFamilyDataGateway,
@@ -60,6 +61,7 @@ import { DevWebRuleAdminClient } from './dev/devWebRuleAdminClient';
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
+import { DevBillingClient } from './dev/devBillingClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
@@ -69,6 +71,7 @@ import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient'
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import {
+  UnavailableBillingClient,
   UnavailableFamilyAuthorityGateway,
   UnavailableWellbeingMessageAdminClient,
 } from './real/unavailableProviders';
@@ -84,6 +87,14 @@ export interface PcaApiClients {
   trustedBrowser: TrustedBrowserProvider;
   runtimeSync: ParentRuntimeSyncClient;
   deviceEnrollment: DeviceEnrollmentClient;
+  /**
+   * PCA-MYKIDS-BILL-1: no HTTP route or family-facing service path exists
+   * anywhere in this repository for entitlements/billing (verified against
+   * backend/src/http/buildServer.ts and backend/src/billing/rbac.ts) --
+   * always UnavailableBillingClient outside demo mode. See
+   * ./real/unavailableProviders.ts's BillingClient doc comment.
+   */
+  billing: BillingClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
@@ -100,6 +111,7 @@ function buildDevClients(): PcaApiClients {
     trustedBrowser: new DevTrustedBrowserProvider(),
     runtimeSync: new DevRuntimeSyncClient(),
     deviceEnrollment: new DevDeviceEnrollmentClient(),
+    billing: new DevBillingClient(),
     isFixtureBacked: true,
   };
 }
@@ -140,6 +152,7 @@ function buildRealClients(): PcaApiClients {
     // backend/src/http/routes/{invitationRoutes,pairingRoutes}.ts; replace
     // this accessor with a real one once a token-issuance flow exists.
     deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noServiceBearerTokenAvailable),
+    billing: new UnavailableBillingClient(),
     isFixtureBacked: false,
   };
 }

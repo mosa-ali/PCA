@@ -31,6 +31,14 @@ import type {
   WellbeingMessageControlV1,
 } from '../domain/wellbeing';
 import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../domain/webRulePolicy';
+import type {
+  EntitlementChangeRequest,
+  EntitlementSnapshot,
+  Invoice,
+  LimitType,
+  PaymentMethodSummary,
+  SubscriptionSnapshot,
+} from '../domain/billing';
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -107,6 +115,40 @@ export interface WebRuleAdminClient {
   listRules(childId: string): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus; revision: number | null }>;
   setRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }>;
   removeRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }>;
+}
+
+/**
+ * PCA-MYKIDS-BILL-1 (doc PCA_ADDENDUM_002 Section 18/18.1): the Parent Web
+ * commercial self-service surface. Every mutating method here is the client
+ * half of a server-authoritative flow -- in particular `beginCheckout`
+ * never itself grants an entitlement increase (PCA-ADD-BILL-035/PCA-ADD-PA-049:
+ * only authoritative server-side payment confirmation may raise
+ * managedDeviceLimit). `isPaymentProviderAvailable` lets the UI honestly
+ * capability-gate the checkout action instead of letting a call fail after
+ * the fact (Section 11: "keep the checkout action capability-gated/disabled
+ * honestly, no fake client-side completion").
+ */
+export interface BillingClient {
+  getEntitlement(): Promise<EntitlementSnapshot>;
+  getSubscription(): Promise<SubscriptionSnapshot>;
+  listInvoices(): Promise<Invoice[]>;
+  getInvoice(invoiceId: string): Promise<Invoice | null>;
+  listPaymentMethods(): Promise<PaymentMethodSummary[]>;
+  /** True only when a real, provider-neutral payment API (Agent45) is actually integrated and reachable -- never true merely because demo/dev fixtures are in use for everything else. */
+  isPaymentProviderAvailable(): boolean;
+
+  /** Creates a PENDING request for the given limit type/target and resolves it (standard quote, custom-quote-pending, or -- for PARENT_MEMBER_LIMIT, PCA-ADD-PA-054 -- no quote at all). */
+  requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest>;
+  /** Parent-initiated withdrawal -- valid only from PENDING/QUOTED (PCA-ADD-PA-030). */
+  cancelRequest(requestId: string): Promise<EntitlementChangeRequest>;
+  /** QUOTED -> PAYMENT_PENDING handoff to the payment provider. Never itself returns an APPROVED state. */
+  beginCheckout(requestId: string): Promise<EntitlementChangeRequest>;
+  /** Re-reads a single request's current authoritative state -- used to poll a PAYMENT_PENDING request after a checkout redirect, never trusting the redirect itself. */
+  getRequest(requestId: string): Promise<EntitlementChangeRequest | null>;
+
+  /** Provider-hosted/tokenized payment-method entry point (PCA-ADD-BILL-024) -- MyKids itself never collects raw card fields. */
+  beginAddPaymentMethod(): Promise<PaymentMethodSummary>;
+  cancelAutoRenew(): Promise<{ auditEventId: string }>;
 }
 
 export interface WellbeingMessageAdminClient {

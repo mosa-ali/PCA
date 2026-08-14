@@ -20,6 +20,10 @@ const ACTIONS: FamilyAction[] = [
   'TRANSFER_OWNERSHIP',
   'REVEAL_RECOVERY_MATERIAL',
   'MANAGE_WELLBEING_MESSAGES',
+  'VIEW_BILLING',
+  'REQUEST_DEVICE_INCREASE',
+  'REQUEST_PARENT_MEMBER_INCREASE',
+  'MANAGE_PAYMENT_METHOD',
 ];
 
 function Cell({ role, action }: { role: FamilyRole; action: FamilyAction }) {

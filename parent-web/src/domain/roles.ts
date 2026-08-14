@@ -38,7 +38,15 @@ export type FamilyAction =
   | 'VIEW_DEVICE_ENROLLMENT'
   | 'CREATE_DEVICE_INVITATION'
   | 'REVOKE_DEVICE_INVITATION'
-  | 'CONFIRM_DEVICE_PAIRING';
+  | 'CONFIRM_DEVICE_PAIRING'
+  // PCA-ADD-BILL-040 (doc PCA_ADDENDUM_002 Section 18): billing/subscription
+  // self-service is Family-Owner-only by default, same tier as
+  // CHANGE_RETENTION/DELETE_HISTORY/EXPORT_DATA -- never delegable to
+  // Administrator, unlike ADD_VIEWER/REMOVE_OR_REVOKE_DEVICE.
+  | 'VIEW_BILLING'
+  | 'REQUEST_DEVICE_INCREASE'
+  | 'REQUEST_PARENT_MEMBER_INCREASE'
+  | 'MANAGE_PAYMENT_METHOD';
 
 export type PermissionResult =
   | { allowed: true; requiresStepUp: boolean }
@@ -75,6 +83,8 @@ const STEP_UP_ACTIONS: ReadonlySet<FamilyAction> = new Set<FamilyAction>([
   'CREATE_DEVICE_INVITATION',
   'REVOKE_DEVICE_INVITATION',
   'CONFIRM_DEVICE_PAIRING',
+  'REQUEST_DEVICE_INCREASE',
+  'MANAGE_PAYMENT_METHOD',
 ]);
 
 /**
@@ -147,6 +157,11 @@ export function evaluatePermission(
           : deny('Owner has not delegated device revocation/pairing to Administrators.');
       }
       return deny('Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.');
+    case 'VIEW_BILLING':
+    case 'REQUEST_DEVICE_INCREASE':
+    case 'REQUEST_PARENT_MEMBER_INCREASE':
+    case 'MANAGE_PAYMENT_METHOD':
+      return role === 'OWNER' ? allow() : deny('Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.');
     default:
       return deny('Unrecognised action.');
   }

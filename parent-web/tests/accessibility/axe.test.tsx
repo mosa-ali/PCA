@@ -5,6 +5,9 @@ import Dashboard from '../../src/pages/Dashboard';
 import Requests from '../../src/pages/Requests';
 import Notifications from '../../src/pages/Notifications';
 import Subscription from '../../src/pages/Subscription';
+import DeviceIncreaseRequest from '../../src/pages/billing/DeviceIncreaseRequest';
+import ParentMemberIncreaseRequest from '../../src/pages/billing/ParentMemberIncreaseRequest';
+import Invoices from '../../src/pages/billing/Invoices';
 import ChildrenList from '../../src/pages/children/ChildrenList';
 import Devices from '../../src/pages/family/Devices';
 import Members from '../../src/pages/family/Members';
@@ -62,6 +65,27 @@ describe('accessibility spot checks (axe)', () => {
 
   it('Subscription page has no critical axe violations', async () => {
     const { container } = renderWithProviders(<Subscription />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('DeviceIncreaseRequest page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<DeviceIncreaseRequest />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ParentMemberIncreaseRequest page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<ParentMemberIncreaseRequest />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Invoices page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Invoices />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
     const results = await axe(container, AXE_OPTIONS);
     expect(results).toHaveNoViolations();
   });

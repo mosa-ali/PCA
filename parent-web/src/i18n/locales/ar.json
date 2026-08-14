@@ -137,7 +137,11 @@
       "DISABLE_PROTECTION_POLICY": "تعطيل سياسة الحماية",
       "TRANSFER_OWNERSHIP": "نقل الملكية",
       "REVEAL_RECOVERY_MATERIAL": "الكشف عن مواد الاسترداد",
-      "MANAGE_WELLBEING_MESSAGES": "إدارة رسائل الرفاهية"
+      "MANAGE_WELLBEING_MESSAGES": "إدارة رسائل الرفاهية",
+      "VIEW_BILLING": "عرض الفوترة والاشتراك",
+      "REQUEST_DEVICE_INCREASE": "طلب زيادة عدد الأجهزة المُدارة",
+      "REQUEST_PARENT_MEMBER_INCREASE": "طلب زيادة عدد أفراد الأسرة الوالدين",
+      "MANAGE_PAYMENT_METHOD": "إدارة طريقة الدفع"
     }
   },
   "stepUp": {
@@ -356,10 +360,116 @@
     }
   },
   "subscription": {
+    "planSectionTitle": "خطتك",
+    "freeStarterBadge": "الباقة المجانية الأساسية",
+    "freeStarterIncluded": "جهاز مُدار واحد ({{count}}) مشمول",
+    "freeStarterPrice": "السعر: مجاني",
+    "freeStarterExplain": "قد تتطلب الأجهزة المُدارة الإضافية بعد حد الباقة المجانية الأساسية زيادة مدفوعة، يتم تسعيرها وقت الطلب.",
     "planLabel": "الخطة: {{plan}}",
     "statusLabel": "الحالة: {{status}}",
-    "planFamilyDev": "عائلة (نموذج تطوير)",
-    "statusActive": "نشط"
+    "status": {
+      "FREE_STARTER": "الباقة المجانية الأساسية",
+      "TRIALING": "فترة تجريبية",
+      "ACTIVE": "نشط",
+      "PAST_DUE": "متأخر السداد",
+      "CANCELED": "ملغى",
+      "EXPIRED": "منتهي"
+    },
+    "renewsOn": "يتجدد في {{date}}",
+    "expiresOn": "ينتهي في {{date}} (التجديد التلقائي متوقف)",
+    "cancelAutoRenew": "إلغاء التجديد التلقائي",
+    "deviceAllowanceTitle": "حصة الأجهزة المُدارة",
+    "devicesActive": "الأجهزة النشطة",
+    "devicesReserved": "الدعوات المعلّقة (محجوزة)",
+    "devicesLimit": "الحد الأقصى للأجهزة",
+    "devicesAvailable": "الفتحات المتاحة",
+    "overLimitDevices": "تجاوزت أسرتك الحد الأقصى للأجهزة المُدارة. تبقى الأجهزة الحالية مسجّلة وتعمل، لكن لا يمكنك تسجيل جهاز جديد حتى تعود ضمن حصتك.",
+    "requestMoreDevices": "طلب المزيد من الأجهزة",
+    "memberAllowanceTitle": "حصة أفراد الأسرة الوالدين",
+    "membersUsed": "أفراد الأسرة الوالدون المستخدَمون",
+    "membersLimit": "الحد الأقصى لأفراد الأسرة الوالدين",
+    "overLimitMembers": "تجاوزت أسرتك الحد الأقصى لأفراد الأسرة الوالدين. يبقى الأعضاء الحاليون في الأسرة، لكن لا يمكنك إضافة عضو جديد حتى تعود ضمن حصتك.",
+    "requestMoreMembers": "طلب المزيد من أفراد الأسرة الوالدين",
+    "openRequestsTitle": "الطلبات المفتوحة",
+    "limitType": {
+      "PARENT_MEMBER_LIMIT": "أفراد الأسرة الوالدون",
+      "MANAGED_DEVICE_LIMIT": "الأجهزة المُدارة"
+    },
+    "viewRequest": "عرض الطلب",
+    "paymentMethodTitle": "طريقة الدفع",
+    "noPaymentMethod": "لا توجد طريقة دفع مسجّلة.",
+    "paymentProviderUnavailable": "الدفع الإلكتروني غير متاح بعد. هذا الإجراء معطّل حتى يتم تفعيل تكامل مزوّد الدفع الخاص بـ PCA -- لا يمكن بدء أي عملية دفع الآن.",
+    "viewInvoices": "عرض الفواتير والإيصالات",
+    "requestState": {
+      "PENDING": "قيد الانتظار",
+      "PENDING_ADMIN_QUOTE": "بانتظار مراجعة السعر",
+      "QUOTED": "تم التسعير -- جاهز للدفع",
+      "PAYMENT_PENDING": "الدفع قيد التأكيد",
+      "APPROVED": "تمت الموافقة",
+      "DENIED": "مرفوض",
+      "CANCELLED": "ملغى"
+    },
+    "increaseDevices": {
+      "title": "زيادة حصة الأجهزة المُدارة",
+      "invalidTarget": "أدخل رقمًا صحيحًا أكبر من حدك الحالي ({{current}}).",
+      "current": "الحد الحالي",
+      "requested": "الحد المطلوب",
+      "awaitingAdminQuote": "لا يوجد سعر معياري للكمية التي طلبتها. تم إرسال طلبك لمراجعة التسعير -- سيتم إشعارك بالسعر الدقيق فور جاهزية عرض السعر. لا يمكن الدفع قبل ذلك.",
+      "price": "السعر",
+      "quoteExpires": "ينتهي هذا العرض في {{date}}",
+      "quoteExpired": "انتهت صلاحية هذا العرض. ألغِ هذا الطلب وقدّم طلبًا جديدًا للحصول على سعر حالي.",
+      "proceedToPayment": "المتابعة إلى الدفع",
+      "confirmingPayment": "نقوم بتأكيد دفعتك. قد يستغرق هذا لحظة -- سيتم تحديث حصتك تلقائيًا فور تأكيد الدفع.",
+      "approved": "تم تأكيد الدفع. تمت زيادة حصة أجهزتك المُدارة. أنت الآن تستخدم {{used}} من أصل {{limit}} جهازًا مُدارًا.",
+      "denied": "تم رفض هذا الطلب: {{reason}}",
+      "denialUnspecified": "لم يُقدَّم سبب.",
+      "cancelled": "تم إلغاء هذا الطلب.",
+      "cancelRequest": "إلغاء هذا الطلب",
+      "currentAllowance": "حصتك الحالية من الأجهزة المُدارة هي {{count}}.",
+      "chooseTarget": "اختر حدًا إجماليًا جديدًا للأجهزة المُدارة",
+      "suggestedTarget": "{{count}} أجهزة",
+      "customTargetLabel": "أو أدخل حدًا إجماليًا مخصصًا",
+      "submit": "طلب هذه الكمية"
+    },
+    "increaseMembers": {
+      "title": "زيادة حصة أفراد الأسرة الوالدين",
+      "neverBillable": "زيادات أفراد الأسرة الوالدين لا تُسعَّر ولا تُفوتَر أبدًا -- تتم مراجعتها والبت فيها مباشرة، دون أي رسوم.",
+      "invalidTarget": "أدخل رقمًا صحيحًا أكبر من حدك الحالي ({{current}}).",
+      "current": "الحد الحالي",
+      "requested": "الحد المطلوب",
+      "approved": "تمت الموافقة على طلبك. حدك لأفراد الأسرة الوالدين الآن {{limit}}.",
+      "denied": "تم رفض هذا الطلب: {{reason}}",
+      "currentAllowance": "حصتك الحالية من أفراد الأسرة الوالدين هي {{count}}.",
+      "targetLabel": "الحد الإجمالي الجديد لأفراد الأسرة الوالدين",
+      "submit": "إرسال الطلب"
+    },
+    "invoices": {
+      "title": "الفواتير والإيصالات",
+      "empty": "لا توجد فواتير بعد.",
+      "date": "التاريخ",
+      "statusLabel": "الحالة",
+      "total": "الإجمالي",
+      "viewDetail": "عرض",
+      "notFound": "تعذر العثور على هذه الفاتورة.",
+      "detailTitle": "الفاتورة {{id}}",
+      "lineItems": "بنود الفاتورة",
+      "quantity": "×{{count}}",
+      "status": {
+        "DRAFT": "مسودة",
+        "OPEN": "مفتوحة",
+        "PAID": "مدفوعة",
+        "VOID": "ملغاة",
+        "UNCOLLECTIBLE": "غير قابلة للتحصيل"
+      }
+    },
+    "checkoutReturn": {
+      "title": "حالة الدفع",
+      "missingRequest": "لم يتم تحديد طلب لعملية الإرجاع هذه.",
+      "confirming": "نقوم بتأكيد دفعتك. يرجى عدم إغلاق هذه الصفحة -- سنقوم بتحديث حصتك تلقائيًا فور تأكيد الدفع من الخادم.",
+      "confirmed": "تم تأكيد الدفع. تم تحديث حصتك.",
+      "failed": "تم رفض هذا الطلب. لم تكتمل أي عملية دفع.",
+      "refreshStatus": "تحديث الحالة"
+    }
   },
   "notifications": {
     "emailAlerts": "أرسل لي بريداً إلكترونياً للتنبيهات الهامة",
