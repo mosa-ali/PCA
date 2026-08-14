@@ -12,13 +12,20 @@
 // production, so every environment converges to the same least-privilege
 // model rather than local/dev quietly keeping a broader one.
 //
-// Connects using PCA_MIGRATION_DATABASE_URL (falling back to
-// PCA_DATABASE_URL) -- an admin/provisioning-capable credential, NEVER the
-// runtime credential itself (which is only ever the TARGET of the grants
-// issued here, not the connection issuing them).
+// Connects using PCA_MIGRATION_DATABASE_URL ONLY -- an admin/
+// provisioning-capable credential, NEVER the runtime credential itself
+// (which is only ever the TARGET of the grants issued here, not the
+// connection issuing them). GRANT/REVOKE is a materially more privileged
+// class of operation than the ordinary schema DDL migrate.mjs/
+// verify-mysql.mjs fall back to PCA_DATABASE_URL for -- this script
+// deliberately has NO such fallback (R2 correction: a privileged operation
+// must never silently degrade to the least-privilege runtime URL, which
+// would either fail confusingly or mask a misconfiguration where that
+// "runtime" URL actually holds elevated authority it shouldn't).
 //
 // Required env:
-//   PCA_MIGRATION_DATABASE_URL or PCA_DATABASE_URL -- admin connection.
+//   PCA_MIGRATION_DATABASE_URL -- admin/provisioning connection (required,
+//     no fallback to PCA_DATABASE_URL).
 //   PCA_RUNTIME_DB_USER -- the runtime principal's username (never hardcoded).
 //   PCA_RUNTIME_DB_HOST -- the runtime principal's host pattern, e.g.
 //     127.0.0.1 or % (never hardcoded).
@@ -34,10 +41,7 @@ function requireEnv(name) {
   return value;
 }
 
-const connectionString = process.env.PCA_MIGRATION_DATABASE_URL ?? process.env.PCA_DATABASE_URL;
-if (!connectionString) {
-  throw new Error('PCA_MIGRATION_DATABASE_URL (or PCA_DATABASE_URL) is required to run provision-runtime-db-grants.mjs.');
-}
+const connectionString = requireEnv('PCA_MIGRATION_DATABASE_URL');
 const runtimeUser = requireEnv('PCA_RUNTIME_DB_USER');
 const runtimeHost = requireEnv('PCA_RUNTIME_DB_HOST');
 
