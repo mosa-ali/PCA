@@ -199,6 +199,15 @@ async function start(): Promise<void> {
   );
   const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
 
+  // PCA-COMMERCIAL-NOTIFY-1 wiring, constructed early so it can be threaded
+  // into ChangeRequestService/WebhookService below (Wave 3A correction R1:
+  // the publisher is now genuinely wired at authoritative post-commit
+  // lifecycle points -- see each call site's own header note).
+  const commercialNotificationRepository = new CommercialNotificationRepository();
+  const commercialNotificationService = new CommercialNotificationService(commercialNotificationRepository);
+  const commercialNotificationSupportService = new CommercialNotificationSupportService(commercialNotificationRepository);
+  const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(commercialNotificationRepository);
+
   const entitlementRepository = new MySqlEntitlementRepository();
   const changeRequestRepository = new MySqlChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
@@ -207,7 +216,13 @@ async function start(): Promise<void> {
   // now resolve against the live billing_price_books row when one exists,
   // falling through to PENDING_ADMIN_QUOTE (never invented pricing)
   // exactly as PriceBookQuotePort.ts documents.
-  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new PriceBookQuotePort(priceBookRepository));
+  const changeRequestService = new ChangeRequestService(
+    changeRequestRepository,
+    entitlementRepository,
+    entitlementService,
+    new PriceBookQuotePort(priceBookRepository),
+    commercialNotificationPublisher,
+  );
   const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
 
   // PCA-PA-3B wiring.
@@ -235,17 +250,6 @@ async function start(): Promise<void> {
     new PaymentMethodRepository(),
   );
 
-  // PCA-COMMERCIAL-NOTIFY-1 wiring. `commercialNotificationPublisher` is
-  // constructed here and exported nowhere yet -- no accepted Quote/Payment/
-  // Entitlement/Request source file calls it today (this lane does not
-  // edit those files). It exists so a future integration pass can import
-  // it directly instead of re-deriving the wiring.
-  const commercialNotificationRepository = new CommercialNotificationRepository();
-  const commercialNotificationService = new CommercialNotificationService(commercialNotificationRepository);
-  const commercialNotificationSupportService = new CommercialNotificationSupportService(commercialNotificationRepository);
-  const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(commercialNotificationRepository);
-  void commercialNotificationPublisher;
-
   const billingCheckoutService = new CheckoutService(changeRequestRepository, changeRequestService, paymentService, paymentRepository, providerRegistry);
   const billingWebhookService = new WebhookService(
     providerRegistry,
@@ -254,6 +258,7 @@ async function start(): Promise<void> {
     paymentService,
     paymentConfirmationService,
     platformAdminAuditService,
+    commercialNotificationPublisher,
   );
 
   const app = buildServer({

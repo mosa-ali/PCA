@@ -29,6 +29,20 @@ import { buildBillingAuditEvent } from '../audit.js';
 import type { BillingAuditActor } from '../audit.js';
 import type { PlatformAdminAuditService } from '../../platformadmin/audit/PlatformAdminAuditService.js';
 import type { PaymentConfirmationPort } from '../../entitlements/payment/PaymentConfirmationPort.js';
+// PCA-COMMERCIAL-NOTIFY-1 composition (Wave 3A correction R1): notification
+// publish calls are placed AFTER each authoritative business commit
+// (never before, never from the raw webhook payload's own claims), using
+// the SAME post-commit pattern this file already uses for
+// updateProcessingStatus/auditAnomaly -- CommercialNotificationRepository
+// manages its own transaction, so this is a durable, idempotent (dedupeKey)
+// post-commit write, not a same-transaction guarantee. A future
+// redelivery/retry that reaches this code path again always safely
+// re-attempts publish() (ALREADY_PUBLISHED on a genuine duplicate), so
+// notification durability rides on the SAME retry/redelivery mechanism
+// this pipeline's business logic itself already depends on -- no new
+// crash-window risk beyond what confirmPaymentAttempt/confirmPayment
+// already accepted.
+import type { CommercialNotificationPublisher } from '../../commercialnotifications/CommercialNotificationPublisher.js';
 
 /**
  * Freshness/replay window: a webhook payload whose own `timestamp` field
@@ -81,6 +95,7 @@ export class WebhookService {
     private readonly paymentService: PaymentService,
     private readonly paymentConfirmationPort: PaymentConfirmationPort,
     private readonly auditService: PlatformAdminAuditService,
+    private readonly notificationPublisher: CommercialNotificationPublisher,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -181,6 +196,28 @@ export class WebhookService {
       const now = this.now();
       const transaction = await this.paymentService.confirmPaymentAttempt(attempt.paymentAttemptId, providerName, providerPaymentRef, SYSTEM_WEBHOOK_ACTOR, now);
 
+      // PAYMENT_CONFIRMED: dedupeKey is the STABLE payment-transaction
+      // identity, NOT providerEventId -- confirmPaymentAttempt above is
+      // itself idempotent per paymentAttemptId (a duplicate provider event,
+      // OR a genuinely different provider event id that resolves to the
+      // SAME attempt via findPaymentAttemptByProviderReference, both
+      // return the SAME existing transaction, never a second row). Keying
+      // the notification off providerEventId instead would incorrectly
+      // create a second notification for the "different event IDs, same
+      // underlying payment" case this mission's Section 18 explicitly
+      // requires collapsed to one.
+      await this.notificationPublisher.publish(
+        {
+          accountRef: attempt.accountRef,
+          eventType: 'PAYMENT_CONFIRMED',
+          dedupeKey: `PAYMENT_CONFIRMED:${transaction.paymentTransactionId}`,
+          resourceRef: transaction.paymentTransactionId,
+          messageKey: 'commercial_notification.payment_confirmed',
+          params: { amountMinor: transaction.price.amountMinor.toString(10), currencyCode: transaction.price.currencyCode },
+        },
+        now,
+      );
+
       if (attempt.increaseRequestRef) {
         const signal = await this.paymentService.toEntitlementSignal(attempt.paymentAttemptId);
         const idempotencyKey = `${providerName}:${providerEventId}`;
@@ -194,7 +231,28 @@ export class WebhookService {
           priceBookVersion: signal.priceBookVersion,
           paymentTransactionId: transaction.paymentTransactionId,
         });
-        if (confirmation.outcome !== 'ACTIVATED' && confirmation.outcome !== 'ALREADY_ACTIVATED') {
+        if (confirmation.outcome === 'ACTIVATED' || confirmation.outcome === 'ALREADY_ACTIVATED') {
+          // ENTITLEMENT_INCREASED: dedupeKey is the change-request identity
+          // -- stable regardless of which provider event id (or how many
+          // duplicate/retried calls) reached ACTIVATED/ALREADY_ACTIVATED
+          // for this request. A different provider event id for the SAME
+          // payment that instead hits REQUEST_NOT_PAYMENT_PENDING (because
+          // the request already left PAYMENT_PENDING on the first,
+          // genuine activation) never reaches this branch at all -- no
+          // notification is attempted, so no duplicate is possible even
+          // without relying on dedupeKey for that specific race.
+          await this.notificationPublisher.publish(
+            {
+              accountRef: attempt.accountRef,
+              eventType: 'ENTITLEMENT_INCREASED',
+              dedupeKey: `ENTITLEMENT_INCREASED:${attempt.increaseRequestRef}`,
+              resourceRef: attempt.increaseRequestRef,
+              messageKey: 'commercial_notification.entitlement_increased',
+              params: { targetDeviceLimit: signal.targetDeviceLimit ?? 0 },
+            },
+            now,
+          );
+        } else {
           // AMOUNT_MISMATCH / REQUEST_NOT_PAYMENT_PENDING / REQUEST_NOT_FOUND:
           // the PAYMENT itself is genuinely confirmed and stays confirmed
           // (never rolled back here) -- this is an entitlement-side
@@ -209,7 +267,26 @@ export class WebhookService {
     }
 
     if (queryResult.status === 'FAILED') {
-      await this.paymentService.markFailed(attempt.paymentAttemptId, this.now());
+      const now = this.now();
+      await this.paymentService.markFailed(attempt.paymentAttemptId, now);
+      // PAYMENT_FAILED: dedupeKey is the payment-attempt identity -- stable
+      // across any number of provider events/redeliveries reporting the
+      // same underlying failed attempt. Only ever reached from the
+      // provider's OWN authoritative queryPayment result (never a client
+      // redirect/cancel/timeout -- those never call into this pipeline at
+      // all, see billingCheckoutRoutes.ts's own header on client redirects
+      // being non-authoritative).
+      await this.notificationPublisher.publish(
+        {
+          accountRef: attempt.accountRef,
+          eventType: 'PAYMENT_FAILED',
+          dedupeKey: `PAYMENT_FAILED:${attempt.paymentAttemptId}`,
+          resourceRef: attempt.paymentAttemptId,
+          messageKey: 'commercial_notification.payment_failed',
+          params: null,
+        },
+        now,
+      );
       return 'PROCESSED';
     }
 

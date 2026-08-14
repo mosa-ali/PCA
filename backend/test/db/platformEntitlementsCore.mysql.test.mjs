@@ -19,6 +19,8 @@ import { MySqlPlatformAdminAuthRepository } from '../../dist/platformadmin/auth/
 import { hashAdminEmail } from '../../dist/platformadmin/auth/emailHash.js';
 import { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../../dist/platformadmin/auth/totp.js';
 import { LoggingAlertAdapter } from '../../dist/platformadmin/auth/alertPort.js';
+import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
+import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -27,7 +29,8 @@ const entitlementRepository = new MySqlEntitlementRepository();
 const changeRequestRepository = new MySqlChangeRequestRepository();
 const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
 const quotePort = new NoPriceBookQuotePort();
-const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort);
+const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(new CommercialNotificationRepository());
+const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort, commercialNotificationPublisher);
 const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
 const slotReservationRepository = new MySqlSlotReservationRepository(entitlementRepository);
 const slotReservationService = new SlotReservationService(slotReservationRepository);
@@ -219,7 +222,7 @@ class StubStandardQuotePort {
     };
   }
 }
-const standardQuoteChangeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new StubStandardQuotePort());
+const standardQuoteChangeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new StubStandardQuotePort(), commercialNotificationPublisher);
 
 test('quote snapshot: a standard (PriceBook-resolved) quote persists priceBookVersion as an exact integer and reloads unchanged', async () => {
   const familyId = uniqueFamilyId('standard-quote-version');

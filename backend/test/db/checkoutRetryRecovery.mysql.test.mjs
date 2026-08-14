@@ -34,6 +34,8 @@ import { PaymentProviderRegistry } from '../../dist/billing/provider/providerReg
 import { createSandboxPaymentProvider } from '../../dist/billing/provider/sandboxProvider.js';
 import { SandboxStaticSecretResolver } from '../../dist/billing/provider/secretResolver.js';
 import { CheckoutService, CheckoutError } from '../../dist/billing/checkout/CheckoutService.js';
+import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
+import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -42,7 +44,8 @@ const entitlementRepository = new MySqlEntitlementRepository();
 const changeRequestRepository = new MySqlChangeRequestRepository();
 const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
 const quotePort = new NoPriceBookQuotePort();
-const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort);
+const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(new CommercialNotificationRepository());
+const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort, commercialNotificationPublisher);
 const slotReservationRepository = new MySqlSlotReservationRepository(entitlementRepository);
 const slotReservationService = new SlotReservationService(slotReservationRepository);
 const authService = new PlatformAdminAuthService(authRepository, new LoggingAlertAdapter());

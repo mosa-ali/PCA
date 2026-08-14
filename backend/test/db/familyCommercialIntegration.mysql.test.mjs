@@ -27,6 +27,8 @@ import { EntitlementService } from '../../dist/entitlements/EntitlementService.j
 import { MySqlChangeRequestRepository } from '../../dist/entitlements/requests/MySqlChangeRequestRepository.js';
 import { ChangeRequestService } from '../../dist/entitlements/requests/ChangeRequestService.js';
 import { FamilyCommercialService, FamilyCommercialError } from '../../dist/familycommercial/FamilyCommercialService.js';
+import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
+import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -49,7 +51,8 @@ function buildService(quotePort) {
   const entitlementRepository = new MySqlEntitlementRepository();
   const changeRequestRepository = new MySqlChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
-  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort);
+  const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(new CommercialNotificationRepository());
+  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, quotePort, commercialNotificationPublisher);
   const subscriptionRepository = { async findActiveForAccount() { return null; } };
   const paymentMethodRepository = { async listForAccount() { return []; } };
   const invoiceReadRepository = { async listForFamily() { return []; }, async findForFamily() { return null; }, async listLines() { return []; } };

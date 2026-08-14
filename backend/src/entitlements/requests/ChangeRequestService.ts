@@ -7,6 +7,15 @@ import type { ChangeRequestRepository } from './ChangeRequestRepository.js';
 import type { QuotePort, ResolveStandardQuoteInput } from '../quote/QuotePort.js';
 import { assertValidPriceBookVersion } from '../types.js';
 import type { EntitlementChangeRequestRecord, EntitlementChangeRequestState, LimitType, OpaqueFamilyId, QuoteSnapshot } from '../types.js';
+// PCA-COMMERCIAL-NOTIFY-1 composition (Wave 3A correction R1) -- see
+// billing/webhook/WebhookService.ts's identical header note on the
+// post-commit, idempotent (dedupeKey) publish pattern used throughout this
+// composition pass. dedupeKey is always the change-request identity here:
+// QUOTE_READY/REQUEST_DENIED are each attainable exactly once per request
+// (createRequest/issueCustomQuote/deny all guard the request's OWN prior
+// state before transitioning), so requestId alone is a sufficient,
+// stable, retry-safe dedupe identity for every hook in this file.
+import type { CommercialNotificationPublisher } from '../../commercialnotifications/CommercialNotificationPublisher.js';
 
 export type ChangeRequestErrorCode =
   | 'INVALID_TARGET'
@@ -47,6 +56,7 @@ export class ChangeRequestService {
   private readonly entitlementRepository: EntitlementRepository;
   private readonly entitlementService: EntitlementService;
   private readonly quotePort: QuotePort;
+  private readonly notificationPublisher: CommercialNotificationPublisher;
   private readonly now: () => Date;
 
   constructor(
@@ -54,13 +64,29 @@ export class ChangeRequestService {
     entitlementRepository: EntitlementRepository,
     entitlementService: EntitlementService,
     quotePort: QuotePort,
+    notificationPublisher: CommercialNotificationPublisher,
     now: () => Date = () => new Date(),
   ) {
     this.changeRequestRepository = changeRequestRepository;
     this.entitlementRepository = entitlementRepository;
     this.entitlementService = entitlementService;
     this.quotePort = quotePort;
+    this.notificationPublisher = notificationPublisher;
     this.now = now;
+  }
+
+  private async publishQuoteReady(request: EntitlementChangeRequestRecord, now: Date): Promise<void> {
+    await this.notificationPublisher.publish(
+      {
+        accountRef: request.familyId,
+        eventType: 'QUOTE_READY',
+        dedupeKey: `QUOTE_READY:${request.requestId}`,
+        resourceRef: request.requestId,
+        messageKey: 'commercial_notification.quote_ready',
+        params: request.quote ? { amountMinor: request.quote.amountMinor.toString(10), currencyCode: request.quote.currencyCode } : null,
+      },
+      now,
+    );
   }
 
   /**
@@ -100,7 +126,9 @@ export class ChangeRequestService {
       expiresAt: resolution.expiresAt,
     };
     const quoted = await runInTransaction((conn) => this.changeRequestRepository.attachQuote(conn, requestId, quote, this.now()));
-    return quoted ?? created;
+    const result = quoted ?? created;
+    if (quoted) await this.publishQuoteReady(result, this.now());
+    return result;
   }
 
   /** PCA-ADD-BILL-044/045: custom quantity path, FINANCE_ADMIN/APP_OWNER only -- caller enforces RBAC before invoking this. */
@@ -137,6 +165,7 @@ export class ChangeRequestService {
       return quoted;
     });
     if (!updated) throw new ChangeRequestError('INVALID_STATE');
+    await this.publishQuoteReady(updated, now);
     return updated;
   }
 
@@ -222,6 +251,17 @@ export class ChangeRequestService {
       return denied;
     });
     if (!result) throw new ChangeRequestError('INVALID_STATE');
+    await this.notificationPublisher.publish(
+      {
+        accountRef: result.familyId,
+        eventType: 'REQUEST_DENIED',
+        dedupeKey: `REQUEST_DENIED:${requestId}`,
+        resourceRef: requestId,
+        messageKey: 'commercial_notification.request_denied',
+        params: { reason },
+      },
+      now,
+    );
     return result;
   }
 
