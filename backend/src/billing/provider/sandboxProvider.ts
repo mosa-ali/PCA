@@ -79,10 +79,26 @@ export interface SandboxWebhookEnvelope {
 export class TestSandboxPaymentProvider implements PaymentProvider {
   readonly providerName = TEST_SANDBOX_PROVIDER_NAME;
   private readonly payments = new Map<string, SandboxPaymentState>();
+  // PCA-BILL-2A-R1 correction: idempotency-key -> already-issued-ref maps,
+  // scoped separately for checkout vs. refund (the same key string could in
+  // principle collide across the two operations otherwise). Honoring a
+  // repeated key returns the SAME ref and never mutates `payments`/pushes a
+  // second refund entry -- see providerContract.ts's idempotencyKey doc
+  // comments for why this in-memory adapter's behavior is what the
+  // checkout-retry and refund-recovery orchestration in
+  // CheckoutService/RefundOrchestrationService depend on.
+  private readonly checkoutRefByIdempotencyKey = new Map<string, string>();
+  private readonly refundRefByIdempotencyKey = new Map<string, string>();
 
   constructor(private readonly secretResolver: SecretResolver) {}
 
   async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
+    if (input.idempotencyKey) {
+      const existingRef = this.checkoutRefByIdempotencyKey.get(input.idempotencyKey);
+      if (existingRef && this.payments.has(existingRef)) {
+        return { providerCheckoutRef: existingRef, redirectUrl: `/billing/sandbox/checkout/${existingRef}` };
+      }
+    }
     const providerCheckoutRef = `sbx_chk_${randomUUID()}`;
     this.payments.set(providerCheckoutRef, {
       providerPaymentRef: providerCheckoutRef,
@@ -93,6 +109,7 @@ export class TestSandboxPaymentProvider implements PaymentProvider {
       createdAt: new Date(),
       refunds: [],
     });
+    if (input.idempotencyKey) this.checkoutRefByIdempotencyKey.set(input.idempotencyKey, providerCheckoutRef);
     return {
       providerCheckoutRef,
       // A JSON status endpoint, not a real UI -- see billingWebhookRoutes.ts's
@@ -141,16 +158,27 @@ export class TestSandboxPaymentProvider implements PaymentProvider {
     };
   }
 
-  async refund(providerPaymentRef: string, amountMinor: bigint, _reason: string): Promise<RefundResult> {
+  async refund(providerPaymentRef: string, amountMinor: bigint, _reason: string, idempotencyKey?: string): Promise<RefundResult> {
     const state = this.payments.get(providerPaymentRef);
     if (!state) throw new SandboxPaymentNotFoundError(providerPaymentRef);
+
+    if (idempotencyKey) {
+      const existingRef = this.refundRefByIdempotencyKey.get(idempotencyKey);
+      if (existingRef) {
+        const existing = state.refunds.find((r) => r.providerRefundRef === existingRef);
+        if (existing) return { providerRefundRef: existing.providerRefundRef, status: existing.status };
+      }
+    }
+
     if (state.status !== 'CONFIRMED') {
       const providerRefundRef = `sbx_rfnd_${randomUUID()}`;
       state.refunds.push({ providerRefundRef, amountMinor, status: 'FAILED' });
+      if (idempotencyKey) this.refundRefByIdempotencyKey.set(idempotencyKey, providerRefundRef);
       return { providerRefundRef, status: 'FAILED' };
     }
     const providerRefundRef = `sbx_rfnd_${randomUUID()}`;
     state.refunds.push({ providerRefundRef, amountMinor, status: 'CONFIRMED' });
+    if (idempotencyKey) this.refundRefByIdempotencyKey.set(idempotencyKey, providerRefundRef);
     return { providerRefundRef, status: 'CONFIRMED' };
   }
 
@@ -189,6 +217,16 @@ export class TestSandboxPaymentProvider implements PaymentProvider {
 
   getStatusForTest(providerPaymentRef: string): SandboxPaymentStatus {
     return this.getStateForTest(providerPaymentRef).status;
+  }
+
+  /** Test-only: total number of refund() calls that actually reached this payment's state (i.e. were NOT satisfied by an idempotency-key replay) -- used by Fix 2/3 recovery/concurrency tests to assert the provider was never double-called. */
+  getRefundCallCountForTest(providerPaymentRef: string): number {
+    return this.getStateForTest(providerPaymentRef).refunds.length;
+  }
+
+  /** Test-only: total number of distinct providerCheckoutRef values ever minted (i.e. createCheckout calls NOT satisfied by an idempotency-key replay) -- used by the Fix 1 checkout-retry test. */
+  getCheckoutCountForTest(): number {
+    return this.payments.size;
   }
 
   private getStateForTest(providerPaymentRef: string): SandboxPaymentState {

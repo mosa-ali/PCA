@@ -1,19 +1,31 @@
 /**
  * PCA-BILL-2A -- family-facing checkout HTTP surface.
  *
- * KNOWN GAP (disclosed, not silently papered over -- see this lane's final
- * report): `createRequireFamilyAuthorization` is this codebase's ONLY
- * reachable family-plane HTTP authorization primitive, and it answers
- * exactly one question -- "does this service account hold an ACTIVE
- * family-scope row for this family" -- with no Family-Owner-vs-
- * Administrator-vs-Viewer distinction available at this layer (that
- * distinction is device-plane/E2EE-envelope-signed only today,
- * backend/src/familyrbac/TrustSetRoleResolver.ts, and parent-web's
- * Subscription.tsx is a static placeholder with no auth wiring at all).
- * A family-scoped service account belonging to an Administrator (not an
- * Owner) can therefore initiate a paid checkout today. True
- * Family-Owner-only enforcement per PCA-ADD-BILL-040 is PCA-MYKIDS-BILL-1's
- * scope, not this lane's.
+ * PCA-BILL-2A-R1 CORRECTION (FIX 4: family owner authority): the original
+ * version of this route relied SOLELY on `createRequireFamilyAuthorization`,
+ * this codebase's only reachable family-plane HTTP authorization primitive
+ * -- it answers exactly "does this service account hold an ACTIVE
+ * family-scope row for this family", with no Family-Owner-vs-
+ * Administrator-vs-Viewer distinction. The checkout-CREATE route (not the
+ * read-only status route -- a family member merely viewing their own
+ * already-created checkout's status is not itself a new commercial
+ * commitment, so this lane judges VIEW_OWN_BILLING_STATUS does not need
+ * the same OWNER gate) now additionally requires a caller-supplied
+ * `actorDeviceId` and resolves OWNER authority through an injected
+ * `FamilyCommercialAuthorityResolver`
+ * (billing/authority/FamilyCommercialAuthorityResolver.ts) before
+ * proceeding.
+ *
+ * PRODUCTION POSTURE (see main.ts wiring): the resolver injected in
+ * production is `UnavailableFamilyCommercialAuthorityResolver`, which
+ * ALWAYS returns AUTHORITY_UNAVAILABLE -- this codebase does not yet hold
+ * a genuine, trustworthy, server-side source of a family's current
+ * trust-set owner/role assignments (see that resolver's own header for the
+ * full architecture-gap explanation). That means, honestly and as
+ * intended: in the current, real, deployed system, checkout-CREATE ALWAYS
+ * 403s with `FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE`. This is the correct,
+ * fail-closed external gate this mission asked for, not a bug -- see this
+ * lane's final report's FAMILY_OWNER_AUTH field.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
@@ -22,12 +34,14 @@ import { createRateLimiter } from '../rateLimit.js';
 import { CheckoutError, type CheckoutService } from '../../billing/checkout/CheckoutService.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
+import type { FamilyCommercialAuthorityResolver } from '../../billing/authority/FamilyCommercialAuthorityResolver.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
 const MAX_PROVIDER_NAME_LENGTH = 32;
 const MAX_RETURN_URL_LENGTH = 2048;
 const MAX_PAYMENT_ATTEMPT_ID_LENGTH = 64;
+const MAX_ACTOR_DEVICE_ID_LENGTH = 128;
 
 export interface BillingCheckoutRoutesDeps {
   checkoutService: CheckoutService;
@@ -35,6 +49,8 @@ export interface BillingCheckoutRoutesDeps {
   authzService: AuthzService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
+  /** FIX 4: injected so production (see main.ts) can wire the fail-closed default while tests can wire a real resolver against a fake trust set. */
+  familyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -76,7 +92,7 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { requestId, provider, returnUrl } = body;
+      const { requestId, provider, returnUrl, actorDeviceId } = body;
       if (typeof requestId !== 'string' || requestId.length === 0 || requestId.length > MAX_REQUEST_ID_LENGTH) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
@@ -85,6 +101,26 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       }
       if (returnUrl !== undefined && (typeof returnUrl !== 'string' || returnUrl.length === 0 || returnUrl.length > MAX_RETURN_URL_LENGTH)) {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (typeof actorDeviceId !== 'string' || actorDeviceId.length === 0 || actorDeviceId.length > MAX_ACTOR_DEVICE_ID_LENGTH) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+
+      // FIX 4: Family-Owner-only gate. Resolved BEFORE any checkout
+      // orchestration runs -- an Administrator/Viewer-scoped (or
+      // authority-unresolvable) caller never reaches CheckoutService at
+      // all.
+      const authority = deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(familyId, actorDeviceId);
+      if (authority.status === 'ROLE_DENIED') {
+        // Same "one generic reason" discipline as AuthzError/
+        // ParentActionAuthorizationService's CROSS_FAMILY_TARGET -- never
+        // leak which role the caller actually holds.
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      if (authority.status === 'AUTHORITY_UNAVAILABLE') {
+        // Distinguishable on purpose (an operational/availability signal,
+        // not an identity-enumeration risk) -- see this file's header.
+        return reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
       }
 
       try {

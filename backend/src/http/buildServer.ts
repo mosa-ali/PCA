@@ -35,10 +35,13 @@ import { registerBillingWebhookRoutes } from './routes/billingWebhookRoutes.js';
 import { registerBillingRefundRoutes } from './routes/billingRefundRoutes.js';
 import type { CheckoutService } from '../billing/checkout/CheckoutService.js';
 import type { WebhookService } from '../billing/webhook/WebhookService.js';
-import type { RefundService } from '../billing/refund.js';
+import type { RefundOrchestrationService } from '../billing/refundOrchestration/RefundOrchestrationService.js';
 import type { PaymentRepository } from '../billing/payment.js';
 import type { PaymentProviderRegistry } from '../billing/provider/providerRegistry.js';
 import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformAdminAuditService.js';
+// PCA-BILL-2A-R1 correction FIX 4: family owner authority gate for
+// checkout-CREATE -- see billingCheckoutRoutes.ts/FamilyCommercialAuthorityResolver.ts.
+import type { FamilyCommercialAuthorityResolver } from '../billing/authority/FamilyCommercialAuthorityResolver.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -60,9 +63,11 @@ export interface ServerDependencies {
   billingCheckoutService: CheckoutService;
   billingWebhookService: WebhookService;
   billingProviderRegistry: PaymentProviderRegistry;
-  billingRefundService: RefundService;
+  billingRefundOrchestrationService: RefundOrchestrationService;
   billingPaymentRepository: PaymentRepository;
   billingAuditService: PlatformAdminAuditService;
+  /** FIX 4 (see FamilyCommercialAuthorityResolver.ts): production wiring (main.ts) is UnavailableFamilyCommercialAuthorityResolver -- fail-closed until a genuine server-side trust-set source exists. */
+  billingFamilyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
 }
 
 /**
@@ -161,6 +166,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authzService: deps.authzService,
     rateLimiter,
     authAttemptLimiter,
+    familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
   });
   registerBillingWebhookRoutes(app, {
     webhookService: deps.billingWebhookService,
@@ -170,7 +176,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerBillingRefundRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     providerRegistry: deps.billingProviderRegistry,
-    refundService: deps.billingRefundService,
+    refundOrchestrationService: deps.billingRefundOrchestrationService,
     paymentRepository: deps.billingPaymentRepository,
     auditService: deps.billingAuditService,
     rateLimiter,

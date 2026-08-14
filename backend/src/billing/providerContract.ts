@@ -24,6 +24,23 @@ export interface CreateCheckoutInput {
   readonly accountRef: string;
   readonly paymentAttemptId: string;
   readonly returnUrl?: string;
+  /**
+   * PCA-BILL-2A-R1 correction (checkout split-state fix): a stable,
+   * caller-supplied idempotency key. A provider adapter that honors this
+   * MUST return the SAME `providerCheckoutRef` (and never create a second
+   * distinct provider-side checkout/payment-intent object) for repeated
+   * calls carrying the same key -- this is what makes retrying
+   * `CheckoutService.createCheckoutSession` after a partial failure safe:
+   * the retry re-calls `createCheckout` with the same key rather than
+   * skipping the provider call outright, so it works uniformly across any
+   * future adapter without this interface needing an adapter-specific
+   * "did you already call me" query method. TEST_SANDBOX honors this (see
+   * sandboxProvider.ts); optional so existing/future adapters that don't
+   * yet support it remain valid implementations (non-idempotent behavior
+   * from such an adapter is a known, documented limitation of THAT
+   * adapter, not a violation of this interface).
+   */
+  readonly idempotencyKey?: string;
 }
 
 export interface CreateCheckoutResult {
@@ -65,5 +82,14 @@ export interface PaymentProvider {
   createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult>;
   verifyWebhook(input: VerifyWebhookInput): Promise<VerifyWebhookResult>;
   queryPayment(providerPaymentRef: string): Promise<QueryPaymentResult>;
-  refund(providerPaymentRef: string, amountMinor: bigint, reason: string): Promise<RefundResult>;
+  /**
+   * `idempotencyKey` (PCA-BILL-2A-R1 correction, refund split-state fix):
+   * optional, backward-compatible 4th parameter. A provider adapter that
+   * honors it MUST return the SAME `providerRefundRef` (never issue a
+   * second distinct provider-side refund) for repeated calls carrying the
+   * same key -- the same idempotent-retry discipline as
+   * CreateCheckoutInput.idempotencyKey above, applied to refunds. TEST_SANDBOX
+   * honors this (see sandboxProvider.ts).
+   */
+  refund(providerPaymentRef: string, amountMinor: bigint, reason: string, idempotencyKey?: string): Promise<RefundResult>;
 }

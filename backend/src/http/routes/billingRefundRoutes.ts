@@ -8,41 +8,51 @@
  * POST /platform-admin/auth/step-up first, exactly like every other
  * sensitive Platform Administration operation).
  *
- * PROVIDER-FIRST, NEVER A FALSE-SUCCESS REFUND ROW: `RefundService.issueRefund`
- * is called ONLY after `PaymentProvider.refund(...)` itself reports
- * CONFIRMED or PENDING. If the provider call throws, or reports FAILED,
- * this route audits the anomaly and rejects cleanly (502) WITHOUT ever
- * calling issueRefund -- billing_refunds.status only has
- * 'RECORDED'|'FAILED' and RefundRepository.insert hardcodes 'RECORDED'
- * (refund.ts, an accepted PCA-BILL-1 file this lane does not edit), so a
- * refund a provider actually rejected is never persisted as if it had
- * succeeded; it is simply never recorded at all. This is the documented,
- * deliberate trade-off in place of adding a FAILED-refund-recording method
- * to that accepted file.
+ * PCA-BILL-2A-R1 CORRECTION (refund split-state fix): this route used to
+ * call `PaymentProvider.refund(...)` directly, then `RefundService.issueRefund`,
+ * with NO durable local record of ANY kind until `issueRefund` itself
+ * succeeded. If the provider call succeeded and `issueRefund` then threw,
+ * money moved at the provider with zero local trace. All of that
+ * orchestration now lives in `RefundOrchestrationService`
+ * (billing/refundOrchestration/RefundOrchestrationService.ts), which
+ * inserts a durable `billing_refund_operations` row FIRST (arbitrated
+ * against the transaction's real remaining balance under a genuine DB row
+ * lock -- see that module's header for the concurrency-race fix) and only
+ * then calls the provider -- this route is now a thin HTTP adapter over
+ * that service.
+ *
+ * IDEMPOTENCY KEY (required client input): the caller (the admin client)
+ * MUST supply `idempotencyKey` in the request body. This is the anchor
+ * that makes retrying this exact HTTP call after a partial failure safe:
+ * the SAME key resumes the SAME operation from wherever it actually got to
+ * (never re-calls the provider once it has confirmed, never re-arbitrates
+ * the balance for an already-claimed operation) -- see
+ * RefundOrchestrationService's own header for the full state machine.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequirePlatformAdminSession } from '../../platformadmin/auth/fastifyPlatformAdminAuthPlugin.js';
 import type { PlatformAdminAuthService } from '../../platformadmin/auth/PlatformAdminAuthService.js';
 import { PlatformAdminAuthError } from '../../platformadmin/auth/PlatformAdminAuthService.js';
 import { requireBillingOperation, BillingAuthorizationError } from '../../billing/rbac.js';
-import { RefundCurrencyMismatchError, RefundExceedsTransactionError, type RefundService } from '../../billing/refund.js';
 import { PaymentRepository } from '../../billing/payment.js';
 import { runInTransaction } from '../../db/pool.js';
 import { isSupportedCurrency } from '../../billing/currency.js';
 import { buildBillingAuditEvent } from '../../billing/audit.js';
 import type { PlatformAdminAuditService } from '../../platformadmin/audit/PlatformAdminAuditService.js';
 import type { PaymentProviderRegistry } from '../../billing/provider/providerRegistry.js';
+import type { RefundOrchestrationService } from '../../billing/refundOrchestration/RefundOrchestrationService.js';
 import { createRateLimiter } from '../rateLimit.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REASON_CODE_LENGTH = 32;
 const MAX_REASON_NOTE_LENGTH = 255;
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 const DECIMAL_INTEGER_STRING = /^\d+$/;
 
 export interface BillingRefundRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   providerRegistry: PaymentProviderRegistry;
-  refundService: RefundService;
+  refundOrchestrationService: RefundOrchestrationService;
   paymentRepository: PaymentRepository;
   auditService: PlatformAdminAuditService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
@@ -70,12 +80,15 @@ export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingR
 
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { paymentTransactionId, amountMinor, currencyCode, reasonCode, reasonNote, stepUpId } = body;
+      const { paymentTransactionId, amountMinor, currencyCode, reasonCode, reasonNote, stepUpId, idempotencyKey } = body;
       if (typeof paymentTransactionId !== 'string' || paymentTransactionId.length === 0) return reply.code(400).send({ error: 'invalid_request' });
       if (typeof amountMinor !== 'string' || !DECIMAL_INTEGER_STRING.test(amountMinor)) return reply.code(400).send({ error: 'invalid_request' });
       if (typeof currencyCode !== 'string' || !isSupportedCurrency(currencyCode)) return reply.code(400).send({ error: 'invalid_request' });
       if (typeof reasonCode !== 'string' || reasonCode.length === 0 || reasonCode.length > MAX_REASON_CODE_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       if (reasonNote !== undefined && reasonNote !== null && (typeof reasonNote !== 'string' || reasonNote.length > MAX_REASON_NOTE_LENGTH)) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0 || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (typeof stepUpId !== 'string' || stepUpId.length === 0) return reply.code(403).send({ error: 'forbidden' });
@@ -93,9 +106,8 @@ export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingR
       const transaction = await runInTransaction((conn) => deps.paymentRepository.findTransactionById(conn, paymentTransactionId));
       if (!transaction) return reply.code(404).send({ error: 'not_found' });
 
-      let provider;
       try {
-        provider = deps.providerRegistry.resolve(transaction.provider);
+        deps.providerRegistry.resolve(transaction.provider);
       } catch {
         return reply.code(400).send({ error: 'invalid_request' });
       }
@@ -110,62 +122,83 @@ export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingR
 
       const actor = { adminId, role: roles[0] ?? null };
 
-      let providerRefundResult;
-      try {
-        providerRefundResult = await provider.refund(transaction.providerTransactionRef, amount, reasonCode);
-      } catch {
-        await deps.auditService.record(
-          buildBillingAuditEvent({
-            eventType: 'PAYMENT_ROLLED_BACK',
-            actor,
-            targetRef: `payment_transaction:${paymentTransactionId}`,
-            result: 'FAILURE',
-            occurredAt: new Date(),
-            metadata: { reason: 'PROVIDER_REFUND_CALL_FAILED' },
-          }),
-        );
-        return reply.code(502).send({ error: 'provider_refund_failed' });
-      }
+      const result = await deps.refundOrchestrationService.initiateRefund(
+        {
+          paymentTransactionId,
+          amountMinor: amount,
+          currencyCode,
+          reasonCode,
+          reasonNote: (reasonNote as string | null | undefined) ?? null,
+          stepUpSessionId: stepUpId,
+          idempotencyKey,
+          provider: transaction.provider,
+        },
+        actor,
+        roles,
+      );
 
-      if (providerRefundResult.status === 'FAILED') {
-        await deps.auditService.record(
-          buildBillingAuditEvent({
-            eventType: 'PAYMENT_ROLLED_BACK',
-            actor,
-            targetRef: `payment_transaction:${paymentTransactionId}`,
-            result: 'FAILURE',
-            occurredAt: new Date(),
-            metadata: { reason: 'PROVIDER_REFUND_REJECTED', providerRefundRef: providerRefundResult.providerRefundRef },
-          }),
-        );
-        return reply.code(502).send({ error: 'provider_refund_failed' });
-      }
-
-      try {
-        const refund = await deps.refundService.issueRefund(
-          {
-            paymentTransactionId,
-            amountMinor: amount,
-            currencyCode,
-            reasonCode,
-            reasonNote: (reasonNote as string | null | undefined) ?? null,
-            stepUpSessionId: stepUpId,
-            entitlementTreatment: 'NOT_APPLICABLE',
-          },
-          actor,
-          roles,
-        );
-        return reply.code(201).send({
-          refundId: refund.refundId,
-          status: refund.status,
-          providerRefundRef: providerRefundResult.providerRefundRef,
-        });
-      } catch (error) {
-        if (error instanceof RefundExceedsTransactionError || error instanceof RefundCurrencyMismatchError) {
+      switch (result.outcome) {
+        case 'FINALIZED':
+          return reply.code(201).send({
+            refundId: result.refund.refundId,
+            status: result.refund.status,
+            providerRefundRef: result.operation.providerRefundRef,
+            refundOperationId: result.operation.refundOperationId,
+          });
+        case 'PENDING_FINALIZATION':
+          // The provider already confirmed this refund -- money has
+          // genuinely moved -- but the local billing_refunds row could not
+          // be finalized yet. This is durably recorded (never lost) and
+          // recoverable by retrying this exact call with the same
+          // idempotencyKey. Surfaced as 202 (accepted, not yet complete),
+          // never as a plain failure -- a client must not interpret this as
+          // "nothing happened" and re-attempt with a NEW idempotencyKey.
+          await deps.auditService.record(
+            buildBillingAuditEvent({
+              eventType: 'PAYMENT_ROLLED_BACK',
+              actor,
+              targetRef: `payment_transaction:${paymentTransactionId}`,
+              result: 'FAILURE',
+              occurredAt: new Date(),
+              metadata: { reason: 'REFUND_FINALIZATION_PENDING', refundOperationId: result.operation.refundOperationId, providerRefundRef: result.operation.providerRefundRef },
+            }),
+          );
+          return reply.code(202).send({
+            error: 'refund_pending_finalization',
+            refundOperationId: result.operation.refundOperationId,
+            providerRefundRef: result.operation.providerRefundRef,
+          });
+        case 'PROVIDER_REFUND_FAILED':
+          await deps.auditService.record(
+            buildBillingAuditEvent({
+              eventType: 'PAYMENT_ROLLED_BACK',
+              actor,
+              targetRef: `payment_transaction:${paymentTransactionId}`,
+              result: 'FAILURE',
+              occurredAt: new Date(),
+              metadata: { reason: 'PROVIDER_REFUND_REJECTED', refundOperationId: result.operation.refundOperationId },
+            }),
+          );
+          return reply.code(502).send({ error: 'provider_refund_failed' });
+        case 'PROVIDER_CALL_ERROR':
+          await deps.auditService.record(
+            buildBillingAuditEvent({
+              eventType: 'PAYMENT_ROLLED_BACK',
+              actor,
+              targetRef: `payment_transaction:${paymentTransactionId}`,
+              result: 'FAILURE',
+              occurredAt: new Date(),
+              metadata: { reason: 'PROVIDER_REFUND_CALL_FAILED', refundOperationId: result.operation.refundOperationId },
+            }),
+          );
+          return reply.code(502).send({ error: 'provider_refund_failed', refundOperationId: result.operation.refundOperationId });
+        case 'TRANSACTION_NOT_FOUND':
+          return reply.code(404).send({ error: 'not_found' });
+        case 'CURRENCY_MISMATCH':
+        case 'EXCEEDS_BALANCE':
           return reply.code(409).send({ error: 'invalid_request' });
-        }
-        if (error instanceof BillingAuthorizationError) return reply.code(403).send({ error: 'forbidden' });
-        throw error;
+        case 'UNKNOWN_PROVIDER':
+          return reply.code(400).send({ error: 'invalid_request' });
       }
     },
   );

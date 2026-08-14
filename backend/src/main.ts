@@ -53,6 +53,11 @@ import { ProviderEventRepository, ProviderEventService } from './billing/provide
 import { createDefaultProviderRegistry } from './billing/provider/providerRegistry.js';
 import { CheckoutService } from './billing/checkout/CheckoutService.js';
 import { WebhookService } from './billing/webhook/WebhookService.js';
+// PCA-BILL-2A-R1 correction: FIX 2/3 durable+concurrency-safe refund
+// orchestration, and FIX 4's fail-closed family-owner-authority default --
+// see each module's own header for the full rationale.
+import { RefundOperationRepository, RefundOrchestrationService } from './billing/refundOrchestration/RefundOrchestrationService.js';
+import { UnavailableFamilyCommercialAuthorityResolver } from './billing/authority/FamilyCommercialAuthorityResolver.js';
 import { MySqlEntitlementRepository } from './entitlements/MySqlEntitlementRepository.js';
 import { MySqlChangeRequestRepository } from './entitlements/requests/MySqlChangeRequestRepository.js';
 import { EntitlementService } from './entitlements/EntitlementService.js';
@@ -137,6 +142,13 @@ async function start(): Promise<void> {
   const providerEventRepository = new ProviderEventRepository();
   const providerEventService = new ProviderEventService(providerEventRepository);
   const providerRegistry = createDefaultProviderRegistry();
+  const refundOperationRepository = new RefundOperationRepository();
+  const refundOrchestrationService = new RefundOrchestrationService(refundOperationRepository, refundService, paymentRepository, providerRegistry);
+  // FIX 4: PRODUCTION default is the fail-closed resolver -- see that
+  // class's own header and billingCheckoutRoutes.ts's header for why this
+  // is the honest, correct posture today (no genuine server-side trust-set
+  // source exists yet), not a placeholder to "finish later" casually.
+  const familyCommercialAuthorityResolver = new UnavailableFamilyCommercialAuthorityResolver();
 
   const entitlementRepository = new MySqlEntitlementRepository();
   const changeRequestRepository = new MySqlChangeRequestRepository();
@@ -204,9 +216,10 @@ async function start(): Promise<void> {
     billingCheckoutService,
     billingWebhookService,
     billingProviderRegistry: providerRegistry,
-    billingRefundService: refundService,
+    billingRefundOrchestrationService: refundOrchestrationService,
     billingPaymentRepository: paymentRepository,
     billingAuditService: platformAdminAuditService,
+    billingFamilyCommercialAuthorityResolver: familyCommercialAuthorityResolver,
   });
   await app.listen({ host, port });
 }

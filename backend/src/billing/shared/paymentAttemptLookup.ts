@@ -61,3 +61,36 @@ export async function findPaymentAttemptByProviderReference(provider: string, pr
   );
   return rows[0] ? toDomain(rows[0]) : null;
 }
+
+/**
+ * PCA-BILL-2A-R1 correction (checkout split-state fix): finds the single
+ * NOT-YET-TERMINAL (`CREATED` or `PENDING`) PaymentAttempt for a given
+ * entitlement change-request, if one exists. This is the lookup
+ * `CheckoutService.createCheckoutSession` performs FIRST, before ever
+ * calling `PaymentService.createAttemptFromSnapshot`/the provider, so a
+ * retried checkout-create call for the same `requestId` reuses the
+ * existing attempt instead of creating a second, orphaned one.
+ *
+ * `increase_request_ref` is a bounded opaque VARCHAR (never a foreign key,
+ * see payment.ts's own header) so this is a plain indexed lookup
+ * (`billing_payment_attempts_increase_request_ref_idx`, migration 0007),
+ * not a join. Ordered by `created_at DESC` and capped at one row purely as
+ * defensive belt-and-suspenders -- by this lane's own invariant (a request
+ * can only be in one checkout flow at a time, enforced by
+ * ChangeRequestService's own QUOTED/PAYMENT_PENDING state machine) there
+ * should never be more than one CREATED/PENDING attempt per request, but
+ * this query does not assume that going in.
+ */
+export async function findActivePaymentAttemptByIncreaseRequestRef(increaseRequestRef: string): Promise<PaymentAttemptRow | null> {
+  const { rows } = await runInTransaction((conn) =>
+    execute<AttemptSqlRow>(
+      conn,
+      `SELECT * FROM billing_payment_attempts
+         WHERE increase_request_ref = ? AND status IN ('CREATED', 'PENDING')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [increaseRequestRef],
+    ),
+  );
+  return rows[0] ? toDomain(rows[0]) : null;
+}
