@@ -37,7 +37,13 @@ export type ServiceOperation =
   // per PCA-ADD-BILL-040 is NOT closed by this lane; it remains
   // PCA-MYKIDS-BILL-1's scope.
   | 'INITIATE_CHECKOUT'
-  | 'VIEW_OWN_BILLING_STATUS';
+  | 'VIEW_OWN_BILLING_STATUS'
+  // PCA-COMMERCIAL-NOTIFY-1: family-facing commercial-notification
+  // read/acknowledge operations, added additively (no existing member
+  // removed or renamed). Gated on the SAME "service account has an ACTIVE
+  // family scope" primitive as every operation above.
+  | 'VIEW_OWN_NOTIFICATIONS'
+  | 'ACKNOWLEDGE_OWN_NOTIFICATION';
 
 export type ScopeStatus = 'ACTIVE' | 'REVOKED';
 

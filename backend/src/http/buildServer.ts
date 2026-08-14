@@ -42,6 +42,16 @@ import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformA
 // PCA-BILL-2A-R1 correction FIX 4: family owner authority gate for
 // checkout-CREATE -- see billingCheckoutRoutes.ts/FamilyCommercialAuthorityResolver.ts.
 import type { FamilyCommercialAuthorityResolver } from '../billing/authority/FamilyCommercialAuthorityResolver.js';
+// PCA-COMMERCIAL-NOTIFY-1: durable commercial-notification event/read model
+// -- a structurally independent surface layered on top of the family
+// service-session/AuthzService plane and Platform Administration (for its
+// Section 7 support view), never modifying any of their accepted source
+// files beyond this registration call and the additive
+// VIEW_OWN_NOTIFICATIONS/ACKNOWLEDGE_OWN_NOTIFICATION ServiceOperation
+// members (authz/types.ts, authz/policy.ts). Registered here exactly like
+// every other domain's registerXRoutes call.
+import { registerCommercialNotificationRoutes } from './routes/commercialNotificationRoutes.js';
+import type { CommercialNotificationService, CommercialNotificationSupportService } from '../commercialnotifications/CommercialNotificationService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -68,6 +78,9 @@ export interface ServerDependencies {
   billingAuditService: PlatformAdminAuditService;
   /** FIX 4 (see FamilyCommercialAuthorityResolver.ts): production wiring (main.ts) is UnavailableFamilyCommercialAuthorityResolver -- fail-closed until a genuine server-side trust-set source exists. */
   billingFamilyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
+  /** PCA-COMMERCIAL-NOTIFY-1: durable commercial notifications -- see registerCommercialNotificationRoutes below. */
+  commercialNotificationService: CommercialNotificationService;
+  commercialNotificationSupportService: CommercialNotificationSupportService;
 }
 
 /**
@@ -180,6 +193,15 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     paymentRepository: deps.billingPaymentRepository,
     auditService: deps.billingAuditService,
     rateLimiter,
+  });
+  registerCommercialNotificationRoutes(app, {
+    commercialNotificationService: deps.commercialNotificationService,
+    commercialNotificationSupportService: deps.commercialNotificationSupportService,
+    authService: deps.authService,
+    authzService: deps.authzService,
+    platformAdminAuthService: deps.platformAdminAuthService,
+    rateLimiter,
+    authAttemptLimiter,
   });
 
   return app;

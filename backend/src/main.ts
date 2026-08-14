@@ -64,6 +64,18 @@ import { EntitlementService } from './entitlements/EntitlementService.js';
 import { ChangeRequestService } from './entitlements/requests/ChangeRequestService.js';
 import { NoPriceBookQuotePort } from './entitlements/quote/QuotePort.js';
 import { PaymentConfirmationService } from './entitlements/payment/PaymentConfirmationService.js';
+// PCA-COMMERCIAL-NOTIFY-1: durable commercial-notification event/read
+// model. No production PAYMENT_PROVIDER_SELECTION-style external gate
+// exists here -- CommercialNotificationService/Publisher are fully
+// functional MySQL-backed wiring from the moment this lane merges. See
+// this lane's final report's SHARED_INTEGRATION_REQUIRED list for the
+// Quote/Payment/Entitlement/Request call sites a future integration pass
+// should add `commercialNotificationPublisher.publish(...)` calls at --
+// this lane deliberately does not edit those domains' accepted source
+// files to wire itself in.
+import { CommercialNotificationRepository } from './commercialnotifications/CommercialNotificationRepository.js';
+import { CommercialNotificationService, CommercialNotificationSupportService } from './commercialnotifications/CommercialNotificationService.js';
+import { MySqlCommercialNotificationPublisher } from './commercialnotifications/CommercialNotificationPublisher.js';
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -162,6 +174,17 @@ async function start(): Promise<void> {
   const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new NoPriceBookQuotePort());
   const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
 
+  // PCA-COMMERCIAL-NOTIFY-1 wiring. `commercialNotificationPublisher` is
+  // constructed here and exported nowhere yet -- no accepted Quote/Payment/
+  // Entitlement/Request source file calls it today (this lane does not
+  // edit those files). It exists so a future integration pass can import
+  // it directly instead of re-deriving the wiring.
+  const commercialNotificationRepository = new CommercialNotificationRepository();
+  const commercialNotificationService = new CommercialNotificationService(commercialNotificationRepository);
+  const commercialNotificationSupportService = new CommercialNotificationSupportService(commercialNotificationRepository);
+  const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(commercialNotificationRepository);
+  void commercialNotificationPublisher;
+
   const billingCheckoutService = new CheckoutService(changeRequestRepository, changeRequestService, paymentService, paymentRepository, providerRegistry);
   const billingWebhookService = new WebhookService(
     providerRegistry,
@@ -220,6 +243,8 @@ async function start(): Promise<void> {
     billingPaymentRepository: paymentRepository,
     billingAuditService: platformAdminAuditService,
     billingFamilyCommercialAuthorityResolver: familyCommercialAuthorityResolver,
+    commercialNotificationService,
+    commercialNotificationSupportService,
   });
   await app.listen({ host, port });
 }

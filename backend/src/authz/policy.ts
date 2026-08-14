@@ -26,6 +26,11 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   // license, matching CREATE_INVITATION's requirement shape.
   INITIATE_CHECKOUT: { requiresFamilyScope: true, requiresLicense: true },
   VIEW_OWN_BILLING_STATUS: { requiresFamilyScope: true, requiresLicense: false },
+  // PCA-COMMERCIAL-NOTIFY-1: no license requirement -- a family must still
+  // be able to see e.g. a PAYMENT_FAILED or REQUEST_DENIED notification
+  // even while its license is lapsed/absent.
+  VIEW_OWN_NOTIFICATIONS: { requiresFamilyScope: true, requiresLicense: false },
+  ACKNOWLEDGE_OWN_NOTIFICATION: { requiresFamilyScope: true, requiresLicense: false },
 };
 
 export function resolveRequirements(operation: ServiceOperation): OperationRequirements {
