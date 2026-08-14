@@ -30,9 +30,16 @@ const PROHIBITED_TERMS = [
 // PCA-ADD-BILL-046) is a durable dedup key DERIVED FROM a payment/provider
 // event id -- an opaque request-shaping string, never a cryptographic
 // private key or secret.
+// open_active_key (billing_price_books, PCA-BILL-1) and active_account_key
+// (billing_subscriptions, PCA-BILL-1) are STORED GENERATED columns that
+// concatenate non-secret scoping fields (market/currency/device-limit or
+// account id) only when the row is the single open/active one -- pure
+// DB-enforced uniqueness-invariant strings (via UNIQUE KEY), never
+// cryptographic key material.
 const ALLOWED_KEY_COLUMNS = new Set([
   'public_key', 'key_id', 'signing_key_id', 'encryption_key_id', 'key_purpose', 'sender_key_id',
   'signing_public_key', 'encryption_public_key', 'idempotency_key',
+  'open_active_key', 'active_account_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
