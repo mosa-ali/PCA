@@ -156,7 +156,7 @@ export class FamilyCommercialService {
 
   // -- F. Subscription read ---------------------------------------------------
   async getSubscription(familyId: string): Promise<SubscriptionRow | null> {
-    return runInTransaction((conn) => this.subscriptionRepository.findActiveForAccount(conn, familyId));
+    return this.runQuery((conn) => this.subscriptionRepository.findActiveForAccount(conn, familyId));
   }
 
   // -- G. Invoice read ---------------------------------------------------------
@@ -181,6 +181,6 @@ export class FamilyCommercialService {
 
   // -- H. Payment method read (safe metadata only) ------------------------------
   async listPaymentMethods(familyId: string): Promise<PaymentMethodRow[]> {
-    return runInTransaction((conn) => this.paymentMethodRepository.listForAccount(conn, familyId));
+    return this.runQuery((conn) => this.paymentMethodRepository.listForAccount(conn, familyId));
   }
 }

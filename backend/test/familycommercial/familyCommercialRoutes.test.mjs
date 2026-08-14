@@ -8,8 +8,6 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { EntitlementService } from '../../dist/entitlements/EntitlementService.js';
-import { ChangeRequestService } from '../../dist/entitlements/requests/ChangeRequestService.js';
-import { NoPriceBookQuotePort } from '../../dist/entitlements/quote/QuotePort.js';
 import { FamilyCommercialService } from '../../dist/familycommercial/FamilyCommercialService.js';
 import { registerFamilyCommercialRoutes } from '../../dist/http/routes/familyCommercialRoutes.js';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
@@ -17,7 +15,12 @@ import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.
 import { createInMemoryAuthzRepository } from '../support/inMemoryAuthzRepository.mjs';
 import { createInMemoryEntitlementRepository } from '../support/inMemoryEntitlementRepository.mjs';
 import { createInMemoryChangeRequestRepository } from '../support/inMemoryChangeRequestRepository.mjs';
+import { createStubChangeRequestService } from '../support/stubChangeRequestService.mjs';
 import { verifyTestOnlyIdentity } from '../support/testOnlyIdentityProvider.mjs';
+
+function fakeRunQuery(fn) {
+  return fn(undefined);
+}
 
 const FIXED_NOW = new Date('2026-06-01T00:00:00Z');
 
@@ -38,7 +41,7 @@ function buildHarness({ resolver } = {}) {
   entitlementRepository._seedDefaults('FREE_STARTER', 1, 1, FIXED_NOW);
   const changeRequestRepository = createInMemoryChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
-  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new NoPriceBookQuotePort(), () => FIXED_NOW);
+  const changeRequestService = createStubChangeRequestService(changeRequestRepository, () => FIXED_NOW);
   const subscriptionRepository = { async findActiveForAccount() { return null; } };
   const paymentMethodRepository = {
     async listForAccount(_conn, accountRef) {
@@ -47,7 +50,7 @@ function buildHarness({ resolver } = {}) {
     },
   };
   const invoiceReadRepository = { async listForFamily() { return []; }, async findForFamily() { return null; }, async listLines() { return []; } };
-  const familyCommercialService = new FamilyCommercialService(entitlementService, changeRequestRepository, changeRequestService, subscriptionRepository, paymentMethodRepository, invoiceReadRepository, () => FIXED_NOW);
+  const familyCommercialService = new FamilyCommercialService(entitlementService, changeRequestRepository, changeRequestService, subscriptionRepository, paymentMethodRepository, invoiceReadRepository, () => FIXED_NOW, fakeRunQuery);
 
   const rateLimiter = createRateLimiter();
   const app = Fastify({ logger: false });
