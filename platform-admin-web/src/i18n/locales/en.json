@@ -1,0 +1,95 @@
+{
+  "app": {
+    "title": "PCA Platform Administration",
+    "skipToContent": "Skip to main content"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "accounts": "Accounts",
+    "entitlements": "Entitlements",
+    "entitlementRequests": "Entitlement Requests",
+    "billing": "Billing",
+    "billingPlans": "Plans",
+    "billingPricing": "Price Book",
+    "billingQuotes": "Custom Quotes",
+    "billingInvoices": "Invoices",
+    "billingPayments": "Payments",
+    "adminUsers": "Admin Users",
+    "audit": "Audit Log",
+    "settings": "Settings"
+  },
+  "shell": {
+    "signedInAs": "Signed in as {{adminId}}",
+    "role_one": "Role: {{roles}}",
+    "role_other": "Roles: {{roles}}",
+    "logout": "Log out",
+    "sessionExpiresAt": "Session expires {{time}}",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "sessionRevoked": "This session has been revoked. Please sign in again."
+  },
+  "login": {
+    "title": "Platform Administration Sign In",
+    "subtitle": "Operator access only. Family/parent accounts cannot sign in here.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "totpLabel": "Authenticator code",
+    "totpHint": "Enter the 6-digit code from your authenticator app.",
+    "submit": "Sign in",
+    "submitting": "Signing in...",
+    "errorUnauthorized": "Incorrect email, password, or authenticator code.",
+    "errorRateLimited": "Too many attempts. Please wait and try again.",
+    "errorGeneric": "Sign-in failed. Please try again.",
+    "errorLockedOut": "This account is temporarily locked after too many failed attempts.",
+    "noSkipMfa": "Multi-factor authentication is required for every sign-in and cannot be skipped."
+  },
+  "stepUp": {
+    "title": "Confirm this action",
+    "body": "This is a sensitive action ({{scope}}) and requires a fresh authenticator code, even though you are already signed in.",
+    "codeLabel": "Authenticator code",
+    "confirm": "Confirm",
+    "invalidCode": "That code was not accepted. Enter a new code from your authenticator app.",
+    "scopes": {
+      "REFUND": "issue refund",
+      "SETTLEMENT_BANK_CONFIG": "change settlement/bank configuration",
+      "ADMIN_ROLE_GRANT": "grant admin role",
+      "FAMILY_ACCOUNT_SUSPEND": "suspend family account",
+      "FAMILY_ACCOUNT_REACTIVATE": "reactivate family account",
+      "ENTITLEMENT_LIMIT_OVERRIDE": "override entitlement limit"
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "retry": "Retry",
+    "loading": "Loading...",
+    "unexpectedError": "Something went wrong. Please try again.",
+    "empty": "Nothing to show yet.",
+    "comingSoonTitle": "Not yet available",
+    "comingSoonBody": "This screen's backend API is not yet implemented. No data is fabricated here; this section will activate once the corresponding backend endpoint ships.",
+    "backendGapLabel": "Backend gap:"
+  },
+  "errorBoundary": {
+    "title": "Platform Administration failed to load",
+    "body": "An unexpected error occurred. If this persists, contact engineering with the detail below."
+  },
+  "notPermitted": {
+    "title": "Not permitted",
+    "body": "Your role does not include this capability."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you requested does not exist."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "identityCardTitle": "Your session",
+    "kpisComingSoonBody": "Operational/commercial KPIs (account counts, entitlement usage, billing status counts) require a platform dashboard aggregation endpoint that does not exist yet server-side."
+  },
+  "roles": {
+    "APP_OWNER": "App Owner",
+    "PLATFORM_ADMIN": "Platform Admin",
+    "FINANCE_ADMIN": "Finance Admin",
+    "SUPPORT_ADMIN": "Support Admin",
+    "AUDITOR_READ_ONLY": "Auditor (Read Only)"
+  }
+}
