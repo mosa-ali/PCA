@@ -79,6 +79,8 @@ export interface PlatformAdminMfaStateRecord {
   totpSecretNonce: Buffer | null;
   activatedAt: Date | null;
   createdAt: Date;
+  /** TOTP-REPLAY-1: the durable, monotonic replay-prevention watermark shared identically across LOGIN and STEP-UP verification -- NULL means no code has ever been accepted for this admin. See AuthRepository.claimTotpCounter and migration 0005's column comment. */
+  lastAcceptedTotpCounter: number | null;
 }
 
 export interface PlatformAdminStepUpSessionRecord {

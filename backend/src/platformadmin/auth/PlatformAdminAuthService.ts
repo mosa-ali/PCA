@@ -116,7 +116,21 @@ export class PlatformAdminAuthService {
 
     const key = loadMfaEncryptionKey();
     const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
-    if (!verifyTotp(secret, totpCode, now.getTime())) {
+    const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
+    if (matchedCounter === null) {
+      await this.recordFailureAndMaybeAlert(emailHash, 'FAILED_MFA', now, correlationId, account.adminId);
+      throw new PlatformAdminAuthError();
+    }
+    // TOTP-REPLAY-1: this is the LAST gate, right before the success path
+    // -- claiming happens only once every other check (account status,
+    // password, MFA-active, code validity) has already passed, so a wrong
+    // password can never burn a valid, unused TOTP counter. A failed claim
+    // (the counter was already accepted -- at this login or a previous
+    // step-up, since the counter is shared) is treated exactly like a
+    // wrong/missing code: same generic error, same audit/lockout
+    // bookkeeping, no distinguishable oracle.
+    const claimed = await this.repository.claimTotpCounter(account.adminId, matchedCounter);
+    if (!claimed) {
       await this.recordFailureAndMaybeAlert(emailHash, 'FAILED_MFA', now, correlationId, account.adminId);
       throw new PlatformAdminAuthError();
     }
@@ -250,12 +264,19 @@ export class PlatformAdminAuthService {
     const now = this.now();
     const correlationId = randomUUID();
     const mfaState = await this.repository.getMfaState(adminId);
-    let verified = false;
+    let matchedCounter: number | null = null;
     if (mfaState && mfaState.status === 'ACTIVE' && mfaState.totpSecretCiphertext && mfaState.totpSecretNonce) {
       const key = loadMfaEncryptionKey();
       const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
-      verified = verifyTotp(secret, totpCode, now.getTime());
+      matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     }
+    // TOTP-REPLAY-1: claiming is the LAST gate, right before the granted
+    // step-up is created -- only attempted once the code itself matched.
+    // The counter is the SAME shared per-admin watermark `login` claims
+    // against, so a code already consumed at login (or a previous step-up)
+    // fails here exactly like a wrong code would, with no distinguishable
+    // oracle (see PlatformAdminAuthRepository.claimTotpCounter).
+    const verified = matchedCounter !== null && (await this.repository.claimTotpCounter(adminId, matchedCounter));
 
     if (!verified) {
       await this.repository.recordDeniedStepUp({

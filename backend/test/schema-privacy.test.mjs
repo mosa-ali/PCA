@@ -143,11 +143,25 @@ test('platform-admin-identity-rbac-audit migration stores session/audit hashes a
   assert.equal(/raw_?token\b/i.test(platformAdminMigration.replace(/--[^\n]*/g, '')), false);
 });
 
-test('platform-admin-identity-rbac-audit migration enforces append-only audit events with UPDATE and DELETE triggers', () => {
-  assert.match(platformAdminMigration, /CREATE TRIGGER platform_admin_audit_events_no_update/);
-  assert.match(platformAdminMigration, /CREATE TRIGGER platform_admin_audit_events_no_delete/);
-  assert.match(platformAdminMigration, /BEFORE UPDATE ON platform_admin_audit_events/);
-  assert.match(platformAdminMigration, /BEFORE DELETE ON platform_admin_audit_events/);
+// Defect-1 correction: a least-privilege MySQL 8 user under binary logging
+// cannot CREATE TRIGGER without SUPER (see migration 0005's own
+// APPEND-ONLY ENFORCEMENT comment), so append-only enforcement for
+// platform_admin_audit_events is now grant-based (never granting the
+// runtime principal UPDATE/DELETE on this one table -- see
+// backend/scripts/provision-runtime-db-grants.mjs and
+// backend/scripts/db/runtimeGrantPlan.mjs), not trigger-based. This
+// migration must therefore define ZERO triggers.
+test('platform-admin-identity-rbac-audit migration defines no triggers -- append-only enforcement is grant-based, not trigger-based', () => {
+  // Strip `--` comments first: the APPEND-ONLY ENFORCEMENT comment above
+  // legitimately discusses, in prose, why CREATE TRIGGER cannot be used --
+  // this assertion is about actual executable DDL, not comment text.
+  const executableSql = platformAdminMigration.replace(/--[^\n]*/g, '');
+  assert.equal(/CREATE TRIGGER/i.test(executableSql), false);
+  assert.match(platformAdminMigration, /APPEND-ONLY ENFORCEMENT \(grant-based, not trigger-based/);
+});
+
+test('platform-admin-identity-rbac-audit migration adds the durable TOTP replay-prevention counter column', () => {
+  assert.match(platformAdminMigration, /last_accepted_totp_counter BIGINT NULL/);
 });
 
 test('platform-admin-identity-rbac-audit migration shares no foreign key with the family/parent plane tables (service_accounts, service_sessions, families)', () => {

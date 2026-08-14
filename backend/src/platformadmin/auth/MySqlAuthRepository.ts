@@ -50,6 +50,7 @@ interface MfaStateRow extends RowDataPacket {
   totp_secret_nonce: Buffer | null;
   activated_at: Date | null;
   created_at: Date;
+  last_accepted_totp_counter: number | string | null;
 }
 
 interface SessionRow extends RowDataPacket {
@@ -104,6 +105,11 @@ function toMfaState(row: MfaStateRow): PlatformAdminMfaStateRecord {
     totpSecretNonce: row.totp_secret_nonce,
     activatedAt: row.activated_at,
     createdAt: row.created_at,
+    // BIGINT columns come back as a JS number when safe (always true here --
+    // a 30-second-step HOTP counter stays far below Number.MAX_SAFE_INTEGER
+    // for millennia) or a string otherwise (mysql2's supportBigNumbers
+    // behavior) -- normalize either shape to a number.
+    lastAcceptedTotpCounter: row.last_accepted_totp_counter === null ? null : Number(row.last_accepted_totp_counter),
   };
 }
 
@@ -460,6 +466,25 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
          WHERE step_up_id = ? AND admin_id = ? AND session_id = ? AND scope = ?
            AND consumed_at IS NULL AND expires_at > ?`,
         [input.consumedAt, input.stepUpId, input.adminId, input.sessionId, input.scope, input.consumedAt],
+      ),
+    );
+    return rowCount > 0;
+  }
+
+  async claimTotpCounter(adminId: PlatformAdminId, counter: number): Promise<boolean> {
+    // TOTP-REPLAY-1: single guarded UPDATE...WHERE, check affected-row
+    // count -- the same idiom consumeStepUp above already uses for its own
+    // single-use claim. InnoDB's row lock on this UPDATE's WHERE clause
+    // serializes concurrent claims of the same admin_id row, so of N
+    // simultaneous attempts claiming the SAME counter, exactly one commits
+    // and the rest see rowCount === 0 once the first has committed.
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE platform_admin_mfa_state
+         SET last_accepted_totp_counter = ?
+         WHERE admin_id = ? AND (last_accepted_totp_counter IS NULL OR last_accepted_totp_counter < ?)`,
+        [counter, adminId, counter],
       ),
     );
     return rowCount > 0;

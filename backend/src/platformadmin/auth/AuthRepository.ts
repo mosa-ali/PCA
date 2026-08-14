@@ -124,4 +124,26 @@ export interface PlatformAdminAuthRepository {
   recordDeniedStepUp(auditEvent: PlatformAdminAuditEvent): Promise<void>;
   /** Guarded single-use consume: returns true iff exactly one matching, unexpired, unconsumed row was updated. */
   consumeStepUp(input: ConsumeStepUpInput): Promise<boolean>;
+
+  /**
+   * TOTP-REPLAY-1: atomically claims one absolute HOTP counter for this
+   * admin as "accepted," durably, via a single guarded UPDATE (mirroring
+   * consumeStepUp's own guarded-UPDATE-then-check-affected-rows idiom):
+   *   UPDATE platform_admin_mfa_state
+   *   SET last_accepted_totp_counter = ?
+   *   WHERE admin_id = ?
+   *     AND (last_accepted_totp_counter IS NULL OR last_accepted_totp_counter < ?)
+   * Returns true iff exactly one row was affected (this counter is
+   * strictly newer than whatever was last accepted -- claim succeeded).
+   * Returns false for a stale/replayed/older-or-equal counter, OR a
+   * concurrent duplicate submission that lost the race -- both cases are
+   * indistinguishable by design. InnoDB's row lock on this UPDATE's WHERE
+   * clause is the entire concurrency-safety mechanism: of N simultaneous
+   * claims of the SAME counter value, exactly one commits and every other
+   * sees its WHERE clause no longer match. This is ONE shared counter per
+   * admin (not one per call-site), used identically by both `login` and
+   * `assertStepUp` -- that sharing is what makes a code consumed at login
+   * unusable for step-up, and vice versa.
+   */
+  claimTotpCounter(adminId: PlatformAdminId, counter: number): Promise<boolean>;
 }

@@ -37,23 +37,24 @@ test('verifyTotp accepts the current step and rejects a code from far outside th
   const secret = generateTotpSecret();
   const now = Date.now();
   const validCode = computeTotp(secret, now, 0);
-  assert.equal(verifyTotp(secret, validCode, now), true);
+  assert.equal(verifyTotp(secret, validCode, now), Math.floor(now / 1000 / 30));
   const farFutureCode = computeTotp(secret, now, 100);
-  assert.equal(verifyTotp(secret, farFutureCode, now), false);
+  assert.equal(verifyTotp(secret, farFutureCode, now), null);
 });
 
-test('verifyTotp accepts ±1 step for clock skew', () => {
+test('verifyTotp accepts ±1 step for clock skew and returns the matched ABSOLUTE counter, not just true/false', () => {
   const secret = generateTotpSecret();
   const now = Date.now();
-  assert.equal(verifyTotp(secret, computeTotp(secret, now, 1), now), true);
-  assert.equal(verifyTotp(secret, computeTotp(secret, now, -1), now), true);
+  const baseCounter = Math.floor(now / 1000 / 30);
+  assert.equal(verifyTotp(secret, computeTotp(secret, now, 1), now), baseCounter + 1);
+  assert.equal(verifyTotp(secret, computeTotp(secret, now, -1), now), baseCounter - 1);
 });
 
 test('verifyTotp rejects a non-6-digit candidate without throwing', () => {
   const secret = generateTotpSecret();
-  assert.equal(verifyTotp(secret, 'abcdef', Date.now()), false);
-  assert.equal(verifyTotp(secret, '12345', Date.now()), false);
-  assert.equal(verifyTotp(secret, '', Date.now()), false);
+  assert.equal(verifyTotp(secret, 'abcdef', Date.now()), null);
+  assert.equal(verifyTotp(secret, '12345', Date.now()), null);
+  assert.equal(verifyTotp(secret, '', Date.now()), null);
 });
 
 test('loadMfaEncryptionKey throws synchronously when the env var is absent (fail-closed)', () => {

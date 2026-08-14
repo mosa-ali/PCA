@@ -8,11 +8,21 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
 
-const connectionString = process.env.PCA_DATABASE_URL;
-if (!connectionString) throw new Error('PCA_DATABASE_URL is required for the disposable database test.');
+// PCA_MIGRATION_DATABASE_URL, if set, is a distinct, more-privileged
+// migration/provisioning credential, separate from the least-privilege
+// runtime credential the application itself uses (PCA_DATABASE_URL, read
+// by backend/src/db/pool.ts, which this script never touches). Production
+// SHOULD set this to a dedicated credential; local/dev/CI MAY simply not
+// set it and collapse both roles onto PCA_DATABASE_URL -- this fallback
+// keeps every existing workflow that only sets PCA_DATABASE_URL working
+// completely unchanged. The hostname allowlist below is validated against
+// whichever URL is actually used, so this disposable-database gate can
+// never accidentally run against a non-local/non-Compose host either way.
+const connectionString = process.env.PCA_MIGRATION_DATABASE_URL ?? process.env.PCA_DATABASE_URL;
+if (!connectionString) throw new Error('PCA_DATABASE_URL (or PCA_MIGRATION_DATABASE_URL) is required for the disposable database test.');
 const url = new URL(connectionString);
 if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
-  throw new Error('PCA_DATABASE_URL must point to the disposable local/Compose database.');
+  throw new Error('PCA_DATABASE_URL/PCA_MIGRATION_DATABASE_URL must point to the disposable local/Compose database.');
 }
 
 const root = new URL('../migrations/', import.meta.url);

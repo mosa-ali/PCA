@@ -14,8 +14,16 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
 
-const connectionString = process.env.PCA_DATABASE_URL;
-if (!connectionString) throw new Error('PCA_DATABASE_URL is required to run migrations.');
+// PCA_MIGRATION_DATABASE_URL, if set, is a distinct, more-privileged
+// migration/provisioning credential (able to CREATE/ALTER/DROP), separate
+// from the least-privilege runtime credential the application itself uses
+// at runtime (PCA_DATABASE_URL, read by backend/src/db/pool.ts, which this
+// script never touches). Production SHOULD set this to a dedicated
+// credential; local/dev/CI MAY simply not set it and collapse both roles
+// onto PCA_DATABASE_URL -- this fallback keeps every existing workflow that
+// only sets PCA_DATABASE_URL working completely unchanged.
+const connectionString = process.env.PCA_MIGRATION_DATABASE_URL ?? process.env.PCA_DATABASE_URL;
+if (!connectionString) throw new Error('PCA_DATABASE_URL (or PCA_MIGRATION_DATABASE_URL) is required to run migrations.');
 
 const migrationsDir = new URL('../migrations/', import.meta.url);
 

@@ -191,7 +191,10 @@ test('revokeAllSessions revokes every active session for the admin', async () =>
   const admin = await createLoginableAdmin(harness);
   const code1 = computeTotp(admin.secret, harness.now().getTime());
   const first = await harness.authService.login(admin.email, admin.password, code1);
-  harness.clock.advance(1000);
+  // Advance a full TOTP step (not just a millisecond) so the second code is
+  // a genuinely distinct, not-yet-claimed HOTP counter -- see TOTP-REPLAY-1:
+  // the same code can no longer be accepted twice.
+  harness.clock.advance(30_000);
   const code2 = computeTotp(admin.secret, harness.now().getTime());
   const second = await harness.authService.login(admin.email, admin.password, code2);
 
@@ -216,6 +219,10 @@ test('step-up: assertStepUp with a correct live TOTP grants a step-up; consumeSt
   const { rawToken } = await harness.authService.login(admin.email, admin.password, code);
   const identity = await harness.authService.validateSession(rawToken);
 
+  // Advance a full TOTP step so the step-up code is a fresh, not-yet-claimed
+  // counter -- TOTP-REPLAY-1's shared per-admin counter means the exact code
+  // just consumed at login can never be re-presented for step-up.
+  harness.clock.advance(30_000);
   const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
   const stepUp = await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER');
   await assert.doesNotReject(() => harness.authService.consumeStepUp(stepUp.stepUpId, admin.adminId, identity.sessionId, 'REFUND'));
@@ -227,6 +234,7 @@ test('step-up: already-consumed cannot be reused even though it has not expired'
   const code = computeTotp(admin.secret, harness.now().getTime());
   const { rawToken } = await harness.authService.login(admin.email, admin.password, code);
   const identity = await harness.authService.validateSession(rawToken);
+  harness.clock.advance(30_000);
   const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
   const stepUp = await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER');
   await harness.authService.consumeStepUp(stepUp.stepUpId, admin.adminId, identity.sessionId, 'REFUND');
@@ -242,6 +250,7 @@ test('step-up: expired grant is rejected', async () => {
   const code = computeTotp(admin.secret, harness.now().getTime());
   const { rawToken } = await harness.authService.login(admin.email, admin.password, code);
   const identity = await harness.authService.validateSession(rawToken);
+  harness.clock.advance(30_000);
   const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
   const stepUp = await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER');
   harness.clock.advance(6 * 60 * 1000); // beyond the 5-minute step-up TTL
@@ -257,6 +266,7 @@ test('step-up: asserted for REFUND cannot be consumed against a different scope'
   const code = computeTotp(admin.secret, harness.now().getTime());
   const { rawToken } = await harness.authService.login(admin.email, admin.password, code);
   const identity = await harness.authService.validateSession(rawToken);
+  harness.clock.advance(30_000);
   const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
   const stepUp = await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER');
   await assert.rejects(
@@ -277,4 +287,135 @@ test('step-up: wrong TOTP code is denied generically and writes ADMIN_STEP_UP_DE
   );
   const denied = harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_STEP_UP_DENIED');
   assert.equal(denied.length, 1);
+});
+
+// TOTP-REPLAY-1: the same 6-digit code can never be accepted twice, even
+// though it remains time-valid for its whole ±1-step clock-skew window.
+// See backend/src/platformadmin/auth/totp.ts's verifyTotp (now returns the
+// matched absolute HOTP counter, not a boolean) and
+// AuthRepository.claimTotpCounter (the durable, guarded CAS this replay
+// defense is built on).
+
+test('TOTP replay: the SAME code presented again immediately afterward is rejected as a replay on a second LOGIN attempt', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const code = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.login(admin.email, admin.password, code); // first use succeeds
+  await assert.rejects(
+    () => harness.authService.login(admin.email, admin.password, code), // same code, same request shape, still within its time-valid window
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: the SAME code presented again immediately afterward is rejected as a replay on a second STEP-UP attempt', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const loginCode = computeTotp(admin.secret, harness.now().getTime());
+  const { rawToken } = await harness.authService.login(admin.email, admin.password, loginCode);
+  const identity = await harness.authService.validateSession(rawToken);
+
+  harness.clock.advance(30_000);
+  const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER'); // first use succeeds
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'ADMIN_ROLE_GRANT', stepUpCode, 'APP_OWNER'), // same code again
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: a code consumed at LOGIN cannot subsequently be reused for a STEP-UP call', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const code = computeTotp(admin.secret, harness.now().getTime());
+  const { rawToken } = await harness.authService.login(admin.email, admin.password, code);
+  const identity = await harness.authService.validateSession(rawToken);
+  // No clock advance: the step-up code computed "now" is bit-for-bit the
+  // same code login already claimed the counter for.
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', code, 'APP_OWNER'),
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: a code consumed at STEP-UP cannot subsequently be reused for a later LOGIN', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const loginCode = computeTotp(admin.secret, harness.now().getTime());
+  const { rawToken } = await harness.authService.login(admin.email, admin.password, loginCode);
+  const identity = await harness.authService.validateSession(rawToken);
+
+  harness.clock.advance(30_000);
+  const stepUpCode = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', stepUpCode, 'APP_OWNER');
+
+  // Same instant, same counter -- attempting to log in again with the
+  // exact code just consumed by step-up must fail.
+  await assert.rejects(
+    () => harness.authService.login(admin.email, admin.password, stepUpCode),
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: an OLDER already-accepted counter is rejected even if presented alone afterward', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const olderCode = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.login(admin.email, admin.password, olderCode);
+
+  harness.clock.advance(60_000); // two full steps forward
+  // Presenting the OLD (already-accepted, now clock-skew-stale) code again
+  // must still fail -- both because it is out of the ±1 window by now AND
+  // because it was already claimed.
+  await assert.rejects(
+    () => harness.authService.login(admin.email, admin.password, olderCode),
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: the NEXT valid, not-yet-accepted counter succeeds normally after time advances', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const firstCode = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.login(admin.email, admin.password, firstCode);
+
+  harness.clock.advance(30_000); // exactly one TOTP step forward
+  const nextCode = computeTotp(admin.secret, harness.now().getTime());
+  await assert.doesNotReject(() => harness.authService.login(admin.email, admin.password, nextCode));
+});
+
+test('TOTP replay: an unused-but-clock-skew-valid ADJACENT counter (current step + 1) is still correctly accepted -- replay-prevention has not over-tightened clock skew', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const currentStepCode = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.login(admin.email, admin.password, currentStepCode);
+
+  // Still "now" (no clock advance) -- but a code for the ADJACENT (+1) step,
+  // which verifyTotp's ±1 skew window accepts and which was never itself
+  // claimed, must succeed on its own login attempt.
+  const adjacentCode = computeTotp(admin.secret, harness.now().getTime(), 1);
+  await assert.doesNotReject(() => harness.authService.login(admin.email, admin.password, adjacentCode));
+});
+
+test('TOTP replay: re-instantiating the service against the SAME repository still correctly rejects a previously-accepted counter (state lives in the repository, not the service object)', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const code = computeTotp(admin.secret, harness.now().getTime());
+  await harness.authService.login(admin.email, admin.password, code);
+
+  const freshAuthService = new (harness.authService.constructor)(harness.repository, harness.alertPort, harness.now);
+  await assert.rejects(
+    () => freshAuthService.login(admin.email, admin.password, code),
+    PlatformAdminAuthError,
+  );
+});
+
+test('TOTP replay: claimTotpCounter concurrency -- of N simultaneous claims of the SAME counter, exactly one succeeds', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const counter = 42;
+  const results = await Promise.all(
+    Array.from({ length: 10 }, () => harness.repository.claimTotpCounter(admin.adminId, counter)),
+  );
+  assert.equal(results.filter((r) => r === true).length, 1);
+  assert.equal(results.filter((r) => r === false).length, 9);
 });

@@ -128,13 +128,31 @@ function timingSafeEqualStrings(a: string, b: string): boolean {
   return timingSafeEqual(bufferA, bufferB);
 }
 
-/** Accepts the current 30-second step ±1 (TOTP_CLOCK_SKEW_STEPS) for clock skew. Rejects any candidate not shaped like a 6-digit code without attempting HMAC computation. */
-export function verifyTotp(secret: Buffer, code: string, timeMs: number): boolean {
-  if (typeof code !== 'string' || !/^[0-9]{6}$/.test(code)) return false;
+/**
+ * TOTP-REPLAY-1: accepts the current 30-second step ±1
+ * (TOTP_CLOCK_SKEW_STEPS) for clock skew, exactly as before. Rejects any
+ * candidate not shaped like a 6-digit code without attempting HMAC
+ * computation. Every candidate comparison remains timing-safe
+ * (timingSafeEqualStrings/timingSafeEqual), unchanged.
+ *
+ * Returns the matched ABSOLUTE HOTP counter (not merely a boolean) on a
+ * match, or `null` if no candidate in the ±1 window matches. This lets the
+ * caller (PlatformAdminAuthService) durably claim that exact counter via
+ * AuthRepository.claimTotpCounter -- a single guarded, atomic
+ * compare-and-swap against platform_admin_mfa_state.last_accepted_totp_counter
+ * -- before treating the code as accepted, so the SAME valid code can never
+ * be accepted twice (RFC 6238's recommended last-accepted-counter replay
+ * defense). verifyTotp itself performs no replay bookkeeping and has no
+ * side effects -- it is a pure function over (secret, code, timeMs), same
+ * as before; the counter claim is the caller's responsibility.
+ */
+export function verifyTotp(secret: Buffer, code: string, timeMs: number): number | null {
+  if (typeof code !== 'string' || !/^[0-9]{6}$/.test(code)) return null;
   for (let offset = -TOTP_CLOCK_SKEW_STEPS; offset <= TOTP_CLOCK_SKEW_STEPS; offset++) {
-    if (timingSafeEqualStrings(computeTotp(secret, timeMs, offset), code)) return true;
+    const counter = currentCounter(timeMs, offset);
+    if (timingSafeEqualStrings(hotp(secret, counter), code)) return counter;
   }
-  return false;
+  return null;
 }
 
 /** otpauth:// URI for authenticator-app enrollment (bootstrap script only in this lane -- see scripts/bootstrap-platform-owner.mjs). */

@@ -170,6 +170,25 @@ CREATE TABLE platform_admin_sessions (
 -- contract). Base32 secret encoding/decoding and RFC 6238 TOTP are
 -- implemented against node:crypto's HMAC-SHA1 primitive only -- no new npm
 -- dependency.
+--
+-- last_accepted_totp_counter (TOTP-REPLAY-1): the durable, monotonic
+-- replay-prevention watermark for this admin's TOTP factor. NULL means no
+-- code has ever been accepted for this admin. Every successful TOTP
+-- verification -- at LOGIN and at STEP-UP alike -- claims its absolute
+-- HOTP counter here via a single guarded
+-- `UPDATE ... SET last_accepted_totp_counter = ? WHERE admin_id = ? AND
+-- (last_accepted_totp_counter IS NULL OR last_accepted_totp_counter < ?)`
+-- (see PlatformAdminAuthRepository.claimTotpCounter/
+-- MySqlPlatformAdminAuthRepository) before the login/step-up is allowed to
+-- succeed. This is deliberately ONE shared counter per admin, not one per
+-- call-site: that single shared value is exactly what makes "a code
+-- consumed at login can never be reused for step-up" (and vice versa) hold
+-- with no separate bookkeeping. RFC 6238 explicitly recommends tracking the
+-- last-accepted counter per identity and rejecting anything at or before
+-- it; this column is that recommendation, persisted durably so it survives
+-- a process restart and stays correct across multiple backend instances
+-- sharing this database (no supplementary in-process cache exists or is
+-- needed).
 CREATE TABLE platform_admin_mfa_state (
   admin_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   status VARCHAR(16) NOT NULL,
@@ -177,6 +196,7 @@ CREATE TABLE platform_admin_mfa_state (
   totp_secret_nonce VARBINARY(16) NULL,
   activated_at DATETIME(3) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  last_accepted_totp_counter BIGINT NULL,
   PRIMARY KEY (admin_id),
   CONSTRAINT platform_admin_mfa_state_admin_id_fk FOREIGN KEY (admin_id) REFERENCES platform_admin_accounts (admin_id),
   CONSTRAINT platform_admin_mfa_state_status_check CHECK (status IN ('PENDING_SETUP', 'ACTIVE', 'DISABLED'))
@@ -286,13 +306,36 @@ CREATE TABLE platform_admin_login_attempts (
 -- greps every audit row's serialized JSON for the exact secret values used
 -- in that test (backend/test/db/platformadmin.mysql.test.mjs).
 --
--- APPEND-ONLY ENFORCEMENT: the two triggers below give genuine DB-level
--- immutability, not just an application-layer convention -- ANY UPDATE or
--- DELETE against this table is rejected with a MySQL error
--- (SQLSTATE '45000'), regardless of which application code or database
--- user attempts it. This is a stronger guarantee than "the service layer
--- never issues an UPDATE/DELETE statement," which a bug or a future
--- careless migration could silently violate.
+-- APPEND-ONLY ENFORCEMENT (grant-based, not trigger-based -- see
+-- backend/scripts/provision-runtime-db-grants.mjs and
+-- backend/scripts/db/runtimeGrantPlan.mjs): this table's genuine DB-level
+-- immutability is enforced by never granting the runtime application
+-- principal UPDATE or DELETE on this specific table, while every other
+-- application table gets the normal full DML grant set. A least-privilege
+-- MySQL 8 user with binary logging enabled
+-- (--log-bin=ON --log-bin-trust-function-creators=OFF, the standard
+-- managed-MySQL/production posture) cannot CREATE TRIGGER without the
+-- SUPER privilege (ERROR 1419), and granting SUPER (or enabling
+-- log_bin_trust_function_creators) to work around that would itself weaken
+-- the production security posture -- so this migration deliberately does
+-- NOT use triggers for this. Instead: MySQL privilege grants are
+-- additive/union across global -> database -> table -> column scope, and a
+-- table-level REVOKE can never narrow a privilege that was granted at a
+-- broader (database) scope -- so the ONLY way to give the runtime
+-- principal a narrower privilege set on this one table than on the rest of
+-- the schema is to grant privileges per-table from the start, and never
+-- grant DML at the database level for that principal at all. Concretely:
+-- the runtime principal gets `GRANT SELECT, INSERT, UPDATE, DELETE ON
+-- <db>.<table>` for every ordinary table, but only `GRANT SELECT, INSERT
+-- ON <db>.platform_admin_audit_events` for this one -- so an application
+-- bug or a compromised runtime credential structurally cannot UPDATE or
+-- DELETE a row here, independent of what SQL the application code sends,
+-- with ZERO SUPER/TRIGGER privilege ever required. Verified against a real
+-- MySQL 8.4 instance: this table-level-grant-only shape (no db-level grant
+-- issued at all) yields a real `ERROR 1142 (42000): UPDATE/DELETE command
+-- denied` for this table specifically, while INSERT/SELECT and DML on
+-- every other table continue to work normally -- see
+-- backend/test/db/platformAdminAuditPrivileges.mysql.test.mjs.
 CREATE TABLE platform_admin_audit_events (
   event_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   event_type VARCHAR(40) NOT NULL,
@@ -323,22 +366,10 @@ CREATE TABLE platform_admin_audit_events (
   CONSTRAINT platform_admin_audit_events_result_check CHECK (result IN ('SUCCESS', 'FAILURE', 'DENIED'))
 ) ENGINE=InnoDB;
 
--- NOTE: deliberately single-statement trigger bodies (no BEGIN...END block,
--- no DELIMITER change) -- backend/scripts/migrate.mjs and
--- backend/scripts/verify-mysql.mjs run migrations through mysql2's
--- multipleStatements mode, which sends this file to the server as a plain
--- semicolon-separated statement stream and has no concept of the MySQL CLI
--- client's `DELIMITER` directive. A compound BEGIN...END trigger body would
--- need its own internal semicolon, which would be misparsed as the end of
--- the CREATE TRIGGER statement under multipleStatements mode. A single
--- SIGNAL statement is valid MySQL trigger-body syntax without BEGIN...END
--- and has exactly one semicolon, in the correct (final) position.
-CREATE TRIGGER platform_admin_audit_events_no_update
-BEFORE UPDATE ON platform_admin_audit_events
-FOR EACH ROW
-SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'platform_admin_audit_events is append-only: UPDATE is not permitted.';
-
-CREATE TRIGGER platform_admin_audit_events_no_delete
-BEFORE DELETE ON platform_admin_audit_events
-FOR EACH ROW
-SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'platform_admin_audit_events is append-only: DELETE is not permitted.';
+-- NOTE: no CREATE TRIGGER statements in this migration (deliberately -- see
+-- the APPEND-ONLY ENFORCEMENT comment above this table's definition). The
+-- append-only guarantee for platform_admin_audit_events is enforced purely
+-- via the runtime principal's per-table grant shape, provisioned by
+-- backend/scripts/provision-runtime-db-grants.mjs after migrations run
+-- (see that script and backend/scripts/mysql/bootstrap-local.sql for the
+-- local dev/test equivalent) -- never by DDL in this file.

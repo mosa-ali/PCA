@@ -152,14 +152,27 @@ test('MySQL: audit metadata/free-text never contains the raw password, raw TOTP 
   }
 });
 
-test('MySQL: platform_admin_audit_events is append-only -- UPDATE and DELETE are both rejected by the DB triggers', async () => {
-  const { accountService } = buildServices();
-  const account = await accountService.createAccount('Append Only Check', hashAdminEmail(uniqueEmail('appendonly')), 'password-value', 'SUPPORT_ADMIN', 'BOOTSTRAP');
-  const [rows] = await getPool().query(`SELECT event_id FROM platform_admin_audit_events WHERE target_ref = ? LIMIT 1`, [`admin:${account.adminId}`]);
-  assert.ok(rows.length > 0);
-  const eventId = rows[0].event_id;
-  await assert.rejects(() => getPool().query(`UPDATE platform_admin_audit_events SET result = 'FAILURE' WHERE event_id = ?`, [eventId]));
-  await assert.rejects(() => getPool().query(`DELETE FROM platform_admin_audit_events WHERE event_id = ?`, [eventId]));
+// NOTE (Defect-1 correction): platform_admin_audit_events' append-only
+// guarantee is no longer enforced by DB triggers (a least-privilege MySQL 8
+// user under binary logging cannot CREATE TRIGGER without SUPER -- see
+// migration 0005's APPEND-ONLY ENFORCEMENT comment). It is now enforced by
+// the runtime principal's per-table grant shape (never granted
+// UPDATE/DELETE on this one table), which getPool() here -- an ordinary,
+// typically fully-privileged local/test connection, not the least-privilege
+// runtime principal -- cannot exercise. The real, DB-level privilege
+// boundary is proven against an actual least-privilege throwaway user in
+// backend/test/db/platformAdminAuditPrivileges.mysql.test.mjs instead.
+
+test('MySQL: platform_admin_audit_events append-only enforcement is grant-based, not trigger-based -- migration 0005 defines zero CREATE TRIGGER statements', async () => {
+  const migration = await (await import('node:fs/promises')).readFile(
+    new URL('../../migrations/0005_platform_admin_identity_rbac_audit.sql', import.meta.url),
+    'utf8',
+  );
+  // Strip `--` comments first: the APPEND-ONLY ENFORCEMENT comment
+  // legitimately discusses, in prose, why CREATE TRIGGER cannot be used --
+  // this assertion is about actual executable DDL, not comment text.
+  const executableSql = migration.replace(/--[^\n]*/g, '');
+  assert.equal(/CREATE TRIGGER/i.test(executableSql), false);
 });
 
 test('MySQL: audit read scoping -- queryForRole restricts a non-owner/auditor role to its own actions only', async () => {
@@ -189,7 +202,17 @@ test('MySQL CONCURRENCY: many simultaneous logout/revoke-all calls against the s
   const admin = await createLoginableAdmin(accountService);
   const tokens = [];
   for (let i = 0; i < 3; i++) {
-    const code = computeTotp(admin.secret, Date.now() + i);
+    // TOTP-REPLAY-1: each login must claim a DISTINCT, not-previously-
+    // accepted HOTP counter -- rather than the same code being presented
+    // (and correctly rejected as a replay) three times in a row. Using
+    // computeTotp's own stepOffset parameter (-1, 0, +1) against the REAL
+    // current time at each iteration keeps every code within verifyTotp's
+    // ±1-step accepted skew window (this service uses real wall-clock time
+    // here, not a fake clock -- pushing the timestamp itself forward by
+    // whole steps, as an earlier version of this fix did, would push later
+    // codes OUTSIDE that window relative to the server's own real "now" at
+    // verification time and fail for the wrong reason).
+    const code = computeTotp(admin.secret, Date.now(), i - 1);
     tokens.push((await authService.login(admin.email, admin.password, code)).rawToken);
   }
 

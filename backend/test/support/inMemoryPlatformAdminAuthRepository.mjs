@@ -220,6 +220,18 @@ export function createInMemoryPlatformAdminAuthRepository() {
       return true;
     },
 
+    // TOTP-REPLAY-1: mirrors MySqlPlatformAdminAuthRepository.claimTotpCounter's
+    // guarded-UPDATE semantics -- exactly one caller "wins" a given
+    // (adminId, counter) claim; a stale/replayed/older-or-equal counter, or
+    // an admin with no MFA state row at all, returns false.
+    async claimTotpCounter(adminId, counter) {
+      const state = mfaStateByAdminId.get(adminId);
+      if (!state) return false;
+      if (state.lastAcceptedTotpCounter != null && state.lastAcceptedTotpCounter >= counter) return false;
+      state.lastAcceptedTotpCounter = counter;
+      return true;
+    },
+
     // Test-only helper: lets a test directly manufacture a session (bypassing login) to exercise validateSession/step-up in isolation.
     _createSessionForTest(record) {
       sessionsByTokenHash.set(record.tokenHash, { ...record });
