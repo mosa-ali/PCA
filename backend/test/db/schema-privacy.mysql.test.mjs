@@ -26,9 +26,13 @@ const PROHIBITED_TERMS = [
 // denormalized copies of the same device_public_keys.key_id/public_key
 // values already approved here -- opaque references to PUBLIC key rows,
 // never private key material.
+// idempotency_key (entitlement_activation_idempotency, PCA-PA-2 /
+// PCA-ADD-BILL-046) is a durable dedup key DERIVED FROM a payment/provider
+// event id -- an opaque request-shaping string, never a cryptographic
+// private key or secret.
 const ALLOWED_KEY_COLUMNS = new Set([
   'public_key', 'key_id', 'signing_key_id', 'encryption_key_id', 'key_purpose', 'sender_key_id',
-  'signing_public_key', 'encryption_public_key',
+  'signing_public_key', 'encryption_public_key', 'idempotency_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
@@ -40,18 +44,28 @@ test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-
   ]);
   assert.ok(columns.length > 0, 'sanity check: schema must have columns to inspect');
 
+  // PCA-PA-2: "title" is dropped from the substring scan below and
+  // re-checked separately with the "entitlement" false-positive stripped
+  // out first -- the same precedent test/schema-privacy.test.mjs already
+  // established for migration 0005 ("en-TITLE-ment" is a substring
+  // collision with the addendum-mandated word "entitlement", never an
+  // actual page/video title column).
+  const scannedTerms = PROHIBITED_TERMS.filter((term) => term !== 'title');
+
   const violations = [];
   for (const { table_name: table } of tables) {
     const lower = table.toLowerCase();
-    for (const term of PROHIBITED_TERMS) {
+    for (const term of scannedTerms) {
       if (lower.includes(term)) violations.push(`table ${table} matches prohibited term "${term}"`);
     }
+    if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`table ${table} matches prohibited term "title" outside the "entitlement" false-positive`);
   }
   for (const { table_name: table, column_name: column } of columns) {
     const lower = column.toLowerCase();
-    for (const term of PROHIBITED_TERMS) {
+    for (const term of scannedTerms) {
       if (lower.includes(term)) violations.push(`${table}.${column} matches prohibited term "${term}"`);
     }
+    if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`${table}.${column} matches prohibited term "title" outside the "entitlement" false-positive`);
   }
   assert.deepEqual(violations, [], violations.join('; '));
 });

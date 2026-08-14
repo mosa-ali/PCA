@@ -10,6 +10,7 @@ import type {
   RequestedProtectionMode,
 } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
+import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 
 export type InvitationErrorCode =
   | 'INVALID_TOKEN'
@@ -57,6 +58,7 @@ export class InvitationService {
   private readonly repository: InvitationRepository;
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
+  private readonly slotReservationService: SlotReservationService | null;
 
   /**
    * `auditService` defaults to a private, per-instance in-memory reference
@@ -65,30 +67,53 @@ export class InvitationService {
    * event source land in one place. See FamilyAuditStore.ts's own doc
    * comment: this is never a PCA server audit log or a durable store, only
    * the in-memory reference implementation the audit domain itself ships.
+   *
+   * `slotReservationService` (PCA-PA-2, optional -- defaults to null so
+   * every existing caller/test that constructs InvitationService without
+   * it keeps working unchanged) implements PCA-ADD-PA-022: when supplied,
+   * a managed-device slot is reserved BEFORE the invitation record is
+   * persisted, and createInvitation throws (creating no invitation at all)
+   * if no slot is available -- never the reverse order. See
+   * SlotReservationService/managed_device_slot_reservations.
    */
   constructor(
     repository: InvitationRepository,
     now: () => Date = () => new Date(),
     auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+    slotReservationService: SlotReservationService | null = null,
   ) {
     this.repository = repository;
     this.now = now;
     this.auditService = auditService;
+    this.slotReservationService = slotReservationService;
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
     const ttlMs = resolveInvitationTtlMs(input.ttlMs);
     const { rawToken, tokenHash } = generateInvitationToken();
     const createdAt = this.now();
+    const invitationId = randomUUID();
+    const expiresAt = computeExpiryInstant(createdAt, ttlMs);
+
+    // PCA-ADD-PA-022/038: reservation happens first, and must succeed,
+    // before any usable invitation token is ever persisted. A device
+    // platform is always a managed-device enrollment invitation in this
+    // codebase (Platform is ANDROID/IOS -- see types.ts); parent-member
+    // invitations are a separate, not-yet-implemented family-RBAC flow
+    // this service does not own.
+    if (this.slotReservationService) {
+      await this.slotReservationService.reserveForInvitation(input.familyId, invitationId, expiresAt);
+    }
+
     const record: InvitationRecord = {
-      invitationId: randomUUID(),
+      invitationId,
       familyId: input.familyId,
       tokenHash,
       platform: input.platform,
       requestedProtectionMode: input.requestedProtectionMode,
       status: 'CREATED',
       createdAt,
-      expiresAt: computeExpiryInstant(createdAt, ttlMs),
+      expiresAt,
       openedAt: null,
       redeemedAt: null,
       revokedAt: null,
@@ -144,7 +169,9 @@ export class InvitationService {
   }
 
   async revokeInvitation(invitationId: InvitationId): Promise<InvitationRecord> {
-    return this.repository.revoke(invitationId, this.now());
+    const record = await this.repository.revoke(invitationId, this.now());
+    if (this.slotReservationService) await this.slotReservationService.releaseForInvitation(invitationId, 'REVOKED');
+    return record;
   }
 
   /** Family-scoped read: wrong family is indistinguishable from nonexistent (IDOR defense, matching the device/pairing domains' pattern). */
@@ -163,6 +190,7 @@ export class InvitationService {
   async revokeInvitationForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord> {
     const record = await this.repository.revokeForFamily(familyId, invitationId, this.now());
     if (!record) throw new InvitationError('NOT_FOUND');
+    if (this.slotReservationService) await this.slotReservationService.releaseForInvitation(invitationId, 'REVOKED');
     await this.auditService.record({
       familyId,
       actionType: 'ROLE_REVOKE',
