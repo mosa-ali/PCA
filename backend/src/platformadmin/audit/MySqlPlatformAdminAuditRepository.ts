@@ -14,7 +14,11 @@ interface AuditEventRow extends RowDataPacket {
   result: string;
   occurred_at: Date;
   correlation_id: string;
-  metadata_json: string | null;
+  // mysql2 auto-parses a JSON-typed column into a JS value (object/array/etc)
+  // rather than returning it as a raw string -- this field's runtime type is
+  // therefore `unknown` (whatever the stored JSON decodes to), never
+  // reliably `string`. See toDomain's handling below.
+  metadata_json: unknown;
 }
 
 function toDomain(row: AuditEventRow): PlatformAdminAuditEvent {
@@ -27,7 +31,12 @@ function toDomain(row: AuditEventRow): PlatformAdminAuditEvent {
     result: row.result as PlatformAdminAuditEvent['result'],
     occurredAt: row.occurred_at,
     correlationId: row.correlation_id,
-    metadata: row.metadata_json === null ? null : (JSON.parse(row.metadata_json) as Record<string, unknown>),
+    metadata:
+      row.metadata_json === null || row.metadata_json === undefined
+        ? null
+        : typeof row.metadata_json === 'string'
+          ? (JSON.parse(row.metadata_json) as Record<string, unknown>)
+          : (row.metadata_json as Record<string, unknown>),
   };
 }
 
