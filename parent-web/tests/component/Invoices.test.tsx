@@ -28,7 +28,7 @@ describe('Invoices and receipts', () => {
   it('lists a paid device-increase invoice with its exact total, and its detail view shows the line item', async () => {
     const clients = getApiClients();
     const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await clients.billing.beginCheckout(quoted.requestId);
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
     await simulateServerPaymentConfirmation(quoted.requestId);
 
     renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });

@@ -79,16 +79,31 @@ describe('getApiClients demo-mode discipline', () => {
     expect(result.allowed).toBe(false);
   });
 
-  it('demoMode false: billing is UnavailableBillingClient -- no entitlement/billing HTTP route exists in this repository (PCA-MYKIDS-BILL-1 BACKEND_GAP_REQUIRED)', async () => {
+  it('demoMode false: billing is the real, HTTP-backed RealBillingClient (PCA-MYKIDS-BILL-3) -- never UnavailableBillingClient', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
-    const { UnavailableBillingClient } = await import('../../src/api/real/unavailableProviders');
+    const { RealBillingClient } = await import('../../src/api/real/realBillingClient');
     const clients = getApiClients();
-    expect(clients.billing).toBeInstanceOf(UnavailableBillingClient);
+    expect(clients.billing).toBeInstanceOf(RealBillingClient);
+    // No browser-reachable bearer-token issuance flow exists yet (see
+    // realBillingClient.ts's header) -- isPaymentProviderAvailable must
+    // honestly report false, and any call must fail with the distinct
+    // SERVICE_SESSION_UNAVAILABLE code, never fixture-shaped data.
     expect(clients.billing.isPaymentProviderAvailable()).toBe(false);
-    await expect(clients.billing.getEntitlement()).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+    await expect(clients.billing.getEntitlement()).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
+  });
+
+  it('demoMode false: commercialNotifications is the real, HTTP-backed RealCommercialNotificationClient', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
+    }));
+    const { getApiClients } = await import('../../src/api/client');
+    const { RealCommercialNotificationClient } = await import('../../src/api/real/realCommercialNotificationClient');
+    const clients = getApiClients();
+    expect(clients.commercialNotifications).toBeInstanceOf(RealCommercialNotificationClient);
+    await expect(clients.commercialNotifications.list()).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
   });
 
   it('demoMode true: billing is the fixture-backed DevBillingClient', async () => {
