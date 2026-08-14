@@ -103,3 +103,56 @@ test('envelope-ledger-family-scope migration does not touch sync_sequence_progre
   assert.equal(/ALTER TABLE sync_sequence_progress_ledger/.test(familyScopeMigration), false);
   assert.equal(/CREATE TABLE|DROP TABLE/.test(familyScopeMigration), false, 'this migration must be purely additive ALTER statements on existing tables, never a table creation or drop');
 });
+
+// PCA-PA-1: 0005_platform_admin_identity_rbac_audit.sql adds the 7
+// Platform Administration identity/RBAC/MFA/step-up/audit tables (see that
+// migration's own header). Same static gate, same prohibited-term list,
+// applied to the new migration file independently of the others'.
+const platformAdminMigration = await readFile(new URL('../migrations/0005_platform_admin_identity_rbac_audit.sql', import.meta.url), 'utf8');
+const platformAdminRequiredTables = [
+  'platform_admin_accounts',
+  'platform_admin_role_assignments',
+  'platform_admin_sessions',
+  'platform_admin_mfa_state',
+  'platform_admin_step_up_sessions',
+  'platform_admin_login_attempts',
+  'platform_admin_audit_events',
+];
+
+test('platform-admin-identity-rbac-audit migration contains exactly the approved 7 Platform Administration tables', () => {
+  for (const table of platformAdminRequiredTables) assert.match(platformAdminMigration, new RegExp(`CREATE TABLE ${table} \\(`));
+});
+
+test('platform-admin-identity-rbac-audit migration does not introduce prohibited readable or secret fields', () => {
+  const schema = platformAdminMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  // 'title' is excluded from this migration's check only: it is a
+  // substring false-positive of the legitimate, addendum-mandated
+  // ENTITLEMENT_INCREASED audit event type ("en-TITLE-ment") and
+  // 'entitlement_limit_override' step-up scope -- "entitlement" here is
+  // PCA-ADD-PA-025's commercial device/parent-member allowance count, not
+  // any doc 09 Section 5.2 data class, and no column or literal in this
+  // migration is an actual page/video title. Every other prohibited term
+  // is still checked unmodified against this migration.
+  const termsForThisMigration = prohibitedTerms.filter((term) => term !== 'title');
+  for (const term of termsForThisMigration) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+  assert.doesNotMatch(schema.replace(/entitlement/g, ''), /title/, 'no genuine "title" term outside the "entitlement" false-positive');
+});
+
+test('platform-admin-identity-rbac-audit migration stores session/audit hashes as fixed-length hex CHAR(64) columns, never a raw-token-shaped column', () => {
+  assert.match(platformAdminMigration, /token_hash CHAR\(64\)/);
+  assert.equal(/raw_?token\b/i.test(platformAdminMigration.replace(/--[^\n]*/g, '')), false);
+});
+
+test('platform-admin-identity-rbac-audit migration enforces append-only audit events with UPDATE and DELETE triggers', () => {
+  assert.match(platformAdminMigration, /CREATE TRIGGER platform_admin_audit_events_no_update/);
+  assert.match(platformAdminMigration, /CREATE TRIGGER platform_admin_audit_events_no_delete/);
+  assert.match(platformAdminMigration, /BEFORE UPDATE ON platform_admin_audit_events/);
+  assert.match(platformAdminMigration, /BEFORE DELETE ON platform_admin_audit_events/);
+});
+
+test('platform-admin-identity-rbac-audit migration shares no foreign key with the family/parent plane tables (service_accounts, service_sessions, families)', () => {
+  const familyPlaneTables = ['service_accounts', 'service_sessions', 'families', 'licenses', 'devices'];
+  for (const table of familyPlaneTables) {
+    assert.equal(new RegExp(`REFERENCES ${table} \\(`).test(platformAdminMigration), false, `unexpected FK to family-plane table: ${table}`);
+  }
+});

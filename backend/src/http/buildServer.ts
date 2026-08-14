@@ -18,6 +18,13 @@ import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
 import type { DeleteNowLedger } from '../retention/DeleteNowLedger.js';
 import type { FamilyAuditService } from '../familyrbac/FamilyAuditStore.js';
+// PCA-PA-1: PCA Platform Administration -- a structurally independent
+// third plane (see backend/src/platformadmin/'s own module comments and
+// migrations/0005_platform_admin_identity_rbac_audit.sql). Registered here
+// only as a route-registration call, exactly like every other domain's
+// registerXRoutes below -- no other part of this file is touched.
+import { registerPlatformAdminAuthRoutes } from './routes/platformAdminAuthRoutes.js';
+import type { PlatformAdminAuthService } from '../platformadmin/auth/PlatformAdminAuthService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -33,6 +40,8 @@ export interface ServerDependencies {
   resolveEnvelopeContext: ResolveEnvelopeContext;
   deleteNowLedger: DeleteNowLedger;
   familyAuditService: FamilyAuditService;
+  /** PCA-PA-1: independent Platform Administration auth plane -- see registerPlatformAdminAuthRoutes below. */
+  platformAdminAuthService: PlatformAdminAuthService;
 }
 
 /**
@@ -120,6 +129,10 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     auditService: deps.familyAuditService,
     rateLimiter,
     authAttemptLimiter,
+  });
+  registerPlatformAdminAuthRoutes(app, {
+    authService: deps.platformAdminAuthService,
+    rateLimiter,
   });
 
   return app;

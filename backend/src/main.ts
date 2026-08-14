@@ -31,6 +31,9 @@ import {
 } from './runtime-sync/index.js';
 import { InMemoryDeleteNowLedger } from './retention/InMemoryDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
+import { PlatformAdminAuthService } from './platformadmin/auth/PlatformAdminAuthService.js';
+import { MySqlPlatformAdminAuthRepository } from './platformadmin/auth/MySqlAuthRepository.js';
+import { LoggingAlertAdapter } from './platformadmin/auth/alertPort.js';
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -133,6 +136,9 @@ async function start(): Promise<void> {
       familyId,
       now: nowUtc,
     }),
+    // PCA-PA-1: independent Platform Administration auth plane -- no
+    // shared repository, session type, or RBAC with anything above.
+    platformAdminAuthService: new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new LoggingAlertAdapter()),
   });
   await app.listen({ host, port });
 }
