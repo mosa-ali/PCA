@@ -466,6 +466,7 @@
       "title": "Payment status",
       "missingRequest": "No request was specified for this payment return.",
       "confirming": "We're confirming your payment. Please don't close this page -- we'll update your allowance automatically once payment is confirmed by the server.",
+      "providerStatus": "Payment provider status: {{status}} ({{amount}}) -- for reference only, not a confirmation.",
       "confirmed": "Payment confirmed. Your allowance has been updated.",
       "failed": "This request was denied. No payment was completed.",
       "refreshStatus": "Refresh status"
@@ -474,7 +475,20 @@
   "notifications": {
     "emailAlerts": "Email me for important alerts",
     "pushRequests": "Push notifications for requests",
-    "payloadNote": "Notification payloads never contain family activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6)."
+    "payloadNote": "Notification payloads never contain family activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6).",
+    "commercialTitle": "Billing notifications",
+    "commercialEmpty": "You have no billing notifications yet.",
+    "unreadCount": "{{count}} unread",
+    "markRead": "Mark read",
+    "acknowledge": "Acknowledge",
+    "eventType": {
+      "QUOTE_READY": "A quote is ready",
+      "PAYMENT_CONFIRMED": "Payment confirmed",
+      "ENTITLEMENT_INCREASED": "Allowance increased",
+      "PAYMENT_FAILED": "Payment failed",
+      "REQUEST_DENIED": "Request denied",
+      "QUOTE_EXPIRED": "Quote expired"
+    }
   },
   "devicesTable": {
     "device": "Device",

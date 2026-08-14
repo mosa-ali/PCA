@@ -466,6 +466,7 @@
       "title": "حالة الدفع",
       "missingRequest": "لم يتم تحديد طلب لعملية الإرجاع هذه.",
       "confirming": "نقوم بتأكيد دفعتك. يرجى عدم إغلاق هذه الصفحة -- سنقوم بتحديث حصتك تلقائيًا فور تأكيد الدفع من الخادم.",
+      "providerStatus": "حالة مزود الدفع: {{status}} ({{amount}}) -- للعلم فقط، وليست تأكيداً.",
       "confirmed": "تم تأكيد الدفع. تم تحديث حصتك.",
       "failed": "تم رفض هذا الطلب. لم تكتمل أي عملية دفع.",
       "refreshStatus": "تحديث الحالة"
@@ -474,7 +475,20 @@
   "notifications": {
     "emailAlerts": "أرسل لي بريداً إلكترونياً للتنبيهات الهامة",
     "pushRequests": "إشعارات فورية للطلبات",
-    "payloadNote": "لا تحتوي حمولات الإشعارات أبداً على تفاصيل نشاط العائلة -- فقط إشارة إيقاظ عامة (docs/architecture/09_SECURITY_PRIVACY_E2EE.md القسم 6)."
+    "payloadNote": "لا تحتوي حمولات الإشعارات أبداً على تفاصيل نشاط العائلة -- فقط إشارة إيقاظ عامة (docs/architecture/09_SECURITY_PRIVACY_E2EE.md القسم 6).",
+    "commercialTitle": "إشعارات الفوترة",
+    "commercialEmpty": "ليس لديك أي إشعارات فوترة حتى الآن.",
+    "unreadCount": "{{count}} غير مقروءة",
+    "markRead": "وضع علامة كمقروء",
+    "acknowledge": "الإقرار",
+    "eventType": {
+      "QUOTE_READY": "عرض السعر جاهز",
+      "PAYMENT_CONFIRMED": "تم تأكيد الدفع",
+      "ENTITLEMENT_INCREASED": "تمت زيادة الحصة",
+      "PAYMENT_FAILED": "فشل الدفع",
+      "REQUEST_DENIED": "تم رفض الطلب",
+      "QUOTE_EXPIRED": "انتهت صلاحية عرض السعر"
+    }
   },
   "devicesTable": {
     "device": "الجهاز",

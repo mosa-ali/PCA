@@ -32,6 +32,9 @@ import type {
 } from '../domain/wellbeing';
 import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../domain/webRulePolicy';
 import type {
+  CheckoutSession,
+  CheckoutStatus,
+  CommercialNotification,
   EntitlementChangeRequest,
   EntitlementSnapshot,
   Invoice,
@@ -141,14 +144,36 @@ export interface BillingClient {
   requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest>;
   /** Parent-initiated withdrawal -- valid only from PENDING/QUOTED (PCA-ADD-PA-030). */
   cancelRequest(requestId: string): Promise<EntitlementChangeRequest>;
-  /** QUOTED -> PAYMENT_PENDING handoff to the payment provider. Never itself returns an APPROVED state. */
-  beginCheckout(requestId: string): Promise<EntitlementChangeRequest>;
+  /**
+   * QUOTED -> PAYMENT_PENDING handoff to the payment provider
+   * (`POST .../billing/checkout`). `returnUrl` is where the provider should
+   * send the browser back to; the resolved `redirectUrl` in the response is
+   * where the caller must actually navigate next (see
+   * `domain/billing.ts`'s `isSameOriginRedirect`) -- this method never
+   * itself performs that navigation, never returns an APPROVED state, and
+   * never itself confirms payment.
+   */
+  beginCheckout(requestId: string, returnUrl: string): Promise<CheckoutSession>;
   /** Re-reads a single request's current authoritative state -- used to poll a PAYMENT_PENDING request after a checkout redirect, never trusting the redirect itself. */
   getRequest(requestId: string): Promise<EntitlementChangeRequest | null>;
+  /** Polling-only checkout-attempt status (`GET .../billing/checkout/:paymentAttemptId`) -- supplementary to `getRequest`, never authoritative confirmation on its own (PCA-ADD-BILL-035). */
+  getCheckoutStatus(paymentAttemptId: string): Promise<CheckoutStatus | null>;
 
   /** Provider-hosted/tokenized payment-method entry point (PCA-ADD-BILL-024) -- MyKids itself never collects raw card fields. */
   beginAddPaymentMethod(): Promise<PaymentMethodSummary>;
   cancelAutoRenew(): Promise<{ auditEventId: string }>;
+}
+
+/**
+ * PCA-MYKIDS-BILL-3: family-facing commercial notification read/acknowledge
+ * surface (contract section "Commercial notifications"). List has NO
+ * cursor/offset pagination -- `limit` only, clamped server-side to 200.
+ */
+export interface CommercialNotificationClient {
+  list(limit?: number): Promise<CommercialNotification[]>;
+  unreadCount(): Promise<number>;
+  markRead(notificationId: string): Promise<void>;
+  acknowledge(notificationId: string): Promise<void>;
 }
 
 export interface WellbeingMessageAdminClient {
