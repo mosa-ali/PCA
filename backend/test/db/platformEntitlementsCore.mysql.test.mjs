@@ -193,6 +193,7 @@ test('request lifecycle: FINANCE_ADMIN issues a custom quote -> PENDING moves to
   assert.equal(quoted.quote.quoteKind, 'CUSTOM');
   assert.equal(quoted.quote.amountMinor, 12345n);
   assert.equal(quoted.quote.currencyCode, 'USD');
+  assert.equal(quoted.quote.priceBookVersion, null, 'a custom quote never carries a PriceBook version');
 
   // Snapshot immutability (PCA-ADD-BILL-043): issuing a second quote must fail (not PENDING anymore).
   await assert.rejects(
@@ -200,6 +201,77 @@ test('request lifecycle: FINANCE_ADMIN issues a custom quote -> PENDING moves to
   );
   const reread = await changeRequestRepository.getById(request.requestId);
   assert.equal(reread.quote.amountMinor, 12345n, 'the original quote snapshot must never be silently replaced');
+});
+
+// PCA-PA-2-R1: priceBookVersion is number|null, matching Agent44's
+// canonical billing_price_books.price_book_version (INT UNSIGNED) /
+// BillingEntitlementSignal.priceBookVersion representation.
+class StubStandardQuotePort {
+  async resolveStandardQuote({ targetDeviceLimit }) {
+    return {
+      kind: 'STANDARD',
+      quoteId: `pricebook-quote:${randomUUID()}`,
+      targetDeviceLimit,
+      amountMinor: 9900n,
+      currencyCode: 'USD',
+      priceBookVersion: 7,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+  }
+}
+const standardQuoteChangeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new StubStandardQuotePort());
+
+test('quote snapshot: a standard (PriceBook-resolved) quote persists priceBookVersion as an exact integer and reloads unchanged', async () => {
+  const familyId = uniqueFamilyId('standard-quote-version');
+  await entitlementService.getOrCreateForFamily(familyId, new Date());
+  const request = await standardQuoteChangeRequestService.createRequest(familyId, 'MANAGED_DEVICE_LIMIT', 3, 'GLOBAL', 'USD');
+  assert.equal(request.state, 'QUOTED');
+  assert.equal(request.quote.quoteKind, 'STANDARD');
+  assert.equal(request.quote.priceBookVersion, 7);
+  assert.equal(typeof request.quote.priceBookVersion, 'number', 'never a formatted string');
+
+  const reread = await changeRequestRepository.getById(request.requestId);
+  assert.equal(reread.quote.priceBookVersion, 7, 'the integer version must round-trip through MySQL exactly');
+  assert.equal(typeof reread.quote.priceBookVersion, 'number');
+});
+
+test('quote snapshot: payment confirmation accepts an integer priceBookVersion end to end (standard quote -> PAYMENT_PENDING -> ACTIVATED)', async () => {
+  const familyId = uniqueFamilyId('standard-quote-payment');
+  await entitlementService.getOrCreateForFamily(familyId, new Date());
+  const request = await standardQuoteChangeRequestService.createRequest(familyId, 'MANAGED_DEVICE_LIMIT', 3, 'GLOBAL', 'USD');
+  const pending = await standardQuoteChangeRequestService.moveToPaymentPending(request.requestId);
+  assert.equal(pending.state, 'PAYMENT_PENDING');
+
+  const result = await paymentConfirmationService.confirmPayment({
+    requestId: pending.requestId,
+    idempotencyKey: `provider:test:event:${randomUUID()}`,
+    targetDeviceLimit: pending.targetLimit,
+    amountMinor: pending.quote.amountMinor,
+    currencyCode: 'USD',
+    quoteRef: pending.quote.quoteRef,
+    priceBookVersion: pending.quote.priceBookVersion,
+    paymentTransactionId: randomUUID(),
+  });
+  assert.equal(result.outcome, 'ACTIVATED');
+});
+
+test('quote snapshot: PaymentConfirmationService rejects a malformed priceBookVersion at typed service authority (never silently coerced)', async () => {
+  const familyId = uniqueFamilyId('malformed-price-book-version');
+  const request = await createQuotedDeviceRequest(familyId);
+  await assert.rejects(
+    () =>
+      paymentConfirmationService.confirmPayment({
+        requestId: request.requestId,
+        idempotencyKey: `provider:test:event:${randomUUID()}`,
+        targetDeviceLimit: request.targetLimit,
+        amountMinor: request.quote.amountMinor,
+        currencyCode: 'USD',
+        quoteRef: request.quote.quoteRef,
+        priceBookVersion: 1.5,
+        paymentTransactionId: randomUUID(),
+      }),
+    TypeError,
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,8 @@ export interface StandardQuoteResolution {
   targetDeviceLimit: number;
   amountMinor: bigint;
   currencyCode: string;
-  priceBookVersion: string;
+  /** PCA-PA-2-R1: matches Agent44's canonical billing_price_books.price_book_version (INT UNSIGNED), never a formatted string. */
+  priceBookVersion: number;
   expiresAt: Date;
 }
 

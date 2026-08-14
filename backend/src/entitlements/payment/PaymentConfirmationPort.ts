@@ -19,7 +19,8 @@ export interface PaymentConfirmationInput {
   amountMinor: bigint;
   currencyCode: string;
   quoteRef: string | null;
-  priceBookVersion: string | null;
+  /** PCA-PA-2-R1: matches Agent44's canonical BillingEntitlementSignal.priceBookVersion (number | null), never a formatted string. */
+  priceBookVersion: number | null;
   /** Opaque reference to the settled payment; audit-only, never a raw provider secret. */
   paymentTransactionId: string;
 }

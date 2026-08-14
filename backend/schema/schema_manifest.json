@@ -890,7 +890,7 @@
         },
         {
           "name": "quote_price_book_version",
-          "type": "varchar(64)",
+          "type": "int unsigned",
           "nullable": true,
           "default": null,
           "key": "",

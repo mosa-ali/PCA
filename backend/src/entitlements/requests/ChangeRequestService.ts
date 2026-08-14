@@ -5,6 +5,7 @@ import { EntitlementService } from '../EntitlementService.js';
 import type { EntitlementRepository } from '../EntitlementRepository.js';
 import type { ChangeRequestRepository } from './ChangeRequestRepository.js';
 import type { QuotePort, ResolveStandardQuoteInput } from '../quote/QuotePort.js';
+import { assertValidPriceBookVersion } from '../types.js';
 import type { EntitlementChangeRequestRecord, EntitlementChangeRequestState, LimitType, OpaqueFamilyId, QuoteSnapshot } from '../types.js';
 
 export type ChangeRequestErrorCode =
@@ -88,6 +89,7 @@ export class ChangeRequestService {
       const marked = await runInTransaction((conn) => this.changeRequestRepository.markAwaitingAdminQuote(conn, requestId, this.now()));
       return marked ?? created;
     }
+    assertValidPriceBookVersion(resolution.priceBookVersion);
     const quote: QuoteSnapshot = {
       quoteKind: 'STANDARD',
       quoteRef: resolution.quoteId,

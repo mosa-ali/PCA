@@ -17,7 +17,8 @@ interface RequestRow {
   quote_ref: string | null;
   quote_amount_minor: string | null;
   quote_currency_code: string | null;
-  quote_price_book_version: string | null;
+  /** INT UNSIGNED -- mysql2 returns this as a plain JS number (PCA-PA-2-R1, matches Agent44's billing_price_books.price_book_version representation). */
+  quote_price_book_version: number | null;
   quoted_at: Date | null;
   quote_expires_at: Date | null;
   decided_by_admin_id: string | null;

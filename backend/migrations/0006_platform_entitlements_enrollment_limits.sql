@@ -126,6 +126,16 @@ CREATE TABLE account_entitlements (
 -- in-flight request's already-quoted price because there is no live
 -- reference to mutate.
 --
+-- PCA-PA-2-R1: quote_price_book_version is INT UNSIGNED (not VARCHAR) to
+-- match Agent44's canonical Billing Core representation
+-- (billing_price_books.price_book_version / BillingEntitlementSignal.
+-- priceBookVersion, migration 0007_billing_core.sql /
+-- backend/src/billing/entitlementContract.ts -- inspected read-only at
+-- f2d0f92c38760598355a4f72133fd62bd1e80b8f). This remains a plain snapshot
+-- column, never a foreign key into billing_price_books: migration 0006
+-- must keep applying independently of migration 0007 (PCA-PA-2 owns no
+-- Billing Core table and never looks one up during migration).
+--
 -- entitlement_change_requests_billable_check enforces PCA-ADD-PA-054: a
 -- PARENT_MEMBER_LIMIT request can never carry a quote -- the two limit
 -- types are never priced by a shared code path that assumes both are
@@ -143,7 +153,7 @@ CREATE TABLE entitlement_change_requests (
   quote_ref VARCHAR(64) NULL,
   quote_amount_minor BIGINT NULL,
   quote_currency_code CHAR(3) NULL,
-  quote_price_book_version VARCHAR(64) NULL,
+  quote_price_book_version INT UNSIGNED NULL,
   quoted_at DATETIME(3) NULL,
   quote_expires_at DATETIME(3) NULL,
   decided_by_admin_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
@@ -163,6 +173,7 @@ CREATE TABLE entitlement_change_requests (
   CONSTRAINT entitlement_change_requests_decision_reason_check CHECK (decision_reason IS NULL OR CHAR_LENGTH(decision_reason) BETWEEN 1 AND 255),
   CONSTRAINT entitlement_change_requests_currency_code_check CHECK (quote_currency_code IS NULL OR quote_currency_code REGEXP '^[A-Z]{3}$'),
   CONSTRAINT entitlement_change_requests_quote_amount_check CHECK (quote_amount_minor IS NULL OR quote_amount_minor >= 0),
+  CONSTRAINT entitlement_change_requests_price_book_version_check CHECK (quote_price_book_version IS NULL OR quote_price_book_version > 0),
   CONSTRAINT entitlement_change_requests_billable_check CHECK (NOT (limit_type = 'PARENT_MEMBER_LIMIT' AND quote_kind IS NOT NULL))
 ) ENGINE=InnoDB;
 

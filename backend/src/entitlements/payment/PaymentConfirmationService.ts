@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execute, isDuplicateEntry, runInTransaction, SoftFailure } from '../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../../platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
+import { assertValidPriceBookVersion } from '../types.js';
 import type { ChangeRequestRepository } from '../requests/ChangeRequestRepository.js';
 import type { EntitlementRepository } from '../EntitlementRepository.js';
 import type { PaymentConfirmationInput, PaymentConfirmationOutcome, PaymentConfirmationPort, PaymentConfirmationResult } from './PaymentConfirmationPort.js';
@@ -34,6 +35,7 @@ export class PaymentConfirmationService implements PaymentConfirmationPort {
   }
 
   async confirmPayment(input: PaymentConfirmationInput): Promise<PaymentConfirmationResult> {
+    assertValidPriceBookVersion(input.priceBookVersion);
     const now = this.now();
     try {
       return await runInTransaction(async (conn) => {
