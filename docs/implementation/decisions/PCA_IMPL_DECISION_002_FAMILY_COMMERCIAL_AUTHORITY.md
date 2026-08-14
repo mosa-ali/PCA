@@ -2,11 +2,12 @@
 
 | Field | Decision |
 |---|---|
-| Status | **OWNER_DECISION_REQUIRED** — not yet accepted; no implementation exists beyond the fail-closed placeholder already in `main.ts` |
-| Date | 2026-08-14 |
-| Originating lane | PCA-FAMILY-AUTH-1 (worktree `claude-53-family-authority`, base `e989c67b`) |
+| Status | `OWNER_APPROVED_OPTION_A` — `IMPLEMENTED_SOURCE_READY_FOR_COORDINATOR_REVIEW` (source-complete, tested; NOT yet wired as the production default — see PCA-FAMILY-AUTH-1-R1's `SHARED_INTEGRATION_REQUIRED`) |
+| Date | 2026-08-14 (proposed), owner-approved and implemented same day (R1) |
+| Originating lane | PCA-FAMILY-AUTH-1 / PCA-FAMILY-AUTH-1-R1 (worktree `claude-53-family-authority`, base `e989c67b`) |
 | Scope | Whether/how PCA's backend may ever independently verify "this authenticated family session currently holds FAMILY_OWNER authority" for an HTTP-only commercial mutation (e.g. checkout), without a new server role ACL, an unsigned client claim, or family private key custody |
 | Prior art | `backend/src/billing/authority/FamilyCommercialAuthorityResolver.ts` (PCA-BILL-2A-R1) already named this exact gap and shipped `UnavailableFamilyCommercialAuthorityResolver` as the fail-closed production default; `backend/src/childprofiles/ChildProfileMembershipResolver.ts` independently hit the identical shape for `CHILD_PROFILE` membership |
+| R1 implementation | `backend/src/familycommercial/authority/**` (genesis anchor + attestation-chain engine/stores), `backend/src/billing/authority/FamilyCommercialAuthorityResolver.ts` (`AttestationChainFamilyCommercialAuthorityResolver` production candidate), `backend/migrations/0011_family_commercial_authority.sql`. Full test matrix (bootstrap/tamper/transfer/stale/revoked/cross-family/cross-member, plus real-MySQL genesis-race and chain-head-race concurrency) passes across two independent clean rooms. See PCA-FAMILY-AUTH-1-R1's final report for the complete gate results. |
 
 ## Why this is a decision, not a task
 
@@ -83,4 +84,12 @@ Treat "who may authorize spend" as a distinct, already-server-resolvable concept
 
 Option A if the product requires a genuine cryptographic Family-Owner guarantee for commercial actions (most consistent with doc 09's stated trust model, at the cost of new client-side crypto work across Android/iOS). Option B as a faster interim if an interactive step-up UX for Owner-gated commercial actions is acceptable. Option C only as an explicit, owner-approved product scoping decision — never as a silent substitute for A/B, since it changes what "Family Owner authorizes this" actually means.
 
-No option is implemented by this lane. `UnavailableFamilyCommercialAuthorityResolver` remains the production default until an owner decision is recorded here and in `31_RISK_DECISION_REGISTER.md` (`PCA-DEC-025`).
+**Owner ruling (PCA-FAMILY-AUTH-1-R1, 2026-08-14): Option A approved.** Option B and Option C are explicitly NOT selected.
+
+## R1 implementation summary
+
+Option A is now source-complete: a per-family genesis anchor (`FamilyAuthorityGenesisAnchor`, self-signed by the founding device's DSK at the server-authorized bootstrap ceremony) plus an append-only, signature-verified Owner-attestation chain (`FamilyOwnerAttestation`, each transfer signed by the OUTGOING Owner's DSK, never self-certified by the incoming Owner) — `backend/src/familycommercial/authority/`. The server durably stores only verification/lineage metadata (genesis public key, attestation chain rows, a current-head pointer) — never a role ACL, never private key material, never the rest of the family trust set (Administrator/Viewer/Child assignments stay device-side per doc 09 §5.2).
+
+`AttestationChainFamilyCommercialAuthorityResolver` (`backend/src/billing/authority/FamilyCommercialAuthorityResolver.ts`) is the production candidate, implementing the SAME resolver interface `billingCheckoutRoutes.ts` already depended on (now `async` — a compile-only signature extension, with the one required `await` + two new fail-closed status branches added to that route; see PCA-FAMILY-AUTH-1-R1's SHARED_INTEGRATION_REQUIRED for why this was unavoidable and exactly what changed). `resolveCurrentOwner` re-verifies the stored head's signature live on every call (defense-in-depth against a tampered row) and checks freshness/revocation against `expiresAt`/`status` — never trusting a persisted boolean alone.
+
+Full required test matrix passes (bootstrap/genesis, tamper matrix, Owner transfer, stale/revoked matrix, cross-family/cross-member denial, genesis-race and chain-head-race concurrency against two independent real-MySQL clean rooms, restart/multi-instance durability, schema-privacy). `UnavailableFamilyCommercialAuthorityResolver` remains the actual production default until a Coordinator performs the main.ts wiring change (not done by this lane — see SHARED_INTEGRATION_REQUIRED).

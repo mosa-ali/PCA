@@ -170,3 +170,40 @@ test('platform-admin-identity-rbac-audit migration shares no foreign key with th
     assert.equal(new RegExp(`REFERENCES ${table} \\(`).test(platformAdminMigration), false, `unexpected FK to family-plane table: ${table}`);
   }
 });
+
+// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, Option A): 0011_family_commercial_authority.sql
+// adds the genesis-anchored Owner-attestation chain tables (see that
+// migration's own header and backend/src/familycommercial/authority/).
+// Same static gate, same prohibited-term list, applied independently of
+// every earlier migration's.
+const familyAuthorityMigration = await readFile(new URL('../migrations/0011_family_commercial_authority.sql', import.meta.url), 'utf8');
+const familyAuthorityRequiredTables = [
+  'family_authority_genesis_anchors', 'family_authority_attestations', 'family_authority_chain_heads',
+];
+
+test('family-commercial-authority migration contains exactly the approved 3 genesis/attestation/head tables', () => {
+  for (const table of familyAuthorityRequiredTables) assert.match(familyAuthorityMigration, new RegExp(`CREATE TABLE ${table} \\(`));
+});
+
+test('family-commercial-authority migration does not introduce prohibited readable or secret fields', () => {
+  const schema = familyAuthorityMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+});
+
+test('family-commercial-authority migration stores no role column other than the resolved owner_device_id identity -- no family_roles-style role/currentRole column anywhere', () => {
+  const schema = familyAuthorityMigration.replace(/--[^\n]*/g, '');
+  assert.equal(/\brole\b/i.test(schema), false, 'no "role" column: this schema resolves a device identity, never a server-authored role assignment');
+});
+
+test('family-commercial-authority migration signing-key columns hold PUBLIC keys only -- column names never claim private-key material', () => {
+  const schema = familyAuthorityMigration.replace(/--[^\n]*/g, '');
+  assert.equal(/private/i.test(schema), false);
+  assert.match(schema, /genesis_dsk_public_key/);
+  assert.match(schema, /owner_dsk_public_key/);
+  assert.match(schema, /signer_dsk_public_key/);
+});
+
+test('family-commercial-authority migration has no foreign key to 0012_commercial_notifications.sql (lane independence)', () => {
+  const executableSql = familyAuthorityMigration.replace(/--[^\n]*/g, '');
+  assert.equal(/commercial_notification/i.test(executableSql), false);
+});

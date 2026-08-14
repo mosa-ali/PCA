@@ -110,16 +110,29 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       // orchestration runs -- an Administrator/Viewer-scoped (or
       // authority-unresolvable) caller never reaches CheckoutService at
       // all.
-      const authority = deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(familyId, actorDeviceId);
+      //
+      // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025/Option A) compile-only extension:
+      // resolveOwnerAuthority is now async (the production candidate
+      // resolver performs a real DB read + live signature re-verification
+      // per call -- see billing/authority/FamilyCommercialAuthorityResolver.ts's
+      // header for why a synchronous, cache-only design was rejected: it
+      // would not be restart/multi-instance durable). STALE_OR_REVOKED and
+      // INVALID_PROOF are new resolution-failure variants that must fail
+      // closed exactly like AUTHORITY_UNAVAILABLE -- never fall through to
+      // checkout. No other line in this handler changed.
+      const authority = await deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(familyId, actorDeviceId);
       if (authority.status === 'ROLE_DENIED') {
         // Same "one generic reason" discipline as AuthzError/
         // ParentActionAuthorizationService's CROSS_FAMILY_TARGET -- never
         // leak which role the caller actually holds.
         return reply.code(403).send({ error: 'forbidden' });
       }
-      if (authority.status === 'AUTHORITY_UNAVAILABLE') {
+      if (authority.status === 'AUTHORITY_UNAVAILABLE' || authority.status === 'STALE_OR_REVOKED' || authority.status === 'INVALID_PROOF') {
         // Distinguishable on purpose (an operational/availability signal,
         // not an identity-enumeration risk) -- see this file's header.
+        // All three collapse to the SAME wire code deliberately: none of
+        // them is a determined-and-wrong role, and the caller must never
+        // learn which one occurred.
         return reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
       }
 

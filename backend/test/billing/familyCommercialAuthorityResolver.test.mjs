@@ -13,6 +13,14 @@
 //     (a static source-level check that keeps this fail-closed posture
 //     honest against a future silent regression -- mirrors this
 //     codebase's other schema-privacy/source-shape static assertions).
+//
+// PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025/Option A): resolveOwnerAuthority is now
+// async (see FamilyCommercialAuthorityResolver.ts's header) -- every call
+// below is awaited accordingly. The dedicated
+// AttestationChainFamilyCommercialAuthorityResolver / genesis-anchored
+// chain test matrix lives in
+// test/familycommercial/authority/FamilyOwnerAttestationChainEngine.test.mjs,
+// not here -- this file stays scoped to the resolver adapters themselves.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -51,50 +59,50 @@ function buildResolver(epochOrNull) {
 // UnavailableFamilyCommercialAuthorityResolver -- the production default
 // ---------------------------------------------------------------------------
 
-test('UnavailableFamilyCommercialAuthorityResolver always returns AUTHORITY_UNAVAILABLE, never a permissive default, regardless of input', () => {
+test('UnavailableFamilyCommercialAuthorityResolver always returns AUTHORITY_UNAVAILABLE, never a permissive default, regardless of input', async () => {
   const resolver = new UnavailableFamilyCommercialAuthorityResolver();
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
-  assert.deepEqual(resolver.resolveOwnerAuthority('any-family', 'any-device'), { status: 'AUTHORITY_UNAVAILABLE' });
-  assert.deepEqual(resolver.resolveOwnerAuthority('', ''), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('any-family', 'any-device'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('', ''), { status: 'AUTHORITY_UNAVAILABLE' });
 });
 
 // ---------------------------------------------------------------------------
 // TrustSetFamilyCommercialAuthorityResolver -- tests-only real implementation
 // ---------------------------------------------------------------------------
 
-test('Family Owner checkout: OWNER_AUTHORIZED', () => {
+test('Family Owner checkout: OWNER_AUTHORIZED', async () => {
   const resolver = buildResolver(epoch());
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'OWNER_AUTHORIZED' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'OWNER_AUTHORIZED' });
 });
 
-test('Administrator checkout: ROLE_DENIED (never ALLOW)', () => {
+test('Administrator checkout: ROLE_DENIED (never ALLOW)', async () => {
   const resolver = buildResolver(epoch());
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-admin'), { status: 'ROLE_DENIED' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-admin'), { status: 'ROLE_DENIED' });
 });
 
-test('Viewer checkout: ROLE_DENIED (never ALLOW)', () => {
+test('Viewer checkout: ROLE_DENIED (never ALLOW)', async () => {
   const resolver = buildResolver(epoch());
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-viewer'), { status: 'ROLE_DENIED' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-viewer'), { status: 'ROLE_DENIED' });
 });
 
-test('wrong family: AUTHORITY_UNAVAILABLE, never silently DENIED or ALLOWED (FAMILY_MISMATCH is a resolution failure, not a role determination)', () => {
+test('wrong family: AUTHORITY_UNAVAILABLE, never silently DENIED or ALLOWED (FAMILY_MISMATCH is a resolution failure, not a role determination)', async () => {
   const resolver = buildResolver(epoch({ familyId: 'fam-1' }));
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-OTHER', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-OTHER', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
 });
 
-test('no trust set at all: AUTHORITY_UNAVAILABLE', () => {
+test('no trust set at all: AUTHORITY_UNAVAILABLE', async () => {
   const resolver = buildResolver(null);
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
 });
 
-test('device not in trust set: AUTHORITY_UNAVAILABLE (never ROLE_DENIED -- a resolution failure, not a determined-and-wrong role)', () => {
+test('device not in trust set: AUTHORITY_UNAVAILABLE (never ROLE_DENIED -- a resolution failure, not a determined-and-wrong role)', async () => {
   const resolver = buildResolver(epoch());
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-unknown'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-unknown'), { status: 'AUTHORITY_UNAVAILABLE' });
 });
 
-test('device present but REVOKED (not ACTIVE), even claiming OWNER: AUTHORITY_UNAVAILABLE, never OWNER_AUTHORIZED', () => {
+test('device present but REVOKED (not ACTIVE), even claiming OWNER: AUTHORITY_UNAVAILABLE, never OWNER_AUTHORIZED', async () => {
   const resolver = buildResolver(epoch());
-  assert.deepEqual(resolver.resolveOwnerAuthority('fam-1', 'dev-revoked-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
+  assert.deepEqual(await resolver.resolveOwnerAuthority('fam-1', 'dev-revoked-owner'), { status: 'AUTHORITY_UNAVAILABLE' });
 });
 
 // ---------------------------------------------------------------------------
@@ -115,4 +123,10 @@ test('PRODUCTION WIRING: main.ts constructs UnavailableFamilyCommercialAuthority
 test('PRODUCTION WIRING: buildServer.ts threads billingFamilyCommercialAuthorityResolver into registerBillingCheckoutRoutes as familyCommercialAuthorityResolver', async () => {
   const buildServerTs = await readFile(new URL('../../src/http/buildServer.ts', import.meta.url), 'utf8');
   assert.match(buildServerTs, /familyCommercialAuthorityResolver:\s*deps\.billingFamilyCommercialAuthorityResolver/);
+});
+
+test('PRODUCTION WIRING: billingCheckoutRoutes.ts awaits resolveOwnerAuthority and fails closed on STALE_OR_REVOKED/INVALID_PROOF exactly like AUTHORITY_UNAVAILABLE', async () => {
+  const routesTs = await readFile(new URL('../../src/http/routes/billingCheckoutRoutes.ts', import.meta.url), 'utf8');
+  assert.match(routesTs, /await deps\.familyCommercialAuthorityResolver\.resolveOwnerAuthority\(/);
+  assert.match(routesTs, /authority\.status === 'AUTHORITY_UNAVAILABLE' \|\| authority\.status === 'STALE_OR_REVOKED' \|\| authority\.status === 'INVALID_PROOF'/);
 });

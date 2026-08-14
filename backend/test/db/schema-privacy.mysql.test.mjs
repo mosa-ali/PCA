@@ -36,10 +36,27 @@ const PROHIBITED_TERMS = [
 // account id) only when the row is the single open/active one -- pure
 // DB-enforced uniqueness-invariant strings (via UNIQUE KEY), never
 // cryptographic key material.
+// genesis_dsk_key_id/genesis_dsk_public_key/owner_dsk_key_id/
+// owner_dsk_public_key/signer_dsk_key_id/signer_dsk_public_key
+// (family_authority_genesis_anchors/family_authority_attestations,
+// PCA-FAMILY-AUTH-1-R1) are the SAME device_public_keys-class PUBLIC
+// signing-key id/value pair already approved above, only under the
+// genesis/owner/signer role names this package's canonicalize.ts uses --
+// no private key material, same review basis as signing_key_id/
+// signing_public_key. head_attestation_id (family_authority_chain_heads)
+// is a content-addressed lookup id (sha256 of an attestation's canonical
+// bytes + signature, see canonicalize.ts computeAttestationId), never key
+// material at all. key_epoch (family_authority_attestations) is the
+// FamilyTrustSetEpoch.keyEpoch integer lineage counter this attestation
+// was issued against (same field/meaning as familytrustset's own
+// keyEpoch, already an accepted non-secret integer there) -- a counter,
+// not key material.
 const ALLOWED_KEY_COLUMNS = new Set([
   'public_key', 'key_id', 'signing_key_id', 'encryption_key_id', 'key_purpose', 'sender_key_id',
   'signing_public_key', 'encryption_public_key', 'idempotency_key',
-  'open_active_key', 'active_account_key',
+  'open_active_key', 'active_account_key', 'key_epoch',
+  'genesis_dsk_key_id', 'genesis_dsk_public_key', 'owner_dsk_key_id', 'owner_dsk_public_key',
+  'signer_dsk_key_id', 'signer_dsk_public_key', 'head_attestation_id',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
