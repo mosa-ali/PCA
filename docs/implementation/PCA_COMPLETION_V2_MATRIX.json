@@ -19,6 +19,12 @@
         "mission": "PCA-MASTER-COORDINATOR Round5 pre-flight governance pass",
         "base": "ae7289f5831e50c9b62a28229296bf658dffdc4c",
         "reason": "Reconciled all 98 Addendum-002 requirement statuses against real current source/tests (four rounds of implementation had landed since the prior NOT_STARTED baseline); added Addendum-003 (PCA-ADD-IDENT-*, 24 IDs) and Addendum-004 (PCA-ADD-COMP-*, 25 IDs) as new NOT_STARTED architecture-only rows."
+      },
+      {
+        "revision": "R3",
+        "mission": "PCA-MASTER-COORDINATOR Round5 finalization pass",
+        "base": "22cd31e1d31deaa51b8055a070b21e5d7f5b37b8",
+        "reason": "Reconciled all 24 Addendum-003 (PCA-ADD-IDENT-*) and 25 Addendum-004 (PCA-ADD-COMP-*) requirements against real Round5 source/tests. Key cross-cutting finding: complimentary-capacity consumption gates (SlotReservationService/ChangeRequestService/over_limit calc) are not yet wired to complimentary grants -- capacity is visible but not consumable (COMP-005/010/011 PARTIAL). Genesis-device-signer bridging IDENT-009/010 is source-complete but functionally fail-closed in production pending PCA-DEC-020 human security review (same posture as every other crypto-gated surface). FREE_ACCESS daily-reminder UI and admin bulk-change path not built this round (IDENT-019/020/021 NOT_STARTED)."
       }
     ]
   },
@@ -4041,198 +4047,260 @@
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/**"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Independent credential domain, no shared table/session/RBAC with platformadmin/auth/**."
     },
     {
       "requirementId": "PCA-ADD-IDENT-002",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Session response carries no field usable to authenticate into Platform Administration."
     },
     {
       "requirementId": "PCA-ADD-IDENT-003",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/emailHash.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Email stored only as a normalized-lowercase hash; password only as a salted hash."
     },
     {
       "requirementId": "PCA-ADD-IDENT-004",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/routes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Register requires email/password/passwordConfirmation; server never trusts client-asserted match."
     },
     {
       "requirementId": "PCA-ADD-IDENT-005",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/verificationCode.ts",
+        "backend/src/parentaccount/TestSandboxEmailSender.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "TEST_SANDBOX-style deliverable-to-logs sender; real provider remains EXTERNAL_GATE (production uses a fail-closed RejectingEmailSender, Coordinator-wired)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-006",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "PENDING_VERIFICATION until correct code submitted before expiry; no session/family created in this state."
     },
     {
       "requirementId": "PCA-ADD-IDENT-007",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/rateLimiter.ts",
+        "backend/src/parentaccount/policy.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/routes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Single-use, TTL-bounded codes; keyed rate limiting per account and per source IP."
     },
     {
       "requirementId": "PCA-ADD-IDENT-008",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/parentAccount.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "DB CHECK-constraint-atomic verification transition; produces the VerifiedIdentity AuthService.issueSession already required."
     },
     {
       "requirementId": "PCA-ADD-IDENT-009",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/parentaccount/genesisDeviceSigner.ts",
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Genesis trigger wired and tested via an ephemeral browser-signed keypair bridging the no-device gap (flagged INTERFACE_CHANGE_REQUEST); production remains fail-closed (RejectingDeviceSignatureVerifier, PCA-DEC-020 pending human security review) exactly like every other crypto-gated surface -- source-complete and correct by design, functionally inert in production today pending that review."
     },
     {
       "requirementId": "PCA-ADD-IDENT-010",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/genesisDeviceSigner.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "No existing trusted family device required -- an ephemeral keypair is generated fresh, not sourced from any prior device."
     },
     {
       "requirementId": "PCA-ADD-IDENT-011",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Invitation-based enrollment/joining is unchanged by this addendum; no join-on-register behavior was added."
     },
     {
       "requirementId": "PCA-ADD-IDENT-012",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/cookies.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/routes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "HttpOnly/Secure(prod)/SameSite=Strict cookie + double-submit CSRF, issued only after verification/login."
     },
     {
       "requirementId": "PCA-ADD-IDENT-013",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Session response shape carries no role/authority field; FamilyCommercialAuthorityResolver remains the sole Owner-authority source, untouched."
     },
     {
       "requirementId": "PCA-ADD-IDENT-014",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/routes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Expired/revoked/missing session all collapse to the same 401, verified live."
     },
     {
       "requirementId": "PCA-ADD-IDENT-015",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountRepository.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/parentAccount.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Session bound to one accountId at issuance; per-request family-scope authorization unchanged."
     },
     {
       "requirementId": "PCA-ADD-IDENT-016",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/genesisDeviceSigner.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Ephemeral genesis private key never persisted/logged -- verified by QA57 tracing every call site."
     },
     {
       "requirementId": "PCA-ADD-IDENT-017",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/policy.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "FREE_ACCESS_MODE/DURATION_DAYS/DEFAULT_PARENT_MEMBER_LIMIT/DEFAULT_MANAGED_DEVICE_LIMIT all env-configurable, bounds-validated."
     },
     {
       "requirementId": "PCA-ADD-IDENT-018",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts",
+        "backend/src/parentaccount/types.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "FreeAccessSnapshot captured onto the account at registration time (ParentAccountService.ts:168); distinct from and layered alongside FREE_STARTER entitlement_defaults, not merged into it."
     },
     {
       "requirementId": "PCA-ADD-IDENT-019",
@@ -4243,7 +4311,7 @@
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "No bulk/administrative re-snapshot UI or audited change path exists yet."
     },
     {
       "requirementId": "PCA-ADD-IDENT-020",
@@ -4254,7 +4322,7 @@
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "No daily in-app remaining-period reminder UI was built this round."
     },
     {
       "requirementId": "PCA-ADD-IDENT-021",
@@ -4265,315 +4333,383 @@
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "No expiry-driven restriction of new commercial-capability acquisition is enforced yet; FREE_ACCESS expiry has no consuming code path today."
     },
     {
       "requirementId": "PCA-ADD-IDENT-022",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "True by construction: FREE_ACCESS and entitlement OVER_LIMIT are structurally separate systems; expiry cannot force OVER_LIMIT since nothing wires them together (also means PCA-ADD-IDENT-021 is unenforced, not merely satisfied)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-023",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/policy.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "Configuration is env-var/Platform-Administration-owned, matching the PCA-ADD-PA-024 precedent -- though no live Platform Admin UI edits it yet (env var only)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-024",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/policy.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 003 requirement (parent identity/registration/free-access). Architecture-accepted (PCA-DEC-026), no implementation source exists yet — Round5 PCA-AUTH-SESSION-1 scope."
+      "notes": "30-day default explicitly labeled illustrative in source comment; every value runtime-configurable, never hardcoded."
     },
     {
       "requirementId": "PCA-ADD-COMP-001",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/**"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Architecturally distinct from Billing domain -- no Invoice/PaymentAttempt/PaymentTransaction/ProviderEvent object type referenced anywhere."
     },
     {
       "requirementId": "PCA-ADD-COMP-002",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/migrations/0014_complimentary_entitlement_grants.sql"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Grepped entire diff for billing-object construction -- zero matches; PriceBook completely untouched."
     },
     {
       "requirementId": "PCA-ADD-COMP-003",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/types.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Grant record matches the frozen field list exactly."
     },
     {
       "requirementId": "PCA-ADD-COMP-004",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/types.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "COMMERCIAL_ACCESS | MANAGED_DEVICE_CAPACITY | PARENT_MEMBER_CAPACITY, never combined in one record."
     },
     {
       "requirementId": "PCA-ADD-COMP-005",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts",
+        "backend/src/entitlements/complimentary/ComplimentaryEntitlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Read-model formula (base + sum(active grants), computed at read time, base row never mutated) is correct and tested -- but the CONSUMPTION side (SlotReservationService/ChangeRequestService, entitlements/MySqlEntitlementRepository.ts over_limit_managed_device calc) still keys off the base limit only, so granted capacity is visible but not yet consumable. Coordinator-level follow-up required outside Writer58 ownership."
     },
     {
       "requirementId": "PCA-ADD-COMP-006",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Conditional UPDATE ... WHERE status=ACTIVE; retried mutation verified to produce no double-apply under real concurrency."
     },
     {
       "requirementId": "PCA-ADD-COMP-007",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/types.ts"
+      ],
+      "testEvidence": [
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Bounded enum, all 10 categories."
     },
     {
       "requirementId": "PCA-ADD-COMP-008",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "No email-domain inference found; STAFF/STAFF_FAMILY manually admin-granted only, no HR integration."
     },
     {
       "requirementId": "PCA-ADD-COMP-009",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/ComplimentaryEntitlementService.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Grepped for category-based branching -- zero special-cased authority logic; STAFF is a label only."
     },
     {
       "requirementId": "PCA-ADD-COMP-010",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Correct by design (capacity above the grant would follow normal PriceBook rules), but currently unreachable in practice since consumption gates do not yet consult complimentary capacity at all -- same root cause as PCA-ADD-COMP-005."
     },
     {
       "requirementId": "PCA-ADD-COMP-011",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Expiry/revocation recomputation is correct and tested at the read-model layer; real OVER_LIMIT triggering depends on the same unwired consumption-gate follow-up as PCA-ADD-COMP-005."
     },
     {
       "requirementId": "PCA-ADD-COMP-012",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Expiry/revoke only flip grant status; account_entitlements active/reserved counts never touched -- verified live."
     },
     {
       "requirementId": "PCA-ADD-COMP-013",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/http/routes/platformadmin/complimentaryGrantRoutes.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "No family-facing mutation route exists for grants; Platform Administration only."
     },
     {
       "requirementId": "PCA-ADD-COMP-014",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/platformadmin/auth/rbacPolicy.ts"
+      ],
+      "testEvidence": [
+        "backend/test/platformadmin/complimentaryRbacPolicy.test.mjs",
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Role matrix matches the frozen spec exactly, server-enforced (confirmed via live HTTP-level denial test), not merely UI-hidden."
     },
     {
       "requirementId": "PCA-ADD-COMP-015",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/platformadmin/complimentary/PlatformAdminComplimentaryGrantService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "COMPLIMENTARY_GRANT_MUTATION step-up required and single-use-consumed before every mutation."
     },
     {
       "requirementId": "PCA-ADD-COMP-016",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/platformadmin/audit/types.ts"
+      ],
+      "testEvidence": [
+        "backend/test/platformadmin/complimentaryAuditTypes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "COMPLIMENTARY_GRANT_CREATED/CHANGED/REVOKED/EXPIRED, safe metadata only, same-transaction as the mutation."
     },
     {
       "requirementId": "PCA-ADD-COMP-017",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "platform-admin-web/src/pages/entitlements/ComplimentaryCapacity.tsx"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Platform Admin UI built; mutate controls hidden per role but server independently re-checks (confirmed by QA58 via a denied-role HTTP test)."
     },
     {
       "requirementId": "PCA-ADD-COMP-018",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MyKidsComplimentaryReadModel.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Read-model function built and tested in isolation, matches the frozen additive-field shape exactly -- but NOT yet wired into familyCommercialRoutes.ts (Coordinator-deferred this round, see ROUND5_OVERLAP_MATRIX.md), so MyKids does not display it yet."
     },
     {
       "requirementId": "PCA-ADD-COMP-019",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MyKidsComplimentaryReadModel.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Serialized JSON verified to never contain internalNote or grantedByAdminId."
     },
     {
       "requirementId": "PCA-ADD-COMP-020",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "No \"payment bypass\"-style language found anywhere in the family-facing surface."
     },
     {
       "requirementId": "PCA-ADD-COMP-021",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "All 5 required concurrency scenarios pass under genuinely concurrent (Promise.all, separate pool connections) execution, independently re-run by QA58."
     },
     {
       "requirementId": "PCA-ADD-COMP-022",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Conditional UPDATE/DELETE pattern throughout; no in-memory lock anywhere in the diff."
     },
     {
       "requirementId": "PCA-ADD-COMP-023",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/migrations/0014_complimentary_entitlement_grants.sql"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Dedicated table; entitlement_defaults/Billing tables untouched."
     },
     {
       "requirementId": "PCA-ADD-COMP-024",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Coordinator assigned lease 0014 from the actual current migration inventory at launch time, not assumed."
     },
     {
       "requirementId": "PCA-ADD-COMP-025",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Addendum 004 requirement (complimentary entitlement grants). Architecture-accepted (Round5 Section A), no implementation source exists yet — Round5 PCA-COMPLIMENTARY-ENTITLEMENTS-1 scope."
+      "notes": "Disposable Docker Compose MySQL only, project pca-r5-w58/pca-r5-qa58, both torn down after use; no production SQL touched."
     }
   ],
   "phases": [

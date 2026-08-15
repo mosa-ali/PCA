@@ -181,7 +181,19 @@ The R1 status below is stale for the same reason as Section 12. Of the 47 `PCA-A
 - Custom quantity: request sits `PENDING` with `awaitingAdminQuote=true` (there is no `PENDING_ADMIN_QUOTE` state literal in the actual codebase — correcting this doc's prior imprecision) → App Owner quote → parent payment → verified activation. **SOURCE_COMPLETE**. (`PCA-ADD-PA-050`, `PCA-ADD-BILL-005A`/`045`)
 - `parentMemberLimit` and `managedDeviceLimit` are kept as separate concepts; paid pricing applies exclusively to `managedDeviceLimit` — `parentMemberLimit` increases are explicitly out of commercial scope pending a future, separate owner decision. **SOURCE_COMPLETE**, doubly enforced at DB CHECK constraint and service level. (`PCA-ADD-PA-025`, `PCA-ADD-PA-054`)
 
-None of the above are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — `SOURCE_COMPLETE` is a source/test-evidence claim only, never a production-readiness claim. Real remaining architecture-only scope: Addendum 003 (parent identity/registration/free-access, `PCA-DEC-026`) and Addendum 004 (complimentary entitlement grants) — both newly authored this pass, zero source yet, Round5 `PCA-AUTH-SESSION-1`/`PCA-COMPLIMENTARY-ENTITLEMENTS-1` scope.
+None of the above are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — `SOURCE_COMPLETE` is a source/test-evidence claim only, never a production-readiness claim.
+
+## 13A. Round5 status (parent identity, complimentary entitlements, commercial runtime maintenance)
+
+Both Addendum 003 and 004, authored architecture-only in Round5 pre-flight, now have real, tested source. See [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md)'s R3 correction for full per-ID detail.
+
+| Dimension | Status |
+|---|---|
+| FAMILY_SERVICE_SESSION (PCA-AUTH-SESSION-1) | SOURCE_COMPLETE (20/24 IDs) — closes `MYKIDS_COMMERCIAL_SESSION_ISSUANCE_GAP`. Cookie-session transport additively wired into the existing `requireServiceSession`; `parent-web`'s `RealBillingClient`/`RealCommercialNotificationClient` can now reach the backend from a real registered/verified parent. Genesis-device-signer bridging remains fail-closed in production pending `PCA-DEC-020`. `FREE_ACCESS` config/snapshot landed; daily-reminder UI and admin bulk-change path did not. |
+| COMPLIMENTARY_ENTITLEMENT_GRANT (PCA-COMPLIMENTARY-ENTITLEMENTS-1) | SOURCE_COMPLETE (22/25 IDs) — durable, audited grants, Platform Admin UI, billing-separated (no fake Invoice/PaymentAttempt/PaymentTransaction/ProviderEvent). Effective-entitlement read model correct/tested; **consumption gates (`SlotReservationService`/`ChangeRequestService`) not yet wired to it** — a real, honestly-scoped follow-up, granted capacity is visible but not yet consumable. |
+| COMMERCIAL_MAINTENANCE (PCA-COMMERCIAL-RUNTIME-1) | SOURCE_COMPLETE — closes both Round4-deferred `SOURCE_RUNTIME_GAP`s. `CommercialMaintenanceRunner` reconciles quote expiry (calling the existing, unmodified `expireDueQuotes`) and prunes commercial-notification retention, both exactly-once/idempotent under real concurrency, wired on a Coordinator-owned interval timer in `main.ts`. |
+
+**Deferred, documented (not silently dropped):** additive complimentary-capacity fields on `GET /v1/families/:familyId/commercial/entitlement` — the MyKids-facing read-model function exists and is tested in isolation but is not yet wired into `familyCommercialRoutes.ts` this round (Coordinator scope decision, see `ROUND5_OVERLAP_MATRIX.md`).
 
 ## 14. Next implementation programme (suggested, not directive)
 

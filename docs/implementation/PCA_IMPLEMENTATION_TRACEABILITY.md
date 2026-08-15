@@ -18,6 +18,10 @@ Where genuinely correct backend orchestration logic exists but has no dedicated 
 
 This correction does not touch the Addendum-001/PCA-0..19/PCA-WELL-1 findings (unchanged, see §"Preserved from R0"), and does not mark anything `VALIDATED_COMPLETE` or `PRODUCTION_READY` — no such claim is made or implied by any `SOURCE_COMPLETE` row below; those remain distinct, higher bars this pass does not attempt to clear (see Completion calculation).
 
+### Correction R3 (PCA-MASTER-COORDINATOR, Round5 finalization pass, base `22cd31e1d31deaa51b8055a070b21e5d7f5b37b8`)
+
+Addenda 003 (`PCA-ADD-IDENT-*`, 24 IDs) and 004 (`PCA-ADD-COMP-*`, 25 IDs) — new controlled architecture authored during Round5 pre-flight — now have real, tested Round5 source (`PCA-AUTH-SESSION-1`, `PCA-COMPLIMENTARY-ENTITLEMENTS-1`, `PCA-COMMERCIAL-RUNTIME-1`) reconciled against them, per each lane's independently-verified Writer/QA report. Key cross-cutting finding: complimentary-capacity **consumption** gates (`SlotReservationService`, `ChangeRequestService`, the `over_limit_managed_device` calculation in `EntitlementRepository`) are not yet wired to consult complimentary grants — a family's granted extra capacity is fully visible (Platform Admin UI, and once wired, MyKids) but not yet consumable, a real, honestly-scoped gap outside Writer58's file ownership (`PCA-ADD-COMP-005/010/011` marked `PARTIAL`). The genesis-device-signer bridging `PCA-ADD-IDENT-009/010` is source-complete and independently QA-confirmed fail-closed in production today (pending `PCA-DEC-020`'s human security review of `CRYPTO_SUITE`), matching every other crypto-gated surface's existing posture. `FREE_ACCESS`'s daily-reminder UI and admin bulk-change path were not built this round (`PCA-ADD-IDENT-019/020/021` `NOT_STARTED`).
+
 ## Control and counting
 
 | Inventory | Count | Authority | Status |
@@ -25,8 +29,8 @@ This correction does not touch the Addendum-001/PCA-0..19/PCA-WELL-1 findings (u
 | Base A-100 | 199 | [Architecture traceability matrix](../architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md) | Immutable accepted baseline; verified 199 unique normative IDs, 0 duplicates, 0 missing, 0 orphans at this base. Per-ID implementation evidence not yet individually re-derived (see scope limitation). |
 | Addendum 001 | 25 | [Secure invite/protected enrollment addendum](addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md) | Owner approved; evidence-backed re-derivation complete (R0 pass, see matrix below). |
 | Addendum 002 | 98 | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved and integrated; substantial real, tested source now exists (76 `SOURCE_COMPLETE`, 13 `PARTIAL`, 9 `NOT_STARTED` — R2 correction, see matrix below). Settlement/reconciliation (`BILL-012/013/014/036/037/038`) remains genuinely unbuilt. |
-| Addendum 003 | 24 | [Parent Identity, Registration, Free-Access addendum](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) | Owner approved (`PCA-DEC-026`, `Option C`); architecture-only, no `PCA-ADD-IDENT-*` source exists yet — Round5 `PCA-AUTH-SESSION-1` scope. |
-| Addendum 004 | 25 | [Complimentary Entitlement Grants addendum](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) | Owner approved (Round5 Section A); architecture-only, no `PCA-ADD-COMP-*` source exists yet — Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` scope. |
+| Addendum 003 | 24 | [Parent Identity, Registration, Free-Access addendum](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) | Owner approved (`PCA-DEC-026`, `Option C`); Round5 `PCA-AUTH-SESSION-1` source landed (20 `SOURCE_COMPLETE`, 1 `PARTIAL`, 3 `NOT_STARTED` — R3 correction, see matrix below). |
+| Addendum 004 | 25 | [Complimentary Entitlement Grants addendum](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) | Owner approved (Round5 Section A); Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` source landed (22 `SOURCE_COMPLETE`, 3 `PARTIAL` — R3 correction, see matrix below). Complimentary-capacity consumption gates not yet wired. |
 | Total implementation authority | 371 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
 
 `BASE_A100_REQUIREMENTS = 199` was independently recounted from the architecture matrix's own ID column (not copied from prior documentation) and confirmed exact: 0 missing, 0 duplicate, 0 orphan IDs. Family breakdown: PCA-FR (112), PCA-NFR (43), PCA-SEC (18), PCA-DATA (17), PCA-AND (3), PCA-IOS (3), PCA-PRIV (2), PCA-AI (1).
@@ -200,19 +204,98 @@ Six requirements (`PCA-ADD-BILL-027`–`029`, `PCA-ADD-BILL-036`–`038`) additi
 
 Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL` status: the underlying `WebhookService` orchestration logic genuinely and correctly implements each requirement (verified by direct code inspection against the addendum's normative text), but no test file anywhere in the repository imports or exercises `WebhookService` itself — only its lower-level dependencies (HMAC signature verification, DB-level event idempotency) are directly tested. This is tracked as a test-coverage gap, not a source gap.
 
+## Addendum 003 implementation matrix (parent identity, registration, free-access)
+
+[PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) is the authority for full normative text. Reconciled against Round5 `PCA-AUTH-SESSION-1` source (Writer57, independently QA57-verified). Full per-ID evidence in [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json).
+
+| Requirement | Status | Summary |
+|---|---|---|
+| PCA-ADD-IDENT-001 | SOURCE_COMPLETE | Independent credential domain, no shared table/session/RBAC with Platform Administration. |
+| PCA-ADD-IDENT-002 | SOURCE_COMPLETE | Session response carries no field usable to authenticate into Platform Administration. |
+| PCA-ADD-IDENT-003 | SOURCE_COMPLETE | Email stored only as a normalized-lowercase hash; password only as a salted hash. |
+| PCA-ADD-IDENT-004 | SOURCE_COMPLETE | Register requires email/password/passwordConfirmation; server never trusts client-asserted match. |
+| PCA-ADD-IDENT-005 | SOURCE_COMPLETE | TEST_SANDBOX-style sender; production uses a fail-closed sender (Coordinator-wired), real provider remains EXTERNAL_GATE. |
+| PCA-ADD-IDENT-006 | SOURCE_COMPLETE | PENDING_VERIFICATION until correct code submitted before expiry. |
+| PCA-ADD-IDENT-007 | SOURCE_COMPLETE | Single-use, TTL-bounded codes; keyed rate limiting per account and source IP. |
+| PCA-ADD-IDENT-008 | SOURCE_COMPLETE | DB CHECK-constraint-atomic verification transition produces the VerifiedIdentity AuthService already required. |
+| PCA-ADD-IDENT-009 | PARTIAL | Genesis trigger wired/tested via an ephemeral browser-signed keypair (flagged INTERFACE_CHANGE_REQUEST); production remains fail-closed pending PCA-DEC-020. |
+| PCA-ADD-IDENT-010 | SOURCE_COMPLETE | No existing trusted family device required — a fresh ephemeral keypair is generated at registration. |
+| PCA-ADD-IDENT-011 | SOURCE_COMPLETE | Invitation-based joining is unchanged; no join-on-register behavior was added. |
+| PCA-ADD-IDENT-012 | SOURCE_COMPLETE | HttpOnly/Secure(prod)/SameSite=Strict cookie + double-submit CSRF, issued only after verification/login. |
+| PCA-ADD-IDENT-013 | SOURCE_COMPLETE | Session never carries a role/authority field; FamilyCommercialAuthorityResolver remains the sole Owner-authority source. |
+| PCA-ADD-IDENT-014 | SOURCE_COMPLETE | Expired/revoked/missing session all collapse to the same 401, verified live. |
+| PCA-ADD-IDENT-015 | SOURCE_COMPLETE | Session bound to one accountId at issuance; per-request family-scope authorization unchanged. |
+| PCA-ADD-IDENT-016 | SOURCE_COMPLETE | Ephemeral genesis private key never persisted/logged — every call site traced by QA57. |
+| PCA-ADD-IDENT-017 | SOURCE_COMPLETE | FREE_ACCESS_MODE/DURATION_DAYS/default limits all env-configurable, bounds-validated. |
+| PCA-ADD-IDENT-018 | SOURCE_COMPLETE | FreeAccessSnapshot captured at registration; distinct from and layered alongside FREE_STARTER entitlement_defaults. |
+| PCA-ADD-IDENT-019 | NOT_STARTED | No bulk/administrative re-snapshot UI or audited change path exists yet. |
+| PCA-ADD-IDENT-020 | NOT_STARTED | No daily in-app remaining-period reminder UI was built this round. |
+| PCA-ADD-IDENT-021 | NOT_STARTED | No expiry-driven restriction of new commercial-capability acquisition is enforced yet. |
+| PCA-ADD-IDENT-022 | SOURCE_COMPLETE | True by construction: FREE_ACCESS and entitlement OVER_LIMIT are structurally separate, unconnected systems. |
+| PCA-ADD-IDENT-023 | SOURCE_COMPLETE | Platform-Administration-owned configuration (env var only, no live UI yet). |
+| PCA-ADD-IDENT-024 | SOURCE_COMPLETE | 30-day default explicitly labeled illustrative; every value runtime-configurable. |
+
+### Addendum 003 status distribution
+
+| Status | Count |
+|---|---:|
+| SOURCE_COMPLETE | 20 |
+| PARTIAL | 1 |
+| NOT_STARTED | 3 |
+
+## Addendum 004 implementation matrix (complimentary entitlement grants)
+
+[PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) is the authority for full normative text. Reconciled against Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` source (Writer58, independently QA58-verified). Full per-ID evidence in [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json).
+
+| Requirement | Status | Summary |
+|---|---|---|
+| PCA-ADD-COMP-001 | SOURCE_COMPLETE | Architecturally distinct from Billing — no Invoice/PaymentAttempt/PaymentTransaction/ProviderEvent type referenced. |
+| PCA-ADD-COMP-002 | SOURCE_COMPLETE | Zero billing-object construction found; PriceBook completely untouched. |
+| PCA-ADD-COMP-003 | SOURCE_COMPLETE | Grant record matches the frozen field list exactly. |
+| PCA-ADD-COMP-004 | SOURCE_COMPLETE | Three scopes, never combined in one record. |
+| PCA-ADD-COMP-005 | PARTIAL | Read-model formula correct/tested; consumption gates (SlotReservationService/ChangeRequestService) not yet wired to consult it — capacity visible, not yet consumable. |
+| PCA-ADD-COMP-006 | SOURCE_COMPLETE | Conditional UPDATE ... WHERE status=ACTIVE; retried mutation verified to produce no double-apply under real concurrency. |
+| PCA-ADD-COMP-007 | SOURCE_COMPLETE | Bounded enum, all 10 categories. |
+| PCA-ADD-COMP-008 | SOURCE_COMPLETE | No email-domain inference; manual admin grant only, no HR integration. |
+| PCA-ADD-COMP-009 | SOURCE_COMPLETE | Zero special-cased authority logic for any category — STAFF is a label only. |
+| PCA-ADD-COMP-010 | PARTIAL | Correct by design; unreachable in practice until the same consumption-gate gap as COMP-005 is closed. |
+| PCA-ADD-COMP-011 | PARTIAL | Expiry/revocation recomputation correct/tested at the read-model layer; real OVER_LIMIT triggering depends on the COMP-005 follow-up. |
+| PCA-ADD-COMP-012 | SOURCE_COMPLETE | Expiry/revoke only flip grant status; active/reserved counts never touched. |
+| PCA-ADD-COMP-013 | SOURCE_COMPLETE | No family-facing mutation route exists; Platform Administration only. |
+| PCA-ADD-COMP-014 | SOURCE_COMPLETE | Role matrix matches the frozen spec exactly, server-enforced (live HTTP-level denial test). |
+| PCA-ADD-COMP-015 | SOURCE_COMPLETE | COMPLIMENTARY_GRANT_MUTATION step-up required and single-use-consumed before every mutation. |
+| PCA-ADD-COMP-016 | SOURCE_COMPLETE | Full audit event vocabulary, safe metadata only, same-transaction as the mutation. |
+| PCA-ADD-COMP-017 | SOURCE_COMPLETE | Platform Admin UI built; server independently re-checks every mutation regardless of UI state. |
+| PCA-ADD-COMP-018 | PARTIAL | MyKids read-model function built/tested in isolation, but not yet wired into familyCommercialRoutes.ts (Coordinator-deferred, see ROUND5_OVERLAP_MATRIX.md). |
+| PCA-ADD-COMP-019 | SOURCE_COMPLETE | Serialized read-model output verified to never contain internalNote or grantedByAdminId. |
+| PCA-ADD-COMP-020 | SOURCE_COMPLETE | No "payment bypass"-style language found anywhere in the family-facing surface. |
+| PCA-ADD-COMP-021 | SOURCE_COMPLETE | All 5 required concurrency scenarios pass under genuinely concurrent execution, independently re-run by QA58. |
+| PCA-ADD-COMP-022 | SOURCE_COMPLETE | Conditional UPDATE/DELETE pattern throughout; no in-memory lock anywhere. |
+| PCA-ADD-COMP-023 | SOURCE_COMPLETE | Dedicated migration/table; entitlement_defaults/Billing tables untouched. |
+| PCA-ADD-COMP-024 | SOURCE_COMPLETE | Migration lease (0014) assigned from the actual current inventory at launch time. |
+| PCA-ADD-COMP-025 | SOURCE_COMPLETE | Disposable Docker Compose MySQL only; no production SQL touched. |
+
+### Addendum 004 status distribution
+
+| Status | Count |
+|---|---:|
+| SOURCE_COMPLETE | 22 |
+| PARTIAL | 3 |
+| NOT_STARTED | 0 |
+
 ## Completion calculation (calculated, not projected)
 
 `BASE_A100_REQUIREMENTS = 199`, `ADDENDUM_001_REQUIREMENTS = 25`, `ADDENDUM_002_REQUIREMENTS = 98`, `ADDENDUM_003_REQUIREMENTS = 24`, `ADDENDUM_004_REQUIREMENTS = 25`, `TOTAL_CONTROLLED_REQUIREMENTS = 371`.
 
-`MISSING_IDS = 0`, `DUPLICATE_IDS = 0`, `ORPHAN_IDS = 0` across all five inventories, each verified exact against its own source document. Addendum 003 (`PCA-ADD-IDENT-001`..`024`, contiguous) and Addendum 004 (`PCA-ADD-COMP-001`..`025`, contiguous) were newly authored in this Round5 pre-flight governance pass and carry no implementation yet — see their own control blocks.
+`MISSING_IDS = 0`, `DUPLICATE_IDS = 0`, `ORPHAN_IDS = 0` across all five inventories, each verified exact against its own source document. Addendum 003 (`PCA-ADD-IDENT-001`..`024`, contiguous) and Addendum 004 (`PCA-ADD-COMP-001`..`025`, contiguous) were authored in Round5 pre-flight and now have real Round5 source reconciled against them (R3 correction below).
 
 Addendum 001 (R0 pass, preserved unchanged): `SOURCE_COMPLETE = 4`, `PARTIAL = 8`, `NOT_STARTED = 12`, `NOT_APPLICABLE = 1`.
 
-Addendum 002 (R2 correction, this pass): `SOURCE_COMPLETE = 76` (including 4 `TEST_EVIDENCE_PARTIAL`-annotated rows), `PARTIAL = 13`, `NOT_STARTED = 9`, `NOT_APPLICABLE = 0`.
+Addendum 002 (R2 correction): `SOURCE_COMPLETE = 76` (including 4 `TEST_EVIDENCE_PARTIAL`-annotated rows), `PARTIAL = 13`, `NOT_STARTED = 9`, `NOT_APPLICABLE = 0`.
 
-Addendum 003: `SOURCE_COMPLETE = 0`, `PARTIAL = 0`, `NOT_STARTED = 24`, `NOT_APPLICABLE = 0` — architecture-only, `PCA-AUTH-SESSION-1` not yet implemented.
+Addendum 003 (R3 correction, this pass): `SOURCE_COMPLETE = 20`, `PARTIAL = 1`, `NOT_STARTED = 3`, `NOT_APPLICABLE = 0` — `PCA-AUTH-SESSION-1` landed; genesis-device-signer fail-closed pending `PCA-DEC-020`; `FREE_ACCESS` daily-reminder UI/admin bulk-change path not built.
 
-Addendum 004: `SOURCE_COMPLETE = 0`, `PARTIAL = 0`, `NOT_STARTED = 25`, `NOT_APPLICABLE = 0` — architecture-only, `PCA-COMPLIMENTARY-ENTITLEMENTS-1` not yet implemented.
+Addendum 004 (R3 correction, this pass): `SOURCE_COMPLETE = 22`, `PARTIAL = 3`, `NOT_STARTED = 0`, `NOT_APPLICABLE = 0` — `PCA-COMPLIMENTARY-ENTITLEMENTS-1` landed; complimentary-capacity consumption gates not yet wired (real, honestly-scoped Coordinator follow-up, outside Writer58 ownership).
 
 None of the 371 controlled requirements are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — `SOURCE_COMPLETE` here means genuinely implemented and (in almost all cases) test-covered source, never real-device/real-environment execution evidence, external-gate closure, or a production-readiness claim. No requirement in any addendum (001-004) is marked `VALIDATED_COMPLETE` or `PRODUCTION_READY`.
 
