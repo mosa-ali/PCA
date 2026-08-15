@@ -66,6 +66,14 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // with structured params_json -- a lookup key for client-side i18n
   // rendering, never key material of any kind.
   'dedupe_key', 'message_key',
+  // setting_key (platform_admin_settings, PCA-ADD-PA-043/044, Writer65) is
+  // a bounded, admin-authored logical settings identifier (e.g.
+  // "branding.support_email", "payment_provider.stripe_main") -- a lookup
+  // key for the generic settings row, never cryptographic key material.
+  // Sensitive VALUES stored under a sensitive setting_key are themselves
+  // opaque references (never a raw secret, PCA-ADD-BILL-025), masked on
+  // every read by PlatformAdminSettingsService -- see that file's header.
+  'setting_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
