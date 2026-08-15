@@ -234,6 +234,49 @@ textarea {
   text-align: center;
 }
 
+/* ---------- FREE_ACCESS reminder banner (Round6, Writer61) ---------- */
+
+.free-access-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+
+.free-access-banner-headline {
+  font-weight: 600;
+  margin: 0;
+}
+
+.free-access-banner-text p {
+  margin: 0 0 var(--space-1);
+}
+
+.free-access-banner-text p:last-child {
+  margin-bottom: 0;
+}
+
+.free-access-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.free-access-banner-active {
+  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
+  border-color: var(--color-warning);
+}
+
+.free-access-banner-expired {
+  background: color-mix(in srgb, var(--color-danger) 14%, var(--color-surface));
+  border-color: var(--color-danger);
+}
+
 /* ---------- Cards / grid ---------- */
 
 .card-grid {

@@ -15,6 +15,7 @@ import RolesMatrix from '../../src/pages/family/RolesMatrix';
 import DeleteNow from '../../src/pages/privacy/DeleteNow';
 import Audit from '../../src/pages/security/Audit';
 import WellbeingAdmin from '../../src/pages/wellbeing/WellbeingAdmin';
+import { FreeAccessReminderBannerView } from '../../src/components/freeaccess/FreeAccessReminderBannerView';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
 /**
@@ -129,6 +130,28 @@ describe('accessibility spot checks (axe)', () => {
     const { container, getByRole, findByRole } = renderWithProviders(<DeleteNow />, { role: 'OWNER' });
     await userEvent.click(getByRole('button', { name: 'Delete Now' }));
     await findByRole('dialog');
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('FreeAccessReminderBannerView (ACTIVE) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(
+      <FreeAccessReminderBannerView
+        status={{ mode: 'TIME_LIMITED', grantedAt: '2026-07-16T00:00:00.000Z', expiresAt: '2026-08-15T00:00:00.000Z', remainingDays: 7, status: 'ACTIVE' }}
+        onDismiss={() => {}}
+      />,
+    );
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('FreeAccessReminderBannerView (EXPIRED) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(
+      <FreeAccessReminderBannerView
+        status={{ mode: 'TIME_LIMITED', grantedAt: '2026-07-16T00:00:00.000Z', expiresAt: '2026-08-15T00:00:00.000Z', remainingDays: null, status: 'EXPIRED' }}
+        onDismiss={() => {}}
+      />,
+    );
     const results = await axe(container, AXE_OPTIONS);
     expect(results).toHaveNoViolations();
   });

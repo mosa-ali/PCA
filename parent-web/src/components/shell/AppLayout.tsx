@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { Breadcrumb } from './Breadcrumb';
 import { DemoBanner } from '../common/DemoBanner';
 import { ConnectionStatusBanner } from '../common/ConnectionStatusBanner';
+import { FreeAccessReminderBanner } from '../freeaccess/FreeAccessReminderBanner';
 
 export function AppLayout() {
   const { t } = useTranslation();
@@ -33,6 +34,7 @@ export function AppLayout() {
         />
         <DemoBanner />
         <ConnectionStatusBanner />
+        <FreeAccessReminderBanner />
         <Breadcrumb />
         <main id="main-content" className="main-content" tabIndex={-1}>
           <Outlet />
