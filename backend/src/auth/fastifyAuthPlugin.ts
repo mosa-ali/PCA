@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthError, type AuthService } from './AuthService.js';
+import { SESSION_COOKIE_NAME, parseCookies } from '../parentaccount/cookies.js';
 
 const BEARER_PREFIX = 'Bearer ';
 // Bounded well above any real session token (43 chars) to reject abuse
@@ -14,29 +15,47 @@ declare module 'fastify' {
 
 /**
  * Fastify preHandler enforcing the service control-plane auth boundary.
- * Parses ONLY `Authorization: Bearer <opaque-token>`. Every failure mode
- * (missing header, malformed header, oversized header, unknown token,
- * expired token, revoked token, disabled account) replies with the SAME
- * generic 401 -- this must never leak which failure occurred, whether an
- * account/family exists, or any token-validity detail.
+ * Accepts EITHER `Authorization: Bearer <opaque-token>` (the original
+ * service-to-service transport -- bootstrapRoutes/invitationRoutes/
+ * pairingRoutes/retentionRoutes keep using this unchanged) OR the
+ * FAMILY_SERVICE_SESSION_V1 `pca_family_session` HttpOnly cookie
+ * (PCA-AUTH-SESSION-1, Round5 Coordinator glue) -- both carry the exact
+ * same opaque token format and are validated through the SAME
+ * `authService.validateSession`, since parentaccount/ParentAccountService.ts
+ * deliberately reuses this backing store rather than inventing a second one
+ * (see PCA_IMPL_DECISION_003). The Bearer header takes priority when both
+ * are present. Every failure mode (missing header/cookie, malformed,
+ * oversized, unknown token, expired token, revoked token, disabled account)
+ * replies with the SAME generic 401 -- this must never leak which failure
+ * occurred, whether an account/family exists, or any token-validity detail.
  *
  * A successful result only proves "this is a recognized service account."
- * It is not, and must never be treated as, family E2EE authority.
+ * It is not, and must never be treated as, family E2EE authority or Family
+ * Owner commercial authority (that remains exclusively
+ * FamilyCommercialAuthorityResolver's attestation-chain check).
  */
 export function createRequireServiceSession(authService: AuthService) {
   return async function requireServiceSession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = request.headers.authorization;
+    let rawToken: string | undefined;
+
     if (
-      typeof header !== 'string' ||
-      header.length === 0 ||
-      header.length > MAX_AUTHORIZATION_HEADER_LENGTH ||
-      !header.startsWith(BEARER_PREFIX)
+      typeof header === 'string' &&
+      header.length > 0 &&
+      header.length <= MAX_AUTHORIZATION_HEADER_LENGTH &&
+      header.startsWith(BEARER_PREFIX)
     ) {
+      rawToken = header.slice(BEARER_PREFIX.length);
+    } else {
+      const cookies = parseCookies(request.headers.cookie);
+      rawToken = cookies.get(SESSION_COOKIE_NAME);
+    }
+
+    if (!rawToken) {
       await reply.code(401).send({ error: 'unauthorized' });
       return;
     }
 
-    const rawToken = header.slice(BEARER_PREFIX.length);
     try {
       request.accountId = await authService.validateSession(rawToken);
     } catch (error) {

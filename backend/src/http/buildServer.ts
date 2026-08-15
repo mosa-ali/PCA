@@ -69,6 +69,21 @@ import type { PlanService } from '../billing/plan.js';
 // already does; reuses the SAME FamilyCommercialAuthorityResolver.
 import { registerFamilyCommercialRoutes } from './routes/familyCommercialRoutes.js';
 import type { FamilyCommercialService } from '../familycommercial/FamilyCommercialService.js';
+// PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent/family
+// identity + FAMILY_SERVICE_SESSION_V1 cookie-session issuance. A sixth
+// structurally independent surface, registered exactly like every other
+// domain's registerXRoutes call -- see parentAccountRoutes.ts's own header
+// for why its session token is compatible with, not a replacement for,
+// the existing Bearer-header requireServiceSession (fastifyAuthPlugin.ts).
+import { registerParentAccountRoutes } from './routes/parentAccountRoutes.js';
+import type { ParentAccountService } from '../parentaccount/ParentAccountService.js';
+// PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
+// entitlement grants (Round5 Owner decision, Addendum 004). Registered
+// here exactly like every other domain's registerXRoutes call; never
+// creates Invoice/PaymentAttempt/PaymentTransaction/ProviderEvent, never
+// touches PriceBook.
+import { registerComplimentaryGrantRoutes } from './routes/platformadmin/complimentaryGrantRoutes.js';
+import type { PlatformAdminComplimentaryGrantService } from '../platformadmin/complimentary/PlatformAdminComplimentaryGrantService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -107,6 +122,10 @@ export interface ServerDependencies {
   planService: PlanService;
   /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
   familyCommercialService: FamilyCommercialService;
+  /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
+  parentAccountService: ParentAccountService;
+  /** PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants -- see registerComplimentaryGrantRoutes below. */
+  platformAdminComplimentaryGrantService: PlatformAdminComplimentaryGrantService;
 }
 
 /**
@@ -246,6 +265,14 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
     rateLimiter,
     authAttemptLimiter,
+  });
+  registerParentAccountRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+  });
+  registerComplimentaryGrantRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    platformAdminComplimentaryGrantService: deps.platformAdminComplimentaryGrantService,
+    rateLimiter,
   });
 
   return app;

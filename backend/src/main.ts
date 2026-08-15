@@ -100,6 +100,66 @@ import { AttestationChainFamilyCommercialAuthorityResolver } from './billing/aut
 import { FamilyOwnerAttestationChainEngine } from './familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
 import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
 import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/authority/MySqlAttestationChainStore.js';
+// PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent identity +
+// FAMILY_SERVICE_SESSION_V1 session issuance wiring. Reuses the SAME
+// AuthService instance buildServer's Bearer-header requireServiceSession
+// already validates against -- see ParentAccountService.ts's own
+// SESSION BACKING STORE doc comment for why this is one token format, not
+// two. `familyGenesisEngine` reuses the SAME familyAuthorityChainEngine
+// constructed above for PCA-FAMILY-AUTH-1-R1, so a self-registered
+// parent's genesis ceremony and every subsequent Owner-authority check run
+// through the identical, unmodified verification path.
+import { ParentAccountService } from './parentaccount/ParentAccountService.js';
+import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
+import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSender.js';
+import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
+// PCA-COMPLIMENTARY-ENTITLEMENTS-1 (Round5 Owner decision, Addendum 004):
+// durable, audited complimentary entitlement grants. Reuses the SAME
+// platformAdminAuthService instance every other Platform Administration
+// surface already shares.
+import { ComplimentaryEntitlementService } from './entitlements/complimentary/ComplimentaryEntitlementService.js';
+import { MySqlComplimentaryGrantRepository } from './entitlements/complimentary/MySqlComplimentaryGrantRepository.js';
+import { PlatformAdminComplimentaryGrantService } from './platformadmin/complimentary/PlatformAdminComplimentaryGrantService.js';
+// PCA-COMMERCIAL-RUNTIME-1: closes the two Round4-deferred
+// SOURCE_RUNTIME_GAPs (QUOTE_EXPIRED_NOTIFICATION,
+// COMMERCIAL_NOTIFICATION_RETENTION_SCHEDULER). Reuses the SAME
+// quoteRepository/changeRequestRepository/commercialNotificationPublisher/
+// commercialNotificationRepository instances already constructed above for
+// PCA-BILL-1/PCA-MYKIDS-BILL-2/PCA-COMMERCIAL-NOTIFY-1 -- this lane never
+// modifies backend/src/billing/quote.ts, only calls its existing
+// expireDueQuotes conditional transition. Interval timer + graceful
+// shutdown hook are this lane's own explicitly Coordinator-owned wiring
+// (see commercialmaintenance/index.ts's header).
+import { MySqlCommercialMaintenanceRunner, loadCommercialMaintenanceConfig } from './commercialmaintenance/index.js';
+
+/**
+ * PCA-ADD-IDENT-005: no real production email provider is selected this
+ * round (EXTERNAL_GATE, unchanged -- matches PAYMENT_PROVIDER_SELECTION's
+ * precedent exactly). `TestSandboxEmailSender` deliberately THROWS if
+ * constructed outside NODE_ENV=test|development (see its own header), so
+ * it cannot be wired unconditionally here without crashing production
+ * server startup entirely -- a strictly worse failure mode than every
+ * other crypto/provider gate in this file, which fails individual
+ * operations closed without taking down the whole process. This adapter
+ * is production's `createDefaultEmailSender` counterpart: registration/
+ * verification-code-request/login remain fully reachable, but
+ * `sendVerificationCode` itself always rejects, so no verification code
+ * ever silently appears to have been delivered when it was not. An
+ * explicit, honest gap, not a silent failure mode -- exactly the same
+ * posture EmailSenderPort.ts's own header already documents.
+ */
+class RejectingEmailSender implements EmailSenderPort {
+  async sendVerificationCode(): Promise<void> {
+    throw new Error('Email sending is not configured in production (PCA-ADD-IDENT-005 EXTERNAL_GATE, provider not yet selected).');
+  }
+}
+
+function createDefaultEmailSender(env: NodeJS.ProcessEnv = process.env): EmailSenderPort {
+  if (env.NODE_ENV === 'test' || env.NODE_ENV === 'development') {
+    return createTestSandboxEmailSender(env);
+  }
+  return new RejectingEmailSender();
+}
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
 const host = process.env.HOST ?? '127.0.0.1';
@@ -261,8 +321,35 @@ async function start(): Promise<void> {
     commercialNotificationPublisher,
   );
 
+  // PCA-AUTH-SESSION-1: single shared AuthService instance -- both
+  // buildServer's Bearer-header requireServiceSession AND
+  // ParentAccountService's cookie-issued sessions validate against this
+  // SAME instance/backing store (see ParentAccountService.ts's own
+  // SESSION BACKING STORE doc comment).
+  const authService = new AuthService(new MySqlAuthRepository());
+  const parentAccountService = new ParentAccountService({
+    repository: new MySqlParentAccountRepository(),
+    authService,
+    emailSender: createDefaultEmailSender(),
+    // PCA-FAMILY-AUTH-1-R1: the SAME engine instance constructed above --
+    // a self-registered parent's genesis ceremony and every subsequent
+    // Owner-authority check run through the identical, unmodified
+    // verification path. Still fail-closed today (RejectingDeviceSignatureVerifier),
+    // exactly like every other crypto-gated surface in this file.
+    familyGenesisEngine: familyAuthorityChainEngine,
+  });
+
+  // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
+  // entitlement grants. Reuses the SAME platformAdminAuthService instance
+  // every other Platform Administration surface already shares.
+  const complimentaryEntitlementService = new ComplimentaryEntitlementService(new MySqlComplimentaryGrantRepository());
+  const platformAdminComplimentaryGrantService = new PlatformAdminComplimentaryGrantService(
+    platformAdminAuthService,
+    complimentaryEntitlementService,
+  );
+
   const app = buildServer({
-    authService: new AuthService(new MySqlAuthRepository()),
+    authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,
     invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService),
@@ -320,8 +407,40 @@ async function start(): Promise<void> {
     planService,
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
+    // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
+    parentAccountService,
+    // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
+    platformAdminComplimentaryGrantService,
   });
   await app.listen({ host, port });
+
+  // PCA-COMMERCIAL-RUNTIME-1: periodic quote-expiry reconciliation +
+  // commercial-notification retention. Coordinator-owned interval timer +
+  // shutdown hook, per ROUND5_INTERFACE_CONTRACTS.md -- the lane itself
+  // delivers only runOnce() and its dependencies (see commercialmaintenance/
+  // index.ts's header). Config is bounds-validated and fails safe (refuses
+  // to start, never silently no-ops) on invalid production configuration.
+  const commercialMaintenanceConfig = loadCommercialMaintenanceConfig();
+  const commercialMaintenanceRunner = new MySqlCommercialMaintenanceRunner(
+    quoteRepository,
+    changeRequestRepository,
+    commercialNotificationPublisher,
+    commercialNotificationRepository,
+    commercialMaintenanceConfig,
+  );
+  const commercialMaintenanceTimer = setInterval(() => {
+    commercialMaintenanceRunner.runOnce().catch((error) => {
+      // A single failed maintenance pass must never crash the whole
+      // process -- the next interval tick retries. Every underlying
+      // transition (quote expiry, notification publish, retention prune)
+      // is independently idempotent/DB-conditional, so a partial pass is
+      // always safe to repeat.
+      console.error('[commercial-maintenance] runOnce failed', error);
+    });
+  }, commercialMaintenanceConfig.intervalMs);
+  commercialMaintenanceTimer.unref();
+  process.on('SIGTERM', () => clearInterval(commercialMaintenanceTimer));
+  process.on('SIGINT', () => clearInterval(commercialMaintenanceTimer));
 }
 
 void start();
