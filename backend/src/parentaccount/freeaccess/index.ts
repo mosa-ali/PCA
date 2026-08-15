@@ -1,0 +1,9 @@
+export type { FreeAccessStatus, FreeAccessEnforcementErrorCode } from './types.js';
+export { FreeAccessEnforcementError } from './types.js';
+export { deriveFreeAccessStatus, assertNewCapacityAllowed, MS_PER_DAY } from './deriveFreeAccessStatus.js';
+export type { FreeAccessAdjustmentAction, FreeAccessAdjustmentErrorCode } from './adjustment.js';
+export { computeAdjustedSnapshot, FreeAccessAdjustmentError } from './adjustment.js';
+export type { FreeAccessAccountRepository, FreeAccessAccountRow, FreeAccessAdjustmentResult } from './FreeAccessAccountRepository.js';
+export { MySqlFreeAccessAccountRepository } from './MySqlFreeAccessAccountRepository.js';
+export type { FreeAccessAdminActor, FreeAccessAdminErrorCode } from './FreeAccessAdminService.js';
+export { FreeAccessAdminService, FreeAccessAdminError } from './FreeAccessAdminService.js';
