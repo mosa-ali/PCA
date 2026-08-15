@@ -16,13 +16,10 @@
  * activity, policy, or E2EE content (structurally -- neither table has a
  * column capable of holding any).
  *
- * IMPORTANT SCOPE NOTE: this module does NOT implement account status
- * (suspend/reactivate) -- `families` has no `status` column and no
- * authoritative customer-account-status table/service exists anywhere in
- * this repository (confirmed by direct migration inspection covering
- * 0001-0008). See this lane's final report's `ACCOUNT_STATUS_MODEL_GAP`
- * for the design that would be required to add one, rather than this
- * lane inventing that model silently.
+ * PCA-ADD-PA-017 UPDATE (Writer65): `families.status` now exists (migration
+ * 0016, additive) -- see `FamilyAccountStatusService` for the suspend/
+ * reactivate write path (RBAC + step-up + audit gated). `statusCapability`
+ * below is AVAILABLE for every row.
  */
 
 import { execute, runInTransaction } from '../../db/pool.js';
@@ -53,20 +50,19 @@ export interface AccountSummary {
   readonly deletedAt: Date | null;
   readonly entitlement: AccountEntitlementSummary | null;
   readonly latestSubscription: AccountSubscriptionSummary | null;
-  /**
-   * Mission Section 8's "active/suspended count where actual authority
-   * exists": no authoritative status model exists (see this file's
-   * header), so this is always 'UNAVAILABLE' rather than a fabricated
-   * ACTIVE default -- mission Section 7's explicit "no fabricated zeroes
-   * / defaults" rule extended consistently to this per-row field.
-   */
-  readonly statusCapability: 'UNAVAILABLE';
+  readonly statusCapability: 'AVAILABLE';
+  readonly status: 'ACTIVE' | 'SUSPENDED';
+  readonly suspendedAt: Date | null;
+  readonly suspensionReason: string | null;
 }
 
 interface FamilyRow {
   family_id: string;
   created_at: Date;
   deleted_at: Date | null;
+  status: 'ACTIVE' | 'SUSPENDED';
+  suspended_at: Date | null;
+  suspension_reason: string | null;
 }
 
 interface EntitlementRow {
@@ -127,7 +123,7 @@ export class AccountsReadModel {
 
       const { rows: familyRows } = await execute<FamilyRow>(
         conn,
-        `SELECT f.family_id, f.created_at, f.deleted_at
+        `SELECT f.family_id, f.created_at, f.deleted_at, f.status, f.suspended_at, f.suspension_reason
          FROM families f
          ${deletedClause}
          ORDER BY f.created_at DESC, f.family_id DESC
@@ -171,7 +167,10 @@ export class AccountsReadModel {
         deletedAt: row.deleted_at,
         entitlement: toEntitlementSummary(entitlementByFamily.get(row.family_id)),
         latestSubscription: toSubscriptionSummary(subscriptionByFamily.get(row.family_id)),
-        statusCapability: 'UNAVAILABLE',
+        statusCapability: 'AVAILABLE',
+        status: row.status,
+        suspendedAt: row.suspended_at,
+        suspensionReason: row.suspension_reason,
       }));
 
       return { items, total, limit: page.limit, offset: page.offset };
@@ -182,7 +181,7 @@ export class AccountsReadModel {
     return runInTransaction(async (conn) => {
       const { rows: familyRows } = await execute<FamilyRow>(
         conn,
-        `SELECT family_id, created_at, deleted_at FROM families WHERE family_id = ?`,
+        `SELECT family_id, created_at, deleted_at, status, suspended_at, suspension_reason FROM families WHERE family_id = ?`,
         [familyId],
       );
       const familyRow = familyRows[0];
@@ -205,7 +204,10 @@ export class AccountsReadModel {
         deletedAt: familyRow.deleted_at,
         entitlement: toEntitlementSummary(entitlementRows[0]),
         latestSubscription: toSubscriptionSummary(subscriptionRows[0]),
-        statusCapability: 'UNAVAILABLE',
+        statusCapability: 'AVAILABLE',
+        status: familyRow.status,
+        suspendedAt: familyRow.suspended_at,
+        suspensionReason: familyRow.suspension_reason,
       };
     });
   }

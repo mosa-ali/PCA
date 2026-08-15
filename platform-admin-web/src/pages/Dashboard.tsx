@@ -79,7 +79,13 @@ export default function Dashboard() {
                   </tr>
                   <tr>
                     <th scope="row">{t('dashboard.accountsActiveSuspended')}</th>
-                    <td className="status-unavailable">{snapshot.accountsActiveSuspended.reason}</td>
+                    {snapshot.accountsActiveSuspended.capability === 'AVAILABLE' ? (
+                      <td>
+                        {snapshot.accountsActiveSuspended.active ?? '—'} / {snapshot.accountsActiveSuspended.suspended ?? '—'}
+                      </td>
+                    ) : (
+                      <td className="status-unavailable">{snapshot.accountsActiveSuspended.reason}</td>
+                    )}
                   </tr>
                   <tr>
                     <th scope="row">{t('dashboard.parentMemberUtilization')}</th>
