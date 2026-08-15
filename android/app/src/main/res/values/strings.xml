@@ -258,4 +258,33 @@
     <string name="safe_browser_ask_parent_submitted">Sent to a parent — waiting for a decision</string>
     <string name="safe_browser_ask_parent_already_pending">A request for this site is already waiting for a parent</string>
     <string name="safe_browser_ask_parent_not_requestable">This is a safety rule that can\'t be requested</string>
+
+    <!-- PCA-ADD-ENR-014 gap item 3: Admin PIN configuration UI (set/change/verify). -->
+    <string name="admin_pin_setup_title">Set an admin PIN</string>
+    <string name="admin_pin_change_title">Change admin PIN</string>
+    <string name="admin_pin_verify_title">Enter admin PIN</string>
+    <string name="admin_pin_locked_out_message">Too many incorrect attempts. Try again in %1$d seconds.</string>
+    <string name="admin_pin_field_label">PIN</string>
+    <string name="admin_pin_current_field_label">Current PIN</string>
+    <string name="admin_pin_new_field_label">New PIN</string>
+    <string name="admin_pin_confirm_field_label">Confirm new PIN</string>
+    <string name="admin_pin_confirm_button">Confirm</string>
+    <string name="admin_pin_continue_button">Continue</string>
+    <string name="admin_pin_save_button">Save PIN</string>
+    <string name="admin_pin_cancel_button">Cancel</string>
+    <string name="admin_pin_use_biometric_instead_button">Use biometrics instead</string>
+
+    <!-- PCA-FR-084/144/145 gap item 4: removal/disable decision subsystem UI. -->
+    <string name="removal_decision_title">Manage device protection</string>
+    <string name="removal_decision_state_keep_active">Protection is active</string>
+    <string name="removal_decision_state_pending">A decision about this device\'s protection is pending your review</string>
+    <string name="removal_decision_state_temporarily_disabled">Protection is temporarily paused until %1$s</string>
+    <string name="removal_decision_state_allow_removal">This device has been authorized for removal from protection</string>
+    <string name="removal_decision_keep_active_button">Keep protection active</string>
+    <string name="removal_decision_temporarily_disable_button">Temporarily pause protection</string>
+    <string name="removal_decision_allow_removal_button">Allow removal of protection</string>
+    <string name="removal_decision_allow_removal_confirm_title">Allow removal of protection?</string>
+    <string name="removal_decision_allow_removal_confirm_message">This permanently authorizes protection to be removed from this device. This action is recorded and cannot be undone.</string>
+    <string name="removal_decision_confirm_button">Confirm</string>
+    <string name="removal_decision_cancel_button">Cancel</string>
 </resources>
