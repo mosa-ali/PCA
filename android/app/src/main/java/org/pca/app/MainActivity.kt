@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
 import org.pca.app.runtime.graph.newLocalRequestId
 import org.pca.app.runtime.ui.ChildHomeScreen
+import org.pca.app.security.ui.AdminSecurityActivity
 
 /**
  * PCA-RUNTIME-ANDROID-1 Section 15: the pure launch shell is replaced by the real child status
@@ -47,6 +48,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenSafeBrowser = {
                         startActivity(Intent(this@MainActivity, SafeBrowserActivity::class.java))
+                    },
+                    onOpenAdminSecurity = {
+                        startActivity(Intent(this@MainActivity, AdminSecurityActivity::class.java))
                     },
                 )
             }

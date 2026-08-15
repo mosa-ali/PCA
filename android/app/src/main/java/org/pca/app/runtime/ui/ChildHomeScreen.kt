@@ -50,6 +50,7 @@ fun ChildHomeScreen(
     onRequestParentContact: () -> Unit = {},
     onEmergencyAccess: () -> Unit = {},
     onOpenSafeBrowser: () -> Unit = {},
+    onOpenAdminSecurity: () -> Unit = {},
 ) {
     val rows = statusRows(status)
     Surface(modifier = modifier.fillMaxSize()) {
@@ -66,6 +67,7 @@ fun ChildHomeScreen(
             item { SafeBrowserEntryCard(onClick = onOpenSafeBrowser) }
             item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
+            item { AdminSecurityEntryCard(onClick = onOpenAdminSecurity) }
         }
     }
 }
@@ -81,6 +83,26 @@ private fun SafeBrowserEntryCard(onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = stringResource(R.string.child_home_safe_browser), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/** Coordinator glue (Wave B integration): the real, reachable entry point into
+ * [org.pca.app.security.ui.AdminSecurityActivity] -- without this, that Activity (Writer64's
+ * PIN/biometric-gated PIN-config + removal-decision surface) would be declared but unlaunchable,
+ * the same "no dead Activities" rule [SafeBrowserEntryCard] above already establishes. This card
+ * itself gates nothing -- AdminSecurityActivity performs its own PIN/biometric authentication on
+ * launch, exactly like SafeBrowserActivity performs its own navigation-policy checks. */
+@Composable
+private fun AdminSecurityEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.removal_decision_title), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
