@@ -554,5 +554,30 @@
   "recovery": {
     "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",
     "startTransaction": "Start recovery transaction (dev stub)"
+  },
+  "auth": {
+    "registerTitle": "Create your PCA account",
+    "registerBody": "Register with your email and a password. We'll send a one-time code to verify your email before your account is active.",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "passwordConfirmationLabel": "Confirm password",
+    "registerSubmit": "Create account",
+    "registerSuccess": "Check your email for a verification code.",
+    "passwordMismatch": "Passwords do not match.",
+    "haveAccount": "Already have an account?",
+    "signInLink": "Sign in",
+    "verifyTitle": "Verify your email",
+    "verifyBody": "Enter the 6-digit code we sent to {{email}}.",
+    "codeLabel": "Verification code",
+    "verifySubmit": "Verify email",
+    "verifySuccess": "Your email is verified. Setting up your family...",
+    "loginTitle": "Sign in to PCA",
+    "loginSubmit": "Sign in",
+    "needAccount": "Need an account?",
+    "registerLink": "Create one",
+    "genericError": "Something went wrong. Please try again.",
+    "invalidCredentials": "Email or password is incorrect.",
+    "invalidCode": "That verification code is incorrect or has expired.",
+    "rateLimited": "Too many attempts. Please wait a moment and try again."
   }
 }

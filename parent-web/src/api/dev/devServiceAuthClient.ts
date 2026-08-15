@@ -1,4 +1,4 @@
-import type { ServiceAuthClient, AuthenticatedSession } from '../interfaces';
+import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult } from '../interfaces';
 import { buildDevSession, setServiceAuthenticated } from './devState';
 
 const DELAY_MS = 120;
@@ -29,5 +29,16 @@ export class DevServiceAuthClient implements ServiceAuthClient {
       granted: true,
       expiresAtUtc: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     };
+  }
+
+  async register(_email: string, _password: string, _passwordConfirmation: string): Promise<RegistrationResult> {
+    await delay();
+    return { status: 'PENDING_VERIFICATION' };
+  }
+
+  async verifyEmail(_email: string, _code: string): Promise<AuthenticatedSession> {
+    await delay();
+    setServiceAuthenticated(true);
+    return buildDevSession();
   }
 }

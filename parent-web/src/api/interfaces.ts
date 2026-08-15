@@ -52,6 +52,11 @@ export interface AuthenticatedSession {
   serviceAuthenticated: boolean;
 }
 
+/** Result of a self-service registration/verification call -- PCA-AUTH-SESSION-1 (FAMILY_SERVICE_SESSION_V1). Never leaks whether an email already existed. */
+export interface RegistrationResult {
+  status: 'PENDING_VERIFICATION';
+}
+
 /** Service-level (account) authentication -- separate from family authority. */
 export interface ServiceAuthClient {
   getSession(): Promise<AuthenticatedSession | null>;
@@ -59,6 +64,22 @@ export interface ServiceAuthClient {
   signOut(): Promise<void>;
   /** Re-authentication for a step-up-protected action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;
+  /**
+   * PCA-AUTH-SESSION-1 (PCA-DEC-026): self-service registration. Server
+   * validates password===passwordConfirmation itself. Always resolves to
+   * the identical PENDING_VERIFICATION result, whether the email was new
+   * or already registered -- never an enumeration oracle a caller can
+   * branch on.
+   */
+  register(email: string, password: string, passwordConfirmation: string): Promise<RegistrationResult>;
+  /**
+   * Consumes the one-time emailed verification code. On success this
+   * establishes the session (same effect as signIn) and returns it --
+   * first verification for a brand-new family also triggers genesis, so
+   * `familyId` may be null if genesis is not currently available (see
+   * ../real/realServiceAuthClient.ts's header).
+   */
+  verifyEmail(email: string, code: string): Promise<AuthenticatedSession>;
 }
 
 /**
