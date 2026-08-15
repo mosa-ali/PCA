@@ -10,6 +10,7 @@ import AccountDetail from './pages/accounts/AccountDetail';
 import Entitlements from './pages/entitlements/Entitlements';
 import EntitlementRequests from './pages/entitlements/EntitlementRequests';
 import ComplimentaryCapacity from './pages/entitlements/ComplimentaryCapacity';
+import FreeAccessPolicy from './pages/entitlements/FreeAccessPolicy';
 import BillingPlans from './pages/billing/BillingPlans';
 import BillingPricing from './pages/billing/BillingPricing';
 import BillingQuotes from './pages/billing/BillingQuotes';
@@ -83,6 +84,15 @@ export default function App() {
           element={
             <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
               <ComplimentaryCapacity />
+            </RouteGuard>
+          }
+        />
+
+        <Route
+          path="free-access-policy"
+          element={
+            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
+              <FreeAccessPolicy />
             </RouteGuard>
           }
         />

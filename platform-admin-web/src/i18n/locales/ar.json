@@ -9,6 +9,7 @@
     "entitlements": "الاستحقاقات",
     "entitlementRequests": "طلبات الاستحقاق",
     "complimentaryCapacity": "السعة المجانية",
+    "freeAccessPolicy": "سياسة الوصول المجاني",
     "billing": "الفوترة",
     "billingPlans": "الخطط",
     "billingPricing": "دفتر الأسعار",
@@ -248,6 +249,44 @@
     "created": "تم إنشاء المنحة المجانية.",
     "revoked": "تم إلغاء المنحة المجانية.",
     "renewed": "تم تجديد المنحة المجانية."
+  },
+  "freeAccessPolicy": {
+    "globalDefaultsTitle": "الإعداد الافتراضي العام للتسجيل",
+    "globalDefaultsHint": "يُطبَّق فقط على الحسابات المُوثَّقة حديثًا مستقبلًا. تغيير هذا الإعداد لا يغيّر أبدًا فترة الوصول المجاني الخاصة بأي حساب مُسجَّل مسبقًا -- استخدم البحث عن الحساب أدناه لذلك.",
+    "accountLookupTitle": "حالة الوصول المجاني للحساب",
+    "accountIdLabel": "معرّف حساب الوالد",
+    "mode": "الوضع",
+    "modes": {
+      "TIME_LIMITED": "محدد المدة",
+      "PERPETUAL": "دائم"
+    },
+    "durationDays": "المدة (أيام)",
+    "defaultParentMemberLimit": "الحد الافتراضي لأعضاء الوالدين",
+    "defaultManagedDeviceLimit": "الحد الافتراضي للأجهزة المُدارة",
+    "noExpiry": "بلا انتهاء",
+    "notApplicable": "غير منطبق",
+    "status": "الحالة",
+    "statuses": {
+      "ACTIVE": "نشط",
+      "EXPIRED": "منتهٍ",
+      "PERPETUAL": "دائم"
+    },
+    "grantedAt": "تاريخ المنح",
+    "expiresAt": "تاريخ الانتهاء",
+    "remainingDays": "الأيام المتبقية",
+    "actionLabel": "التعديل",
+    "actions": {
+      "EXTEND": "تمديد",
+      "REDUCE": "تقليص",
+      "CONVERT_TO_PERPETUAL": "التحويل إلى دائم",
+      "CONVERT_TO_TIME_LIMITED": "التحويل إلى محدد المدة"
+    },
+    "daysLabel": "الأيام",
+    "reasonCode": "السبب",
+    "adjust": "تطبيق التعديل",
+    "reasonRequired": "السبب مطلوب.",
+    "invalidDays": "أدخل عددًا صحيحًا موجبًا من الأيام.",
+    "adjusted": "تم تعديل الوصول المجاني."
   },
   "entitlementRequests": {
     "invalidAmount": "أدخل مبلغًا صالحًا غير سالب، مثل 19.99.",
