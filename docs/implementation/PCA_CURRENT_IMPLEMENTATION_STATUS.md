@@ -168,7 +168,7 @@ The R1 status below is stale for the same reason as Section 12. Of the 47 `PCA-A
 | BILLING_CORE | SOURCE_COMPLETE — `backend/src/billing/**` (Plan/PriceBook/Subscription/Invoice/Quote/PaymentAttempt/PaymentTransaction/PaymentMethod/Refund/Dispute/ProviderEvent), migrations `0007`-`0008`, exact-BigInt money model, all schema-privacy-tested |
 | PAYMENT_PROVIDER_SOURCE | SOURCE_COMPLETE (abstraction) — `PaymentProvider` interface, `TEST_SANDBOX` adapter with real HMAC webhook verification, no production adapter selected (`PAYMENT_PROVIDER_SELECTION` remains `EXTERNAL_GATE`, unchanged) |
 | MYKIDS_BILLING_SELF_SERVICE | PARTIAL — real, tested UI+backend flow exists (`parent-web/src/pages/Subscription.tsx` is NOT a placeholder — that R1/addendum claim was wrong), but unreachable end-to-end for a real parent today: `RealBillingClient` fails fast with `SERVICE_SESSION_UNAVAILABLE` because no browser-reachable session-issuance route exists yet. Closed by Round5 `PCA-AUTH-SESSION-1` (Addendum 003). |
-| SETTLEMENT_RECONCILIATION | NOT_STARTED — `SettlementAccount`/`SettlementBatch`/`Reconciliation` (`BILL-012/013/014/021/036/037/038`) have zero source anywhere; only RBAC/audit-vocabulary placeholders reserved |
+| SETTLEMENT_RECONCILIATION | SOURCE_COMPLETE (Round6) — `SettlementAccount`/`SettlementBatch`/`Reconciliation` (`BILL-012/013/014/021/036/037/038`) fully built: migration `0015`, repository, service, RBAC, HTTP routes, three wired Platform Admin pages. See §13B. |
 
 `parent-web/src/pages/Subscription.tsx` is genuine, substantial (168-line) source wired to real APIs — the prior R1/addendum claim that it is "only a static placeholder" is corrected here as factually wrong against current source.
 
@@ -194,6 +194,18 @@ Both Addendum 003 and 004, authored architecture-only in Round5 pre-flight, now 
 | COMMERCIAL_MAINTENANCE (PCA-COMMERCIAL-RUNTIME-1) | SOURCE_COMPLETE — closes both Round4-deferred `SOURCE_RUNTIME_GAP`s. `CommercialMaintenanceRunner` reconciles quote expiry (calling the existing, unmodified `expireDueQuotes`) and prunes commercial-notification retention, both exactly-once/idempotent under real concurrency, wired on a Coordinator-owned interval timer in `main.ts`. |
 
 **Deferred, documented (not silently dropped):** additive complimentary-capacity fields on `GET /v1/families/:familyId/commercial/entitlement` — the MyKids-facing read-model function exists and is tested in isolation but is not yet wired into `familyCommercialRoutes.ts` this round (Coordinator scope decision, see `ROUND5_OVERLAP_MATRIX.md`).
+
+## 13B. Round6 status (entitlement consumption, free-access closure, settlement/reconciliation)
+
+Base `eddb36397fd5f8e5ad43e627655e425608c51410` → published `c880e191891b8f2a978c218cae32479f40261e28`. See [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md)'s R4 correction for full per-ID detail.
+
+| Dimension | Status |
+|---|---|
+| COMPLIMENTARY_ENTITLEMENT_CONSUMPTION (PCA-COMPLIMENTARY-CONSUMPTION-1) | SOURCE_COMPLETE (25/25 Addendum-004 IDs) — closes the Round5-identified consumption-gate gap. `EffectiveEntitlementCapacity`'s SSOT formula is now consulted by the real slot-reservation/over-limit consumption gates, not just the read model. Complimentary capacity is genuinely consumable and now visible in MyKids. |
+| FREE_ACCESS_ENFORCEMENT (PCA-FREE-ACCESS-1) | 22/24 Addendum-003 IDs `SOURCE_COMPLETE`, 2 `PARTIAL` — daily in-app reminder and audited admin adjustment path both landed. The allowed/denied operation matrix post-expiry is correct by construction (existing protections never disabled) but the restriction of *new* commercial-capability acquisition after expiry is not yet wired into any real consumption call site (`IDENT-021`, honestly self-disclosed by Writer61, independently confirmed by QA61 and by this reconciliation pass). |
+| SETTLEMENT_RECONCILIATION (PCA-BILL-3) | SOURCE_COMPLETE (7/7 previously-`NOT_STARTED` Addendum-002 IDs closed) — `SettlementAccount`/`SettlementBatch`/`Reconciliation`, migration `0015`, RBAC (`VIEW_SETTLEMENT_RECORDS`/`MUTATE_SETTLEMENT_ACCOUNT`/`CREATE_SETTLEMENT_BATCH`/`RESOLVE_RECONCILIATION`), DB-authoritative no-double-attribution constraint, three Platform Admin pages wired into routing/nav. Real banking-relationship setup remains `SETTLEMENT_BANK_CONFIGURATION` (external, unchanged, not closed here). |
+
+**Deferred, documented (not silently dropped):** `FREE_ACCESS_ENFORCEMENT_V1`'s `assertNewCapacityAllowed`-style enforcement is built and unit-tested but not bound into `SlotReservationService`/`ChangeRequestService`/enrollment — denied-after-expiry is not yet structurally enforced against any real operation. Left as a dedicated follow-up rather than risking an edit to already-accepted, already-tested consumption logic this late in the round without a fresh QA pass. Platform Admin Dashboard still lacks settlement summary/service-health metrics (`PA-041`, untouched — outside Writer62's file ownership this round).
 
 ## 14. Next implementation programme (suggested, not directive)
 

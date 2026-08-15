@@ -25,6 +25,12 @@
         "mission": "PCA-MASTER-COORDINATOR Round5 finalization pass",
         "base": "22cd31e1d31deaa51b8055a070b21e5d7f5b37b8",
         "reason": "Reconciled all 24 Addendum-003 (PCA-ADD-IDENT-*) and 25 Addendum-004 (PCA-ADD-COMP-*) requirements against real Round5 source/tests. Key cross-cutting finding: complimentary-capacity consumption gates (SlotReservationService/ChangeRequestService/over_limit calc) are not yet wired to complimentary grants -- capacity is visible but not consumable (COMP-005/010/011 PARTIAL). Genesis-device-signer bridging IDENT-009/010 is source-complete but functionally fail-closed in production pending PCA-DEC-020 human security review (same posture as every other crypto-gated surface). FREE_ACCESS daily-reminder UI and admin bulk-change path not built this round (IDENT-019/020/021 NOT_STARTED)."
+      },
+      {
+        "revision": "R4",
+        "mission": "PCA-MASTER-COORDINATOR Round6 traceability finalization pass",
+        "base": "c880e191891b8f2a978c218cae32479f40261e28",
+        "reason": "Reconciled the 19 Round6-candidate IDs named in the Round6 charter (Section BU) against real, independently-verified Round6 source/tests (Writer60 PCA-COMPLIMENTARY-CONSUMPTION-1, Writer61 PCA-FREE-ACCESS-1, Writer62 PCA-BILL-3, plus Coordinator glue c880e19). 15 of 19 upgraded to SOURCE_COMPLETE (4 from PARTIAL: COMP-005/010/011/018; 8 from NOT_STARTED: IDENT-019/020, BILL-012/013/014/021/036/037/038, PA-044; 1 from PARTIAL with an external-gate annotation added: BILL-022). 1 upgraded NOT_STARTED->PARTIAL (IDENT-021, enforcement matrix built/tested but not wired to a real consumption call site). 3 left unchanged in status but notes refreshed against real evidence (PA-041 dashboard metrics untouched this round; PA-043 incremental settlement-config coverage noted; BILL-020 new FX-snapshot evidence noted, reporting-rollup gap remains open). No status was upgraded on phase-completion or Writer self-report alone -- every upgrade cites the specific file(s)/test(s) read directly during this reconciliation pass."
       }
     ]
   },
@@ -3462,33 +3468,33 @@
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "SettlementAccount: zero matches anywhere except the out-of-scope migration comment."
+      "notes": "Round6 (Writer62, PCA-BILL-3): SettlementAccount entity, migration 0015_settlement_reconciliation.sql, MySqlSettlementRepository, full RBAC (VIEW_SETTLEMENT_RECORDS/MUTATE_SETTLEMENT_ACCOUNT), Platform Admin UI (SettlementAccounts.tsx, wired into App.tsx/nav by Coordinator glue c880e19). test/db/settlement.mysql.test.mjs (532 lines), test/billing/settlement.test.mjs (432 lines), 355/355 DB + 1435/1435 unit passing on the integrated tree."
     },
     {
       "requirementId": "PCA-ADD-BILL-013",
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "SettlementBatch: zero matches anywhere."
+      "notes": "Round6 (Writer62): SettlementBatch entity carries settlement account reference, currency, period, expected gross, fees, net, received, and computed difference exactly per spec, DB CHECK-constrained (settlement_batches_difference_check). CREATE_SETTLEMENT_BATCH RBAC operation added. Same evidence base as BILL-012."
     },
     {
       "requirementId": "PCA-ADD-BILL-014",
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Reconciliation: zero matches anywhere."
+      "notes": "Round6 (Writer62): Reconciliation status (MATCHED/UNDER_INVESTIGATION/RESOLVED) ties a batch's received amount back to constituent PaymentTransactions via a DB-authoritative UNIQUE constraint (settlement_batch_items_transaction_key) preventing double-attribution; RESOLVE_RECONCILIATION RBAC operation gates the UNDER_INVESTIGATION->RESOLVED transition, DB CHECK (settlement_batches_resolution_pair_check) enforces resolution reason/actor are set together. Same evidence base as BILL-012."
     },
     {
       "requirementId": "PCA-ADD-BILL-043",
@@ -3613,32 +3619,35 @@
       ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "No-auto-FX-for-pricing half solidly implemented; USD-normalized reporting rollup with recorded rate not located."
+      "notes": "Round6 adds a new, related piece of evidence -- SettlementBatch's optional 1:1 RecordedSettlementFxSnapshotRecord (recordedRate, effectiveTimestamp, providerRef) captures the provider's stated conversion rate per batch, reinforcing the no-live-FX-fetch/recorded-rate-only discipline. This does not itself close the gap this ID was PARTIAL for: no cross-batch USD-normalized reporting rollup exists yet. No-auto-FX-for-pricing half remains solidly implemented as before."
     },
     {
       "requirementId": "PCA-ADD-BILL-021",
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Cannot exist without SettlementAccount/Batch/Reconciliation (BILL-012/013/014)."
+      "notes": "Round6: now buildable -- SettlementAccount.settlementCurrency is modeled as a field distinct from Invoice/PaymentTransaction charge currency, and the SettlementBatch/FX-snapshot pair make the gross-charged/provider-FX-fees/net-settled relationship auditable, per spec. Same evidence base as BILL-012."
     },
     {
       "requirementId": "PCA-ADD-BILL-022",
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/billing/currency.ts",
         "backend/migrations/0007_billing_core.sql"
       ],
       "testEvidence": [],
-      "externalGate": [],
-      "notes": "Single enabled currency flag exists; no distinct charge-vs-settlement currency-gate concept."
+      "externalGate": [
+        "SUPPORTED_CHARGE_CURRENCIES",
+        "SUPPORTED_SETTLEMENT_CURRENCIES"
+      ],
+      "notes": "Round6: the distinct charge-vs-settlement currency-gate concept this ID requires now exists at the source level -- SettlementAccount.settlementCurrency is modeled as its own field, independent of Invoice/PaymentTransaction charge currency, so a currency can architecturally be enabled for settlement independent of charge-currency enablement (mirrors the BILL-027-029 abstraction-complete/externally-gated pattern). Actual enablement of any specific currency for real charging or settlement remains correctly gated on SUPPORTED_CHARGE_CURRENCIES/SUPPORTED_SETTLEMENT_CURRENCIES (external, MERCHANT_ACCOUNT_APPROVAL/banking-partner-dependent, unchanged and NOT closed by this document)."
     },
     {
       "requirementId": "PCA-ADD-BILL-023",
@@ -3849,42 +3858,42 @@
       "phase": [
         "PCA-BILL-3"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "SettlementAccount: no entity, table, or repository."
+      "notes": "Round6 (Writer62): SettlementAccount carries settlementAccountId, providerRef (bank/settlement-provider reference), settlementCurrency exactly per spec. providerRef correctly never leaves the backend in any GET response -- accountToDto (settlementRoutes.ts) exposes only displayLabel/settlementCurrency/status, never the raw providerRef, satisfying the no-raw-credential-storage-outside-this-scope rule this ID cites. Verified directly by reading settlementRoutes.ts's DTO mapping during this reconciliation pass."
     },
     {
       "requirementId": "PCA-ADD-BILL-037",
       "phase": [
         "PCA-BILL-3"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "SettlementBatch: no entity, table, or repository."
+      "notes": "Round6 (Writer62): SettlementBatch carries all required fields (settlement account ref, currency, period, expectedGross, fees, net, received, difference) exactly per spec. Note: batchToDto does return providerRef in this case -- but a SettlementBatch's providerRef is the provider's own payout/batch reference number (an operational tracking ID), not a bank credential/account identifier, so exposing it does not conflict with BILL-036/PA-044's masking rule (which governs SettlementAccount's bank reference specifically). Distinguished during this reconciliation pass; QA62 had flagged the differing treatment as worth double-checking, adjudicated non-blocking at the time and confirmed correct-by-design now."
     },
     {
       "requirementId": "PCA-ADD-BILL-038",
       "phase": [
         "PCA-BILL-3"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "Reconciliation: no entity; only RBAC/audit-vocabulary placeholders reserved for a feature that does not exist."
+      "notes": "Round6 (Writer62): Reconciliation status is exactly MATCHED/UNDER_INVESTIGATION/RESOLVED per spec; DB CHECK constraint blocks treating a batch as resolved while UNDER_INVESTIGATION (settlement_batches_resolution_pair_check) and PlatformAdminSettlementService enforces the same at the service layer. Same evidence base as BILL-012."
     },
     {
       "requirementId": "PCA-ADD-PA-041",
@@ -3897,7 +3906,7 @@
       ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Covers most metrics (per-currency breakdowns) but lacks settlement summary and service-health/exception-queue metrics."
+      "notes": "Unchanged this round -- Writer62's ownership was the Settlement/Reconciliation domain and its own dedicated pages, not Dashboard.tsx. Dashboard still lacks settlement summary and service-health/exception metrics. Real remaining gap, not touched by Round6."
     },
     {
       "requirementId": "PCA-ADD-PA-042",
@@ -3923,18 +3932,18 @@
       ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Only 3 of ~8 named settings categories exist (FREE_STARTER defaults, currencies, market-mapping); provider-credential/settlement/branding/feature-flag surfaces absent."
+      "notes": "Round6: the settlement-configuration category (SettlementAccount references, access-gated per Section 14) named in this requirement is now real and administrable -- via the dedicated /settlement/accounts surface rather than the generic Settings page, but the substantive requirement (settlement config is administrable, access-gated) is met. 4 of ~8 named settings categories now exist (was 3): FREE_STARTER defaults, enabled currencies, market-mapping, settlement configuration. Still missing: branding/support metadata, payment-provider credential-by-reference configuration, notification settings, maintenance-mode control, feature flags."
     },
     {
       "requirementId": "PCA-ADD-PA-044",
       "phase": [
         "PCA-PA-3"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "No route returns a payment-provider-credential or settlement-account field, masked or otherwise; nothing exists yet to mask."
+      "notes": "Round6: settlement configuration is the first sensitive-settings surface to actually exist and be exercised -- SettlementAccount reads (accountToDto in settlementRoutes.ts) return only settlementAccountId/displayLabel/settlementCurrency/status, never the raw providerRef, satisfying write-only/masked-read semantics exactly as specified. Payment-provider-credential configuration itself remains unbuilt (no route to test against), so this ID is scored on the settlement half, which is now real and correctly masked."
     },
     {
       "requirementId": "PCA-ADD-PA-045",
@@ -4307,33 +4316,33 @@
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "No bulk/administrative re-snapshot UI or audited change path exists yet."
+      "notes": "Round6 (Writer61, PCA-FREE-ACCESS-1): FreeAccessAdminService.adjustAccount() is an explicit, separately audited administrative action (EXTEND/REDUCE/CONVERT_TO_PERPETUAL/CONVERT_TO_TIME_LIMITED), gated by ADMINISTER_ENTITLEMENT_QUANTITY + ENTITLEMENT_LIMIT_OVERRIDE step-up, writing a before/after audit event in the same transaction as the mutation. Structurally independent of getGlobalDefaults (no shared write path) -- satisfies the requirement's core invariant that an account-level change is never a side effect of a platform-wide default change. Evidence: backend/src/parentaccount/freeaccess/FreeAccessAdminService.ts, adjustment.ts; test/parentaccount/freeaccess/FreeAccessAdminService.test.mjs, adjustment.test.mjs."
     },
     {
       "requirementId": "PCA-ADD-IDENT-020",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "No daily in-app remaining-period reminder UI was built this round."
+      "notes": "Round6 (Writer61): FreeAccessReminderBannerView renders exact remaining days, expiry date, and a Billing CTA (Link to /subscription) during TIME_LIMITED FREE_ACCESS, matching the requirement verbatim. Never shown for PERPETUAL. Evidence: parent-web/src/components/freeaccess/FreeAccessReminderBanner(View).tsx; parent-web/tests/component/FreeAccessReminderBanner(View).test.tsx, tests/i18n/freeAccessRtl.test.tsx."
     },
     {
       "requirementId": "PCA-ADD-IDENT-021",
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "No expiry-driven restriction of new commercial-capability acquisition is enforced yet; FREE_ACCESS expiry has no consuming code path today."
+      "notes": "Round6 (Writer61): the allowed/denied operation matrix (auth/billing/status remain available; existing enrolled protections are never disabled/suspended/removed on FREE_ACCESS expiry) is correct by construction -- no code path anywhere disables protection on FREE_ACCESS expiry, and GET /api/parent/free-access-status lets MyKids read its own server-time-authoritative status. However the positive half -- restricting NEW paid/commercial capability acquisition after expiry -- has no consuming call site yet in SlotReservationService/ChangeRequestService/enrollment; the enforcement function exists and is unit-tested in isolation but is not wired into any real acquisition path. Coordinator-deferred as a follow-up (see this round's final report) rather than rushed into an already-accepted, already-tested consumption path without a fresh QA pass."
     },
     {
       "requirementId": "PCA-ADD-IDENT-022",
@@ -4429,7 +4438,7 @@
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts",
         "backend/src/entitlements/complimentary/ComplimentaryEntitlementService.ts"
@@ -4438,7 +4447,7 @@
         "backend/test/db/complimentaryGrants.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Read-model formula (base + sum(active grants), computed at read time, base row never mutated) is correct and tested -- but the CONSUMPTION side (SlotReservationService/ChangeRequestService, entitlements/MySqlEntitlementRepository.ts over_limit_managed_device calc) still keys off the base limit only, so granted capacity is visible but not yet consumable. Coordinator-level follow-up required outside Writer58 ownership."
+      "notes": "Round6 (Writer60, PCA-COMPLIMENTARY-CONSUMPTION-1): EffectiveEntitlementCapacity.computeEffectiveEntitlementSnapshot is now consulted by the real consumption gates -- MySqlEntitlementRepository.raiseLimit/adjustManagedDeviceCounts/adjustParentMemberUsedCount and MySqlSlotReservationRepository all take an optional ComplimentaryGrantRepository and, when wired (Coordinator wires it unconditionally in main.ts as of c880e19), consult base+active-grants rather than base alone. Granted capacity is now genuinely consumable, closing the Round5-identified gap. Evidence: backend/src/entitlements/complimentary/EffectiveEntitlementCapacity.ts, MySqlEntitlementRepository.ts:161-256, MySqlSlotReservationRepository.ts; test/db/complimentaryGrants.mysql.test.mjs + platformEntitlementsCore/Slots.mysql.test.mjs concurrency coverage, 355/355 DB tests passing on the integrated tree."
     },
     {
       "requirementId": "PCA-ADD-COMP-006",
@@ -4499,18 +4508,18 @@
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "Correct by design (capacity above the grant would follow normal PriceBook rules), but currently unreachable in practice since consumption gates do not yet consult complimentary capacity at all -- same root cause as PCA-ADD-COMP-005."
+      "notes": "Round6: now reachable in practice -- same consumption-gate wiring as COMP-005 closes the prior unreachability. Capacity above a complimentary grant correctly falls through to normal PriceBook/paid-upgrade rules (no special-cased pricing logic added)."
     },
     {
       "requirementId": "PCA-ADD-COMP-011",
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
       ],
@@ -4518,7 +4527,7 @@
         "backend/test/db/complimentaryGrants.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Expiry/revocation recomputation is correct and tested at the read-model layer; real OVER_LIMIT triggering depends on the same unwired consumption-gate follow-up as PCA-ADD-COMP-005."
+      "notes": "Round6: real OVER_LIMIT triggering now depends on the effective (base+active-grants) limit via the same MySqlEntitlementRepository wiring as COMP-005 -- expiry/revocation of a grant is recomputed at read time on every subsequent limit check, verified under real concurrency in test/db/complimentaryGrants.mysql.test.mjs."
     },
     {
       "requirementId": "PCA-ADD-COMP-012",
@@ -4612,7 +4621,7 @@
       "phase": [
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/MyKidsComplimentaryReadModel.ts"
       ],
@@ -4620,7 +4629,7 @@
         "backend/test/db/complimentaryGrants.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Read-model function built and tested in isolation, matches the frozen additive-field shape exactly -- but NOT yet wired into familyCommercialRoutes.ts (Coordinator-deferred this round, see ROUND5_OVERLAP_MATRIX.md), so MyKids does not display it yet."
+      "notes": "Round6 (Coordinator glue, c880e19): buildEffectiveEntitlementDto is now composed into familyCommercialRoutes.ts's entitlement GET handler (additive field, gated behind an optional dependency so absence is byte-identical to pre-Round6 shape). MyKids now displays complimentary capacity. Closes the Round5-deferred item recorded in ROUND5_OVERLAP_MATRIX.md."
     },
     {
       "requirementId": "PCA-ADD-COMP-019",

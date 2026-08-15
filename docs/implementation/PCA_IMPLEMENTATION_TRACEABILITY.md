@@ -22,15 +22,28 @@ This correction does not touch the Addendum-001/PCA-0..19/PCA-WELL-1 findings (u
 
 Addenda 003 (`PCA-ADD-IDENT-*`, 24 IDs) and 004 (`PCA-ADD-COMP-*`, 25 IDs) — new controlled architecture authored during Round5 pre-flight — now have real, tested Round5 source (`PCA-AUTH-SESSION-1`, `PCA-COMPLIMENTARY-ENTITLEMENTS-1`, `PCA-COMMERCIAL-RUNTIME-1`) reconciled against them, per each lane's independently-verified Writer/QA report. Key cross-cutting finding: complimentary-capacity **consumption** gates (`SlotReservationService`, `ChangeRequestService`, the `over_limit_managed_device` calculation in `EntitlementRepository`) are not yet wired to consult complimentary grants — a family's granted extra capacity is fully visible (Platform Admin UI, and once wired, MyKids) but not yet consumable, a real, honestly-scoped gap outside Writer58's file ownership (`PCA-ADD-COMP-005/010/011` marked `PARTIAL`). The genesis-device-signer bridging `PCA-ADD-IDENT-009/010` is source-complete and independently QA-confirmed fail-closed in production today (pending `PCA-DEC-020`'s human security review of `CRYPTO_SUITE`), matching every other crypto-gated surface's existing posture. `FREE_ACCESS`'s daily-reminder UI and admin bulk-change path were not built this round (`PCA-ADD-IDENT-019/020/021` `NOT_STARTED`).
 
+### Correction R4 (PCA-MASTER-COORDINATOR, Round6 traceability finalization pass, base `c880e191891b8f2a978c218cae32479f40261e28`)
+
+Round6 (`PCA-COMPLIMENTARY-CONSUMPTION-1` Writer60, `PCA-FREE-ACCESS-1` Writer61, `PCA-BILL-3` Writer62, plus Coordinator glue `c880e19`) closes the majority of the real gaps R3 identified. Reconciled directly against Round6 source/tests (not against Writer/QA self-reports alone — every upgrade below cites the specific file(s)/test(s) read during this pass):
+
+- **Complimentary-capacity consumption gap (COMP-005/010/011/018), closed.** `EffectiveEntitlementCapacity.computeEffectiveEntitlementSnapshot` is now consulted by the real consumption gates (`MySqlEntitlementRepository`, `MySqlSlotReservationRepository`), wired unconditionally in `main.ts` by Coordinator glue. Complimentary capacity is genuinely consumable and now displayed in MyKids (`familyCommercialRoutes.ts`). All 25 Addendum-004 requirements are now `SOURCE_COMPLETE`.
+- **FREE_ACCESS daily-reminder UI and audited admin adjustment path (IDENT-019/020), closed.** `FreeAccessReminderBannerView` (MyKids) and `FreeAccessAdminService.adjustAccount()` (Platform Administration) both landed with real tests.
+- **FREE_ACCESS expiry-driven acquisition restriction (IDENT-021), partially closed.** The allowed/denied operation matrix is correct by construction and the negative half (never disable existing protection) holds structurally; the positive half (block new commercial-capability acquisition post-expiry) has no consuming call site yet — upgraded `NOT_STARTED` → `PARTIAL`, not `SOURCE_COMPLETE`. This is the largest genuinely open item this correction leaves behind.
+- **Settlement/Reconciliation (BILL-012/013/014/021/036/037/038, PA-044), closed.** The entire domain — previously zero source anywhere — now has a migration, repository, service, RBAC, HTTP routes, and three wired-and-navigable Platform Admin pages, all independently re-verified (355/355 DB tests, 1435/1435 backend unit tests, on a freshly created MySQL container after the Coordinator glue commit).
+- **Charge-vs-settlement currency-gate concept (BILL-022), closed at the source level** — `SettlementAccount.settlementCurrency` now exists as its own field, independent of charge currency. Actual per-currency enablement remains correctly gated externally (unchanged).
+- **Left open, unchanged:** `PA-041` (dashboard settlement/service-health metrics — Round6 did not touch `Dashboard.tsx`), `PA-043` (5 of ~8 settings categories still missing — provider-credential, branding, notification, maintenance-mode, feature-flag), `BILL-020` (cross-batch USD-normalized reporting rollup still not located, though a new per-batch FX snapshot reinforces the recorded-rate discipline), `PA-048` (the sole remaining Addendum-002 `NOT_STARTED` row, unrelated to Round6's scope).
+
+`MISSING_IDS=0`, `DUPLICATE_IDS=0`, `ORPHAN_IDS=0` reconfirmed against the full 371-row inventory after this correction (programmatic uniqueness/completeness check re-run, not assumed carried-forward from R3).
+
 ## Control and counting
 
 | Inventory | Count | Authority | Status |
 |---|---:|---|---|
 | Base A-100 | 199 | [Architecture traceability matrix](../architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md) | Immutable accepted baseline; verified 199 unique normative IDs, 0 duplicates, 0 missing, 0 orphans at this base. Per-ID implementation evidence not yet individually re-derived (see scope limitation). |
 | Addendum 001 | 25 | [Secure invite/protected enrollment addendum](addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md) | Owner approved; evidence-backed re-derivation complete (R0 pass, see matrix below). |
-| Addendum 002 | 98 | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved and integrated; substantial real, tested source now exists (76 `SOURCE_COMPLETE`, 13 `PARTIAL`, 9 `NOT_STARTED` — R2 correction, see matrix below). Settlement/reconciliation (`BILL-012/013/014/036/037/038`) remains genuinely unbuilt. |
-| Addendum 003 | 24 | [Parent Identity, Registration, Free-Access addendum](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) | Owner approved (`PCA-DEC-026`, `Option C`); Round5 `PCA-AUTH-SESSION-1` source landed (20 `SOURCE_COMPLETE`, 1 `PARTIAL`, 3 `NOT_STARTED` — R3 correction, see matrix below). |
-| Addendum 004 | 25 | [Complimentary Entitlement Grants addendum](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) | Owner approved (Round5 Section A); Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` source landed (22 `SOURCE_COMPLETE`, 3 `PARTIAL` — R3 correction, see matrix below). Complimentary-capacity consumption gates not yet wired. |
+| Addendum 002 | 98 | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved and integrated; substantial real, tested source now exists (85 `SOURCE_COMPLETE`, 12 `PARTIAL`, 1 `NOT_STARTED` — R4 correction, see matrix below). Settlement/reconciliation (`BILL-012/013/014/021/036/037/038`) closed by Round6 `PCA-BILL-3`. |
+| Addendum 003 | 24 | [Parent Identity, Registration, Free-Access addendum](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) | Owner approved (`PCA-DEC-026`, `Option C`); Round5 `PCA-AUTH-SESSION-1` + Round6 `PCA-FREE-ACCESS-1` source landed (22 `SOURCE_COMPLETE`, 2 `PARTIAL`, 0 `NOT_STARTED` — R4 correction, see matrix below). |
+| Addendum 004 | 25 | [Complimentary Entitlement Grants addendum](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) | Owner approved (Round5 Section A); Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` + Round6 `PCA-COMPLIMENTARY-CONSUMPTION-1` source landed (25 `SOURCE_COMPLETE`, 0 `PARTIAL` — R4 correction, see matrix below). Complimentary-capacity consumption gates now wired end-to-end. |
 | Total implementation authority | 371 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
 
 `BASE_A100_REQUIREMENTS = 199` was independently recounted from the architecture matrix's own ID column (not copied from prior documentation) and confirmed exact: 0 missing, 0 duplicate, 0 orphan IDs. Family breakdown: PCA-FR (112), PCA-NFR (43), PCA-SEC (18), PCA-DATA (17), PCA-AND (3), PCA-IOS (3), PCA-PRIV (2), PCA-AI (1).
@@ -128,10 +141,10 @@ Primary programme/phase uses the workstream tags this addendum's own Section 21 
 | PCA-ADD-PA-038 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | `SELECT ... FOR UPDATE` atomic reservation, TOCTOU avoided. |
 | PCA-ADD-PA-039 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Genuine N=8/12 concurrent race test across independent DB connections, exactly K successes. |
 | PCA-ADD-PA-040 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Used vs. held tracked and exposed distinctly end to end. |
-| PCA-ADD-PA-041 | PCA-PA-4 | PARTIAL | Dashboard covers most metrics (per-currency breakdowns) but lacks settlement summary and service-health/exception-queue metrics. |
+| PCA-ADD-PA-041 | PCA-PA-4 | PARTIAL | Dashboard covers most metrics (per-currency breakdowns) but lacks settlement summary and service-health/exception-queue metrics. Unchanged by Round6 (Writer62 owned the Settlement domain/pages, not Dashboard.tsx). |
 | PCA-ADD-PA-042 | PCA-PA-4 | SOURCE_COMPLETE | No family-activity table reachable anywhere in the dashboard read model (negative property, verified by absence). |
-| PCA-ADD-PA-043 | PCA-PA-3 | PARTIAL | Only 3 of ~8 settings categories exist (FREE_STARTER defaults, currencies, market-mapping); provider-credential/settlement/branding/feature-flag surfaces absent. |
-| PCA-ADD-PA-044 | PCA-PA-3 | NOT_STARTED | No route exists to mask-read a provider-credential/settlement-account field — nothing to mask, since the underlying settings surface doesn't exist. |
+| PCA-ADD-PA-043 | PCA-PA-3 | PARTIAL | Round6: settlement configuration (SettlementAccount references, access-gated per Section 14) is now real and administrable via the dedicated `/settlement/accounts` surface — 4 of ~8 categories now exist (was 3). Provider-credential/branding/feature-flag surfaces still absent. |
+| PCA-ADD-PA-044 | PCA-PA-3 | SOURCE_COMPLETE | Round6: settlement configuration is the first sensitive-settings surface to actually exist and be exercised — `accountToDto` (`settlementRoutes.ts`) returns only `settlementAccountId`/`displayLabel`/`settlementCurrency`/`status`, never the raw `providerRef`, satisfying write-only/masked-read semantics exactly as specified. |
 | PCA-ADD-PA-045 | PCA-PA-1 | SOURCE_COMPLETE | 16 of 17 named audit event types both declared and actually emitted (`auditTypes.test.mjs`); `PLAN_CHANGED`/`BANK_SETTING_CHANGED` declared but never constructed (no such flows exist yet). |
 | PCA-ADD-PA-046 | PCA-PA-1 | SOURCE_COMPLETE | Metadata cap + validation; role-scoped read (APP_OWNER/AUDITOR unrestricted, others own-actions-only) — slightly narrower than spec's "own + domain" carve-out. |
 | PCA-ADD-PA-047 | PCA-MYKIDS-BILL-1 | PARTIAL | Server correctly prevents direct parent entitlement writes, but unreachable end-to-end today — `SERVICE_SESSION_UNAVAILABLE` (see intro note above; closed by Round5 `PCA-AUTH-SESSION-1`). |
@@ -151,17 +164,17 @@ Primary programme/phase uses the workstream tags this addendum's own Section 21 
 | PCA-ADD-BILL-009 | PCA-BILL-1 | SOURCE_COMPLETE | Refund issuance step-up-gated; extended by `RefundOrchestrationService` for concurrency/durability. |
 | PCA-ADD-BILL-010 | PCA-BILL-1 | SOURCE_COMPLETE | Dispute lifecycle states present; thinner test coverage than payment/refund. |
 | PCA-ADD-BILL-011 | PCA-BILL-1 | SOURCE_COMPLETE | UNIQUE(provider, provider_event_id) persistence/idempotency foundation. |
-| PCA-ADD-BILL-012 | PCA-BILL-3 | NOT_STARTED | SettlementAccount — zero matches anywhere except the out-of-scope migration comment. |
-| PCA-ADD-BILL-013 | PCA-BILL-3 | NOT_STARTED | SettlementBatch — zero matches anywhere. |
-| PCA-ADD-BILL-014 | PCA-BILL-3 | NOT_STARTED | Reconciliation — zero matches anywhere. |
+| PCA-ADD-BILL-012 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): SettlementAccount entity, migration `0015`, `MySqlSettlementRepository`, full RBAC, Platform Admin UI wired end-to-end by Coordinator glue `c880e19`. |
+| PCA-ADD-BILL-013 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): SettlementBatch carries settlement account ref/currency/period/expected gross/fees/net/received/computed difference exactly per spec, DB CHECK-constrained. |
+| PCA-ADD-BILL-014 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): Reconciliation MATCHED/UNDER_INVESTIGATION/RESOLVED states; DB-authoritative UNIQUE constraint prevents double-attribution of a `PaymentTransaction` to more than one batch item. |
 | PCA-ADD-BILL-015 | PCA-BILL-1 | SOURCE_COMPLETE | Currency co-located with every money-bearing column; vacuously satisfied for the absent settlement tables. |
 | PCA-ADD-BILL-016 | PCA-BILL-1 | SOURCE_COMPLETE | No family/policy/key columns; explicit static + live schema-privacy test pair. |
 | PCA-ADD-BILL-017 | PCA-BILL-1 | SOURCE_COMPLETE | `amountMinor: bigint` throughout; `InvalidMoneyError` on any non-bigint. |
 | PCA-ADD-BILL-018 | PCA-BILL-1 | SOURCE_COMPLETE | Single centralized `CURRENCY_METADATA` map. |
 | PCA-ADD-BILL-019 | PCA-BILL-1 | SOURCE_COMPLETE | USD/SAR/YER only; EUR and all others explicitly rejected. |
-| PCA-ADD-BILL-020 | PCA-BILL-1 | PARTIAL | No-auto-FX-for-pricing half solidly implemented; USD-normalized reporting rollup with recorded rate not located. |
-| PCA-ADD-BILL-021 | PCA-BILL-1 | NOT_STARTED | Cannot exist without SettlementAccount/Batch/Reconciliation (BILL-012/013/014). |
-| PCA-ADD-BILL-022 | PCA-BILL-1 | PARTIAL | Single `enabled` currency flag exists; no distinct charge-vs-settlement currency-gate concept. |
+| PCA-ADD-BILL-020 | PCA-BILL-1 | PARTIAL | No-auto-FX-for-pricing half solidly implemented; USD-normalized reporting rollup still not located. Round6 adds a per-batch `RecordedSettlementFxSnapshotRecord` (recorded rate, not live-fetched) — reinforces the discipline but does not itself add the cross-batch rollup. |
+| PCA-ADD-BILL-021 | PCA-BILL-1 | SOURCE_COMPLETE | Round6: now buildable — `SettlementAccount.settlementCurrency` is modeled distinctly from Invoice/PaymentTransaction charge currency, and the Batch/FX-snapshot pair make gross/fees/net/received auditable per spec. |
+| PCA-ADD-BILL-022 | PCA-BILL-1 | SOURCE_COMPLETE | Round6: the distinct charge-vs-settlement currency-gate concept now exists at the source level (`SettlementAccount.settlementCurrency` is its own field). Actual per-currency enablement remains correctly gated on `SUPPORTED_CHARGE_CURRENCIES`/`SUPPORTED_SETTLEMENT_CURRENCIES` (external, unchanged, NOT closed here). |
 | PCA-ADD-BILL-023 | PCA-BILL-2 | SOURCE_COMPLETE | No card/CVV/routing/secret columns anywhere; three independent schema-privacy tests assert this. |
 | PCA-ADD-BILL-024 | PCA-BILL-2 | SOURCE_COMPLETE | Server never becomes a card-data intermediary (architecture correct; unverifiable end-to-end absent a real provider adapter). |
 | PCA-ADD-BILL-025 | PCA-BILL-2 | SOURCE_COMPLETE | Resolve-by-reference-only secret indirection; no hardcoded/DB secret values found. |
@@ -175,9 +188,9 @@ Primary programme/phase uses the workstream tags this addendum's own Section 21 
 | PCA-ADD-BILL-033 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: `queryPayment` is the sole authoritative status source, webhook body status never read, but no direct test. |
 | PCA-ADD-BILL-034 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: amount/currency cross-checked against the immutable snapshot, mismatch is an anomaly never silently reconciled, but no direct test. |
 | PCA-ADD-BILL-035 | PCA-BILL-2 | SOURCE_COMPLETE | Frontend never marks payment state locally; only server-driven `WebhookService` confirms. |
-| PCA-ADD-BILL-036 | PCA-BILL-3 | NOT_STARTED | SettlementAccount — no entity, table, or repository. |
-| PCA-ADD-BILL-037 | PCA-BILL-3 | NOT_STARTED | SettlementBatch — no entity, table, or repository. |
-| PCA-ADD-BILL-038 | PCA-BILL-3 | NOT_STARTED | Reconciliation — no entity; only RBAC/audit-vocabulary placeholders reserved for a feature that doesn't exist. |
+| PCA-ADD-BILL-036 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): SettlementAccount carries id/`providerRef`/currency exactly per spec; `providerRef` never leaves the backend in any GET response (`accountToDto` exposes only `displayLabel`). |
+| PCA-ADD-BILL-037 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): SettlementBatch carries all required fields per spec. `batchToDto` does return `providerRef`, but a batch's `providerRef` is the provider's own payout/batch tracking number, not a bank credential — distinct from BILL-036's masking rule, confirmed correct-by-design during this reconciliation. |
+| PCA-ADD-BILL-038 | PCA-BILL-3 | SOURCE_COMPLETE | Round6 (Writer62): Reconciliation status exactly MATCHED/UNDER_INVESTIGATION/RESOLVED; DB CHECK + service-layer enforcement both block treating an UNDER_INVESTIGATION batch as resolved. |
 | PCA-ADD-BILL-039 | PCA-MYKIDS-BILL-1 | PARTIAL | Full UI+backend flow genuinely exists (`Subscription.tsx` etc., contradicting the addendum's own stale "placeholder" claim), but unreachable end-to-end today — `SERVICE_SESSION_UNAVAILABLE` (closed by Round5 `PCA-AUTH-SESSION-1`). |
 | PCA-ADD-BILL-040 | PCA-MYKIDS-BILL-1 | SOURCE_COMPLETE | Owner-only gate enforced server-side; the REAL attestation-chain resolver (not a stub) is wired in production `main.ts` (`familyCommercialRoutes.test.mjs`, ROLE_DENIED tests for Administrator/Viewer). |
 | PCA-ADD-BILL-041 | PCA-PA-1 | PARTIAL | No real production payment-provider adapter exists yet (only a test/dev-restricted sandbox), so real-money billing structurally cannot go live — but no explicit engineered "refuse in production" kill-switch exists for a hypothetical future adapter. |
@@ -187,20 +200,20 @@ Primary programme/phase uses the workstream tags this addendum's own Section 21 
 | PCA-ADD-BILL-046 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Idempotency key is provider-event-ID-derived (not request-ID-only); exactly-once confirmed under N=8 concurrent duplicates. |
 | PCA-ADD-BILL-047 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Limit-raise never touches slot reservations — holds by construction; no dedicated regression test proves survival under a concurrent race. |
 
-### Addendum 002 status distribution (R2 correction)
+### Addendum 002 status distribution (R4 correction, Round6)
 
 | Status | Count |
 |---|---:|
-| SOURCE_COMPLETE (incl. `TEST_EVIDENCE_PARTIAL`-annotated rows) | 76 |
-| PARTIAL | 13 |
-| NOT_STARTED | 9 |
+| SOURCE_COMPLETE (incl. `TEST_EVIDENCE_PARTIAL`-annotated rows) | 85 |
+| PARTIAL | 12 |
+| NOT_STARTED | 1 |
 | NOT_APPLICABLE | 0 |
 | EXTERNAL_GATE (as primary status) | 0 |
 
-PA: 41 SOURCE_COMPLETE, 8 PARTIAL (`006,017,020,027,036,041,043,047`), 2 NOT_STARTED (`044,048`) = 51.
-BILL: 35 SOURCE_COMPLETE, 5 PARTIAL (`020,022,026,039,041`), 7 NOT_STARTED (`012,013,014,021,036,037,038`) = 47.
+PA: 42 SOURCE_COMPLETE, 8 PARTIAL (`006,017,020,027,036,041,043,047`), 1 NOT_STARTED (`048`) = 51. Round6 closes `044` (settlement-config masked-read now real).
+BILL: 43 SOURCE_COMPLETE, 4 PARTIAL (`020,026,039,041`), 0 NOT_STARTED = 47. Round6 (Writer62, `PCA-BILL-3`) closes the entire Settlement/Reconciliation gap (`012/013/014/021/036/037/038`) and the charge-vs-settlement currency-gate concept (`022`).
 
-Six requirements (`PCA-ADD-BILL-027`–`029`, `PCA-ADD-BILL-036`–`038`) additionally carry a non-empty `externalGate` annotation in the JSON matrix (`PAYMENT_PROVIDER_SELECTION`/`MERCHANT_ACCOUNT_APPROVAL` and `SETTLEMENT_BANK_CONFIGURATION`/`SUPPORTED_SETTLEMENT_CURRENCIES` respectively); BILL-027–029's abstraction layer is itself `SOURCE_COMPLETE` (the external gate blocks only a real production provider, not the abstraction), while BILL-036–038 remain `NOT_STARTED` since no settlement source exists yet to be gated at all.
+Six requirements (`PCA-ADD-BILL-027`–`029`, `PCA-ADD-BILL-022`, `PCA-ADD-BILL-036`–`038`) carry a non-empty `externalGate` annotation in the JSON matrix (`PAYMENT_PROVIDER_SELECTION`/`MERCHANT_ACCOUNT_APPROVAL`/`SUPPORTED_CHARGE_CURRENCIES`/`SUPPORTED_SETTLEMENT_CURRENCIES` and `SETTLEMENT_BANK_CONFIGURATION` respectively) — all are `SOURCE_COMPLETE` as of Round6 (the external gate blocks only real production use/enablement, not the abstraction or the settlement domain itself, which is now fully built and tested).
 
 Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL` status: the underlying `WebhookService` orchestration logic genuinely and correctly implements each requirement (verified by direct code inspection against the addendum's normative text), but no test file anywhere in the repository imports or exercises `WebhookService` itself — only its lower-level dependencies (HMAC signature verification, DB-level event idempotency) are directly tested. This is tracked as a test-coverage gap, not a source gap.
 
@@ -228,20 +241,20 @@ Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TES
 | PCA-ADD-IDENT-016 | SOURCE_COMPLETE | Ephemeral genesis private key never persisted/logged — every call site traced by QA57. |
 | PCA-ADD-IDENT-017 | SOURCE_COMPLETE | FREE_ACCESS_MODE/DURATION_DAYS/default limits all env-configurable, bounds-validated. |
 | PCA-ADD-IDENT-018 | SOURCE_COMPLETE | FreeAccessSnapshot captured at registration; distinct from and layered alongside FREE_STARTER entitlement_defaults. |
-| PCA-ADD-IDENT-019 | NOT_STARTED | No bulk/administrative re-snapshot UI or audited change path exists yet. |
-| PCA-ADD-IDENT-020 | NOT_STARTED | No daily in-app remaining-period reminder UI was built this round. |
-| PCA-ADD-IDENT-021 | NOT_STARTED | No expiry-driven restriction of new commercial-capability acquisition is enforced yet. |
+| PCA-ADD-IDENT-019 | SOURCE_COMPLETE | Round6 (Writer61): `FreeAccessAdminService.adjustAccount()` is an explicit, separately audited administrative action (EXTEND/REDUCE/CONVERT_TO_PERPETUAL/CONVERT_TO_TIME_LIMITED), step-up-gated, structurally independent of `getGlobalDefaults` — never a side effect of a platform-wide default change. |
+| PCA-ADD-IDENT-020 | SOURCE_COMPLETE | Round6 (Writer61): `FreeAccessReminderBannerView` renders exact remaining days, expiry date, and a Billing CTA during `TIME_LIMITED` free access, matching the requirement verbatim. |
+| PCA-ADD-IDENT-021 | PARTIAL | Round6 (Writer61): the allowed/denied matrix is correct by construction (auth/billing/status always available; existing protections never disabled on expiry) but the positive half — restricting new commercial-capability acquisition — has no consuming call site yet in SlotReservationService/ChangeRequestService/enrollment. Enforcement function built/tested in isolation only. |
 | PCA-ADD-IDENT-022 | SOURCE_COMPLETE | True by construction: FREE_ACCESS and entitlement OVER_LIMIT are structurally separate, unconnected systems. |
 | PCA-ADD-IDENT-023 | SOURCE_COMPLETE | Platform-Administration-owned configuration (env var only, no live UI yet). |
 | PCA-ADD-IDENT-024 | SOURCE_COMPLETE | 30-day default explicitly labeled illustrative; every value runtime-configurable. |
 
-### Addendum 003 status distribution
+### Addendum 003 status distribution (R4 correction, Round6)
 
 | Status | Count |
 |---|---:|
-| SOURCE_COMPLETE | 20 |
-| PARTIAL | 1 |
-| NOT_STARTED | 3 |
+| SOURCE_COMPLETE | 22 |
+| PARTIAL | 2 |
+| NOT_STARTED | 0 |
 
 ## Addendum 004 implementation matrix (complimentary entitlement grants)
 
@@ -253,20 +266,20 @@ Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TES
 | PCA-ADD-COMP-002 | SOURCE_COMPLETE | Zero billing-object construction found; PriceBook completely untouched. |
 | PCA-ADD-COMP-003 | SOURCE_COMPLETE | Grant record matches the frozen field list exactly. |
 | PCA-ADD-COMP-004 | SOURCE_COMPLETE | Three scopes, never combined in one record. |
-| PCA-ADD-COMP-005 | PARTIAL | Read-model formula correct/tested; consumption gates (SlotReservationService/ChangeRequestService) not yet wired to consult it — capacity visible, not yet consumable. |
+| PCA-ADD-COMP-005 | SOURCE_COMPLETE | Round6 (Writer60): `EffectiveEntitlementCapacity.computeEffectiveEntitlementSnapshot` is now consulted by the real consumption gates (`MySqlEntitlementRepository`/`MySqlSlotReservationRepository`, both take an optional `ComplimentaryGrantRepository`, wired unconditionally by Coordinator glue in `main.ts`). Capacity is now genuinely consumable. |
 | PCA-ADD-COMP-006 | SOURCE_COMPLETE | Conditional UPDATE ... WHERE status=ACTIVE; retried mutation verified to produce no double-apply under real concurrency. |
 | PCA-ADD-COMP-007 | SOURCE_COMPLETE | Bounded enum, all 10 categories. |
 | PCA-ADD-COMP-008 | SOURCE_COMPLETE | No email-domain inference; manual admin grant only, no HR integration. |
 | PCA-ADD-COMP-009 | SOURCE_COMPLETE | Zero special-cased authority logic for any category — STAFF is a label only. |
-| PCA-ADD-COMP-010 | PARTIAL | Correct by design; unreachable in practice until the same consumption-gate gap as COMP-005 is closed. |
-| PCA-ADD-COMP-011 | PARTIAL | Expiry/revocation recomputation correct/tested at the read-model layer; real OVER_LIMIT triggering depends on the COMP-005 follow-up. |
+| PCA-ADD-COMP-010 | SOURCE_COMPLETE | Round6: now reachable in practice via the same consumption-gate wiring as COMP-005; capacity above a grant correctly falls through to normal PriceBook rules. |
+| PCA-ADD-COMP-011 | SOURCE_COMPLETE | Round6: real OVER_LIMIT triggering now depends on the effective (base+active-grants) limit, recomputed at read time on every limit check, verified under real concurrency. |
 | PCA-ADD-COMP-012 | SOURCE_COMPLETE | Expiry/revoke only flip grant status; active/reserved counts never touched. |
 | PCA-ADD-COMP-013 | SOURCE_COMPLETE | No family-facing mutation route exists; Platform Administration only. |
 | PCA-ADD-COMP-014 | SOURCE_COMPLETE | Role matrix matches the frozen spec exactly, server-enforced (live HTTP-level denial test). |
 | PCA-ADD-COMP-015 | SOURCE_COMPLETE | COMPLIMENTARY_GRANT_MUTATION step-up required and single-use-consumed before every mutation. |
 | PCA-ADD-COMP-016 | SOURCE_COMPLETE | Full audit event vocabulary, safe metadata only, same-transaction as the mutation. |
 | PCA-ADD-COMP-017 | SOURCE_COMPLETE | Platform Admin UI built; server independently re-checks every mutation regardless of UI state. |
-| PCA-ADD-COMP-018 | PARTIAL | MyKids read-model function built/tested in isolation, but not yet wired into familyCommercialRoutes.ts (Coordinator-deferred, see ROUND5_OVERLAP_MATRIX.md). |
+| PCA-ADD-COMP-018 | SOURCE_COMPLETE | Round6 (Coordinator glue `c880e19`): `buildEffectiveEntitlementDto` now composed into `familyCommercialRoutes.ts`'s entitlement GET handler; MyKids now displays complimentary capacity. Closes the Round5-deferred item. |
 | PCA-ADD-COMP-019 | SOURCE_COMPLETE | Serialized read-model output verified to never contain internalNote or grantedByAdminId. |
 | PCA-ADD-COMP-020 | SOURCE_COMPLETE | No "payment bypass"-style language found anywhere in the family-facing surface. |
 | PCA-ADD-COMP-021 | SOURCE_COMPLETE | All 5 required concurrency scenarios pass under genuinely concurrent execution, independently re-run by QA58. |
@@ -275,12 +288,12 @@ Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TES
 | PCA-ADD-COMP-024 | SOURCE_COMPLETE | Migration lease (0014) assigned from the actual current inventory at launch time. |
 | PCA-ADD-COMP-025 | SOURCE_COMPLETE | Disposable Docker Compose MySQL only; no production SQL touched. |
 
-### Addendum 004 status distribution
+### Addendum 004 status distribution (R4 correction, Round6)
 
 | Status | Count |
 |---|---:|
-| SOURCE_COMPLETE | 22 |
-| PARTIAL | 3 |
+| SOURCE_COMPLETE | 25 |
+| PARTIAL | 0 |
 | NOT_STARTED | 0 |
 
 ## Completion calculation (calculated, not projected)
