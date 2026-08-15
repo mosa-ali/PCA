@@ -13,11 +13,14 @@ import Fastify from 'fastify';
 import { closePool, getPool, runInTransaction } from '../../dist/db/pool.js';
 import { MySqlComplimentaryGrantRepository } from '../../dist/entitlements/complimentary/MySqlComplimentaryGrantRepository.js';
 import { ComplimentaryEntitlementService, ComplimentaryGrantError } from '../../dist/entitlements/complimentary/ComplimentaryEntitlementService.js';
-import { buildMyKidsComplimentaryReadModel } from '../../dist/entitlements/complimentary/MyKidsComplimentaryReadModel.js';
+import { buildMyKidsComplimentaryReadModel, buildEffectiveEntitlementDto } from '../../dist/entitlements/complimentary/MyKidsComplimentaryReadModel.js';
 import { PlatformAdminComplimentaryGrantService, PlatformAdminComplimentaryError } from '../../dist/platformadmin/complimentary/PlatformAdminComplimentaryGrantService.js';
 import { registerComplimentaryGrantRoutes } from '../../dist/http/routes/platformadmin/complimentaryGrantRoutes.js';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
 import { MySqlEntitlementRepository } from '../../dist/entitlements/MySqlEntitlementRepository.js';
+import { EntitlementService } from '../../dist/entitlements/EntitlementService.js';
+import { MySqlSlotReservationRepository } from '../../dist/entitlements/slots/MySqlSlotReservationRepository.js';
+import { SlotReservationService } from '../../dist/entitlements/slots/SlotReservationService.js';
 import { PlatformAdminAuthService } from '../../dist/platformadmin/auth/PlatformAdminAuthService.js';
 import { PlatformAdminAccountService } from '../../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { MySqlPlatformAdminAuthRepository } from '../../dist/platformadmin/auth/MySqlAuthRepository.js';
@@ -32,6 +35,28 @@ const accountService = new PlatformAdminAccountService(authRepository);
 const grantRepository = new MySqlComplimentaryGrantRepository();
 const entitlementRepository = new MySqlEntitlementRepository();
 const complimentaryService = new ComplimentaryEntitlementService(grantRepository);
+
+// EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+// Round6): separate, EXPLICITLY complimentary-aware instances -- kept
+// distinct from `entitlementRepository`/`entitlementService` used by the
+// pre-existing tests above (which intentionally stay wired base-only) so
+// this extension never changes any already-passing test's behavior.
+const entitlementRepositoryEffective = new MySqlEntitlementRepository(grantRepository);
+const changeRequestRepositoryStub = { listOpenForFamily: async () => [] };
+const entitlementServiceEffective = new EntitlementService(entitlementRepositoryEffective, changeRequestRepositoryStub);
+const slotReservationRepositoryEffective = new MySqlSlotReservationRepository(entitlementRepositoryEffective, grantRepository);
+const slotReservationServiceEffective = new SlotReservationService(slotReservationRepositoryEffective);
+
+async function insertRawInvitationForComplimentaryTests(familyId, expiresAt) {
+  const invitationId = randomUUID();
+  await getPool().query(
+    `INSERT INTO enrollment_invitations
+       (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at, opened_at, redeemed_at, revoked_at)
+     VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'CREATED', NOW(3), ?, NULL, NULL, NULL)`,
+    [invitationId, familyId, randomUUID().replace(/-/g, '').padEnd(64, '0'), expiresAt],
+  );
+  return invitationId;
+}
 
 let clockOffsetMs = 0;
 const clock = () => new Date(Date.now() + clockOffsetMs);
@@ -597,6 +622,167 @@ test('HTTP: create -> list -> revoke round trip, and RBAC/step-up enforced at th
   } finally {
     await app.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+// Round6): the consumption-side SSOT wiring -- EntitlementService
+// .getEffectiveSnapshot, the MyKids DTO, cross-family isolation, no fake
+// billing, and grant category having zero authority/consumption-path
+// effect.
+// ---------------------------------------------------------------------------
+
+test('EFFECTIVE_ENTITLEMENT_V2 SSOT: base=1, complimentary=4 -> effective=5 via EntitlementService.getEffectiveSnapshot', async () => {
+  const familyId = uniqueFamilyId('ssot-effective-5');
+  const now = new Date();
+  await entitlementServiceEffective.getOrCreateForFamily(familyId, now);
+
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  const stepUpId = await stepUpFor(admin, 'COMPLIMENTARY_GRANT_MUTATION');
+  await adminComplimentaryService.createGrant(actorOf(admin), {
+    familyId,
+    entitlementType: 'MANAGED_DEVICE_CAPACITY',
+    category: 'BETA_TESTER',
+    amountOrAllowance: 4,
+    effectiveFrom: now,
+    expiresAt: null,
+    reasonCode: 'BETA_PROGRAM',
+    internalNote: null,
+    stepUpId,
+  });
+
+  const snapshot = await entitlementServiceEffective.getEffectiveSnapshot(familyId, new Date());
+  assert.equal(snapshot.baseManagedDeviceLimit, 1);
+  assert.equal(snapshot.complimentaryManagedDeviceCapacity, 4);
+  assert.equal(snapshot.effectiveManagedDeviceLimit, 5);
+  assert.equal(snapshot.overLimitManagedDevice, false);
+});
+
+test('EFFECTIVE_ENTITLEMENT_V2: cross-family isolation -- complimentary capacity for family A never leaks into family B', async () => {
+  const familyA = uniqueFamilyId('effective-isolation-a');
+  const familyB = uniqueFamilyId('effective-isolation-b');
+  const now = new Date();
+  await entitlementServiceEffective.getOrCreateForFamily(familyA, now);
+  await entitlementServiceEffective.getOrCreateForFamily(familyB, now);
+
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  const stepUpId = await stepUpFor(admin, 'COMPLIMENTARY_GRANT_MUTATION');
+  await adminComplimentaryService.createGrant(actorOf(admin), {
+    familyId: familyA,
+    entitlementType: 'MANAGED_DEVICE_CAPACITY',
+    category: 'PARTNER',
+    amountOrAllowance: 7,
+    effectiveFrom: now,
+    expiresAt: null,
+    reasonCode: 'ISOLATION_TEST',
+    internalNote: null,
+    stepUpId,
+  });
+
+  const snapshotA = await entitlementServiceEffective.getEffectiveSnapshot(familyA, new Date());
+  const snapshotB = await entitlementServiceEffective.getEffectiveSnapshot(familyB, new Date());
+  assert.equal(snapshotA.effectiveManagedDeviceLimit, 8);
+  assert.equal(snapshotB.effectiveManagedDeviceLimit, 1, "family B's effective limit must never see family A's grant");
+  assert.equal(snapshotB.complimentaryManagedDeviceCapacity, 0);
+});
+
+test('EFFECTIVE_ENTITLEMENT_V2: MyKids DTO exposes base/complimentary/effective/active/reserved/available/expiry, never internalNote/grantedByAdminId', async () => {
+  const familyId = uniqueFamilyId('effective-dto');
+  const now = new Date();
+  await entitlementRepository.getOrCreateForFamily(familyId, 'FREE_STARTER', { tier: 'FREE_STARTER', parentMemberLimit: 1, managedDeviceLimit: 1, updatedAt: now, updatedByAdminId: null }, now);
+  await getPool().query(`UPDATE account_entitlements SET managed_device_active_count = 1 WHERE family_id = ?`, [familyId]);
+
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  const stepUpId = await stepUpFor(admin, 'COMPLIMENTARY_GRANT_MUTATION');
+  await adminComplimentaryService.createGrant(actorOf(admin), {
+    familyId,
+    entitlementType: 'MANAGED_DEVICE_CAPACITY',
+    category: 'TEMPORARY_COMPLIMENTARY',
+    amountOrAllowance: 3,
+    effectiveFrom: now,
+    expiresAt,
+    reasonCode: 'TEMP_DEVICE_CAPACITY',
+    internalNote: 'never leak this to MyKids',
+    stepUpId,
+  });
+
+  const dto = await buildEffectiveEntitlementDto(complimentaryService, familyId, { parentMemberLimit: 1, managedDeviceLimit: 1, parentMemberUsed: 0, managedDeviceActive: 1, managedDeviceReserved: 0 }, new Date());
+  assert.deepEqual(dto.managedDevice, { base: 1, complimentary: 3, effective: 4, active: 1, reserved: 0, available: 3 });
+  assert.deepEqual(dto.parentMember, { base: 1, complimentary: 0, effective: 1, used: 0 });
+  assert.equal(dto.complimentaryExpiresAt, expiresAt.toISOString());
+  const serialized = JSON.stringify(dto);
+  assert.ok(!serialized.includes('never leak this to MyKids'), 'MyKids DTO must never leak internalNote');
+  assert.ok(!serialized.includes(admin.adminId), 'MyKids DTO must never leak grantedByAdminId');
+});
+
+test('EFFECTIVE_ENTITLEMENT_V2: no fake billing -- reserving a managed-device slot using only complimentary capacity creates zero Invoice/PaymentAttempt/PaymentTransaction/ProviderEvent rows', async () => {
+  const familyId = uniqueFamilyId('no-fake-billing');
+  const now = new Date();
+  await entitlementServiceEffective.getOrCreateForFamily(familyId, now);
+  // base=1, already at capacity -- only the complimentary grant makes room.
+  await getPool().query(`UPDATE account_entitlements SET managed_device_active_count = 1 WHERE family_id = ?`, [familyId]);
+
+  const [beforeInvoices] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_invoices`);
+  const [beforeAttempts] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_attempts`);
+  const [beforeTransactions] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_transactions`);
+  const [beforeEvents] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_provider_events`);
+
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  const stepUpId = await stepUpFor(admin, 'COMPLIMENTARY_GRANT_MUTATION');
+  await adminComplimentaryService.createGrant(actorOf(admin), {
+    familyId,
+    entitlementType: 'MANAGED_DEVICE_CAPACITY',
+    category: 'SUPPORT_EXCEPTION',
+    amountOrAllowance: 1,
+    effectiveFrom: now,
+    expiresAt: null,
+    reasonCode: 'NO_FAKE_BILLING_TEST',
+    internalNote: null,
+    stepUpId,
+  });
+
+  const invitationId = await insertRawInvitationForComplimentaryTests(familyId, new Date(Date.now() + 60_000));
+  const record = await slotReservationServiceEffective.reserveForInvitation(familyId, invitationId, new Date(Date.now() + 60_000));
+  assert.equal(record.status, 'RESERVED', 'the complimentary grant must make the slot reservable even though base capacity was already full');
+
+  const [afterInvoices] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_invoices`);
+  const [afterAttempts] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_attempts`);
+  const [afterTransactions] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_transactions`);
+  const [afterEvents] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_provider_events`);
+  assert.equal(Number(afterInvoices[0].n), Number(beforeInvoices[0].n), 'zero new Invoice rows');
+  assert.equal(Number(afterAttempts[0].n), Number(beforeAttempts[0].n), 'zero new PaymentAttempt rows');
+  assert.equal(Number(afterTransactions[0].n), Number(beforeTransactions[0].n), 'zero new PaymentTransaction rows');
+  assert.equal(Number(afterEvents[0].n), Number(beforeEvents[0].n), 'zero new ProviderEvent rows');
+});
+
+test('EFFECTIVE_ENTITLEMENT_V2: grant category carries zero authority/consumption-path effect -- FOUNDER and OTHER of equal amount yield identical effective totals', async () => {
+  const familyFounder = uniqueFamilyId('category-founder');
+  const familyOther = uniqueFamilyId('category-other');
+  const now = new Date();
+  await entitlementServiceEffective.getOrCreateForFamily(familyFounder, now);
+  await entitlementServiceEffective.getOrCreateForFamily(familyOther, now);
+
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  for (const [familyId, category] of [[familyFounder, 'FOUNDER'], [familyOther, 'OTHER']]) {
+    const stepUpId = await stepUpFor(admin, 'COMPLIMENTARY_GRANT_MUTATION');
+    await adminComplimentaryService.createGrant(actorOf(admin), {
+      familyId,
+      entitlementType: 'MANAGED_DEVICE_CAPACITY',
+      category,
+      amountOrAllowance: 2,
+      effectiveFrom: now,
+      expiresAt: null,
+      reasonCode: 'CATEGORY_NEUTRALITY_TEST',
+      internalNote: null,
+      stepUpId,
+    });
+  }
+
+  const founderSnapshot = await entitlementServiceEffective.getEffectiveSnapshot(familyFounder, new Date());
+  const otherSnapshot = await entitlementServiceEffective.getEffectiveSnapshot(familyOther, new Date());
+  assert.equal(founderSnapshot.effectiveManagedDeviceLimit, otherSnapshot.effectiveManagedDeviceLimit, 'category never changes the effective-capacity arithmetic');
+  assert.equal(founderSnapshot.effectiveManagedDeviceLimit, 3);
 });
 
 test.after(async () => {

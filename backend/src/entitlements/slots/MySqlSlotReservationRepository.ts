@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../../db/pool.js';
+import type { ComplimentaryGrantRepository } from '../complimentary/ComplimentaryGrantRepository.js';
+import { computeEffectiveEntitlementSnapshot } from '../complimentary/EffectiveEntitlementCapacity.js';
 import type { EntitlementRepository } from '../EntitlementRepository.js';
 import type { ConsumeOutcome, ReleaseOutcome, ReserveOutcome, SlotReservationRepository } from './SlotReservationRepository.js';
 import type { OpaqueFamilyId, SlotReleaseReason, SlotReservationRecord, SlotReservationStatus } from '../types.js';
@@ -32,9 +34,22 @@ function mapRow(row: ReservationRow): SlotReservationRecord {
 
 export class MySqlSlotReservationRepository implements SlotReservationRepository {
   private readonly entitlementRepository: EntitlementRepository;
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+   * Round6): optional so the existing `new MySqlSlotReservationRepository
+   * (entitlementRepository)` single-arg call site (main.ts) keeps
+   * compiling unchanged -- when absent, `reserve` degrades byte-for-byte
+   * to the pre-Round6 base-limit-only availability check (zero
+   * regression). Wiring a real `ComplimentaryGrantRepository` here
+   * (Coordinator follow-up -- see WRITER60 final report's
+   * INTERFACE_CHANGE_REQUEST) is what actually closes the consumption-side
+   * gap in production.
+   */
+  private readonly complimentaryGrantRepository: ComplimentaryGrantRepository | null;
 
-  constructor(entitlementRepository: EntitlementRepository) {
+  constructor(entitlementRepository: EntitlementRepository, complimentaryGrantRepository?: ComplimentaryGrantRepository) {
     this.entitlementRepository = entitlementRepository;
+    this.complimentaryGrantRepository = complimentaryGrantRepository ?? null;
   }
 
   /**
@@ -65,7 +80,33 @@ export class MySqlSlotReservationRepository implements SlotReservationRepository
       const entitlement = await this.entitlementRepository.lockForFamily(conn, familyId);
       if (!entitlement) return { outcome: 'ENTITLEMENT_NOT_FOUND' } as const;
 
-      const available = entitlement.managedDeviceLimit - entitlement.managedDeviceActiveCount - entitlement.managedDeviceReservedCount;
+      // EFFECTIVE_ENTITLEMENT_V2: capacity is base + any ACTIVE,
+      // currently-effective complimentary MANAGED_DEVICE_CAPACITY grant,
+      // read via the SAME SSOT function every other consumption decision
+      // uses (EffectiveEntitlementCapacity.computeEffectiveEntitlementSnapshot),
+      // on THIS SAME connection -- already inside the transaction that
+      // just took the account_entitlements row's SELECT ... FOR UPDATE
+      // lock above, so this never opens a second lock/transaction and
+      // never regresses the existing count-then-insert-safe arbitration.
+      const effectiveManagedDeviceLimit = this.complimentaryGrantRepository
+        ? (
+            await computeEffectiveEntitlementSnapshot(
+              conn,
+              this.complimentaryGrantRepository,
+              familyId,
+              {
+                parentMemberLimit: entitlement.parentMemberLimit,
+                managedDeviceLimit: entitlement.managedDeviceLimit,
+                parentMemberUsed: entitlement.parentMemberUsedCount,
+                managedDeviceActive: entitlement.managedDeviceActiveCount,
+                managedDeviceReserved: entitlement.managedDeviceReservedCount,
+              },
+              now,
+            )
+          ).effectiveManagedDeviceLimit
+        : entitlement.managedDeviceLimit;
+
+      const available = effectiveManagedDeviceLimit - entitlement.managedDeviceActiveCount - entitlement.managedDeviceReservedCount;
       if (available <= 0) return { outcome: 'NO_AVAILABLE_SLOT' } as const;
 
       await this.entitlementRepository.adjustManagedDeviceCounts(conn, familyId, 1, 0, now);

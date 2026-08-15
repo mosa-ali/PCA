@@ -3,6 +3,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import { runInTransaction } from '../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../../platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
 import type { ComplimentaryGrantRepository } from './ComplimentaryGrantRepository.js';
+import { computeEffectiveEntitlementSnapshot } from './EffectiveEntitlementCapacity.js';
 import {
   COMMERCIAL_ACCESS_MARKER_AMOUNT,
   COMPLIMENTARY_ENTITLEMENT_TYPES,
@@ -13,6 +14,8 @@ import type {
   ComplimentaryGrantRecord,
   CreateComplimentaryGrantInput,
   EffectiveCapacity,
+  EffectiveEntitlementBaseUsage,
+  EffectiveEntitlementSnapshot,
   FreeAccessSummary,
   OpaqueFamilyId,
 } from './types.js';
@@ -237,6 +240,26 @@ export class ComplimentaryEntitlementService {
       await this.sweepExpiry(conn, familyId, now);
       const complimentaryAmount = await this.repository.sumActiveAmount(conn, familyId, entitlementType, now);
       return { entitlementType, baseAmount, complimentaryAmount, effectiveTotal: baseAmount + complimentaryAmount };
+    });
+  }
+
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+   * Round6) -- generalizes `computeEffectiveCapacity` above into the full
+   * frozen `EffectiveEntitlementSnapshot` shape (both limit types at once,
+   * plus usage/over-limit flags), for callers that don't already hold an
+   * open transaction/connection (e.g. the MyKids read model). Sweeps due
+   * expiries first, same as every other method on this service, then
+   * delegates the actual base+complimentary assembly to the shared SSOT
+   * function in `EffectiveEntitlementCapacity.ts` -- the SAME function
+   * `MySqlSlotReservationRepository`/`MySqlEntitlementRepository`/
+   * `EntitlementService.getEffectiveSnapshot` call, so there is exactly one
+   * place the `base + sum(active grants)` arithmetic is defined.
+   */
+  async computeEffectiveEntitlementSnapshot(familyId: OpaqueFamilyId, base: EffectiveEntitlementBaseUsage, now: Date): Promise<EffectiveEntitlementSnapshot> {
+    return this.runTx(async (conn) => {
+      await this.sweepExpiry(conn, familyId, now);
+      return computeEffectiveEntitlementSnapshot(conn, this.repository, familyId, base, now);
     });
   }
 

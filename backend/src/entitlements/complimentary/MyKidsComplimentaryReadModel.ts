@@ -16,7 +16,7 @@
  * computeEffectiveCapacity returns only numeric totals.
  */
 import type { ComplimentaryEntitlementService } from './ComplimentaryEntitlementService.js';
-import type { FreeAccessSummary, OpaqueFamilyId } from './types.js';
+import type { EffectiveEntitlementBaseUsage, FreeAccessSummary, OpaqueFamilyId } from './types.js';
 
 export interface MyKidsComplimentaryReadModel {
   complimentaryCapacity: { managedDevice: number; parentMember: number };
@@ -56,6 +56,77 @@ export async function buildMyKidsComplimentaryReadModel(
     complimentaryCapacity: { managedDevice: deviceCapacity.complimentaryAmount, parentMember: memberCapacity.complimentaryAmount },
     effectiveTotal: { managedDeviceLimit: deviceCapacity.effectiveTotal, parentMemberLimit: memberCapacity.effectiveTotal },
     freeAccess,
+  };
+}
+
+/**
+ * EFFECTIVE_ENTITLEMENT_V2 MyKids-facing DTO (PCA-COMPLIMENTARY-CONSUMPTION-1,
+ * Writer60 Round6) -- additive fields (base/complimentary/effective/
+ * active/reserved/available/expiry) for `GET /v1/families/:familyId/
+ * commercial/entitlement`. Delivered here as a pure function; per file
+ * ownership (ROUND6_FILE_OWNERSHIP.csv) `familyCommercialRoutes.ts` is
+ * Coordinator-owned, so the Coordinator composes this into that route's
+ * existing response this round.
+ *
+ * PRIVACY (PCA-ADD-COMP-019, still binding): never reads or returns
+ * internalNote/grantedByAdminId -- `expiresAt` below is derived only from
+ * the public `entitlementType`/`status`/`expiresAt` fields of
+ * ComplimentaryGrantRecord, the same privacy-safe subset
+ * buildFreeAccessSummary already relies on.
+ */
+export interface MyKidsEffectiveEntitlementDto {
+  managedDevice: {
+    base: number;
+    complimentary: number;
+    effective: number;
+    active: number;
+    reserved: number;
+    available: number;
+  };
+  parentMember: {
+    base: number;
+    complimentary: number;
+    effective: number;
+    used: number;
+  };
+  /** Soonest expiresAt among the family's currently-ACTIVE MANAGED_DEVICE_CAPACITY/PARENT_MEMBER_CAPACITY grants; null if none are active or all are perpetual (expiresAt IS NULL). */
+  complimentaryExpiresAt: string | null;
+}
+
+export async function buildEffectiveEntitlementDto(
+  service: ComplimentaryEntitlementService,
+  familyId: OpaqueFamilyId,
+  base: EffectiveEntitlementBaseUsage,
+  now: Date,
+): Promise<MyKidsEffectiveEntitlementDto> {
+  const snapshot = await service.computeEffectiveEntitlementSnapshot(familyId, base, now);
+  // listForFamily also sweeps due expiries first, so a grant whose
+  // expiresAt has just passed is excluded from soonestExpiry below by the
+  // same status transition the snapshot's sum already excluded it from.
+  const grants = await service.listForFamily(familyId, now);
+  const soonestExpiry = grants.reduce<Date | null>((soonest, grant) => {
+    if (grant.status !== 'ACTIVE') return soonest;
+    if (grant.entitlementType !== 'MANAGED_DEVICE_CAPACITY' && grant.entitlementType !== 'PARENT_MEMBER_CAPACITY') return soonest;
+    if (grant.expiresAt === null) return soonest;
+    if (grant.expiresAt.getTime() <= now.getTime()) return soonest;
+    return !soonest || grant.expiresAt.getTime() < soonest.getTime() ? grant.expiresAt : soonest;
+  }, null);
+  return {
+    managedDevice: {
+      base: snapshot.baseManagedDeviceLimit,
+      complimentary: snapshot.complimentaryManagedDeviceCapacity,
+      effective: snapshot.effectiveManagedDeviceLimit,
+      active: snapshot.managedDeviceActive,
+      reserved: snapshot.managedDeviceReserved,
+      available: Math.max(snapshot.availableDeviceCapacity, 0),
+    },
+    parentMember: {
+      base: snapshot.baseParentMemberLimit,
+      complimentary: snapshot.complimentaryParentMemberCapacity,
+      effective: snapshot.effectiveParentMemberLimit,
+      used: snapshot.parentMemberUsed,
+    },
+    complimentaryExpiresAt: soonestExpiry ? soonestExpiry.toISOString() : null,
   };
 }
 

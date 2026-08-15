@@ -21,6 +21,9 @@ import { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKe
 import { LoggingAlertAdapter } from '../../dist/platformadmin/auth/alertPort.js';
 import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
 import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
+import { MySqlComplimentaryGrantRepository } from '../../dist/entitlements/complimentary/MySqlComplimentaryGrantRepository.js';
+import { ComplimentaryEntitlementService } from '../../dist/entitlements/complimentary/ComplimentaryEntitlementService.js';
+import { PlatformAdminComplimentaryGrantService } from '../../dist/platformadmin/complimentary/PlatformAdminComplimentaryGrantService.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -52,6 +55,40 @@ const adminEntitlementService = new PlatformAdminEntitlementService(
   changeRequestService,
   slotReservationService,
 );
+
+// EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+// Round6): a SEPARATE complimentary-aware wiring, kept distinct from the
+// base-only `entitlementRepository`/`entitlementService`/
+// `changeRequestService` above (used by every pre-existing test in this
+// file, which must keep passing unchanged).
+const grantRepository = new MySqlComplimentaryGrantRepository();
+const complimentaryService = new ComplimentaryEntitlementService(grantRepository);
+const adminComplimentaryService = new PlatformAdminComplimentaryGrantService(authService, complimentaryService, clock);
+const entitlementRepositoryEffective = new MySqlEntitlementRepository(grantRepository);
+const changeRequestRepositoryEffective = new MySqlChangeRequestRepository();
+const entitlementServiceEffective = new EntitlementService(entitlementRepositoryEffective, changeRequestRepositoryEffective);
+const changeRequestServiceEffective = new ChangeRequestService(changeRequestRepositoryEffective, entitlementRepositoryEffective, entitlementServiceEffective, quotePort, commercialNotificationPublisher);
+
+async function grantManagedDeviceCapacity(familyId, amountOrAllowance) {
+  const admin = await createAdmin({ role: 'APP_OWNER' });
+  clockOffsetMs += 31_000;
+  const code = computeTotp(admin.secret, clock().getTime());
+  const stepUp = await authService.assertStepUp(admin.adminId, admin.sessionId, 'COMPLIMENTARY_GRANT_MUTATION', code, admin.roles[0]);
+  return adminComplimentaryService.createGrant(
+    { adminId: admin.adminId, roles: admin.roles, sessionId: admin.sessionId },
+    {
+      familyId,
+      entitlementType: 'MANAGED_DEVICE_CAPACITY',
+      category: 'BETA_TESTER',
+      amountOrAllowance,
+      effectiveFrom: new Date(),
+      expiresAt: null,
+      reasonCode: 'CHANGE_REQUEST_EFFECTIVE_TEST',
+      internalNote: null,
+      stepUpId: stepUp.stepUpId,
+    },
+  );
+}
 
 function uniqueFamilyId(label) {
   return `family-${label}-${randomUUID()}`;
@@ -578,6 +615,55 @@ test('cross-family isolation: raising one family entitlement never affects anoth
   const entitlementB = await entitlementService.getForFamily(familyB);
   assert.equal(entitlementA.managedDeviceLimit, 9);
   assert.equal(entitlementB.managedDeviceLimit, 1);
+});
+
+// ---------------------------------------------------------------------------
+// EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+// Round6): ChangeRequestService target validation against the EFFECTIVE
+// limit, never the base limit alone.
+// ---------------------------------------------------------------------------
+
+test('EFFECTIVE_ENTITLEMENT_V2: createRequest never quotes/accepts a target the family already effectively holds via an active complimentary grant', async () => {
+  const familyId = uniqueFamilyId('effective-request-already-held');
+  await entitlementServiceEffective.getOrCreateForFamily(familyId, new Date());
+  await grantManagedDeviceCapacity(familyId, 4); // base=1 + complimentary=4 => effective=5
+
+  // A target within (or exactly at) what the family already effectively
+  // holds must be rejected -- never quoted/charged for capacity already
+  // held via the complimentary grant.
+  await assert.rejects(
+    () => changeRequestServiceEffective.createRequest(familyId, 'MANAGED_DEVICE_LIMIT', 5, 'GLOBAL', 'USD'),
+    (error) => error instanceof ChangeRequestError && error.code === 'INVALID_TARGET',
+  );
+  await assert.rejects(
+    () => changeRequestServiceEffective.createRequest(familyId, 'MANAGED_DEVICE_LIMIT', 3, 'GLOBAL', 'USD'),
+    (error) => error instanceof ChangeRequestError && error.code === 'INVALID_TARGET',
+  );
+
+  // A target genuinely ABOVE the effective limit is accepted and its
+  // persisted currentLimitAtRequest reflects the EFFECTIVE baseline (5),
+  // not the base limit (1).
+  const accepted = await changeRequestServiceEffective.createRequest(familyId, 'MANAGED_DEVICE_LIMIT', 6, 'GLOBAL', 'USD');
+  assert.equal(accepted.currentLimitAtRequest, 5, 'the request baseline is the EFFECTIVE limit the family already held, not the base limit');
+  assert.equal(accepted.targetLimit, 6);
+});
+
+test('EFFECTIVE_ENTITLEMENT_V2: createAndApproveNoChargeDeviceIncrease also validates against the effective limit', async () => {
+  const familyId = uniqueFamilyId('effective-no-charge-already-held');
+  await entitlementServiceEffective.getOrCreateForFamily(familyId, new Date());
+  await grantManagedDeviceCapacity(familyId, 4); // effective=5
+  const owner = await createAdmin({ role: 'APP_OWNER' });
+  const actor = { adminId: owner.adminId, roles: owner.roles, sessionId: owner.sessionId };
+
+  await assert.rejects(
+    () => changeRequestServiceEffective.createAndApproveNoChargeDeviceIncrease(familyId, 5, actor.adminId, 'should be rejected'),
+    (error) => error instanceof ChangeRequestError && error.code === 'INVALID_TARGET',
+  );
+
+  const approved = await changeRequestServiceEffective.createAndApproveNoChargeDeviceIncrease(familyId, 7, actor.adminId, 'genuine increase above effective');
+  assert.equal(approved.state, 'APPROVED');
+  const raised = await entitlementRepositoryEffective.getForFamily(familyId);
+  assert.equal(raised.managedDeviceLimit, 7, 'the BASE limit column is raised to the new target (never additive with complimentary)');
 });
 
 test.after(async () => {
