@@ -60,4 +60,61 @@ class UriEnrollmentLinkParserTest {
         val result = parser.parse("pca://enroll?token=abc123&familyId=attacker-controlled&role=OWNER")
         assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = "abc123"), result)
     }
+
+    // -------------------------------------------------------------------
+    // PCA-ADD-ENR-008: Android App Link (https://) continuation form --
+    // additive to the custom-scheme form above, never a replacement.
+    // -------------------------------------------------------------------
+
+    private val appLinkParser = UriEnrollmentLinkParser(
+        expectedScheme = "pca",
+        expectedHost = "enroll",
+        appLinkScheme = "https",
+        appLinkHost = "enroll.pca.app",
+    )
+
+    @Test
+    fun `App Link form -- parses the token as the final path segment, matching exactly what parent-web generates`() {
+        val result = appLinkParser.parse("https://enroll.pca.app/abc123")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "https://enroll.pca.app", rawInvitationToken = "abc123"), result)
+    }
+
+    @Test
+    fun `App Link form -- a trailing slash does not produce an empty token`() {
+        val result = appLinkParser.parse("https://enroll.pca.app/abc123/")
+        assertEquals("abc123", result?.rawInvitationToken)
+    }
+
+    @Test
+    fun `App Link form -- the custom pca scheme still works on the SAME parser instance (additive, not a replacement)`() {
+        val result = appLinkParser.parse("pca://enroll?token=xyz789")
+        assertEquals(ParsedEnrollmentLink(serverBaseUrl = "pca://enroll", rawInvitationToken = "xyz789"), result)
+    }
+
+    @Test
+    fun `App Link form -- rejects a wrong host even with the right App Link scheme`() {
+        assertNull(appLinkParser.parse("https://not-enroll.pca.app/abc123"))
+    }
+
+    @Test
+    fun `App Link form -- rejects the http (non-https) scheme`() {
+        assertNull(appLinkParser.parse("http://enroll.pca.app/abc123"))
+    }
+
+    @Test
+    fun `App Link form -- rejects a bare host with no path at all`() {
+        assertNull(appLinkParser.parse("https://enroll.pca.app"))
+        assertNull(appLinkParser.parse("https://enroll.pca.app/"))
+    }
+
+    @Test
+    fun `App Link form -- when the parser was constructed WITHOUT app-link params, https links are rejected outright (no accidental broadening of the original construction)`() {
+        assertNull(parser.parse("https://enroll.pca.app/abc123"))
+    }
+
+    @Test
+    fun `App Link form -- an unrelated query string on the App Link form is never treated as trusted`() {
+        val result = appLinkParser.parse("https://enroll.pca.app/abc123?familyId=attacker-controlled&role=OWNER")
+        assertEquals("abc123", result?.rawInvitationToken)
+    }
 }

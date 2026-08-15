@@ -176,8 +176,15 @@ class PcaAppGraph private constructor(
     val deviceKeyPairGenerator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator()
     val deviceBootstrapApiClient: DeviceBootstrapApiClient =
         HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pca.app"))
+    /** PCA-ADD-ENR-008: accepts both the custom `pca://enroll` scheme and the `https://` Android
+     * App Link continuation form -- see [EnrollmentDeepLinkConfig.APP_LINK_HOST]'s own doc. */
     val enrollmentLinkParser: EnrollmentLinkParser =
-        UriEnrollmentLinkParser(EnrollmentDeepLinkConfig.EXPECTED_SCHEME, EnrollmentDeepLinkConfig.EXPECTED_HOST)
+        UriEnrollmentLinkParser(
+            expectedScheme = EnrollmentDeepLinkConfig.EXPECTED_SCHEME,
+            expectedHost = EnrollmentDeepLinkConfig.EXPECTED_HOST,
+            appLinkScheme = EnrollmentDeepLinkConfig.APP_LINK_SCHEME,
+            appLinkHost = EnrollmentDeepLinkConfig.APP_LINK_HOST,
+        )
     /** PCA-ENROLLMENT-RUNTIME-2: durable pending-attempt state, backed by the same encrypted
      * [runtimeStateStore] as [familyStateStore] above -- survives process death/app restart/
      * device reboot so an ambiguous bootstrap response can be recovered instead of silently lost.

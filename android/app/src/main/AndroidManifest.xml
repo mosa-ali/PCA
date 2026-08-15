@@ -71,6 +71,24 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="pca" android:host="enroll" />
             </intent-filter>
+            <!-- PCA-ADD-ENR-008 (Writer63, additive-only): Android App Link continuation, so
+                 tapping the invite link when the app is NOT yet installed can fall through to the
+                 browser/Play Store and, once installed, deep-link back into this same activity.
+                 A custom scheme (the intent-filter above) cannot do this, since the OS has nothing
+                 registered for an unrecognized scheme until the app already exists on the device.
+                 android:host MUST stay in exact sync with
+                 org.pca.app.enrollment.EnrollmentDeepLinkConfig.APP_LINK_HOST (see that constant's
+                 own doc comment). autoVerify="true" only takes effect once a real
+                 assetlinks.json is hosted at this domain (a production/domain-infrastructure
+                 decision outside this change); until then this filter is accepted but Android
+                 falls back to its normal unverified-link disambiguation behavior, never a false
+                 claim of working continuation before the domain is actually verified. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="enroll.pca.app" />
+            </intent-filter>
         </activity>
 
         <!-- PCA-WEB-RUNTIME-1: the real child-facing Safe Browser surface. Not exported (launched
