@@ -33,7 +33,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: ['tests/**/*', 'e2e/**/*', '**/*.test.ts', '**/*.test.tsx'],
+      files: ['tests/**/*', 'e2e/**/*', 'e2e-real/**/*', '**/*.test.ts', '**/*.test.tsx'],
       env: { node: true },
       rules: { '@typescript-eslint/no-explicit-any': 'off' },
     },

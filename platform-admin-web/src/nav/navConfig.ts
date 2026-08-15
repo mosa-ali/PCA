@@ -1,10 +1,12 @@
 import type { PlatformAdminOperation } from '../domain/roles';
+import type { BillingOperation } from '../domain/billingRbac';
 
 export interface NavItem {
   path: string;
   labelKey: string;
-  /** Item is hidden from the nav (not merely styled differently) when the current admin has none of these operations. Route-level enforcement still happens independently via RouteGuard/RBAC on the page itself. */
-  operation: PlatformAdminOperation;
+  /** Item is hidden from the nav (not merely styled differently) when the current admin has none of these operations. Route-level enforcement still happens independently via RouteGuard/RBAC on the page itself. Exactly one of `operation`/`billingOperation` is set per item -- billing views use the finer-grained billing/rbac.ts vocabulary (backend/src/billing/rbac.ts), everything else uses platformadmin/auth/rbacPolicy.ts's coarser vocabulary. */
+  operation?: PlatformAdminOperation;
+  billingOperation?: BillingOperation;
 }
 
 export interface NavSection {
@@ -26,11 +28,11 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     titleKey: 'nav.billing',
     items: [
-      { path: '/billing/plans', labelKey: 'nav.billingPlans', operation: 'ADMINISTER_BILLING' },
-      { path: '/billing/pricing', labelKey: 'nav.billingPricing', operation: 'ADMINISTER_BILLING' },
-      { path: '/billing/quotes', labelKey: 'nav.billingQuotes', operation: 'ADMINISTER_BILLING' },
-      { path: '/billing/invoices', labelKey: 'nav.billingInvoices', operation: 'ADMINISTER_BILLING' },
-      { path: '/billing/payments', labelKey: 'nav.billingPayments', operation: 'ADMINISTER_BILLING' },
+      { path: '/billing/plans', labelKey: 'nav.billingPlans', billingOperation: 'VIEW_BILLING_RECORDS' },
+      { path: '/billing/pricing', labelKey: 'nav.billingPricing', billingOperation: 'VIEW_PRICE_BOOK' },
+      { path: '/billing/quotes', labelKey: 'nav.billingQuotes', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+      { path: '/billing/invoices', labelKey: 'nav.billingInvoices', billingOperation: 'VIEW_BILLING_RECORDS' },
+      { path: '/billing/payments', labelKey: 'nav.billingPayments', billingOperation: 'VIEW_BILLING_RECORDS' },
     ],
   },
   {

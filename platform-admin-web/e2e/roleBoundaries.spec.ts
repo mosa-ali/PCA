@@ -41,20 +41,27 @@ async function signInAs(page: Page, roles: string[]) {
 }
 
 test.describe('role boundaries (mission Section 24)', () => {
-  test('AUDITOR_READ_ONLY: billing (a mutation-capable area) is hidden and blocked; admin-users (view-only per Section 3.7) stays reachable read-only', async ({ page }) => {
+  test('AUDITOR_READ_ONLY: billing is reachable read-only (billing/rbac.ts VIEW_BILLING_RECORDS/VIEW_PRICE_BOOK are both ALLOW); admin-users (view-only per Section 3.7) also stays reachable read-only', async ({ page }) => {
     await signInAs(page, ['AUDITOR_READ_ONLY']);
 
-    // Billing has no separate "view" operation in the backend's closed
-    // vocabulary (ADMINISTER_BILLING is FINANCE_ADMIN/APP_OWNER only) --
-    // AUDITOR_READ_ONLY is correctly denied here, not just hidden from nav.
-    await expect(page.getByRole('link', { name: /billing/i })).toHaveCount(0);
+    // CORRECTED against the frozen PLATFORM_ADMIN_LIVE_API_V1 contract and
+    // backend/src/billing/rbac.ts's real BILLING_OPERATION_MATRIX (verified
+    // by Writer55, ROUND4_AGENT55_ASSIGNMENT.md): billing DOES have its own
+    // finer-grained operation vocabulary, separate from platformadmin/auth/
+    // rbacPolicy.ts's coarse ADMINISTER_BILLING -- and AUDITOR_READ_ONLY is
+    // explicitly ALLOW on VIEW_BILLING_RECORDS/VIEW_PRICE_BOOK ("read-only
+    // across every billing view operation, write on none" -- rbac.ts's own
+    // header comment). The nav link IS shown and the route IS reachable,
+    // read-only (no mutation controls render -- BillingPermissionGate hides
+    // MUTATE_PRICE_BOOK/ADMINISTER_BILLING_RECORDS-gated forms for this role).
+    await expect(page.getByRole('link', { name: /^payments$/i })).toBeVisible();
     await goClientSide(page, '/billing/payments');
-    await expect(page.getByRole('heading', { name: /not permitted/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /not permitted/i })).toHaveCount(0);
 
     // VIEW_ADMIN_ACCOUNTS is explicitly ALLOW for AUDITOR_READ_ONLY
-    // (Section 3.7) -- the nav link IS shown, and the route is reachable
-    // (as a read-only COMING_SOON shell today, since no admin-account HTTP
-    // endpoint exists yet -- see README BACKEND_GAP_REQUIRED).
+    // (Section 3.7) -- the nav link IS shown, and the route is reachable,
+    // read-only (the "Create admin user" control is hidden -- gated on
+    // MANAGE_ADMIN_ACCOUNTS, APP_OWNER only).
     await expect(page.getByRole('link', { name: /admin users/i })).toBeVisible();
     await goClientSide(page, '/admin-users');
     await expect(page.getByRole('heading', { name: /not permitted/i })).toHaveCount(0);

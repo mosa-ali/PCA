@@ -25,56 +25,47 @@ npm run dev             # http://localhost:4100
 ```
 npm run typecheck
 npm run lint
-npm run test        # vitest unit/component/RBAC/i18n/a11y suite
-npm run test:e2e     # Playwright (mocks the backend at the HTTP boundary -- see e2e/*.spec.ts headers)
+npm run test          # vitest unit/component/RBAC/i18n/a11y suite
+npm run test:e2e      # Playwright (mocks the backend at the HTTP boundary -- see e2e/*.spec.ts headers)
+npm run test:e2e:real # Playwright against a REAL backend + MySQL (see e2e-real/realBackend.spec.ts header)
 npm run build
 ```
 
-## BACKEND_GAP_REQUIRED
+## Backend integration status (PCA-PA-3C, live)
 
-As of this app's authoring (base `2b16941` on `pca-dev`), the backend's
-Platform Administration HTTP surface is limited to exactly five routes,
-all in `backend/src/http/routes/platformAdminAuthRoutes.ts`:
+Every route this app calls is now real and live server-side (Agent51's
+`backend/src/http/routes/platformadmin/*` surface -- accounts, entitlements
++ requests, plans, price book, quotes, subscriptions/invoices/payments/
+refunds/disputes (read-only), admin-users, audit, settings, dashboard).
+Every page in this app (Dashboard, Accounts, Entitlements, Entitlement
+Requests, Plans, Price Book, Custom Quotes, the read-only billing views,
+Admin Users, Audit, Settings) calls the real HTTP surface through
+`src/api/platformAdminApiClient.ts` -- no page renders a `ComingSoon`
+placeholder or fabricated data. This was verified against an actual
+Fastify + MySQL backend process (see `e2e-real/realBackend.spec.ts`'s
+header for the exact bootstrap sequence), not merely against the mocked
+`e2e/*.spec.ts` suite.
 
-- `POST /platform-admin/auth/login`
-- `POST /platform-admin/auth/logout`
-- `POST /platform-admin/auth/sessions/revoke-all`
-- `POST /platform-admin/auth/step-up`
-- `GET /platform-admin/auth/whoami`
+Two deliberate exceptions, both honest "unavailable" states rather than
+simulated success (see `ROUND4_INTERFACE_CONTRACTS.md`'s explicit-gaps
+list):
 
-This app implements those five real, wired to a genuine HTTP client
-(`src/api/platformAdminAuthClient.ts`) -- login, MFA, session management,
-and step-up re-authentication are fully functional against a running
-backend.
+- **Family-account suspend/reactivate**: no such route exists (no
+  authoritative account-status model). `AccountDetail.tsx` renders disabled
+  Suspend/Reactivate buttons with an explicit "unavailable" message --
+  never a fake success toast.
+- **Refund issuance, subscription subscribe/cancel/modify, settlement
+  provider config**: no write routes exist on this surface at all; not
+  represented as actionable UI anywhere in this app.
 
-Every other route in this app (dashboard KPIs, accounts, entitlements,
-entitlement requests, all of billing, admin-user management, audit,
-settings) renders a `ComingSoon` component (`src/components/common/ComingSoon.tsx`)
-instead of fabricated data, because **no corresponding HTTP endpoint exists
-server-side yet**, even though the underlying domain logic does:
+Money is handled exclusively via `src/money/money.ts`: every `amountMinor`
+is a wire decimal-integer STRING (never a JS `number`), parsed to an exact
+`BigInt` and only ever formatted for display after that exact-safe
+validation -- see that file's header for the full contract.
 
-| Area | Domain logic exists at | HTTP route status |
-|---|---|---|
-| Dashboard KPIs | -- (no aggregation service written yet) | missing |
-| Accounts (list/detail/suspend/reactivate) | -- | missing |
-| Entitlements | `backend/src/entitlements/EntitlementService.ts` | missing |
-| Entitlement requests | `backend/src/entitlements/requests/ChangeRequestService.ts` | missing |
-| Billing plans | `backend/src/billing/plan.ts` | missing |
-| Price book | `backend/src/billing/priceBook.ts` | missing |
-| Custom quotes | `backend/src/billing/quote.ts`, `backend/src/entitlements/quote/QuotePort.ts` | missing |
-| Invoices | `backend/src/billing/invoice.ts` | missing |
-| Payments/refunds/disputes | `backend/src/billing/payment.ts`, `refund.ts`, `dispute.ts` | missing |
-| Admin-user management | `backend/src/platformadmin/auth/PlatformAdminAccountService.ts` | missing |
-| Audit log (queryable) | `backend/src/platformadmin/audit/PlatformAdminAuditService.ts` | missing |
-| Platform settings | -- | missing |
-
-None of this app's code invents a fake production endpoint for any of the
-above. Each `ComingSoon` screen states, verbatim, which backend file
-implements the domain logic and that no HTTP route wires it up yet, so an
-operator (and the next engineer) can tell "not built" from "broken."
-
-RBAC (`src/domain/roles.ts`), navigation gating (`src/nav/navConfig.ts`),
-and route guards (`src/rbac/RouteGuard.tsx`) are pre-wired for every one of
-these areas per the addendum's Section 3.7 permission matrix, so wiring a
-real HTTP client in for any of them is additive -- it does not require any
-RBAC or routing rework.
+RBAC (`src/domain/roles.ts`, `src/domain/billingRbac.ts`), navigation
+gating (`src/nav/navConfig.ts`), and route guards (`src/rbac/RouteGuard.tsx`,
+`src/rbac/BillingRouteGuard.tsx`) are UI hints only, independently
+cross-checked against `backend/src/platformadmin/auth/rbacPolicy.ts`'s and
+`backend/src/billing/rbac.ts`'s real operation matrices -- the server
+remains the sole authorization authority for every mutating request.
