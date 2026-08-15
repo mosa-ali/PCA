@@ -165,11 +165,11 @@ Primary programme/phase uses the workstream tags this addendum's own Section 21 
 | PCA-ADD-BILL-027 | PCA-BILL-2 | SOURCE_COMPLETE | `PaymentProvider` interface, zero SDK import anywhere, fail-closed on unknown provider. |
 | PCA-ADD-BILL-028 | PCA-BILL-2 | SOURCE_COMPLETE | Correctly self-scoped: documents production registry is empty; external gates unresolved by design. |
 | PCA-ADD-BILL-029 | PCA-BILL-2 | SOURCE_COMPLETE | Provider is part of the event unique key; multi-provider identity first-class, DB-enforced. |
-| PCA-ADD-BILL-030 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Reject-before-trust sequencing correct by inspection; HMAC primitive tested, but no test exercises `WebhookService.processWebhook` directly. |
+| PCA-ADD-BILL-030 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: reject-before-trust sequencing correct by inspection, HMAC primitive tested, but no test exercises `WebhookService.processWebhook` directly. |
 | PCA-ADD-BILL-031 | PCA-BILL-2 | SOURCE_COMPLETE | DB `UNIQUE(provider, provider_event_id)` idempotency, zero re-execution on duplicate — genuine concurrent-race + redelivery tests. |
-| PCA-ADD-BILL-032 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Freshness/replay window logic present and precise (5-minute window, `STALE_REPLAY` audit); no direct test. |
-| PCA-ADD-BILL-033 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | `queryPayment` is the sole authoritative status source, webhook body status never read; no direct test. |
-| PCA-ADD-BILL-034 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Amount/currency cross-checked against the immutable snapshot; mismatch is an anomaly, never silently reconciled; no direct test. |
+| PCA-ADD-BILL-032 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: freshness/replay window logic present and precise (5-minute window, `STALE_REPLAY` audit), but no direct test. |
+| PCA-ADD-BILL-033 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: `queryPayment` is the sole authoritative status source, webhook body status never read, but no direct test. |
+| PCA-ADD-BILL-034 | PCA-BILL-2 | SOURCE_COMPLETE | TEST_EVIDENCE_PARTIAL: amount/currency cross-checked against the immutable snapshot, mismatch is an anomaly never silently reconciled, but no direct test. |
 | PCA-ADD-BILL-035 | PCA-BILL-2 | SOURCE_COMPLETE | Frontend never marks payment state locally; only server-driven `WebhookService` confirms. |
 | PCA-ADD-BILL-036 | PCA-BILL-3 | NOT_STARTED | SettlementAccount — no entity, table, or repository. |
 | PCA-ADD-BILL-037 | PCA-BILL-3 | NOT_STARTED | SettlementBatch — no entity, table, or repository. |
