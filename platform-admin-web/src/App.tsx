@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './components/shell/AppLayout';
 import { RequireSession } from './rbac/RequireSession';
 import { RouteGuard } from './rbac/RouteGuard';
+import { BillingRouteGuard } from './rbac/BillingRouteGuard';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AccountsList from './pages/accounts/AccountsList';
@@ -79,23 +80,23 @@ export default function App() {
         <Route
           path="billing/plans"
           element={
-            <RouteGuard operation="ADMINISTER_BILLING">
+            <BillingRouteGuard operation="VIEW_BILLING_RECORDS">
               <BillingPlans />
-            </RouteGuard>
+            </BillingRouteGuard>
           }
         />
         <Route
           path="billing/pricing"
           element={
-            <RouteGuard operation="ADMINISTER_BILLING">
+            <BillingRouteGuard operation="VIEW_PRICE_BOOK">
               <BillingPricing />
-            </RouteGuard>
+            </BillingRouteGuard>
           }
         />
         <Route
           path="billing/quotes"
           element={
-            <RouteGuard operation="ADMINISTER_BILLING">
+            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
               <BillingQuotes />
             </RouteGuard>
           }
@@ -103,17 +104,17 @@ export default function App() {
         <Route
           path="billing/invoices"
           element={
-            <RouteGuard operation="ADMINISTER_BILLING">
+            <BillingRouteGuard operation="VIEW_BILLING_RECORDS">
               <BillingInvoices />
-            </RouteGuard>
+            </BillingRouteGuard>
           }
         />
         <Route
           path="billing/payments"
           element={
-            <RouteGuard operation="ADMINISTER_BILLING">
+            <BillingRouteGuard operation="VIEW_BILLING_RECORDS">
               <BillingPayments />
-            </RouteGuard>
+            </BillingRouteGuard>
           }
         />
 

@@ -54,13 +54,23 @@ describe('route security (mission Section 24)', () => {
       secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
     });
 
-    it('AUDITOR_READ_ONLY is redirected away from a mutation-capable area (billing)', async () => {
+    it('AUDITOR_READ_ONLY is redirected away from admin-account management (a mutation-capable area)', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(jsonResponse(200, { adminId: 'auditor-1', roles: ['AUDITOR_READ_ONLY'] })),
+      );
+      renderAppAt('/settings');
+      expect(await screen.findByRole('heading', { name: /not permitted/i })).toBeInTheDocument();
+    });
+
+    it('AUDITOR_READ_ONLY CAN view billing/plans (VIEW_BILLING_RECORDS ALLOW per billing/rbac.ts) but is not redirected', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue(jsonResponse(200, { adminId: 'auditor-1', roles: ['AUDITOR_READ_ONLY'] })),
       );
       renderAppAt('/billing/plans');
-      expect(await screen.findByRole('heading', { name: /not permitted/i })).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
+      expect(await screen.findByRole('heading', { name: /plans/i })).toBeInTheDocument();
     });
 
     it('SUPPORT_ADMIN is redirected away from finance/billing access', async () => {
@@ -97,7 +107,7 @@ describe('route security (mission Section 24)', () => {
       );
       renderAppAt('/admin-users');
       await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
-      expect(await screen.findByText(/not yet available/i)).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: /admin users/i })).toBeInTheDocument();
     });
 
     it('AUDITOR_READ_ONLY can still view the dashboard (a view-only operation)', async () => {
