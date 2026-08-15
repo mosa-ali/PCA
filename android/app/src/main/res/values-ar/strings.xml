@@ -257,4 +257,33 @@
     <string name="safe_browser_ask_parent_submitted">تم الإرسال إلى أحد الوالدين — بانتظار القرار</string>
     <string name="safe_browser_ask_parent_already_pending">هناك طلب سابق لهذا الموقع بانتظار أحد الوالدين</string>
     <string name="safe_browser_ask_parent_not_requestable">هذه قاعدة أمان لا يمكن طلب مراجعتها</string>
+
+    <!-- PCA-ADD-ENR-014 gap item 3: Admin PIN configuration UI (set/change/verify). -->
+    <string name="admin_pin_setup_title">تعيين رمز PIN للمشرف</string>
+    <string name="admin_pin_change_title">تغيير رمز PIN للمشرف</string>
+    <string name="admin_pin_verify_title">أدخل رمز PIN للمشرف</string>
+    <string name="admin_pin_locked_out_message">عدد كبير جدًا من المحاولات غير الصحيحة. حاول مرة أخرى بعد %1$d ثانية.</string>
+    <string name="admin_pin_field_label">رمز PIN</string>
+    <string name="admin_pin_current_field_label">رمز PIN الحالي</string>
+    <string name="admin_pin_new_field_label">رمز PIN الجديد</string>
+    <string name="admin_pin_confirm_field_label">تأكيد رمز PIN الجديد</string>
+    <string name="admin_pin_confirm_button">تأكيد</string>
+    <string name="admin_pin_continue_button">متابعة</string>
+    <string name="admin_pin_save_button">حفظ رمز PIN</string>
+    <string name="admin_pin_cancel_button">إلغاء</string>
+    <string name="admin_pin_use_biometric_instead_button">استخدم القياسات الحيوية بدلاً من ذلك</string>
+
+    <!-- PCA-FR-084/144/145 gap item 4: removal/disable decision subsystem UI. -->
+    <string name="removal_decision_title">إدارة حماية الجهاز</string>
+    <string name="removal_decision_state_keep_active">الحماية مفعّلة</string>
+    <string name="removal_decision_state_pending">هناك قرار بشأن حماية هذا الجهاز بانتظار مراجعتك</string>
+    <string name="removal_decision_state_temporarily_disabled">تم إيقاف الحماية مؤقتًا حتى %1$s</string>
+    <string name="removal_decision_state_allow_removal">تم التصريح بإزالة الحماية عن هذا الجهاز</string>
+    <string name="removal_decision_keep_active_button">إبقاء الحماية مفعّلة</string>
+    <string name="removal_decision_temporarily_disable_button">إيقاف الحماية مؤقتًا</string>
+    <string name="removal_decision_allow_removal_button">السماح بإزالة الحماية</string>
+    <string name="removal_decision_allow_removal_confirm_title">السماح بإزالة الحماية؟</string>
+    <string name="removal_decision_allow_removal_confirm_message">هذا يصرّح بشكل دائم بإمكانية إزالة الحماية عن هذا الجهاز. يتم تسجيل هذا الإجراء ولا يمكن التراجع عنه.</string>
+    <string name="removal_decision_confirm_button">تأكيد</string>
+    <string name="removal_decision_cancel_button">إلغاء</string>
 </resources>
