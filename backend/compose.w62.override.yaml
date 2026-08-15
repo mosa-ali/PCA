@@ -1,0 +1,21 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
+      MYSQL_DATABASE: pca_test
+      MYSQL_USER: pca_test_app
+      MYSQL_PASSWORD: pca_test_only_not_a_secret
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --default-time-zone=+00:00
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ppca_test_only_not_a_secret"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:33103:3306"
+    tmpfs:
+      - /var/lib/mysql
