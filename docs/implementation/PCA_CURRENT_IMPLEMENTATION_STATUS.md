@@ -143,40 +143,45 @@ None of these gates are closed by this document. None should be treated as close
 
 ## 12. Platform Administration status
 
-Addendum 002 (Platform Administration and Billing) is now **integrated and accepted controlled architecture authority** at base `6fba8e000614e772414ba973631fbfe2f20aef20` — see [PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md). Its 51 `PCA-ADD-PA-*` requirement IDs are now part of the controlled inventory (see [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md) and [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json)). Architecture acceptance is not implementation evidence: source status below remains conservative and unchanged by the architecture landing.
+### Correction R2 (Round5 pre-flight, 2026-08-15, base `ae7289f5831e50c9b62a28229296bf658dffdc4c`)
+
+The R1 status below (`NOT_STARTED` across the board) is now stale: four further rounds of real, tested, merged implementation (Wave3A + Round4) landed since R1. See [PCA_IMPLEMENTATION_TRACEABILITY.md](PCA_IMPLEMENTATION_TRACEABILITY.md)'s R2 correction for the full per-ID reconciliation; this section summarizes the result.
 
 | Dimension | Status |
 |---|---|
-| PLATFORM_ADMIN_ARCHITECTURE | ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED — integrated and controlled, no implementation source exists |
-| PLATFORM_ADMIN_SOURCE | NOT_STARTED |
-| PLATFORM_ADMIN_WEB | NOT_STARTED |
-| PLATFORM_ADMIN_AUTH_RBAC | NOT_STARTED |
-| PLATFORM_ENTITLEMENTS | NOT_STARTED |
+| PLATFORM_ADMIN_ARCHITECTURE | ARCHITECTURE_ACCEPTED_SOURCE_COMPLETE — integrated, controlled, and substantially implemented |
+| PLATFORM_ADMIN_SOURCE | SOURCE_COMPLETE (majority) — `backend/src/platformadmin/**`, migration `0005` |
+| PLATFORM_ADMIN_WEB | SOURCE_COMPLETE — `platform-admin-web/**`, live-backend-integrated (Dashboard, Accounts, Entitlements, Requests, Plans, PriceBook, Custom Quotes, read-only Billing, Admin Users, Audit, Settings), real-backend E2E suite passing |
+| PLATFORM_ADMIN_AUTH_RBAC | SOURCE_COMPLETE — separate auth realm/session/RBAC, MFA+step-up, audit, verified by `crossRealm.test.mjs`/`rbacPolicy.test.mjs` |
+| PLATFORM_ENTITLEMENTS | SOURCE_COMPLETE (majority) — `backend/src/entitlements/**`, migration `0006`, concurrency-safe slot reservation genuinely tested under real parallel load |
 
-All 51 `PCA-ADD-PA-*` requirements are individually reconciled as `NOT_STARTED` in the traceability document and matrix, consistent with the addendum's own Section 21/22 self-declaration that no `PCA-PA-*` source exists in the repository, independently confirmed by this correction's targeted search.
+Of the 51 `PCA-ADD-PA-*` requirements: 41 `SOURCE_COMPLETE`, 8 `PARTIAL`, 2 `NOT_STARTED`. Real remaining gaps: settings surface incomplete (no provider-credential/settlement/branding config — `PA-043/044`), dashboard missing settlement/service-health metrics (`PA-041`), slot-consumption stage 4 (device reaching ACTIVE releasing its reservation) never wired to a real device-activation event (`PA-027/036`), and 3 of 6 named step-up scopes unwired because their underlying actions (family suspend/reactivate, settlement config) don't exist yet (`PA-017`). Full per-ID evidence in the traceability doc/matrix.
 
 ## 13. Billing/payment status
 
-The 47 `PCA-ADD-BILL-*` requirement IDs (including lettered `PCA-ADD-BILL-005A`) are now part of the controlled inventory. All are `NOT_STARTED`.
+### Correction R2 (Round5 pre-flight, 2026-08-15, base `ae7289f5831e50c9b62a28229296bf658dffdc4c`)
+
+The R1 status below is stale for the same reason as Section 12. Of the 47 `PCA-ADD-BILL-*` requirement IDs: 35 `SOURCE_COMPLETE` (4 of those additionally flagged `TEST_EVIDENCE_PARTIAL` — correct `WebhookService` orchestration logic with no direct test exercising the service itself), 5 `PARTIAL`, 7 `NOT_STARTED`.
 
 | Dimension | Status |
 |---|---|
-| BILLING_CORE | NOT_STARTED |
-| PAYMENT_PROVIDER_SOURCE | NOT_STARTED |
-| MYKIDS_BILLING_SELF_SERVICE | NOT_STARTED |
+| BILLING_CORE | SOURCE_COMPLETE — `backend/src/billing/**` (Plan/PriceBook/Subscription/Invoice/Quote/PaymentAttempt/PaymentTransaction/PaymentMethod/Refund/Dispute/ProviderEvent), migrations `0007`-`0008`, exact-BigInt money model, all schema-privacy-tested |
+| PAYMENT_PROVIDER_SOURCE | SOURCE_COMPLETE (abstraction) — `PaymentProvider` interface, `TEST_SANDBOX` adapter with real HMAC webhook verification, no production adapter selected (`PAYMENT_PROVIDER_SELECTION` remains `EXTERNAL_GATE`, unchanged) |
+| MYKIDS_BILLING_SELF_SERVICE | PARTIAL — real, tested UI+backend flow exists (`parent-web/src/pages/Subscription.tsx` is NOT a placeholder — that R1/addendum claim was wrong), but unreachable end-to-end for a real parent today: `RealBillingClient` fails fast with `SERVICE_SESSION_UNAVAILABLE` because no browser-reachable session-issuance route exists yet. Closed by Round5 `PCA-AUTH-SESSION-1` (Addendum 003). |
+| SETTLEMENT_RECONCILIATION | NOT_STARTED — `SettlementAccount`/`SettlementBatch`/`Reconciliation` (`BILL-012/013/014/021/036/037/038`) have zero source anywhere; only RBAC/audit-vocabulary placeholders reserved |
 
-Confirmed via targeted search (re-run this correction pass): zero matches for billing/payment/invoice/stripe/platform-admin/entitlement-sku/paywall terms across `backend/src`, `parent-web`, `parent-sdk`, `docs/release_readiness`, and `tooling`. `parent-web/src/pages/Subscription.tsx` is a static placeholder with no backend wiring — explicitly noted in the addendum itself as not a starting implementation of the `PCA-MYKIDS-BILL-1` workstream.
+`parent-web/src/pages/Subscription.tsx` is genuine, substantial (168-line) source wired to real APIs — the prior R1/addendum claim that it is "only a static placeholder" is corrected here as factually wrong against current source.
 
-### Owner-approved future commercial requirements (architecture-accepted via Addendum 002; not implemented)
+### Owner-approved future commercial requirements (architecture-accepted via Addendum 002; now substantially implemented)
 
-- `FREE_STARTER`: managedDeviceLimit = 1, price = FREE. (`PCA-ADD-PA-021`–`024`)
-- Pricing above 1 device: App Owner configurable, no hard-coded price, versioned price book as pricing authority. (`PCA-ADD-BILL-002`, `PCA-ADD-BILL-044`)
-- Accepted initial currencies: USD (global/default), SAR (Gulf market), YER (Yemen). EUR not in initial scope. No automatic FX required for initial release. (`PCA-ADD-BILL-019`–`020`)
-- Paid upgrade flow: select/request target managed-device limit → quote → display price → payment → server/provider-verified confirmation → entitlement activation → parent notification → updated allowance visible. Browser redirect alone is NOT payment authority. (`PCA-ADD-PA-030`–`035`, `PCA-ADD-BILL-035`, Section 18.1)
-- Custom quantity: `PENDING_ADMIN_QUOTE` → App Owner quote → parent payment → verified activation. (`PCA-ADD-PA-050`, `PCA-ADD-BILL-005A`/`045`)
-- `parentMemberLimit` and `managedDeviceLimit` are kept as separate concepts; paid pricing applies exclusively to `managedDeviceLimit` — `parentMemberLimit` increases are explicitly out of commercial scope pending a future, separate owner decision. (`PCA-ADD-PA-025`, `PCA-ADD-PA-054`)
+- `FREE_STARTER`: managedDeviceLimit = 1, price = FREE. **SOURCE_COMPLETE**, config-table-driven not hardcoded. (`PCA-ADD-PA-021`–`024`)
+- Pricing above 1 device: App Owner configurable, no hard-coded price, versioned price book as pricing authority. **SOURCE_COMPLETE**, DB-enforced single-open-active-row. (`PCA-ADD-BILL-002`, `PCA-ADD-BILL-044`)
+- Accepted initial currencies: USD (global/default), SAR (Gulf market), YER (Yemen). EUR not in initial scope. No automatic FX required for initial release. **SOURCE_COMPLETE**. (`PCA-ADD-BILL-019`–`020`, `020`'s reporting-rollup half remains `PARTIAL`)
+- Paid upgrade flow: select/request target managed-device limit → quote → display price → payment → server/provider-verified confirmation → entitlement activation → parent notification → updated allowance visible. Browser redirect alone is NOT payment authority. **SOURCE_COMPLETE** at the backend/UI level; end-to-end for a real parent blocked on the session-issuance gap above. (`PCA-ADD-PA-030`–`035`, `PCA-ADD-BILL-035`, Section 18.1)
+- Custom quantity: request sits `PENDING` with `awaitingAdminQuote=true` (there is no `PENDING_ADMIN_QUOTE` state literal in the actual codebase — correcting this doc's prior imprecision) → App Owner quote → parent payment → verified activation. **SOURCE_COMPLETE**. (`PCA-ADD-PA-050`, `PCA-ADD-BILL-005A`/`045`)
+- `parentMemberLimit` and `managedDeviceLimit` are kept as separate concepts; paid pricing applies exclusively to `managedDeviceLimit` — `parentMemberLimit` increases are explicitly out of commercial scope pending a future, separate owner decision. **SOURCE_COMPLETE**, doubly enforced at DB CHECK constraint and service level. (`PCA-ADD-PA-025`, `PCA-ADD-PA-054`)
 
-These decisions now have assigned Addendum-002 requirement IDs (shown above) since integration. They remain architecture-only — no implementation source exists for any of them.
+None of the above are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — `SOURCE_COMPLETE` is a source/test-evidence claim only, never a production-readiness claim. Real remaining architecture-only scope: Addendum 003 (parent identity/registration/free-access, `PCA-DEC-026`) and Addendum 004 (complimentary entitlement grants) — both newly authored this pass, zero source yet, Round5 `PCA-AUTH-SESSION-1`/`PCA-COMPLIMENTARY-ENTITLEMENTS-1` scope.
 
 ## 14. Next implementation programme (suggested, not directive)
 

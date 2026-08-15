@@ -10,14 +10,24 @@ This document was re-derived from actual source, tests, and schema evidence by A
 
 Addendum 002 (Platform Administration and Billing) has since been integrated into `pca-dev` and is now controlled architecture authority — see [PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md). This correction reconciles this document with that fact: its 98 requirement IDs (`PCA-ADD-PA-001`..`054`, 51 non-contiguous IDs; `PCA-ADD-BILL-001`..`047`, 47 non-contiguous IDs including lettered `PCA-ADD-BILL-005A`) are now part of the controlled inventory below. *Historical note: at the R0 pass, Addendum 002 did not yet exist in the repository and was correctly absent from this document; that earlier state is not a current-status claim.* This correction did not re-score the existing PCA-0..19/PCA-WELL-1/Addendum-001 findings from R0 — see §"Preserved from R0" below.
 
+### Correction R2 (PCA-MASTER-COORDINATOR, Round5 pre-flight governance pass, 2026-08-15, base `ae7289f5831e50c9b62a28229296bf658dffdc4c`)
+
+The R1 correction above was itself accurate only as of its own authoring date — since then, four further rounds of real, tested, merged implementation landed (Wave3A integration plus Round4's PCA-PA-3C/PCA-MYKIDS-BILL-3 live-backend integration lanes). R1's own status table, and the Addendum 002 document's own Section 21/22 status claims, are now **stale**: both assert "no source exists" / every workstream `NOT_STARTED`, which is factually false against current `pca-dev`. This R2 correction independently re-derives all 98 Addendum-002 requirement IDs against actual current source, tests, and schema — not against the addendum document's own (stale) self-reported status, and not by simply marking everything complete. Five independent read-only research passes each covered a disjoint subset of the 98 requirements, each citing concrete file:line/test evidence; findings were cross-checked and compiled into the table below by the Coordinator. Full per-ID evidence lives in [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json).
+
+Where genuinely correct backend orchestration logic exists but has no dedicated automated test exercising it directly (specifically `WebhookService`'s freshness/replay, out-of-order-tolerance, and amount/currency cross-check logic — `PCA-ADD-BILL-030/032/033/034`), status remains `SOURCE_COMPLETE` (the requirement's behavior is genuinely implemented) with an explicit `TEST_EVIDENCE_PARTIAL` note rather than being downgraded — source-completeness and test-coverage are tracked as distinct facts, not conflated.
+
+This correction does not touch the Addendum-001/PCA-0..19/PCA-WELL-1 findings (unchanged, see §"Preserved from R0"), and does not mark anything `VALIDATED_COMPLETE` or `PRODUCTION_READY` — no such claim is made or implied by any `SOURCE_COMPLETE` row below; those remain distinct, higher bars this pass does not attempt to clear (see Completion calculation).
+
 ## Control and counting
 
 | Inventory | Count | Authority | Status |
 |---|---:|---|---|
 | Base A-100 | 199 | [Architecture traceability matrix](../architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md) | Immutable accepted baseline; verified 199 unique normative IDs, 0 duplicates, 0 missing, 0 orphans at this base. Per-ID implementation evidence not yet individually re-derived (see scope limitation). |
 | Addendum 001 | 25 | [Secure invite/protected enrollment addendum](addenda/PCA_ADDENDUM_001_SECURE_INVITE_PROTECTED_ENROLLMENT.md) | Owner approved; evidence-backed re-derivation complete (R0 pass, see matrix below). |
-| Addendum 002 | 98 | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved and integrated at this base; architecture-accepted, source implementation NOT_STARTED for all 98 requirements (R1 correction, see matrix below). |
-| Total implementation authority | 322 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
+| Addendum 002 | 98 | [Platform Administration and Billing addendum](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) | Owner approved and integrated; substantial real, tested source now exists (76 `SOURCE_COMPLETE`, 13 `PARTIAL`, 9 `NOT_STARTED` — R2 correction, see matrix below). Settlement/reconciliation (`BILL-012/013/014/036/037/038`) remains genuinely unbuilt. |
+| Addendum 003 | 24 | [Parent Identity, Registration, Free-Access addendum](addenda/PCA_ADDENDUM_003_PARENT_IDENTITY_REGISTRATION_FREE_ACCESS.md) | Owner approved (`PCA-DEC-026`, `Option C`); architecture-only, no `PCA-ADD-IDENT-*` source exists yet — Round5 `PCA-AUTH-SESSION-1` scope. |
+| Addendum 004 | 25 | [Complimentary Entitlement Grants addendum](addenda/PCA_ADDENDUM_004_COMPLIMENTARY_ENTITLEMENTS.md) | Owner approved (Round5 Section A); architecture-only, no `PCA-ADD-COMP-*` source exists yet — Round5 `PCA-COMPLIMENTARY-ENTITLEMENTS-1` scope. |
+| Total implementation authority | 371 | Base A-100 + approved addenda | No requirement is implemented merely by appearing here |
 
 `BASE_A100_REQUIREMENTS = 199` was independently recounted from the architecture matrix's own ID column (not copied from prior documentation) and confirmed exact: 0 missing, 0 duplicate, 0 orphan IDs. Family breakdown: PCA-FR (112), PCA-NFR (43), PCA-SEC (18), PCA-DATA (17), PCA-AND (3), PCA-IOS (3), PCA-PRIV (2), PCA-AI (1).
 
@@ -66,134 +76,145 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 
 ## Addendum 002 implementation matrix
 
-[PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) is the authority for every requirement's full normative text; this table does not reproduce it. Its own Section 21/22 self-declares every `PCA-PA-*`/`PCA-BILL-*`/`PCA-MYKIDS-BILL-*` workstream `NOT_STARTED` across all three completion tiers (`SOURCE_COMPLETE`/`VALIDATED_COMPLETE`/`PRODUCTION_READY`), confirmed independently in this correction by a targeted repository search (zero billing/payment/platform-admin/entitlement-sku/paywall source found across `backend/src`, `parent-web/src`, `parent-sdk`). No requirement below is marked `SOURCE_COMPLETE` — architecture acceptance is not implementation evidence. `sourceEvidence = []` / `testEvidence = []` for all 98 rows in [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json).
+[PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md](addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md) is the authority for every requirement's full normative text; this table does not reproduce it. **The addendum's own Section 21/22 status claims are now stale** — they assert every workstream is `NOT_STARTED` and that `parent-web/src/pages/Subscription.tsx` is "only a static placeholder," both contradicted by current source (confirmed independently by this R2 correction, which reads the actual current files, not the addendum's self-reported table). Four rounds of real implementation (Wave3A + Round4) landed since the addendum's 2026-08-13 authoring date: `backend/src/platformadmin/**`, `backend/src/billing/**`, `backend/src/familycommercial/**`, `backend/src/commercialnotifications/**`, migrations `0005`-`0012`, and both `platform-admin-web/**` (live-backend-integrated) and `parent-web/src/api/real/**`/`pages/billing/**`. Full per-ID `sourceEvidence`/`testEvidence` citations are in [PCA_COMPLETION_V2_MATRIX.json](PCA_COMPLETION_V2_MATRIX.json); this table carries a condensed one-line summary per row. `SOURCE_COMPLETE` here means the requirement's described capability is genuinely implemented and covered by passing tests unless the row explicitly notes otherwise — it is never a claim of `VALIDATED_COMPLETE`/`PRODUCTION_READY` (see Completion calculation).
+
+**The most significant remaining real gap**: `parent-web`'s `RealBillingClient`/`RealCommercialNotificationClient` are genuine, correct, fully unit-tested HTTP implementations, but no browser-reachable route anywhere issues the bearer/service-session token `requireServiceSession` requires (`AuthService.issueSession` has zero call sites) — both clients fail fast with `SERVICE_SESSION_UNAVAILABLE` rather than falling back to fixture data. This is why `PCA-ADD-BILL-039`/`PCA-ADD-PA-047` are `PARTIAL` despite substantial complete source underneath them. This exact gap is what Round5's `PCA-AUTH-SESSION-1` (Addendum 003, `PCA-DEC-026`) is scoped to close.
 
 Primary programme/phase uses the workstream tags this addendum's own Section 21 Implementation Programme V2 table defines: `PCA-PA-1` (Admin Identity/RBAC/Audit), `PCA-PA-2` (Entitlements/Enrollment Limits), `PCA-PA-3` (Platform Admin Web), `PCA-PA-4` (Operations/Reporting), `PCA-PA-5` (Security/Financial Red Team), `PCA-PA-6` (UX/i18n/a11y), `PCA-PA-UAT`, `PCA-BILL-1` (Billing Core), `PCA-BILL-2` (Payment Provider), `PCA-BILL-3` (Settlements/Reconciliation), `PCA-BILL-UAT`, `PCA-MYKIDS-BILL-1` (Parent Self-Service).
 
 | Requirement | Primary programme/phase | Status | Summary |
 |---|---|---|---|
-| PCA-ADD-PA-001 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-002 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-003 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-004 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-005 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-006 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 2 (Trust boundary). |
-| PCA-ADD-PA-007 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 3 (Platform Administration roles). |
-| PCA-ADD-PA-008 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 3 (Platform Administration roles). |
-| PCA-ADD-PA-009 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 3 (Platform Administration roles). |
-| PCA-ADD-PA-010 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-011 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-012 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-013 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-014 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-015 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-016 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-017 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-018 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-019 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-020 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 4 (Platform Administration authority). |
-| PCA-ADD-PA-021 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 5 (Free Starter entitlement). |
-| PCA-ADD-PA-022 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 5 (Free Starter entitlement). |
-| PCA-ADD-PA-023 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 5 (Free Starter entitlement). |
-| PCA-ADD-PA-024 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 5 (Free Starter entitlement). |
-| PCA-ADD-PA-025 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-PA-026 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-PA-027 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-PA-028 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-PA-029 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-PA-030 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-031 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-032 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-033 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-034 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-035 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-036 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-PA-037 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-PA-038 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-PA-039 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-PA-040 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-PA-041 | PCA-PA-4 | NOT_STARTED | Addendum 002 requirement, Section 15 (Platform dashboard). |
-| PCA-ADD-PA-042 | PCA-PA-4 | NOT_STARTED | Addendum 002 requirement, Section 15 (Platform dashboard). |
-| PCA-ADD-PA-043 | PCA-PA-3 | NOT_STARTED | Addendum 002 requirement, Section 16 (Platform settings). |
-| PCA-ADD-PA-044 | PCA-PA-3 | NOT_STARTED | Addendum 002 requirement, Section 16 (Platform settings). |
-| PCA-ADD-PA-045 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 17 (Admin audit). |
-| PCA-ADD-PA-046 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 17 (Admin audit). |
-| PCA-ADD-PA-047 | PCA-MYKIDS-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 18 (MyKids commercial self-service). |
-| PCA-ADD-PA-048 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 21 (Implementation Programme V2). |
-| PCA-ADD-PA-049 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-050 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 7 (Increase request flow). |
-| PCA-ADD-PA-054 | PCA-PA-2 | NOT_STARTED | Addendum 002 requirement, Section 6 (Entitlement model). |
-| PCA-ADD-BILL-001 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-002 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-003 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-004 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-005 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-005A | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-006 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-007 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-008 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-009 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-010 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-011 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-012 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-013 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-014 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-015 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-016 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-017 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-018 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-019 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-020 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-021 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-022 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 10 (Money model). |
-| PCA-ADD-BILL-023 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 11 (Payment security). |
-| PCA-ADD-BILL-024 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 11 (Payment security). |
-| PCA-ADD-BILL-025 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 11 (Payment security). |
-| PCA-ADD-BILL-026 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 11 (Payment security). |
-| PCA-ADD-BILL-027 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 12 (Payment provider abstraction). |
-| PCA-ADD-BILL-028 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 12 (Payment provider abstraction). |
-| PCA-ADD-BILL-029 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 12 (Payment provider abstraction). |
-| PCA-ADD-BILL-030 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-031 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-032 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-033 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-034 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-035 | PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 13 (Webhook security). |
-| PCA-ADD-BILL-036 | PCA-BILL-3 | NOT_STARTED | Addendum 002 requirement, Section 14 (Settlement and banking). |
-| PCA-ADD-BILL-037 | PCA-BILL-3 | NOT_STARTED | Addendum 002 requirement, Section 14 (Settlement and banking). |
-| PCA-ADD-BILL-038 | PCA-BILL-3 | NOT_STARTED | Addendum 002 requirement, Section 14 (Settlement and banking). |
-| PCA-ADD-BILL-039 | PCA-MYKIDS-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 18 (MyKids commercial self-service). |
-| PCA-ADD-BILL-040 | PCA-MYKIDS-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 18 (MyKids commercial self-service). |
-| PCA-ADD-BILL-041 | PCA-PA-1 | NOT_STARTED | Addendum 002 requirement, Section 19 (External gates). |
-| PCA-ADD-BILL-043 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-044 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-045 | PCA-BILL-1 | NOT_STARTED | Addendum 002 requirement, Section 9 (Billing domain entities). |
-| PCA-ADD-BILL-046 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
-| PCA-ADD-BILL-047 | PCA-PA-2, PCA-BILL-2 | NOT_STARTED | Addendum 002 requirement, Section 8 (Concurrency-safe device slots). |
+| PCA-ADD-PA-001 | PCA-PA-1 | SOURCE_COMPLETE | Distinct auth realm/session/RBAC, structurally and by `crossRealm.test.mjs`. |
+| PCA-ADD-PA-002 | PCA-PA-1 | SOURCE_COMPLETE | `pa_`-prefixed tokens rejected by family-plane parser and vice versa (`crossRealm.test.mjs`). |
+| PCA-ADD-PA-003 | PCA-PA-1 | SOURCE_COMPLETE | No shared login route; no account-linking code path exists. |
+| PCA-ADD-PA-004 | PCA-PA-1 | SOURCE_COMPLETE | No FDEK/DSK/DEK/recovery-secret reference anywhere in `platformadmin/`. |
+| PCA-ADD-PA-005 | PCA-PA-1 | SOURCE_COMPLETE | No family-policy write path exists in this module (`schemaPrivacyScan.test.mjs`). |
+| PCA-ADD-PA-006 | PCA-PA-1 | PARTIAL | Doc-governance requirement (future docs must match the trust-boundary diagram) — not code-testable. |
+| PCA-ADD-PA-007 | PCA-PA-1 | SOURCE_COMPLETE | Admin create/role-grant require step-up + are audited in the same transaction (`accountService.test.mjs`). |
+| PCA-ADD-PA-008 | PCA-PA-1 | SOURCE_COMPLETE | `AUDITOR_READ_ONLY` denied on every mutating operation, server-side (`rbacPolicy.test.mjs`). |
+| PCA-ADD-PA-009 | PCA-PA-1 | SOURCE_COMPLETE | No child-data/key-material columns anywhere in migration 0005 (`schemaPrivacyScan.test.mjs`). |
+| PCA-ADD-PA-010 | PCA-PA-1 | SOURCE_COMPLETE | Distinct auth plugin/service/RBAC, no shared claim schema (`crossRealm.test.mjs`). |
+| PCA-ADD-PA-011 | PCA-PA-1 | SOURCE_COMPLETE | No `isAdmin`-flag pattern anywhere in the codebase; wholly separate account table. |
+| PCA-ADD-PA-012 | PCA-PA-1 | SOURCE_COMPLETE | Composite of PA-013–018 below, all independently satisfied. |
+| PCA-ADD-PA-013 | PCA-PA-1 | SOURCE_COMPLETE | `platform_admin_accounts` distinct table, no FK to family tables (`accountService.test.mjs`). |
+| PCA-ADD-PA-014 | PCA-PA-1 | SOURCE_COMPLETE | `pa_`-prefixed tokens, separate `platform_admin_sessions` table (`token.test.mjs`, `crossRealm.test.mjs`). |
+| PCA-ADD-PA-015 | PCA-PA-1 | SOURCE_COMPLETE | Own closed RBAC matrix, independent of `familyrbac/policy.ts` (`rbacPolicy.test.mjs`). |
+| PCA-ADD-PA-016 | PCA-PA-1 | SOURCE_COMPLETE | Password AND TOTP required atomically, fail-closed, no bypass path (`authService.test.mjs`, `totp.test.mjs`). |
+| PCA-ADD-PA-017 | PCA-PA-1 | PARTIAL | 3 of 6 step-up scopes wired (role-grant, entitlement-override, refund); suspend/reactivate/settlement-config scopes reserved but unwired — their underlying actions don't exist yet. |
+| PCA-ADD-PA-018 | PCA-PA-1 | SOURCE_COMPLETE | Every mutation audits same-transaction; append-only enforced at DB grant level (`auditTypes.test.mjs`; DB-level proof not re-executed live this pass). |
+| PCA-ADD-PA-019 | PCA-PA-1 | SOURCE_COMPLETE | Self and forced (role-removal-triggered) session revocation both exist (`authService.test.mjs`, `accountService.test.mjs`). |
+| PCA-ADD-PA-020 | PCA-PA-1 | PARTIAL | Role-gated (APP_OWNER/FINANCE_ADMIN) lockout-alert logic is real and tested, but the only shipped adapter is a console-log line, not real alert delivery. |
+| PCA-ADD-PA-021 | PCA-PA-2 | SOURCE_COMPLETE | FREE_STARTER 1/1 read from config table, not hardcoded (`platformEntitlementsCore.mysql.test.mjs`). |
+| PCA-ADD-PA-022 | PCA-PA-2 | SOURCE_COMPLETE | Reservation precedes invitation; failed reservation leaves no orphan (`platformEntitlementsSlots.mysql.test.mjs`). |
+| PCA-ADD-PA-023 | PCA-PA-2 | SOURCE_COMPLETE | Downgrade sets over-limit flag, never force-removes (`platformEntitlementsCore.mysql.test.mjs`). |
+| PCA-ADD-PA-024 | PCA-PA-2 | SOURCE_COMPLETE | Config-table-driven defaults, snapshot-on-first-touch (`platformEntitlementsCore.mysql.test.mjs`). |
+| PCA-ADD-PA-025 | PCA-PA-2 | SOURCE_COMPLETE | Two genuinely independent counter columns (`platformEntitlementsCore.mysql.test.mjs`). |
+| PCA-ADD-PA-026 | PCA-PA-2 | SOURCE_COMPLETE | Structurally quantity-only, no invite/enroll method exists. |
+| PCA-ADD-PA-027 | PCA-PA-2 | PARTIAL | `consumeByInvitationId` defined but no real PAIRED→ACTIVE device-activation event wired anywhere — code's own comments admit this. |
+| PCA-ADD-PA-028 | PCA-PA-2 | SOURCE_COMPLETE | Distinct active/reserved counter columns; no PlatformAdmin-originated enrollment path. |
+| PCA-ADD-PA-029 | PCA-PA-2 | SOURCE_COMPLETE | Full state exposed via `FamilyCommercialService.getEntitlement`; no dedicated test at that layer. |
+| PCA-ADD-PA-030 | PCA-PA-2 | SOURCE_COMPLETE | True 6-state lifecycle at schema+service+test level (`platformEntitlementsCore.mysql.test.mjs`). |
+| PCA-ADD-PA-031 | PCA-PA-2 | SOURCE_COMPLETE | Transitions table exists; writer path not fully re-verified this pass. |
+| PCA-ADD-PA-032 | PCA-PA-2 | SOURCE_COMPLETE | Same-transaction approve+raise, atomicity verified post-commit. |
+| PCA-ADD-PA-033 | PCA-PA-2 | SOURCE_COMPLETE | Standard auto-quote and custom-admin-quote paths both implemented and tested. |
+| PCA-ADD-PA-034 | PCA-PA-2 | SOURCE_COMPLETE | Limit raise only invoked from APPROVED-transition code. |
+| PCA-ADD-PA-035 | PCA-PA-2 | SOURCE_COMPLETE | Denial reason required, stored, audited, surfaced. |
+| PCA-ADD-PA-036 | PCA-PA-2, PCA-BILL-2 | PARTIAL | Stages 1-3 of the 4-stage slot pipeline wired; stage 4 (CONSUMED-on-ACTIVE) is a dormant, isolated-tested hook — documented gap in the code itself. |
+| PCA-ADD-PA-037 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Release-on-expiry/revoke verified, idempotent (`platformEntitlementsSlots.mysql.test.mjs`). |
+| PCA-ADD-PA-038 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | `SELECT ... FOR UPDATE` atomic reservation, TOCTOU avoided. |
+| PCA-ADD-PA-039 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Genuine N=8/12 concurrent race test across independent DB connections, exactly K successes. |
+| PCA-ADD-PA-040 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Used vs. held tracked and exposed distinctly end to end. |
+| PCA-ADD-PA-041 | PCA-PA-4 | PARTIAL | Dashboard covers most metrics (per-currency breakdowns) but lacks settlement summary and service-health/exception-queue metrics. |
+| PCA-ADD-PA-042 | PCA-PA-4 | SOURCE_COMPLETE | No family-activity table reachable anywhere in the dashboard read model (negative property, verified by absence). |
+| PCA-ADD-PA-043 | PCA-PA-3 | PARTIAL | Only 3 of ~8 settings categories exist (FREE_STARTER defaults, currencies, market-mapping); provider-credential/settlement/branding/feature-flag surfaces absent. |
+| PCA-ADD-PA-044 | PCA-PA-3 | NOT_STARTED | No route exists to mask-read a provider-credential/settlement-account field — nothing to mask, since the underlying settings surface doesn't exist. |
+| PCA-ADD-PA-045 | PCA-PA-1 | SOURCE_COMPLETE | 16 of 17 named audit event types both declared and actually emitted (`auditTypes.test.mjs`); `PLAN_CHANGED`/`BANK_SETTING_CHANGED` declared but never constructed (no such flows exist yet). |
+| PCA-ADD-PA-046 | PCA-PA-1 | SOURCE_COMPLETE | Metadata cap + validation; role-scoped read (APP_OWNER/AUDITOR unrestricted, others own-actions-only) — slightly narrower than spec's "own + domain" carve-out. |
+| PCA-ADD-PA-047 | PCA-MYKIDS-BILL-1 | PARTIAL | Server correctly prevents direct parent entitlement writes, but unreachable end-to-end today — `SERVICE_SESSION_UNAVAILABLE` (see intro note above; closed by Round5 `PCA-AUTH-SESSION-1`). |
+| PCA-ADD-PA-048 | PCA-PA-1 | NOT_STARTED | Process/reporting-discipline rule; no code artifact enforces it (no CI gate blocking an unevidenced status claim). |
+| PCA-ADD-PA-049 | PCA-PA-2 | SOURCE_COMPLETE | `PaymentConfirmationPort` has no client-facing HTTP route; reachable only from `WebhookService`. |
+| PCA-ADD-PA-050 | PCA-PA-2 | SOURCE_COMPLETE | Both upgrade paths implemented, RBAC-gated (`ADMINISTER_BILLING`) as specified. |
+| PCA-ADD-PA-054 | PCA-PA-2 | SOURCE_COMPLETE | Billable/non-billable separation enforced at BOTH DB CHECK constraint and service level — strongest evidence of any PA row (raw-SQL constraint-violation test). |
+| PCA-ADD-BILL-001 | PCA-BILL-1 | SOURCE_COMPLETE | Plan versioning creates a new version, never mutates (`billingCore.mysql.test.mjs`). |
+| PCA-ADD-BILL-002 | PCA-BILL-1 | SOURCE_COMPLETE | DB-enforced single-open-active-row per (market,currency,targetDeviceLimit) (`billingCorePriceBookConcurrency.mysql.test.mjs`). |
+| PCA-ADD-BILL-003 | PCA-BILL-1 | SOURCE_COMPLETE | At most one ACTIVE subscription is a real DB-level constraint, not app-only. |
+| PCA-ADD-BILL-004 | PCA-BILL-1 | SOURCE_COMPLETE | Invoice totals computed via exact integer arithmetic. |
+| PCA-ADD-BILL-005 | PCA-BILL-1 | SOURCE_COMPLETE | InvoiceLine entity/table present. |
+| PCA-ADD-BILL-005A | PCA-BILL-1 | SOURCE_COMPLETE | Quote issuance/expiry/status lifecycle present; issued via the entitlements-plane admin path, not a standalone billing route. |
+| PCA-ADD-BILL-006 | PCA-BILL-1 | SOURCE_COMPLETE | PaymentAttempt full flow tested end to end. |
+| PCA-ADD-BILL-007 | PCA-BILL-1 | SOURCE_COMPLETE | Idempotent confirm; UNIQUE(payment_attempt_id) enforces one transaction per attempt. |
+| PCA-ADD-BILL-008 | PCA-BILL-1 | SOURCE_COMPLETE | No PAN/CVV columns anywhere; provider-token + display-safe metadata only. |
+| PCA-ADD-BILL-009 | PCA-BILL-1 | SOURCE_COMPLETE | Refund issuance step-up-gated; extended by `RefundOrchestrationService` for concurrency/durability. |
+| PCA-ADD-BILL-010 | PCA-BILL-1 | SOURCE_COMPLETE | Dispute lifecycle states present; thinner test coverage than payment/refund. |
+| PCA-ADD-BILL-011 | PCA-BILL-1 | SOURCE_COMPLETE | UNIQUE(provider, provider_event_id) persistence/idempotency foundation. |
+| PCA-ADD-BILL-012 | PCA-BILL-3 | NOT_STARTED | SettlementAccount — zero matches anywhere except the out-of-scope migration comment. |
+| PCA-ADD-BILL-013 | PCA-BILL-3 | NOT_STARTED | SettlementBatch — zero matches anywhere. |
+| PCA-ADD-BILL-014 | PCA-BILL-3 | NOT_STARTED | Reconciliation — zero matches anywhere. |
+| PCA-ADD-BILL-015 | PCA-BILL-1 | SOURCE_COMPLETE | Currency co-located with every money-bearing column; vacuously satisfied for the absent settlement tables. |
+| PCA-ADD-BILL-016 | PCA-BILL-1 | SOURCE_COMPLETE | No family/policy/key columns; explicit static + live schema-privacy test pair. |
+| PCA-ADD-BILL-017 | PCA-BILL-1 | SOURCE_COMPLETE | `amountMinor: bigint` throughout; `InvalidMoneyError` on any non-bigint. |
+| PCA-ADD-BILL-018 | PCA-BILL-1 | SOURCE_COMPLETE | Single centralized `CURRENCY_METADATA` map. |
+| PCA-ADD-BILL-019 | PCA-BILL-1 | SOURCE_COMPLETE | USD/SAR/YER only; EUR and all others explicitly rejected. |
+| PCA-ADD-BILL-020 | PCA-BILL-1 | PARTIAL | No-auto-FX-for-pricing half solidly implemented; USD-normalized reporting rollup with recorded rate not located. |
+| PCA-ADD-BILL-021 | PCA-BILL-1 | NOT_STARTED | Cannot exist without SettlementAccount/Batch/Reconciliation (BILL-012/013/014). |
+| PCA-ADD-BILL-022 | PCA-BILL-1 | PARTIAL | Single `enabled` currency flag exists; no distinct charge-vs-settlement currency-gate concept. |
+| PCA-ADD-BILL-023 | PCA-BILL-2 | SOURCE_COMPLETE | No card/CVV/routing/secret columns anywhere; three independent schema-privacy tests assert this. |
+| PCA-ADD-BILL-024 | PCA-BILL-2 | SOURCE_COMPLETE | Server never becomes a card-data intermediary (architecture correct; unverifiable end-to-end absent a real provider adapter). |
+| PCA-ADD-BILL-025 | PCA-BILL-2 | SOURCE_COMPLETE | Resolve-by-reference-only secret indirection; no hardcoded/DB secret values found. |
+| PCA-ADD-BILL-026 | PCA-BILL-2 | PARTIAL | DB-schema absence of forbidden terms is tested; no runtime log/diagnostic-output absence test exists for Billing. |
+| PCA-ADD-BILL-027 | PCA-BILL-2 | SOURCE_COMPLETE | `PaymentProvider` interface, zero SDK import anywhere, fail-closed on unknown provider. |
+| PCA-ADD-BILL-028 | PCA-BILL-2 | SOURCE_COMPLETE | Correctly self-scoped: documents production registry is empty; external gates unresolved by design. |
+| PCA-ADD-BILL-029 | PCA-BILL-2 | SOURCE_COMPLETE | Provider is part of the event unique key; multi-provider identity first-class, DB-enforced. |
+| PCA-ADD-BILL-030 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Reject-before-trust sequencing correct by inspection; HMAC primitive tested, but no test exercises `WebhookService.processWebhook` directly. |
+| PCA-ADD-BILL-031 | PCA-BILL-2 | SOURCE_COMPLETE | DB `UNIQUE(provider, provider_event_id)` idempotency, zero re-execution on duplicate — genuine concurrent-race + redelivery tests. |
+| PCA-ADD-BILL-032 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Freshness/replay window logic present and precise (5-minute window, `STALE_REPLAY` audit); no direct test. |
+| PCA-ADD-BILL-033 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | `queryPayment` is the sole authoritative status source, webhook body status never read; no direct test. |
+| PCA-ADD-BILL-034 | PCA-BILL-2 | SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL | Amount/currency cross-checked against the immutable snapshot; mismatch is an anomaly, never silently reconciled; no direct test. |
+| PCA-ADD-BILL-035 | PCA-BILL-2 | SOURCE_COMPLETE | Frontend never marks payment state locally; only server-driven `WebhookService` confirms. |
+| PCA-ADD-BILL-036 | PCA-BILL-3 | NOT_STARTED | SettlementAccount — no entity, table, or repository. |
+| PCA-ADD-BILL-037 | PCA-BILL-3 | NOT_STARTED | SettlementBatch — no entity, table, or repository. |
+| PCA-ADD-BILL-038 | PCA-BILL-3 | NOT_STARTED | Reconciliation — no entity; only RBAC/audit-vocabulary placeholders reserved for a feature that doesn't exist. |
+| PCA-ADD-BILL-039 | PCA-MYKIDS-BILL-1 | PARTIAL | Full UI+backend flow genuinely exists (`Subscription.tsx` etc., contradicting the addendum's own stale "placeholder" claim), but unreachable end-to-end today — `SERVICE_SESSION_UNAVAILABLE` (closed by Round5 `PCA-AUTH-SESSION-1`). |
+| PCA-ADD-BILL-040 | PCA-MYKIDS-BILL-1 | SOURCE_COMPLETE | Owner-only gate enforced server-side; the REAL attestation-chain resolver (not a stub) is wired in production `main.ts` (`familyCommercialRoutes.test.mjs`, ROLE_DENIED tests for Administrator/Viewer). |
+| PCA-ADD-BILL-041 | PCA-PA-1 | PARTIAL | No real production payment-provider adapter exists yet (only a test/dev-restricted sandbox), so real-money billing structurally cannot go live — but no explicit engineered "refuse in production" kill-switch exists for a hypothetical future adapter. |
+| PCA-ADD-BILL-043 | PCA-BILL-1 | SOURCE_COMPLETE | Quote/price snapshot immutability directly, explicitly regression-tested (survives later PriceBook change and Quote expiry/supersession). |
+| PCA-ADD-BILL-044 | PCA-BILL-1 | SOURCE_COMPLETE | Price-book admin RBAC matches the addendum's role matrix exactly, including the PLATFORM_ADMIN view-only carve-out. |
+| PCA-ADD-BILL-045 | PCA-BILL-1 | SOURCE_COMPLETE | CommercialMarket country-mapping is data-driven config, not hardcoded logic. |
+| PCA-ADD-BILL-046 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Idempotency key is provider-event-ID-derived (not request-ID-only); exactly-once confirmed under N=8 concurrent duplicates. |
+| PCA-ADD-BILL-047 | PCA-PA-2, PCA-BILL-2 | SOURCE_COMPLETE | Limit-raise never touches slot reservations — holds by construction; no dedicated regression test proves survival under a concurrent race. |
 
-### Addendum 002 status distribution
+### Addendum 002 status distribution (R2 correction)
 
 | Status | Count |
 |---|---:|
-| SOURCE_COMPLETE | 0 |
-| PARTIAL | 0 |
-| NOT_STARTED | 98 |
+| SOURCE_COMPLETE (incl. `TEST_EVIDENCE_PARTIAL`-annotated rows) | 76 |
+| PARTIAL | 13 |
+| NOT_STARTED | 9 |
 | NOT_APPLICABLE | 0 |
 | EXTERNAL_GATE (as primary status) | 0 |
 
-Six requirements (`PCA-ADD-BILL-027`–`029`, `PCA-ADD-BILL-036`–`038`) additionally carry a non-empty `externalGate` annotation in the JSON matrix (`PAYMENT_PROVIDER_SELECTION`/`MERCHANT_ACCOUNT_APPROVAL` and `SETTLEMENT_BANK_CONFIGURATION`/`SUPPORTED_SETTLEMENT_CURRENCIES` respectively) because their eventual completion depends on those external commercial gates in addition to source work; their current status remains `NOT_STARTED` since no source exists yet to be gated.
+PA: 41 SOURCE_COMPLETE, 8 PARTIAL (`006,017,020,027,036,041,043,047`), 2 NOT_STARTED (`044,048`) = 51.
+BILL: 35 SOURCE_COMPLETE, 5 PARTIAL (`020,022,026,039,041`), 7 NOT_STARTED (`012,013,014,021,036,037,038`) = 47.
+
+Six requirements (`PCA-ADD-BILL-027`–`029`, `PCA-ADD-BILL-036`–`038`) additionally carry a non-empty `externalGate` annotation in the JSON matrix (`PAYMENT_PROVIDER_SELECTION`/`MERCHANT_ACCOUNT_APPROVAL` and `SETTLEMENT_BANK_CONFIGURATION`/`SUPPORTED_SETTLEMENT_CURRENCIES` respectively); BILL-027–029's abstraction layer is itself `SOURCE_COMPLETE` (the external gate blocks only a real production provider, not the abstraction), while BILL-036–038 remain `NOT_STARTED` since no settlement source exists yet to be gated at all.
+
+Four requirements (`PCA-ADD-BILL-030/032/033/034`) carry a `SOURCE_COMPLETE; TEST_EVIDENCE_PARTIAL` status: the underlying `WebhookService` orchestration logic genuinely and correctly implements each requirement (verified by direct code inspection against the addendum's normative text), but no test file anywhere in the repository imports or exercises `WebhookService` itself — only its lower-level dependencies (HMAC signature verification, DB-level event idempotency) are directly tested. This is tracked as a test-coverage gap, not a source gap.
 
 ## Completion calculation (calculated, not projected)
 
-`BASE_A100_REQUIREMENTS = 199`, `ADDENDUM_001_REQUIREMENTS = 25`, `ADDENDUM_002_REQUIREMENTS = 98`, `TOTAL_CONTROLLED_REQUIREMENTS = 322`.
+`BASE_A100_REQUIREMENTS = 199`, `ADDENDUM_001_REQUIREMENTS = 25`, `ADDENDUM_002_REQUIREMENTS = 98`, `ADDENDUM_003_REQUIREMENTS = 24`, `ADDENDUM_004_REQUIREMENTS = 25`, `TOTAL_CONTROLLED_REQUIREMENTS = 371`.
 
-`MISSING_IDS = 0`, `DUPLICATE_IDS = 0`, `ORPHAN_IDS = 0` across all three inventories, each verified exact against its own source document.
+`MISSING_IDS = 0`, `DUPLICATE_IDS = 0`, `ORPHAN_IDS = 0` across all five inventories, each verified exact against its own source document. Addendum 003 (`PCA-ADD-IDENT-001`..`024`, contiguous) and Addendum 004 (`PCA-ADD-COMP-001`..`025`, contiguous) were newly authored in this Round5 pre-flight governance pass and carry no implementation yet — see their own control blocks.
 
 Addendum 001 (R0 pass, preserved unchanged): `SOURCE_COMPLETE = 4`, `PARTIAL = 8`, `NOT_STARTED = 12`, `NOT_APPLICABLE = 1`.
 
-Addendum 002 (R1 correction): `SOURCE_COMPLETE = 0`, `PARTIAL = 0`, `NOT_STARTED = 98`, `NOT_APPLICABLE = 0`.
+Addendum 002 (R2 correction, this pass): `SOURCE_COMPLETE = 76` (including 4 `TEST_EVIDENCE_PARTIAL`-annotated rows), `PARTIAL = 13`, `NOT_STARTED = 9`, `NOT_APPLICABLE = 0`.
 
-None of the 322 controlled requirements are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — no real-device/real-environment execution evidence or closed external gates exist for any addendum requirement (001 or 002) yet.
+Addendum 003: `SOURCE_COMPLETE = 0`, `PARTIAL = 0`, `NOT_STARTED = 24`, `NOT_APPLICABLE = 0` — architecture-only, `PCA-AUTH-SESSION-1` not yet implemented.
+
+Addendum 004: `SOURCE_COMPLETE = 0`, `PARTIAL = 0`, `NOT_STARTED = 25`, `NOT_APPLICABLE = 0` — architecture-only, `PCA-COMPLIMENTARY-ENTITLEMENTS-1` not yet implemented.
+
+None of the 371 controlled requirements are `VALIDATED_COMPLETE` or `PRODUCTION_READY` — `SOURCE_COMPLETE` here means genuinely implemented and (in almost all cases) test-covered source, never real-device/real-environment execution evidence, external-gate closure, or a production-readiness claim. No requirement in any addendum (001-004) is marked `VALIDATED_COMPLETE` or `PRODUCTION_READY`.
 
 Base A-100: individual per-ID `IMPLEMENTED`/`IMPLEMENTED_TESTED`/`PLATFORM_LIMITED` counts are **not yet calculated** — see scope limitation above. The phase-level (PCA-0..19) re-derivation in `PCA_CURRENT_IMPLEMENTATION_STATUS.md` §4 stands in as the best current evidence-based signal until a full per-ID pass is done; treat it as directionally reliable, not as a substitute for the still-pending per-ID base-inventory audit.
 
