@@ -4,17 +4,20 @@ import { bigIntToSqlParam, money, sqlAmountMinorToBigInt } from '../money.js';
 import type { Money } from '../money.js';
 import type { CurrencyCode } from '../currency.js';
 import type { SettlementRepository } from './SettlementRepository.js';
+import { applyExactRateToMinor } from './types.js';
 import type {
   AttributeTransactionInput,
   CreateSettlementAccountInput,
   OpenSettlementBatchInput,
   RecordedSettlementFxSnapshotRecord,
   ReconciliationStatus,
+  SettlementAccountHealthRow,
   SettlementAccountRecord,
   SettlementAccountStatus,
   SettlementBatchItemRecord,
   SettlementBatchRecord,
   SettlementDashboardSummary,
+  SettlementUsdRollup,
 } from './types.js';
 
 interface AccountSqlRow {
@@ -354,6 +357,99 @@ export class MySqlSettlementRepository implements SettlementRepository {
           totalDifferenceMinor: BigInt(row.total_difference).toString(10),
         };
       }),
+    };
+  }
+
+  async accountHealthSummary(conn: PoolConnection): Promise<SettlementAccountHealthRow[]> {
+    const { rows: accountRows } = await execute<AccountSqlRow>(
+      conn,
+      `SELECT * FROM settlement_accounts WHERE status = 'ACTIVE' ORDER BY created_at ASC, settlement_account_id ASC`,
+    );
+    if (accountRows.length === 0) return [];
+
+    const accountIds = accountRows.map((r) => r.settlement_account_id);
+    const placeholders = accountIds.map(() => '?').join(',');
+    // "Most recent batch per account" -- ranked by period_end (the batch's
+    // own reporting period, the operationally meaningful recency signal),
+    // tie-broken by created_at then id for full determinism.
+    const { rows: batchRows } = await execute<BatchSqlRow>(
+      conn,
+      `SELECT b.* FROM settlement_batches b
+       INNER JOIN (
+         SELECT settlement_account_ref,
+                MAX(CONCAT(LPAD(UNIX_TIMESTAMP(period_end), 20, '0'), '-', LPAD(UNIX_TIMESTAMP(created_at), 20, '0'), '-', settlement_batch_id)) AS rank_key
+         FROM settlement_batches
+         WHERE settlement_account_ref IN (${placeholders})
+         GROUP BY settlement_account_ref
+       ) latest ON latest.settlement_account_ref = b.settlement_account_ref
+         AND latest.rank_key = CONCAT(LPAD(UNIX_TIMESTAMP(b.period_end), 20, '0'), '-', LPAD(UNIX_TIMESTAMP(b.created_at), 20, '0'), '-', b.settlement_batch_id)`,
+      accountIds,
+    );
+    const latestByAccount = new Map(batchRows.map((r) => [r.settlement_account_ref, batchToDomain(r)]));
+
+    return accountRows.map((row) => {
+      const account = accountToDomain(row);
+      const latest = latestByAccount.get(account.settlementAccountId) ?? null;
+      return {
+        settlementAccountId: account.settlementAccountId,
+        displayLabel: account.displayLabel,
+        settlementCurrency: account.settlementCurrency,
+        accountStatus: account.status,
+        mostRecentBatch: latest
+          ? { settlementBatchId: latest.settlementBatchId, status: latest.status, periodEnd: latest.periodEnd }
+          : null,
+      };
+    });
+  }
+
+  async tryRecordUsdNormalization(conn: PoolConnection, settlementBatchId: string, rate: string, adminId: string, now: Date): Promise<{ applied: boolean; record: SettlementBatchRecord | null }> {
+    const { rowCount } = await execute(
+      conn,
+      `UPDATE settlement_batches
+       SET usd_normalized_rate = ?, usd_normalized_recorded_at = ?, usd_normalized_by_admin_id = ?
+       WHERE settlement_batch_id = ? AND usd_normalized_rate IS NULL`,
+      [rate, now, adminId, settlementBatchId],
+    );
+    if (rowCount !== 1) return { applied: false, record: null };
+    const { rows } = await execute<BatchSqlRow>(conn, `SELECT * FROM settlement_batches WHERE settlement_batch_id = ?`, [settlementBatchId]);
+    return { applied: true, record: rows[0] ? batchToDomain(rows[0]) : null };
+  }
+
+  async usdRollup(conn: PoolConnection): Promise<SettlementUsdRollup> {
+    interface RollupRow {
+      settlement_currency: string;
+      net_minor: number | string;
+      received_minor: number | string;
+      usd_normalized_rate: string | null;
+    }
+    const { rows } = await execute<RollupRow>(
+      conn,
+      `SELECT settlement_currency, net_minor, received_minor, usd_normalized_rate FROM settlement_batches`,
+    );
+    let totalNet = 0n;
+    let totalReceived = 0n;
+    let included = 0;
+    let excluded = 0;
+    for (const row of rows) {
+      const netMinor = sqlAmountMinorToBigInt(row.net_minor);
+      const receivedMinor = sqlAmountMinorToBigInt(row.received_minor);
+      if (row.settlement_currency === 'USD') {
+        totalNet += netMinor;
+        totalReceived += receivedMinor;
+        included += 1;
+      } else if (row.usd_normalized_rate !== null) {
+        totalNet += applyExactRateToMinor(netMinor, row.usd_normalized_rate);
+        totalReceived += applyExactRateToMinor(receivedMinor, row.usd_normalized_rate);
+        included += 1;
+      } else {
+        excluded += 1;
+      }
+    }
+    return {
+      totalNetUsdMinor: totalNet.toString(10),
+      totalReceivedUsdMinor: totalReceived.toString(10),
+      includedBatchCount: included,
+      excludedForMissingRateBatchCount: excluded,
     };
   }
 }

@@ -124,7 +124,16 @@
     "requestsByState": "Entitlement requests by state",
     "subscriptionsByStatus": "Subscriptions by status",
     "quotesByStatus": "Quotes by status",
-    "invoicesByStatusCurrency": "Invoices by status and currency"
+    "invoicesByStatusCurrency": "Invoices by status and currency",
+    "settlementSummaryTitle": "Settlement reconciliation summary",
+    "settlementMatched": "Matched batches",
+    "settlementUnderInvestigation": "Under investigation",
+    "settlementResolved": "Resolved batches",
+    "serviceHealthTitle": "Service health / exception queue",
+    "openReconciliationExceptions": "Open reconciliation exceptions",
+    "settlementAccount": "Settlement account",
+    "mostRecentBatchStatus": "Most recent batch status",
+    "mostRecentBatchPeriodEnd": "Most recent batch period end"
   },
   "roles": {
     "APP_OWNER": "App Owner",

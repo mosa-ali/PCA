@@ -143,6 +143,83 @@ export default function Dashboard() {
               <p className="status-unavailable">{t('common.empty')}</p>
             )}
           </section>
+
+          <section className="card">
+            <h2 className="section-title">{t('dashboard.settlementSummaryTitle')}</h2>
+            {snapshot.settlementSummary.capability === 'AVAILABLE' && snapshot.settlementSummary.summary ? (
+              <>
+                <div className="table-wrap">
+                  <table className="table">
+                    <tbody>
+                      <tr>
+                        <th scope="row">{t('dashboard.settlementMatched')}</th>
+                        <td>{snapshot.settlementSummary.summary.matchedBatchCount}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">{t('dashboard.settlementUnderInvestigation')}</th>
+                        <td>{snapshot.settlementSummary.summary.underInvestigationBatchCount}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">{t('dashboard.settlementResolved')}</th>
+                        <td>{snapshot.settlementSummary.summary.resolvedBatchCount}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {snapshot.settlementSummary.summary.byCurrency.length > 0 && (
+                  <div className="actions-row">
+                    {snapshot.settlementSummary.summary.byCurrency.map((row) => (
+                      <span key={row.currencyCode} className="badge">
+                        {row.currencyCode}: net {row.totalNet.amountMinor}, received {row.totalReceived.amountMinor}, diff {row.totalDifferenceMinor}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="status-unavailable">{t('common.empty')}</p>
+            )}
+          </section>
+
+          <section className="card">
+            <h2 className="section-title">{t('dashboard.serviceHealthTitle')}</h2>
+            {snapshot.serviceHealth.capability === 'AVAILABLE' ? (
+              <>
+                <dl className="kv-list">
+                  <dt>{t('dashboard.openReconciliationExceptions')}</dt>
+                  <dd>{snapshot.serviceHealth.openReconciliationExceptions ?? '—'}</dd>
+                </dl>
+                {snapshot.serviceHealth.mostRecentBatchStatusByAccount && snapshot.serviceHealth.mostRecentBatchStatusByAccount.length > 0 ? (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>{t('dashboard.settlementAccount')}</th>
+                          <th>{t('dashboard.mostRecentBatchStatus')}</th>
+                          <th>{t('dashboard.mostRecentBatchPeriodEnd')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {snapshot.serviceHealth.mostRecentBatchStatusByAccount.map((row) => (
+                          <tr key={row.settlementAccountId}>
+                            <td>
+                              {row.displayLabel} ({row.settlementCurrency})
+                            </td>
+                            <td>{row.mostRecentBatchStatus ?? t('common.empty')}</td>
+                            <td>{row.mostRecentBatchPeriodEnd ? new Date(row.mostRecentBatchPeriodEnd).toLocaleString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="status-unavailable">{t('common.empty')}</p>
+                )}
+              </>
+            ) : (
+              <p className="status-unavailable">{t('common.empty')}</p>
+            )}
+          </section>
         </>
       )}
     </div>

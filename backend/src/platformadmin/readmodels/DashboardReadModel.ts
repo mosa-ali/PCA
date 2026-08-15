@@ -16,6 +16,8 @@
  */
 
 import { execute, runInTransaction } from '../../db/pool.js';
+import { MySqlSettlementRepository } from '../../billing/settlement/MySqlSettlementRepository.js';
+import type { SettlementDashboardSummary } from '../../billing/settlement/types.js';
 
 export type MetricCapability = 'AVAILABLE' | 'UNAVAILABLE';
 
@@ -51,6 +53,34 @@ export interface PlatformDashboardSnapshot {
   readonly paymentAttemptsByStatusAndCurrency: { capability: MetricCapability; rows: Array<{ status: string; currencyCode: string; count: number }> | null };
   readonly refundsByCurrency: { capability: MetricCapability; rows: Array<{ currencyCode: string; count: number }> | null };
   readonly openDisputes: CountMetric;
+  /**
+   * PCA-ADD-PA-041 (Writer65): sourced from the now-complete Settlement /
+   * Reconciliation domain (backend/src/billing/settlement/**). AVAILABLE
+   * unconditionally -- the settlement_batches table always exists post
+   * migration 0015, so an empty result set (no batches yet) is a real,
+   * correctly-reported zero, never an UNAVAILABLE placeholder.
+   */
+  readonly settlementSummary: { capability: MetricCapability; summary: SettlementDashboardSummary | null };
+  /**
+   * PCA-ADD-PA-041 (Writer65): service-health / exception-queue metrics.
+   * `openReconciliationExceptions` is the open UNDER_INVESTIGATION batch
+   * count (also present inside settlementSummary; duplicated here as its
+   * own top-level field per the mission's explicit ask for a dedicated
+   * exception-queue metric). `mostRecentBatchStatusByAccount` is one row
+   * per ACTIVE settlement account with its own latest batch (or null if
+   * that account has no batches yet -- never fabricated).
+   */
+  readonly serviceHealth: {
+    readonly capability: MetricCapability;
+    readonly openReconciliationExceptions: number | null;
+    readonly mostRecentBatchStatusByAccount: ReadonlyArray<{
+      readonly settlementAccountId: string;
+      readonly displayLabel: string;
+      readonly settlementCurrency: string;
+      readonly mostRecentBatchStatus: string | null;
+      readonly mostRecentBatchPeriodEnd: string | null;
+    }> | null;
+  };
 }
 
 interface CountRow {
@@ -134,6 +164,13 @@ export class DashboardReadModel {
         `SELECT COUNT(*) AS cnt FROM billing_disputes WHERE status IN ('OPEN', 'UNDER_REVIEW')`,
       );
 
+      // PCA-ADD-PA-041 (Writer65): reuses the same transaction connection
+      // as every other query above -- one consistent point-in-time
+      // snapshot, never a second independent transaction.
+      const settlementRepository = new MySqlSettlementRepository();
+      const settlementSummary = await settlementRepository.dashboardSummary(conn);
+      const accountHealth = await settlementRepository.accountHealthSummary(conn);
+
       const groupedToRecord = (rows: GroupedRow[]): Record<string, number> =>
         Object.fromEntries(rows.map((r) => [r.groupKey, toNumber(r.cnt as unknown as number)]));
 
@@ -173,6 +210,18 @@ export class DashboardReadModel {
           rows: refundRows.map((r) => ({ currencyCode: r.currency_code, count: toNumber(r.cnt as unknown as number) })),
         },
         openDisputes: { capability: 'AVAILABLE', value: toNumber(openDisputeRows[0]?.cnt as unknown as number) },
+        settlementSummary: { capability: 'AVAILABLE', summary: settlementSummary },
+        serviceHealth: {
+          capability: 'AVAILABLE',
+          openReconciliationExceptions: settlementSummary.underInvestigationBatchCount,
+          mostRecentBatchStatusByAccount: accountHealth.map((row) => ({
+            settlementAccountId: row.settlementAccountId,
+            displayLabel: row.displayLabel,
+            settlementCurrency: row.settlementCurrency,
+            mostRecentBatchStatus: row.mostRecentBatch?.status ?? null,
+            mostRecentBatchPeriodEnd: row.mostRecentBatch?.periodEnd.toISOString() ?? null,
+          })),
+        },
       };
     });
   }

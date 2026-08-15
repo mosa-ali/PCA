@@ -5,10 +5,12 @@ import type {
   OpenSettlementBatchInput,
   RecordedSettlementFxSnapshotRecord,
   ReconciliationStatus,
+  SettlementAccountHealthRow,
   SettlementAccountRecord,
   SettlementBatchItemRecord,
   SettlementBatchRecord,
   SettlementDashboardSummary,
+  SettlementUsdRollup,
 } from './types.js';
 
 /** Persistence port for the Settlement / Reconciliation domain. Every mutation runs on the caller's transaction connection so audit writes stay atomic with the domain write, exactly like ComplimentaryGrantRepository/EntitlementRepository already do in this codebase. */
@@ -56,4 +58,19 @@ export interface SettlementRepository {
   isTransactionAlreadyAttributed(conn: PoolConnection, paymentTransactionId: string): Promise<boolean>;
 
   dashboardSummary(conn: PoolConnection): Promise<SettlementDashboardSummary>;
+
+  /** PCA-ADD-PA-041 (Writer65): one row per settlement account with its own most recent batch, for the Platform Admin dashboard's service-health widget. */
+  accountHealthSummary(conn: PoolConnection): Promise<SettlementAccountHealthRow[]>;
+
+  /**
+   * PCA-ADD-BILL-020 (Writer65): admin-recorded, immutable, one-time
+   * USD-normalization rate for a single non-USD batch. Returns
+   * applied=false (never throws) if the batch already has a recorded rate
+   * or does not exist -- same conditional-write discipline as
+   * tryResolveBatch/tryAttributeTransaction.
+   */
+  tryRecordUsdNormalization(conn: PoolConnection, settlementBatchId: string, rate: string, adminId: string, now: Date): Promise<{ applied: boolean; record: SettlementBatchRecord | null }>;
+
+  /** PCA-ADD-BILL-020 (Writer65): the cross-batch USD rollup itself -- see SettlementUsdRollup's doc comment for inclusion/exclusion rules. */
+  usdRollup(conn: PoolConnection): Promise<SettlementUsdRollup>;
 }

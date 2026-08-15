@@ -31,10 +31,30 @@ export interface CurrencyCountRow {
   count: number;
 }
 
+export interface SettlementDashboardSummary {
+  matchedBatchCount: number;
+  underInvestigationBatchCount: number;
+  resolvedBatchCount: number;
+  byCurrency: Array<{
+    currencyCode: string;
+    totalNet: { amountMinor: string; currencyCode: string };
+    totalReceived: { amountMinor: string; currencyCode: string };
+    totalDifferenceMinor: string;
+  }>;
+}
+
+export interface MostRecentBatchStatusRow {
+  settlementAccountId: string;
+  displayLabel: string;
+  settlementCurrency: string;
+  mostRecentBatchStatus: string | null;
+  mostRecentBatchPeriodEnd: string | null;
+}
+
 export interface PlatformDashboardSnapshot {
   generatedAt: string;
   accountsTotal: CountMetric;
-  accountsActiveSuspended: { capability: 'UNAVAILABLE'; reason: string };
+  accountsActiveSuspended: { capability: MetricCapability; value?: number | null; suspended?: number | null; reason?: string };
   parentMemberEntitlementUtilization: UtilizationMetric;
   managedDeviceEntitlementUtilization: UtilizationMetric;
   managedDeviceActive: CountMetric;
@@ -47,4 +67,10 @@ export interface PlatformDashboardSnapshot {
   paymentAttemptsByStatusAndCurrency: { capability: MetricCapability; rows: StatusCurrencyRow[] | null };
   refundsByCurrency: { capability: MetricCapability; rows: CurrencyCountRow[] | null };
   openDisputes: CountMetric;
+  settlementSummary: { capability: MetricCapability; summary: SettlementDashboardSummary | null };
+  serviceHealth: {
+    capability: MetricCapability;
+    openReconciliationExceptions: number | null;
+    mostRecentBatchStatusByAccount: MostRecentBatchStatusRow[] | null;
+  };
 }

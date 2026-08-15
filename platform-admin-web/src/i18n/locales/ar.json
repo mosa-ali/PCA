@@ -124,7 +124,16 @@
     "requestsByState": "طلبات الاستحقاق حسب الحالة",
     "subscriptionsByStatus": "الاشتراكات حسب الحالة",
     "quotesByStatus": "عروض الأسعار حسب الحالة",
-    "invoicesByStatusCurrency": "الفواتير حسب الحالة والعملة"
+    "invoicesByStatusCurrency": "الفواتير حسب الحالة والعملة",
+    "settlementSummaryTitle": "ملخص تسوية المطابقة",
+    "settlementMatched": "دفعات مطابقة",
+    "settlementUnderInvestigation": "قيد التحقيق",
+    "settlementResolved": "دفعات محلولة",
+    "serviceHealthTitle": "سلامة الخدمة / قائمة الاستثناءات",
+    "openReconciliationExceptions": "استثناءات المطابقة المفتوحة",
+    "settlementAccount": "حساب التسوية",
+    "mostRecentBatchStatus": "حالة أحدث دفعة",
+    "mostRecentBatchPeriodEnd": "نهاية فترة أحدث دفعة"
   },
   "roles": {
     "APP_OWNER": "مالك التطبيق",
