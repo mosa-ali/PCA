@@ -8,18 +8,18 @@
 // each of these with.
 //
 // NOTE: DeviceStatusClient, ParentFamilyDataGateway, RequestClient,
-// TrustedBrowserProvider and ParentRuntimeSyncClient now have real
-// implementations (see ../real/realParentFamilyDataGateway.ts and
-// siblings) as part of PCA-PARENT-FAMILY-DATA-1 -- their Unavailable*
-// classes were removed from this file once nothing constructed them
-// anymore, per the KNOWN_BACKEND_INTEGRATION_ACTION convention in
-// ../client.ts. FamilyAuthorityGateway and WellbeingMessageAdminClient are
-// still genuinely unimplemented in this repository slice.
-import type { BillingClient, FamilyAuthorityGateway, WellbeingMessageAdminClient } from '../interfaces';
+// TrustedBrowserProvider, ParentRuntimeSyncClient, and (as of
+// PCA-MYKIDS-BILL-3) BillingClient/CommercialNotificationClient now have
+// real implementations (see ../real/realParentFamilyDataGateway.ts,
+// ../real/realBillingClient.ts, and siblings) -- their Unavailable* classes
+// were removed from this file once nothing constructed them anymore, per
+// the KNOWN_BACKEND_INTEGRATION_ACTION convention in ../client.ts.
+// FamilyAuthorityGateway and WellbeingMessageAdminClient are still
+// genuinely unimplemented in this repository slice.
+import type { FamilyAuthorityGateway, WellbeingMessageAdminClient } from '../interfaces';
 import type { AuditEntrySummary, FamilyMember } from '../../domain/types';
 import type { FamilyAction, FamilyRole, PermissionResult } from '../../domain/roles';
 import type { CuratedSuggestion, WellbeingCustomMessage, WellbeingMessageControlV1 } from '../../domain/wellbeing';
-import type { EntitlementChangeRequest, EntitlementSnapshot, Invoice, LimitType, PaymentMethodSummary, SubscriptionSnapshot } from '../../domain/billing';
 import { ServiceUnavailableError } from '../unavailable';
 
 /**
@@ -86,58 +86,5 @@ export class UnavailableWellbeingMessageAdminClient implements WellbeingMessageA
   }
   restoreCustomMessage(): Promise<WellbeingMessageControlV1> {
     return Promise.reject(new ServiceUnavailableError('WellbeingMessageAdminClient.restoreCustomMessage'));
-  }
-}
-
-/**
- * Fail-closed placeholder for BillingClient (PCA-MYKIDS-BILL-1). Confirmed
- * by repository survey: backend/src/http/buildServer.ts registers no
- * entitlement/billing route of any kind, and backend/src/billing/*'s
- * service layer is exclusively Platform-Administration-RBAC-gated (no
- * family-facing read/write path exists even at the service layer for the
- * Invoice/PaymentMethod/Subscription domain). This is a genuine, repository
- * confirmed backend-integration gap (BACKEND_GAP_REQUIRED), not a narrower
- * "payment provider not selected yet" condition -- every method here
- * honestly rejects rather than fabricating an endpoint or fixture-shaped
- * data. isPaymentProviderAvailable() returns false so the UI can disable
- * the checkout action up front instead of only discovering the failure
- * after a click (Section 11 of PCA_ADDENDUM_002 Section 18).
- */
-export class UnavailableBillingClient implements BillingClient {
-  getEntitlement(): Promise<EntitlementSnapshot> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.getEntitlement'));
-  }
-  getSubscription(): Promise<SubscriptionSnapshot> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.getSubscription'));
-  }
-  listInvoices(): Promise<Invoice[]> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.listInvoices'));
-  }
-  getInvoice(): Promise<Invoice | null> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.getInvoice'));
-  }
-  listPaymentMethods(): Promise<PaymentMethodSummary[]> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.listPaymentMethods'));
-  }
-  isPaymentProviderAvailable(): boolean {
-    return false;
-  }
-  requestLimitIncrease(_limitType: LimitType, _targetLimit: number): Promise<EntitlementChangeRequest> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.requestLimitIncrease'));
-  }
-  cancelRequest(): Promise<EntitlementChangeRequest> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.cancelRequest'));
-  }
-  beginCheckout(): Promise<EntitlementChangeRequest> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.beginCheckout'));
-  }
-  getRequest(): Promise<EntitlementChangeRequest | null> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.getRequest'));
-  }
-  beginAddPaymentMethod(): Promise<PaymentMethodSummary> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.beginAddPaymentMethod'));
-  }
-  cancelAutoRenew(): Promise<{ auditEventId: string }> {
-    return Promise.reject(new ServiceUnavailableError('BillingClient.cancelAutoRenew'));
   }
 }

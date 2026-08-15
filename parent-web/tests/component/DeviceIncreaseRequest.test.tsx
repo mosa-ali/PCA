@@ -76,7 +76,12 @@ describe('Device increase request flow (PCA_ADDENDUM_002 Section 18.1)', () => {
     renderWithProviders(<TestApp />, { route: '/subscription/increase-devices', role: 'OWNER' });
     await userEvent.click(await screen.findByRole('button', { name: '2 devices' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Proceed to payment' }));
-    await waitFor(() => expect(screen.getByText('Payment pending')).toBeInTheDocument());
+    // Same CPU-contention caveat as the Approved wait below applies here:
+    // under a fully-parallel test-file run, the dev fixture's ~900ms
+    // "server webhook" schedule can race the initial mount/poll of this
+    // page, so this uses the same generous timeout/interval rather than
+    // vitest's 1000ms default -- not a race in the app code itself.
+    await waitFor(() => expect(screen.getByText('Payment pending')).toBeInTheDocument(), { timeout: 15_000, interval: 250 });
 
     // The dev fixture schedules its "server webhook" confirmation ~900ms
     // after checkout begins; this page polls on its own (no test-only hook

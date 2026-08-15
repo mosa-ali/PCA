@@ -40,6 +40,7 @@
 import { config } from '../config/env';
 import type {
   BillingClient,
+  CommercialNotificationClient,
   DeviceStatusClient,
   FamilyAuthorityGateway,
   ParentFamilyDataGateway,
@@ -62,19 +63,18 @@ import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
 import { DevBillingClient } from './dev/devBillingClient';
+import { DevCommercialNotificationClient } from './dev/devCommercialNotificationClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
 import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
 import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
-import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
+import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEnrollmentBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
-import {
-  UnavailableBillingClient,
-  UnavailableFamilyAuthorityGateway,
-  UnavailableWellbeingMessageAdminClient,
-} from './real/unavailableProviders';
+import { RealBillingClient, noFamilyContextAvailable, noServiceBearerTokenAvailable as noBillingBearerTokenAvailable } from './real/realBillingClient';
+import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
+import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -88,13 +88,17 @@ export interface PcaApiClients {
   runtimeSync: ParentRuntimeSyncClient;
   deviceEnrollment: DeviceEnrollmentClient;
   /**
-   * PCA-MYKIDS-BILL-1: no HTTP route or family-facing service path exists
-   * anywhere in this repository for entitlements/billing (verified against
-   * backend/src/http/buildServer.ts and backend/src/billing/rbac.ts) --
-   * always UnavailableBillingClient outside demo mode. See
-   * ./real/unavailableProviders.ts's BillingClient doc comment.
+   * PCA-MYKIDS-BILL-3: real, HTTP-backed against MYKIDS_COMMERCIAL_API_V1
+   * (backend/src/http/routes/familyCommercialRoutes.ts +
+   * billingCheckoutRoutes.ts) outside demo mode -- see
+   * ./real/realBillingClient.ts's header for the one remaining, honestly
+   * surfaced integration gap (no browser-reachable bearer-token/family-
+   * context issuance flow yet in this repository slice, identical in kind
+   * to ./real/realDeviceEnrollmentClient.ts's own documented gap).
    */
   billing: BillingClient;
+  /** PCA-MYKIDS-BILL-3: real, HTTP-backed against the family-facing commercial-notification routes outside demo mode. Same session-transport gap as `billing` above. */
+  commercialNotifications: CommercialNotificationClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
@@ -112,6 +116,7 @@ function buildDevClients(): PcaApiClients {
     runtimeSync: new DevRuntimeSyncClient(),
     deviceEnrollment: new DevDeviceEnrollmentClient(),
     billing: new DevBillingClient(),
+    commercialNotifications: new DevCommercialNotificationClient(),
     isFixtureBacked: true,
   };
 }
@@ -151,8 +156,21 @@ function buildRealClients(): PcaApiClients {
     // plumbing itself is genuine and verified against
     // backend/src/http/routes/{invitationRoutes,pairingRoutes}.ts; replace
     // this accessor with a real one once a token-issuance flow exists.
-    deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noServiceBearerTokenAvailable),
-    billing: new UnavailableBillingClient(),
+    deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noDeviceEnrollmentBearerTokenAvailable),
+    // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
+    // deviceEnrollment above -- see ./real/realBillingClient.ts's header.
+    // actorDeviceId reuses TrustedBrowserProvider's browserEndpointId (this
+    // codebase's only existing device-identity concept; billing routes do
+    // not themselves require E2EE trust, so this is a pragmatic reuse, not
+    // a claim that billing depends on the crypto-review gate) -- resolves
+    // to null until requestPairing() has run at least once, at which point
+    // RealBillingClient honestly rejects mutating calls with
+    // DEVICE_IDENTITY_UNAVAILABLE rather than sending an empty/fabricated id.
+    billing: new RealBillingClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable, async () => {
+      const snapshot = await trustedBrowser.getSnapshot();
+      return snapshot.browserEndpointId;
+    }),
+    commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
     isFixtureBacked: false,
   };
 }

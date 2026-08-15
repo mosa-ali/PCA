@@ -14,6 +14,8 @@ import type {
   BillingClient,
 } from '../interfaces';
 import type {
+  CheckoutSession,
+  CheckoutStatus,
   EntitlementChangeRequest,
   EntitlementSnapshot,
   Invoice,
@@ -65,6 +67,19 @@ let invoices: Invoice[] = [];
 let paymentMethods: PaymentMethodSummary[] = [];
 let requestSeq = 0;
 let invoiceSeq = 0;
+/** DEV-only in-memory checkout-attempt state, keyed by paymentAttemptId -- stands in for what a real PaymentAttempt row + CheckoutService.getCheckoutStatus would return. */
+const checkoutAttempts = new Map<string, CheckoutStatus>();
+/**
+ * DEV-only: every "simulated webhook" setTimeout handle scheduled by
+ * beginCheckout below, so __resetDevBillingStateForTests can cancel any
+ * still-pending ones. Without this, a timer scheduled by one test can still
+ * fire mid-way through the NEXT test -- and since requestSeq is reset to 0
+ * per test, request/paymentAttempt ids are reused across tests, so a stale
+ * timer can land on (and prematurely confirm) an unrelated, identically-id'd
+ * request created by the following test. This is a test-isolation-only
+ * concern; production code never resets this module's state at all.
+ */
+const pendingWebhookTimers = new Set<ReturnType<typeof setTimeout>>();
 
 function notify() {
   // No external subscribers today (unlike devState.ts's role-switcher,
@@ -91,6 +106,9 @@ export function __resetDevBillingStateForTests(): void {
   paymentMethods = [];
   requestSeq = 0;
   invoiceSeq = 0;
+  checkoutAttempts.clear();
+  for (const timer of pendingWebhookTimers) clearTimeout(timer);
+  pendingWebhookTimers.clear();
 }
 
 function nowIso(): string {
@@ -187,6 +205,11 @@ export async function simulateServerPaymentConfirmation(requestId: string): Prom
   const quotedPrice = request.quote.price;
   entitlement = { ...entitlement, managedDeviceLimit: request.targetLimit };
   const approved = replaceRequest({ ...request, state: 'APPROVED', updatedAtUtc: nowIso() });
+  for (const [paymentAttemptId, attempt] of checkoutAttempts) {
+    if (attempt.increaseRequestRef === requestId) {
+      checkoutAttempts.set(paymentAttemptId, { ...attempt, status: 'CONFIRMED' });
+    }
+  }
   invoiceSeq += 1;
   const invoice: Invoice = {
     invoiceId: `dev-invoice-${invoiceSeq}`,
@@ -301,7 +324,7 @@ export class DevBillingClient implements BillingClient {
     return replaceRequest({ ...request, state: 'CANCELLED', updatedAtUtc: nowIso() });
   }
 
-  async beginCheckout(requestId: string): Promise<EntitlementChangeRequest> {
+  async beginCheckout(requestId: string, _returnUrl: string): Promise<CheckoutSession> {
     await delay();
     const request = findRequestOrThrow(requestId);
     if (request.state !== 'QUOTED' || !request.quote) {
@@ -318,20 +341,44 @@ export class DevBillingClient implements BillingClient {
     // (see noDevOnlyImportsInProduction.test.ts) -- a page discovers the
     // resulting APPROVED state only by re-reading getRequest/getEntitlement,
     // exactly as a real client would learn of a real webhook's effect.
-    const pending = replaceRequest({ ...request, state: 'PAYMENT_PENDING', updatedAtUtc: nowIso() });
-    setTimeout(() => {
+    replaceRequest({ ...request, state: 'PAYMENT_PENDING', updatedAtUtc: nowIso() });
+    requestSeq += 1;
+    const paymentAttemptId = `dev-payment-attempt-${requestSeq}`;
+    checkoutAttempts.set(paymentAttemptId, {
+      paymentAttemptId,
+      status: 'PENDING',
+      amount: request.quote.price,
+      increaseRequestRef: requestId,
+    });
+    const webhookTimer = setTimeout(() => {
       // Fire-and-forget, like a real webhook this module doesn't control the
       // timing of -- if the in-memory fixture state was reset in the
       // meantime (e.g. test teardown) the request simply no longer exists,
       // which is not a defect to surface as an unhandled rejection.
+      pendingWebhookTimers.delete(webhookTimer);
       simulateServerPaymentConfirmation(requestId).catch(() => {});
     }, 900);
-    return pending;
+    pendingWebhookTimers.add(webhookTimer);
+    // redirectUrl is a same-origin, in-app SPA path -- the DevBillingClient
+    // fixture never leaves the SPA (no real payment provider exists in
+    // demo/dev mode); see domain/billing.ts's isSameOriginRedirect, which
+    // treats this as "navigate with the router", not "hard browser redirect".
+    return {
+      paymentAttemptId,
+      provider: 'DEV_FIXTURE',
+      redirectUrl: `/subscription/checkout-return?requestId=${requestId}`,
+      status: 'PENDING',
+    };
   }
 
   async getRequest(requestId: string): Promise<EntitlementChangeRequest | null> {
     await delay(60);
     return requests.find((r) => r.requestId === requestId) ?? null;
+  }
+
+  async getCheckoutStatus(paymentAttemptId: string): Promise<CheckoutStatus | null> {
+    await delay(60);
+    return checkoutAttempts.get(paymentAttemptId) ?? null;
   }
 
   async beginAddPaymentMethod(): Promise<PaymentMethodSummary> {

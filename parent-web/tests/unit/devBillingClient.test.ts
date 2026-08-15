@@ -63,14 +63,22 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
     expect(cancelled.state).toBe('CANCELLED');
 
     const another = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3);
-    await client.beginCheckout(another.requestId);
+    await client.beginCheckout(another.requestId, 'https://example.test/return');
     await expect(client.cancelRequest(another.requestId)).rejects.toThrow(/PENDING or QUOTED/);
   });
 
   it('beginCheckout moves QUOTED -> PAYMENT_PENDING and never itself raises the device limit or marks APPROVED', async () => {
     const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    const pending = await client.beginCheckout(quoted.requestId);
-    expect(pending.state).toBe('PAYMENT_PENDING');
+    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    expect(session.status).toBe('PENDING');
+    expect(session.paymentAttemptId).toBeTruthy();
+
+    const request = await client.getRequest(quoted.requestId);
+    expect(request?.state).toBe('PAYMENT_PENDING');
+
+    const status = await client.getCheckoutStatus(session.paymentAttemptId);
+    expect(status?.status).toBe('PENDING');
+    expect(status?.increaseRequestRef).toBe(quoted.requestId);
 
     const entitlement = await client.getEntitlement();
     expect(entitlement.managedDeviceLimit).toBe(1); // unchanged -- only server confirmation may raise it
@@ -78,12 +86,12 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
 
   it('beginCheckout refuses a request that is not QUOTED', async () => {
     const pending = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 4); // awaiting admin quote, not QUOTED
-    await expect(client.beginCheckout(pending.requestId)).rejects.toThrow(/QUOTED/);
+    await expect(client.beginCheckout(pending.requestId, 'https://example.test/return')).rejects.toThrow(/QUOTED/);
   });
 
   it('server-side payment confirmation raises the device limit, approves the request, and creates a paid invoice', async () => {
     const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 3);
-    await client.beginCheckout(quoted.requestId);
+    await client.beginCheckout(quoted.requestId, 'https://example.test/return');
 
     const confirmed = await simulateServerPaymentConfirmation(quoted.requestId);
     expect(confirmed.state).toBe('APPROVED');
@@ -99,7 +107,7 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
 
   it('a duplicate confirmation for an already-approved request is an idempotent no-op (does not double-apply)', async () => {
     const quoted = await client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
-    await client.beginCheckout(quoted.requestId);
+    await client.beginCheckout(quoted.requestId, 'https://example.test/return');
     await simulateServerPaymentConfirmation(quoted.requestId);
     await simulateServerPaymentConfirmation(quoted.requestId); // duplicate "webhook redelivery" / UI refresh
 
@@ -116,8 +124,10 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
     expect(quoted.awaitingAdminQuote).toBe(false);
     expect(quoted.quote?.quoteKind).toBe('CUSTOM');
 
-    const pending = await client.beginCheckout(quoted.requestId);
-    expect(pending.state).toBe('PAYMENT_PENDING');
+    const session = await client.beginCheckout(quoted.requestId, 'https://example.test/return');
+    expect(session.status).toBe('PENDING');
+    const request = await client.getRequest(quoted.requestId);
+    expect(request?.state).toBe('PAYMENT_PENDING');
   });
 
   it('a parent-member request can be approved directly at no charge, without ever entering QUOTED', async () => {

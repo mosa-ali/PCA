@@ -18,7 +18,8 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import { RequestStateBadge } from '../../components/billing/RequestStateBadge';
-import { formatMoney, isQuoteExpired, suggestedDeviceTargets } from '../../domain/billing';
+import { formatMoney, isQuoteExpired, isSameOriginRedirect, suggestedDeviceTargets } from '../../domain/billing';
+import { storePaymentAttemptId } from '../../domain/checkoutCorrelation';
 
 export default function DeviceIncreaseRequest() {
   const { t, i18n } = useTranslation();
@@ -77,8 +78,25 @@ export default function DeviceIncreaseRequest() {
     setActionError(null);
     setBusy(true);
     try {
-      await clients.billing.beginCheckout(id);
-      navigate(`/subscription/checkout-return?requestId=${id}`);
+      const returnUrl = `${window.location.origin}/subscription/checkout-return?requestId=${id}`;
+      const session = await clients.billing.beginCheckout(id, returnUrl);
+      // Correlate requestId -> paymentAttemptId BEFORE any navigation --
+      // sessionStorage survives a real cross-origin redirect-and-back (see
+      // domain/checkoutCorrelation.ts), an in-app router navigation does not
+      // need it but storing it unconditionally keeps this one code path
+      // honest for both cases.
+      storePaymentAttemptId(id, session.paymentAttemptId);
+      if (isSameOriginRedirect(session.redirectUrl, window.location.origin)) {
+        // DevBillingClient fixture (or any same-origin redirect target):
+        // stay in-app via the router, exactly as before.
+        navigate(session.redirectUrl.startsWith('/') ? session.redirectUrl : `/subscription/checkout-return?requestId=${id}`);
+      } else {
+        // A genuine different-origin payment-provider handoff -- this is a
+        // real, full-page browser navigation. PCA-ADD-BILL-035: this is
+        // NEVER treated as proof of anything; the checkout-return page
+        // re-derives all state from the server after the browser comes back.
+        window.location.assign(session.redirectUrl);
+      }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
       setBusy(false);
