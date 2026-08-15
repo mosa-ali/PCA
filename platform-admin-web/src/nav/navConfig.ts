@@ -23,6 +23,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: '/accounts', labelKey: 'nav.accounts', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
       { path: '/entitlements', labelKey: 'nav.entitlements', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
       { path: '/entitlement-requests', labelKey: 'nav.entitlementRequests', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+      { path: '/complimentary-capacity', labelKey: 'nav.complimentaryCapacity', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
     ],
   },
   {

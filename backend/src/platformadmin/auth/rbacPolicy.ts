@@ -25,7 +25,18 @@ export type PlatformAdminOperation =
   | 'VIEW_AUDIT_LOG_FULL'
   | 'VIEW_AUDIT_LOG_OWN'
   | 'VIEW_SUPPORT_ACCOUNT_METADATA'
-  | 'PERFORM_SUPPORT_ACTION';
+  | 'PERFORM_SUPPORT_ACTION'
+  // PCA-ADD-COMP-014: complimentary-grant create/revoke/renew, bounded
+  // delegation to APP_OWNER + PLATFORM_ADMIN (FINANCE_ADMIN/SUPPORT_ADMIN/
+  // AUDITOR_READ_ONLY remain read-only via VIEW_SUPPORT_ACCOUNT_METADATA,
+  // already ALLOW for all five roles).
+  | 'ADMINISTER_COMPLIMENTARY_GRANT'
+  // PCA-ADD-COMP-014: permanent/lifetime (no expiresAt) complimentary
+  // grants remain APP_OWNER-only by default -- a SEPARATE operation row,
+  // never a parameterized branch inside ADMINISTER_COMPLIMENTARY_GRANT,
+  // so the closed-matrix/no-default-case discipline this file already
+  // documents extends cleanly to the permanent-grant restriction too.
+  | 'ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT';
 
 export type PlatformAdminAuthorizationVerdict = 'ALLOW' | 'DENY';
 
@@ -158,6 +169,20 @@ const OPERATION_MATRIX: Record<PlatformAdminOperation, Record<PlatformAdminRole,
     PLATFORM_ADMIN: 'ALLOW',
     FINANCE_ADMIN: 'DENY',
     SUPPORT_ADMIN: 'ALLOW',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  ADMINISTER_COMPLIMENTARY_GRANT: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'ALLOW',
+    FINANCE_ADMIN: 'DENY',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'DENY',
+    FINANCE_ADMIN: 'DENY',
+    SUPPORT_ADMIN: 'DENY',
     AUDITOR_READ_ONLY: 'DENY',
   },
 };

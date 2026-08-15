@@ -38,6 +38,12 @@ export const PLATFORM_ADMIN_STEP_UP_SCOPES = [
   'FAMILY_ACCOUNT_SUSPEND',
   'FAMILY_ACCOUNT_REACTIVATE',
   'ENTITLEMENT_LIMIT_OVERRIDE',
+  // PCA-ADD-COMP-015: complimentary-grant create/revoke/renew is a
+  // semantically distinct sensitive operation from
+  // ENTITLEMENT_LIMIT_OVERRIDE (that scope gates a direct, billable-in-kind
+  // device-limit override; this one gates a durable, audited, no-charge
+  // grant record) -- a new scope, never a reuse of ENTITLEMENT_LIMIT_OVERRIDE.
+  'COMPLIMENTARY_GRANT_MUTATION',
 ] as const;
 
 export type PlatformAdminStepUpScope = (typeof PLATFORM_ADMIN_STEP_UP_SCOPES)[number];

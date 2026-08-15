@@ -9,6 +9,7 @@ import AccountsList from './pages/accounts/AccountsList';
 import AccountDetail from './pages/accounts/AccountDetail';
 import Entitlements from './pages/entitlements/Entitlements';
 import EntitlementRequests from './pages/entitlements/EntitlementRequests';
+import ComplimentaryCapacity from './pages/entitlements/ComplimentaryCapacity';
 import BillingPlans from './pages/billing/BillingPlans';
 import BillingPricing from './pages/billing/BillingPricing';
 import BillingQuotes from './pages/billing/BillingQuotes';
@@ -73,6 +74,15 @@ export default function App() {
           element={
             <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
               <EntitlementRequests />
+            </RouteGuard>
+          }
+        />
+
+        <Route
+          path="complimentary-capacity"
+          element={
+            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
+              <ComplimentaryCapacity />
             </RouteGuard>
           }
         />
