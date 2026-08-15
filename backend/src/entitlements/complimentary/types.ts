@@ -107,3 +107,46 @@ export interface FreeAccessSummary {
   expiresAt: Date | null;
   remainingDays: number | null;
 }
+
+/**
+ * PCA-COMPLIMENTARY-CONSUMPTION-1 (Writer60, Round6) -- the caller-supplied
+ * BASE usage a consumption decision is being evaluated against. Always read
+ * from the family's existing `account_entitlements` row (never derived,
+ * never persisted by this module); the SSOT function in
+ * `EffectiveEntitlementCapacity.ts` combines this with the family's current
+ * ACTIVE complimentary grants.
+ */
+export interface EffectiveEntitlementBaseUsage {
+  parentMemberLimit: number;
+  managedDeviceLimit: number;
+  parentMemberUsed: number;
+  managedDeviceActive: number;
+  managedDeviceReserved: number;
+}
+
+/**
+ * EFFECTIVE_ENTITLEMENT_V2 (frozen field set, ROUND6_INTERFACE_CONTRACTS.md).
+ * The single, exact shape every consumption decision (slot reservation,
+ * change-request target validation, over-limit computation, MyKids read
+ * model) reads through -- no service independently recomputes
+ * `base + sum(active grants)`; see `EffectiveEntitlementCapacity
+ * .computeEffectiveEntitlementSnapshot`, the one function that assembles
+ * this shape everywhere it is used.
+ */
+export interface EffectiveEntitlementSnapshot {
+  baseParentMemberLimit: number;
+  complimentaryParentMemberCapacity: number;
+  effectiveParentMemberLimit: number;
+
+  baseManagedDeviceLimit: number;
+  complimentaryManagedDeviceCapacity: number;
+  effectiveManagedDeviceLimit: number;
+
+  parentMemberUsed: number;
+  managedDeviceActive: number;
+  managedDeviceReserved: number;
+
+  availableDeviceCapacity: number;
+  overLimitParentMember: boolean;
+  overLimitManagedDevice: boolean;
+}
