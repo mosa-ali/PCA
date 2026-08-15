@@ -19,10 +19,12 @@ import type { AttributeTransactionRequest, SettlementActor, SettlementService } 
 import type {
   CreateSettlementAccountInput,
   OpenSettlementBatchInput,
+  SettlementAccountHealthRow,
   SettlementAccountRecord,
   SettlementBatchItemRecord,
   SettlementBatchRecord,
   SettlementDashboardSummary,
+  SettlementUsdRollup,
 } from '../../billing/settlement/types.js';
 
 export interface PlatformAdminSettlementActor {
@@ -217,5 +219,24 @@ export class PlatformAdminSettlementService {
   async dashboardSummary(actor: PlatformAdminSettlementActor): Promise<SettlementDashboardSummary> {
     this.requireRead(actor);
     return this.settlementService.dashboardSummary();
+  }
+
+  /** PCA-ADD-PA-041 (Writer65): see SettlementAccountHealthRow's doc comment. Same VIEW_SETTLEMENT_RECORDS read gate as every other settlement read. */
+  async accountHealthSummary(actor: PlatformAdminSettlementActor): Promise<SettlementAccountHealthRow[]> {
+    this.requireRead(actor);
+    return this.settlementService.accountHealthSummary();
+  }
+
+  /** PCA-ADD-BILL-020 (Writer65): reuses the same MUTATE_SETTLEMENT_ACCOUNT RBAC gate and SETTLEMENT_BANK_CONFIG step-up as every other settlement-account-adjacent mutation. */
+  async recordUsdNormalization(actor: PlatformAdminSettlementActor, settlementBatchId: string, rate: string, stepUpId: PlatformAdminStepUpId): Promise<SettlementBatchView> {
+    this.requireMutateAccount(actor);
+    await this.stepUp(actor, stepUpId);
+    return this.settlementService.recordUsdNormalization(settlementBatchId, rate, this.settlementActor(actor), this.now());
+  }
+
+  /** PCA-ADD-BILL-020 (Writer65): see SettlementUsdRollup's doc comment. */
+  async usdRollup(actor: PlatformAdminSettlementActor): Promise<SettlementUsdRollup> {
+    this.requireRead(actor);
+    return this.settlementService.usdRollup();
   }
 }

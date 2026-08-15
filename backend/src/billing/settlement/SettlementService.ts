@@ -28,10 +28,12 @@ import type {
   CreateSettlementAccountInput,
   OpenSettlementBatchInput,
   ReconciliationStatus,
+  SettlementAccountHealthRow,
   SettlementAccountRecord,
   SettlementBatchItemRecord,
   SettlementBatchRecord,
   SettlementDashboardSummary,
+  SettlementUsdRollup,
 } from './types.js';
 
 /** Actor identity threaded through every mutation for audit attribution -- mirrors ComplimentaryEntitlementService's grantedByAdminId/insertPlatformAdminAuditEventRow pattern exactly. */
@@ -279,6 +281,47 @@ export class SettlementService {
 
   async dashboardSummary(): Promise<SettlementDashboardSummary> {
     return this.runTx((conn) => this.repository.dashboardSummary(conn));
+  }
+
+  /** PCA-ADD-PA-041 (Writer65): see SettlementAccountHealthRow's doc comment. */
+  async accountHealthSummary(): Promise<SettlementAccountHealthRow[]> {
+    return this.runTx((conn) => this.repository.accountHealthSummary(conn));
+  }
+
+  /**
+   * PCA-ADD-BILL-020 (Writer65): records a one-time, immutable USD-
+   * normalization rate for a non-USD batch. Rejects a USD batch outright
+   * (it needs no rate, rate=1 is implicit) and rejects re-recording once a
+   * rate already exists (ALREADY_ATTRIBUTED reused for "already has an
+   * immutable value" -- same semantic this codebase already gives that
+   * code for settlement_batch_items' one-time attribution).
+   */
+  async recordUsdNormalization(settlementBatchId: string, rate: string, actor: SettlementActor, now: Date = new Date()): Promise<SettlementBatchRecord> {
+    if (!RATE_DECIMAL_PATTERN.test(rate)) throw new SettlementError('INVALID_INPUT', 'rate must be an exact decimal string.');
+    return this.runTx(async (conn) => {
+      const batch = await this.repository.lockBatchById(conn, settlementBatchId);
+      if (!batch) throw new SettlementError('NOT_FOUND', `SettlementBatch ${settlementBatchId} not found.`);
+      if (batch.settlementCurrency === 'USD') throw new SettlementError('INVALID_INPUT', 'A USD batch needs no USD-normalization rate.');
+      const result = await this.repository.tryRecordUsdNormalization(conn, settlementBatchId, rate, actor.adminId, now);
+      if (!result.applied || !result.record) throw new SettlementError('ALREADY_ATTRIBUTED', 'This batch already has a recorded USD-normalization rate.');
+      await insertPlatformAdminAuditEventRow(conn, {
+        eventId: randomUUID(),
+        eventType: 'SETTLEMENT_ACCOUNT_CHANGED',
+        actorAdminId: actor.adminId,
+        actorRole: actor.role,
+        targetRef: `settlement-batch:${settlementBatchId}`,
+        result: 'SUCCESS',
+        occurredAt: now,
+        correlationId: randomUUID(),
+        metadata: { usdNormalizedRate: rate },
+      });
+      return result.record;
+    });
+  }
+
+  /** PCA-ADD-BILL-020 (Writer65): see SettlementUsdRollup's doc comment. */
+  async usdRollup(): Promise<SettlementUsdRollup> {
+    return this.runTx((conn) => this.repository.usdRollup(conn));
   }
 }
 

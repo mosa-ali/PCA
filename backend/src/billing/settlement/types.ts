@@ -146,3 +146,57 @@ export interface SettlementDashboardSummary {
     readonly totalDifferenceMinor: string;
   }>;
 }
+
+/**
+ * PCA-ADD-PA-041 (Writer65) -- one row per ACTIVE settlement account,
+ * carrying only its own most recent batch (by period_end, tie-broken by
+ * created_at) for the Platform Admin dashboard's service-health widget.
+ * `mostRecentBatch` is null for an account with no batches yet -- never a
+ * fabricated status. No raw provider secret: only `displayLabel`
+ * (already masked, see SettlementAccountRecord's own doc comment).
+ */
+export interface SettlementAccountHealthRow {
+  readonly settlementAccountId: string;
+  readonly displayLabel: string;
+  readonly settlementCurrency: CurrencyCode;
+  readonly accountStatus: SettlementAccountStatus;
+  readonly mostRecentBatch: {
+    readonly settlementBatchId: string;
+    readonly status: ReconciliationStatus;
+    readonly periodEnd: Date;
+  } | null;
+}
+
+/**
+ * PCA-ADD-BILL-020 (Writer65) -- cross-batch USD-normalized reporting
+ * rollup. `includedBatchCount` is every USD batch plus every non-USD batch
+ * that has a recorded `usd_normalized_rate` (migration 0017);
+ * `excludedForMissingRateBatchCount` is every non-USD batch that does NOT
+ * yet have one -- reported explicitly, never silently dropped, mirroring
+ * DashboardReadModel.ts's "capability: UNAVAILABLE rather than a
+ * fabricated zero" convention.
+ */
+export interface SettlementUsdRollup {
+  readonly totalNetUsdMinor: string;
+  readonly totalReceivedUsdMinor: string;
+  readonly includedBatchCount: number;
+  readonly excludedForMissingRateBatchCount: number;
+}
+
+/** Same exact-decimal-string shape as `RecordedSettlementFxSnapshotRecord.recordedRate` -- up to 13 integer digits, up to 10 fractional digits, never scientific notation. */
+export const USD_RATE_DECIMAL_PATTERN = /^\d{1,13}(\.\d{1,10})?$/;
+
+/**
+ * Exact fixed-point multiplication of a minor-unit bigint amount by a
+ * decimal-string rate, truncated toward zero at the minor-unit boundary
+ * (never rounded up, never a float intermediate) -- this domain's
+ * "never invent hidden precision" discipline (see file header) applied to
+ * the one place this lane needs rate * amount arithmetic. `rateDecimalString`
+ * MUST already match `USD_RATE_DECIMAL_PATTERN`.
+ */
+export function applyExactRateToMinor(amountMinor: bigint, rateDecimalString: string): bigint {
+  const [wholePart, fracPart = ''] = rateDecimalString.split('.');
+  const scale = 10n ** BigInt(fracPart.length);
+  const rateScaled = BigInt(wholePart) * scale + (fracPart.length > 0 ? BigInt(fracPart) : 0n);
+  return (amountMinor * rateScaled) / scale;
+}

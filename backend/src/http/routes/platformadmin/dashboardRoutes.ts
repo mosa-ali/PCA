@@ -10,6 +10,7 @@ import { createRequirePlatformAdminSession } from '../../../platformadmin/auth/f
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
 import { DashboardReadModel } from '../../../platformadmin/readmodels/DashboardReadModel.js';
+import { moneyToJson } from '../../../billing/money.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminDashboardRoutesDeps {
@@ -31,7 +32,31 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
         return reply.code(403).send({ error: 'forbidden' });
       }
       const snapshot = await readModel.build();
-      return reply.code(200).send(snapshot);
+      // settlementSummary carries real Money/bigint domain values (see
+      // SettlementDashboardSummary) -- JSON.stringify cannot serialize a
+      // bigint, so this is the one field that needs an explicit wire
+      // mapping (moneyToJson, billing/money.ts's existing convention)
+      // before the response leaves this route. Every other field is
+      // already plain number/string/null, unchanged.
+      return reply.code(200).send({
+        ...snapshot,
+        settlementSummary: {
+          capability: snapshot.settlementSummary.capability,
+          summary: snapshot.settlementSummary.summary
+            ? {
+                matchedBatchCount: snapshot.settlementSummary.summary.matchedBatchCount,
+                underInvestigationBatchCount: snapshot.settlementSummary.summary.underInvestigationBatchCount,
+                resolvedBatchCount: snapshot.settlementSummary.summary.resolvedBatchCount,
+                byCurrency: snapshot.settlementSummary.summary.byCurrency.map((row) => ({
+                  currencyCode: row.currencyCode,
+                  totalNet: moneyToJson(row.totalNet),
+                  totalReceived: moneyToJson(row.totalReceived),
+                  totalDifferenceMinor: row.totalDifferenceMinor,
+                })),
+              }
+            : null,
+        },
+      });
     },
   );
 }

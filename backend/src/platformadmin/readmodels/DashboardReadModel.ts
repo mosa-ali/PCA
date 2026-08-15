@@ -9,13 +9,16 @@
  * forced live-FX rollup) -- every money-shaped aggregate here is grouped
  * by currency_code, never summed across currencies.
  *
- * Every metric that has no authoritative source in this schema (account
- * active/suspended counts -- see AccountsReadModel's header) is reported
+ * Every metric that has no authoritative source in this schema is reported
  * via an explicit `capability: 'UNAVAILABLE'` field, never a fabricated
- * zero (mission Section 7's explicit instruction).
+ * zero (mission Section 7's explicit instruction). PCA-ADD-PA-017 UPDATE
+ * (Writer65): `families.status` now exists (migration 0016), so
+ * `accountsActiveSuspended` below is AVAILABLE.
  */
 
 import { execute, runInTransaction } from '../../db/pool.js';
+import { MySqlSettlementRepository } from '../../billing/settlement/MySqlSettlementRepository.js';
+import type { SettlementDashboardSummary } from '../../billing/settlement/types.js';
 
 export type MetricCapability = 'AVAILABLE' | 'UNAVAILABLE';
 
@@ -38,7 +41,7 @@ export interface UtilizationMetric {
 export interface PlatformDashboardSnapshot {
   readonly generatedAt: string;
   readonly accountsTotal: CountMetric;
-  readonly accountsActiveSuspended: { capability: 'UNAVAILABLE'; reason: string };
+  readonly accountsActiveSuspended: { capability: 'AVAILABLE'; active: number; suspended: number };
   readonly parentMemberEntitlementUtilization: UtilizationMetric;
   readonly managedDeviceEntitlementUtilization: UtilizationMetric;
   readonly managedDeviceActive: CountMetric;
@@ -51,6 +54,34 @@ export interface PlatformDashboardSnapshot {
   readonly paymentAttemptsByStatusAndCurrency: { capability: MetricCapability; rows: Array<{ status: string; currencyCode: string; count: number }> | null };
   readonly refundsByCurrency: { capability: MetricCapability; rows: Array<{ currencyCode: string; count: number }> | null };
   readonly openDisputes: CountMetric;
+  /**
+   * PCA-ADD-PA-041 (Writer65): sourced from the now-complete Settlement /
+   * Reconciliation domain (backend/src/billing/settlement/**). AVAILABLE
+   * unconditionally -- the settlement_batches table always exists post
+   * migration 0015, so an empty result set (no batches yet) is a real,
+   * correctly-reported zero, never an UNAVAILABLE placeholder.
+   */
+  readonly settlementSummary: { capability: MetricCapability; summary: SettlementDashboardSummary | null };
+  /**
+   * PCA-ADD-PA-041 (Writer65): service-health / exception-queue metrics.
+   * `openReconciliationExceptions` is the open UNDER_INVESTIGATION batch
+   * count (also present inside settlementSummary; duplicated here as its
+   * own top-level field per the mission's explicit ask for a dedicated
+   * exception-queue metric). `mostRecentBatchStatusByAccount` is one row
+   * per ACTIVE settlement account with its own latest batch (or null if
+   * that account has no batches yet -- never fabricated).
+   */
+  readonly serviceHealth: {
+    readonly capability: MetricCapability;
+    readonly openReconciliationExceptions: number | null;
+    readonly mostRecentBatchStatusByAccount: ReadonlyArray<{
+      readonly settlementAccountId: string;
+      readonly displayLabel: string;
+      readonly settlementCurrency: string;
+      readonly mostRecentBatchStatus: string | null;
+      readonly mostRecentBatchPeriodEnd: string | null;
+    }> | null;
+  };
 }
 
 interface CountRow {
@@ -83,6 +114,10 @@ export class DashboardReadModel {
   async build(now: Date = new Date()): Promise<PlatformDashboardSnapshot> {
     return runInTransaction(async (conn) => {
       const { rows: accountsRows } = await execute<CountRow>(conn, `SELECT COUNT(*) AS cnt FROM families WHERE deleted_at IS NULL`);
+      const { rows: accountStatusRows } = await execute<{ status: 'ACTIVE' | 'SUSPENDED'; cnt: number }>(
+        conn,
+        `SELECT status, COUNT(*) AS cnt FROM families WHERE deleted_at IS NULL GROUP BY status`,
+      );
 
       const { rows: entitlementSumRows } = await execute<SumRow>(
         conn,
@@ -134,6 +169,13 @@ export class DashboardReadModel {
         `SELECT COUNT(*) AS cnt FROM billing_disputes WHERE status IN ('OPEN', 'UNDER_REVIEW')`,
       );
 
+      // PCA-ADD-PA-041 (Writer65): reuses the same transaction connection
+      // as every other query above -- one consistent point-in-time
+      // snapshot, never a second independent transaction.
+      const settlementRepository = new MySqlSettlementRepository();
+      const settlementSummary = await settlementRepository.dashboardSummary(conn);
+      const accountHealth = await settlementRepository.accountHealthSummary(conn);
+
       const groupedToRecord = (rows: GroupedRow[]): Record<string, number> =>
         Object.fromEntries(rows.map((r) => [r.groupKey, toNumber(r.cnt as unknown as number)]));
 
@@ -141,8 +183,9 @@ export class DashboardReadModel {
         generatedAt: now.toISOString(),
         accountsTotal: { capability: 'AVAILABLE', value: toNumber(accountsRows[0]?.cnt as unknown as number) },
         accountsActiveSuspended: {
-          capability: 'UNAVAILABLE',
-          reason: 'No authoritative customer-account status model exists in this schema (see ACCOUNT_STATUS_MODEL_GAP).',
+          capability: 'AVAILABLE',
+          active: toNumber((accountStatusRows.find((r) => r.status === 'ACTIVE')?.cnt as unknown as number) ?? 0),
+          suspended: toNumber((accountStatusRows.find((r) => r.status === 'SUSPENDED')?.cnt as unknown as number) ?? 0),
         },
         parentMemberEntitlementUtilization: {
           capability: 'AVAILABLE',
@@ -173,6 +216,18 @@ export class DashboardReadModel {
           rows: refundRows.map((r) => ({ currencyCode: r.currency_code, count: toNumber(r.cnt as unknown as number) })),
         },
         openDisputes: { capability: 'AVAILABLE', value: toNumber(openDisputeRows[0]?.cnt as unknown as number) },
+        settlementSummary: { capability: 'AVAILABLE', summary: settlementSummary },
+        serviceHealth: {
+          capability: 'AVAILABLE',
+          openReconciliationExceptions: settlementSummary.underInvestigationBatchCount,
+          mostRecentBatchStatusByAccount: accountHealth.map((row) => ({
+            settlementAccountId: row.settlementAccountId,
+            displayLabel: row.displayLabel,
+            settlementCurrency: row.settlementCurrency,
+            mostRecentBatchStatus: row.mostRecentBatch?.status ?? null,
+            mostRecentBatchPeriodEnd: row.mostRecentBatch?.periodEnd.toISOString() ?? null,
+          })),
+        },
       };
     });
   }

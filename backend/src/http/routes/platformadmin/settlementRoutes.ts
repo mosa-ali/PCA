@@ -365,4 +365,65 @@ export function registerSettlementRoutes(app: FastifyInstance, deps: SettlementR
       throw error;
     }
   });
+
+  // ---- Account health summary (PCA-ADD-PA-041, Writer65) ----
+
+  app.get('/platform-admin/settlement/account-health', { preHandler: [readLimiter, requirePlatformAdminSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const rows = await deps.platformAdminSettlementService.accountHealthSummary(actor(request));
+      return reply.code(200).send({
+        items: rows.map((row) => ({
+          settlementAccountId: row.settlementAccountId,
+          displayLabel: row.displayLabel,
+          settlementCurrency: row.settlementCurrency,
+          accountStatus: row.accountStatus,
+          mostRecentBatch: row.mostRecentBatch
+            ? { settlementBatchId: row.mostRecentBatch.settlementBatchId, status: row.mostRecentBatch.status, periodEnd: dateToJson(row.mostRecentBatch.periodEnd) }
+            : null,
+        })),
+      });
+    } catch (error) {
+      if (mapKnownError(error, reply)) return;
+      throw error;
+    }
+  });
+
+  // ---- USD-normalized cross-batch rollup (PCA-ADD-BILL-020, Writer65) ----
+
+  app.post(
+    '/platform-admin/settlement/batches/:batchId/usd-normalization',
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [mutateLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { batchId } = request.params as { batchId?: string };
+      if (typeof batchId !== 'string' || batchId.length === 0 || batchId.length > ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
+      const body = request.body;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      const { rate } = body;
+      if (typeof rate !== 'string' || rate.length === 0) return reply.code(400).send({ error: 'invalid_request' });
+      const stepUpId = requireStepUpId(body, reply);
+      if (stepUpId === null) return;
+      try {
+        const view = await deps.platformAdminSettlementService.recordUsdNormalization(actor(request), batchId, rate, stepUpId);
+        return reply.code(200).send(batchToDto(view));
+      } catch (error) {
+        if (mapKnownError(error, reply)) return;
+        throw error;
+      }
+    },
+  );
+
+  app.get('/platform-admin/settlement/usd-rollup', { preHandler: [readLimiter, requirePlatformAdminSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const rollup = await deps.platformAdminSettlementService.usdRollup(actor(request));
+      return reply.code(200).send({
+        totalNetUsdMinor: rollup.totalNetUsdMinor,
+        totalReceivedUsdMinor: rollup.totalReceivedUsdMinor,
+        includedBatchCount: rollup.includedBatchCount,
+        excludedForMissingRateBatchCount: rollup.excludedForMissingRateBatchCount,
+      });
+    } catch (error) {
+      if (mapKnownError(error, reply)) return;
+      throw error;
+    }
+  });
 }
