@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { generateInvitationToken, hashInvitationToken, isPlausibleInvitationToken } from './token.js';
 import { computeExpiryInstant, resolveInvitationTtlMs } from './policy.js';
-import type { InvitationRepository, RedemptionResult } from './InvitationRepository.js';
+import type { InvitationRepository, RedemptionResult, TransitionResult } from './InvitationRepository.js';
 import type {
   InvitationRecord,
   InvitationId,
@@ -17,7 +17,9 @@ export type InvitationErrorCode =
   | 'NOT_FOUND'
   | 'EXPIRED'
   | 'REVOKED'
-  | 'ALREADY_REDEEMED';
+  | 'ALREADY_REDEEMED'
+  /** PCA-ADD-ENR-005: an INSTALL_REQUIRED/APP_INSTALLED/AUTHORIZATION_REQUIRED transition was requested out of order (e.g. requesting an earlier state than the invitation has already reached). Never leaks the current status beyond this generic code. */
+  | 'INVALID_STATE';
 
 /** Message text is always a fixed, generic string per code — never interpolates the raw token or family data. */
 export class InvitationError extends Error {
@@ -35,6 +37,7 @@ const INVITATION_ERROR_MESSAGES: Record<InvitationErrorCode, string> = {
   EXPIRED: 'Invitation has expired.',
   REVOKED: 'Invitation was revoked.',
   ALREADY_REDEEMED: 'Invitation was already redeemed.',
+  INVALID_STATE: 'Invitation is not in a state that allows this action.',
 };
 
 export interface CreateInvitationInput {
@@ -51,7 +54,7 @@ export interface CreateInvitationResult {
   rawToken: string;
 }
 
-const TERMINAL_STATUSES: ReadonlySet<InvitationStatusLike> = new Set(['REDEEMED', 'REVOKED']);
+const TERMINAL_STATUSES: ReadonlySet<InvitationStatusLike> = new Set(['REDEEMED', 'REVOKED', 'EXPIRED']);
 type InvitationStatusLike = InvitationRecord['status'];
 
 export class InvitationService {
@@ -115,7 +118,11 @@ export class InvitationService {
       createdAt,
       expiresAt,
       openedAt: null,
+      installRequiredAt: null,
+      appInstalledAt: null,
+      authorizationRequiredAt: null,
       redeemedAt: null,
+      expiredAt: null,
       revokedAt: null,
     };
     await this.repository.create(record);
@@ -144,6 +151,33 @@ export class InvitationService {
       return this.repository.markOpened(record.invitationId, this.now());
     }
     return record;
+  }
+
+  /**
+   * PCA-ADD-ENR-005/008: the child device calls this when it determines the
+   * app is not yet installed, immediately before handing off to the
+   * platform store. Idempotent -- calling it again (e.g. the device retries
+   * after a network blip) while still in a valid pre-transition state simply
+   * re-confirms the same INSTALL_REQUIRED status rather than erroring.
+   */
+  async markInstallRequired(rawToken: string): Promise<InvitationRecord> {
+    return this.applyForwardTransition(rawToken, (invitationId, at) =>
+      this.repository.markInstallRequired(invitationId, at),
+    );
+  }
+
+  /** PCA-ADD-ENR-005/008: the device calls this on resuming enrollment via the App Link/store-install continuation. */
+  async markAppInstalled(rawToken: string): Promise<InvitationRecord> {
+    return this.applyForwardTransition(rawToken, (invitationId, at) =>
+      this.repository.markAppInstalled(invitationId, at),
+    );
+  }
+
+  /** PCA-ADD-ENR-005: the device calls this once its bootstrap key material is prepared and it is awaiting parent-side authorization before redemption completes. */
+  async markAuthorizationRequired(rawToken: string): Promise<InvitationRecord> {
+    return this.applyForwardTransition(rawToken, (invitationId, at) =>
+      this.repository.markAuthorizationRequired(invitationId, at),
+    );
   }
 
   /**
@@ -178,12 +212,12 @@ export class InvitationService {
   async getInvitationForFamily(familyId: OpaqueFamilyId, invitationId: InvitationId): Promise<InvitationRecord> {
     const record = await this.repository.findByIdForFamily(familyId, invitationId);
     if (!record) throw new InvitationError('NOT_FOUND');
-    return { ...record, status: this.effectiveStatus(record) };
+    return this.persistExpiryIfDue(record);
   }
 
   async listInvitationsForFamily(familyId: OpaqueFamilyId): Promise<InvitationRecord[]> {
     const records = await this.repository.listForFamily(familyId);
-    return records.map((record) => ({ ...record, status: this.effectiveStatus(record) }));
+    return Promise.all(records.map((record) => this.persistExpiryIfDue(record)));
   }
 
   /** Family-scoped revoke: the UPDATE itself is filtered by family_id (see revokeForFamily), so a caller can never revoke another family's invitation by guessing an id. */
@@ -213,15 +247,55 @@ export class InvitationService {
   async resolveInvitationState(rawToken: string): Promise<InvitationStatusLike> {
     const record = await this.findByToken(rawToken);
     if (!record) throw new InvitationError('NOT_FOUND');
-    return this.effectiveStatus(record);
+    return (await this.persistExpiryIfDue(record)).status;
+  }
+
+  /**
+   * Shared plumbing for the three INSTALL_REQUIRED/APP_INSTALLED/
+   * AUTHORIZATION_REQUIRED forward-progress transitions: resolves the
+   * bearer token (persisting an EXPIRED transition first if the record is
+   * past due), rejects the already-terminal cases with the SAME generic
+   * error codes redemption uses, then delegates to the given repository
+   * transition call and maps its TransitionResult back to a record or a
+   * thrown InvitationError.
+   */
+  private async applyForwardTransition(
+    rawToken: string,
+    repositoryCall: (invitationId: InvitationId, at: Date) => Promise<TransitionResult>,
+  ): Promise<InvitationRecord> {
+    const found = await this.findByToken(rawToken);
+    if (!found) throw new InvitationError('NOT_FOUND');
+    const record = await this.persistExpiryIfDue(found);
+    if (record.status === 'REVOKED') throw new InvitationError('REVOKED');
+    if (record.status === 'REDEEMED') throw new InvitationError('ALREADY_REDEEMED');
+    if (record.status === 'EXPIRED') throw new InvitationError('EXPIRED');
+
+    const result = await repositoryCall(record.invitationId, this.now());
+    switch (result.outcome) {
+      case 'TRANSITIONED':
+        return result.record;
+      case 'ALREADY_IN_STATE':
+        return result.record;
+      case 'ALREADY_REDEEMED':
+        throw new InvitationError('ALREADY_REDEEMED');
+      case 'REVOKED':
+        throw new InvitationError('REVOKED');
+      case 'EXPIRED':
+        throw new InvitationError('EXPIRED');
+      case 'NOT_FOUND':
+        throw new InvitationError('NOT_FOUND');
+      case 'INVALID_STATE':
+        throw new InvitationError('INVALID_STATE');
+    }
   }
 
   private async loadRedeemable(rawToken: string): Promise<InvitationRecord> {
-    const record = await this.findByToken(rawToken);
-    if (!record) throw new InvitationError('NOT_FOUND');
+    const found = await this.findByToken(rawToken);
+    if (!found) throw new InvitationError('NOT_FOUND');
+    const record = await this.persistExpiryIfDue(found);
     if (record.status === 'REVOKED') throw new InvitationError('REVOKED');
     if (record.status === 'REDEEMED') throw new InvitationError('ALREADY_REDEEMED');
-    if (this.isExpired(record)) throw new InvitationError('EXPIRED');
+    if (record.status === 'EXPIRED') throw new InvitationError('EXPIRED');
     return record;
   }
 
@@ -234,8 +308,16 @@ export class InvitationService {
     return this.now().getTime() >= record.expiresAt.getTime();
   }
 
-  private effectiveStatus(record: InvitationRecord): InvitationStatusLike {
-    if (TERMINAL_STATUSES.has(record.status)) return record.status;
-    return this.isExpired(record) ? 'EXPIRED' : record.status;
+  /**
+   * PCA-ADD-ENR-005: EXPIRED is now a real, audited, persisted transition
+   * rather than a value computed only on read. Any code path that observes
+   * a non-terminal record past its expiresAt calls this, which writes the
+   * transition via InvitationRepository.expireIfDue (itself idempotent and
+   * a no-op for records that are not yet due or already terminal) and
+   * returns the now-authoritative persisted record.
+   */
+  private async persistExpiryIfDue(record: InvitationRecord): Promise<InvitationRecord> {
+    if (TERMINAL_STATUSES.has(record.status) || !this.isExpired(record)) return record;
+    return this.repository.expireIfDue(record.invitationId, this.now());
   }
 }

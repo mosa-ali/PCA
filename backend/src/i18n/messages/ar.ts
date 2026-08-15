@@ -41,6 +41,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'invitation.EXPIRED': 'انتهت صلاحية الدعوة.',
   'invitation.REVOKED': 'تم إلغاء الدعوة.',
   'invitation.ALREADY_REDEEMED': 'تم استخدام الدعوة مسبقًا.',
+  'invitation.INVALID_STATE': 'الدعوة ليست في حالة تسمح بهذا الإجراء.',
 
   'pairing.NOT_FOUND': 'لم يتم العثور على طلب الإقران.',
   'pairing.INVALID_STATE': 'طلب الإقران ليس في حالة تسمح بهذا الإجراء.',

@@ -50,6 +50,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'invitation.EXPIRED': 'Invitation has expired.',
   'invitation.REVOKED': 'Invitation was revoked.',
   'invitation.ALREADY_REDEEMED': 'Invitation was already redeemed.',
+  'invitation.INVALID_STATE': 'Invitation is not in a state that allows this action.',
 
   // pairing/PairingService.ts PAIRING_ERROR_MESSAGES
   'pairing.NOT_FOUND': 'Pairing request was not found.',

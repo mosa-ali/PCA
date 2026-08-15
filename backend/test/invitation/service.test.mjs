@@ -192,12 +192,23 @@ test('concurrent-redeem repository contract: exactly one of many simultaneous at
   }
 });
 
-test('resolveInvitationState reports EXPIRED once past expiry without a separate write', async () => {
-  const { service, clock } = buildService();
-  const { rawToken } = await service.createInvitation(baseInput);
+test('resolveInvitationState reports EXPIRED once past expiry, and PERSISTS a real audited EXPIRED transition (PCA-ADD-ENR-005)', async () => {
+  const { service, repository, clock } = buildService();
+  const { rawToken, record } = await service.createInvitation(baseInput);
   assert.equal(await service.resolveInvitationState(rawToken), 'CREATED');
   clock.advance(TTL_MS + 1);
   assert.equal(await service.resolveInvitationState(rawToken), 'EXPIRED');
+
+  // Unlike the old computed-on-read behavior, EXPIRED is now a real write:
+  // the underlying repository record itself is EXPIRED, not just the value
+  // returned to this caller.
+  const stored = await repository.findByTokenHash(hashInvitationToken(rawToken));
+  assert.equal(stored.status, 'EXPIRED');
+  assert.notEqual(stored.expiredAt, null);
+
+  const transition = repository.transitions.find((t) => t.invitationId === record.invitationId && t.toStatus === 'EXPIRED');
+  assert.ok(transition, 'an immutable EXPIRED transition audit row must exist');
+  assert.equal(transition.fromStatus, 'CREATED');
 });
 
 test('security: token truncation is rejected', async () => {
@@ -270,4 +281,131 @@ test('TTL policy: a caller cannot exceed the maximum by requesting an astronomic
     () => service.createInvitation({ ...baseInput, ttlMs: Number.MAX_SAFE_INTEGER }),
     RangeError,
   );
+});
+
+// -----------------------------------------------------------------------
+// PCA-ADD-ENR-005 (Addendum 001): full 8-state invitation lifecycle --
+// INSTALL_REQUIRED / APP_INSTALLED / AUTHORIZATION_REQUIRED as real,
+// persisted, audited transitions.
+// -----------------------------------------------------------------------
+
+test('8-state lifecycle: full forward path CREATED -> OPENED -> INSTALL_REQUIRED -> APP_INSTALLED -> AUTHORIZATION_REQUIRED -> REDEEMED', async () => {
+  const { service, repository } = buildService();
+  const { rawToken, record } = await service.createInvitation(baseInput);
+
+  await service.markOpened(rawToken);
+  const installRequired = await service.markInstallRequired(rawToken);
+  assert.equal(installRequired.status, 'INSTALL_REQUIRED');
+  assert.notEqual(installRequired.installRequiredAt, null);
+
+  const appInstalled = await service.markAppInstalled(rawToken);
+  assert.equal(appInstalled.status, 'APP_INSTALLED');
+  assert.notEqual(appInstalled.appInstalledAt, null);
+
+  const authRequired = await service.markAuthorizationRequired(rawToken);
+  assert.equal(authRequired.status, 'AUTHORIZATION_REQUIRED');
+  assert.notEqual(authRequired.authorizationRequiredAt, null);
+
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
+
+  const path = repository.transitions
+    .filter((t) => t.invitationId === record.invitationId)
+    .map((t) => `${t.fromStatus}->${t.toStatus}`);
+  assert.deepEqual(path, [
+    'CREATED->OPENED',
+    'OPENED->INSTALL_REQUIRED',
+    'INSTALL_REQUIRED->APP_INSTALLED',
+    'APP_INSTALLED->AUTHORIZATION_REQUIRED',
+    'AUTHORIZATION_REQUIRED->REDEEMED',
+  ]);
+});
+
+test('8-state lifecycle: steps may be skipped -- APP_INSTALLED is reachable directly from CREATED', async () => {
+  const { service } = buildService();
+  const { rawToken } = await service.createInvitation(baseInput);
+  const appInstalled = await service.markAppInstalled(rawToken);
+  assert.equal(appInstalled.status, 'APP_INSTALLED');
+});
+
+test('8-state lifecycle: redemption remains reachable directly from CREATED (existing direct-bootstrap flow is unbroken)', async () => {
+  const { service } = buildService();
+  const { rawToken } = await service.createInvitation(baseInput);
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
+});
+
+test('8-state lifecycle: forward transition is idempotent -- calling markInstallRequired twice does not error', async () => {
+  const { service } = buildService();
+  const { rawToken } = await service.createInvitation(baseInput);
+  const first = await service.markInstallRequired(rawToken);
+  const second = await service.markInstallRequired(rawToken);
+  assert.equal(first.status, 'INSTALL_REQUIRED');
+  assert.equal(second.status, 'INSTALL_REQUIRED');
+  assert.equal(second.installRequiredAt.getTime(), first.installRequiredAt.getTime());
+});
+
+test('8-state lifecycle: out-of-order transition rejected (going backward after progressing forward)', async () => {
+  const { service } = buildService();
+  const { rawToken } = await service.createInvitation(baseInput);
+  await service.markAuthorizationRequired(rawToken);
+  await assert.rejects(() => service.markInstallRequired(rawToken), (error) => {
+    assert.equal(error.code, 'INVALID_STATE');
+    return true;
+  });
+});
+
+test('8-state lifecycle: forward transitions rejected on a REVOKED invitation, without leaking beyond the generic REVOKED code', async () => {
+  const { service } = buildService();
+  const { record, rawToken } = await service.createInvitation(baseInput);
+  await service.revokeInvitation(record.invitationId);
+  await assert.rejects(() => service.markInstallRequired(rawToken), { code: 'REVOKED' });
+  await assert.rejects(() => service.markAppInstalled(rawToken), { code: 'REVOKED' });
+  await assert.rejects(() => service.markAuthorizationRequired(rawToken), { code: 'REVOKED' });
+});
+
+test('8-state lifecycle: forward transitions rejected on an already-REDEEMED invitation', async () => {
+  const { service } = buildService();
+  const { rawToken } = await service.createInvitation(baseInput);
+  await service.redeemInvitation(rawToken);
+  await assert.rejects(() => service.markInstallRequired(rawToken), { code: 'ALREADY_REDEEMED' });
+});
+
+test('8-state lifecycle: forward transitions rejected on an EXPIRED invitation, and expiry is persisted as a real transition first', async () => {
+  const { service, repository, clock } = buildService();
+  const { rawToken, record } = await service.createInvitation(baseInput);
+  clock.advance(TTL_MS + 1);
+  await assert.rejects(() => service.markInstallRequired(rawToken), { code: 'EXPIRED' });
+  const stored = await repository.findByTokenHash(hashInvitationToken(rawToken));
+  assert.equal(stored.status, 'EXPIRED');
+  const transition = repository.transitions.find((t) => t.invitationId === record.invitationId && t.toStatus === 'EXPIRED');
+  assert.ok(transition, 'expiry observed via a forward-transition call must still be persisted and audited');
+});
+
+test('8-state lifecycle: getInvitationForFamily persists EXPIRED as a real write, not just a computed read value', async () => {
+  const { service, repository, clock } = buildService();
+  const { record } = await service.createInvitation(baseInput);
+  clock.advance(TTL_MS + 1);
+  const fetched = await service.getInvitationForFamily(baseInput.familyId, record.invitationId);
+  assert.equal(fetched.status, 'EXPIRED');
+  const stored = await repository.findByIdForFamily(baseInput.familyId, record.invitationId);
+  assert.equal(stored.status, 'EXPIRED');
+});
+
+test('8-state lifecycle: listInvitationsForFamily persists EXPIRED for every due record it observes', async () => {
+  const { service, repository, clock } = buildService();
+  const a = await service.createInvitation({ ...baseInput, familyId: 'family-list-expiry' });
+  await service.createInvitation({ ...baseInput, familyId: 'family-list-expiry', ttlMs: TTL_MS * 4 });
+  clock.advance(TTL_MS + 1);
+  const list = await service.listInvitationsForFamily('family-list-expiry');
+  const expiredOne = list.find((r) => r.invitationId === a.record.invitationId);
+  assert.equal(expiredOne.status, 'EXPIRED');
+  const stillActive = list.find((r) => r.invitationId !== a.record.invitationId);
+  assert.equal(stillActive.status, 'CREATED');
+});
+
+test('8-state lifecycle: malformed/unknown token rejected identically for the new transitions as for redemption', async () => {
+  const { service } = buildService();
+  await assert.rejects(() => service.markInstallRequired('not a valid token'), { code: 'INVALID_TOKEN' });
+  await assert.rejects(() => service.markAppInstalled('A'.repeat(43)), { code: 'NOT_FOUND' });
 });
