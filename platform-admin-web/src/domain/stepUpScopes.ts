@@ -10,6 +10,8 @@ export const PLATFORM_ADMIN_STEP_UP_SCOPES = [
   'FAMILY_ACCOUNT_SUSPEND',
   'FAMILY_ACCOUNT_REACTIVATE',
   'ENTITLEMENT_LIMIT_OVERRIDE',
+  // PCA-ADD-COMP-015: complimentary-grant create/revoke/renew.
+  'COMPLIMENTARY_GRANT_MUTATION',
 ] as const;
 
 export type PlatformAdminStepUpScope = (typeof PLATFORM_ADMIN_STEP_UP_SCOPES)[number];
