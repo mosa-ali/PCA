@@ -1,0 +1,97 @@
+// PCA-SEC-010/011/012/017/019/020/022, PCA-FR-138/143, PCA-NFR-024: all
+// depend on a genuine, reviewed cryptographic signature verifier existing
+// in production. That verifier does not exist yet (CRYPTO_SUITE =
+// WAITING_HUMAN_SECURITY_REVIEW, doc 09 PCA-DEC-020) -- production instead
+// wires RejectingDeviceSignatureVerifier/RejectingEnvelopeSignatureVerifier
+// (see main.ts), which unconditionally deny every verification attempt.
+//
+// This test proves that fail-closed posture is airtight at the verifier
+// level itself: no input shape -- well-formed-looking, empty, malformed,
+// a "signature" that happens to equal the message or the key, extremely
+// long, or containing suspicious bytes -- can ever coax either class into
+// resolving `true`. This is the innermost layer of defense; the HTTP-level
+// end-to-end proof lives in
+// test/runtime-sync/http/productionCryptoGateFailClosed.test.mjs.
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
+import test from 'node:test';
+
+import { RejectingDeviceSignatureVerifier, RejectingEnvelopeSignatureVerifier } from '../../dist/runtime-sync/RejectingCryptoVerifiers.js';
+
+const WHITESPACE_ONLY = String.fromCharCode(32);
+
+const ADVERSARIAL_INPUTS = [
+  '',
+  WHITESPACE_ONLY,
+  'a',
+  'null',
+  'undefined',
+  'true',
+  '0',
+  '{}',
+  '[]',
+  'MEUCIQ...validlookingsignaturebase64==',
+  Buffer.from('forged-signature-bytes').toString('base64'),
+  randomBytes(64).toString('base64'),
+  randomBytes(64).toString('hex'),
+  'A'.repeat(4096),
+  '../../etc/passwd',
+  "'; DROP TABLE devices; --",
+  randomUUID(),
+];
+
+test('RejectingDeviceSignatureVerifier.verify always resolves false, for every adversarial (key, message, signature) combination', async () => {
+  const verifier = new RejectingDeviceSignatureVerifier();
+  for (const publicKey of ADVERSARIAL_INPUTS) {
+    for (const message of ADVERSARIAL_INPUTS) {
+      for (const signature of ADVERSARIAL_INPUTS) {
+        const result = await verifier.verify(publicKey, message, signature);
+        assert.equal(result, false, `verify(${JSON.stringify(publicKey)}, ${JSON.stringify(message)}, ${JSON.stringify(signature)}) must be false`);
+      }
+    }
+  }
+});
+
+test('RejectingDeviceSignatureVerifier: a signature identical to the public key, or identical to the message, still fails', async () => {
+  const verifier = new RejectingDeviceSignatureVerifier();
+  const shared = randomBytes(32).toString('base64');
+  assert.equal(await verifier.verify(shared, 'some-nonce', shared), false);
+  const nonce = randomBytes(16).toString('base64');
+  assert.equal(await verifier.verify('some-pubkey', nonce, nonce), false);
+});
+
+test('RejectingDeviceSignatureVerifier: replaying the exact same (key, message, signature) triple repeatedly never eventually succeeds', async () => {
+  const verifier = new RejectingDeviceSignatureVerifier();
+  const args = ['pubkey-x', 'nonce-y', 'signature-z'];
+  for (let i = 0; i < 50; i += 1) {
+    assert.equal(await verifier.verify(...args), false);
+  }
+});
+
+test('RejectingEnvelopeSignatureVerifier.verify always resolves false, for every adversarial (key, canonicalBytes, signature) combination', async () => {
+  const verifier = new RejectingEnvelopeSignatureVerifier();
+  for (const publicKey of ADVERSARIAL_INPUTS) {
+    for (const canonicalBytes of ADVERSARIAL_INPUTS) {
+      for (const signature of ADVERSARIAL_INPUTS) {
+        const result = await verifier.verify(publicKey, canonicalBytes, signature);
+        assert.equal(result, false, `verify(${JSON.stringify(publicKey)}, ${JSON.stringify(canonicalBytes)}, ${JSON.stringify(signature)}) must be false`);
+      }
+    }
+  }
+});
+
+test('RejectingEnvelopeSignatureVerifier: a tampered canonicalBytes payload with an unrelated signature still fails (not merely "usually" fails)', async () => {
+  const verifier = new RejectingEnvelopeSignatureVerifier();
+  const originalCanonical = JSON.stringify({ messageId: 'm1', payload: 'original' });
+  const tamperedCanonical = JSON.stringify({ messageId: 'm1', payload: 'tampered-by-attacker' });
+  for (const canonicalBytes of [originalCanonical, tamperedCanonical]) {
+    assert.equal(await verifier.verify('any-pubkey', canonicalBytes, 'any-signature'), false);
+  }
+});
+
+test('both rejecting verifiers never throw -- a caller that forgets to catch would otherwise crash the process on every auth attempt', async () => {
+  const deviceVerifier = new RejectingDeviceSignatureVerifier();
+  const envelopeVerifier = new RejectingEnvelopeSignatureVerifier();
+  await assert.doesNotReject(() => deviceVerifier.verify('', '', ''));
+  await assert.doesNotReject(() => envelopeVerifier.verify('', '', ''));
+});
