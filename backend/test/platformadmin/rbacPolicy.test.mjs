@@ -3,7 +3,7 @@ import test from 'node:test';
 import { authorizePlatformAdminOperation, PLATFORM_ADMIN_OPERATIONS } from '../../dist/platformadmin/auth/rbacPolicy.js';
 import { PLATFORM_ADMIN_ROLES } from '../../dist/platformadmin/auth/types.js';
 
-const VIEW_OPERATIONS = new Set(['VIEW_ADMIN_ACCOUNTS', 'VIEW_PLATFORM_DASHBOARD', 'VIEW_AUDIT_LOG_FULL', 'VIEW_AUDIT_LOG_OWN', 'VIEW_SUPPORT_ACCOUNT_METADATA']);
+const VIEW_OPERATIONS = new Set(['VIEW_ADMIN_ACCOUNTS', 'VIEW_PLATFORM_DASHBOARD', 'VIEW_AUDIT_LOG_FULL', 'VIEW_AUDIT_LOG_OWN', 'VIEW_SUPPORT_ACCOUNT_METADATA', 'VIEW_SETTLEMENT_RECORDS']);
 
 test('PCA-ADD-PA-008: AUDITOR_READ_ONLY is DENY on every operation not prefixed VIEW_*, across the whole matrix', () => {
   for (const operation of PLATFORM_ADMIN_OPERATIONS) {
