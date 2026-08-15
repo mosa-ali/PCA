@@ -110,3 +110,36 @@ jobs:
       - name: Run deterministic security checks
         shell: pwsh
         run: ./tooling/security/Invoke-SecurityChecks.ps1 -EmitDependencyInventory
+
+  dependency-audit:
+    # PCA-NFR-006 (Writer65): a real dependency/supply-chain scanning gate.
+    # `npm audit` is already present in the toolchain (bundled with npm
+    # itself -- no new external dependency added) and reads only the
+    # committed package-lock.json against npm's public advisory database;
+    # it does not modify the lockfile or install anything beyond what
+    # `npm ci` already would. Fails the build on any HIGH or CRITICAL
+    # advisory in either Node workspace (backend, platform-admin-web) --
+    # this repository's only two npm-managed workspaces (see
+    # backend/package-lock.json / platform-admin-web/package-lock.json).
+    # Android/iOS dependency scanning is out of this gate's scope (no
+    # equivalent lockfile-based advisory tool is already present in this
+    # toolchain for Gradle/CocoaPods; adding one is a separate, larger
+    # decision this lane does not make silently).
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Audit backend dependencies (fails on HIGH/CRITICAL)
+        working-directory: backend
+        run: npm audit --audit-level=high
+      - name: Audit platform-admin-web dependencies (fails on HIGH/CRITICAL)
+        working-directory: platform-admin-web
+        run: npm audit --audit-level=high
+      - name: No-ads / no-data-broker SDK inventory check (PCA-FR-123)
+        run: node backend/scripts/checkNoAdTrackingSdks.mjs
