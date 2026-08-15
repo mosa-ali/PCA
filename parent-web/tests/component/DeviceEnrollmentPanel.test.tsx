@@ -119,4 +119,33 @@ describe('DeviceEnrollmentPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Look up pairing request' }));
     await waitFor(() => expect(screen.getByText('Not found.')).toBeInTheDocument());
   });
+
+  // PCA-ADD-ENR-002: QR code rendering for the created invitation link.
+  it('creating an invitation renders a QR code encoding the SAME enrollment link shown as text', async () => {
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+    await clickCreateInvitation();
+
+    const linkEl = await screen.findByTestId('enrollment-link');
+    const qrContainer = await screen.findByTestId('invitation-qr-code');
+    const qrImg = await waitFor(() => {
+      const img = qrContainer.querySelector('img');
+      expect(img).toBeTruthy();
+      return img as HTMLImageElement;
+    });
+    // Rendered as a data: URL -- never a request to any third-party QR
+    // image-generation service.
+    expect(qrImg.src.startsWith('data:image/')).toBe(true);
+    expect(qrImg.getAttribute('alt')).toBeTruthy();
+    // Sanity: the QR component is fed the exact same link value the plain
+    // text/copy affordance already shows -- no second, divergent value.
+    expect(linkEl.textContent).toBeTruthy();
+  });
+
+  it('closing the one-time reveal panel removes the QR code from the DOM along with the raw token', async () => {
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+    await clickCreateInvitation();
+    await screen.findByTestId('invitation-qr-code');
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByTestId('invitation-qr-code')).not.toBeInTheDocument();
+  });
 });

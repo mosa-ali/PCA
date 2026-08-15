@@ -7,6 +7,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/common/St
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useAuth } from '../../state/AuthContext';
 import { DeviceEnrollmentError } from '../../api/deviceEnrollmentClient';
+import InvitationQrCode from './InvitationQrCode';
 import type {
   InvitationDto,
   InvitationPlatform,
@@ -215,6 +216,7 @@ export default function DeviceEnrollmentPanel() {
         <div className="token-reveal-once" role="region" aria-labelledby="token-reveal-title">
           <h3 id="token-reveal-title">{t('deviceEnrollment.tokenRevealTitle')}</h3>
           <p>{t('deviceEnrollment.tokenRevealBody')}</p>
+          <InvitationQrCode value={enrollmentLink} />
           <div className="copyable-value">
             <code data-testid="enrollment-link">{enrollmentLink}</code>
             <button type="button" className="btn" onClick={() => copy(enrollmentLink)}>
