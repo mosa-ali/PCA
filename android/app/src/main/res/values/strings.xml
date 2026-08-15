@@ -19,6 +19,20 @@
     <string name="wellbeing_card_title">Here\'s an idea</string>
     <string name="wellbeing_card_dismiss">Not now</string>
 
+    <!-- Prayer reminder (PCA-FR-073, WRITER68) notification strings -->
+    <string name="prayer_reminder_notification_channel_name">Prayer reminders</string>
+    <string name="prayer_reminder_notification_channel_description">Reminders shortly before each prayer time.</string>
+    <string name="prayer_reminder_notification_title">%1$s reminder</string>
+    <string name="prayer_reminder_notification_body">It\'s almost time.</string>
+
+    <!-- Usage-access alert (PCA-FR-081, WRITER68) notification strings -->
+    <string name="usage_access_alert_notification_channel_name">Device monitoring alerts</string>
+    <string name="usage_access_alert_notification_channel_description">Alerts when this device\'s usage monitoring stops working as expected.</string>
+    <string name="usage_access_alert_revoked_title">Usage access was turned off</string>
+    <string name="usage_access_alert_revoked_body">This device\'s usage monitoring permission was revoked. Screen-time reporting may be incomplete until it is re-enabled.</string>
+    <string name="usage_access_alert_degraded_title">Usage monitoring may need attention</string>
+    <string name="usage_access_alert_degraded_body">This device hasn\'t reported any usage activity recently even though access is still granted.</string>
+
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">Web protection</string>
     <string name="web_protection_vpn_channel_description">Shows while device-wide domain filtering is active.</string>

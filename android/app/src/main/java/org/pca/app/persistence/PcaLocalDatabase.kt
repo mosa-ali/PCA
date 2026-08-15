@@ -20,6 +20,7 @@ import org.pca.app.persistence.dao.RetentionDeletionReceiptDao
 import org.pca.app.persistence.dao.SyncOutboxDao
 import org.pca.app.persistence.dao.SyncReceiptDao
 import org.pca.app.persistence.dao.TamperEventDao
+import org.pca.app.persistence.dao.TombstoneRecordDao
 import org.pca.app.persistence.dao.UsageSessionDao
 import org.pca.app.persistence.dao.WebVisitDao
 import org.pca.app.persistence.entity.BreakSessionEntity
@@ -37,6 +38,7 @@ import org.pca.app.persistence.entity.RetentionDeletionReceiptEntity
 import org.pca.app.persistence.entity.SyncOutboxRecordEntity
 import org.pca.app.persistence.entity.SyncReceiptRecordEntity
 import org.pca.app.persistence.entity.TamperEventEntity
+import org.pca.app.persistence.entity.TombstoneRecordEntity
 import org.pca.app.persistence.entity.UsageSessionEntity
 import org.pca.app.persistence.entity.WebVisitEntity
 
@@ -79,6 +81,7 @@ import org.pca.app.persistence.entity.WebVisitEntity
         RetentionDeletionReceiptEntity::class,
         SyncOutboxRecordEntity::class,
         SyncReceiptRecordEntity::class,
+        TombstoneRecordEntity::class,
     ],
 )
 @TypeConverters(Converters::class)
@@ -100,9 +103,10 @@ abstract class PcaLocalDatabase : RoomDatabase() {
     abstract fun retentionDeletionReceiptDao(): RetentionDeletionReceiptDao
     abstract fun syncOutboxDao(): SyncOutboxDao
     abstract fun syncReceiptDao(): SyncReceiptDao
+    abstract fun tombstoneRecordDao(): TombstoneRecordDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val DATABASE_NAME = "pca_local.db"
 
         /**

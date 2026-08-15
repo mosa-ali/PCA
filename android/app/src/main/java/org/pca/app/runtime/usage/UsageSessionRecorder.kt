@@ -2,6 +2,8 @@ package org.pca.app.runtime.usage
 
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.pca.app.foundation.MonotonicTimeSource
 import org.pca.app.foundation.WallClockTimeSource
 import org.pca.app.persistence.entity.SourceConfidence
@@ -49,6 +51,17 @@ data class UsagePollResult(
  * [UsageSessionRepository.record] is itself `@Insert(REPLACE)`-keyed on a deterministic session id
  * ([sessionId]), so even a re-poll that reprocesses an already-recorded interval upserts the same
  * row rather than creating a duplicate.
+ *
+ * Concurrency (WRITER68 correction, PCA-AND-RUNTIME-PLATFORM-1): [PcaAppGraph.runUsageLocationIngestionCycle]
+ * now has TWO genuinely concurrent callers -- the in-process 5-minute poll loop and the
+ * `WorkManager`-backed [org.pca.app.runtime.background.UsageIngestionWorker] safety net, which can
+ * overlap in time (there is no OS-level guarantee they never run together). [state] was previously
+ * a plain `@Volatile var` mutated via a non-atomic read-modify-write inside [poll] -- safe with
+ * exactly one caller, but a genuine lost-update race with two. [pollMutex] serializes the whole
+ * critical section (read [state], run it through [UsageSessionEngine], write [state] back, persist
+ * the snapshot) so two concurrent [poll] calls interleave safely rather than one clobbering the
+ * other's cursor advancement -- see `UsageSessionRecorderTest`'s own concurrent-poll case for a
+ * test that actually exercises two overlapping callers, not just two sequential ones.
  */
 class UsageSessionRecorder(
     private val usageObservationSource: UsageObservationSource,
@@ -69,13 +82,21 @@ class UsageSessionRecorder(
     private var state: UsageSessionEngineState = UsageObservationRestorer.restore(snapshotStore.load(), currentBootId)
     private val bootId: String? = currentBootId
 
+    /** Guards every read-modify-write of [state] (see this class's own doc comment on why this
+     * exists now that two independent callers can genuinely overlap). */
+    private val pollMutex = Mutex()
+
     /**
      * Queries real platform events since this recorder's own last-processed cursor, folds them
      * through [UsageSessionEngine], and persists any newly-completed session. Safe to call
      * repeatedly (duplicate/out-of-order events are absorbed by the engine's own cursor
-     * discipline), and safe to call with no network connectivity (purely local).
+     * discipline), safe to call with no network connectivity (purely local), AND now genuinely
+     * safe to call concurrently from two different coroutines/callers -- the whole cycle runs
+     * under [pollMutex], so two overlapping calls are serialized rather than racing on [state].
      */
-    suspend fun poll(): UsagePollResult {
+    suspend fun poll(): UsagePollResult = pollMutex.withLock { doPoll() }
+
+    private suspend fun doPoll(): UsagePollResult {
         val accessState = usageObservationSource.accessState()
         if (accessState != UsageAccessState.GRANTED) {
             return UsagePollResult(accessState = accessState, recordedSessionCount = 0)

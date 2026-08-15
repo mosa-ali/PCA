@@ -23,6 +23,20 @@
     <string name="wellbeing_card_helpful">أعجبتني هذه الفكرة</string>
     <string name="wellbeing_card_not_for_me">ليست مناسبة لي</string>
 
+    <!-- Prayer reminder (PCA-FR-073, WRITER68) notification strings -->
+    <string name="prayer_reminder_notification_channel_name">تذكيرات الصلاة</string>
+    <string name="prayer_reminder_notification_channel_description">تذكيرات قبل وقت كل صلاة بوقت قصير.</string>
+    <string name="prayer_reminder_notification_title">تذكير %1$s</string>
+    <string name="prayer_reminder_notification_body">اقترب الوقت.</string>
+
+    <!-- Usage-access alert (PCA-FR-081, WRITER68) notification strings -->
+    <string name="usage_access_alert_notification_channel_name">تنبيهات مراقبة الجهاز</string>
+    <string name="usage_access_alert_notification_channel_description">تنبيهات عند توقف مراقبة استخدام هذا الجهاز عن العمل كما هو متوقع.</string>
+    <string name="usage_access_alert_revoked_title">تم إيقاف صلاحية مراقبة الاستخدام</string>
+    <string name="usage_access_alert_revoked_body">تم إلغاء صلاحية مراقبة الاستخدام لهذا الجهاز. قد يكون تقرير وقت الشاشة غير مكتمل حتى إعادة تفعيلها.</string>
+    <string name="usage_access_alert_degraded_title">قد تحتاج مراقبة الاستخدام إلى انتباه</string>
+    <string name="usage_access_alert_degraded_body">لم يُبلغ هذا الجهاز عن أي نشاط استخدام مؤخرًا رغم أن الصلاحية لا تزال ممنوحة.</string>
+
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">حماية الويب</string>
     <string name="web_protection_vpn_channel_description">تظهر أثناء تفعيل تصفية النطاقات على مستوى الجهاز.</string>

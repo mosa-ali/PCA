@@ -10,6 +10,7 @@ import org.pca.app.persistence.repository.PolicyReceiptRepository
 import org.pca.app.persistence.repository.PolicySnapshotRepository
 import org.pca.app.persistence.repository.PrayerReminderEventRepository
 import org.pca.app.persistence.repository.ProximityEventRepository
+import org.pca.app.persistence.repository.TamperEventRepository
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.persistence.repository.WebVisitRepository
 import org.pca.app.persistence.retention.DeleteNowCoordinator
@@ -54,6 +55,9 @@ class PcaLocalPersistence private constructor(
     val breakSessionRepository = BreakSessionRepository(database.breakSessionDao())
     val proximityEventRepository = ProximityEventRepository(database.proximityEventDao())
     val prayerReminderEventRepository = PrayerReminderEventRepository(database.prayerReminderEventDao())
+    /** PCA-FR-085 (WRITER68): see [TamperEventRepository]'s own doc comment -- the first real
+     * producer-facing wiring point for a table that was previously schema-only. */
+    val tamperEventRepository = TamperEventRepository(database.tamperEventDao())
     val policySnapshotRepository = PolicySnapshotRepository(database.policySnapshotDao(), cipher)
     val policyReceiptRepository = PolicyReceiptRepository(database.policyReceiptDao())
     val syncOutboxRepository = SyncOutboxRepository(database.syncOutboxDao(), cipher)

@@ -46,6 +46,18 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
         return receipts
     }
 
+    /**
+     * PCA-DATA-026: prunes `tombstone_records` past their own fixed, bounded lifetime (see
+     * [RetentionCutoffCalculator.tombstoneCutoff]'s own doc comment for why six months, independent
+     * of any family retention policy). Deliberately its own cycle, not folded into
+     * [runGeneralCycle] or [runAuditFloorCycle] -- a tombstone is neither ordinary activity data
+     * nor an audit trail, it is proof-of-deletion metadata with its own distinct lifetime rule.
+     */
+    suspend fun pruneTombstones(nowUtc: Instant, zoneId: ZoneId): Int {
+        val cutoffMillis = RetentionCutoffCalculator.tombstoneCutoff(nowUtc, zoneId).toEpochMilli()
+        return database.tombstoneRecordDao().deleteOlderThan(cutoffMillis)
+    }
+
     /** PCA-DATA-021: separate, longer audit-trail floor -- MUST NOT be called from [runGeneralCycle]. */
     suspend fun runAuditFloorCycle(
         familyId: String,

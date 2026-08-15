@@ -83,6 +83,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    // PCA-AND-RUNTIME-PLATFORM-1: the app's first real background-execution primitive
+    // (WorkManager/CoroutineWorker) -- see android/app/src/main/java/org/pca/app/runtime/background/.
+    implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
@@ -92,6 +95,7 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.org.json)
+    testImplementation(libs.androidx.work.testing)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)

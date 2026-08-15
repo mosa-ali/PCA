@@ -271,4 +271,47 @@ class DeleteNowCoordinatorTest {
         assertEquals("device_all_categories", receipt.entityCategory)
         assertEquals(true, receipt.deletedCount >= 1)
     }
+
+    // ---- PCA-DATA-026: tombstone-record proof-of-deletion coverage ----
+
+    @Test
+    fun `deleteDevice writes exactly one content-free tombstone for the deleted device id`() = runTest {
+        seedFamily()
+
+        coordinator.deleteDevice("family-1", "device-1", Instant.parse("2026-08-12T00:00:00Z"))
+
+        val tombstones = db.tombstoneRecordDao().getForFamily("family-1")
+        assertEquals(1, tombstones.size)
+        val tombstone = tombstones.single()
+        assertEquals("device-1", tombstone.recordId)
+        assertEquals("Device", tombstone.recordCategory)
+        assertEquals(Instant.parse("2026-08-12T00:00:00Z").toEpochMilli(), tombstone.deletedAtEpochMillis)
+    }
+
+    @Test
+    fun `deleteChild writes a tombstone for the member id, not a device id`() = runTest {
+        seedFamily()
+
+        coordinator.deleteChild("family-1", "member-1", listOf("device-1"), Instant.parse("2026-08-12T00:00:00Z"))
+
+        val tombstones = db.tombstoneRecordDao().getForFamily("family-1")
+        assertEquals(1, tombstones.size)
+        assertEquals("member-1", tombstones.single().recordId)
+        assertEquals("FamilyMember", tombstones.single().recordCategory)
+    }
+
+    @Test
+    fun `deleteFamily writes a tombstone for the family id itself, scoped to that family only`() = runTest {
+        seedFullFamily("family-A", "member-A", "device-A", seq = 1L)
+        seedFullFamily("family-B", "member-B", "device-B", seq = 1L)
+
+        coordinator.deleteFamily("family-A", Instant.parse("2026-08-12T00:00:00Z"))
+
+        val tombstonesA = db.tombstoneRecordDao().getForFamily("family-A")
+        val tombstonesB = db.tombstoneRecordDao().getForFamily("family-B")
+        assertEquals(1, tombstonesA.size)
+        assertEquals("family-A", tombstonesA.single().recordId)
+        assertEquals("Family", tombstonesA.single().recordCategory)
+        assertTrue("deleteFamily(family-A) must not write a family-B tombstone", tombstonesB.isEmpty())
+    }
 }
