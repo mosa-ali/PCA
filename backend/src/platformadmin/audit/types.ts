@@ -43,6 +43,15 @@ export const PLATFORM_ADMIN_AUDIT_EVENT_TYPES = [
   'ADMIN_STEP_UP_GRANTED',
   'ADMIN_STEP_UP_DENIED',
   'ADMIN_MFA_ENROLLED',
+  // PCA-ADD-COMP-016: complimentary-grant lifecycle events (Writer58 /
+  // PCA-COMPLIMENTARY-ENTITLEMENTS-1). Mirrored in migration 0014's
+  // platform_admin_audit_events_event_type_check CHECK constraint -- a
+  // reviewer changing one MUST change the other (same anchor discipline
+  // documented above).
+  'COMPLIMENTARY_GRANT_CREATED',
+  'COMPLIMENTARY_GRANT_CHANGED',
+  'COMPLIMENTARY_GRANT_REVOKED',
+  'COMPLIMENTARY_GRANT_EXPIRED',
 ] as const;
 
 export type PlatformAdminAuditEventType = (typeof PLATFORM_ADMIN_AUDIT_EVENT_TYPES)[number];
