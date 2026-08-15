@@ -69,6 +69,7 @@ import type { PlanService } from '../billing/plan.js';
 // already does; reuses the SAME FamilyCommercialAuthorityResolver.
 import { registerFamilyCommercialRoutes } from './routes/familyCommercialRoutes.js';
 import type { FamilyCommercialService } from '../familycommercial/FamilyCommercialService.js';
+import type { ComplimentaryEntitlementService } from '../entitlements/complimentary/ComplimentaryEntitlementService.js';
 // PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent/family
 // identity + FAMILY_SERVICE_SESSION_V1 cookie-session issuance. A sixth
 // structurally independent surface, registered exactly like every other
@@ -84,6 +85,16 @@ import type { ParentAccountService } from '../parentaccount/ParentAccountService
 // touches PriceBook.
 import { registerComplimentaryGrantRoutes } from './routes/platformadmin/complimentaryGrantRoutes.js';
 import type { PlatformAdminComplimentaryGrantService } from '../platformadmin/complimentary/PlatformAdminComplimentaryGrantService.js';
+// PCA-FREE-ACCESS-1 (Round6): real backend enforcement/admin surface for
+// FreeAccessSnapshot. Registered here exactly like every other domain's
+// registerXRoutes call.
+import { registerFreeAccessAdminRoutes } from './routes/platformadmin/freeAccessAdminRoutes.js';
+import type { FreeAccessAccountRepository } from '../parentaccount/freeaccess/FreeAccessAccountRepository.js';
+import type { FreeAccessAdminService } from '../parentaccount/freeaccess/FreeAccessAdminService.js';
+// PCA-BILL-3 (Round6): Settlement / Reconciliation. Registered here
+// exactly like every other domain's registerXRoutes call.
+import { registerSettlementRoutes } from './routes/platformadmin/settlementRoutes.js';
+import type { PlatformAdminSettlementService } from '../platformadmin/settlement/PlatformAdminSettlementService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -126,6 +137,13 @@ export interface ServerDependencies {
   parentAccountService: ParentAccountService;
   /** PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants -- see registerComplimentaryGrantRoutes below. */
   platformAdminComplimentaryGrantService: PlatformAdminComplimentaryGrantService;
+  /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): plain domain service composed into familyCommercialRoutes.ts's additive entitlement fields -- optional, see that route's own doc comment. */
+  complimentaryEntitlementService?: ComplimentaryEntitlementService;
+  /** PCA-FREE-ACCESS-1: real backend enforcement/admin surface -- see registerParentAccountRoutes/registerFreeAccessAdminRoutes below. */
+  freeAccessAccountRepository: FreeAccessAccountRepository;
+  freeAccessAdminService: FreeAccessAdminService;
+  /** PCA-BILL-3: Settlement / Reconciliation -- see registerSettlementRoutes below. */
+  platformAdminSettlementService: PlatformAdminSettlementService;
 }
 
 /**
@@ -265,13 +283,25 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     familyCommercialAuthorityResolver: deps.billingFamilyCommercialAuthorityResolver,
     rateLimiter,
     authAttemptLimiter,
+    complimentaryEntitlementService: deps.complimentaryEntitlementService,
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,
+    freeAccessAccountRepository: deps.freeAccessAccountRepository,
   });
   registerComplimentaryGrantRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     platformAdminComplimentaryGrantService: deps.platformAdminComplimentaryGrantService,
+    rateLimiter,
+  });
+  registerFreeAccessAdminRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    freeAccessAdminService: deps.freeAccessAdminService,
+    rateLimiter,
+  });
+  registerSettlementRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    platformAdminSettlementService: deps.platformAdminSettlementService,
     rateLimiter,
   });
 

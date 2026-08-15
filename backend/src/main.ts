@@ -131,6 +131,14 @@ import { PlatformAdminComplimentaryGrantService } from './platformadmin/complime
 // shutdown hook are this lane's own explicitly Coordinator-owned wiring
 // (see commercialmaintenance/index.ts's header).
 import { MySqlCommercialMaintenanceRunner, loadCommercialMaintenanceConfig } from './commercialmaintenance/index.js';
+// PCA-FREE-ACCESS-1 (Round6): real backend enforcement/admin surface for
+// the Round5 FreeAccessSnapshot.
+import { MySqlFreeAccessAccountRepository } from './parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
+import { FreeAccessAdminService } from './parentaccount/freeaccess/FreeAccessAdminService.js';
+// PCA-BILL-3 (Round6): Settlement/Reconciliation domain.
+import { MySqlSettlementRepository } from './billing/settlement/MySqlSettlementRepository.js';
+import { SettlementService } from './billing/settlement/SettlementService.js';
+import { PlatformAdminSettlementService } from './platformadmin/settlement/PlatformAdminSettlementService.js';
 
 /**
  * PCA-ADD-IDENT-005: no real production email provider is selected this
@@ -268,7 +276,15 @@ async function start(): Promise<void> {
   const commercialNotificationSupportService = new CommercialNotificationSupportService(commercialNotificationRepository);
   const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(commercialNotificationRepository);
 
-  const entitlementRepository = new MySqlEntitlementRepository();
+  // PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): constructed here, BEFORE
+  // entitlementRepository/slotReservationService below, so EFFECTIVE_ENTITLEMENT_V2
+  // (base + active complimentary grants) is genuinely consulted by the real
+  // consumption path -- not just the isolated Round5 MyKids read model.
+  // Both consumers below treat this as an optional trailing constructor
+  // argument (Writer60's own backward-compatible design); passing it here
+  // is what actually activates the effective-limit behavior in production.
+  const complimentaryGrantRepositoryForConsumption = new MySqlComplimentaryGrantRepository();
+  const entitlementRepository = new MySqlEntitlementRepository(complimentaryGrantRepositoryForConsumption);
   const changeRequestRepository = new MySqlChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
   // PCA-MYKIDS-BILL-2: the real PriceBook-backed QuotePort adapter,
@@ -287,7 +303,9 @@ async function start(): Promise<void> {
 
   // PCA-PA-3B wiring.
   const platformAdminAccountService = new PlatformAdminAccountService(new MySqlPlatformAdminAuthRepository());
-  const slotReservationService = new SlotReservationService(new MySqlSlotReservationRepository(entitlementRepository));
+  const slotReservationService = new SlotReservationService(
+    new MySqlSlotReservationRepository(entitlementRepository, complimentaryGrantRepositoryForConsumption),
+  );
   const platformAdminEntitlementService = new PlatformAdminEntitlementService(
     platformAdminAuthService,
     entitlementRepository,
@@ -341,12 +359,27 @@ async function start(): Promise<void> {
 
   // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
   // entitlement grants. Reuses the SAME platformAdminAuthService instance
-  // every other Platform Administration surface already shares.
-  const complimentaryEntitlementService = new ComplimentaryEntitlementService(new MySqlComplimentaryGrantRepository());
+  // every other Platform Administration surface already shares, and the
+  // SAME complimentaryGrantRepositoryForConsumption instance the Round6
+  // consumption path above uses -- one repository instance, no divergence.
+  const complimentaryEntitlementService = new ComplimentaryEntitlementService(complimentaryGrantRepositoryForConsumption);
   const platformAdminComplimentaryGrantService = new PlatformAdminComplimentaryGrantService(
     platformAdminAuthService,
     complimentaryEntitlementService,
   );
+
+  // PCA-FREE-ACCESS-1 (Round6, Writer61): backing repository for the
+  // parent-facing free-access status read and the admin adjustment
+  // service. Reuses the SAME authService instance the rest of the parent
+  // identity plane shares.
+  const freeAccessAccountRepository = new MySqlFreeAccessAccountRepository();
+  const freeAccessAdminService = new FreeAccessAdminService(platformAdminAuthService, freeAccessAccountRepository);
+
+  // PCA-BILL-3 (Round6, Writer62): Settlement/Reconciliation. Reuses the
+  // SAME paymentRepository instance the rest of the billing domain shares
+  // (settlement batch items associate to, but never mutate, its rows).
+  const settlementService = new SettlementService(new MySqlSettlementRepository(), paymentRepository);
+  const platformAdminSettlementService = new PlatformAdminSettlementService(platformAdminAuthService, settlementService);
 
   const app = buildServer({
     authService,
@@ -411,6 +444,11 @@ async function start(): Promise<void> {
     parentAccountService,
     // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
     platformAdminComplimentaryGrantService,
+    // PCA-FREE-ACCESS-1: real backend enforcement/admin surface.
+    freeAccessAccountRepository,
+    freeAccessAdminService,
+    // PCA-BILL-3: Settlement / Reconciliation.
+    platformAdminSettlementService,
   });
   await app.listen({ host, port });
 

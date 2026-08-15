@@ -68,6 +68,13 @@ import {
   paymentMethodToJson,
   subscriptionToJson,
 } from '../../familycommercial/dto.js';
+// PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6, Writer60): additive
+// EFFECTIVE_ENTITLEMENT_V2 fields on the entitlement read response.
+// Optional dependency -- when absent, the response is byte-identical to
+// pre-Round6 behavior (no complimentaryEntitlement field at all), matching
+// Writer60's own backward-compatible design for the underlying services.
+import type { ComplimentaryEntitlementService } from '../../entitlements/complimentary/ComplimentaryEntitlementService.js';
+import { buildEffectiveEntitlementDto } from '../../entitlements/complimentary/MyKidsComplimentaryReadModel.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -84,6 +91,8 @@ export interface FamilyCommercialRoutesDeps {
   familyCommercialAuthorityResolver: FamilyCommercialAuthorityResolver;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
+  /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): optional -- absent means the entitlement response omits the additive complimentaryEntitlement field entirely, never a partial/broken shape. */
+  complimentaryEntitlementService?: ComplimentaryEntitlementService;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -140,7 +149,24 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
     async (request: FastifyRequest) => {
       const { familyId } = request.params as { familyId: string };
       const model = await svc.getEntitlement(familyId);
-      return entitlementReadModelToJson(model);
+      const json = entitlementReadModelToJson(model);
+      if (!deps.complimentaryEntitlementService) return json;
+      // Additive only -- never renamed/removed a pre-Round6 field. Never
+      // exposes internalNote/grantedByAdminId (PCA-ADD-COMP-019), enforced
+      // by buildEffectiveEntitlementDto's own privacy-safe field selection.
+      const complimentaryEntitlement = await buildEffectiveEntitlementDto(
+        deps.complimentaryEntitlementService,
+        familyId,
+        {
+          parentMemberLimit: model.parentMemberLimit,
+          managedDeviceLimit: model.managedDeviceLimit,
+          parentMemberUsed: model.parentMemberUsed,
+          managedDeviceActive: model.managedDeviceActive,
+          managedDeviceReserved: model.managedDeviceReserved,
+        },
+        new Date(),
+      );
+      return { ...json, complimentaryEntitlement };
     },
   );
 

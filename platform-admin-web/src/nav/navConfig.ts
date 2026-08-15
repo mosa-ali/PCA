@@ -1,12 +1,14 @@
 import type { PlatformAdminOperation } from '../domain/roles';
 import type { BillingOperation } from '../domain/billingRbac';
+import type { SettlementOperation } from '../domain/settlement';
 
 export interface NavItem {
   path: string;
   labelKey: string;
-  /** Item is hidden from the nav (not merely styled differently) when the current admin has none of these operations. Route-level enforcement still happens independently via RouteGuard/RBAC on the page itself. Exactly one of `operation`/`billingOperation` is set per item -- billing views use the finer-grained billing/rbac.ts vocabulary (backend/src/billing/rbac.ts), everything else uses platformadmin/auth/rbacPolicy.ts's coarser vocabulary. */
+  /** Item is hidden from the nav (not merely styled differently) when the current admin has none of these operations. Route-level enforcement still happens independently via RouteGuard/RBAC on the page itself. Exactly one of `operation`/`billingOperation`/`settlementOperation` is set per item -- billing/settlement views use their own finer-grained vocabularies (backend/src/billing/rbac.ts, backend/src/platformadmin/auth/rbacPolicy.ts's VIEW_SETTLEMENT_RECORDS family), everything else uses platformadmin/auth/rbacPolicy.ts's coarser vocabulary. */
   operation?: PlatformAdminOperation;
   billingOperation?: BillingOperation;
+  settlementOperation?: SettlementOperation;
 }
 
 export interface NavSection {
@@ -35,6 +37,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: '/billing/quotes', labelKey: 'nav.billingQuotes', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
       { path: '/billing/invoices', labelKey: 'nav.billingInvoices', billingOperation: 'VIEW_BILLING_RECORDS' },
       { path: '/billing/payments', labelKey: 'nav.billingPayments', billingOperation: 'VIEW_BILLING_RECORDS' },
+      { path: '/settlement/accounts', labelKey: 'nav.settlementAccounts', settlementOperation: 'VIEW_SETTLEMENT_RECORDS' },
+      { path: '/settlement/batches', labelKey: 'nav.settlementBatches', settlementOperation: 'VIEW_SETTLEMENT_RECORDS' },
+      { path: '/settlement/reconciliation', labelKey: 'nav.settlementReconciliation', settlementOperation: 'VIEW_SETTLEMENT_RECORDS' },
     ],
   },
   {

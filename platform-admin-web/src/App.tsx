@@ -3,6 +3,7 @@ import { AppLayout } from './components/shell/AppLayout';
 import { RequireSession } from './rbac/RequireSession';
 import { RouteGuard } from './rbac/RouteGuard';
 import { BillingRouteGuard } from './rbac/BillingRouteGuard';
+import { SettlementRouteGuard } from './rbac/SettlementRouteGuard';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AccountsList from './pages/accounts/AccountsList';
@@ -16,6 +17,9 @@ import BillingPricing from './pages/billing/BillingPricing';
 import BillingQuotes from './pages/billing/BillingQuotes';
 import BillingInvoices from './pages/billing/BillingInvoices';
 import BillingPayments from './pages/billing/BillingPayments';
+import SettlementAccounts from './pages/billing/SettlementAccounts';
+import SettlementBatches from './pages/billing/SettlementBatches';
+import SettlementReconciliation from './pages/billing/SettlementReconciliation';
 import AdminUsers from './pages/AdminUsers';
 import Audit from './pages/Audit';
 import Settings from './pages/Settings';
@@ -135,6 +139,30 @@ export default function App() {
             <BillingRouteGuard operation="VIEW_BILLING_RECORDS">
               <BillingPayments />
             </BillingRouteGuard>
+          }
+        />
+        <Route
+          path="settlement/accounts"
+          element={
+            <SettlementRouteGuard operation="VIEW_SETTLEMENT_RECORDS">
+              <SettlementAccounts />
+            </SettlementRouteGuard>
+          }
+        />
+        <Route
+          path="settlement/batches"
+          element={
+            <SettlementRouteGuard operation="VIEW_SETTLEMENT_RECORDS">
+              <SettlementBatches />
+            </SettlementRouteGuard>
+          }
+        />
+        <Route
+          path="settlement/reconciliation"
+          element={
+            <SettlementRouteGuard operation="VIEW_SETTLEMENT_RECORDS">
+              <SettlementReconciliation />
+            </SettlementRouteGuard>
           }
         />
 

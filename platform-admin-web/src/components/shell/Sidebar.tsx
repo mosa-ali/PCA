@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { NAV_SECTIONS } from '../../nav/navConfig';
 import { isPermitted } from '../../domain/roles';
 import { isBillingPermitted } from '../../domain/billingRbac';
+import { isSettlementPermitted } from '../../domain/settlement';
 import { useCurrentRoles } from '../../state/AuthContext';
 
 interface SidebarProps {
@@ -18,7 +19,10 @@ export function Sidebar({ drawerOpen, onNavigate }: SidebarProps) {
     <nav className={`sidebar${drawerOpen ? ' drawer-open' : ''}`} aria-label={t('nav.dashboard')} id="app-sidebar">
       {NAV_SECTIONS.map((section, idx) => {
         const visibleItems = section.items.filter(
-          (item) => (item.operation ? isPermitted(roles, item.operation) : true) && (item.billingOperation ? isBillingPermitted(roles, item.billingOperation) : true),
+          (item) =>
+            (item.operation ? isPermitted(roles, item.operation) : true) &&
+            (item.billingOperation ? isBillingPermitted(roles, item.billingOperation) : true) &&
+            (item.settlementOperation ? isSettlementPermitted(roles, item.settlementOperation) : true),
         );
         if (visibleItems.length === 0) return null;
         return (
