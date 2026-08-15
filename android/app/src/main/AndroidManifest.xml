@@ -88,6 +88,30 @@
              org.pca.app.feature.webprotection.vpn.WebProtectionVpnService's own doc comment for the
              DNS-only scope decision and org.pca.app.feature.webprotection.vpn.VpnEnforcementController
              for the real start/stop orchestration seam. -->
+        <!-- PCA-FR-073 (WRITER68 android-runtime-platform lane): the receiver that finally turns
+             org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler's already-correct exact alarm
+             into a real, user-visible notification. exported="false": the sending PendingIntent
+             is always created by this same app (setPackage(context.packageName) in
+             org.pca.app.runtime.prayer.PrayerReminderIntents), so it never needs to be reachable
+             from outside the app; the intent-filter below is required so the manifest-registered
+             receiver actually matches the broadcast (API 26+ implicit-broadcast restriction). -->
+        <receiver
+            android:name=".runtime.prayer.PrayerReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.pca.app.action.PRAYER_REMINDER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- PCA-AND-RUNTIME-PLATFORM-1 (WRITER68): periodic usage-ingestion background job so
+             collection survives process death, not just foreground/in-process execution; see
+             org.pca.app.runtime.background.UsageIngestionWorker's own doc comment. WorkManager
+             self-registers its own ContentProvider-based initializer from the work-runtime-ktx
+             library's merged manifest; no explicit provider/service entry is needed here for
+             the library itself, only the app enqueuing work against it
+             (org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler, called from
+             PcaAppGraph.start()). -->
+
         <service
             android:name=".feature.webprotection.vpn.WebProtectionVpnService"
             android:exported="true"
