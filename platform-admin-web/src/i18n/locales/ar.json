@@ -15,6 +15,9 @@
     "billingQuotes": "عروض الأسعار المخصصة",
     "billingInvoices": "الفواتير",
     "billingPayments": "المدفوعات",
+    "settlementAccounts": "حسابات التسوية",
+    "settlementBatches": "دفعات التسوية",
+    "settlementReconciliation": "المطابقة",
     "adminUsers": "مستخدمو الإدارة",
     "audit": "سجل التدقيق",
     "settings": "الإعدادات"
@@ -75,6 +78,7 @@
     "applyFilters": "تطبيق عوامل التصفية",
     "actions": "الإجراءات",
     "hide": "إخفاء",
+    "select": "اختر…",
     "search": "بحث",
     "save": "حفظ",
     "yes": "نعم",
@@ -386,5 +390,71 @@
     "reasonCode": "رمز السبب",
     "disputeId": "معرّف النزاع",
     "evidenceDueAt": "موعد استحقاق الأدلة"
+  },
+  "settlement": {
+    "notAuthorized": "لا يملك دورك صلاحية عرض سجلات التسوية.",
+    "currency": "العملة",
+    "accounts": {
+      "hint": "تُعرض حسابات التسوية بمرجع مُقنَّع فقط -- لا يُعرض المرجع الفعلي لدى المزوّد/البنك هنا أبدًا.",
+      "displayLabel": "الحساب",
+      "status": "الحالة",
+      "createdAt": "تاريخ الإنشاء",
+      "statuses": {
+        "ACTIVE": "نشط",
+        "INACTIVE": "غير نشط"
+      },
+      "activate": "تفعيل",
+      "deactivate": "إلغاء التفعيل",
+      "statusChanged": "تم تحديث حالة حساب التسوية.",
+      "createTitle": "إضافة حساب تسوية",
+      "createHint": "تُخزَّن بيانات مرجع المزوّد/البنك كمرجع مجرد فقط، وليست بيانات اعتماد خام أبدًا.",
+      "providerRef": "مرجع المزوّد",
+      "create": "إضافة حساب",
+      "formIncomplete": "أدخل مرجع المزوّد وتسمية عرض مُقنَّعة.",
+      "created": "تم إنشاء حساب التسوية."
+    },
+    "batches": {
+      "period": "الفترة",
+      "expectedGross": "الإجمالي المتوقع",
+      "fees": "الرسوم",
+      "net": "الصافي",
+      "received": "المستلم",
+      "difference": "الفرق (بالوحدات الصغرى)",
+      "status": "الحالة",
+      "viewItems": "عرض المعاملات",
+      "createTitle": "فتح دفعة تسوية",
+      "account": "حساب التسوية",
+      "periodStart": "بداية الفترة",
+      "periodEnd": "نهاية الفترة",
+      "providerRef": "مرجع تقرير المزوّد",
+      "create": "فتح الدفعة",
+      "created": "تم فتح دفعة التسوية.",
+      "selectAccount": "اختر حساب تسوية.",
+      "formIncomplete": "أدخل الفترة ومرجع المزوّد.",
+      "transactionIdRequired": "أدخل معرّف معاملة دفع لإسنادها.",
+      "attribute": "إسناد المعاملة",
+      "attributed": "تم إسناد المعاملة إلى هذه الدفعة.",
+      "alreadyAttributed": "هذه المعاملة مُسندة بالفعل إلى دفعة تسوية أخرى.",
+      "fxRate": "سعر الصرف",
+      "fxRateHint": "سعر الصرف (فقط إذا اختلفت عملة المعاملة عن عملة الدفعة)",
+      "fxProviderRef": "مرجع مصدر سعر الصرف"
+    },
+    "reconciliation": {
+      "statuses": {
+        "MATCHED": "مطابقة",
+        "UNDER_INVESTIGATION": "قيد التحقيق",
+        "RESOLVED": "تمت التسوية"
+      },
+      "underInvestigationTitle": "قيد التحقيق",
+      "resolvedTitle": "تمت تسويتها",
+      "resolveTitle": "تسوية",
+      "reasonLabel": "سبب التسوية",
+      "reasonRequired": "أدخل سبب التسوية.",
+      "resolve": "تسوية",
+      "resolved": "تمت تسوية المطابقة.",
+      "alreadyResolved": "هذه الدفعة تمت تسويتها بالفعل.",
+      "resolutionReason": "سبب التسوية",
+      "resolvedAt": "تاريخ التسوية"
+    }
   }
 }

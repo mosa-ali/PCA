@@ -15,6 +15,9 @@
     "billingQuotes": "Custom Quotes",
     "billingInvoices": "Invoices",
     "billingPayments": "Payments",
+    "settlementAccounts": "Settlement Accounts",
+    "settlementBatches": "Settlement Batches",
+    "settlementReconciliation": "Reconciliation",
     "adminUsers": "Admin Users",
     "audit": "Audit Log",
     "settings": "Settings"
@@ -75,6 +78,7 @@
     "applyFilters": "Apply filters",
     "actions": "Actions",
     "hide": "Hide",
+    "select": "Select…",
     "search": "Search",
     "save": "Save",
     "yes": "Yes",
@@ -386,5 +390,71 @@
     "reasonCode": "Reason code",
     "disputeId": "Dispute ID",
     "evidenceDueAt": "Evidence due"
+  },
+  "settlement": {
+    "notAuthorized": "Your role cannot view settlement records.",
+    "currency": "Currency",
+    "accounts": {
+      "hint": "Settlement accounts are shown with a masked reference only -- the underlying provider/bank reference is never displayed here.",
+      "displayLabel": "Account",
+      "status": "Status",
+      "createdAt": "Created",
+      "statuses": {
+        "ACTIVE": "Active",
+        "INACTIVE": "Inactive"
+      },
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "statusChanged": "Settlement account status updated.",
+      "createTitle": "Add a settlement account",
+      "createHint": "Provider/bank reference material is stored as an opaque reference only, never a raw credential.",
+      "providerRef": "Provider reference",
+      "create": "Add account",
+      "formIncomplete": "Enter a provider reference and a masked display label.",
+      "created": "Settlement account created."
+    },
+    "batches": {
+      "period": "Period",
+      "expectedGross": "Expected gross",
+      "fees": "Fees",
+      "net": "Net",
+      "received": "Received",
+      "difference": "Difference (minor units)",
+      "status": "Status",
+      "viewItems": "View transactions",
+      "createTitle": "Open a settlement batch",
+      "account": "Settlement account",
+      "periodStart": "Period start",
+      "periodEnd": "Period end",
+      "providerRef": "Provider report reference",
+      "create": "Open batch",
+      "created": "Settlement batch opened.",
+      "selectAccount": "Select a settlement account.",
+      "formIncomplete": "Fill in the period and provider reference.",
+      "transactionIdRequired": "Enter a payment transaction ID to attribute.",
+      "attribute": "Attribute transaction",
+      "attributed": "Transaction attributed to this batch.",
+      "alreadyAttributed": "That transaction is already attributed to a settlement batch.",
+      "fxRate": "FX rate",
+      "fxRateHint": "FX rate (only if the transaction currency differs from the batch currency)",
+      "fxProviderRef": "FX source reference"
+    },
+    "reconciliation": {
+      "statuses": {
+        "MATCHED": "Matched",
+        "UNDER_INVESTIGATION": "Under investigation",
+        "RESOLVED": "Resolved"
+      },
+      "underInvestigationTitle": "Under investigation",
+      "resolvedTitle": "Resolved",
+      "resolveTitle": "Resolve",
+      "reasonLabel": "Resolution reason",
+      "reasonRequired": "Enter a resolution reason.",
+      "resolve": "Resolve",
+      "resolved": "Reconciliation resolved.",
+      "alreadyResolved": "This batch was already resolved.",
+      "resolutionReason": "Resolution reason",
+      "resolvedAt": "Resolved at"
+    }
   }
 }
