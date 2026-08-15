@@ -6,6 +6,16 @@
   "demo": {
     "banner": "Development preview -- all data on this screen is synthetic (DEVELOPMENT_ONLY) and not real family data."
   },
+  "freeAccess": {
+    "remainingDaysHeadline_one": "{{count}} day remaining in your free access period",
+    "remainingDaysHeadline_other": "{{count}} days remaining in your free access period",
+    "expiresTodayHeadline": "Your free access period expires today",
+    "expiresOnBody": "It expires on {{date}}.",
+    "expiredHeadline": "Your free access period has ended",
+    "expiredBody": "Your account and your children's existing protection continue to work as before. Visit Billing to see your options and continue with paid access.",
+    "billingCta": "View billing options",
+    "dismissForToday": "Dismiss this reminder for today"
+  },
   "errorBoundary": {
     "title": "Configuration error",
     "body": "The parent console could not start due to an unexpected internal error. This is not a normal \"backend not reachable yet\" condition -- please report this to the PCA team."

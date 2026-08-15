@@ -24,6 +24,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: '/entitlements', labelKey: 'nav.entitlements', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
       { path: '/entitlement-requests', labelKey: 'nav.entitlementRequests', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
       { path: '/complimentary-capacity', labelKey: 'nav.complimentaryCapacity', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+      { path: '/free-access-policy', labelKey: 'nav.freeAccessPolicy', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
     ],
   },
   {

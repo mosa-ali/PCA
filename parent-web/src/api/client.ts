@@ -43,6 +43,7 @@ import type {
   CommercialNotificationClient,
   DeviceStatusClient,
   FamilyAuthorityGateway,
+  FreeAccessStatusClient,
   ParentFamilyDataGateway,
   RequestClient,
   ServiceAuthClient,
@@ -64,6 +65,7 @@ import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
 import { DevBillingClient } from './dev/devBillingClient';
 import { DevCommercialNotificationClient } from './dev/devCommercialNotificationClient';
+import { DevFreeAccessStatusClient } from './dev/devFreeAccessStatusClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
@@ -74,6 +76,7 @@ import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEn
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, noFamilyContextAvailable, noServiceBearerTokenAvailable as noBillingBearerTokenAvailable } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
+import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
@@ -99,6 +102,14 @@ export interface PcaApiClients {
   billing: BillingClient;
   /** PCA-MYKIDS-BILL-3: real, HTTP-backed against the family-facing commercial-notification routes outside demo mode. Same session-transport gap as `billing` above. */
   commercialNotifications: CommercialNotificationClient;
+  /**
+   * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): real, cookie-session-
+   * backed against GET /api/parent/free-access-status outside demo mode --
+   * no bearer-token/family-context gap like `billing`/`deviceEnrollment`
+   * above, since this route reuses the SAME `pca_family_session` cookie
+   * `serviceAuth` already relies on.
+   */
+  freeAccessStatus: FreeAccessStatusClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
@@ -117,6 +128,7 @@ function buildDevClients(): PcaApiClients {
     deviceEnrollment: new DevDeviceEnrollmentClient(),
     billing: new DevBillingClient(),
     commercialNotifications: new DevCommercialNotificationClient(),
+    freeAccessStatus: new DevFreeAccessStatusClient(),
     isFixtureBacked: true,
   };
 }
@@ -171,6 +183,7 @@ function buildRealClients(): PcaApiClients {
       return snapshot.browserEndpointId;
     }),
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
+    freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
     isFixtureBacked: false,
   };
 }

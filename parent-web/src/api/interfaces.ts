@@ -42,6 +42,7 @@ import type {
   PaymentMethodSummary,
   SubscriptionSnapshot,
 } from '../domain/billing';
+import type { FreeAccessStatus } from '../domain/freeAccess';
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -80,6 +81,19 @@ export interface ServiceAuthClient {
    * ../real/realServiceAuthClient.ts's header).
    */
   verifyEmail(email: string, code: string): Promise<AuthenticatedSession>;
+}
+
+/**
+ * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61) -- reads the current
+ * account's FreeAccessStatus, derived server-side from the existing
+ * FreeAccessSnapshot (PCA-AUTH-SESSION-1) + the server clock. Read-only:
+ * this client never computes or caches a locally-derived expiry/remaining-
+ * days value, and the UI must always treat the server's response as
+ * authoritative over anything it might otherwise infer.
+ */
+export interface FreeAccessStatusClient {
+  /** null when no session is established, or the account has no snapshot yet (never thrown for that expected case). */
+  getStatus(): Promise<FreeAccessStatus | null>;
 }
 
 /**

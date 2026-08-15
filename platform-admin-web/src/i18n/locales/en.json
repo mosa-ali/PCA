@@ -9,6 +9,7 @@
     "entitlements": "Entitlements",
     "entitlementRequests": "Entitlement Requests",
     "complimentaryCapacity": "Complimentary Capacity",
+    "freeAccessPolicy": "Free Access Policy",
     "billing": "Billing",
     "billingPlans": "Plans",
     "billingPricing": "Price Book",
@@ -248,6 +249,44 @@
     "created": "Complimentary grant created.",
     "revoked": "Complimentary grant revoked.",
     "renewed": "Complimentary grant renewed."
+  },
+  "freeAccessPolicy": {
+    "globalDefaultsTitle": "Global registration-default configuration",
+    "globalDefaultsHint": "Applies only to newly-verified accounts going forward. Changing this configuration never alters any already-registered account's own free access period -- use the account lookup below for that.",
+    "accountLookupTitle": "Account free access status",
+    "accountIdLabel": "Parent account ID",
+    "mode": "Mode",
+    "modes": {
+      "TIME_LIMITED": "Time-limited",
+      "PERPETUAL": "Perpetual"
+    },
+    "durationDays": "Duration (days)",
+    "defaultParentMemberLimit": "Default parent-member limit",
+    "defaultManagedDeviceLimit": "Default managed-device limit",
+    "noExpiry": "No expiry",
+    "notApplicable": "Not applicable",
+    "status": "Status",
+    "statuses": {
+      "ACTIVE": "Active",
+      "EXPIRED": "Expired",
+      "PERPETUAL": "Perpetual"
+    },
+    "grantedAt": "Granted at",
+    "expiresAt": "Expires at",
+    "remainingDays": "Remaining days",
+    "actionLabel": "Adjustment",
+    "actions": {
+      "EXTEND": "Extend",
+      "REDUCE": "Reduce",
+      "CONVERT_TO_PERPETUAL": "Convert to perpetual",
+      "CONVERT_TO_TIME_LIMITED": "Convert to time-limited"
+    },
+    "daysLabel": "Days",
+    "reasonCode": "Reason",
+    "adjust": "Apply adjustment",
+    "reasonRequired": "A reason is required.",
+    "invalidDays": "Enter a positive whole number of days.",
+    "adjusted": "Free access adjusted."
   },
   "entitlementRequests": {
     "invalidAmount": "Enter a valid non-negative amount, e.g. 19.99.",

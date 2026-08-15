@@ -43,12 +43,28 @@ import {
   VERIFY_EMAIL_RATE_LIMIT,
   VERIFY_IP_RATE_LIMIT,
 } from '../../parentaccount/policy.js';
+import { deriveFreeAccessStatus } from '../../parentaccount/freeaccess/deriveFreeAccessStatus.js';
+import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess/FreeAccessAccountRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const CSRF_TOKEN_BYTES = 32;
 
 export interface ParentAccountRoutesDeps {
   parentAccountService: ParentAccountService;
+  /**
+   * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): backs the new
+   * GET /api/parent/free-access-status route below. A distinct,
+   * narrowly-scoped read port -- see FreeAccessAccountRepository.ts's own
+   * doc comment for why this is a second port against `parent_accounts`
+   * rather than an extension of ParentAccountRepository. Optional (rather
+   * than required) so this additive change never breaks
+   * buildServer.ts's EXISTING call site (a Coordinator-owned file this
+   * lane does not edit) until the Coordinator wires the new dependency in
+   * -- see this lane's final report's COORDINATOR_BINDING_REQUIRED item.
+   * Until wired, the new route fails closed with 503, never a crash or a
+   * silently-wrong 200.
+   */
+  freeAccessAccountRepository?: FreeAccessAccountRepository;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -211,6 +227,45 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     clearSessionCookies(reply);
     await reply.code(204).send();
+  });
+
+  /**
+   * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): the frozen
+   * FreeAccessStatus read contract, derived server-side from the account's
+   * existing Round5 FreeAccessSnapshot + the server clock -- never from
+   * any client-supplied value. Same auth discipline as GET
+   * /api/parent/session (session cookie only, no CSRF check needed for a
+   * read). 404 (not 200 with nulls) if the account has no snapshot yet --
+   * this should be structurally impossible for a session that just
+   * validated (readSession already requires VERIFIED), but this route
+   * fails closed rather than assuming it.
+   */
+  app.get('/api/parent/free-access-status', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.freeAccessAccountRepository) {
+      await reply.code(503).send({ error: 'not_configured' });
+      return;
+    }
+    const token = readSessionCookie(request);
+    if (token === null) {
+      await reply.code(401).send({ error: 'unauthorized' });
+      return;
+    }
+    try {
+      const session = await parentAccountService.readSession(token);
+      const row = await deps.freeAccessAccountRepository.findByAccountId(session.accountId);
+      if (!row || row.freeAccess === null) {
+        await reply.code(404).send({ error: 'not_found' });
+        return;
+      }
+      const status = deriveFreeAccessStatus(row.freeAccess, new Date());
+      await reply.code(200).send(status);
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        await reply.code(401).send({ error: 'unauthorized' });
+        return;
+      }
+      throw error;
+    }
   });
 
   app.post('/api/parent/sessions/revoke-all', async (request: FastifyRequest, reply: FastifyReply) => {
