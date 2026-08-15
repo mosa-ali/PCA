@@ -54,7 +54,7 @@ export interface MostRecentBatchStatusRow {
 export interface PlatformDashboardSnapshot {
   generatedAt: string;
   accountsTotal: CountMetric;
-  accountsActiveSuspended: { capability: MetricCapability; value?: number | null; suspended?: number | null; reason?: string };
+  accountsActiveSuspended: { capability: MetricCapability; active?: number | null; suspended?: number | null; reason?: string };
   parentMemberEntitlementUtilization: UtilizationMetric;
   managedDeviceEntitlementUtilization: UtilizationMetric;
   managedDeviceActive: CountMetric;
