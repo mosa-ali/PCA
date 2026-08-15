@@ -28,6 +28,14 @@ package org.pca.app.runtime.schedule
 object ScheduleEvaluator {
 
     fun evaluate(input: ScheduleEvaluationInput): ScheduleDecision {
+        // PCA-AND-003 non-overridable safety floor (see EmergencyAccessFloor doc comment): checked
+        // first, before any window/config content is even read, so no policy shape -- malicious,
+        // malformed, or validly-authored/signed -- can ever produce a blocking decision for a
+        // protected emergency app token.
+        if (EmergencyAccessFloor.isProtectedToken(input.appToken)) {
+            return EmergencyAccessFloor.ALWAYS_ALLOWED_DECISION
+        }
+
         val configErrors = input.windows.flatMap { validateScheduleWindow(it) }
         if (configErrors.isNotEmpty()) {
             return ScheduleDecision(

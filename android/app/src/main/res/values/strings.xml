@@ -192,6 +192,9 @@
     <string name="ask_parent_button_hint">Send a request to a parent for early return to use</string>
     <string name="emergency_button_label">Emergency</string>
     <string name="emergency_button_hint">Reach emergency help immediately. Always available.</string>
+    <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
+    <string name="emergency_call_button_label">Call for help</string>
+    <string name="emergency_call_button_hint">Open your phone\'s dialer to call for help. You choose who to call.</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. -->
     <string name="enrollment_entry_title">Set up this device</string>
@@ -287,4 +290,16 @@
     <string name="removal_decision_allow_removal_confirm_message">This permanently authorizes protection to be removed from this device. This action is recorded and cannot be undone.</string>
     <string name="removal_decision_confirm_button">Confirm</string>
     <string name="removal_decision_cancel_button">Cancel</string>
+
+    <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
+    <string name="youtube_mode_screen_title">YouTube monitoring</string>
+    <string name="youtube_mode_a_title">Mode A: App usage only</string>
+    <string name="youtube_mode_a_description">Shows how much time was spent in the YouTube app, based on device app-usage data. It never shows which videos were watched or searched.</string>
+    <string name="youtube_mode_a_status_loading">Checking current usage…</string>
+    <string name="youtube_mode_a_status_unsupported">Not available on this device</string>
+    <string name="youtube_mode_a_status_permission_needed">Turn on Usage Access to see this</string>
+    <string name="youtube_mode_a_status_measured">%1$s minutes today</string>
+    <string name="youtube_mode_b_title">Mode B: Video-level detail</string>
+    <string name="youtube_mode_b_description">Would show which specific videos were watched. This requires a separate review and is not offered as a setting you can turn on.</string>
+    <string name="youtube_mode_b_unavailable">Not available yet</string>
 </resources>

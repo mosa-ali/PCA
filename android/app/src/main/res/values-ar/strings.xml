@@ -198,6 +198,9 @@
     <string name="ask_parent_button_hint">إرسال طلب إلى أحد الوالدين للعودة المبكرة للاستخدام</string>
     <string name="emergency_button_label">طوارئ</string>
     <string name="emergency_button_hint">التواصل مع المساعدة الطارئة فورًا. متاح دائمًا.</string>
+    <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
+    <string name="emergency_call_button_label">اتصل للحصول على المساعدة</string>
+    <string name="emergency_call_button_hint">افتح لوحة الاتصال في هاتفك للاتصال طلبًا للمساعدة. أنت من يختار من تتصل به.</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. PENDING NATIVE REVIEWER SIGN-OFF, same posture as the rest of this file. -->
     <string name="enrollment_entry_title">إعداد هذا الجهاز</string>
@@ -286,4 +289,16 @@
     <string name="removal_decision_allow_removal_confirm_message">هذا يصرّح بشكل دائم بإمكانية إزالة الحماية عن هذا الجهاز. يتم تسجيل هذا الإجراء ولا يمكن التراجع عنه.</string>
     <string name="removal_decision_confirm_button">تأكيد</string>
     <string name="removal_decision_cancel_button">إلغاء</string>
+
+    <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
+    <string name="youtube_mode_screen_title">مراقبة يوتيوب</string>
+    <string name="youtube_mode_a_title">النمط A: استخدام التطبيق فقط</string>
+    <string name="youtube_mode_a_description">يُظهر مدة استخدام تطبيق يوتيوب استنادًا إلى بيانات استخدام التطبيقات على الجهاز. لا يُظهر أبدًا الفيديوهات التي تمت مشاهدتها أو البحث عنها.</string>
+    <string name="youtube_mode_a_status_loading">جارٍ التحقق من الاستخدام الحالي…</string>
+    <string name="youtube_mode_a_status_unsupported">غير متاح على هذا الجهاز</string>
+    <string name="youtube_mode_a_status_permission_needed">فعّل إذن الوصول إلى الاستخدام لرؤية هذا</string>
+    <string name="youtube_mode_a_status_measured">%1$s دقيقة اليوم</string>
+    <string name="youtube_mode_b_title">النمط B: تفاصيل على مستوى الفيديو</string>
+    <string name="youtube_mode_b_description">سيُظهر الفيديوهات المحددة التي تمت مشاهدتها. يتطلب هذا مراجعة منفصلة وليس متاحًا كإعداد يمكن تفعيله.</string>
+    <string name="youtube_mode_b_unavailable">غير متاح بعد</string>
 </resources>

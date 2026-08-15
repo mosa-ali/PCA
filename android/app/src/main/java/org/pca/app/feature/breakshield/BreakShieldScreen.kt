@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -68,6 +69,10 @@ fun BreakShieldScreen(
     onDhikrInteraction: () -> Unit,
     onRequestParentOverride: () -> Unit,
     onRequestEmergencyException: () -> Unit,
+    onCallEmergencyServices: () -> Unit = run {
+        val context = LocalContext.current
+        { launchEmergencyDialer(context) }
+    },
 ) {
     if (!state.isShieldVisible) return
 
@@ -80,6 +85,7 @@ fun BreakShieldScreen(
     val dhikrButtonHint = stringResource(R.string.dhikr_button_hint)
     val askParentButtonHint = stringResource(R.string.ask_parent_button_hint)
     val emergencyButtonHint = stringResource(R.string.emergency_button_hint)
+    val emergencyCallButtonHint = stringResource(R.string.emergency_call_button_hint)
 
     val reducedMotion = rememberReducedMotionEnabled()
     var visible by remember { mutableStateOf(false) }
@@ -150,6 +156,16 @@ fun BreakShieldScreen(
                                 modifier = Modifier.semantics { contentDescription = emergencyButtonHint },
                             ) { Text(stringResource(R.string.emergency_button_label)) }
                         }
+                        // PCA-FR-132: a real "call for help" action, always present -- unlike the
+                        // emergency-EXCEPTION button above (which only bypasses PCA's own screen-time
+                        // policy and is hidden while that exception is already active), reaching a
+                        // phone must never depend on any Break Shield mode/state. See
+                        // EmergencyDialIntent.kt's own doc comment for why this is ACTION_DIAL, never
+                        // ACTION_CALL, and why no number is pre-filled.
+                        Button(
+                            onClick = onCallEmergencyServices,
+                            modifier = Modifier.semantics { contentDescription = emergencyCallButtonHint },
+                        ) { Text(stringResource(R.string.emergency_call_button_label)) }
                     }
                 }
             }

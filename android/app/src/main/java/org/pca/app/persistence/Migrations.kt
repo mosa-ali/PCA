@@ -54,5 +54,26 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    /**
+     * PCA-FR-045/PCA-FR-131 (WRITER69): adds `installed_app_events` -- a new, purely additive
+     * table for the install-observer receiver's "a new app install was observed" records. No
+     * existing table/row is touched.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `installed_app_events` (" +
+                    "`id` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `packageName` TEXT NOT NULL, " +
+                    "`appLabel` TEXT, `installedAtEpochMillis` INTEGER NOT NULL, " +
+                    "`observedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_installed_app_events_deviceId` ON `installed_app_events` (`deviceId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_installed_app_events_installedAtEpochMillis` " +
+                    "ON `installed_app_events` (`installedAtEpochMillis`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }

@@ -78,6 +78,27 @@ class PcaLocalDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate3To4CreatesInstalledAppEventsTable() {
+        helper.createDatabase(TEST_DB_NAME, 3).close()
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB_NAME, 4, true, Migrations.MIGRATION_3_4)
+        migrated.execSQL(
+            "INSERT INTO installed_app_events (id, deviceId, packageName, appLabel, installedAtEpochMillis, observedAtEpochMillis) " +
+                "VALUES ('i1', 'device-1', 'com.example.newapp', 'New App', 1000, 1500)",
+        )
+        val cursor = migrated.query("SELECT packageName, appLabel, installedAtEpochMillis FROM installed_app_events WHERE id = 'i1'")
+        try {
+            org.junit.Assert.assertTrue(cursor.moveToFirst())
+            org.junit.Assert.assertEquals("com.example.newapp", cursor.getString(cursor.getColumnIndexOrThrow("packageName")))
+            org.junit.Assert.assertEquals("New App", cursor.getString(cursor.getColumnIndexOrThrow("appLabel")))
+            org.junit.Assert.assertEquals(1000L, cursor.getLong(cursor.getColumnIndexOrThrow("installedAtEpochMillis")))
+        } finally {
+            cursor.close()
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DB_NAME = "pca_local_migration_test.db"
     }
