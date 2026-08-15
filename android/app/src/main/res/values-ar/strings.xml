@@ -198,6 +198,9 @@
     <string name="ask_parent_button_hint">إرسال طلب إلى أحد الوالدين للعودة المبكرة للاستخدام</string>
     <string name="emergency_button_label">طوارئ</string>
     <string name="emergency_button_hint">التواصل مع المساعدة الطارئة فورًا. متاح دائمًا.</string>
+    <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
+    <string name="emergency_call_button_label">اتصل للحصول على المساعدة</string>
+    <string name="emergency_call_button_hint">افتح لوحة الاتصال في هاتفك للاتصال طلبًا للمساعدة. أنت من يختار من تتصل به.</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. PENDING NATIVE REVIEWER SIGN-OFF, same posture as the rest of this file. -->
     <string name="enrollment_entry_title">إعداد هذا الجهاز</string>

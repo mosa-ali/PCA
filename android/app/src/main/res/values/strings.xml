@@ -192,6 +192,9 @@
     <string name="ask_parent_button_hint">Send a request to a parent for early return to use</string>
     <string name="emergency_button_label">Emergency</string>
     <string name="emergency_button_hint">Reach emergency help immediately. Always available.</string>
+    <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
+    <string name="emergency_call_button_label">Call for help</string>
+    <string name="emergency_call_button_hint">Open your phone\'s dialer to call for help. You choose who to call.</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. -->
     <string name="enrollment_entry_title">Set up this device</string>
