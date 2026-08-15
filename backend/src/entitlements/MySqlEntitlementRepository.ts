@@ -1,5 +1,8 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
+import type { ComplimentaryGrantRepository } from './complimentary/ComplimentaryGrantRepository.js';
+import { baseOnlyEffectiveEntitlementSnapshot, computeEffectiveEntitlementSnapshot } from './complimentary/EffectiveEntitlementCapacity.js';
+import type { EffectiveEntitlementBaseUsage, EffectiveEntitlementSnapshot } from './complimentary/types.js';
 import type { EntitlementRepository } from './EntitlementRepository.js';
 import type { AccountEntitlementRecord, EntitlementDefaultsRecord, LimitType, OpaqueFamilyId } from './types.js';
 
@@ -62,7 +65,33 @@ async function selectForFamily(conn: PoolConnection, familyId: OpaqueFamilyId, f
   return rows[0] ? mapEntitlement(rows[0]) : null;
 }
 
+function toBaseUsage(entitlement: AccountEntitlementRecord): EffectiveEntitlementBaseUsage {
+  return {
+    parentMemberLimit: entitlement.parentMemberLimit,
+    managedDeviceLimit: entitlement.managedDeviceLimit,
+    parentMemberUsed: entitlement.parentMemberUsedCount,
+    managedDeviceActive: entitlement.managedDeviceActiveCount,
+    managedDeviceReserved: entitlement.managedDeviceReservedCount,
+  };
+}
+
 export class MySqlEntitlementRepository implements EntitlementRepository {
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+   * Round6): optional so every EXISTING `new MySqlEntitlementRepository()`
+   * call site (main.ts, tests) keeps compiling unchanged -- when absent,
+   * every method below degrades byte-for-byte to its pre-Round6 base-only
+   * behavior (zero regression). Wiring a real
+   * `ComplimentaryGrantRepository` here (Coordinator follow-up -- see
+   * WRITER60 final report's INTERFACE_CHANGE_REQUEST) is what actually
+   * closes the consumption-side gap in production.
+   */
+  private readonly complimentaryGrantRepository: ComplimentaryGrantRepository | null;
+
+  constructor(complimentaryGrantRepository?: ComplimentaryGrantRepository) {
+    this.complimentaryGrantRepository = complimentaryGrantRepository ?? null;
+  }
+
   async getDefaults(tier: string): Promise<EntitlementDefaultsRecord | null> {
     const { rows } = await runInTransaction((conn) => execute<DefaultsRow>(conn, `SELECT * FROM entitlement_defaults WHERE tier = ?`, [tier]));
     return rows[0] ? mapDefaults(rows[0]) : null;
@@ -124,24 +153,38 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
    * stale 0 in place. Existing occupants are never touched by this method;
    * only the limit column and the derived flag change.
    */
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2: the over-limit flag now compares current
+   * usage against `targetLimit + complimentaryAmount` (the EFFECTIVE
+   * limit), not `targetLimit` alone -- `complimentaryAmount` is read via
+   * `ComplimentaryGrantRepository.sumActiveAmount` (the SAME canonical
+   * query `EffectiveEntitlementCapacity.computeEffectiveEntitlementSnapshot`
+   * calls) on THIS connection, so it observes the same in-flight grant
+   * state any other consumption decision inside the same transaction
+   * would. When no complimentaryGrantRepository is wired, complimentaryAmount
+   * is 0 and this is byte-for-byte the pre-Round6 base-only formula.
+   */
   async raiseLimit(conn: PoolConnection, familyId: OpaqueFamilyId, limitType: LimitType, targetLimit: number, now: Date): Promise<AccountEntitlementRecord> {
+    const complimentaryAmount = this.complimentaryGrantRepository
+      ? await this.complimentaryGrantRepository.sumActiveAmount(conn, familyId, limitType === 'MANAGED_DEVICE_LIMIT' ? 'MANAGED_DEVICE_CAPACITY' : 'PARENT_MEMBER_CAPACITY', now)
+      : 0;
     if (limitType === 'MANAGED_DEVICE_LIMIT') {
       await execute(
         conn,
         `UPDATE account_entitlements
          SET managed_device_limit = ?, revision = revision + 1, updated_at = ?,
-             over_limit_managed_device = CASE WHEN ? < (managed_device_active_count + managed_device_reserved_count) THEN 1 ELSE 0 END
+             over_limit_managed_device = CASE WHEN (? + ?) < (managed_device_active_count + managed_device_reserved_count) THEN 1 ELSE 0 END
          WHERE family_id = ?`,
-        [targetLimit, now, targetLimit, familyId],
+        [targetLimit, now, targetLimit, complimentaryAmount, familyId],
       );
     } else {
       await execute(
         conn,
         `UPDATE account_entitlements
          SET parent_member_limit = ?, revision = revision + 1, updated_at = ?,
-             over_limit_parent_member = CASE WHEN ? < parent_member_used_count THEN 1 ELSE 0 END
+             over_limit_parent_member = CASE WHEN (? + ?) < parent_member_used_count THEN 1 ELSE 0 END
          WHERE family_id = ?`,
-        [targetLimit, now, targetLimit, familyId],
+        [targetLimit, now, targetLimit, complimentaryAmount, familyId],
       );
     }
     const updated = await selectForFamily(conn, familyId, false);
@@ -149,7 +192,11 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
     return updated;
   }
 
+  /** EFFECTIVE_ENTITLEMENT_V2: `over_limit_managed_device` now compares against `managed_device_limit + complimentaryAmount` -- see raiseLimit's doc comment for the same complimentaryAmount-sourcing rule. */
   async adjustManagedDeviceCounts(conn: PoolConnection, familyId: OpaqueFamilyId, reservedDelta: number, activeDelta: number, now: Date): Promise<AccountEntitlementRecord> {
+    const complimentaryAmount = this.complimentaryGrantRepository
+      ? await this.complimentaryGrantRepository.sumActiveAmount(conn, familyId, 'MANAGED_DEVICE_CAPACITY', now)
+      : 0;
     await execute(
       conn,
       `UPDATE account_entitlements
@@ -158,18 +205,30 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
            revision = revision + 1,
            updated_at = ?,
            over_limit_managed_device = CASE
-             WHEN managed_device_limit < GREATEST(managed_device_reserved_count + ?, 0) + GREATEST(managed_device_active_count + ?, 0) THEN 1
+             WHEN (managed_device_limit + ?) < GREATEST(managed_device_reserved_count + ?, 0) + GREATEST(managed_device_active_count + ?, 0) THEN 1
              ELSE 0
            END
        WHERE family_id = ?`,
-      [reservedDelta, activeDelta, now, reservedDelta, activeDelta, familyId],
+      [reservedDelta, activeDelta, now, complimentaryAmount, reservedDelta, activeDelta, familyId],
     );
     const updated = await selectForFamily(conn, familyId, false);
     if (!updated) throw new Error(`account_entitlements row missing for family ${familyId} after adjustManagedDeviceCounts`);
     return updated;
   }
 
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2: `over_limit_parent_member` now compares
+   * against `parent_member_limit + complimentaryAmount`. Per the
+   * PARENT_MEMBER_CONSUMPTION_BINDING_REQUIRED finding (WRITER60 final
+   * report), this method still has zero real callers anywhere in the
+   * backend -- fixed here for correctness/consistency (so the flag it
+   * WOULD compute is correct the moment a caller is bound), not because a
+   * live gap was closed.
+   */
   async adjustParentMemberUsedCount(conn: PoolConnection, familyId: OpaqueFamilyId, delta: number, now: Date): Promise<AccountEntitlementRecord> {
+    const complimentaryAmount = this.complimentaryGrantRepository
+      ? await this.complimentaryGrantRepository.sumActiveAmount(conn, familyId, 'PARENT_MEMBER_CAPACITY', now)
+      : 0;
     await execute(
       conn,
       `UPDATE account_entitlements
@@ -177,14 +236,24 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
            revision = revision + 1,
            updated_at = ?,
            over_limit_parent_member = CASE
-             WHEN parent_member_limit < GREATEST(parent_member_used_count + ?, 0) THEN 1
+             WHEN (parent_member_limit + ?) < GREATEST(parent_member_used_count + ?, 0) THEN 1
              ELSE 0
            END
        WHERE family_id = ?`,
-      [delta, now, delta, familyId],
+      [delta, now, complimentaryAmount, delta, familyId],
     );
     const updated = await selectForFamily(conn, familyId, false);
     if (!updated) throw new Error(`account_entitlements row missing for family ${familyId} after adjustParentMemberUsedCount`);
     return updated;
+  }
+
+  async getEffectiveSnapshotForFamily(familyId: OpaqueFamilyId, now: Date): Promise<EffectiveEntitlementSnapshot | null> {
+    return runInTransaction(async (conn) => {
+      const entitlement = await selectForFamily(conn, familyId, false);
+      if (!entitlement) return null;
+      const base = toBaseUsage(entitlement);
+      if (!this.complimentaryGrantRepository) return baseOnlyEffectiveEntitlementSnapshot(base);
+      return computeEffectiveEntitlementSnapshot(conn, this.complimentaryGrantRepository, familyId, base, now);
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { FREE_STARTER_TIER } from './types.js';
+import type { EffectiveEntitlementSnapshot } from './complimentary/types.js';
 import type { EntitlementRepository } from './EntitlementRepository.js';
 import type { ChangeRequestRepository } from './requests/ChangeRequestRepository.js';
 import type { AccountEntitlementRecord, EntitlementReadModel, OpaqueFamilyId } from './types.js';
@@ -32,6 +33,28 @@ export class EntitlementService {
 
   async getForFamily(familyId: OpaqueFamilyId): Promise<AccountEntitlementRecord | null> {
     return this.entitlementRepository.getForFamily(familyId);
+  }
+
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+   * Round6) -- the SSOT read surface this service exists to provide (per
+   * ROUND6_FILE_OWNERSHIP.csv: EntitlementService.ts is the "SSOT wiring
+   * point"). Ensures the family's row exists first (same lazy-init
+   * `getOrCreateForFamily` every other method here already goes through),
+   * then delegates the actual base+complimentary assembly to
+   * `EntitlementRepository.getEffectiveSnapshotForFamily` -- which itself
+   * composes the same shared `EffectiveEntitlementCapacity
+   * .computeEffectiveEntitlementSnapshot` function every other consumption
+   * decision in this codebase composes. `ChangeRequestService.createRequest`
+   * / `createAndApproveNoChargeDeviceIncrease` call this method (via the
+   * `entitlementService` reference they already hold) instead of wiring
+   * their own complimentary dependency.
+   */
+  async getEffectiveSnapshot(familyId: OpaqueFamilyId, now: Date): Promise<EffectiveEntitlementSnapshot> {
+    await this.getOrCreateForFamily(familyId, now);
+    const snapshot = await this.entitlementRepository.getEffectiveSnapshotForFamily(familyId, now);
+    if (!snapshot) throw new Error(`account_entitlements row missing for family ${familyId} after getOrCreateForFamily`);
+    return snapshot;
   }
 
   async buildReadModel(familyId: OpaqueFamilyId, now: Date): Promise<EntitlementReadModel> {

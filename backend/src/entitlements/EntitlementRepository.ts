@@ -1,4 +1,5 @@
 import type { PoolConnection } from 'mysql2/promise';
+import type { EffectiveEntitlementSnapshot } from './complimentary/types.js';
 import type { AccountEntitlementRecord, EntitlementDefaultsRecord, LimitType, OpaqueFamilyId } from './types.js';
 
 /**
@@ -43,4 +44,17 @@ export interface EntitlementRepository {
 
   /** Adjusts the parent-member used counter and recomputes its over-limit flag. Caller MUST already hold the row lock. */
   adjustParentMemberUsedCount(conn: PoolConnection, familyId: OpaqueFamilyId, delta: number, now: Date): Promise<AccountEntitlementRecord>;
+
+  /**
+   * EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+   * Round6) -- additive, read-only. Returns the family's current
+   * EffectiveEntitlementSnapshot (base + ACTIVE complimentary grants) via
+   * the same SSOT arithmetic every consumption decision in this codebase
+   * uses (`complimentary/EffectiveEntitlementCapacity
+   * .computeEffectiveEntitlementSnapshot`). Null if no account_entitlements
+   * row exists for the family yet. Never removes/renames any base-only
+   * method above -- callers that only need the base limit keep using
+   * getForFamily/lockForFamily exactly as before.
+   */
+  getEffectiveSnapshotForFamily(familyId: OpaqueFamilyId, now: Date): Promise<EffectiveEntitlementSnapshot | null>;
 }

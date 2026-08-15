@@ -99,8 +99,18 @@ export class ChangeRequestService {
   async createRequest(familyId: OpaqueFamilyId, limitType: LimitType, targetLimit: number, market: ResolveStandardQuoteInput['commercialMarket'], currencyCode: string): Promise<EntitlementChangeRequestRecord> {
     if (!Number.isInteger(targetLimit) || targetLimit < 0) throw new ChangeRequestError('INVALID_TARGET');
     const now = this.now();
-    const entitlement = await this.entitlementService.getOrCreateForFamily(familyId, now);
-    const currentLimit = limitType === 'MANAGED_DEVICE_LIMIT' ? entitlement.managedDeviceLimit : entitlement.parentMemberLimit;
+    // EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
+    // Round6): compares against the EFFECTIVE limit (base + ACTIVE
+    // complimentary capacity for this limitType), not the base limit alone
+    // -- a family must never be quoted/told to pay for capacity it already
+    // effectively holds via an active complimentary grant.
+    // `entitlementService.getEffectiveSnapshot` is the SSOT read surface
+    // (EntitlementService.ts, "SSOT wiring point"); `currentLimitAtRequest`
+    // below persists the EFFECTIVE value actually compared against, so the
+    // request record's own historical baseline stays consistent with the
+    // decision that was made.
+    const snapshot = await this.entitlementService.getEffectiveSnapshot(familyId, now);
+    const currentLimit = limitType === 'MANAGED_DEVICE_LIMIT' ? snapshot.effectiveManagedDeviceLimit : snapshot.effectiveParentMemberLimit;
     if (targetLimit <= currentLimit) throw new ChangeRequestError('INVALID_TARGET');
 
     const requestId = randomUUID();
@@ -219,11 +229,15 @@ export class ChangeRequestService {
   async createAndApproveNoChargeDeviceIncrease(familyId: OpaqueFamilyId, targetLimit: number, actorAdminId: string, reason: string): Promise<EntitlementChangeRequestRecord> {
     if (!Number.isInteger(targetLimit) || targetLimit < 0) throw new ChangeRequestError('INVALID_TARGET');
     const now = this.now();
-    const entitlement = await this.entitlementService.getOrCreateForFamily(familyId, now);
-    if (targetLimit <= entitlement.managedDeviceLimit) throw new ChangeRequestError('INVALID_TARGET');
+    // EFFECTIVE_ENTITLEMENT_V2: same base->effective threshold move as
+    // createRequest above -- an admin no-charge increase must also never
+    // be rejected for/quoted against capacity the family already
+    // effectively holds via an active complimentary grant.
+    const snapshot = await this.entitlementService.getEffectiveSnapshot(familyId, now);
+    if (targetLimit <= snapshot.effectiveManagedDeviceLimit) throw new ChangeRequestError('INVALID_TARGET');
     const requestId = randomUUID();
     await runInTransaction((conn) =>
-      this.changeRequestRepository.create(conn, { requestId, familyId, limitType: 'MANAGED_DEVICE_LIMIT', currentLimitAtRequest: entitlement.managedDeviceLimit, targetLimit, now }),
+      this.changeRequestRepository.create(conn, { requestId, familyId, limitType: 'MANAGED_DEVICE_LIMIT', currentLimitAtRequest: snapshot.effectiveManagedDeviceLimit, targetLimit, now }),
     );
     return this.approveDeviceRequestNoCharge(requestId, actorAdminId, reason);
   }
