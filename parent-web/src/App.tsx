@@ -34,11 +34,21 @@ import CheckoutReturn from './pages/billing/CheckoutReturn';
 import Settings from './pages/Settings';
 import NotPermitted from './pages/NotPermitted';
 import NotFound from './pages/NotFound';
+import Register from './pages/auth/Register';
+import VerifyEmail from './pages/auth/VerifyEmail';
+import Login from './pages/auth/Login';
 import { RouteGuard } from './rbac/RouteGuard';
 
 export default function App() {
   return (
     <Routes>
+      {/* PCA-AUTH-SESSION-1: unauthenticated auth pages, deliberately outside
+          AppLayout's chrome (no family-scoped nav/shell makes sense before a
+          session exists). */}
+      <Route path="register" element={<Register />} />
+      <Route path="verify-email" element={<VerifyEmail />} />
+      <Route path="login" element={<Login />} />
+
       <Route element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
