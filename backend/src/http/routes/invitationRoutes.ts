@@ -3,13 +3,24 @@ import { InvitationError, type InvitationService } from '../../invitation/Invita
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import { createRequireFamilyAuthorization } from '../requireFamilyAuthorization.js';
 import { createRateLimiter } from '../rateLimit.js';
-import { toInvitationCreatedDto, toInvitationDto } from '../dto.js';
+import { toInvitationCreatedDto, toInvitationDto, toInvitationTransitionDto } from '../dto.js';
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const VALID_PLATFORMS = new Set(['ANDROID', 'IOS']);
 const VALID_PROTECTION_MODES = new Set(['ANDROID_STANDARD', 'ANDROID_PROTECTED', 'IOS_STANDARD']);
+const MAX_TOKEN_LENGTH = 64;
+
+/**
+ * PCA-ADD-ENR-005/PCA-SEC-001: every device-facing lifecycle-transition
+ * error collapses to the SAME generic 404 already used by
+ * bootstrapRoutes.ts's GENERIC_UNAVAILABLE_CODES for NOT_FOUND/EXPIRED/
+ * REVOKED/ALREADY_REDEEMED -- plus INVALID_STATE (an out-of-order
+ * transition request), so this surface can never become a token-guessing
+ * or lifecycle-state oracle either.
+ */
+const GENERIC_UNAVAILABLE_CODES = new Set(['NOT_FOUND', 'EXPIRED', 'REVOKED', 'ALREADY_REDEEMED', 'INVALID_STATE']);
 
 export interface InvitationRoutesDeps {
   invitationService: InvitationService;
@@ -125,4 +136,78 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       }
     },
   );
+
+  registerDeviceLifecycleTransitionRoutes(app, deps);
+}
+
+/**
+ * PCA-ADD-ENR-005/008 (Addendum 001): device-facing invitation
+ * lifecycle-progress endpoints. Deliberately NOT behind
+ * requireServiceSession/requireFamilyAuthorization -- like
+ * bootstrapRoutes.ts's `/v1/enrollment/bootstrap`, authority here is only
+ * "possession of the invitation's one-time bearer token," matching every
+ * other pre-enrollment device-facing call. These exist so the Android
+ * install/store/App-Link continuation flow (EnrollmentCoordinator.kt) can
+ * report real forward progress -- app-not-installed, app-installed-resumed,
+ * bootstrap-material-prepared-awaiting-authorization -- as persisted,
+ * audited server states instead of the client silently tracking them
+ * itself.
+ */
+function registerDeviceLifecycleTransitionRoutes(app: FastifyInstance, deps: InvitationRoutesDeps): void {
+  const transitions: Array<{
+    path: string;
+    bucket: string;
+    apply: (rawInvitationToken: string) => Promise<Awaited<ReturnType<InvitationService['markInstallRequired']>>>;
+  }> = [
+    {
+      path: '/v1/enrollment/invitations/install-required',
+      bucket: 'invitation-install-required',
+      apply: (rawInvitationToken) => deps.invitationService.markInstallRequired(rawInvitationToken),
+    },
+    {
+      path: '/v1/enrollment/invitations/app-installed',
+      bucket: 'invitation-app-installed',
+      apply: (rawInvitationToken) => deps.invitationService.markAppInstalled(rawInvitationToken),
+    },
+    {
+      path: '/v1/enrollment/invitations/authorization-required',
+      bucket: 'invitation-authorization-required',
+      apply: (rawInvitationToken) => deps.invitationService.markAuthorizationRequired(rawInvitationToken),
+    },
+  ];
+
+  for (const transition of transitions) {
+    app.post(
+      transition.path,
+      {
+        bodyLimit: MAX_BODY_BYTES,
+        preHandler: [deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: transition.bucket })],
+      },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = request.body;
+        if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+        const { rawInvitationToken } = body;
+        if (
+          typeof rawInvitationToken !== 'string' ||
+          rawInvitationToken.length === 0 ||
+          rawInvitationToken.length > MAX_TOKEN_LENGTH
+        ) {
+          return reply.code(400).send({ error: 'invalid_request' });
+        }
+
+        try {
+          const record = await transition.apply(rawInvitationToken);
+          return reply.code(200).send(toInvitationTransitionDto(record));
+        } catch (error) {
+          if (error instanceof InvitationError) {
+            if (GENERIC_UNAVAILABLE_CODES.has(error.code)) {
+              return reply.code(404).send({ error: 'invitation_unavailable' });
+            }
+            return reply.code(400).send({ error: 'invalid_request' });
+          }
+          throw error;
+        }
+      },
+    );
+  }
 }

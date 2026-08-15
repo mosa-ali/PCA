@@ -22,6 +22,16 @@ ALTER TABLE enrollment_invitations
   ADD COLUMN authorization_required_at DATETIME(3) NULL AFTER app_installed_at,
   ADD COLUMN expired_at DATETIME(3) NULL AFTER redeemed_at;
 
+-- The original column (migration 0001) was VARCHAR(16), sized for the
+-- longest of the original 4 states (REVOKED/REDEEMED). The longest new
+-- state, 'AUTHORIZATION_REQUIRED', is 22 characters -- widen to VARCHAR(32)
+-- (matching enrollment_invitation_transitions' own from_status/to_status
+-- columns below) before the CHECK constraint is replaced, so an
+-- ER_DATA_TOO_LONG on this column can never mask a validated-but-truncated
+-- transition.
+ALTER TABLE enrollment_invitations
+  MODIFY COLUMN status VARCHAR(32) NOT NULL;
+
 ALTER TABLE enrollment_invitations
   DROP CHECK enrollment_invitations_status_check;
 

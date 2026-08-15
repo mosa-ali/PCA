@@ -4,7 +4,7 @@ import test from 'node:test';
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
 import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
 import { hashInvitationToken } from '../../dist/invitation/token.js';
-import { closePool } from '../../dist/db/pool.js';
+import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -120,6 +120,103 @@ test('MySQL CONCURRENCY: redeem raced against revoke resolves to exactly one det
       assert.equal(final.redeemedAt, null, 'a REVOKED invitation must never carry a redeemedAt from a losing concurrent redeem');
     }
   }
+});
+
+// --- PCA-ADD-ENR-005/023: 8-state lifecycle against real MySQL ---------
+
+test('MySQL: full forward lifecycle persists every intermediate timestamp and an immutable transition audit trail', async () => {
+  const service = buildService();
+  const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+
+  await service.markOpened(rawToken);
+  const installRequired = await service.markInstallRequired(rawToken);
+  assert.equal(installRequired.status, 'INSTALL_REQUIRED');
+  assert.ok(installRequired.installRequiredAt);
+
+  const appInstalled = await service.markAppInstalled(rawToken);
+  assert.equal(appInstalled.status, 'APP_INSTALLED');
+  assert.ok(appInstalled.appInstalledAt);
+
+  const authRequired = await service.markAuthorizationRequired(rawToken);
+  assert.equal(authRequired.status, 'AUTHORIZATION_REQUIRED');
+  assert.ok(authRequired.authorizationRequiredAt);
+
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
+
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT from_status, to_status FROM enrollment_invitation_transitions WHERE invitation_id = ? ORDER BY transitioned_at ASC`,
+    [record.invitationId],
+  );
+  assert.deepEqual(
+    rows.map((r) => `${r.from_status}->${r.to_status}`),
+    ['CREATED->OPENED', 'OPENED->INSTALL_REQUIRED', 'INSTALL_REQUIRED->APP_INSTALLED', 'APP_INSTALLED->AUTHORIZATION_REQUIRED', 'AUTHORIZATION_REQUIRED->REDEEMED'],
+  );
+});
+
+test('MySQL: redemption remains reachable directly from CREATED, skipping every intermediate state (existing bootstrap flow unbroken)', async () => {
+  const service = buildService();
+  const { rawToken } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
+});
+
+test('MySQL: EXPIRED is a real committed row, not just a value returned to the caller', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const service = buildService(() => now);
+  const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}`, ttlMs: 60_000 });
+  now = new Date(now.getTime() + 60_001);
+  assert.equal(await service.resolveInvitationState(rawToken), 'EXPIRED');
+
+  const stored = await repository.findByTokenHash(hashInvitationToken(rawToken));
+  assert.equal(stored.status, 'EXPIRED');
+  assert.notEqual(stored.expiredAt, null);
+
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT from_status, to_status FROM enrollment_invitation_transitions WHERE invitation_id = ? AND to_status = 'EXPIRED'`,
+    [record.invitationId],
+  );
+  assert.equal(rows.length, 1, 'exactly one EXPIRED transition row, committed to real MySQL');
+});
+
+test('MySQL: out-of-order (backward) lifecycle transition is rejected without corrupting the persisted forward state', async () => {
+  const service = buildService();
+  const { rawToken } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+  await service.markAuthorizationRequired(rawToken);
+  await assert.rejects(() => service.markInstallRequired(rawToken), { code: 'INVALID_STATE' });
+  assert.equal(await service.resolveInvitationState(rawToken), 'AUTHORIZATION_REQUIRED');
+});
+
+test('MySQL: revoked invitation rejects every lifecycle-progress transition', async () => {
+  const service = buildService();
+  const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+  await service.revokeInvitation(record.invitationId);
+  await assert.rejects(() => service.markInstallRequired(rawToken), { code: 'REVOKED' });
+  await assert.rejects(() => service.markAppInstalled(rawToken), { code: 'REVOKED' });
+  await assert.rejects(() => service.markAuthorizationRequired(rawToken), { code: 'REVOKED' });
+});
+
+test('MySQL CRITICAL CONCURRENCY: many simultaneous markInstallRequired calls against one invitation -- exactly 1 real transition row is written', async () => {
+  const service = buildService();
+  const { rawToken, record } = await service.createInvitation({ ...baseInput, familyId: `family-${randomUUID()}` });
+
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 20 }, () => service.markInstallRequired(rawToken)),
+  );
+  const fulfilled = attempts.filter((a) => a.status === 'fulfilled');
+  // Idempotent: every attempt succeeds (ALREADY_IN_STATE collapses into the
+  // same success as TRANSITIONED at the service layer), but exactly one
+  // underlying transition row is ever committed.
+  assert.equal(fulfilled.length, 20);
+
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS n FROM enrollment_invitation_transitions WHERE invitation_id = ? AND to_status = 'INSTALL_REQUIRED'`,
+    [record.invitationId],
+  );
+  assert.equal(rows[0].n, 1, 'exactly one INSTALL_REQUIRED transition row despite 20 concurrent callers');
 });
 
 test.after(async () => {

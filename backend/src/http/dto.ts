@@ -16,7 +16,11 @@ export interface InvitationDto {
   createdAt: string;
   expiresAt: string;
   openedAt: string | null;
+  installRequiredAt: string | null;
+  appInstalledAt: string | null;
+  authorizationRequiredAt: string | null;
   redeemedAt: string | null;
+  expiredAt: string | null;
   revokedAt: string | null;
 }
 
@@ -30,7 +34,11 @@ export function toInvitationDto(record: InvitationRecord): InvitationDto {
     createdAt: record.createdAt.toISOString(),
     expiresAt: record.expiresAt.toISOString(),
     openedAt: record.openedAt ? record.openedAt.toISOString() : null,
+    installRequiredAt: record.installRequiredAt ? record.installRequiredAt.toISOString() : null,
+    appInstalledAt: record.appInstalledAt ? record.appInstalledAt.toISOString() : null,
+    authorizationRequiredAt: record.authorizationRequiredAt ? record.authorizationRequiredAt.toISOString() : null,
     redeemedAt: record.redeemedAt ? record.redeemedAt.toISOString() : null,
+    expiredAt: record.expiredAt ? record.expiredAt.toISOString() : null,
     revokedAt: record.revokedAt ? record.revokedAt.toISOString() : null,
   };
 }
@@ -42,6 +50,23 @@ export interface InvitationCreatedDto extends InvitationDto {
 
 export function toInvitationCreatedDto(record: InvitationRecord, rawInvitationToken: string): InvitationCreatedDto {
   return { ...toInvitationDto(record), rawInvitationToken };
+}
+
+/**
+ * Minimal device-facing lifecycle-transition response (PCA-ADD-ENR-005/008
+ * install/App Link continuation endpoints in invitationRoutes.ts). The
+ * caller here authenticates only by possession of the one-time invitation
+ * bearer token, before any device identity or parent session exists -- so,
+ * unlike InvitationDto (parent-session-authenticated, family-scoped), this
+ * never discloses familyId, requestedProtectionMode, or any timestamp other
+ * than the one this transition itself just wrote.
+ */
+export interface InvitationTransitionDto {
+  status: string;
+}
+
+export function toInvitationTransitionDto(record: InvitationRecord): InvitationTransitionDto {
+  return { status: record.status };
 }
 
 export interface PairingRequestDto {

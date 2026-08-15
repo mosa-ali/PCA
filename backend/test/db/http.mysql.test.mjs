@@ -1049,6 +1049,123 @@ test('MySQL HTTP PRIVACY: server runs with logging disabled -- no bearer/raw-inv
   assert.equal(response.statusCode, 201);
 });
 
+// --- PCA-ADD-ENR-005/008: device-facing invitation lifecycle-progress routes ---
+
+test('MySQL HTTP: install-required -> app-installed -> authorization-required -> bootstrap redeems, real end-to-end route path', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+
+  const installRequired = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(installRequired.statusCode, 200);
+  assert.deepEqual(installRequired.json(), { status: 'INSTALL_REQUIRED' });
+
+  const appInstalled = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/app-installed',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(appInstalled.statusCode, 200);
+  assert.deepEqual(appInstalled.json(), { status: 'APP_INSTALLED' });
+
+  const authorizationRequired = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/authorization-required',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(authorizationRequired.statusCode, 200);
+  assert.deepEqual(authorizationRequired.json(), { status: 'AUTHORIZATION_REQUIRED' });
+
+  const bootstrap = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/bootstrap',
+    payload: bootstrapPayload({ rawInvitationToken: rawToken }),
+  });
+  assert.equal(bootstrap.statusCode, 201);
+  assert.equal(bootstrap.json().status, 'PAIRING_PENDING');
+});
+
+test('MySQL HTTP: lifecycle-progress routes require no parent session or family id -- device-only bearer token authority', async () => {
+  const { rawToken } = await createRealInvitation();
+  // No Authorization header at all, and the path itself carries no familyId --
+  // exactly like /v1/enrollment/bootstrap's own auth model.
+  const response = await freshApp().inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(response.statusCode, 200);
+});
+
+test('MySQL HTTP: lifecycle-progress route on an unknown/expired/revoked token collapses to the same generic 404 as bootstrap', async () => {
+  const app = freshApp();
+  const { rawToken: expiredToken } = await createRealInvitation({ ttlMs: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const expired = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: expiredToken },
+  });
+
+  const { rawToken: revokedToken, record: revokedRecord } = await createRealInvitation();
+  await invitationService.revokeInvitation(revokedRecord.invitationId);
+  const revoked = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: revokedToken },
+  });
+
+  const unknown = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: randomBytes(32).toString('base64url') },
+  });
+
+  for (const response of [expired, revoked, unknown]) {
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.json(), { error: 'invitation_unavailable' });
+  }
+});
+
+test('MySQL HTTP: out-of-order lifecycle-progress request (going backward) is the same generic 404, not a distinguishing detail', async () => {
+  const app = freshApp();
+  const { rawToken } = await createRealInvitation();
+  const forward = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/authorization-required',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(forward.statusCode, 200);
+
+  const backward = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: rawToken },
+  });
+  assert.equal(backward.statusCode, 404);
+  assert.deepEqual(backward.json(), { error: 'invitation_unavailable' });
+});
+
+test('MySQL HTTP: malformed/oversized token on a lifecycle-progress route is a distinguishable 400', async () => {
+  const app = freshApp();
+  const empty = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: '' },
+  });
+  assert.equal(empty.statusCode, 400);
+
+  const oversized = await app.inject({
+    method: 'POST',
+    url: '/v1/enrollment/invitations/install-required',
+    payload: { rawInvitationToken: 'a'.repeat(500) },
+  });
+  assert.equal(oversized.statusCode, 400);
+});
+
 test.after(async () => {
   await closePool();
 });
