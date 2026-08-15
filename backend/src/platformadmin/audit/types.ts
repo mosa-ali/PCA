@@ -52,6 +52,16 @@ export const PLATFORM_ADMIN_AUDIT_EVENT_TYPES = [
   'COMPLIMENTARY_GRANT_CHANGED',
   'COMPLIMENTARY_GRANT_REVOKED',
   'COMPLIMENTARY_GRANT_EXPIRED',
+  // SETTLEMENT_RECONCILIATION_V1 (Writer62, Round6): settlement-domain
+  // lifecycle events. Mirrored in migration 0015's
+  // platform_admin_audit_events_event_type_check CHECK constraint -- a
+  // reviewer changing one MUST change the other (same anchor discipline
+  // documented above).
+  'SETTLEMENT_ACCOUNT_CREATED',
+  'SETTLEMENT_ACCOUNT_CHANGED',
+  'SETTLEMENT_BATCH_CREATED',
+  'SETTLEMENT_BATCH_ITEM_ATTRIBUTED',
+  'SETTLEMENT_RECONCILIATION_RESOLVED',
 ] as const;
 
 export type PlatformAdminAuditEventType = (typeof PLATFORM_ADMIN_AUDIT_EVENT_TYPES)[number];

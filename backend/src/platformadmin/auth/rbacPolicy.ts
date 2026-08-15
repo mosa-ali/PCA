@@ -36,7 +36,21 @@ export type PlatformAdminOperation =
   // never a parameterized branch inside ADMINISTER_COMPLIMENTARY_GRANT,
   // so the closed-matrix/no-default-case discipline this file already
   // documents extends cleanly to the permanent-grant restriction too.
-  | 'ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT';
+  | 'ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT'
+  // SETTLEMENT_RECONCILIATION_V1 (Writer62, Round6,
+  // ROUND6_INTERFACE_CONTRACTS.md): four granular operations, added
+  // instead of reusing the single coarse `ADMINISTER_SETTLEMENT` row
+  // already reserved above -- the frozen matrix requires
+  // AUDITOR_READ_ONLY to ALLOW on read but DENY on every mutation, which a
+  // single combined operation cannot express (ADMINISTER_SETTLEMENT stays
+  // reserved/unused by this lane, exactly as the interface contract
+  // permits). PLATFORM_ADMIN and SUPPORT_ADMIN are DENY on all four, by
+  // design -- stricter than most other billing operations, since
+  // settlement/bank data is more sensitive.
+  | 'VIEW_SETTLEMENT_RECORDS'
+  | 'MUTATE_SETTLEMENT_ACCOUNT'
+  | 'CREATE_SETTLEMENT_BATCH'
+  | 'RESOLVE_RECONCILIATION';
 
 export type PlatformAdminAuthorizationVerdict = 'ALLOW' | 'DENY';
 
@@ -182,6 +196,34 @@ const OPERATION_MATRIX: Record<PlatformAdminOperation, Record<PlatformAdminRole,
     APP_OWNER: 'ALLOW',
     PLATFORM_ADMIN: 'DENY',
     FINANCE_ADMIN: 'DENY',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  VIEW_SETTLEMENT_RECORDS: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'DENY',
+    FINANCE_ADMIN: 'ALLOW',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'ALLOW',
+  },
+  MUTATE_SETTLEMENT_ACCOUNT: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'DENY',
+    FINANCE_ADMIN: 'ALLOW',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  CREATE_SETTLEMENT_BATCH: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'DENY',
+    FINANCE_ADMIN: 'ALLOW',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  RESOLVE_RECONCILIATION: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'DENY',
+    FINANCE_ADMIN: 'ALLOW',
     SUPPORT_ADMIN: 'DENY',
     AUDITOR_READ_ONLY: 'DENY',
   },
