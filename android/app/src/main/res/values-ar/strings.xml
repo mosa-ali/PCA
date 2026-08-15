@@ -257,4 +257,16 @@
     <string name="safe_browser_ask_parent_submitted">تم الإرسال إلى أحد الوالدين — بانتظار القرار</string>
     <string name="safe_browser_ask_parent_already_pending">هناك طلب سابق لهذا الموقع بانتظار أحد الوالدين</string>
     <string name="safe_browser_ask_parent_not_requestable">هذه قاعدة أمان لا يمكن طلب مراجعتها</string>
+
+    <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
+    <string name="youtube_mode_screen_title">مراقبة يوتيوب</string>
+    <string name="youtube_mode_a_title">النمط A: استخدام التطبيق فقط</string>
+    <string name="youtube_mode_a_description">يُظهر مدة استخدام تطبيق يوتيوب استنادًا إلى بيانات استخدام التطبيقات على الجهاز. لا يُظهر أبدًا الفيديوهات التي تمت مشاهدتها أو البحث عنها.</string>
+    <string name="youtube_mode_a_status_loading">جارٍ التحقق من الاستخدام الحالي…</string>
+    <string name="youtube_mode_a_status_unsupported">غير متاح على هذا الجهاز</string>
+    <string name="youtube_mode_a_status_permission_needed">فعّل إذن الوصول إلى الاستخدام لرؤية هذا</string>
+    <string name="youtube_mode_a_status_measured">%1$s دقيقة اليوم</string>
+    <string name="youtube_mode_b_title">النمط B: تفاصيل على مستوى الفيديو</string>
+    <string name="youtube_mode_b_description">سيُظهر الفيديوهات المحددة التي تمت مشاهدتها. يتطلب هذا مراجعة منفصلة وليس متاحًا كإعداد يمكن تفعيله.</string>
+    <string name="youtube_mode_b_unavailable">غير متاح بعد</string>
 </resources>

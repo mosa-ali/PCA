@@ -258,4 +258,16 @@
     <string name="safe_browser_ask_parent_submitted">Sent to a parent — waiting for a decision</string>
     <string name="safe_browser_ask_parent_already_pending">A request for this site is already waiting for a parent</string>
     <string name="safe_browser_ask_parent_not_requestable">This is a safety rule that can\'t be requested</string>
+
+    <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
+    <string name="youtube_mode_screen_title">YouTube monitoring</string>
+    <string name="youtube_mode_a_title">Mode A: App usage only</string>
+    <string name="youtube_mode_a_description">Shows how much time was spent in the YouTube app, based on device app-usage data. It never shows which videos were watched or searched.</string>
+    <string name="youtube_mode_a_status_loading">Checking current usage…</string>
+    <string name="youtube_mode_a_status_unsupported">Not available on this device</string>
+    <string name="youtube_mode_a_status_permission_needed">Turn on Usage Access to see this</string>
+    <string name="youtube_mode_a_status_measured">%1$s minutes today</string>
+    <string name="youtube_mode_b_title">Mode B: Video-level detail</string>
+    <string name="youtube_mode_b_description">Would show which specific videos were watched. This requires a separate review and is not offered as a setting you can turn on.</string>
+    <string name="youtube_mode_b_unavailable">Not available yet</string>
 </resources>
