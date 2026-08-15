@@ -27,6 +27,14 @@ function dismissalKey(status: FreeAccessStatus, now: Date): string {
 
 function readStorage(): string | null {
   try {
+    // Not a secret: a non-sensitive UI dismissal marker (a date +
+    // status-bucket string, e.g. "2026-08-15:ACTIVE:7"), never
+    // credential/session/family data. The repo-wide ban (see
+    // .eslintrc.cjs) exists to keep secrets out of localStorage; this
+    // value carries no confidentiality requirement at all and genuinely
+    // needs to survive a reload, which src/security/secureStorage.ts's
+    // in-memory-only store cannot do.
+    // eslint-disable-next-line no-restricted-properties
     return window.localStorage.getItem(STORAGE_KEY);
   } catch {
     // localStorage can throw (private-browsing quota, disabled storage) --
@@ -42,6 +50,8 @@ export function isFreeAccessReminderDismissed(status: FreeAccessStatus, now: Dat
 
 export function dismissFreeAccessReminder(status: FreeAccessStatus, now: Date = new Date()): void {
   try {
+    // Non-secret UI preference, not sensitive data -- see readStorage's own comment above.
+    // eslint-disable-next-line no-restricted-properties
     window.localStorage.setItem(STORAGE_KEY, dismissalKey(status, now));
   } catch {
     // Best-effort only -- see readStorage's own comment.

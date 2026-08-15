@@ -5,6 +5,7 @@ import { renderWithProviders } from '../utils/renderWithProviders';
 
 describe('FreeAccessReminderBanner (container, dev-fixture-backed)', () => {
   beforeEach(() => {
+    // eslint-disable-next-line no-restricted-properties -- test-only isolation reset for the non-secret dismissal marker under test, never a secret (see src/components/freeaccess/freeAccessDismissal.ts's own comment).
     window.localStorage.clear();
   });
 

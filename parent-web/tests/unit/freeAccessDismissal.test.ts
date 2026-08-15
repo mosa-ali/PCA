@@ -7,6 +7,7 @@ const NOW = new Date('2026-08-08T12:00:00.000Z');
 
 describe('freeAccessDismissal', () => {
   beforeEach(() => {
+    // eslint-disable-next-line no-restricted-properties -- test-only isolation reset for the non-secret dismissal marker under test, never a secret (see src/components/freeaccess/freeAccessDismissal.ts's own comment).
     window.localStorage.clear();
   });
 
