@@ -5,16 +5,23 @@
  * PCA-PA-2/Billing Core pieces verbatim (`EntitlementRepository.getDefaults`,
  * `PlatformAdminEntitlementService.updateFreeStarterDefaults`,
  * `MySqlMarketMappingRepository`, `billing/currency.ts`'s
- * `listCurrencyMetadata`) -- no new settings storage, no secret-value
- * read/write of any kind (no provider-credential or settlement-account
- * field is exposed here at all -- Section 14/16's "sensitive settings are
- * write-only, never plaintext-readable" scope is entirely out of this
- * lane; nothing in this file even reaches those tables).
+ * `listCurrencyMetadata`).
+ *
+ * PCA-ADD-PA-043/044 (Writer65) UPDATE: the remaining named settings
+ * categories (branding/support metadata, payment-provider configuration-
+ * by-reference, notification settings, maintenance-mode, feature flags)
+ * are now served below via `PlatformAdminSettingsService`, composing the
+ * new `platform_admin_settings` table (migration 0016). PAYMENT_PROVIDER
+ * is the one sensitive category -- every read of it returns
+ * `MaskedSettingView` only (no raw value field exists on that type at
+ * all), satisfying PCA-ADD-PA-044's write-only/masked-read rule.
  *
  * Read gate: `VIEW_SUPPORT_ACCOUNT_METADATA` (ALLOW for every role).
  * Mutation gate: `ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS`
  * (APP_OWNER/PLATFORM_ADMIN only per Section 3.7) for the market-mapping
- * upsert; the FREE_STARTER defaults mutation reuses
+ * upsert and every non-sensitive settings category;
+ * `ADMINISTER_SENSITIVE_PLATFORM_SETTINGS` (APP_OWNER only) for
+ * PAYMENT_PROVIDER; the FREE_STARTER defaults mutation reuses
  * `PlatformAdminEntitlementService.updateFreeStarterDefaults`'s own
  * internal `ADMINISTER_ENTITLEMENT_QUANTITY` gate unchanged.
  */
@@ -31,6 +38,9 @@ import { MySqlMarketMappingRepository, isCommercialMarket } from '../../../billi
 import { runInTransaction } from '../../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../../../platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
 import { dateToJson } from '../../../platformadmin/api/dto.js';
+import { MySqlPlatformAdminSettingsRepository } from '../../../platformadmin/settings/PlatformAdminSettingsRepository.js';
+import type { PlatformAdminSettingCategory } from '../../../platformadmin/settings/PlatformAdminSettingsRepository.js';
+import { PlatformAdminSettingsService, PlatformAdminSettingsError } from '../../../platformadmin/settings/PlatformAdminSettingsService.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminSettingsRoutesDeps {
@@ -41,7 +51,30 @@ export interface PlatformAdminSettingsRoutesDeps {
 }
 
 const MAX_BODY_BYTES = 1024;
+const SETTINGS_MAX_BODY_BYTES = 8 * 1024;
 const COUNTRY_CODE_PATTERN = /^[A-Za-z]{2}$/;
+const SETTING_KEY_PATTERN = /^[a-z][a-z0-9_.]{0,126}[a-z0-9]$/;
+const SETTINGS_CATEGORIES: readonly PlatformAdminSettingCategory[] = ['BRANDING', 'PAYMENT_PROVIDER', 'NOTIFICATION', 'MAINTENANCE', 'FEATURE_FLAG'];
+
+function isSettingCategory(value: unknown): value is PlatformAdminSettingCategory {
+  return typeof value === 'string' && (SETTINGS_CATEGORIES as readonly string[]).includes(value);
+}
+
+function mapSettingsError(error: unknown, reply: FastifyReply): boolean {
+  if (error instanceof PlatformAdminSettingsError) {
+    if (error.code === 'FORBIDDEN') {
+      reply.code(403).send({ error: 'forbidden' });
+      return true;
+    }
+    if (error.code === 'NOT_FOUND') {
+      reply.code(404).send({ error: 'not_found' });
+      return true;
+    }
+    reply.code(400).send({ error: 'invalid_request' });
+    return true;
+  }
+  return false;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -52,6 +85,7 @@ export function registerPlatformAdminSettingsRoutes(app: FastifyInstance, deps: 
   const readLimiter = deps.rateLimiter({ windowMs: 60_000, max: 120, bucket: 'platform-admin-settings-read' });
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'platform-admin-settings-mutate' });
   const marketMappingRepository = new MySqlMarketMappingRepository();
+  const settingsService = new PlatformAdminSettingsService(new MySqlPlatformAdminSettingsRepository());
 
   function requireView(request: FastifyRequest, reply: FastifyReply): boolean {
     const roles = request.platformAdminRoles ?? [];
@@ -136,6 +170,80 @@ export function registerPlatformAdminSettingsRoutes(app: FastifyInstance, deps: 
         });
       });
       return reply.code(200).send({ countryCode: countryCode.toUpperCase(), commercialMarket });
+    },
+  );
+
+  // ---- PCA-ADD-PA-043/044 (Writer65): remaining settings categories ----
+
+  function settingsActor(request: FastifyRequest) {
+    return { adminId: request.platformAdminId as string, roles: request.platformAdminRoles ?? [] };
+  }
+
+  app.get(
+    '/platform-admin/settings/category/:category',
+    { preHandler: [readLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { category } = request.params as { category?: string };
+      if (!isSettingCategory(category)) return reply.code(400).send({ error: 'invalid_request' });
+      try {
+        const items = await settingsService.listByCategory(settingsActor(request), category);
+        return reply.code(200).send({
+          items: items.map((item) =>
+            'maskedDisplay' in item
+              ? { settingKey: item.settingKey, category: item.category, maskedDisplay: item.maskedDisplay, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId }
+              : { settingKey: item.settingKey, category: item.category, value: item.value, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId },
+          ),
+        });
+      } catch (error) {
+        if (mapSettingsError(error, reply)) return;
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/platform-admin/settings/key/:settingKey',
+    { preHandler: [readLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { settingKey } = request.params as { settingKey?: string };
+      if (typeof settingKey !== 'string' || !SETTING_KEY_PATTERN.test(settingKey)) return reply.code(400).send({ error: 'invalid_request' });
+      try {
+        const item = await settingsService.get(settingsActor(request), settingKey);
+        if (!item) return reply.code(404).send({ error: 'not_found' });
+        return reply.code(200).send(
+          'maskedDisplay' in item
+            ? { settingKey: item.settingKey, category: item.category, maskedDisplay: item.maskedDisplay, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId }
+            : { settingKey: item.settingKey, category: item.category, value: item.value, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId },
+        );
+      } catch (error) {
+        if (mapSettingsError(error, reply)) return;
+        throw error;
+      }
+    },
+  );
+
+  app.put(
+    '/platform-admin/settings/key/:settingKey',
+    { bodyLimit: SETTINGS_MAX_BODY_BYTES, preHandler: [mutateLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { settingKey } = request.params as { settingKey?: string };
+      if (typeof settingKey !== 'string' || !SETTING_KEY_PATTERN.test(settingKey)) return reply.code(400).send({ error: 'invalid_request' });
+      const body = request.body;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      const { category, value, maskedDisplay } = body;
+      if (!isSettingCategory(category)) return reply.code(400).send({ error: 'invalid_request' });
+      if (maskedDisplay !== undefined && maskedDisplay !== null && typeof maskedDisplay !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+      try {
+        const item = await settingsService.put(settingsActor(request), settingKey, category, value, (maskedDisplay as string | null | undefined) ?? null);
+        return reply.code(200).send(
+          'maskedDisplay' in item
+            ? { settingKey: item.settingKey, category: item.category, maskedDisplay: item.maskedDisplay, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId }
+            : { settingKey: item.settingKey, category: item.category, value: item.value, updatedAt: dateToJson(item.updatedAt), updatedByAdminId: item.updatedByAdminId },
+        );
+      } catch (error) {
+        if (mapSettingsError(error, reply)) return;
+        throw error;
+      }
     },
   );
 }
