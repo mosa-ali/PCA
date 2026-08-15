@@ -57,6 +57,18 @@ class EnrollmentCoordinator(
     private val _state = MutableStateFlow(restoreInitialState())
     val state: StateFlow<EnrollmentState> = _state.asStateFlow()
 
+    /**
+     * PCA-FR-140/141: this device's own DSK/DEK fingerprints, computed locally
+     * ([computeKeyFingerprint]) immediately after [beginBootstrap] generates the key pairs --
+     * before either public key is ever sent over the network. A separate StateFlow from
+     * [state] on purpose: it is a SAS-style display concern orthogonal to the enrollment
+     * lifecycle itself (it stays populated through PairingPending, where the parent-visible
+     * fingerprint-comparison UI matters most, and is cleared back to null on
+     * [submitInvitationLink] for a fresh attempt/device).
+     */
+    private val _keyFingerprints = MutableStateFlow<DeviceKeyFingerprints?>(null)
+    val keyFingerprints: StateFlow<DeviceKeyFingerprints?> = _keyFingerprints.asStateFlow()
+
     private var rawInvitationToken: String? = null
 
     private fun restoreInitialState(): EnrollmentState {
@@ -93,6 +105,9 @@ class EnrollmentCoordinator(
             return
         }
         rawInvitationToken = parsed.rawInvitationToken
+        // A fresh attempt (including the add-another-device path) must never show a stale
+        // fingerprint from a PRIOR device's key pair while this one is still being prepared.
+        _keyFingerprints.value = null
         _state.value = EnrollmentState.InvitationReady(parsed.serverBaseUrl)
     }
 
@@ -123,6 +138,14 @@ class EnrollmentCoordinator(
             _state.value = EnrollmentState.CryptoReviewRequired
             return
         }
+
+        // PCA-FR-140/141: computed from the public keys ALREADY generated above, before either is
+        // sent anywhere -- purely a local, deterministic function of key material this device
+        // already holds. Never derived from (or dependent on) a network response.
+        _keyFingerprints.value = DeviceKeyFingerprints(
+            signingKeyFingerprint = computeKeyFingerprint(signingKey.publicKeyBase64),
+            encryptionKeyFingerprint = computeKeyFingerprint(encryptionKey.publicKeyBase64),
+        )
 
         val pending = PendingEnrollmentAttempt(
             attemptId = AttemptIdentifiers.newAttemptId(),

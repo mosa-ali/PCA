@@ -199,6 +199,29 @@
     <string name="enrollment_crypto_review_required">This build isn\'t approved for real device setup yet (development mode).</string>
     <string name="enrollment_revoked">This device\'s access has been removed. Ask a parent for a new invitation.</string>
 
+    <!-- PCA-FR-007/142: informed-consent summary, shown before enrollment starts on this device
+         (and again for every additional device this same flow enrolls). Distinct from the
+         ordinary progress screens above. -->
+    <string name="enrollment_consent_title">Before you continue</string>
+    <string name="enrollment_consent_intro">Setting up this device gives a parent ongoing parental-control management over it. Here is what that means:</string>
+    <string name="enrollment_consent_monitored_heading">A parent will be able to see:</string>
+    <string name="enrollment_consent_monitored_item_1">Which app/website categories are visited (not full browsing history or message content)</string>
+    <string name="enrollment_consent_monitored_item_2">Screen time and break status</string>
+    <string name="enrollment_consent_monitored_item_3">General device/location status where location is enabled</string>
+    <string name="enrollment_consent_monitored_item_4">Protection status and requests you send (more time, unblock, policy changes)</string>
+    <string name="enrollment_consent_not_monitored_heading">A parent will NOT see:</string>
+    <string name="enrollment_consent_not_monitored_item_1">The content of your messages or calls</string>
+    <string name="enrollment_consent_not_monitored_item_2">Camera images or a stored history of exact browsing/search text</string>
+    <string name="enrollment_consent_not_monitored_item_3">Your precise live location unless that specific feature is separately enabled</string>
+    <string name="enrollment_consent_emergency_note">Emergency calling and emergency help always stay available, regardless of any restriction.</string>
+    <string name="enrollment_consent_accept_button">I understand, continue</string>
+
+    <!-- PCA-FR-140/141: local device-key fingerprint confirmation, shown while waiting for parent pairing confirmation. -->
+    <string name="enrollment_fingerprint_confirmation_title">Confirm this device\'s key</string>
+    <string name="enrollment_fingerprint_confirmation_body">Compare these codes against what the parent app shows for this device before confirming pairing there.</string>
+    <string name="enrollment_dsk_fingerprint_label">Signing key: %1$s</string>
+    <string name="enrollment_dek_fingerprint_label">Encryption key: %1$s</string>
+
     <!-- Prayer names (doc 20 Section 5): presentation-layer display strings only; calculation
          logic uses PrayerName.kt's own fields (untouched by PCA-16). These are what a screen
          reader/UI renders. -->

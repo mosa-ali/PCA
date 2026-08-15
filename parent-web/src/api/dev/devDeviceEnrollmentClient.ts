@@ -60,7 +60,11 @@ export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
       openedAt: null,
+      installRequiredAt: null,
+      appInstalledAt: null,
+      authorizationRequiredAt: null,
       redeemedAt: null,
+      expiredAt: null,
       revokedAt: null,
       rawTokenIssuedOnce: rawToken,
     };

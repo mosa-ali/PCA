@@ -28,9 +28,11 @@ class EnrollmentActivity : ComponentActivity() {
 
         setContent {
             val state by coordinator.state.collectAsState()
+            val keyFingerprints by coordinator.keyFingerprints.collectAsState()
             MaterialTheme {
                 EnrollmentScreen(
                     state = state,
+                    keyFingerprints = keyFingerprints,
                     onLinkSubmitted = { link -> coordinator.submitInvitationLink(link) },
                     onContinue = { lifecycleScope.launch { coordinator.beginBootstrap() } },
                     // PCA-ENROLLMENT-RUNTIME-2: one explicit, human-directed action covers both

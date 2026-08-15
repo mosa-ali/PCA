@@ -33,7 +33,12 @@ export interface InvitationDto {
   createdAt: string;
   expiresAt: string;
   openedAt: string | null;
+  /** PCA-ADD-ENR-005 (Addendum 001 8-state lifecycle): real, persisted, audited transitions -- see InvitationService.ts. */
+  installRequiredAt: string | null;
+  appInstalledAt: string | null;
+  authorizationRequiredAt: string | null;
   redeemedAt: string | null;
+  expiredAt: string | null;
   revokedAt: string | null;
 }
 

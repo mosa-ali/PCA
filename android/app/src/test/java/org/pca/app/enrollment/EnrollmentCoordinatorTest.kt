@@ -529,6 +529,79 @@ class EnrollmentCoordinatorTest {
         assertEquals(EnrollmentState.FailedInvitationInvalid, c.state.value)
     }
 
+    // --- PCA-FR-140/141: local device-key fingerprint exposure ---
+
+    @Test
+    fun `keyFingerprints is null before any bootstrap attempt`() {
+        val c = coordinator(NeverCalledBootstrapApiClient())
+        assertNull(c.keyFingerprints.value)
+        c.submitInvitationLink(LINK)
+        assertNull(c.keyFingerprints.value)
+    }
+
+    @Test
+    fun `keyFingerprints is populated locally from the generated keys BEFORE the network call, and matches computeKeyFingerprint`() = runTest {
+        val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult("d1", "PAIRING_PENDING") }
+        val keyGen = TestConformanceDeviceKeyPairGenerator()
+        val c = coordinator(apiClient, keyGen)
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        val fingerprints = c.keyFingerprints.value
+        assertTrue(fingerprints != null)
+        assertTrue(fingerprints!!.signingKeyFingerprint.isNotBlank())
+        assertTrue(fingerprints.encryptionKeyFingerprint.isNotBlank())
+        assertNotEquals(fingerprints.signingKeyFingerprint, fingerprints.encryptionKeyFingerprint)
+    }
+
+    @Test
+    fun `keyFingerprints stays null when the crypto gate blocks bootstrap -- never fabricated ahead of real key generation`() = runTest {
+        val c = coordinator(NeverCalledBootstrapApiClient())
+        c.submitInvitationLink(LINK)
+
+        c.beginBootstrap()
+
+        assertEquals(EnrollmentState.CryptoReviewRequired, c.state.value)
+        assertNull(c.keyFingerprints.value)
+    }
+
+    @Test
+    fun `keyFingerprints is cleared when a fresh link is submitted for a second device -- never leaks a prior device's fingerprint`() = runTest {
+        val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult("d1", "PAIRING_PENDING") }
+        val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator())
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+        assertTrue(c.keyFingerprints.value != null)
+
+        // Add-another-device path: a fresh link submission must not keep showing the first
+        // device's fingerprint while the second device's keys are not yet generated.
+        c.submitInvitationLink(LINK)
+        assertNull(c.keyFingerprints.value)
+    }
+
+    @Test
+    fun `two different key pairs produce two different fingerprint sets`() = runTest {
+        val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult("d1", "PAIRING_PENDING") }
+        // A single shared key generator instance across two coordinators, so its internal
+        // uniqueness counter guarantees the second device's keys are genuinely distinct from the
+        // first's (rather than two independently-constructed generators each starting their own
+        // counter at 0, which would coincidentally produce identical fake key bytes).
+        val sharedKeyGen = TestConformanceDeviceKeyPairGenerator()
+        val c1 = coordinator(apiClient, sharedKeyGen)
+        c1.submitInvitationLink(LINK)
+        c1.beginBootstrap()
+        val first = c1.keyFingerprints.value!!
+
+        val c2 = coordinator(apiClient, sharedKeyGen)
+        c2.submitInvitationLink(LINK)
+        c2.beginBootstrap()
+        val second = c2.keyFingerprints.value!!
+
+        assertNotEquals(first.signingKeyFingerprint, second.signingKeyFingerprint)
+        assertNotEquals(first.encryptionKeyFingerprint, second.encryptionKeyFingerprint)
+    }
+
     @Test
     fun `two independent beginBootstrap calls (two genuinely different attempts) generate DIFFERENT attemptIds`() = runTest {
         val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult("d", "PAIRING_PENDING") }

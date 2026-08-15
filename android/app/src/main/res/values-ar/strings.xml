@@ -203,6 +203,25 @@
     <string name="enrollment_crypto_review_required">هذا الإصدار غير معتمد لإعداد جهاز حقيقي بعد (وضع التطوير).</string>
     <string name="enrollment_revoked">تمت إزالة وصول هذا الجهاز. اطلب دعوة جديدة من أحد الوالدين.</string>
 
+    <string name="enrollment_consent_title">قبل أن تتابع</string>
+    <string name="enrollment_consent_intro">إعداد هذا الجهاز يمنح أحد الوالدين إدارة رقابة أبوية مستمرة عليه. إليك ما يعنيه ذلك:</string>
+    <string name="enrollment_consent_monitored_heading">سيتمكن أحد الوالدين من رؤية:</string>
+    <string name="enrollment_consent_monitored_item_1">فئات التطبيقات/المواقع التي تتم زيارتها (وليس سجل التصفح الكامل أو محتوى الرسائل)</string>
+    <string name="enrollment_consent_monitored_item_2">وقت الشاشة وحالة الاستراحة</string>
+    <string name="enrollment_consent_monitored_item_3">حالة الجهاز/الموقع العامة عند تفعيل خاصية الموقع</string>
+    <string name="enrollment_consent_monitored_item_4">حالة الحماية والطلبات التي ترسلها (وقت إضافي، إلغاء حظر، تغييرات في السياسة)</string>
+    <string name="enrollment_consent_not_monitored_heading">لن يرى أحد الوالدين:</string>
+    <string name="enrollment_consent_not_monitored_item_1">محتوى رسائلك أو مكالماتك</string>
+    <string name="enrollment_consent_not_monitored_item_2">صور الكاميرا أو سجلاً محفوظاً لنص التصفح/البحث الدقيق</string>
+    <string name="enrollment_consent_not_monitored_item_3">موقعك المباشر الدقيق ما لم يتم تفعيل هذه الخاصية تحديداً بشكل منفصل</string>
+    <string name="enrollment_consent_emergency_note">تبقى المكالمات الطارئة والمساعدة الطارئة متاحة دائماً، بغض النظر عن أي قيود.</string>
+    <string name="enrollment_consent_accept_button">فهمت، متابعة</string>
+
+    <string name="enrollment_fingerprint_confirmation_title">تأكيد مفتاح هذا الجهاز</string>
+    <string name="enrollment_fingerprint_confirmation_body">قارن هذه الرموز مع ما يعرضه تطبيق الوالدين لهذا الجهاز قبل تأكيد الإقران هناك.</string>
+    <string name="enrollment_dsk_fingerprint_label">مفتاح التوقيع: %1$s</string>
+    <string name="enrollment_dek_fingerprint_label">مفتاح التشفير: %1$s</string>
+
     <!-- Reuses the exact same Arabic text already present in PrayerName.kt's arabicName field
          (not re-authored); see PrayerDisplayNames.kt. -->
     <string name="prayer_name_fajr">الفجر</string>
