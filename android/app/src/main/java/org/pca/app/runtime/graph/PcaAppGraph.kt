@@ -57,9 +57,14 @@ import org.pca.app.platform.DevicePolicyProtectionCapabilities
 import org.pca.app.platform.StandardDevicePolicyCapabilitySource
 import org.pca.app.platform.StandardLocationCapabilitySource
 import org.pca.app.platform.StandardUsageObservationSource
+import org.pca.app.platform.UsageAccessAlertNotificationDelivery
+import org.pca.app.platform.UsageAccessStateTracker
 import org.pca.app.platform.proximity.HardwareProximitySource
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
+import org.pca.app.runtime.background.BackgroundExecutionScheduler
+import org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler
+import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
 import org.pca.app.runtime.PcaRuntime
@@ -78,6 +83,7 @@ import org.pca.app.runtime.port.OfflineFamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.location.LocationSampleRecorder
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
+import org.pca.app.runtime.prayer.PrayerReminderIntents
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
@@ -150,6 +156,27 @@ class PcaAppGraph private constructor(
     val usageObservationSource = StandardUsageObservationSource(context, monotonicTimeSource, wallClockTimeSource)
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(StandardDevicePolicyCapabilitySource(context))
+
+    /** PCA-FR-081/PCA-FR-085 (WRITER68): the real evidence-backed usage-access history tracker
+     * (previously constructed nowhere in production -- see its own doc comment) plus the one
+     * degradation-response producer built on top of it. [usageAccessAlertNotificationDelivery] is
+     * the local notification half; [usageAccessDegradationMonitor] is the decision layer that ties
+     * tracker state to both that notification and a real [org.pca.app.persistence.entity.TamperEventEntity]
+     * row on REVOKED. See [UsageAccessDegradationMonitor]'s own doc comment for the full picture. */
+    val usageAccessStateTracker = UsageAccessStateTracker(usageObservationSource, monotonicTimeSource)
+    private val usageAccessAlertNotificationDelivery = UsageAccessAlertNotificationDelivery(context)
+    val usageAccessDegradationMonitor = UsageAccessDegradationMonitor(
+        tracker = usageAccessStateTracker,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
+        wallClockTimeSource = wallClockTimeSource,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { state -> usageAccessAlertNotificationDelivery.deliver(state) },
+    )
+
+    /** PCA-AND-002/PCA-NFR-033 (WRITER68): the app's first real background-execution primitive
+     * (`WorkManager`) -- see [UsageIngestionWorker]'s own doc comment. Started (idempotently) from
+     * [start]. */
+    val backgroundExecutionScheduler: BackgroundExecutionScheduler = WorkManagerBackgroundExecutionScheduler(context)
 
     /** PCA-RUNTIME-2R1: this device's PCA-enrolled identity authority -- separate from
      * [bootInstanceSource] and never derived from `ANDROID_ID`. Backed by the same durable,
@@ -352,45 +379,68 @@ class PcaAppGraph private constructor(
     )
 
     /**
-     * Targets this app's own package only (no explicit receiver component) -- the concrete
-     * broadcast receiver that turns this into a user-visible reminder is a separate feature slice
-     * this graph does not own (Section 2/3 note: "avoid a huge service locator" / this class only
-     * owns OS alarm plumbing, not reminder UI). A future receiver registered for
-     * [PRAYER_REMINDER_ACTION] in the manifest starts receiving these without any change here.
+     * PCA-FR-073: [org.pca.app.runtime.prayer.PrayerReminderReceiver] is now the manifest-
+     * registered receiver that turns this into a real, user-visible notification -- see its own
+     * doc comment. This graph still does not construct or reference that receiver directly (it
+     * only owns OS alarm plumbing, not reminder UI/delivery); [PrayerReminderIntents] is the one
+     * shared contract object both ends depend on, so the action string/extra key can never drift
+     * out of sync between sender and receiver.
      */
-    private fun prayerReminderIntent(prayer: PrayerName): Intent =
-        Intent(PRAYER_REMINDER_ACTION).apply {
-            setPackage(context.packageName)
-            putExtra(PRAYER_EXTRA_NAME, prayer.name)
-        }
+    private fun prayerReminderIntent(prayer: PrayerName): Intent = PrayerReminderIntents.build(context, prayer)
 
     /** Starts every platform observer this graph owns, plus [runtime] itself. Idempotent (both
      * [runtime.start] and hardware sensor registration are safe to call more than once) -- Section
      * 13/14: process restart or being called again after a configuration change must never
-     * double-register a sensor listener or double-launch the tick loop. */
+     * double-register a sensor listener or double-launch the tick loop.
+     *
+     * PCA-AND-RUNTIME-PLATFORM-1 (WRITER68): also enqueues the real [WorkManager]-backed periodic
+     * safety net ([backgroundExecutionScheduler]) so ingestion keeps resuming even across process
+     * death, not only while this in-process loop happens to be alive -- see
+     * [org.pca.app.runtime.background.UsageIngestionWorker]'s own doc comment. `enqueueUniquePeriodicWork`
+     * with [androidx.work.ExistingPeriodicWorkPolicy.KEEP] makes this call idempotent across
+     * repeated `start()` calls, same discipline as the rest of this method. */
     fun start() {
         hardwareProximitySource.start()
         runtime.start()
         startUsageLocationPolling()
+        backgroundExecutionScheduler.scheduleUsageIngestion()
     }
 
-    /** PCA-ANDROID-USAGE-LOCATION-1 Coordinator glue: drives [usageSessionRecorder]/
-     * [locationSampleRecorder] on a conservative, battery-appropriate interval -- far slower than
-     * [PcaRuntime]'s own screen-time tick, since neither usage-session boundaries nor location
-     * need second-level freshness. Safe to call repeatedly (both recorders are internally
-     * idempotent against duplicate/out-of-order events); each poll is independent and a failure
-     * in one never cancels the loop, matching this app's "never crash the caller" tick discipline. */
+    /** PCA-ANDROID-USAGE-LOCATION-1 Coordinator glue: drives [runUsageLocationIngestionCycle] on a
+     * conservative, battery-appropriate interval -- far slower than [PcaRuntime]'s own screen-time
+     * tick, since neither usage-session boundaries nor location need second-level freshness. This
+     * is the FOREGROUND/in-process half of PCA-AND-002's collection path; [backgroundExecutionScheduler]
+     * (started alongside this in [start]) is the process-death-resilient half -- see
+     * [org.pca.app.runtime.background.UsageIngestionWorker]. */
     private fun startUsageLocationPolling() {
         coroutineScope.launch {
             while (true) {
-                runCatching { usageSessionRecorder.poll() }
-                val deviceId = enrolledDeviceIdOrNull()
-                if (deviceId != null) {
-                    runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
-                }
+                runUsageLocationIngestionCycle()
                 delay(USAGE_LOCATION_POLL_INTERVAL_MILLIS)
             }
         }
+    }
+
+    /**
+     * One ingestion cycle: polls [usageSessionRecorder], captures a [locationSampleRecorder]
+     * sample, and re-evaluates [usageAccessDegradationMonitor]. Extracted to its own public suspend
+     * function (rather than inlined only in [startUsageLocationPolling]'s loop) so
+     * [org.pca.app.runtime.background.UsageIngestionWorker] can call the EXACT same production
+     * logic from a `WorkManager` job -- one real implementation, two callers (in-process loop for
+     * freshness while running, `WorkManager` for resilience across process death), never two
+     * parallel copies that could drift. Safe to call repeatedly and safe to call concurrently with
+     * the in-process loop: [usageSessionRecorder]/[locationSampleRecorder] are both internally
+     * idempotent against duplicate/out-of-order events (see their own doc comments), and each step
+     * here is independently `runCatching`-guarded so a failure in one never skips the others,
+     * matching this app's "never crash the caller" tick discipline.
+     */
+    suspend fun runUsageLocationIngestionCycle() {
+        runCatching { usageSessionRecorder.poll() }
+        val deviceId = enrolledDeviceIdOrNull()
+        if (deviceId != null) {
+            runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
+        }
+        runCatching { usageAccessDegradationMonitor.checkAndHandle() }
     }
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the
@@ -403,8 +453,6 @@ class PcaAppGraph private constructor(
     }
 
     companion object {
-        private const val PRAYER_REMINDER_ACTION = "org.pca.app.action.PRAYER_REMINDER"
-        private const val PRAYER_EXTRA_NAME = "prayer_name"
         private const val USAGE_LOCATION_POLL_INTERVAL_MILLIS = 5 * 60 * 1000L
 
         @Volatile private var instance: PcaAppGraph? = null
