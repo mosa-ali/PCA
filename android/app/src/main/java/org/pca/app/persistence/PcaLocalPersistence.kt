@@ -5,6 +5,7 @@ import org.pca.app.persistence.crypto.AndroidKeystoreLocalRecordCipher
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.repository.BreakSessionRepository
 import org.pca.app.persistence.repository.FamilyMemberRepository
+import org.pca.app.persistence.repository.InstalledAppEventRepository
 import org.pca.app.persistence.repository.LocationPointRepository
 import org.pca.app.persistence.repository.PolicyReceiptRepository
 import org.pca.app.persistence.repository.PolicySnapshotRepository
@@ -60,6 +61,9 @@ class PcaLocalPersistence private constructor(
     val tamperEventRepository = TamperEventRepository(database.tamperEventDao())
     val policySnapshotRepository = PolicySnapshotRepository(database.policySnapshotDao(), cipher)
     val policyReceiptRepository = PolicyReceiptRepository(database.policyReceiptDao())
+    /** PCA-FR-045/PCA-FR-131 (WRITER69): local record of observed app-install events -- see
+     * [org.pca.app.persistence.entity.InstalledAppEventEntity]'s own doc comment for scope. */
+    val installedAppEventRepository = InstalledAppEventRepository(database.installedAppEventDao())
     val syncOutboxRepository = SyncOutboxRepository(database.syncOutboxDao(), cipher)
     val syncReceiptRepository = SyncReceiptRepository(database.syncReceiptDao())
     val retentionEngine = RetentionEngine(database)

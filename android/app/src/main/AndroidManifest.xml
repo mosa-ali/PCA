@@ -121,6 +121,24 @@
             </intent-filter>
         </receiver>
 
+        <!-- PCA-FR-045/PCA-FR-131 (WRITER69, additive-only): observes the documented
+             PACKAGE_ADDED system broadcast to make newly installed apps visible to the
+             parent-facing app list; see org.pca.app.runtime.installobserver.InstalledAppEventReceiver's
+             own doc comment for the deliberately conservative scope (visibility only, no
+             install-blocking approval gate; doc 03 marks that fuller workflow PROPOSED, not
+             committed). exported="true" and the intent-filter's data scheme are required because
+             PACKAGE_ADDED is an OS-sent system broadcast, not a self-sent one (contrast the
+             PrayerReminderReceiver above); the receiver itself still verifies intent.action, so
+             nothing but real PACKAGE_ADDED broadcasts for real package data URIs ever reach it. -->
+        <receiver
+            android:name=".runtime.installobserver.InstalledAppEventReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
         <!-- PCA-AND-RUNTIME-PLATFORM-1 (WRITER68): periodic usage-ingestion background job so
              collection survives process death, not just foreground/in-process execution; see
              org.pca.app.runtime.background.UsageIngestionWorker's own doc comment. WorkManager

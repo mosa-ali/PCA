@@ -11,6 +11,7 @@ import org.pca.app.persistence.entity.PrayerDeliveryState
 import org.pca.app.persistence.entity.ProximityBucket
 import org.pca.app.persistence.entity.SourceConfidence
 import org.pca.app.persistence.repository.BreakSessionRepository
+import org.pca.app.persistence.repository.InstalledAppEventRepository
 import org.pca.app.persistence.repository.PrayerReminderEventRepository
 import org.pca.app.persistence.repository.ProximityEventRepository
 import org.pca.app.persistence.repository.UsageSessionRepository
@@ -93,5 +94,40 @@ class ProducerAdapterRepositoryTest {
         val stored = repo.getForDevice("device-1")
         assertEquals(1, stored.size)
         assertEquals(PrayerDeliveryState.DELIVERED, stored.single().deliveryState)
+    }
+
+    @Test
+    fun `installed app event record is idempotent on id and preserves package name and label`() = runTest {
+        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+
+        repo.record("install-1", "device-1", "com.example.newapp", "New App", 1000L, 1500L)
+        repo.record("install-1", "device-1", "com.example.newapp", "New App", 1000L, 1500L)
+
+        val stored = repo.getForDevice("device-1")
+        assertEquals(1, stored.size)
+        assertEquals("com.example.newapp", stored.single().packageName)
+        assertEquals("New App", stored.single().appLabel)
+    }
+
+    @Test
+    fun `installed app event tolerates a null app label`() = runTest {
+        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+
+        repo.record("install-2", "device-1", "com.example.gone", null, 1000L, 1500L)
+
+        val stored = repo.getForDevice("device-1").single()
+        assertEquals(null, stored.appLabel)
+    }
+
+    @Test
+    fun `installed app events are readable in reverse chronological order by install time`() = runTest {
+        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+
+        repo.record("install-early", "device-1", "app-a", "A", 1000L, 1000L)
+        repo.record("install-late", "device-1", "app-b", "B", 5000L, 5000L)
+
+        val ordered = repo.getForDevice("device-1")
+        assertEquals("install-late", ordered[0].id)
+        assertEquals("install-early", ordered[1].id)
     }
 }

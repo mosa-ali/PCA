@@ -125,6 +125,7 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
         record("BreakSession", database.breakSessionDao().deleteOlderThanForDevice(ctx.deviceId, cutoffMillis))
         record("ProximityEvent", database.proximityEventDao().deleteOlderThanForDevice(ctx.deviceId, cutoffMillis))
         record("PrayerReminderEvent", database.prayerReminderEventDao().deleteOlderThanForDevice(ctx.deviceId, cutoffMillis))
+        record("InstalledAppEvent", database.installedAppEventDao().deleteOlderThanForDevice(ctx.deviceId, cutoffMillis))
 
         return receipts
     }
