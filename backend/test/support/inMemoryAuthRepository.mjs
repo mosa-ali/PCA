@@ -48,5 +48,24 @@ export function createInMemoryAuthRepository() {
         if (account.accountId === accountId) account.disabledAt = disabledAt;
       }
     },
+
+    // Test-only helper, not part of the AuthRepository interface: added for
+    // backend/src/parentaccount/**'s revoke-all-sessions test coverage
+    // (PCA-AUTH-SESSION-1) -- mirrors the narrowly-scoped
+    // `UPDATE service_sessions SET revoked_at=? WHERE account_id=? AND
+    // revoked_at IS NULL` MySqlParentAccountRepository.revokeAllServiceSessionsFor
+    // performs directly against the real service_sessions table in
+    // production, without this file exposing a new production-facing
+    // AuthRepository method.
+    _revokeAllSessionsForAccountTest(accountId, revokedAt) {
+      let count = 0;
+      for (const session of sessionsByTokenHash.values()) {
+        if (session.accountId === accountId && !session.revokedAt) {
+          session.revokedAt = revokedAt;
+          count += 1;
+        }
+      }
+      return count;
+    },
   };
 }

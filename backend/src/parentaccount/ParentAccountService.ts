@@ -1,0 +1,320 @@
+import { randomUUID, createHash } from 'node:crypto';
+import type { AuthService } from '../auth/AuthService.js';
+import type { OpaqueFamilyId, OpaqueDeviceId } from '../familytrustset/types.js';
+import type { FamilyOwnerAttestationChainEngine } from '../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import { canonicalizeGenesisAnchor, canonicalizeOwnerAttestation } from '../familycommercial/authority/canonicalize.js';
+import { FAMILY_AUTHORITY_PROTOCOL_VERSION, OWNER_ATTESTATION_DOMAIN } from '../familycommercial/authority/types.js';
+import type { FamilyAuthorityGenesisAnchor, FamilyOwnerAttestation } from '../familycommercial/authority/types.js';
+import { generateEphemeralGenesisDeviceKeyPair, signWithGenesisDeviceKey } from './genesisDeviceSigner.js';
+import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
+import { hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
+import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
+import { MAX_VERIFICATION_ATTEMPTS_PER_CODE, VERIFICATION_CODE_TTL_MS, computeFreeAccessExpiry, resolveFreeAccessDefaults } from './policy.js';
+import type { ParentAccountRepository } from './ParentAccountRepository.js';
+import type { EmailSenderPort } from './EmailSenderPort.js';
+import type { LoginOutcome, ParentAccountId, RegisterOutcome, SessionReadOutcome, VerifyEmailOutcome } from './types.js';
+
+export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
+
+/**
+ * Deliberately ONE generic code/message per failure category -- mirrors
+ * AuthService.AuthError/PlatformAdminAuthService.PlatformAdminAuthError
+ * exactly. UNAUTHORIZED covers every login/verify-email failure mode
+ * (unknown email, wrong password, unverified account, wrong/expired/
+ * already-consumed code) -- the caller can never distinguish which.
+ */
+export class ParentAccountError extends Error {
+  readonly code: ParentAccountErrorCode;
+  constructor(code: ParentAccountErrorCode) {
+    super(code);
+    this.name = 'ParentAccountError';
+    this.code = code;
+  }
+}
+
+const GENESIS_DEVICE_ATTESTATION_TTL_MS = 24 * 60 * 60 * 1000; // 24h -- comfortably inside FamilyOwnerAttestationChainEngine's sane-TTL bounds
+
+export interface ParentAccountServiceDeps {
+  repository: ParentAccountRepository;
+  authService: AuthService;
+  emailSender: EmailSenderPort;
+  /**
+   * Injected so production (Coordinator-wired, see main.ts's own existing
+   * FamilyOwnerAttestationChainEngine construction) and tests can supply
+   * different DeviceSignatureVerifier policies -- this service never
+   * constructs its own engine instance. `undefined` means "genesis
+   * capability not wired" (treated identically to a genesis attempt that
+   * returns INVALID_PROOF/AUTHORITY_UNAVAILABLE: identity/session issuance
+   * still succeeds, familyId is simply null).
+   */
+  familyGenesisEngine?: FamilyOwnerAttestationChainEngine;
+  now?: () => Date;
+}
+
+/**
+ * Orchestrates PCA-DEC-026's self-service registration/verification/login
+ * flow. Deliberately delegates ALL session token issuance/validation/
+ * single-token revocation to the EXISTING, unmodified
+ * backend/src/auth/AuthService -- see PCA_IMPL_DECISION_003's "no new
+ * session-issuance contract is invented at the AuthService layer; a new
+ * identity-producing step is added upstream of it." accountReferenceHash is
+ * always sha256(this domain's own accountId), never derived from email or
+ * password.
+ */
+export class ParentAccountService {
+  private readonly repository: ParentAccountRepository;
+  private readonly authService: AuthService;
+  private readonly emailSender: EmailSenderPort;
+  private readonly familyGenesisEngine: FamilyOwnerAttestationChainEngine | undefined;
+  private readonly now: () => Date;
+
+  constructor(deps: ParentAccountServiceDeps) {
+    this.repository = deps.repository;
+    this.authService = deps.authService;
+    this.emailSender = deps.emailSender;
+    this.familyGenesisEngine = deps.familyGenesisEngine;
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  /**
+   * PCA-ADD-IDENT-004: the server never trusts a client-asserted
+   * password===passwordConfirmation match beyond re-checking it itself.
+   * Response is IDENTICAL ({status:'PENDING_VERIFICATION'}) whether the
+   * email was new, already PENDING_VERIFICATION (resend), or already
+   * VERIFIED (silent no-op) -- never an enumeration oracle.
+   */
+  async register(email: string, password: string, passwordConfirmation: string): Promise<RegisterOutcome> {
+    if (!isPlausibleEmail(email) || !isPlausiblePassword(password) || password !== passwordConfirmation) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    const emailHash = hashParentEmail(email);
+    const existing = await this.repository.findByEmailHash(emailHash);
+    const passwordHash = await hashPassword(password);
+    const now = this.now();
+
+    if (existing === null) {
+      const accountId = randomUUID();
+      try {
+        await this.repository.createPendingAccount({ accountId, emailHash, passwordHash, createdAt: now });
+      } catch (error) {
+        // A concurrent registration for the same email won the race --
+        // fall through to the identical PENDING_VERIFICATION response,
+        // never surfacing the race as a distinguishable error.
+        if (!isDuplicateEntryLike(error)) throw error;
+      }
+      const account = await this.repository.findByEmailHash(emailHash);
+      if (account && account.status === 'PENDING_VERIFICATION') {
+        await this.issueAndSendVerificationCode(account.accountId, email);
+      }
+      return { status: 'PENDING_VERIFICATION' };
+    }
+
+    if (existing.status === 'PENDING_VERIFICATION') {
+      await this.repository.updatePendingPasswordHash(existing.accountId, passwordHash);
+      await this.issueAndSendVerificationCode(existing.accountId, email);
+    }
+    // existing.status === 'VERIFIED': silent no-op, identical response.
+    return { status: 'PENDING_VERIFICATION' };
+  }
+
+  private async issueAndSendVerificationCode(accountId: ParentAccountId, email: string): Promise<void> {
+    const now = this.now();
+    const { code, codeHash } = generateVerificationCode();
+    await this.repository.insertVerificationCode({
+      codeId: randomUUID(),
+      accountId,
+      codeHash,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + VERIFICATION_CODE_TTL_MS),
+    });
+    // Best-effort: a TEST_SANDBOX/logging failure must never distinguish
+    // this response from any other branch's identical response.
+    try {
+      await this.emailSender.sendVerificationCode(email, code);
+    } catch {
+      // deliberately swallowed -- see this method's own doc comment.
+    }
+  }
+
+  async verifyEmail(email: string, code: string): Promise<VerifyEmailOutcome> {
+    if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    const emailHash = hashParentEmail(email);
+    const account = await this.repository.findByEmailHash(emailHash);
+    if (!account || account.status !== 'PENDING_VERIFICATION') throw new ParentAccountError('UNAUTHORIZED');
+
+    const activeCode = await this.repository.findLatestVerificationCode(account.accountId);
+    if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.attemptCount >= MAX_VERIFICATION_ATTEMPTS_PER_CODE) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.expiresAt.getTime() <= this.now().getTime()) throw new ParentAccountError('UNAUTHORIZED');
+
+    await this.repository.incrementVerificationAttempt(activeCode.codeId);
+    const candidateHash = hashVerificationCode(code);
+    if (!verificationCodeHashesMatch(candidateHash, activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+
+    const won = await this.repository.consumeVerificationCodeIfUnconsumed(activeCode.codeId, this.now());
+    if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent verify-email race for the same code
+
+    const now = this.now();
+    const familyId = await this.attemptFamilyGenesis(account.accountId, now);
+    const defaults = resolveFreeAccessDefaults();
+    const expiresAt = computeFreeAccessExpiry(now, defaults);
+
+    await this.repository.markVerified({
+      accountId: account.accountId,
+      verifiedAt: now,
+      familyId,
+      freeAccess: {
+        mode: defaults.mode,
+        durationDays: defaults.durationDays,
+        startedAt: now,
+        expiresAt,
+        defaultParentMemberLimit: defaults.defaultParentMemberLimit,
+        defaultManagedDeviceLimit: defaults.defaultManagedDeviceLimit,
+      },
+    });
+
+    const issued = await this.issueSessionFor(account.accountId);
+    if (familyId !== null) {
+      // PCA-DEC-026: a freshly genesis-anchored Family Owner must actually
+      // be able to reach their own family's commercial data through the
+      // EXISTING, unmodified familyCommercialRoutes.ts/
+      // billingCheckoutRoutes.ts, both of which require an ACTIVE
+      // service_account_family_scopes row before anything else runs -- see
+      // ParentAccountRepository.grantFamilyScopeIfAbsent's own doc comment.
+      await this.repository.grantFamilyScopeIfAbsent(issued.session.accountId, familyId, now);
+    }
+    return { accountId: account.accountId, familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
+  }
+
+  /**
+   * PCA-ADD-IDENT-009: every fresh verification creates its OWN new family
+   * (this self-service flow has no "join an existing family" path --
+   * PCA-ADD-IDENT-011 -- so every verified account is, by construction, the
+   * first-and-only verified parent of a brand-new family). Best-effort:
+   * genesis is a bounded external capability (see genesisDeviceSigner.ts's
+   * header) -- a rejected/unavailable signature verifier degrades to
+   * familyId=null, never blocks identity verification or session issuance.
+   */
+  private async attemptFamilyGenesis(accountId: ParentAccountId, now: Date): Promise<OpaqueFamilyId | null> {
+    if (!this.familyGenesisEngine) return null;
+    const familyId: OpaqueFamilyId = randomUUID();
+    const genesisDeviceId: OpaqueDeviceId = `web-registration:${accountId}`;
+    const { publicKeyBase64, privateKey } = generateEphemeralGenesisDeviceKeyPair();
+    const genesisDskKeyId = `web-reg-key:${accountId}`;
+
+    const anchorWithoutSignature: Omit<FamilyAuthorityGenesisAnchor, 'signature'> = {
+      familyId,
+      genesisDeviceId,
+      genesisDskKeyId,
+      genesisDskPublicKey: publicKeyBase64,
+      protocolVersion: FAMILY_AUTHORITY_PROTOCOL_VERSION,
+      createdAt: now,
+    };
+    const anchor: FamilyAuthorityGenesisAnchor = {
+      ...anchorWithoutSignature,
+      signature: signWithGenesisDeviceKey(privateKey, canonicalizeGenesisAnchor(anchorWithoutSignature)),
+    };
+
+    const attestationWithoutSignature: Omit<FamilyOwnerAttestation, 'signature'> = {
+      familyId,
+      purpose: OWNER_ATTESTATION_DOMAIN,
+      attestationRevision: 1,
+      ownerDeviceId: genesisDeviceId,
+      ownerDskKeyId: genesisDskKeyId,
+      ownerDskPublicKey: publicKeyBase64,
+      trustSetEpoch: 1,
+      keyEpoch: 1,
+      issuedAt: now,
+      expiresAt: new Date(now.getTime() + GENESIS_DEVICE_ATTESTATION_TTL_MS),
+      previousAttestationId: null,
+      signerDeviceId: genesisDeviceId,
+      signerDskKeyId: genesisDskKeyId,
+      signerDskPublicKey: publicKeyBase64,
+    };
+    const genesisAttestation: FamilyOwnerAttestation = {
+      ...attestationWithoutSignature,
+      signature: signWithGenesisDeviceKey(privateKey, canonicalizeOwnerAttestation(attestationWithoutSignature)),
+    };
+
+    const result = await this.familyGenesisEngine.bootstrapFamilyAuthority({ anchor, genesisAttestation });
+    if (result.status === 'BOOTSTRAPPED' || result.status === 'ALREADY_BOOTSTRAPPED') {
+      return result.anchor.familyId;
+    }
+    return null; // INVALID_PROOF -- e.g. RejectingDeviceSignatureVerifier in production today; identity/session still proceed.
+  }
+
+  /** PCA-ADD-IDENT-012: only succeeds against a VERIFIED account; generic failure for every other case (unknown email, wrong password, unverified). */
+  async login(email: string, password: string): Promise<LoginOutcome> {
+    if (!isPlausibleEmail(email) || typeof password !== 'string' || password.length === 0) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    const emailHash = hashParentEmail(email);
+    const account = await this.repository.findByEmailHash(emailHash);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) {
+      // Still hash against a dummy value so the two branches (unknown
+      // email vs. wrong password) take roughly the same time.
+      await verifyPassword(password, DUMMY_PASSWORD_HASH);
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    const ok = await verifyPassword(password, account.passwordHash);
+    if (!ok) throw new ParentAccountError('UNAUTHORIZED');
+
+    const issued = await this.issueSessionFor(account.accountId);
+    return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
+  }
+
+  private async issueSessionFor(accountId: ParentAccountId) {
+    const identity = { accountReferenceHash: accountReferenceHashFor(accountId) };
+    const issued = await this.authService.issueSession(identity);
+    await this.repository.setServiceAccountIdIfAbsent(accountId, issued.session.accountId);
+    return issued;
+  }
+
+  /** GET /api/parent/session -- reads current session state without re-verifying credentials. Fails closed (UNAUTHORIZED) identically for missing/malformed/expired/revoked cookie, disabled account, or an orphaned service-session lookup. */
+  async readSession(rawSessionToken: string): Promise<SessionReadOutcome> {
+    let serviceAccountId: string;
+    try {
+      serviceAccountId = await this.authService.validateSession(rawSessionToken);
+    } catch {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    const account = await this.repository.findByServiceAccountId(serviceAccountId);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    return { accountId: account.accountId, familyId: account.familyId, emailVerified: true };
+  }
+
+  /** Idempotent: revoking an unknown/malformed/already-revoked token is never an error. */
+  async logout(rawSessionToken: string): Promise<void> {
+    try {
+      await this.authService.revokeSession(rawSessionToken);
+    } catch {
+      // AuthError from a malformed token -- logout is still a success from the caller's perspective (fail closed on the READ side, not here).
+    }
+  }
+
+  /** Requires an already-valid current session; revokes every session for that service account. */
+  async revokeAllSessions(rawSessionToken: string): Promise<void> {
+    let serviceAccountId: string;
+    try {
+      serviceAccountId = await this.authService.validateSession(rawSessionToken);
+    } catch {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    await this.repository.revokeAllServiceSessionsFor(serviceAccountId, this.now());
+  }
+}
+
+function accountReferenceHashFor(accountId: ParentAccountId): Buffer {
+  return createHash('sha256').update(accountId, 'utf8').digest();
+}
+
+function isDuplicateEntryLike(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ER_DUP_ENTRY';
+}
+
+// A fixed, never-matching scrypt-shaped credential used only to keep
+// login()'s "unknown account" branch's timing in the same ballpark as its
+// "wrong password" branch -- never a real account's hash.
+const DUMMY_PASSWORD_HASH = `scrypt$32768$8$1$${'00'.repeat(16)}$${'00'.repeat(64)}`;
