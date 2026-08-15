@@ -86,6 +86,11 @@ dependencies {
     // PCA-AND-RUNTIME-PLATFORM-1: the app's first real background-execution primitive
     // (WorkManager/CoroutineWorker) -- see android/app/src/main/java/org/pca/app/runtime/background/.
     implementation(libs.androidx.work.runtime.ktx)
+    // PCA-ADD-ENR-013: BiometricPrompt gate for sensitive local admin actions
+    // (e.g. disabling protection, viewing sensitive settings) -- the official
+    // Jetpack wrapper over BiometricManager/BiometricPrompt, not a custom
+    // biometric implementation.
+    implementation(libs.androidx.biometric)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
