@@ -94,6 +94,7 @@ import type { FreeAccessAdminService } from '../parentaccount/freeaccess/FreeAcc
 // PCA-BILL-3 (Round6): Settlement / Reconciliation. Registered here
 // exactly like every other domain's registerXRoutes call.
 import { registerSettlementRoutes } from './routes/platformadmin/settlementRoutes.js';
+import { registerSdkDisclosureRoutes } from './routes/sdkDisclosureRoutes.js';
 import type { PlatformAdminSettlementService } from '../platformadmin/settlement/PlatformAdminSettlementService.js';
 
 export interface ServerDependencies {
@@ -304,6 +305,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     platformAdminSettlementService: deps.platformAdminSettlementService,
     rateLimiter,
   });
+  registerSdkDisclosureRoutes(app, { rateLimiter });
 
   return app;
 }
