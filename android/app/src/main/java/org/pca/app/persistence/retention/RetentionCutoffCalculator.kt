@@ -38,6 +38,18 @@ object RetentionCutoffCalculator {
     private val AUDIT_FLOOR = Period.ofMonths(12)
 
     /**
+     * PCA-DATA-026: a tombstone's own fixed, family-policy-independent bounded lifetime -- a
+     * tombstone's only job is to let a short post-deletion reconciliation window distinguish
+     * "deleted" from "never existed"; six months is deliberately generous (well past any
+     * plausible sync/convergence delay this app could ever have) while still being finite,
+     * satisfying the "bounded lifetime" requirement rather than retaining tombstones forever.
+     */
+    private val TOMBSTONE_LIFETIME = Period.ofMonths(6)
+
+    fun tombstoneCutoff(nowUtc: Instant, policyZone: ZoneId): Instant =
+        nowUtc.atZone(policyZone).minus(TOMBSTONE_LIFETIME).toInstant()
+
+    /**
      * PCA-DATA-021: audit-trail retention floor is the family's general
      * retention window OR 12 months, whichever is LONGER.
      */

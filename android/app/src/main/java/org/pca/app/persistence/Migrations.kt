@@ -32,5 +32,27 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    /**
+     * PCA-DATA-026 (WRITER68): adds `tombstone_records` -- a minimal, content-free (id + deletion
+     * timestamp only, per the requirement) proof-of-deletion table with its own bounded-lifetime
+     * pruning (see [org.pca.app.persistence.retention.RetentionEngine.pruneTombstones]). A brand
+     * new table, so this migration is purely additive -- no existing row's meaning changes.
+     */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `tombstone_records` (" +
+                    "`id` TEXT NOT NULL, `familyId` TEXT NOT NULL, `recordId` TEXT NOT NULL, " +
+                    "`recordCategory` TEXT NOT NULL, `deletedAtEpochMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`id`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tombstone_records_familyId` ON `tombstone_records` (`familyId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tombstone_records_deletedAtEpochMillis` " +
+                    "ON `tombstone_records` (`deletedAtEpochMillis`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

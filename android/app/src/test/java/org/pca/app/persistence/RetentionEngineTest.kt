@@ -13,6 +13,7 @@ import org.pca.app.persistence.entity.ParentActionType
 import org.pca.app.persistence.entity.ParentActionAuditEntity
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.entity.TamperEventEntity
+import org.pca.app.persistence.entity.TombstoneRecordEntity
 import org.pca.app.persistence.entity.WebVisitAction
 import org.pca.app.persistence.repository.WebVisitRepository
 import org.pca.app.persistence.retention.DeviceRetentionContext
@@ -84,6 +85,37 @@ class RetentionEngineTest {
         val remaining = db.tamperEventDao().getForDevice("device-1")
         assertEquals(1, remaining.size)
         assertEquals("recent", remaining.single().id)
+    }
+
+    // ---- PCA-DATA-026: tombstone bounded-lifetime pruning ----
+
+    @Test
+    fun `pruneTombstones deletes only tombstones past the fixed six-month floor`() = runTest {
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        val sevenMonthsAgo = now.atZone(zone).minusMonths(7).toInstant().toEpochMilli()
+        val oneMonthAgo = now.atZone(zone).minusMonths(1).toInstant().toEpochMilli()
+
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("old", "family-1", "device-1", "Device", sevenMonthsAgo))
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("recent", "family-1", "device-2", "Device", oneMonthAgo))
+
+        val deleted = engine.pruneTombstones(now, zone)
+
+        assertEquals(1, deleted)
+        val remaining = db.tombstoneRecordDao().getForFamily("family-1")
+        assertEquals(1, remaining.size)
+        assertEquals("recent", remaining.single().id)
+    }
+
+    @Test
+    fun `pruneTombstones never touches a tombstone still within its six-month floor`() = runTest {
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        val fiveMonthsAgo = now.atZone(zone).minusMonths(5).toInstant().toEpochMilli()
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("t1", "family-1", "device-1", "Device", fiveMonthsAgo))
+
+        val deleted = engine.pruneTombstones(now, zone)
+
+        assertEquals(0, deleted)
+        assertEquals(1, db.tombstoneRecordDao().count())
     }
 
     @Test

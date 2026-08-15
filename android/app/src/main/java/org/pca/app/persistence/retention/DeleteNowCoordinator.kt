@@ -6,6 +6,7 @@ import java.util.UUID
 import org.pca.app.persistence.PcaLocalDatabase
 import org.pca.app.persistence.entity.PolicySnapshotEntity
 import org.pca.app.persistence.entity.RetentionDeletionReceiptEntity
+import org.pca.app.persistence.entity.TombstoneRecordEntity
 
 /**
  * PCA-LOCAL-DB-1 Section 21: one local DB deletion coordinator entrypoint
@@ -16,6 +17,13 @@ import org.pca.app.persistence.entity.RetentionDeletionReceiptEntity
  *
  * Does NOT delete: platform keys, account bootstrap, or other families'
  * data -- only the requested scope (Section 21).
+ *
+ * PCA-DATA-026: alongside the existing count-only [RetentionDeletionReceiptEntity], each deletion
+ * here also writes ONE [TombstoneRecordEntity] row for the top-level identity that was actually
+ * deleted (the device id / member id / family id itself -- not one row per underlying table),
+ * matching the requirement's own "ID + deletion timestamp only, no content" shape. This is the
+ * local-side half of "delete-now-to-outbox propagation" (see [org.pca.app.runtime.graph.PcaAppGraph]'s
+ * `familySyncRuntimePort` doc comment for the external, crypto-gated half this lane does not cross).
  */
 class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
 
@@ -24,6 +32,7 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
         var total = 0
         database.withTransaction {
             total += deleteDeviceScopedRows(deviceId)
+            insertTombstone(familyId, deviceId, "Device", nowUtc)
         }
         return insertReceipt(familyId, deviceId, "device_all_categories", total, nowUtc, "delete_now_device")
     }
@@ -37,6 +46,7 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
             }
             total += database.parentActionAuditDao().deleteAllForActor(memberId)
             total += database.familyMemberDao().deleteById(memberId)
+            insertTombstone(familyId, memberId, "FamilyMember", nowUtc)
         }
         return insertReceipt(familyId, null, "child_all_categories", total, nowUtc, "delete_now_child:$memberId")
     }
@@ -93,8 +103,21 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
             total += database.syncReceiptDao().deleteAllForFamily(familyId)
             // 5. family_members last -- every subquery above depends on it still existing.
             total += database.familyMemberDao().deleteAllForFamily(familyId)
+            insertTombstone(familyId, familyId, "Family", nowUtc)
         }
         return insertReceipt(familyId, null, "family_all_categories", total, nowUtc, "delete_now_family")
+    }
+
+    private suspend fun insertTombstone(familyId: String, recordId: String, recordCategory: String, nowUtc: Instant) {
+        database.tombstoneRecordDao().insert(
+            TombstoneRecordEntity(
+                id = UUID.randomUUID().toString(),
+                familyId = familyId,
+                recordId = recordId,
+                recordCategory = recordCategory,
+                deletedAtEpochMillis = nowUtc.toEpochMilli(),
+            ),
+        )
     }
 
     private suspend fun insertReceipt(

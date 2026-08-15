@@ -35,6 +35,27 @@ class PcaLocalDatabaseMigrationTest {
     }
 
     @Test
+    fun migrate2To3CreatesTombstoneRecordsTable() {
+        helper.createDatabase(TEST_DB_NAME, 2).close()
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB_NAME, 3, true, Migrations.MIGRATION_2_3)
+        migrated.execSQL(
+            "INSERT INTO tombstone_records (id, familyId, recordId, recordCategory, deletedAtEpochMillis) " +
+                "VALUES ('t1', 'family-1', 'device-1', 'Device', 1000)",
+        )
+        val cursor = migrated.query("SELECT recordId, recordCategory, deletedAtEpochMillis FROM tombstone_records WHERE id = 't1'")
+        try {
+            org.junit.Assert.assertTrue(cursor.moveToFirst())
+            org.junit.Assert.assertEquals("device-1", cursor.getString(cursor.getColumnIndexOrThrow("recordId")))
+            org.junit.Assert.assertEquals("Device", cursor.getString(cursor.getColumnIndexOrThrow("recordCategory")))
+            org.junit.Assert.assertEquals(1000L, cursor.getLong(cursor.getColumnIndexOrThrow("deletedAtEpochMillis")))
+        } finally {
+            cursor.close()
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrate1To2AddsOutboxPriorityAndCoalesceKeyColumns() {
         helper.createDatabase(TEST_DB_NAME, 1).apply {
             execSQL(
