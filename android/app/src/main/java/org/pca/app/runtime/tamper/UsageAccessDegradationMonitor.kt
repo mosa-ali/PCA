@@ -1,6 +1,8 @@
 package org.pca.app.runtime.tamper
 
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.pca.app.foundation.WallClockTimeSource
 import org.pca.app.persistence.repository.TamperEventRepository
 import org.pca.app.platform.TrackedUsageAccessState
@@ -45,20 +47,29 @@ class UsageAccessDegradationMonitor(
     @Volatile
     private var lastObservedState: TrackedUsageAccessState? = null
 
+    /** Guards the read-then-write of [lastObservedState] plus the action it gates (see this
+     * class's own doc comment: two genuinely concurrent callers -- the in-process poll loop and
+     * the `WorkManager` safety-net job -- can otherwise both read the same `previous` value and
+     * both treat their own call as "the" transition, double-writing a `TamperEvent` row /
+     * double-notifying instead of debouncing to exactly one). */
+    private val checkMutex = Mutex()
+
     /**
      * Re-evaluates live state via [tracker] and acts only on a genuine transition INTO REVOKED or
      * DEGRADED (never on every call, never on a transition between two non-alerting states). Safe
      * to call from both the in-process poll loop and the `WorkManager` safety-net job -- state is
      * held on this single monitor instance (constructed once in
      * [org.pca.app.runtime.graph.PcaAppGraph], never per-call), so both callers see and update the
-     * same debounce state rather than each re-notifying independently.
+     * same debounce state rather than each re-notifying independently, and [checkMutex] makes that
+     * "see and update" step atomic across two overlapping calls, not just correct for sequential
+     * ones.
      */
-    suspend fun checkAndHandle() {
+    suspend fun checkAndHandle() = checkMutex.withLock {
         val state = tracker.currentState()
         val previous = lastObservedState
         lastObservedState = state
-        if (previous == state) return
-        if (previous == null) return // first-ever observation is a baseline, not a transition.
+        if (previous == state) return@withLock
+        if (previous == null) return@withLock // first-ever observation is a baseline, not a transition.
 
         when (state) {
             TrackedUsageAccessState.REVOKED -> {

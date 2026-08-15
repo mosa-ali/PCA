@@ -1,5 +1,10 @@
 package org.pca.app.runtime.tamper
 
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -146,5 +151,38 @@ class UsageAccessDegradationMonitorTest {
 
         assertEquals(listOf(TrackedUsageAccessState.REVOKED), notified)
         assertEquals(0, db.tamperEventDao().count())
+    }
+
+    // -- concurrency (QA68 correction: PcaAppGraph.runUsageLocationIngestionCycle now has two
+    // genuinely concurrent callers -- the in-process poll loop and the WorkManager safety net) --
+
+    /**
+     * Proves [UsageAccessDegradationMonitor.checkAndHandle]'s internal `Mutex` actually serializes
+     * two overlapping calls that observe the SAME transition, rather than both racing past the
+     * `previous == state` debounce check. Uses REAL OS threads (`Dispatchers.Default`, not
+     * `runTest`'s virtual-time single-threaded dispatcher, which never produces a genuine race).
+     * Without the fix this is reproducible: both calls can read `lastObservedState == GRANTED`
+     * before either writes `REVOKED` back, so both conclude "this is a new transition" and both
+     * notify (a double-notification the debounce doc comment explicitly promises never happens).
+     * With the fix, only the call that wins the lock race observes an actual transition; the other
+     * sees `previous == state` and returns without acting.
+     */
+    @Test
+    fun `two genuinely concurrent checkAndHandle calls on the same REVOKED transition notify exactly once`() {
+        val notified = CopyOnWriteArrayList<TrackedUsageAccessState>()
+        val source = FakeUsageObservationSource().apply { state = UsageAccessState.GRANTED }
+        val monitor = buildMonitor(source, notified = notified)
+
+        runBlocking { monitor.checkAndHandle() } // establish the GRANTED baseline sequentially first
+        source.state = UsageAccessState.DENIED // now a REVOKED transition is pending for both racers
+
+        runBlocking {
+            listOf(
+                async(Dispatchers.Default) { monitor.checkAndHandle() },
+                async(Dispatchers.Default) { monitor.checkAndHandle() },
+            ).awaitAll()
+        }
+
+        assertEquals(listOf(TrackedUsageAccessState.REVOKED), notified.toList())
     }
 }

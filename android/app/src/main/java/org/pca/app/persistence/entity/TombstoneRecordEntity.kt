@@ -6,15 +6,18 @@ import androidx.room.PrimaryKey
 
 /**
  * PCA-DATA-026: a minimal, content-free proof that a specific local identity's data was actually
- * deleted -- ID + deletion timestamp ONLY, exactly as the requirement specifies, never the deleted
- * content itself (same non-sensitive discipline [RetentionDeletionReceiptEntity] already follows
- * one level up, at the count/category granularity; this table is the record-identity-level
- * complement to it, one row per deleted top-level identity rather than per deletion cycle).
+ * deleted -- every column here is non-sensitive deletion METADATA (which identity, of what
+ * category, deleted when), never the deleted content itself, satisfying the requirement's "ID +
+ * deletion timestamp, no content" shape without literally being a two-column table (same
+ * non-sensitive discipline [RetentionDeletionReceiptEntity] already follows one level up, at the
+ * count/category granularity; this table is the record-identity-level complement to it, one row
+ * per deleted top-level identity rather than per deletion cycle).
  *
  * [recordId] is the id of the thing that was deleted (a `deviceId`, family-member id, or family
  * id -- see [recordCategory]), NOT a reference to any row that still exists; by the time a
  * tombstone is written, the record it describes is already gone. [recordCategory] mirrors
- * [RetentionDeletionReceiptEntity.entityCategory]'s free-string convention.
+ * [RetentionDeletionReceiptEntity.entityCategory]'s free-string convention. [familyId] is scoping
+ * metadata (which family this proof-of-deletion belongs to), not deleted content either.
  *
  * Bounded lifetime (PCA-DATA-026's own requirement): [org.pca.app.persistence.retention.RetentionEngine.pruneTombstones]
  * deletes rows older than [org.pca.app.persistence.retention.RetentionCutoffCalculator]'s own

@@ -1,5 +1,10 @@
 package org.pca.app.runtime.usage
 
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -15,6 +20,7 @@ import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.platform.UsageAccessState
 import org.pca.app.platform.UsageEvent
 import org.pca.app.platform.UsageEventType
+import org.pca.app.platform.UsageObservationSource
 import org.pca.app.runtime.FakeMonotonicTimeSource
 import org.pca.app.runtime.FakeUsageObservationSource
 import org.pca.app.runtime.FakeWallClockTimeSource
@@ -246,5 +252,60 @@ class UsageSessionRecorderTest {
         assertEquals(2, sessions.size)
         // getForDevice orders DESC by startedAtEpochMillis (UsageSessionDao's own contract).
         assertTrue(sessions[0].startedAtEpochMillis >= sessions[1].startedAtEpochMillis)
+    }
+
+    // -- concurrency (QA68 correction: PcaAppGraph.runUsageLocationIngestionCycle now has two
+    // genuinely concurrent callers -- the in-process poll loop and the WorkManager safety net) --
+
+    /**
+     * Proves [UsageSessionRecorder.poll]'s internal `Mutex` actually serializes two overlapping
+     * calls rather than racing on `state`. Uses REAL OS threads (`Dispatchers.Default`, not
+     * `runTest`'s virtual-time single-threaded dispatcher -- that dispatcher never produces a
+     * genuine race) and a source that hands out two DIFFERENT, chronologically-ordered event
+     * batches (open at elapsed=100, close at elapsed=200) to the first and second caller. Without
+     * the fix, a real lost-update is reproducible here: both calls can read the same stale initial
+     * `state` before either writes back, and whichever call's write lands last silently discards
+     * the other call's session-boundary update -- the open-at-100 event can vanish entirely rather
+     * than ever being recorded as a completed session. With the fix, both batches are applied in
+     * one serialized sequence: exactly one completed session is recorded and the cursor reflects
+     * both batches, regardless of which coroutine's thread happens to run first.
+     */
+    @Test
+    fun `two genuinely concurrent poll calls never lose either one's session-boundary update`() {
+        val callIndex = AtomicInteger(0)
+        val batches = listOf(
+            listOf(UsageEvent("pkg-a", UsageEventType.FOREGROUND, 100L)),
+            listOf(UsageEvent("pkg-a", UsageEventType.BACKGROUND, 200L)),
+        )
+        val sequencedSource = object : UsageObservationSource {
+            override fun accessState(): UsageAccessState = UsageAccessState.GRANTED
+            override fun queryEventsSince(elapsedRealtimeMillis: Long): List<UsageEvent> {
+                val idx = callIndex.getAndIncrement().coerceAtMost(batches.size - 1)
+                return batches[idx]
+            }
+        }
+        val recorder = UsageSessionRecorder(
+            usageObservationSource = sequencedSource,
+            usageSessionRepository = repository,
+            monotonicTimeSource = monotonic,
+            wallClockTimeSource = wallClock,
+            snapshotStore = InMemoryUsageObservationSnapshotStore(),
+            deviceIdProvider = { "device-1" },
+            currentBootId = "boot-1",
+        )
+
+        val recordedCount = runBlocking {
+            listOf(
+                async(Dispatchers.Default) { recorder.poll() },
+                async(Dispatchers.Default) { recorder.poll() },
+            ).awaitAll()
+            repository.getForDevice("device-1").size
+        }
+
+        // Both batches' effects survived: the session that opened at 100 and closed at 200 was
+        // actually persisted (not silently dropped by a losing writer), and the cursor reflects
+        // having applied both batches, not just whichever call happened to write last.
+        assertEquals(1, recordedCount)
+        assertEquals(200L, recorder.currentEngineState().lastProcessedElapsedMillis)
     }
 }

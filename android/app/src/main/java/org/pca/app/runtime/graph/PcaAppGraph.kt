@@ -428,11 +428,14 @@ class PcaAppGraph private constructor(
      * [org.pca.app.runtime.background.UsageIngestionWorker] can call the EXACT same production
      * logic from a `WorkManager` job -- one real implementation, two callers (in-process loop for
      * freshness while running, `WorkManager` for resilience across process death), never two
-     * parallel copies that could drift. Safe to call repeatedly and safe to call concurrently with
-     * the in-process loop: [usageSessionRecorder]/[locationSampleRecorder] are both internally
-     * idempotent against duplicate/out-of-order events (see their own doc comments), and each step
-     * here is independently `runCatching`-guarded so a failure in one never skips the others,
-     * matching this app's "never crash the caller" tick discipline.
+     * parallel copies that could drift. Safe to call repeatedly, and genuinely safe to call
+     * concurrently from those two callers (QA68 correction: this was previously an unbacked claim
+     * -- [usageSessionRecorder]'s cursor/state mutation and [usageAccessDegradationMonitor]'s
+     * debounce state are each now guarded by their own internal `Mutex`, see their own doc
+     * comments, so two overlapping calls serialize on the actual shared mutable state rather than
+     * racing on it). [locationSampleRecorder] holds no mutable instance state, so it needs no lock
+     * of its own. Each step here is independently `runCatching`-guarded so a failure in one never
+     * skips the others, matching this app's "never crash the caller" tick discipline.
      */
     suspend fun runUsageLocationIngestionCycle() {
         runCatching { usageSessionRecorder.poll() }
