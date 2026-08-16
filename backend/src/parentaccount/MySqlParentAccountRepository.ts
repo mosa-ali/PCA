@@ -199,6 +199,14 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
     return rowCount;
   }
 
+  /** See ParentAccountRepository.ts's own doc comment: read-only lookup against the SHARED `families` table (owned by platformadmin/accounts) for the login-time suspend check. */
+  async findFamilyStatus(familyId: string): Promise<'ACTIVE' | 'SUSPENDED' | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<{ status: 'ACTIVE' | 'SUSPENDED' }>(conn, `SELECT status FROM families WHERE family_id = ?`, [familyId]),
+    );
+    return rows[0] ? rows[0].status : null;
+  }
+
   /** See ParentAccountRepository.ts's own doc comment for why this direct, narrowly-scoped write against the SHARED service_account_family_scopes table exists here. */
   async grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: string, now: Date): Promise<void> {
     await runInTransaction((conn) =>

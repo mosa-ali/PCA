@@ -261,6 +261,19 @@ export class ParentAccountService {
     const ok = await verifyPassword(password, account.passwordHash);
     if (!ok) throw new ParentAccountError('UNAUTHORIZED');
 
+    // PCA-ADD-PA-017 enforcement (Writer73): a Platform Admin-suspended
+    // family (families.status='SUSPENDED', see
+    // platformadmin/accounts/FamilyAccountStatusService.ts) must not be
+    // able to sign in and reach the family's data -- generic UNAUTHORIZED,
+    // identical to every other login failure mode, so a suspension can
+    // never be distinguished from a wrong password by the caller. An
+    // account with no familyId yet (genesis never completed) has nothing to
+    // suspend and always passes this check.
+    if (account.familyId !== null) {
+      const familyStatus = await this.repository.findFamilyStatus(account.familyId);
+      if (familyStatus === 'SUSPENDED') throw new ParentAccountError('UNAUTHORIZED');
+    }
+
     const issued = await this.issueSessionFor(account.accountId);
     return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
   }

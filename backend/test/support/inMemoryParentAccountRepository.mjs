@@ -1,8 +1,11 @@
 // Deterministic in-memory ParentAccountRepository for tests only. Never
 // used as a production substitute for MySqlParentAccountRepository. Lives
 // entirely under backend/test/ -- not part of the TypeScript build.
-export function createInMemoryParentAccountRepository({ revokeAllSessionsForAccount, grantFamilyScope } = {}) {
+export function createInMemoryParentAccountRepository({ revokeAllSessionsForAccount, grantFamilyScope, familyStatusById } = {}) {
   const grantedScopes = new Set(); // `${serviceAccountId}:${familyId}`
+  // familyId -> 'ACTIVE' | 'SUSPENDED'. Defaults to ACTIVE for any familyId
+  // never explicitly set, mirroring migration 0017's DEFAULT 'ACTIVE'.
+  const familyStatuses = familyStatusById instanceof Map ? familyStatusById : new Map();
   const accountsById = new Map();
   const accountsByEmailHashHex = new Map(); // emailHashHex -> accountId
   const accountsByServiceAccountId = new Map(); // serviceAccountId -> accountId
@@ -116,9 +119,19 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       if (grantFamilyScope) await grantFamilyScope(serviceAccountId, familyId, now);
     },
 
+    async findFamilyStatus(familyId) {
+      if (!familyStatuses.has(familyId)) return familyId ? 'ACTIVE' : null;
+      return familyStatuses.get(familyId);
+    },
+
     // Test-only accessor, not part of the ParentAccountRepository interface.
     _hasGrantedScopeForTest(serviceAccountId, familyId) {
       return grantedScopes.has(`${serviceAccountId}:${familyId}`);
+    },
+
+    // Test-only mutator, not part of the ParentAccountRepository interface.
+    _setFamilyStatusForTest(familyId, status) {
+      familyStatuses.set(familyId, status);
     },
   };
 }

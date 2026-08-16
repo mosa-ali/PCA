@@ -289,6 +289,64 @@ test('SECURITY: revoke-all-sessions itself requires a currently-valid session (a
   });
 });
 
+test('PCA-ADD-PA-017 enforcement: login is rejected with the SAME generic UNAUTHORIZED once the account\'s family is SUSPENDED', async () => {
+  const harness = buildHarness();
+  const outcome = await registerAndVerify(harness);
+  assert.equal(typeof outcome.familyId, 'string', 'a real genesis engine is wired in this harness, so familyId must be present');
+
+  // Sanity: login works normally while the family is ACTIVE (the default).
+  await harness.service.login(EMAIL, PASSWORD);
+
+  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
+  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD), (err) => {
+    assert.ok(err instanceof ParentAccountError);
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+});
+
+test('PCA-ADD-PA-017 enforcement: reactivating the family (status back to ACTIVE) restores login', async () => {
+  const harness = buildHarness();
+  const outcome = await registerAndVerify(harness);
+  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
+  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD));
+
+  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'ACTIVE');
+  const relogin = await harness.service.login(EMAIL, PASSWORD);
+  assert.equal(typeof relogin.rawSessionToken, 'string');
+});
+
+test('PCA-ADD-PA-017 enforcement: an account with no familyId yet (genesis unavailable) is never blocked by the suspend check', async () => {
+  const harness = buildHarness({ genesisVerifier: null });
+  const outcome = await registerAndVerify(harness);
+  assert.equal(outcome.familyId, null);
+  const relogin = await harness.service.login(EMAIL, PASSWORD);
+  assert.equal(typeof relogin.rawSessionToken, 'string');
+});
+
+test('SECURITY: a suspended family\'s login failure is indistinguishable in shape/code from a wrong-password failure (no information leak)', async () => {
+  const harness = buildHarness();
+  const outcome = await registerAndVerify(harness);
+  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
+
+  let suspendedError;
+  try {
+    await harness.service.login(EMAIL, PASSWORD);
+  } catch (err) {
+    suspendedError = err;
+  }
+  let wrongPasswordError;
+  try {
+    await harness.service.login(EMAIL, 'a totally different wrong password');
+  } catch (err) {
+    wrongPasswordError = err;
+  }
+  assert.ok(suspendedError instanceof ParentAccountError);
+  assert.ok(wrongPasswordError instanceof ParentAccountError);
+  assert.equal(suspendedError.code, wrongPasswordError.code);
+  assert.equal(suspendedError.message, wrongPasswordError.message);
+});
+
 test('CONCURRENCY: two concurrent registrations for the same email never both create distinct accounts (uniqueness race)', async () => {
   const harness = buildHarness();
   const results = await Promise.all([

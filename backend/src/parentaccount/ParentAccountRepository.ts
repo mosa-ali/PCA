@@ -55,6 +55,18 @@ export interface ParentAccountRepository {
   findByEmailHash(emailHash: Buffer): Promise<ParentAccountRecord | null>;
   findById(accountId: ParentAccountId): Promise<ParentAccountRecord | null>;
   findByServiceAccountId(serviceAccountId: string): Promise<ParentAccountRecord | null>;
+  /**
+   * PCA-ADD-PA-017 enforcement (Writer73): the login-time family-suspend
+   * check needs to read `families.status` (migration 0017, written by
+   * `platformadmin/accounts/FamilyAccountStatusService.ts`) without this
+   * domain taking any write dependency on the `families` table -- mirrors
+   * `grantFamilyScopeIfAbsent`'s "narrowly-scoped direct read/write against
+   * a shared table this domain does not own" precedent, read-only this
+   * time. Returns null iff the family row does not exist (soft-deleted or
+   * never created) -- callers treat that identically to ACTIVE, since a
+   * missing family row is never itself a reason to deny a parent's login.
+   */
+  findFamilyStatus(familyId: OpaqueFamilyId): Promise<'ACTIVE' | 'SUSPENDED' | null>;
   /** Only valid while the account is still PENDING_VERIFICATION -- used when a not-yet-verified email registers again (resend semantics). */
   updatePendingPasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void>;
 

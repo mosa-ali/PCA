@@ -5,7 +5,7 @@
 // CHECK constraint, and cross-domain compatibility with the SHARED
 // service_sessions table (revoke-all).
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
@@ -147,6 +147,107 @@ test('MySQL: verify-email under a REAL (test-only Ed25519) signature verifier du
   );
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, 'ACTIVE');
+});
+
+// PCA-ADD-PA-017 enforcement (Writer73): end-to-end proof, against real
+// MySQL, that a Platform Admin's real suspend action (through the real
+// FamilyAccountStatusService, real RBAC, real step-up -- identical to
+// test/db/familyAccountStatus.mysql.test.mjs's own coverage of that
+// service) actually blocks the affected family's parent from logging in,
+// and that reactivating restores it. Deliberately loads the admin-side
+// machinery lazily/locally to this block rather than importing it at
+// module scope, keeping this file's primary focus on ParentAccountService.
+test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the family durably blocks that family\'s parent login; reactivate restores it', async () => {
+  if (!process.env.PLATFORM_ADMIN_MFA_ENC_KEY) process.env.PLATFORM_ADMIN_MFA_ENC_KEY = 'ab'.repeat(32);
+  const { FamilyAccountStatusService } = await import('../../dist/platformadmin/accounts/FamilyAccountStatusService.js');
+  const { PlatformAdminAuthService } = await import('../../dist/platformadmin/auth/PlatformAdminAuthService.js');
+  const { PlatformAdminAccountService } = await import('../../dist/platformadmin/auth/PlatformAdminAccountService.js');
+  const { MySqlPlatformAdminAuthRepository } = await import('../../dist/platformadmin/auth/MySqlAuthRepository.js');
+  const { hashAdminEmail } = await import('../../dist/platformadmin/auth/emailHash.js');
+  const { computeTotp, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } = await import('../../dist/platformadmin/auth/totp.js');
+  const { LoggingAlertAdapter } = await import('../../dist/platformadmin/auth/alertPort.js');
+  const { getPool } = await import('../../dist/db/pool.js');
+
+  let adminClockOffsetMs = 0;
+  const adminClock = () => new Date(Date.now() + adminClockOffsetMs);
+  const adminAuthRepository = new MySqlPlatformAdminAuthRepository();
+  const adminAccountService = new PlatformAdminAccountService(adminAuthRepository);
+  const adminAuthService = new PlatformAdminAuthService(adminAuthRepository, new LoggingAlertAdapter(), adminClock);
+  const familyStatusService = new FamilyAccountStatusService(adminAuthService, adminClock);
+
+  // Real Platform Admin, real TOTP-backed MFA, real login.
+  const adminEmail = `writer73-admin-${randomUUID()}@example.test`;
+  const adminPassword = 'correct horse battery staple';
+  const adminAccount = await adminAccountService.createAccount('Writer73 DB Test Admin', hashAdminEmail(adminEmail), adminPassword, 'PLATFORM_ADMIN', 'BOOTSTRAP');
+  const secret = generateTotpSecret();
+  const { ciphertext, nonce } = encryptTotpSecret(secret, loadMfaEncryptionKey());
+  await getPool().query(
+    `UPDATE platform_admin_mfa_state SET status = 'ACTIVE', totp_secret_ciphertext = ?, totp_secret_nonce = ?, activated_at = NOW(3) WHERE admin_id = ?`,
+    [ciphertext, nonce, adminAccount.adminId],
+  );
+  const loginCode = computeTotp(secret, adminClock().getTime());
+  const { rawToken: adminRawToken } = await adminAuthService.login(adminEmail, adminPassword, loginCode);
+  const adminIdentity = await adminAuthService.validateSession(adminRawToken);
+  const admin = { adminId: adminAccount.adminId, roles: ['PLATFORM_ADMIN'], sessionId: adminIdentity.sessionId };
+
+  // Real parent, real family genesis (this file's own test above already
+  // proves the Ed25519 verifier reaches BOOTSTRAPPED durably).
+  const emailSender = new RecordingEmailSender();
+  const parentAccountRepository = new MySqlParentAccountRepository();
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    createEd25519DeviceSignatureVerifier(),
+    () => new Date(),
+  );
+  const parentServiceWithGenesis = new ParentAccountService({
+    repository: parentAccountRepository,
+    authService: new AuthService(new MySqlAuthRepository()),
+    emailSender,
+    familyGenesisEngine: engine,
+  });
+  const email = uniqueEmail();
+  const password = 'a genuinely long password';
+  await parentServiceWithGenesis.register(email, password, password);
+  const code = emailSender.lastCodeFor(email);
+  const verifyOutcome = await parentServiceWithGenesis.verifyEmail(email, code);
+  assert.equal(typeof verifyOutcome.familyId, 'string');
+
+  // The `families` row this admin flow operates on: created directly here
+  // (mirrors test/db/familyAccountStatus.mysql.test.mjs's own createFamily
+  // helper -- no production code path currently populates this table from
+  // the self-service parent-web registration flow; see this repository's
+  // FamilyAccountStatusService.ts header for that documented boundary).
+  await getPool().query(`INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`, [
+    verifyOutcome.familyId,
+    randomBytes(32),
+  ]);
+
+  // Sanity: login works before any suspend action.
+  await parentServiceWithGenesis.login(email, password);
+
+  // Real suspend: real RBAC check, real step-up consumption, real audit row.
+  adminClockOffsetMs += 31_000; // fresh TOTP counter -- see TOTP-REPLAY-1 in PlatformAdminAuthService.
+  const suspendStepUpCode = computeTotp(secret, adminClock().getTime());
+  const suspendStepUp = await adminAuthService.assertStepUp(admin.adminId, admin.sessionId, 'FAMILY_ACCOUNT_SUSPEND', suspendStepUpCode, admin.roles[0]);
+  const suspended = await familyStatusService.suspend(admin, verifyOutcome.familyId, 'Writer73 DB-level enforcement proof', suspendStepUp.stepUpId);
+  assert.equal(suspended.status, 'SUSPENDED');
+
+  // The negative case this item exists to prove: login now genuinely fails.
+  await assert.rejects(() => parentServiceWithGenesis.login(email, password), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+
+  // Reactivate: real step-up again, then login is restored.
+  adminClockOffsetMs += 31_000;
+  const reactivateStepUpCode = computeTotp(secret, adminClock().getTime());
+  const reactivateStepUp = await adminAuthService.assertStepUp(admin.adminId, admin.sessionId, 'FAMILY_ACCOUNT_REACTIVATE', reactivateStepUpCode, admin.roles[0]);
+  const reactivated = await familyStatusService.reactivate(admin, verifyOutcome.familyId, reactivateStepUp.stepUpId);
+  assert.equal(reactivated.status, 'ACTIVE');
+
+  const relogin = await parentServiceWithGenesis.login(email, password);
+  assert.equal(typeof relogin.rawSessionToken, 'string');
 });
 
 test.after(async () => {
