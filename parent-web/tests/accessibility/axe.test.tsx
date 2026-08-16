@@ -1,6 +1,8 @@
+import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
+import { Route, Routes } from 'react-router-dom';
 import Dashboard from '../../src/pages/Dashboard';
 import Requests from '../../src/pages/Requests';
 import Notifications from '../../src/pages/Notifications';
@@ -9,14 +11,26 @@ import DeviceIncreaseRequest from '../../src/pages/billing/DeviceIncreaseRequest
 import ParentMemberIncreaseRequest from '../../src/pages/billing/ParentMemberIncreaseRequest';
 import Invoices from '../../src/pages/billing/Invoices';
 import ChildrenList from '../../src/pages/children/ChildrenList';
+import ActivityTimelinePage from '../../src/pages/children/ActivityTimelinePage';
 import Devices from '../../src/pages/family/Devices';
 import Members from '../../src/pages/family/Members';
 import RolesMatrix from '../../src/pages/family/RolesMatrix';
 import DeleteNow from '../../src/pages/privacy/DeleteNow';
+import Retention from '../../src/pages/privacy/Retention';
+import Transparency from '../../src/pages/privacy/Transparency';
 import Audit from '../../src/pages/security/Audit';
 import WellbeingAdmin from '../../src/pages/wellbeing/WellbeingAdmin';
 import { FreeAccessReminderBannerView } from '../../src/components/freeaccess/FreeAccessReminderBannerView';
 import { renderWithProviders } from '../utils/renderWithProviders';
+
+/** Wraps a page that reads a route param (e.g. useParams childId) so it actually receives one, mirroring tests/component/ScreenTimePage.test.tsx's established pattern. */
+function withChildRoute(path: string, element: ReactElement) {
+  return (
+    <Routes>
+      <Route path={path} element={element} />
+    </Routes>
+  );
+}
 
 /**
  * axe-core's `empty-table-header` rule is a "best-practice"/minor-impact
@@ -121,6 +135,29 @@ describe('accessibility spot checks (axe)', () => {
 
   it('WellbeingAdmin page has no critical axe violations', async () => {
     const { container } = renderWithProviders(<WellbeingAdmin />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Retention page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Retention />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Transparency ("What parents can see") page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Transparency />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ActivityTimelinePage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/activity', <ActivityTimelinePage />), {
+      route: '/children/child-amir/activity',
+      role: 'OWNER',
+    });
     await new Promise((r) => setTimeout(r, 250));
     const results = await axe(container, AXE_OPTIONS);
     expect(results).toHaveNoViolations();

@@ -21,6 +21,7 @@ import type {
   WebProtectionStatus,
   YouTubeStatus,
 } from '../../domain/types';
+import type { ActivityTimelineEntry } from '../../domain/activityTimeline';
 type ScreenTimePatch = Partial<Pick<ScreenTimeStatus, 'continuousUseLimitMinutes' | 'breakDurationMinutes'>>;
 import type { ParentFamilyDataGateway } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
@@ -77,5 +78,9 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   }
   getPrayerSettings(childId: string): Promise<PrayerSettings> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getPrayerSettings', `prayer:${childId}`);
+  }
+  async getActivityTimeline(childId: string, limit = 100): Promise<ActivityTimelineEntry[]> {
+    const entries = await this.readOrExplainUnavailable<ActivityTimelineEntry[]>('ParentFamilyDataGateway.getActivityTimeline', `activityTimeline:${childId}`);
+    return entries.slice(0, limit);
   }
 }

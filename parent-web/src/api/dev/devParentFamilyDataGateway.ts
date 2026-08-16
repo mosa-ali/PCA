@@ -9,6 +9,7 @@ import type {
   WebProtectionStatus,
   YouTubeStatus,
 } from '../../domain/types';
+import type { ActivityTimelineCategory, ActivityTimelineEntry } from '../../domain/activityTimeline';
 import {
   DEV_APP_RULES,
   DEV_CHILDREN,
@@ -26,6 +27,40 @@ function requireFixture<T>(map: Record<string, T>, childId: string, what: string
   const v = map[childId];
   if (!v) throw new Error(`No DEVELOPMENT_ONLY fixture for ${what} / childId=${childId}`);
   return v;
+}
+
+/**
+ * PCA-FR-092: illustrative, in-memory, category-level activity entries --
+ * NOT a claim about real event shapes/volume, only enough variety to
+ * exercise the consolidated-timeline UI across every category in
+ * ../../domain/activityTimeline.ts. Generated deterministically per
+ * childId (not random) so a demo session's timeline is stable across
+ * reloads.
+ */
+const DEV_TIMELINE_TEMPLATE: { category: ActivityTimelineCategory; minutesAgo: number; summary: string; detail: string | null }[] = [
+  { category: 'APP_USAGE', minutesAgo: 12, summary: 'Used an Education app for 22 minutes', detail: null },
+  { category: 'WEB_BROWSING', minutesAgo: 40, summary: 'Visited a site in the Reference category', detail: 'ALLOWED' },
+  { category: 'CONTENT_BLOCK', minutesAgo: 55, summary: 'A site in the Adult category was blocked', detail: 'RULE_MATCH' },
+  { category: 'BREAK_SESSION', minutesAgo: 70, summary: 'Took a 5-minute screen break after continuous use', detail: 'COMPLETED' },
+  { category: 'EYE_PROTECTION', minutesAgo: 95, summary: 'An eye-rest reminder was shown', detail: null },
+  { category: 'LOCATION', minutesAgo: 130, summary: 'Location updated to the Home trust zone', detail: null },
+  { category: 'PRAYER_REMINDER', minutesAgo: 160, summary: 'Asr prayer reminder delivered', detail: 'DELIVERED' },
+  { category: 'APP_USAGE', minutesAgo: 200, summary: 'Used a Social app for 15 minutes', detail: null },
+  { category: 'WEB_BROWSING', minutesAgo: 260, summary: 'Visited a site in the Video Streaming category', detail: 'ALLOWED' },
+  { category: 'CONTENT_BLOCK', minutesAgo: 300, summary: 'A site in the Gambling category was blocked', detail: 'RULE_MATCH' },
+  { category: 'BREAK_SESSION', minutesAgo: 340, summary: 'Took a 10-minute screen break after continuous use', detail: 'COMPLETED' },
+  { category: 'PRAYER_REMINDER', minutesAgo: 400, summary: 'Dhuhr prayer reminder delivered', detail: 'DELIVERED' },
+];
+
+function generateDevActivityTimeline(childId: string, now: Date): ActivityTimelineEntry[] {
+  return DEV_TIMELINE_TEMPLATE.map((t, i) => ({
+    entryId: `${childId}-timeline-${i}`,
+    childId,
+    category: t.category,
+    timestampUtc: new Date(now.getTime() - t.minutesAgo * 60_000).toISOString(),
+    summary: t.summary,
+    detail: t.detail,
+  }));
 }
 
 /** DEVELOPMENT_ONLY fixture implementation of ParentFamilyDataGateway. */
@@ -90,5 +125,13 @@ export class DevParentFamilyDataGateway implements ParentFamilyDataGateway {
   async getPrayerSettings(childId: string): Promise<PrayerSettings> {
     await delay();
     return requireFixture(DEV_PRAYER, childId, 'prayer settings');
+  }
+
+  async getActivityTimeline(childId: string, limit = 100): Promise<ActivityTimelineEntry[]> {
+    await delay();
+    // Confirms the child is a known fixture (consistent 404-shaped failure
+    // with every other getter above) before generating illustrative entries.
+    requireFixture(DEV_SCREEN_TIME, childId, 'activity timeline');
+    return generateDevActivityTimeline(childId, new Date()).slice(0, limit);
   }
 }

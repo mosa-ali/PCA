@@ -72,6 +72,17 @@ read-only pending real backend support (see ICR-PCA-FR-094-NOTIFICATION-PREFS). 
 engineering-authored, non-religious, **PENDING NATIVE REVIEWER SIGN-OFF** status as every other
 entry in this file.
 
+## Addendum (PCA-FR-092/096/121, WRITER72): activity timeline + transparency page
+
+`parent-web/src/i18n/locales/ar.json` gained two new full sections when these pages were built:
+`activityTimeline.*` (the consolidated per-child activity view, PCA-FR-092) and
+`transparency.*` (the "What parents can see" page, PCA-FR-096/121). All are ordinary,
+non-religious product UI/content strings, authored engineering-side per this file's policy, and
+carry the same **PENDING NATIVE REVIEWER SIGN-OFF** status. `transparency.*` in particular is
+normative-content-adjacent (it summarizes doc 03's PCA-FR-121 and doc 09 Section 5.1/5.2) and
+should be prioritized for review given its role in parent-facing informed consent (doc 03
+PCA-FR-007).
+
 ## What is NOT pending review
 
 - String **completeness** (every key present in both locales) — enforced automatically, not a

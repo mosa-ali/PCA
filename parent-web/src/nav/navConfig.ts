@@ -37,6 +37,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { path: '/privacy/retention', labelKey: 'nav.retention' },
       { path: '/privacy/export', labelKey: 'nav.export' },
       { path: '/privacy/delete', labelKey: 'nav.deleteNow' },
+      // PCA-FR-096: "What parents can see" reachable from panel navigation
+      // (PCA-FR-121 is the normative page itself). ICR-PCA-FR-096-ROUTE
+      // filed for the matching App.tsx <Route path="privacy/transparency">
+      // registration (App.tsx is coordinator-owned).
+      { path: '/privacy/transparency', labelKey: 'nav.transparency' },
     ],
   },
   {
@@ -66,4 +71,8 @@ export const CHILD_SUB_NAV: NavItem[] = [
   { path: 'eye-protection', labelKey: 'nav.eyeProtection' },
   { path: 'prayer', labelKey: 'nav.prayer' },
   { path: 'wellbeing-messages', labelKey: 'nav.wellbeingMessages' },
+  // PCA-FR-092: consolidated per-child activity timeline. ICR-PCA-FR-092-ROUTE
+  // filed for the matching App.tsx nested <Route path="activity"> under
+  // children/:childId (App.tsx is coordinator-owned).
+  { path: 'activity', labelKey: 'nav.activityTimeline' },
 ];

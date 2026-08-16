@@ -44,6 +44,7 @@ import type {
 } from '../domain/billing';
 import type { FreeAccessStatus } from '../domain/freeAccess';
 import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, RetentionPolicySettings, RetentionPolicySubmitResult } from '../domain/retention';
+import type { ActivityTimelineEntry } from '../domain/activityTimeline';
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -127,6 +128,8 @@ export interface ParentFamilyDataGateway {
   getLocationStatus(childId: string): Promise<LocationStatus>;
   getEyeProtectionStatus(childId: string): Promise<EyeProtectionStatus>;
   getPrayerSettings(childId: string): Promise<PrayerSettings>;
+  /** PCA-FR-092: consolidated, category-level activity timeline for one child -- see ../domain/activityTimeline.ts's file header for what this is (and deliberately is not). Most-recent-first; `limit` caps the returned count. */
+  getActivityTimeline(childId: string, limit?: number): Promise<ActivityTimelineEntry[]>;
 }
 
 export interface DeviceStatusClient {

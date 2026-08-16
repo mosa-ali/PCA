@@ -32,6 +32,7 @@
     "eyeProtection": "Eye Protection",
     "prayer": "Prayer",
     "wellbeingMessages": "Wellbeing Messages",
+    "activityTimeline": "Activity Timeline",
     "requests": "Requests",
     "family": "Family",
     "usersMembers": "Users & Members",
@@ -41,6 +42,7 @@
     "retention": "Retention",
     "export": "Export",
     "deleteNow": "Delete Now",
+    "transparency": "What Parents Can See",
     "security": "Security",
     "protectionStatus": "Protection Status",
     "recovery": "Recovery",
@@ -572,6 +574,47 @@
   },
   "childWellbeing": {
     "noMessages": "No custom wellbeing messages target this child yet."
+  },
+  "activityTimeline": {
+    "title": "Activity Timeline",
+    "description": "A single, chronological, category-level view of this child's recent activity across every PCA feature -- distinct from the Audit log, which only records changes YOU made to settings, not the child's own activity.",
+    "empty": "No activity has been recorded for this child yet.",
+    "category": {
+      "APP_USAGE": "App usage",
+      "WEB_BROWSING": "Web browsing",
+      "CONTENT_BLOCK": "Content blocked",
+      "LOCATION": "Location",
+      "BREAK_SESSION": "Screen break",
+      "EYE_PROTECTION": "Eye protection",
+      "PRAYER_REMINDER": "Prayer reminder"
+    }
+  },
+  "transparency": {
+    "title": "What Parents Can See",
+    "intro": "This page lists, in plain language, exactly what PCA lets you (the parent) see about your child's device, and what PCA never collects or shows to anyone -- including PCA itself.",
+    "visibleTitle": "What you can see in this console",
+    "visible": {
+      "appUsage": "Which apps your child uses and for how long (category/app-level, using the device's own usage-tracking API where the platform provides one).",
+      "webBrowsing": "The domain/category of sites visited and whether they were allowed or blocked, when using PCA's own filtered browsing mode -- not every third-party browser your child could install.",
+      "contentBlocks": "A record that a site or app was blocked, its category, and the rule/reason -- never the raw blocked content itself.",
+      "location": "A coarse location state (e.g. \"at a trusted zone\", \"last seen near X\") at the accuracy level and frequency your family's policy sets -- never a continuous precise GPS trace beyond what you configure.",
+      "screenTime": "Continuous-use duration and screen-break history.",
+      "eyeProtection": "When an eye-rest reminder was shown -- never a camera image or any biometric measurement.",
+      "prayerReminders": "When a prayer reminder was scheduled and delivered.",
+      "deviceStatus": "Whether the device is online, its last sync time, and whether its protection is fully applied.",
+      "policyChanges": "A full audit trail of every setting change made by any family member (see the Audit page)."
+    },
+    "notVisibleTitle": "What PCA never collects or shows -- to anyone, including PCA",
+    "notVisible": {
+      "messages": "The content of messages, calls, or any other communication on the device.",
+      "screenshots": "Screenshots, screen recordings, or microphone/camera captures.",
+      "biometrics": "Camera frames, face images, or any biometric template -- the eye-protection feature only ever produces a coarse near/far distance signal, consumed on-device and never transmitted.",
+      "preciseWithoutConsent": "Continuous precise location beyond what your family's own policy requests.",
+      "fullBrowsing": "Full browsing history or page content outside PCA's own filtered browsing mode.",
+      "thirdParty": "Any activity from a third-party app or browser PCA has no legitimate access to."
+    },
+    "encryptionNote": "Everything above is end-to-end encrypted between your family's own devices. PCA's servers relay encrypted data but hold no key that can read it -- see the Retention page for how long different categories are kept, and Security & Recovery for how your family's encryption keys work.",
+    "sdkNote": "Third-party services this app relies on (crash reporting, payment processing, push-notification delivery) are listed with the specific data category each can access; PCA does not use advertising or tracking SDKs."
   },
   "recovery": {
     "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",

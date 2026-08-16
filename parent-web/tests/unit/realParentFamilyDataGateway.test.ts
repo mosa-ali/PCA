@@ -78,6 +78,12 @@ describe('RealParentFamilyDataGateway / RealDeviceStatusClient / RealRequestClie
     await expect(gateway.getDashboard()).rejects.toMatchObject({ code: 'NOT_READY_CRYPTO_REVIEW' });
   });
 
+  it('PCA-FR-092: getActivityTimeline is crypto-gated exactly like every other read -- an untrusted browser cannot read the consolidated activity timeline either', async () => {
+    const provider = new StubTrustedBrowserProvider(snapshotWith('BROWSER_NOT_TRUSTED'));
+    const gateway = new RealParentFamilyDataGateway(provider, createLocalFamilyDataStore());
+    await expect(gateway.getActivityTimeline('child-1')).rejects.toMatchObject({ code: 'ENDPOINT_NOT_TRUSTED' });
+  });
+
   it('mutations are also crypto-gated: updateScreenTime never silently "succeeds" without real decryption', async () => {
     const provider = new StubTrustedBrowserProvider(snapshotWith('BROWSER_NOT_TRUSTED'));
     const gateway = new RealParentFamilyDataGateway(provider, createLocalFamilyDataStore());
