@@ -301,4 +301,21 @@
     <string name="youtube_mode_b_title">النمط B: تفاصيل على مستوى الفيديو</string>
     <string name="youtube_mode_b_description">سيُظهر الفيديوهات المحددة التي تمت مشاهدتها. يتطلب هذا مراجعة منفصلة وليس متاحًا كإعداد يمكن تفعيله.</string>
     <string name="youtube_mode_b_unavailable">غير متاح بعد</string>
+
+    <!-- PCA-FR-063: تنبيهات دخول/خروج "منطقة موثوقة" الجغرافية (إطار PCA-FR-135: تنبيه اختياري
+         وصريح حول حدود منطقة محددة، وليس تتبعًا مستمرًا في الخلفية أبدًا). -->
+    <string name="geofence_notification_channel_name">تنبيهات المنطقة</string>
+    <string name="geofence_notification_channel_description">تنبيهات عند دخول هذا الجهاز أو خروجه من منطقة موثوقة قمت بتحديدها.</string>
+    <string name="geofence_alert_entry_title">دخل %1$s</string>
+    <string name="geofence_alert_entry_body">دخل هذا الجهاز منطقة \"%1$s\".</string>
+    <string name="geofence_alert_exit_title">غادر %1$s</string>
+    <string name="geofence_alert_exit_body">غادر هذا الجهاز منطقة \"%1$s\".</string>
+
+    <!-- PCA-PRIV-001 / PCA-FR-023/024: إفصاح إذن الكاميرا لفحص مسافة العين من الشاشة. -->
+    <string name="eye_distance_camera_permission_title">فحص مسافة الشاشة بالكاميرا</string>
+    <string name="eye_distance_camera_permission_explainer">يمكن لهذه الميزة استخدام الكاميرا الأمامية لملاحظة اقتراب الوجه كثيرًا من الشاشة، لتقترح أخذ استراحة بلطف. إنها تقيس فقط مسافة تقريبية (قريب/بعيد) -- ولا تتعرف أبدًا على هوية الشخص، ولا تلتقط أو تحفظ أي صورة، ولا ترفع أو تخزن أي صورة من الكاميرا مطلقًا. تُستخدم كل لقطة كاميرا لجزء من الثانية ثم تُحذف فورًا.</string>
+    <string name="eye_distance_camera_permission_allow_button">السماح بالكاميرا لفحص المسافة</string>
+    <string name="eye_distance_camera_permission_not_now_button">ليس الآن</string>
+    <string name="eye_distance_camera_permission_denied_notice">لم يُمنح إذن الكاميرا، لذا فإن فحص مسافة الشاشة متوقف. لا يتم الوصول إلى أي صور دون هذا الإذن أبدًا.</string>
+    <string name="eye_distance_camera_unavailable_notice">ميزة اكتشاف المسافة على الجهاز غير متاحة بعد في هذا الإصدار.</string>
 </resources>

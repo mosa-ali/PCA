@@ -259,6 +259,27 @@ class PcaAppGraph private constructor(
         wallClockTimeSource = wallClockTimeSource,
     )
 
+    /** PCA-FR-063: real geofence entry/exit "trust zone" alerting (PCA-FR-135 framing -- an
+     * opt-in, explicit local alert, never continuous background tracking). Deliberately reuses
+     * [runUsageLocationIngestionCycle]'s existing, already-resilient (in-process + WorkManager)
+     * location-sampling cadence rather than adding a second periodic scheduler -- see
+     * [geofenceMonitor]'s call site below. Zone authoring has no UI yet (mission: bounded scope);
+     * [geofenceZoneStore] is ready for a future UI to call [org.pca.app.runtime.location.geofence.GeofenceZoneStore.addOrReplace]
+     * directly. Each store uses its own `EncryptedSharedPreferences` file, same at-rest-protection
+     * discipline as every other [PersistentStateStore] binding in this graph. */
+    val geofenceZoneStore = org.pca.app.runtime.location.geofence.GeofenceZoneStore(
+        EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zones"),
+    )
+    val geofenceZoneStateStore = org.pca.app.runtime.location.geofence.GeofenceZoneStateStore(
+        EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_geofence_zone_state"),
+    )
+    val geofenceAlertDelivery = org.pca.app.runtime.location.geofence.AndroidGeofenceAlertDelivery(context.applicationContext)
+    val geofenceMonitor = org.pca.app.runtime.location.geofence.GeofenceMonitor(
+        zoneStore = geofenceZoneStore,
+        zoneStateStore = geofenceZoneStateStore,
+        alertPort = geofenceAlertDelivery,
+    )
+
     /** PCA-ANDROID-WEB-YOUTUBE-1 (Agent 19) + PCA-WEB-RUNTIME-1 (Agent 27) real production
      * bindings: the deterministic, offline-first web-filter/Safe Browser engine, now wired to a
      * real navigation surface ([org.pca.app.feature.webprotection.ui.SafeBrowserActivity]),
@@ -448,7 +469,22 @@ class PcaAppGraph private constructor(
         runCatching { usageSessionRecorder.poll() }
         val deviceId = enrolledDeviceIdOrNull()
         if (deviceId != null) {
-            runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
+            val captureResult = runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
+            // PCA-FR-063: evaluate the SAME fresh fix this cycle just captured against any
+            // parent-defined geofence zones. Deliberately a second, independent
+            // `lastKnownLocation()` read (never re-derived from the just-persisted, possibly
+            // approximate-rounded record) -- geofence membership should reflect the real platform
+            // fix, not the defense-in-depth-rounded value [locationSampleRecorder] chose to persist
+            // for a COARSE-permission device. Cheap and side-effect-free: the same read-only
+            // platform accessor [locationSampleRecorder] itself calls.
+            if (captureResult.getOrNull()?.recorded == true) {
+                runCatching {
+                    val sample = locationCapabilitySource.lastKnownLocation()
+                    if (sample != null) {
+                        geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
+                    }
+                }
+            }
         }
         runCatching { usageAccessDegradationMonitor.checkAndHandle() }
     }
