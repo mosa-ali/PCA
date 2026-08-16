@@ -53,6 +53,17 @@ completion for release purposes.
    cover completeness/structure/bidi-safety, not visual layout, font legibility, or truncation
    with real text metrics).
 
+## Addendum (PCA-FR-093, WRITER72): parent-web privacy pages
+
+`parent-web/src/i18n/locales/ar.json`'s `retention`/`export`/`deleteNow` sections gained new
+keys (`retention.currentDefault`, `retention.chooseWindow`, `retention.windowLabels.*`, updated
+`retention.updatedStatus`/`deleteNow.issuedStatus`/`export.generatedStatus`/`export.description`)
+when those pages were wired to the real backend retention/delete-now/export-request endpoints.
+These are ordinary, non-religious product UI strings (retention-window duration labels and status
+sentences), authored engineering-side per the same policy as the rest of this file, and carry the
+same **PENDING NATIVE REVIEWER SIGN-OFF** status -- not yet linguistically reviewed, not to be
+treated as translation completion for release.
+
 ## What is NOT pending review
 
 - String **completeness** (every key present in both locales) — enforced automatically, not a

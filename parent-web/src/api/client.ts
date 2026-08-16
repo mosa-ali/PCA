@@ -46,6 +46,7 @@ import type {
   FreeAccessStatusClient,
   ParentFamilyDataGateway,
   RequestClient,
+  RetentionClient,
   ServiceAuthClient,
   WebRuleAdminClient,
   WellbeingMessageAdminClient,
@@ -77,6 +78,8 @@ import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, noFamilyContextAvailable, noServiceBearerTokenAvailable as noBillingBearerTokenAvailable } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
+import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
+import { DevRetentionClient } from './dev/devRetentionClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
@@ -110,6 +113,13 @@ export interface PcaApiClients {
    * `serviceAuth` already relies on.
    */
   freeAccessStatus: FreeAccessStatusClient;
+  /**
+   * PCA-FR-093: real, HTTP-backed against
+   * backend/src/http/routes/retentionRoutes.ts outside demo mode. Same
+   * session-transport gap as `billing` above -- see
+   * ./real/realRetentionClient.ts's header.
+   */
+  retention: RetentionClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
   isFixtureBacked: boolean;
 }
@@ -129,6 +139,7 @@ function buildDevClients(): PcaApiClients {
     billing: new DevBillingClient(),
     commercialNotifications: new DevCommercialNotificationClient(),
     freeAccessStatus: new DevFreeAccessStatusClient(),
+    retention: new DevRetentionClient(),
     isFixtureBacked: true,
   };
 }
@@ -184,6 +195,9 @@ function buildRealClients(): PcaApiClients {
     }),
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
+    // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
+    // billing above -- see ./real/realRetentionClient.ts's header.
+    retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, noRetentionFamilyContextAvailable),
     isFixtureBacked: false,
   };
 }

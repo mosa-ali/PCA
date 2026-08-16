@@ -43,6 +43,7 @@ import type {
   SubscriptionSnapshot,
 } from '../domain/billing';
 import type { FreeAccessStatus } from '../domain/freeAccess';
+import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, RetentionPolicySettings, RetentionPolicySubmitResult } from '../domain/retention';
 
 export interface AuthenticatedSession {
   accountId: string;
@@ -209,6 +210,24 @@ export interface CommercialNotificationClient {
   unreadCount(): Promise<number>;
   markRead(notificationId: string): Promise<void>;
   acknowledge(notificationId: string): Promise<void>;
+}
+
+/**
+ * PCA-FR-093: family privacy-control intake surface against
+ * backend/src/http/routes/retentionRoutes.ts. `getDefaults` is
+ * family-scope-free (the architecture-baseline default,
+ * PCA-DEC-003/PCA-FR-101); every other method is scoped to the caller's
+ * own family. See retentionRoutes.ts's own doc comments: `submitPolicy`
+ * validates+audits but this backend holds no policy payload storage
+ * (never claim persistence to the UI), `deleteNow`/`requestExport` always
+ * report a pending/not-yet-completed disposition, never a fabricated
+ * "done" state.
+ */
+export interface RetentionClient {
+  getDefaults(): Promise<RetentionDefaults>;
+  submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult>;
+  deleteNow(actionId: string): Promise<DeleteNowResult>;
+  requestExport(): Promise<ExportRequestResult>;
 }
 
 export interface WellbeingMessageAdminClient {

@@ -1,11 +1,21 @@
+// PCA-FR-093: the confirm action genuinely calls
+// clients.retention.deleteNow (backend/src/http/routes/retentionRoutes.ts's
+// POST /v1/families/:familyId/delete-now) instead of only flipping local
+// UI state. actionId is a fresh client-generated id per confirm so a
+// retried submit is idempotent server-side (see that route's own
+// scoped-actionId doc comment). The status message always reflects the
+// backend's real disclosed disposition (DELETE_PENDING_REMOTE_DEVICE),
+// never a fabricated "done".
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState } from 'react';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { getApiClients } from '../../api/client';
 
 export default function DeleteNow() {
   const { t } = useTranslation();
+  const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -21,7 +31,9 @@ export default function DeleteNow() {
   const confirmDelete = async () => {
     try {
       await runFamilyAction('DELETE_HISTORY', async () => {
-        setStatus(t('deleteNow.issuedStatus'));
+        const actionId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `delete-now-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const result = await clients.retention.deleteNow(actionId);
+        setStatus(t('deleteNow.issuedStatus', { status: result.deliveryStatus }));
       });
     } catch (e) {
       setStatus(e instanceof Error ? e.message : t('common.deniedGeneric'));

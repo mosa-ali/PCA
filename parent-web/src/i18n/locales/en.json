@@ -548,17 +548,26 @@
     "epochSummary": "Family trust-set epoch {{trustSetEpoch}}, key epoch {{keyEpoch}}."
   },
   "export": {
-    "description": "An export is generated and encrypted entirely on this device; only the family's own key material can open it.",
-    "generatedStatus": "Export generated locally in this browser (dev stub) -- never proxied through a server."
+    "description": "An export is generated and encrypted entirely on this device; only the family's own key material can open it. Requesting one here records a pending export intake request with the service -- it is not yet a downloadable file (crypto-review pending).",
+    "generatedStatus": "Export request accepted (ref {{exportId}}) -- pending crypto review, not yet a downloadable file."
   },
   "retention": {
-    "description": "Retention/deletion of family activity is enforced locally by the device holding the plaintext; this screen only sets the family-level policy value that devices honor.",
-    "updatedStatus": "Retention updated (dev stub -- no real backend yet)."
+    "description": "Retention/deletion of family activity is enforced locally by the device holding the plaintext; this screen sets the family-level policy value that devices honor.",
+    "currentDefault": "Current architecture default: {{window}}.",
+    "chooseWindow": "Choose the retention window for this family",
+    "updatedStatus": "Retention policy validated and audited: {{window}}. Devices apply this value locally.",
+    "windowLabels": {
+      "14_DAYS": "14 days",
+      "1_MONTH": "1 month",
+      "3_MONTHS": "3 months",
+      "6_MONTHS": "6 months",
+      "9_MONTHS": "9 months"
+    }
   },
   "deleteNow": {
     "description": "This issues a signed, one-time deletion instruction to family devices. It cannot retroactively erase a device that stays offline.",
     "confirmBody": "This action cannot be undone once devices acknowledge it.",
-    "issuedStatus": "Deletion instruction issued (dev stub) -- signed and audited, delivered E2EE to devices."
+    "issuedStatus": "Deletion instruction issued and audited -- delivery status: {{status}}."
   },
   "childWellbeing": {
     "noMessages": "No custom wellbeing messages target this child yet."
