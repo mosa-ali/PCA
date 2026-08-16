@@ -302,4 +302,23 @@
     <string name="youtube_mode_b_title">Mode B: Video-level detail</string>
     <string name="youtube_mode_b_description">Would show which specific videos were watched. This requires a separate review and is not offered as a setting you can turn on.</string>
     <string name="youtube_mode_b_unavailable">Not available yet</string>
+
+    <!-- PCA-FR-063: geofence entry/exit "trust zone" alerts (PCA-FR-135 framing: an opt-in,
+         explicit alert about a defined zone boundary, never continuous background tracking). -->
+    <string name="geofence_notification_channel_name">Zone alerts</string>
+    <string name="geofence_notification_channel_description">Alerts when this device enters or exits a trusted zone you\'ve defined.</string>
+    <string name="geofence_alert_entry_title">Entered %1$s</string>
+    <string name="geofence_alert_entry_body">This device entered the \"%1$s\" zone.</string>
+    <string name="geofence_alert_exit_title">Left %1$s</string>
+    <string name="geofence_alert_exit_body">This device left the \"%1$s\" zone.</string>
+
+    <!-- PCA-PRIV-001 / PCA-FR-023/024: camera-based eye-distance proximity permission disclosure.
+         Must always state plainly that only a coarse near/far reading is measured, images are
+         never stored, uploaded, or logged, and this is not face recognition of who is present. -->
+    <string name="eye_distance_camera_permission_title">Screen-distance camera check</string>
+    <string name="eye_distance_camera_permission_explainer">This feature can use the front camera to notice when a face is very close to the screen, so it can gently suggest a break. It only ever measures rough NEAR/FAR distance -- it never identifies who is in view, never takes or saves a photo, and never uploads or stores any camera image. Each camera frame is used for a split second and then thrown away immediately.</string>
+    <string name="eye_distance_camera_permission_allow_button">Allow camera for distance check</string>
+    <string name="eye_distance_camera_permission_not_now_button">Not now</string>
+    <string name="eye_distance_camera_permission_denied_notice">Camera permission was not granted, so the screen-distance check is off. No images are ever accessed without this permission.</string>
+    <string name="eye_distance_camera_unavailable_notice">The on-device distance-detection feature isn\'t available on this build yet.</string>
 </resources>
