@@ -33,6 +33,12 @@
     <string name="usage_access_alert_degraded_title">Usage monitoring may need attention</string>
     <string name="usage_access_alert_degraded_body">This device hasn\'t reported any usage activity recently even though access is still granted.</string>
 
+    <!-- Emergency-dial trusted-contact alert (PCA-FR-132, Writer73) notification strings -->
+    <string name="emergency_dial_alert_notification_channel_name">Emergency access alerts</string>
+    <string name="emergency_dial_alert_notification_channel_description">Alerts when the emergency dialer is opened on this device.</string>
+    <string name="emergency_dial_alert_title">Emergency dialer opened</string>
+    <string name="emergency_dial_alert_body">A record of this was queued to sync when the family connection is next available.</string>
+
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">Web protection</string>
     <string name="web_protection_vpn_channel_description">Shows while device-wide domain filtering is active.</string>

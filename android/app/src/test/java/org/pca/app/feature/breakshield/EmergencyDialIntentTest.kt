@@ -1,6 +1,8 @@
 package org.pca.app.feature.breakshield
 
+import android.content.Context
 import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -9,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
 /**
  * PCA-FR-132: this is the safety-critical half of the emergency-call closure -- proves the actual
@@ -56,5 +59,73 @@ class EmergencyDialIntentTest {
     fun `isSafeEmergencyDialIntent rejects an ACTION_DIAL intent that pre-fills a number`() {
         val intentWithNumber = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:911"))
         assertFalse("a pre-filled number is not the deliberately-blank shape this app builds", isSafeEmergencyDialIntent(intentWithNumber))
+    }
+
+    // PCA-FR-132 trusted-contact closure (Writer73): launchEmergencyDialer's own safety
+    // guarantees now that it also fires a best-effort EmergencyDialTrustedContactAlert -- the
+    // safety boundary this item exists to protect is that the alert step can NEVER prevent,
+    // delay-in-a-way-that-matters, or roll back the dial launch.
+
+    private class RecordingAlert : EmergencyDialTrustedContactAlert {
+        var callCount = 0
+            private set
+        var dialAlreadyLaunchedWhenCalled = false
+            private set
+        private val context: Context = ApplicationProvider.getApplicationContext()
+
+        override fun alert() {
+            callCount++
+            // peekNextStartedActivity (non-consuming) so this check never steals the Intent the
+            // test itself still needs to inspect afterward via the consuming nextStartedActivity.
+            dialAlreadyLaunchedWhenCalled = shadowOf(context as android.app.Application).peekNextStartedActivity() != null
+        }
+    }
+
+    @Test
+    fun `launchEmergencyDialer still starts the real ACTION_DIAL intent, unchanged, with the new alert parameter present`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alert = RecordingAlert()
+
+        launchEmergencyDialer(context, alert)
+
+        val started = shadowOf(context as android.app.Application).nextStartedActivity
+        assertEquals(Intent.ACTION_DIAL, started?.action)
+        assertNull(started?.data)
+    }
+
+    @Test
+    fun `launchEmergencyDialer invokes the trusted-contact alert exactly once, strictly after the dial intent has already been started`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alert = RecordingAlert()
+
+        launchEmergencyDialer(context, alert)
+
+        assertEquals(1, alert.callCount)
+        assertTrue("the dial Intent must already be recorded as started by the time alert() runs", alert.dialAlreadyLaunchedWhenCalled)
+    }
+
+    @Test
+    fun `SAFETY -- a trusted-contact alert that throws never propagates out of launchEmergencyDialer and never undoes the dial launch`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val throwingAlert = EmergencyDialTrustedContactAlert { throw IllegalStateException("simulated notification/sync failure") }
+
+        // Must not throw.
+        launchEmergencyDialer(context, throwingAlert)
+
+        val started = shadowOf(context as android.app.Application).nextStartedActivity
+        assertEquals("the dial intent must still have been started even though the alert threw", Intent.ACTION_DIAL, started?.action)
+    }
+
+    @Test
+    fun `RealEmergencyDialTrustedContactAlert#alert never throws even with no PcaApplication wired (plain Robolectric application context)`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // Sanity: this repo's plain unit-test environment does NOT use PcaApplication as the test
+        // application (see PrayerReminderReceiverTest's own doc comment for why) -- so this also
+        // proves the safe-cast degrade path in enqueueEmergencyDialChildRequest.
+        assertFalse(context.applicationContext is org.pca.app.PcaApplication)
+
+        // Must not throw -- both internal legs (notification delivery, child-request enqueue)
+        // degrade silently.
+        RealEmergencyDialTrustedContactAlert(context).alert()
     }
 }

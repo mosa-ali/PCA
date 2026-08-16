@@ -37,6 +37,12 @@
     <string name="usage_access_alert_degraded_title">قد تحتاج مراقبة الاستخدام إلى انتباه</string>
     <string name="usage_access_alert_degraded_body">لم يُبلغ هذا الجهاز عن أي نشاط استخدام مؤخرًا رغم أن الصلاحية لا تزال ممنوحة.</string>
 
+    <!-- تنبيه جهة الاتصال الموثوقة عند استخدام الاتصال الطارئ (PCA-FR-132, Writer73) -->
+    <string name="emergency_dial_alert_notification_channel_name">تنبيهات الوصول الطارئ</string>
+    <string name="emergency_dial_alert_notification_channel_description">تنبيهات عند فتح لوحة الاتصال الطارئ على هذا الجهاز.</string>
+    <string name="emergency_dial_alert_title">تم فتح لوحة الاتصال الطارئ</string>
+    <string name="emergency_dial_alert_body">تم إدراج سجل بهذا الأمر لمزامنته عند توفر اتصال العائلة.</string>
+
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">حماية الويب</string>
     <string name="web_protection_vpn_channel_description">تظهر أثناء تفعيل تصفية النطاقات على مستوى الجهاز.</string>
