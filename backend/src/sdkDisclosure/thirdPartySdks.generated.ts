@@ -78,6 +78,11 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
         "category": "Android Jetpack (first-party Google platform library)"
       },
       {
+        "name": "androidx.biometric:biometric",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
         "name": "androidx.compose:compose-bom",
         "version": "see android/gradle/libs.versions.toml",
         "category": "Android Jetpack (first-party Google platform library)"
@@ -129,6 +134,16 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
       },
       {
         "name": "androidx.security:security-crypto",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
+        "name": "androidx.work:work-runtime-ktx",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
+        "name": "androidx.work:work-testing",
         "version": "see android/gradle/libs.versions.toml",
         "category": "Android Jetpack (first-party Google platform library)"
       },
