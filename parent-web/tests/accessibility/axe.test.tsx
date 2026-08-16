@@ -12,6 +12,7 @@ import ParentMemberIncreaseRequest from '../../src/pages/billing/ParentMemberInc
 import Invoices from '../../src/pages/billing/Invoices';
 import ChildrenList from '../../src/pages/children/ChildrenList';
 import ActivityTimelinePage from '../../src/pages/children/ActivityTimelinePage';
+import AppsPage from '../../src/pages/children/AppsPage';
 import Devices from '../../src/pages/family/Devices';
 import Members from '../../src/pages/family/Members';
 import RolesMatrix from '../../src/pages/family/RolesMatrix';
@@ -19,7 +20,12 @@ import DeleteNow from '../../src/pages/privacy/DeleteNow';
 import Retention from '../../src/pages/privacy/Retention';
 import Transparency from '../../src/pages/privacy/Transparency';
 import Audit from '../../src/pages/security/Audit';
+import ProtectionStatus from '../../src/pages/security/ProtectionStatus';
 import WellbeingAdmin from '../../src/pages/wellbeing/WellbeingAdmin';
+import Login from '../../src/pages/auth/Login';
+import Register from '../../src/pages/auth/Register';
+import CheckoutReturn from '../../src/pages/billing/CheckoutReturn';
+import Settings from '../../src/pages/Settings';
 import { FreeAccessReminderBannerView } from '../../src/components/freeaccess/FreeAccessReminderBannerView';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
@@ -156,6 +162,47 @@ describe('accessibility spot checks (axe)', () => {
   it('ActivityTimelinePage has no critical axe violations', async () => {
     const { container } = renderWithProviders(withChildRoute('/children/:childId/activity', <ActivityTimelinePage />), {
       route: '/children/child-amir/activity',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Login page (auth, unauthenticated) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Login />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Register page (auth, unauthenticated) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Register />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Settings page (language switcher form) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Settings />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ProtectionStatus page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<ProtectionStatus />);
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('CheckoutReturn page (no requestId in URL) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<CheckoutReturn />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('AppsPage (child app-rules form) has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/apps', <AppsPage />), {
+      route: '/children/child-amir/apps',
       role: 'OWNER',
     });
     await new Promise((r) => setTimeout(r, 250));
