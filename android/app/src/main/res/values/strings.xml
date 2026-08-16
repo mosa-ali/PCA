@@ -302,6 +302,7 @@
     <string name="youtube_mode_b_title">Mode B: Video-level detail</string>
     <string name="youtube_mode_b_description">Would show which specific videos were watched. This requires a separate review and is not offered as a setting you can turn on.</string>
     <string name="youtube_mode_b_unavailable">Not available yet</string>
+    <string name="youtube_mode_unavailable_error">YouTube monitoring isn\'t available on this device right now. Try again later.</string>
 
     <!-- PCA-FR-063: geofence entry/exit "trust zone" alerts (PCA-FR-135 framing: an opt-in,
          explicit alert about a defined zone boundary, never continuous background tracking). -->

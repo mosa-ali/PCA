@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
+import org.pca.app.feature.youtube.ui.YouTubeModeActivity
 import org.pca.app.runtime.graph.newLocalRequestId
 import org.pca.app.runtime.ui.ChildHomeScreen
 import org.pca.app.security.ui.AdminSecurityActivity
@@ -51,6 +52,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onOpenAdminSecurity = {
                         startActivity(Intent(this@MainActivity, AdminSecurityActivity::class.java))
+                    },
+                    onOpenYouTubeMode = {
+                        startActivity(Intent(this@MainActivity, YouTubeModeActivity::class.java))
                     },
                 )
             }

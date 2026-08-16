@@ -51,6 +51,7 @@ fun ChildHomeScreen(
     onEmergencyAccess: () -> Unit = {},
     onOpenSafeBrowser: () -> Unit = {},
     onOpenAdminSecurity: () -> Unit = {},
+    onOpenYouTubeMode: () -> Unit = {},
 ) {
     val rows = statusRows(status)
     Surface(modifier = modifier.fillMaxSize()) {
@@ -65,6 +66,7 @@ fun ChildHomeScreen(
             items(rows) { row -> StatusRow(row) }
 
             item { SafeBrowserEntryCard(onClick = onOpenSafeBrowser) }
+            item { YouTubeModeEntryCard(onClick = onOpenYouTubeMode) }
             item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
             item { AdminSecurityEntryCard(onClick = onOpenAdminSecurity) }
@@ -103,6 +105,25 @@ private fun AdminSecurityEntryCard(onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = stringResource(R.string.removal_decision_title), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/** PCA-FR-054 closure (Writer73): the real, reachable entry point into
+ * [org.pca.app.feature.youtube.ui.YouTubeModeActivity] -- without this, that screen (a real,
+ * independently-tested Composable) would remain declared but unlaunchable, the same "no dead
+ * Activities" rule [SafeBrowserEntryCard] above already establishes. This card itself gates
+ * nothing -- YouTubeModeActivity resolves its own real identity/usage-evidence read on launch. */
+@Composable
+private fun YouTubeModeEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.youtube_mode_screen_title), style = MaterialTheme.typography.titleMedium)
         }
     }
 }

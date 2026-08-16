@@ -301,6 +301,7 @@
     <string name="youtube_mode_b_title">النمط B: تفاصيل على مستوى الفيديو</string>
     <string name="youtube_mode_b_description">سيُظهر الفيديوهات المحددة التي تمت مشاهدتها. يتطلب هذا مراجعة منفصلة وليس متاحًا كإعداد يمكن تفعيله.</string>
     <string name="youtube_mode_b_unavailable">غير متاح بعد</string>
+    <string name="youtube_mode_unavailable_error">مراقبة يوتيوب غير متاحة على هذا الجهاز حاليًا. حاول مرة أخرى لاحقًا.</string>
 
     <!-- PCA-FR-063: تنبيهات دخول/خروج "منطقة موثوقة" الجغرافية (إطار PCA-FR-135: تنبيه اختياري
          وصريح حول حدود منطقة محددة، وليس تتبعًا مستمرًا في الخلفية أبدًا). -->
