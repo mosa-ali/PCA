@@ -64,6 +64,14 @@ sentences), authored engineering-side per the same policy as the rest of this fi
 same **PENDING NATIVE REVIEWER SIGN-OFF** status -- not yet linguistically reviewed, not to be
 treated as translation completion for release.
 
+## Addendum (PCA-FR-094, WRITER72): notification-preferences gap note
+
+`parent-web/src/i18n/locales/ar.json`'s `notifications.preferencesNotYetConnected` (and its
+English counterpart) is new UI copy explaining that the email/push preference toggles are
+read-only pending real backend support (see ICR-PCA-FR-094-NOTIFICATION-PREFS). Same
+engineering-authored, non-religious, **PENDING NATIVE REVIEWER SIGN-OFF** status as every other
+entry in this file.
+
 ## What is NOT pending review
 
 - String **completeness** (every key present in both locales) — enforced automatically, not a

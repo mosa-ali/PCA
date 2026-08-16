@@ -487,6 +487,7 @@
   "notifications": {
     "emailAlerts": "Email me for important alerts",
     "pushRequests": "Push notifications for requests",
+    "preferencesNotYetConnected": "These delivery preferences are not yet backed by a server-side setting -- changing them here would not currently change what you receive, so they are shown read-only until that backend support exists.",
     "payloadNote": "Notification payloads never contain family activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6).",
     "commercialTitle": "Billing notifications",
     "commercialEmpty": "You have no billing notifications yet.",

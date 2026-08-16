@@ -37,12 +37,26 @@ export default function Notifications() {
     <section aria-labelledby="notifications-title">
       <h1 id="notifications-title">{t('nav.notifications')}</h1>
       <div className="card">
+        {/*
+          PCA-FR-094: no backend notification-preference endpoint exists in
+          this repository slice (checked backend/src/http/routes/
+          parentAccountRoutes.ts and the whole backend tree for
+          notification-preference/email-destination surface -- none found).
+          Rendering these as live, silently-no-op checkboxes would mislead a
+          parent into believing a choice here changes delivery. They are
+          disabled and explicitly labeled as not-yet-connected rather than
+          faked; see ICR-PCA-FR-094-NOTIFICATION-PREFS filed alongside this
+          change for the real backend work this needs.
+        */}
         <label className="checkbox-row">
-          <input type="checkbox" defaultChecked /> {t('notifications.emailAlerts')}
+          <input type="checkbox" checked disabled aria-describedby="notification-prefs-gap-note" /> {t('notifications.emailAlerts')}
         </label>
         <label className="checkbox-row">
-          <input type="checkbox" defaultChecked /> {t('notifications.pushRequests')}
+          <input type="checkbox" checked disabled aria-describedby="notification-prefs-gap-note" /> {t('notifications.pushRequests')}
         </label>
+        <p id="notification-prefs-gap-note" role="status">
+          {t('notifications.preferencesNotYetConnected')}
+        </p>
       </div>
       <p style={{ color: 'var(--color-text-muted)' }}>{t('notifications.payloadNote')}</p>
 
