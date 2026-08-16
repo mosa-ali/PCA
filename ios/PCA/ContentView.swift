@@ -1,21 +1,40 @@
 import SwiftUI
 
 struct ContentView: View {
+    /// Snapshot-only for this home screen: real-time authorization
+    /// tracking is `ChildAuthorizationCenter`'s job (see
+    /// `FamilyControls/ChildAuthorizationCenter.swift`), which requires
+    /// the `FamilyControls` framework at runtime. This default keeps the
+    /// screen honest ("not yet active") rather than defaulting to
+    /// `.approved`, consistent with doc 07 Section 14's "never silently
+    /// say PROTECTED" rule; a production entry point wires the real
+    /// observed state in here instead of relying on this default.
+    var authorization: ChildAuthorizationState = .notDetermined
+
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "shield")
-                .font(.system(size: 42))
-                .accessibilityHidden(true)
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "shield")
+                    .font(.system(size: 42))
+                    .accessibilityHidden(true)
 
-            Text("PCA")
-                .font(.largeTitle.weight(.semibold))
+                Text("PCA")
+                    .font(.largeTitle.weight(.semibold))
 
-            Text("Native iOS foundation")
-                .foregroundStyle(.secondary)
+                Text("Native iOS foundation")
+                    .foregroundStyle(.secondary)
+
+                NavigationLink {
+                    AboutProtectionView(authorization: authorization)
+                } label: {
+                    Label("Removal protection", systemImage: "lock.shield")
+                }
+                .padding(.top, 8)
+                .accessibilityHint("Shows what removal protection is currently active on this device and its exact scope")
+            }
+            .padding()
+            .accessibilityElement(children: .contain)
         }
-        .padding()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("PCA native iOS foundation")
     }
 }
 

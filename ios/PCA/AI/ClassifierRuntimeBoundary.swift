@@ -37,6 +37,33 @@ public protocol ClassifierRuntime {
     func classify(inputDigest: Data) throws -> ClassificationResult
 }
 
+/// Thrown by a `ClassifierRuntime` conformance that cannot honor a
+/// `classify` call. Deliberately NOT a crash: doc 23 Section 1 requires
+/// "no signed/verified model is currently loaded" to be treated as "no
+/// classification," never as "classified safe," and a caller cannot
+/// recover from -- or write a test against -- a `fatalError`. Throwing
+/// keeps the fail-safe contract (no result is ever fabricated) while
+/// staying within normal Swift error handling that both production
+/// callers and XCTest can exercise.
+public enum ClassifierRuntimeError: Error, Equatable {
+    /// A concrete Core ML model/feature schema has not been wired at the
+    /// doc-23 integration point yet (no signed model package ships in
+    /// this source tree -- see doc 23 Section 3). Callers MUST treat this
+    /// identically to `.modelUnavailable` from `availability()`: no
+    /// classification happened, and nothing about the input was judged
+    /// safe or unsafe.
+    case modelSchemaNotWired
+}
+
+extension ClassifierRuntimeError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .modelSchemaNotWired:
+            return "No concrete Core ML model schema is wired at the doc-23 integration point yet; this runtime cannot classify until a signed model package (doc 23 Section 3) is integrated by an owner decision."
+        }
+    }
+}
+
 #if canImport(CoreML)
 /// Placement-only production conformance: this type says WHERE inference
 /// runs (Core ML, on-device, no network call in this method), not WHAT
@@ -59,10 +86,15 @@ public final class CoreMLClassifierRuntime: ClassifierRuntime {
     public func classify(inputDigest: Data) throws -> ClassificationResult {
         // Concrete `MLModel` invocation is intentionally not implemented
         // in this source-only slice -- it requires the specific model's
-        // input/output feature schema (doc 23), which this boundary file
-        // does not select. `availability()` is the contract callers must
-        // check before ever calling this method.
-        fatalError("CoreMLClassifierRuntime.classify requires a concrete model schema wired at the doc-23 integration point.")
+        // input/output feature schema (doc 23), which no signed model
+        // package in this repository currently supplies. `availability()`
+        // is the contract callers must check before ever calling this
+        // method; this throw is the fail-safe fallback for a caller that
+        // calls anyway (or calls between an `availability()` check and a
+        // model swap) -- it MUST NOT crash the host app (PCA-AI-001/
+        // PCA-AI-002: a failed/unwired model retains deterministic-only
+        // behavior, never an app crash) and MUST NOT fabricate a result.
+        throw ClassifierRuntimeError.modelSchemaNotWired
     }
 }
 #endif
