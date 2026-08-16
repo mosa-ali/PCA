@@ -43,12 +43,11 @@ import org.pca.app.security.ThrottledAdminPinVerifier
  * `BiometricPrompt`, which is exactly why this is a distinct Activity
  * rather than added to one of theirs.
  *
- * NOT YET registered in `AndroidManifest.xml` or linked from any existing
- * screen -- both are owned outside this lane's exclusive file list (see
- * this lane's INTERFACE_CHANGE_REQUEST). Every class this Activity uses is
- * itself fully real and independently unit-tested; only the final
- * manifest registration + a launcher entry point elsewhere in the app
- * remain for a user to actually reach this screen.
+ * Registered in `AndroidManifest.xml` and reachable in production: launched
+ * from [org.pca.app.MainActivity] via the `AdminSecurityEntryCard` entry
+ * point wired into [org.pca.app.runtime.ui.ChildHomeScreen] (see that
+ * screen's own doc comment for why the card itself gates nothing -- this
+ * Activity performs its own PIN/biometric authentication on launch).
  *
  * Composition here is intentionally constructed directly (not read off
  * [org.pca.app.runtime.graph.PcaAppGraph], which this lane does not own)
