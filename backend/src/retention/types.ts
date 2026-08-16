@@ -46,6 +46,40 @@ export type AuditRetentionEntityClass = 'PARENT_ACTION_AUDIT' | 'TAMPER_EVENT';
 
 export type RetentionEntityClass = GeneralRetentionEntityClass | AuditRetentionEntityClass;
 
+/**
+ * PCA-DATA-020: the type-level restriction above (RetentionEntityClass has
+ * no member for any Section 3.2-protected entity) only holds INSIDE this
+ * module's own pure functions -- it cannot by itself stop an external HTTP
+ * caller from supplying an arbitrary string (e.g. `"Family"` or
+ * `"DeviceKeyMetadata"`) that TypeScript's structural `as` casts at a JSON
+ * parse boundary would happily let through un-checked. This runtime array
+ * (generated FROM the exact same literal union above, not independently
+ * maintained, so it can never drift out of sync with it) is what an HTTP
+ * intake boundary must validate every caller-supplied `entityClass` against
+ * before constructing a `RetentionRecord` -- see
+ * http/routes/retentionRoutes.ts's `parseDeleteNowRecords`.
+ */
+export const ALL_RETENTION_ENTITY_CLASSES: readonly RetentionEntityClass[] = [
+  'WEB_VISIT',
+  'CONTENT_BLOCK_EVENT',
+  'USAGE_SESSION',
+  'YOUTUBE_CONTROLLED_ACTIVITY',
+  'BREAK_SESSION',
+  'PROXIMITY_EVENT',
+  'LOCATION_POINT',
+  'PRAYER_REMINDER_EVENT',
+  'ROUTINE_ACTIVITY',
+  'CHILD_REQUEST_DECISION',
+  'SYNC_RECEIPT',
+  'WELLBEING_COUNTER',
+  'PARENT_ACTION_AUDIT',
+  'TAMPER_EVENT',
+];
+
+export function isRetentionEntityClass(value: unknown): value is RetentionEntityClass {
+  return typeof value === 'string' && (ALL_RETENTION_ENTITY_CLASSES as readonly string[]).includes(value);
+}
+
 export type LocationRetentionMode = 'CURRENT_LAST_ONLY' | { window: RetentionWindow };
 
 export interface RetentionPolicySettings {

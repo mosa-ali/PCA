@@ -286,6 +286,41 @@ test('export-requests round trip: accepted (202) with a fresh exportId, never cl
   }
 });
 
+test('PCA-DATA-020: delete-now rejects a record whose entityClass is a Section 3.2-protected entity name (e.g. "Family") with 400, never silently accepting it into a plan', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/delete-now`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { actionId: 'protected-entity-attempt', records: [{ entityClass: 'Family', id: 'x', eventTimestampUtc: '2026-01-01T00:00:00.000Z' }] },
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, 'invalid_request');
+  } finally {
+    await app.close();
+  }
+});
+
+test('PCA-DATA-020: delete-now rejects a record with an unrecognized/made-up entityClass string with 400', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/delete-now`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { actionId: 'unknown-entity-attempt', records: [{ entityClass: 'NOT_A_REAL_CLASS', id: 'x', eventTimestampUtc: '2026-01-01T00:00:00.000Z' }] },
+    });
+    assert.equal(response.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
 test('PCA-DATA-027/doc 11 Section 6: delete-now response discloses the request as DELETE_PENDING_REMOTE_DEVICE, never as completed', async () => {
   const { app, authService, authzRepository } = buildApp();
   try {

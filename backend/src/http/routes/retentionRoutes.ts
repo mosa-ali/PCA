@@ -7,6 +7,7 @@ import type { AuthzRepository } from '../../authz/AuthzRepository.js';
 import { validateRetentionPolicy } from '../../retention/engine.js';
 import { applyDeleteNow } from '../../retention/deleteNow.js';
 import type { DeleteNowLedger } from '../../retention/DeleteNowLedger.js';
+import { isRetentionEntityClass } from '../../retention/types.js';
 import type { DeletionState, LocationRetentionMode, RetentionPolicySettings, RetentionRecord, RetentionWindow } from '../../retention/types.js';
 import { DEFAULT_RETENTION_WINDOW, RETENTION_WINDOWS } from '../../retention/policy.js';
 import { FamilyAuditService } from '../../familyrbac/FamilyAuditStore.js';
@@ -133,12 +134,21 @@ function parseDeleteNowRecords(value: unknown): RetentionRecord[] | null {
   for (const entry of value) {
     if (!isPlainObject(entry)) return null;
     const { entityClass, id, eventTimestampUtc } = entry;
-    if (typeof entityClass !== 'string' || entityClass.length === 0 || entityClass.length > MAX_ENTITY_CLASS_LENGTH) return null;
+    // PCA-DATA-020: entityClass MUST be one of the actual known
+    // RetentionEntityClass values (retention/types.ts's
+    // ALL_RETENTION_ENTITY_CLASSES, generated from the same literal union
+    // planPurge/planDeleteNow are typed against) -- never an unchecked
+    // caller-supplied string. This is the runtime half of the type-level
+    // scope restriction those pure functions already enforce: it stops an
+    // external caller from ever getting a Section 3.2-protected entity
+    // name (e.g. "Family", "DeviceKeyMetadata") accepted into a
+    // RetentionRecord at all, let alone into a delete-now plan.
+    if (!isRetentionEntityClass(entityClass) || (entityClass as string).length > MAX_ENTITY_CLASS_LENGTH) return null;
     if (typeof id !== 'string' || id.length === 0 || id.length > MAX_RECORD_ID_LENGTH) return null;
     if (typeof eventTimestampUtc !== 'string') return null;
     const parsed = new Date(eventTimestampUtc);
     if (Number.isNaN(parsed.getTime())) return null;
-    records.push({ entityClass: entityClass as RetentionRecord['entityClass'], id, eventTimestampUtc: parsed });
+    records.push({ entityClass, id, eventTimestampUtc: parsed });
   }
   return records;
 }
