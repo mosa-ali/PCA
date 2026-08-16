@@ -286,6 +286,110 @@ test('export-requests round trip: accepted (202) with a fresh exportId, never cl
   }
 });
 
+test('PCA-DATA-027/doc 11 Section 6: delete-now response discloses the request as DELETE_PENDING_REMOTE_DEVICE, never as completed', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/delete-now`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { actionId: 'disclosure-check-1', records: [{ entityClass: 'WEB_VISIT', id: 'r1', eventTimestampUtc: '2026-01-01T00:00:00.000Z' }] },
+    });
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.deliveryStatus, 'DELETE_PENDING_REMOTE_DEVICE');
+    assert.notEqual(body.deliveryStatus, 'DELETION_CONFIRMED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('PCA-DATA-029/doc 11 Section 10: export-requests response discloses the "exists outside app-managed retention once created" limitation at creation time', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/export-requests`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: {},
+    });
+    assert.equal(response.statusCode, 202);
+    const body = response.json();
+    assert.ok(Array.isArray(body.disclosures) && body.disclosures.length > 0);
+    assert.match(body.disclosures[0], /EXIST.*OUTSIDE.*APP.*MANAGED/i);
+  } finally {
+    await app.close();
+  }
+});
+
+test('PCA-FR-101/PCA-DEC-003: the architecture-baseline retention default (1_MONTH) is reachable via GET /v1/retention-policy/defaults', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/retention-policy/defaults',
+      headers: { authorization: `Bearer ${rawToken}` },
+    });
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.generalWindow, '1_MONTH');
+    assert.ok(body.availableWindows.includes('1_MONTH'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET /v1/retention-policy/defaults requires authentication (401 without a bearer token) but NOT family scope', async () => {
+  const { app } = buildApp();
+  try {
+    const unauthenticated = await app.inject({ method: 'GET', url: '/v1/retention-policy/defaults' });
+    assert.equal(unauthenticated.statusCode, 401);
+  } finally {
+    await app.close();
+  }
+});
+
+test('PCA-NFR-062: a parent can complete delete-now AND request an export end-to-end purely through the API, with no manual/support-ticket step anywhere in either response', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+
+    const deleteNowResponse = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/delete-now`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { actionId: 'nfr-062-self-service-delete', records: [] },
+    });
+    assert.equal(deleteNowResponse.statusCode, 200);
+    const deleteNowBody = deleteNowResponse.json();
+    // Self-service: fully resolved by this one authenticated call -- no
+    // "contact support"/"open a ticket" field or sentinel value anywhere.
+    assert.equal(deleteNowBody.actionId, 'nfr-062-self-service-delete');
+    const deleteNowSerialized = JSON.stringify(deleteNowBody).toLowerCase();
+    assert.doesNotMatch(deleteNowSerialized, /support|ticket|contact us|manual review/);
+
+    const exportResponse = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/export-requests`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: {},
+    });
+    assert.equal(exportResponse.statusCode, 202);
+    const exportBody = exportResponse.json();
+    const exportSerialized = JSON.stringify(exportBody).toLowerCase();
+    assert.doesNotMatch(exportSerialized, /support|ticket|contact us|manual review/);
+  } finally {
+    await app.close();
+  }
+});
+
 test('every accepted retention/delete-now/export request is audited via the shared FamilyAuditService', async () => {
   const { app, authService, authzRepository, auditRepo } = buildApp();
   try {

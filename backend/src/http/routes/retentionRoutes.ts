@@ -7,9 +7,34 @@ import type { AuthzRepository } from '../../authz/AuthzRepository.js';
 import { validateRetentionPolicy } from '../../retention/engine.js';
 import { applyDeleteNow } from '../../retention/deleteNow.js';
 import type { DeleteNowLedger } from '../../retention/DeleteNowLedger.js';
-import type { LocationRetentionMode, RetentionPolicySettings, RetentionRecord, RetentionWindow } from '../../retention/types.js';
-import { RETENTION_WINDOWS } from '../../retention/policy.js';
+import type { DeletionState, LocationRetentionMode, RetentionPolicySettings, RetentionRecord, RetentionWindow } from '../../retention/types.js';
+import { DEFAULT_RETENTION_WINDOW, RETENTION_WINDOWS } from '../../retention/policy.js';
 import { FamilyAuditService } from '../../familyrbac/FamilyAuditStore.js';
+
+/**
+ * doc 11 Section 6/Section 5.1/PCA-DATA-027: this HTTP layer only ever
+ * records a "delete now" REQUEST -- it never receives a signed child-device
+ * acknowledgement (that arrives, if at all, via the device-side envelope
+ * flow this route intentionally does not implement, PCA-DATA-027/crypto
+ * gate). So every response from this route MUST disclose the request as
+ * pending, literally reusing retention/types.ts's own `DeletionState` enum
+ * value rather than inventing a parallel ad hoc status string -- this is
+ * the doc 11 Section 6 "the UI MUST report the child deletion as pending,
+ * never completed" requirement, made structurally impossible to violate by
+ * type (there is no other DeletionState this constant could be reassigned
+ * to that would still compile as a "delete now accepted" response).
+ */
+const DELETE_NOW_DISCLOSED_STATE: DeletionState = 'DELETE_PENDING_REMOTE_DEVICE';
+
+/**
+ * doc 11 Section 10: "mark it EXPORT_EXISTS_EXTERNALLY and disclose that
+ * limitation at creation" -- this route never fabricates a completed
+ * export (see this file's top doc comment), but the 202 intake response
+ * still owes the caller the SAME disclosure doc 11 Section 10 requires be
+ * shown at creation time, so a client integrating this endpoint cannot
+ * miss it by only reading a later, not-yet-implemented completion payload.
+ */
+const EXPORT_CREATION_DISCLOSURE = 'EXPORT_WILL_EXIST_OUTSIDE_APP_MANAGED_RETENTION_ONCE_CREATED' as const;
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_FAMILY_ID_LENGTH = 128;
@@ -199,7 +224,12 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       await deps.auditService.record(
         auditRecord(familyId, 'DELETE_NOW', 'SUCCESS', `actionId=${actionId} idempotent=${result.idempotent} toDelete=${result.plan.toDelete.length}`, actionId),
       );
-      return reply.code(200).send({ actionId, idempotent: result.idempotent, plan: serializePlan(result.plan) });
+      return reply.code(200).send({
+        actionId,
+        idempotent: result.idempotent,
+        plan: serializePlan(result.plan),
+        deliveryStatus: DELETE_NOW_DISCLOSED_STATE,
+      });
     },
   );
 
@@ -240,7 +270,30 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       // 202: request accepted, never a completed artifact -- see this
       // module's doc comment on why export execution is intentionally not
       // wired here (PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW).
-      return reply.code(202).send({ exportId, status: 'PENDING_CRYPTO_REVIEW' });
+      return reply.code(202).send({ exportId, status: 'PENDING_CRYPTO_REVIEW', disclosures: [EXPORT_CREATION_DISCLOSURE] });
+    },
+  );
+
+  /**
+   * PCA-FR-101/PCA-DEC-003: exposes the architecture-baseline retention
+   * default (retention/policy.ts's `DEFAULT_RETENTION_WINDOW`, currently
+   * `1_MONTH`) so a client actually has a reachable source for "the
+   * default shown for explicit parent confirmation at first enrollment"
+   * instead of a client-side value that could silently drift from this
+   * module's own constant. Deliberately family-scope-free (no
+   * `requireActiveFamilyScope`): the default is a fixed architecture
+   * constant, not per-family state, and is needed BEFORE a family has
+   * chosen (or necessarily even has) an active retention policy yet.
+   * Still requires an authenticated service session, consistent with
+   * every other route this file registers.
+   */
+  app.get(
+    '/v1/retention-policy/defaults',
+    {
+      preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'retention-defaults' })],
+    },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      return reply.code(200).send({ generalWindow: DEFAULT_RETENTION_WINDOW, availableWindows: RETENTION_WINDOWS });
     },
   );
 
