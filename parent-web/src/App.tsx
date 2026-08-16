@@ -19,6 +19,8 @@ import Devices from './pages/family/Devices';
 import Retention from './pages/privacy/Retention';
 import Export from './pages/privacy/Export';
 import DeleteNow from './pages/privacy/DeleteNow';
+import Transparency from './pages/privacy/Transparency';
+import ActivityTimelinePage from './pages/children/ActivityTimelinePage';
 import ProtectionStatus from './pages/security/ProtectionStatus';
 import Recovery from './pages/security/Recovery';
 import Audit from './pages/security/Audit';
@@ -79,6 +81,7 @@ export default function App() {
           <Route path="eye-protection" element={<EyeProtectionPage />} />
           <Route path="prayer" element={<PrayerPage />} />
           <Route path="wellbeing-messages" element={<ChildWellbeingPage />} />
+          <Route path="activity" element={<ActivityTimelinePage />} />
         </Route>
 
         <Route path="requests" element={<Requests />} />
@@ -111,6 +114,7 @@ export default function App() {
             </RouteGuard>
           }
         />
+        <Route path="privacy/transparency" element={<Transparency />} />
 
         <Route path="security/status" element={<ProtectionStatus />} />
         <Route path="security/trusted-browser" element={<TrustedBrowser />} />
