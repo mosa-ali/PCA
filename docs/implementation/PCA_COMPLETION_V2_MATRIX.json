@@ -462,21 +462,15 @@
       "phase": [
         "UNMAPPED_PHASE_CROSSWALK_PENDING"
       ],
-      "status": "NOT_STARTED",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/migrations/0006_platform_entitlements_enrollment_limits.sql:64-65 (FREE_STARTER seeds parent_member_limit=1, managed_device_limit=1)"
       ],
       "testEvidence": [
         "backend/test/db/platformEntitlementsCore.mysql.test.mjs:128 (asserts 1/1 as correct)"
       ],
-      "externalGate": [
-        "ARCHITECTURE_CONTRADICTION: requirement calls for the base tier to support >=2 parents and >=2 devices",
-        "the live FREE_STARTER tier ships 1/1",
-        "and a passing test asserts 1/1 as correct. This is a genuine architecture-vs-commercial-pricing conflict",
-        "not a simple engineering gap -- changing FREE_STARTER limits is a commercial/pricing decision (affects PCA-ADD-PA-021..024 SOURCE_COMPLETE free-tier definition)",
-        "not something a Writer should silently change. OWNER_DECISION_REQUIRED."
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). billing-entitlements Runtime reachability: Yes -- this is the live default tier, so the contradiction is shipping"
+      "externalGate": [],
+      "notes": "OWNER_DECISION_RESOLVED (PCA-FR-004A = OPTION_B, 2026-08-16): the FREE_STARTER 1/1 commercial default (parentMemberLimit=1, managedDeviceLimit=1) is the deliberately-selected, controlling model and is preserved as-is -- no change to 2/2. The prior ARCHITECTURE_CONTRADICTION externalGate entry (2/2-vs-1/1) is resolved by supersession: PCA-DEC-022 (docs/architecture/31_RISK_DECISION_REGISTER.md) and PCA-ADD-PA-021..024 (docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md Section 5) are the later, controlling architectural decisions; the original >=2/>=2 base-tier wording in docs/architecture/02_STAKEHOLDERS_PERSONAS_ROLES.md Section 5 is retained verbatim under a SUPERSEDED callout, not deleted. Matches docs/implementation/PCA_CURRENT_IMPLEMENTATION_STATUS.md (FREE_STARTER, SOURCE_COMPLETE, config-table-driven, PCA-ADD-PA-021..024). PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947) lineage preserved; billing-entitlements Runtime reachability: Yes -- this is the live default tier."
     },
     {
       "requirementId": "PCA-FR-005",
