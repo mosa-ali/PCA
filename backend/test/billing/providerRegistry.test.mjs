@@ -6,6 +6,7 @@ import {
   PaymentProviderRegistry,
   UnknownProviderError,
   DuplicateProviderRegistrationError,
+  PaymentProviderProductionActivationError,
   createDefaultProviderRegistry,
 } from '../../dist/billing/provider/providerRegistry.js';
 
@@ -54,4 +55,52 @@ test('createDefaultProviderRegistry returns an EMPTY registry when NODE_ENV is u
   delete env.NODE_ENV;
   const registry = createDefaultProviderRegistry({ env });
   assert.deepEqual(registry.listRegisteredProviderNames(), []);
+});
+
+// Writer73: PCA-BILL production kill-switch -- register() itself, with the production-activation
+// gate explicitly opted into (mirroring createDefaultProviderRegistry's own construction), never
+// a change to plain `new PaymentProviderRegistry()`'s default (unaffected, and covered by the
+// 'register() + resolve() round-trips a provider by name' test above regardless of ambient
+// NODE_ENV).
+
+test('PRODUCTION KILL-SWITCH: with the gate enforced, register() refuses a non-approved provider outside test/development', () => {
+  const registry = new PaymentProviderRegistry({ env: { NODE_ENV: 'production' }, enforceProductionActivationGate: true });
+  assert.throws(() => registry.register(fakeProvider('STRIPE')), PaymentProviderProductionActivationError);
+  assert.deepEqual(registry.listRegisteredProviderNames(), [], 'a refused registration must never partially register');
+});
+
+test('PRODUCTION KILL-SWITCH: an explicit, exact-name PCA_PAYMENT_PROVIDER_PRODUCTION_ACTIVATION approval allows that ONE provider through', () => {
+  const registry = new PaymentProviderRegistry({
+    env: { NODE_ENV: 'production', PCA_PAYMENT_PROVIDER_PRODUCTION_ACTIVATION: 'STRIPE' },
+    enforceProductionActivationGate: true,
+  });
+  registry.register(fakeProvider('STRIPE'));
+  assert.equal(registry.isRegistered('STRIPE'), true);
+});
+
+test('PRODUCTION KILL-SWITCH: an approval for a DIFFERENT provider name never also approves this one (no wildcard/boolean escape hatch)', () => {
+  const registry = new PaymentProviderRegistry({
+    env: { NODE_ENV: 'production', PCA_PAYMENT_PROVIDER_PRODUCTION_ACTIVATION: 'STRIPE' },
+    enforceProductionActivationGate: true,
+  });
+  assert.throws(() => registry.register(fakeProvider('SOME_OTHER_PROVIDER')), PaymentProviderProductionActivationError);
+});
+
+test('PRODUCTION KILL-SWITCH: the gate never fires in test/development, with or without an approval env var set', () => {
+  for (const nodeEnv of ['test', 'development']) {
+    const registry = new PaymentProviderRegistry({ env: { NODE_ENV: nodeEnv }, enforceProductionActivationGate: true });
+    registry.register(fakeProvider('ANYTHING'));
+    assert.equal(registry.isRegistered('ANYTHING'), true);
+  }
+});
+
+test('PRODUCTION KILL-SWITCH: createDefaultProviderRegistry\'s own registry has the gate enforced, but the sandbox registration in development still succeeds (no regression)', () => {
+  const registry = createDefaultProviderRegistry({ env: { ...process.env, NODE_ENV: 'development' } });
+  assert.equal(registry.isRegistered('TEST_SANDBOX'), true);
+});
+
+test('PRODUCTION KILL-SWITCH: a caller who does not opt in (plain `new PaymentProviderRegistry()`) is completely unaffected by NODE_ENV', () => {
+  const registry = new PaymentProviderRegistry({ env: { NODE_ENV: 'production' } });
+  registry.register(fakeProvider('ANY_TEST_DOUBLE'));
+  assert.equal(registry.isRegistered('ANY_TEST_DOUBLE'), true);
 });
