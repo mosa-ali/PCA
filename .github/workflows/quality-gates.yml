@@ -143,3 +143,46 @@ jobs:
         run: npm audit --audit-level=high
       - name: No-ads / no-data-broker SDK inventory check (PCA-FR-123)
         run: node backend/scripts/checkNoAdTrackingSdks.mjs
+      # PCA-NFR-006 (Writer73): a real SBOM (Software Bill of Materials) generation gate,
+      # separate from the vulnerability-audit steps above. `@cyclonedx/cyclonedx-npm` is invoked
+      # via `npx --yes` (no new dependency added to any package.json/lockfile -- resolved fresh
+      # from the npm registry at CI time, identical posture to `npm audit` needing no new
+      # dependency either) and reads `--package-lock-only`, so it never requires `npm ci`/
+      # `node_modules` to already exist. Each workspace's SBOM is validated (not merely
+      # generated): a real CycloneDX document with `bomFormat: "CycloneDX"` and at least one
+      # component, so a broken/empty SBOM fails this gate rather than silently passing.
+      #
+      # parent-web is deliberately NOT included here: verified locally (both bare and after a
+      # full `npm ci`) that `cyclonedx-npm`'s underlying `npm ls --package-lock-only` fails there
+      # today with ELSPROBLEMS ("missing: @types/node@22.15.30, required by
+      # browser-runtime@npm:@pca/parent-sdk-browser-runtime@0.1.0" and the same for
+      # `typescript@5.8.3`/`@pca/parent-sdk-wellbeing-control`) -- a pre-existing
+      # lockfile/workspace-hoisting inconsistency in that workspace's own dependency tree, not an
+      # SBOM-tooling limitation (backend and platform-admin-web both generate a valid, populated
+      # SBOM with the identical command). Fixing parent-web's own dependency-tree inconsistency is
+      # outside this gate's scope; re-add a parent-web step here once that is resolved.
+      #
+      # Android (Gradle) and iOS (CocoaPods) are out of this step's scope entirely -- no
+      # equivalent zero-install CycloneDX generator is already available in this toolchain for
+      # either, the same boundary the dependency-audit steps above already draw for those two
+      # platforms.
+      - name: Generate + validate backend SBOM (CycloneDX)
+        working-directory: backend
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm --package-lock-only --output-format json --output-file sbom.cdx.json
+          node -e "
+            const sbom = require('./sbom.cdx.json');
+            if (sbom.bomFormat !== 'CycloneDX') throw new Error('sbom.cdx.json is not a CycloneDX document');
+            if (!Array.isArray(sbom.components) || sbom.components.length === 0) throw new Error('sbom.cdx.json has no components');
+            console.log(\`backend SBOM: \${sbom.components.length} components, CycloneDX \${sbom.specVersion}\`);
+          "
+      - name: Generate + validate platform-admin-web SBOM (CycloneDX)
+        working-directory: platform-admin-web
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm --package-lock-only --output-format json --output-file sbom.cdx.json
+          node -e "
+            const sbom = require('./sbom.cdx.json');
+            if (sbom.bomFormat !== 'CycloneDX') throw new Error('sbom.cdx.json is not a CycloneDX document');
+            if (!Array.isArray(sbom.components) || sbom.components.length === 0) throw new Error('sbom.cdx.json has no components');
+            console.log(\`platform-admin-web SBOM: \${sbom.components.length} components, CycloneDX \${sbom.specVersion}\`);
+          "

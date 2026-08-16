@@ -18,6 +18,9 @@ Thumbs.db
 **/xcuserdata/
 **/*.xcuserstate
 
+# SBOM output (PCA-NFR-006) -- generated fresh by CI/local script, never committed
+sbom.cdx.json
+
 # Local configuration, credentials, and generated environment files
 .env
 .env.*
