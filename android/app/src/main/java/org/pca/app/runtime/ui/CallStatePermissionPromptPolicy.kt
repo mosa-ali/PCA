@@ -9,4 +9,8 @@ object CallStatePermissionPromptPolicy {
         promptWasShown -> Action.OPEN_SETTINGS
         else -> Action.REQUEST
     }
+
+    /** Refreshes the observer only when a Settings round-trip changed denied to granted. */
+    fun shouldRefreshAfterSettingsReturn(wasGranted: Boolean, isGranted: Boolean): Boolean =
+        !wasGranted && isGranted
 }

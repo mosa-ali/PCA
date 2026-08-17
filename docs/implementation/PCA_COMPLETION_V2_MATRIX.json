@@ -5570,7 +5570,7 @@
       "phase": [
         "PCA-4"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt",
@@ -5584,8 +5584,11 @@
         "android/app/src/test/java/org/pca/app/runtime/schedule/NightProtectionScheduleTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
-      "externalGate": [],
-      "notes": "R3 source correction: additive baseline, runtime decision path, foreground package observation, and live device-owner package-suspension consumer are composed. Actual device-owner provisioning and physical restart/offline evidence remain external.",
+      "externalGate": [
+        "ANDROID_REAL_DEVICE_UAT",
+        "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION"
+      ],
+      "notes": "R3 source-status normalization: all locally implementable schedule and enforcement contracts are composed and reachable. Device-owner authorization plus physical restart/offline proof remain external gates.",
       "iosSourceClassification": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "correctionWave": "R3 night communication safety correction"
     },
@@ -5595,7 +5598,7 @@
         "PCA-3",
         "PCA-4"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidCommunicationSurfaceResolver.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt",
@@ -5610,10 +5613,14 @@
         "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
       "externalGate": [
-        "REAL_DEVICE_TELEPHONY_UAT"
+        "ANDROID_REAL_DEVICE_UAT",
+        "REAL_DEVICE_TELEPHONY_UAT",
+        "IOS_MAC_XCODE",
+        "IOS_FAMILY_CONTROLS_ENTITLEMENT",
+        "IOS_PHYSICAL_DEVICE"
       ],
-      "notes": "R3 source correction: public capability resolver and call-state lifecycle are composed; call-surface package-level preservation is implemented, but public Android APIs cannot separate call UI from all dialer UI and physical incoming-call evidence remains external.",
-      "iosSourceClassification": "PARTIAL_SOURCE_GAP",
+      "notes": "R3 source-status normalization: public capability resolution, call lifecycle, and safe package-level preservation are composed. Android call-surface precision and all physical/iOS confirmation remain external platform gates; no private API or broad allowlist is claimed.",
+      "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     },
     {
@@ -5621,7 +5628,7 @@
       "phase": [
         "PCA-3"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinator.kt",
@@ -5643,9 +5650,13 @@
         "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationCallStateObserverAvailabilityTest.kt"
       ],
       "externalGate": [
-        "REAL_DEVICE_TELEPHONY_SMS_UAT"
+        "ANDROID_REAL_DEVICE_UAT",
+        "REAL_DEVICE_TELEPHONY_SMS_UAT",
+        "IOS_MAC_XCODE",
+        "IOS_FAMILY_CONTROLS_ENTITLEMENT",
+        "IOS_PHYSICAL_DEVICE"
       ],
-      "notes": "R3 source correction: Break Shield call pause/restore, foreground schedule handoff, typed SMS transport preservation, and transparent one-shot READ_PHONE_STATE permission UX are composed; physical call/SMS delivery remains external.",
+      "notes": "R3 source-status normalization: Break Shield call pause/restore, schedule handoff, typed SMS transport preservation, Settings-return permission refresh, and one-shot READ_PHONE_STATE UX are composed. Physical call/SMS delivery remains external.",
       "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     },
@@ -5654,7 +5665,7 @@
       "phase": [
         "PCA-3"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt",
@@ -5668,8 +5679,12 @@
         "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationCallLifecycleAdapterTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
-      "externalGate": [],
-      "notes": "R3 source correction: emergency floor, typed surfaces, foreground handoff, and device-owner consumer preserve emergency/call/SMS transport without a generic allowlist; physical validation remains external.",
+      "externalGate": [
+        "ANDROID_REAL_DEVICE_UAT",
+        "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION",
+        "REAL_DEVICE_TELEPHONY_SMS_UAT"
+      ],
+      "notes": "R3 source-status normalization: emergency floor, typed surfaces, foreground handoff, and device-owner consumer preserve emergency/call/SMS transport without a generic allowlist. Physical validation and device-owner authorization remain external.",
       "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     }

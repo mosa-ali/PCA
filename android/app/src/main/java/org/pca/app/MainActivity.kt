@@ -29,6 +29,9 @@ import org.pca.app.security.ui.AdminSecurityActivity
  * child request -- rather than being visually present but functionally dead.
  */
 class MainActivity : ComponentActivity() {
+    private var phoneStatePermissionGranted: Boolean? = null
+    private var awaitingSettingsPermissionReturn = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val runtime = (application as PcaApplication).graph.runtime
@@ -79,6 +82,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             CallStatePermissionPromptPolicy.Action.OPEN_SETTINGS -> {
+                                awaitingSettingsPermissionReturn = true
                                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                                     data = Uri.parse("package:$packageName")
                                 })
@@ -90,12 +94,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        val isGranted = hasPhoneStatePermission()
+        val wasGranted = phoneStatePermissionGranted
+        phoneStatePermissionGranted = isGranted
+        if (awaitingSettingsPermissionReturn) {
+            awaitingSettingsPermissionReturn = false
+            if (wasGranted != null && CallStatePermissionPromptPolicy.shouldRefreshAfterSettingsReturn(wasGranted, isGranted)) {
+                (application as PcaApplication).graph.runtime.refreshCommunicationCallStateObserver()
+            }
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PHONE_STATE_PERMISSION_REQUEST_CODE) {
+            phoneStatePermissionGranted = hasPhoneStatePermission()
             (application as PcaApplication).graph.runtime.refreshCommunicationCallStateObserver()
         }
     }
+
+    private fun hasPhoneStatePermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_PHONE_STATE,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private companion object {
         const val PERMISSION_PREFS = "pca_permission_prompts"

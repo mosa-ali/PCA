@@ -27,4 +27,29 @@ class CallStatePermissionPromptPolicyTest {
             CallStatePermissionPromptPolicy.nextAction(hasPermission = false, promptWasShown = true),
         )
     }
+
+    @Test
+    fun settingsReturnRefreshesOnlyWhenPermissionChangedToGranted() {
+        assertEquals(
+            true,
+            CallStatePermissionPromptPolicy.shouldRefreshAfterSettingsReturn(
+                wasGranted = false,
+                isGranted = true,
+            ),
+        )
+        assertEquals(
+            false,
+            CallStatePermissionPromptPolicy.shouldRefreshAfterSettingsReturn(
+                wasGranted = false,
+                isGranted = false,
+            ),
+        )
+        assertEquals(
+            false,
+            CallStatePermissionPromptPolicy.shouldRefreshAfterSettingsReturn(
+                wasGranted = true,
+                isGranted = true,
+            ),
+        )
+    }
 }

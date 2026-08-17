@@ -363,3 +363,11 @@ The review correction keeps PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-0
 ## R3 Wave 9: schedule enforcement consumer and call-state permission UX
 
 The Android runtime now composes the schedule decision through a foreground-package handoff into a live device-owner package-suspension consumer. The consumer returns an observable outcome through PcaRuntimeStatus and preserves emergency, incoming-call, and SMS transport tokens without treating the Messages UI as a generic exemption. The child surface provides a transparent, user-initiated, one-shot READ_PHONE_STATE request; denial opens Android settings on later action, and no SMS permission is requested. Full local Android unit-test, lint, and debug-assemble gates passed. Device-owner provisioning, physical restart/offline behavior, and native call/SMS delivery remain external validation gates.
+
+## R3 Wave 10: Settings return and source versus external validation separation
+
+`MainActivity.onResume()` now detects the denied-to-granted `READ_PHONE_STATE` transition after `Settings.ACTION_APPLICATION_DETAILS_SETTINGS` and refreshes the call-state observer without reopening the permission prompt or requesting SMS access. The focused policy coverage includes granted, unchanged-denied, and already-granted return states.
+
+The source-status audit now separates locally implementable behavior from physical/platform evidence. `PCA-FR-043B`, `PCA-FR-043C`, `PCA-FR-015A`, and `PCA-AND-003A` are `SOURCE_COMPLETE` in the matrix and audit because their supported source contracts are composed and runtime-reachable; the validation backlog remains open for Android device-owner authorization, real telephony/SMS, iOS entitlement/Xcode/device, and physical-device behavior. This is not a `VALIDATED_COMPLETE` or `PRODUCTION_READY` claim.
+
+The Android SMS limit remains explicit: package suspension preserves SMS transport, but public Android APIs do not guarantee delivery while independently blocking every foreground interaction with the same Messages package. PCA does not read SMS content, intercept SMS, use private APIs, or promise a narrower Messages UI restriction than the platform supports.

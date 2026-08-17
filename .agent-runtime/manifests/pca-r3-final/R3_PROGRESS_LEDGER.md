@@ -119,3 +119,10 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Added transparent one-shot READ_PHONE_STATE UX with settings fallback after denial; no SMS permission is requested.
 - Focused and full Android gates passed: testDebugUnitTest, lintDebug, and assembleDebug.
 - Physical device-owner provisioning, restart/offline enforcement proof, and native call/SMS delivery remain external validation gates; release readiness remains NOT READY.
+
+### Wave 10: Settings-return permission refresh and source-status normalization
+
+- Added lifecycle-aware `MainActivity.onResume()` handling for the Android Settings permission round-trip. A denied-to-granted transition refreshes the live call-state observer once; a still-denied return does not prompt again or crash.
+- Added focused `CallStatePermissionPromptPolicy` coverage for granted, unchanged-denied, and already-granted transitions. The focused Gradle invocation was run with the shared wrapper cache; no real-device permission result is claimed.
+- Normalized PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-003A to `SOURCE_COMPLETE` with explicit device-owner, telephony/SMS, iOS, and physical-device external gates. Their validation rows remain open and do not imply real-device proof.
+- SMS remains delivery-preserved but not an unrestricted Messages UI exemption; this is a documented public-Android capability limit.
