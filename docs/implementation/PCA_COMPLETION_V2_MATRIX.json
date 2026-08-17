@@ -5626,20 +5626,26 @@
         "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinator.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationCallStateObserver.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
         "android/app/src/main/java/org/pca/app/platform/ForegroundAppPackageSource.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/CallStatePermissionPromptPolicy.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "android/app/src/main/java/org/pca/app/MainActivity.kt",
         "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationBreakShieldIntegrationTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinatorTest.kt",
         "android/app/src/test/java/org/pca/app/feature/screentime/engine/ScreenTimeEngineTest.kt",
-        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/ui/CallStatePermissionPromptPolicyTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationCallStateObserverAvailabilityTest.kt"
       ],
       "externalGate": [
         "REAL_DEVICE_TELEPHONY_SMS_UAT"
       ],
-      "notes": "R3 source correction: Break Shield call pause/restore, foreground schedule handoff, and typed SMS transport preservation are composed; READ_PHONE_STATE permission UX and physical call/SMS delivery remain external.",
+      "notes": "R3 source correction: Break Shield call pause/restore, foreground schedule handoff, typed SMS transport preservation, and transparent one-shot READ_PHONE_STATE permission UX are composed; physical call/SMS delivery remains external.",
       "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     },
