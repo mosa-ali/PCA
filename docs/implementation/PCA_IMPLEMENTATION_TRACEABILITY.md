@@ -359,3 +359,7 @@ R3 Writer Wave 2 closure: executable source and focused-test evidence closed PCA
 ## R3 night communication safety correction
 
 The review correction keeps PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-003A at PARTIAL. The owner bedtime baseline is now additive and non-weakenable; RINGING no longer pauses Break Shield recovery; SMS transport is typed separately from interactive emergency/call surfaces; and Android public telephony state is composed through an idempotent observer into PcaRuntime. Device-wide per-app enforcement, entitlement/device behavior, and real telephony/SMS UAT remain explicitly unverified.
+
+## R3 Wave 9: schedule enforcement consumer and call-state permission UX
+
+The Android runtime now composes the schedule decision through a foreground-package handoff into a live device-owner package-suspension consumer. The consumer returns an observable outcome through PcaRuntimeStatus and preserves emergency, incoming-call, and SMS transport tokens without treating the Messages UI as a generic exemption. The child surface provides a transparent, user-initiated, one-shot READ_PHONE_STATE request; denial opens Android settings on later action, and no SMS permission is requested. Full local Android unit-test, lint, and debug-assemble gates passed. Device-owner provisioning, physical restart/offline behavior, and native call/SMS delivery remain external validation gates.

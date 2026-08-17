@@ -110,3 +110,12 @@ R3 Writer Wave 2 closure: FR-040, FR-092, and FR-096 moved to SOURCE_COMPLETE fr
 ### Wave 8 correction: night communication safety
 
 Reviewed commit range 35cb793..9b34f72 and corrected the source slice without changing the controlled total or four requirement statuses. The 21:30-07:00 owner baseline is always unioned with parent BEDTIME windows; answered-call timing is the only Break Shield pause; SMS delivery is not a generic interactive allowlist; and the public Android call observer is permission-gated, idempotent, and composed through PcaRuntime. FR-043B remains PARTIAL because a real per-app/device enforcement consumer is not present; physical telephony/SMS, iOS entitlement, security review, and REAL_UAT remain external.
+
+### Wave 9: schedule enforcement consumer and call-state permission UX
+
+- Entry base: 64bd626c4e7ad112c708229a7bc4238c11a91988.
+- Implemented the foreground-package handoff, live device-owner package-suspension consumer, and child-visible enforcement outcome.
+- Preserved emergency, incoming-call, and SMS transport surfaces without creating a generic Messages UI exemption; public Android package APIs cannot narrow call UI separately.
+- Added transparent one-shot READ_PHONE_STATE UX with settings fallback after denial; no SMS permission is requested.
+- Focused and full Android gates passed: testDebugUnitTest, lintDebug, and assembleDebug.
+- Physical device-owner provisioning, restart/offline enforcement proof, and native call/SMS delivery remain external validation gates; release readiness remains NOT READY.
