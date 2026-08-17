@@ -38,7 +38,7 @@ Round6 (`PCA-COMPLIMENTARY-CONSUMPTION-1` Writer60, `PCA-FREE-ACCESS-1` Writer61
 
 R3 crosswalk closure: all 199 Base A-100 IDs now have explicit PCA programme/domain phases derived from the controlled normative sections and PCA-0..19 programme definitions. UNMAPPED_IDS=0 is now true in the controlled matrix itself. This closes phase ambiguity only; it does not upgrade source status, executable validation, owner decisions, platform gates, or independent-review outcomes, and architecture control is not claimed as 100%.
 
-The live source tree was re-checked after the handoff range. PCA-ADD-ENR-005, PCA-ADD-ENR-006, and PCA-ADD-ENR-023 now have source-backed eight-state lifecycle, fail-closed transition, expiry, atomic redemption, and immutable-audit evidence; focused unit/MySQL test files are recorded in the matrix, while the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate open validation gate. PCA-ADD-ENR-008 has Android App Link parser, manifest, coordinator, and tests, but remains PARTIAL because Digital Asset Links hosting and physical install-return behavior are external gates. PCA-ADD-ENR-019 remains PARTIAL because no concrete runtime enrollment-to-AUTHORIZATION_REQUIRED transition is claimed.
+The live source tree was re-checked after the handoff range. PCA-ADD-ENR-005, PCA-ADD-ENR-006, and PCA-ADD-ENR-023 now have source-backed eight-state lifecycle, fail-closed transition, expiry, atomic redemption, and immutable-audit evidence; focused unit/MySQL test files are recorded in the matrix. The elevated backend unit/security suite passed 1,495 tests; the fresh disposable MySQL validation gate passed 385 of 389 tests with 0 failures and 4 intentionally delegated privilege checks; the mandatory privilege gate then passed all 4 delegated checks. PCA-ADD-ENR-008 has Android App Link parser, manifest, coordinator, and tests, but remains PARTIAL because Digital Asset Links hosting and physical install-return behavior are external gates. PCA-ADD-ENR-019 remains PARTIAL because no concrete runtime enrollment-to-AUTHORIZATION_REQUIRED transition is claimed.
 
 
 ### Correction R5 (PCA-FINAL-SOURCE-COMPLETION-100, base `e50a94799d1d99fbc8247ad50114a1696676f186`)
@@ -77,10 +77,10 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | Requirement | Primary phase(s) | Status | Summary |
 |---|---|---|---|
 | PCA-ADD-ENR-001 | PCA-10 | PARTIAL | Platform/mode selection implemented backend+web; child selection and initial policy profile not modeled in the invitation record. |
-| PCA-ADD-ENR-002 | PCA-1, PCA-10 | PARTIAL | Link + raw token exist; no QR code, no short fallback code. |
-| PCA-ADD-ENR-003 | PCA-1, PCA-10 | PARTIAL | No secrets found in what exists (token, link); QR/fallback code don't exist to evaluate. |
+| PCA-ADD-ENR-002 | PCA-1, PCA-10 | PARTIAL | Parent-side QR rendering and Android deep-link continuation are now real and tested; the required short fallback code remains unimplemented. |
+| PCA-ADD-ENR-003 | PCA-1, PCA-10 | PARTIAL | The URL and QR encode only the opaque invitation link and are covered by no-secret evidence; the unimplemented fallback-code half cannot yet be claimed. |
 | PCA-ADD-ENR-004 | PCA-1 | SOURCE_COMPLETE | Token entropy (256-bit CSPRNG), SHA-256 hash-only storage, TTL, single-use, revocation all solid. |
-| PCA-ADD-ENR-005 | PCA-1 | SOURCE_COMPLETE | Full eight-state persisted lifecycle, validated forward transitions, timestamps, immutable transition audit rows, and focused unit/MySQL evidence are present; the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate validation gate. |
+| PCA-ADD-ENR-005 | PCA-1 | SOURCE_COMPLETE | Full eight-state persisted lifecycle, validated forward transitions, timestamps, immutable transition audit rows, and focused unit/MySQL evidence are present; the elevated backend unit/security suite and fresh disposable MySQL gates passed, with the four privilege checks covered by the dedicated mandatory gate. |
 | PCA-ADD-ENR-006 | PCA-1 | SOURCE_COMPLETE | Redeemed, expired, revoked, malformed, and invalid-state paths fail closed through generic outcomes; focused unit/MySQL evidence is recorded. |
 | PCA-ADD-ENR-007 | PCA-10 | SOURCE_COMPLETE | Status + revoke implemented backend and web without exposing a reusable token. |
 | PCA-ADD-ENR-008 | PCA-1, PCA-2 | PARTIAL | Android App Link parser, autoVerify manifest filter, coordinator wiring, and focused tests are present; Digital Asset Links hosting and physical install-return behavior remain external gates. |
@@ -98,7 +98,7 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | PCA-ADD-ENR-020 | PCA-11, PCA-13 | NOT_STARTED | No E2EE alert generator for the addendum's event list; no display component in Parent Web. |
 | PCA-ADD-ENR-021 | PCA-10, PCA-13, PCA-15 | NOT_STARTED | Emergency floor exists narrowly (manual toggle in Screen Time only), not evidenced across the required flows generally. |
 | PCA-ADD-ENR-022 | PCA-1, PCA-11 | SOURCE_COMPLETE | Strong schema-privacy regression test; enrollment table stores only hash/platform/mode/status/timestamps. |
-| PCA-ADD-ENR-023 | PCA-1 | SOURCE_COMPLETE | Creation, transition, expiry, revocation, atomic redemption, opaque correlation, immutable audit persistence, and focused unit/MySQL evidence are present; the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate validation gate. |
+| PCA-ADD-ENR-023 | PCA-1 | SOURCE_COMPLETE | Creation, transition, expiry, revocation, atomic redemption, opaque correlation, immutable audit persistence, and focused unit/MySQL evidence are present; the elevated backend unit/security suite and fresh disposable MySQL gates passed, with the four privilege checks covered by the dedicated mandatory gate. |
 | PCA-ADD-ENR-024 | PCA-1, PCA-11, PCA-13 | PARTIAL | Invitation-side reuse/expiry/revocation/wrong-family covered; removal-side unevaluable since that subsystem doesn't exist. |
 | PCA-ADD-ENR-025 | PCA-1, PCA-2, PCA-10, PCA-11, PCA-13, PCA-15 | NOT_STARTED | Per-row backend+DB+security+test evidence is not recorded for most of the 25 requirements; this meta-requirement cannot be marked implemented. |
 

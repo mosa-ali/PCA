@@ -7,12 +7,12 @@ Generated from the completion matrix and repository evidence on 2026-08-17.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 371 |
-| SOURCE_COMPLETE | 237 |
-| PARTIAL | 94 |
+| SOURCE_COMPLETE | 242 |
+| PARTIAL | 89 |
 | NOT_STARTED | 21 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 115 |
+| Partial plus not-started | 110 |
 | External-gate rows | 55 |
 | Terminology audit rows | 209 |
 
@@ -20,7 +20,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 
 ## Handoff review
 
-- Reviewed range: abbb2f3..aa65d59
+- Reviewed range: 2937ad7..8002643
 - Reviewed commits: 4cdf0ac, 6b4abd4, aa65d59
 - Accepted handoff SHA: aa65d59bd1bbc0f9a31b686934b6b0708f0abf09
 - Handoff verdict: VERIFIED_ACCEPTED_WITH_OPEN_BACKLOG
@@ -36,7 +36,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android full test: PASS after file-backed Robolectric tests use TRUNCATE journal mode; production database policy is unchanged.
 - Parent Web typecheck, lint, test, and build: PASS.
 - Parent Web test count: 49 files and 394 tests.
-- Backend build and full unit/security suite: PASS, 1,495 tests. MySQL integration: BLOCKED before test start because PCA_DATABASE_URL and PCA_MIGRATION_DATABASE_URL are unset. No separate mutation command is declared in backend/package.json.
+- Backend build and full unit/security suite: PASS, 1,495 tests. Fresh disposable MySQL validation gate: PASS after reset-test-db recreated `pca_test` from empty; 389 tests, 385 passed, 0 failed, and 4 privilege checks intentionally skipped for the separate mandatory gate. Dedicated MySQL privilege gate: PASS, 4 tests, 4 passed, 0 failed, 0 skipped. Runtime grants: 62 table-level grants; `platform_admin_audit_events` SELECT/INSERT only; `schema_migrations` SELECT only; other 60 tables SELECT/INSERT/UPDATE/DELETE.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -63,3 +63,26 @@ R3 Writer Wave 2 closure: FR-040, FR-092, and FR-096 moved to SOURCE_COMPLETE fr
 - PCA-FR-074A: offline travel above 50 km now produces one permission-guarded prayer-time verification notice per offline episode, with detector tests and production graph wiring.
 - Counts after this wave: SOURCE_COMPLETE=237; PARTIAL=94; NOT_STARTED=21; source backlog=115.
 - Focused Android gate: BUILD SUCCESSFUL; all three new test classes compiled and executed.
+
+## Writer Wave 4 reconciliation
+- PCA-FR-002: independently closed at source level from the real parent-side QR renderer, bounded invitation lifecycle, Android deep-link parser, and focused component/unit/MySQL evidence. This does not close PCA-ADD-ENR-002, whose short fallback code is still absent.
+- PCA-FR-014A: independently closed at source level from paired English/Arabic Break Shield resources, resource-driven rendering, and locale/resource-completeness evidence. Content-pack governance remains under PCA-FR-014.
+- PCA-FR-121: independently closed at source level from the routed What Parents Can See page, English/Arabic disclosure content, and the real axe accessibility test.
+- PCA-PRIV-002: independently closed at source level from the no-telemetry route regression guard and Android no-egress/privacy static coverage. PCA-NFR-014 remains open because optional aggregate telemetry consent is a separate requirement and is not implied by the absence of a transport.
+- PCA-FR-101: independently closed at source level from the real `1_MONTH` default route, parent retention presentation, and route/accessibility evidence; browser session issuance and production validation remain separate gates.
+- Counts after this reconciliation: SOURCE_COMPLETE=242; PARTIAL=89; NOT_STARTED=21; source backlog=110. Validation remains separate: the five closures are marked `SOURCE_COMPLETE_VALIDATION_PENDING`.
+
+### Wave 4 validation and gate evidence (2026-08-17)
+
+- Validation backlog reconciliation: all 202 validation rows were compared with the requirement audit; 1 stale status was aligned and 65 stale validation states were normalized to `SOURCE_COMPLETE_VALIDATION_PENDING` where the source audit is complete. Validation remains a separate gate and no external or real-device result was fabricated.
+- Local release/UAT gate launcher: `pwsh tooling/release/Invoke-ReleaseGateCheck.ps1` ran and returned exit 1 with `VERDICT: NOT READY`. It reported `REAL_UAT: NOT_EXECUTED (0/50 cases logged)`, pending production crypto review, and the documented external gates. This is the expected honest result; it is not real-device UAT evidence.
+- Source backlog classification after the five closures:
+
+| SOURCE_SOLVABLE_CLASS | CURRENT_STATUS | ROWS |
+|---|---:|---:|
+| EXTERNAL_GATE | NOT_STARTED | 5 |
+| EXTERNAL_GATE | PARTIAL | 28 |
+| OWNER_OR_ENVIRONMENT_GATE | PARTIAL | 20 |
+| SOURCE_TRIAGE_REQUIRED | NOT_STARTED | 16 |
+| SOURCE_TRIAGE_REQUIRED | PARTIAL | 41 |
+| **Total** |  | **110** |
