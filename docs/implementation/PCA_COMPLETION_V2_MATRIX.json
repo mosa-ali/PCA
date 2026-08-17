@@ -46,7 +46,10 @@
       },
       "revision=R5; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-1; base=2937ad72801cc66175c7251d83998046511710e5; reason=Writers 74-76 reconciled six source-solvable rows from executable source/test evidence: AND-002, FR-037, FR-045, FR-031A, NFR-012, and FR-123. No external or owner gate was upgraded.",
       "revision=R6; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-2; base=2937ad72801cc66175c7251d83998046511710e5; reason=Writers 77-79 reconciled FR-040, FR-092, and FR-096 from executable source/test evidence. User-facing monitored child/device terminology was corrected in selected English/Arabic locale and Android resource surfaces without renaming internal family authority, Family Trust Set, familyId, or E2EE terms.",
-      "revision=R7; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-3; base=2937ad72801cc66175c7251d83998046511710e5; reason=Closed three source-solvable rows with executable Android evidence: informed-consent gate, capability-unavailable labels, and offline-travel prayer-time staleness notice. Validation backlog and external gates remain separate."
+      "revision=R7; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-3; base=2937ad72801cc66175c7251d83998046511710e5; reason=Closed three source-solvable rows with executable Android evidence: informed-consent gate, capability-unavailable labels, and offline-travel prayer-time staleness notice. Validation backlog and external gates remain separate.",
+      "revision=R8; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WAVE-4-5-RECONCILIATION; base=35cb793f890b4e56729a083273a322c589f16d4c; reason=Reconciled five Wave 4 source closures that were missing from this matrix (FR-002, FR-014A, FR-101, FR-121, PRIV-002) and preserved the two Wave 5 enrollment fallback closures. Counts are derived from this 371-row matrix; validation and external gates remain separate.",
+      "revision=R9; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WAVE-6; base=35cb793f890b4e56729a083273a322c589f16d4c; reason=Added the missing Parent Web location-history retention selector and reconciled FR-093/FR-102 against the existing bounded backend policy contract and focused Parent Web/backend evidence. Service-session, device-side, and real-environment gates remain separate.",
+    "revision=R10; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WAVE-7-NIGHT-COMMUNICATION-SAFETY; base=35cb793f890b4e56729a083273a322c589f16d4c; reason=Added owner-approved PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-003A. Source contracts and bounded tests are recorded; runtime telephony/SMS, iOS capability, and physical-device gates remain separate."
     ]
   },
   "publishedBase": "5b9d76a4d11edd5e480df1e19f5eea8030139ee5",
@@ -416,15 +419,15 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentLinkParser.kt + EnrollmentDeepLinkConfig.kt + EnrollmentActivity.kt"
+        "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx | parent-web/src/pages/family/InvitationQrCode.tsx | backend/src/invitation/InvitationService.ts | backend/src/invitation/MySqlInvitationRepository.ts | android/app/src/main/java/org/pca/app/enrollment/EnrollmentLinkParser.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/enrollment/"
+        "parent-web/tests/component/DeviceEnrollmentPanel.test.tsx | backend/test/invitation/service.test.mjs | backend/test/db/invitation.mysql.test.mjs | android/app/src/test/java/org/pca/app/enrollment/UriEnrollmentLinkParserTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no QR generation/scan surface. Runtime reachability: REACHABLE (deep link + direct launch)"
+      "notes": "Wave 4 reconciliation: parent-side QR rendering, bounded invitation lifecycle, and Android deep-link parsing are present and covered by focused component, unit, MySQL, and parser evidence. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-002A",
@@ -662,13 +665,15 @@
       "phase": [
         "PCA-3"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/res/values/strings.xml + values-ar/strings.xml (165/165 string parity confirmed)"
+        "android/app/src/main/java/org/pca/app/feature/breakshield/BreakShieldScreen.kt | android/app/src/main/res/values/strings.xml | android/app/src/main/res/values-ar/strings.xml"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/breakshield/BreakShieldFormatDurationTest.kt | android/app/src/test/java/org/pca/app/i18n/StringResourceCompletenessTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Break-content localization relies on the same general string-resource mechanism as the rest of the app; no dedicated content-pack versioning/review pipeline for Dhikr content specifically was verified Runtime reachability: YES"
+      "notes": "Wave 4 reconciliation: Break Shield uses paired English/Arabic resources through resource-driven rendering, with focused duration and resource-completeness evidence. Content-pack governance remains a separate PCA-FR-014 concern. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-015",
@@ -1449,15 +1454,15 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/pages/privacy/Retention.tsx (header comment: 'genuinely wired to the real family privacy-control intake ... clients.retention (see ../../api/real/realRetentionClient.ts)' -- calls clients.retention.getDefaults() and clients.retention.submitPolicy(...), not a dev/mock stub) | backend/src/http/routes/retentionRoutes.ts:145 (real backend endpoint)"
+        "parent-web/src/pages/privacy/Retention.tsx | parent-web/src/domain/retention.ts | backend/src/http/routes/retentionRoutes.ts | parent-web/src/api/real/realRetentionClient.ts"
       ],
       "testEvidence": [
-        "None found dedicated to Retention.tsx specifically."
+        "parent-web/tests/component/Retention.test.tsx | backend/test/retention/retentionRoutes.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). First audit found 'Frontend not wired to the real backend retention endpoint.' This is now FALSE -- the frontend genuinely calls the real backend client this round. Same known session-issuance caveat as other family-scoped real clients applies (SERVICE_SESSION_UNAVAILABLE gap tracked separately under PCA-ADD-BILL-039/PCA-ADD-PA-047, closed by PCA-AUTH-SESSION-1 per the gap register) -- not re-verified independently this pass whether that session gap still applies to this specific route. Runtime reachability: Retention.tsx is routed at parent-web/src/App.tsx path=\"privacy/retention\"; real client wiring confirmed by direct file read (imports realRetentionClient-backed clients.retention, not a dev fixture)."
+      "notes": "Wave 6 source implementation: the real Parent Web panel exposes the family retention policy and separately bounded location-history retention through the existing authenticated retention client and route. Service-session issuance and device-side local enforcement remain separate gates. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-094",
@@ -1521,30 +1526,30 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/retention/policy.ts"
+        "backend/src/retention/policy.ts | backend/src/http/routes/retentionRoutes.ts | parent-web/src/pages/privacy/Retention.tsx"
       ],
       "testEvidence": [
-        "backend/test/retention/retentionRoutes.test.mjs"
+        "backend/test/retention/retentionRoutes.test.mjs | parent-web/tests/accessibility/axe.test.tsx"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Verify PCA-DEC-003 (1-month architecture-baseline default) is actually the client-presented default; backend has no persisted default to check against since it holds no policy payload storage. Runtime reachability: Backend validates/echoes policy but (per retentionRoutes.ts comment) does not persist a default choice server-side; default-presentation-at-first-enrollment is a client UX concern."
+      "notes": "Wave 4 reconciliation: the real 1_MONTH default route and parent retention presentation are reachable and covered by backend route and parent accessibility evidence. Browser session issuance and production validation remain separate gates. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-102",
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/retention/policy.ts (validateRetentionPolicy enforces location retention <= general window)"
+        "backend/src/retention/engine.ts | backend/src/http/routes/retentionRoutes.ts | parent-web/src/pages/privacy/Retention.tsx | parent-web/src/domain/retention.ts"
       ],
       "testEvidence": [
-        "backend/test/retention/retentionRoutes.test.mjs"
+        "backend/test/retention/retentionRoutes.test.mjs | parent-web/tests/component/Retention.test.tsx"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Reachable via retention-policy validation route."
+      "notes": "Wave 6 source implementation: Parent Web can choose CURRENT_LAST_ONLY or a location-history window, while the UI disables windows longer than general retention and the backend rejects invalid combinations. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-103",
@@ -1679,16 +1684,15 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/pages/privacy/Transparency.tsx (NEW this round -- 'What Parents Can See' disclosure page, real content, real aria-labelledby structure) | parent-web/src/App.tsx:22,117 (imported and registered at route path='privacy/transparency')"
+        "parent-web/src/pages/privacy/Transparency.tsx | parent-web/src/App.tsx | parent-web/src/i18n/locales/en.json | parent-web/src/i18n/locales/ar.json"
       ],
       "testEvidence": [
-        "Not independently confirmed to have a dedicated test file for content-completeness against doc 08's full 'what parents can see' disclosure checklist",
-        "not yet in parent-web's axe suite import list."
+        "parent-web/tests/accessibility/axe.test.tsx"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). First audit found this entirely absent ('Entire transparency page absent -- no source matches anywhere'). Now source-complete and routed. Content is only 45 lines (parent-web/src/pages/privacy/Transparency.tsx) -- a real but minimal disclosure surface; not independently verified this pass against doc 08's full required disclosure content list (categories monitored, what is/isn't visible to parents, etc.) beyond confirming the page exists, is reachable, and renders real (not placeholder) copy. Runtime reachability: CONFIRMED GENUINELY REACHABLE this round: App.tsx registers <Route path=\"privacy/transparency\" element={<Transparency />} /> as a real top-level family route (not nested/orphaned) -- verified by direct read, not just component presence."
+      "notes": "Wave 4 reconciliation: the routed What Parents Can See page contains the English/Arabic disclosure surface and is covered by the real parent axe accessibility suite. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-FR-122",
@@ -2765,16 +2769,15 @@
         "PCA-5",
         "PCA-17"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/safebrowser/** (deterministic filtering data distribution, e.g. category lists)",
-        "no backend telemetry-ingestion endpoint for classification-decision-derived aggregates was found"
+        "backend/src/http | android/app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt | android/app/src/main/java/org/pca/app/feature/webprotection/vpn/VpnMetadataDecisionAdapter.kt"
       ],
       "testEvidence": [
-        "backend/test/safebrowser/*.test.mjs"
+        "backend/test/security/noTelemetryEndpoint.test.mjs | android/app/src/test/java/org/pca/app/feature/webprotection/privacy/WebProtectionPrivacyStaticScanTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No backend telemetry endpoint found (consistent with default-off requirement); recommend an explicit grep-based CI guard analogous to schema-privacy tests to keep it that way, since none currently exists for this specific claim. Runtime reachability: Deterministic filter-list distribution is reachable; no evidence of an opt-in aggregate product-telemetry ingestion path server-side (which is consistent with the requirement — such telemetry is opt-in and off by default per PCA-NFR-014 — but also not affirmatively verified as absent from any hidden endpoint)."
+      "notes": "Wave 4 reconciliation: no-telemetry route regression and Android no-egress/privacy static coverage are present. PCA-NFR-014 remains open because optional aggregate telemetry consent is a separate requirement and is not implied by the absence of a transport. Runtime reachability: CONFIRMED."
     },
     {
       "requirementId": "PCA-SEC-001",
@@ -5561,6 +5564,74 @@
       "testEvidence": [],
       "externalGate": [],
       "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+    },
+    {
+      "requirementId": "PCA-FR-043B",
+      "phase": [
+        "PCA-4"
+      ],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicyRules.kt; android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt; android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt (accepted-policy default injection)"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/schedule/NightProtectionScheduleTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: source default and boundary semantics exist. Runtime policy injection, persisted restart delivery, and real device enforcement remain source/runtime and external gates."
+    },
+    {
+      "requirementId": "PCA-FR-043C",
+      "phase": [
+        "PCA-3",
+        "PCA-4"
+      ],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt (resolved communication-surface token contract)"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt"
+      ],
+      "externalGate": [
+        "REAL_DEVICE_TELEPHONY_UAT"
+      ],
+      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: protected communication token contract exists without OEM package assumptions. Telecom/role capability adapter, call lifecycle wiring, and real incoming-call behavior remain open."
+    },
+    {
+      "requirementId": "PCA-FR-015A",
+      "phase": [
+        "PCA-3"
+      ],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt (distinct COMMUNICATION_EXCEPTION freezes recovery progress)",
+        "parent-web/src/pages/children/ScreenTimePage.tsx (communication safety copy)"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/screentime/engine/ScreenTimeEngineTest.kt"
+      ],
+      "externalGate": [
+        "REAL_DEVICE_TELEPHONY_SMS_UAT"
+      ],
+      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: pure Break Shield timer semantics are implemented and tested. OS call/SMS delivery integration and physical-device evidence remain open."
+    },
+    {
+      "requirementId": "PCA-AND-003A",
+      "phase": [
+        "PCA-3"
+      ],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt (resolved protected token input)",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt (documented resolver contract)",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEvaluator.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: local non-overridable floor accepts resolved communication tokens and never assumes an OEM dialer. A production RoleManager/TelecomManager/SMS capability adapter and enforcement integration remain open."
     }
   ],
   "phases": [

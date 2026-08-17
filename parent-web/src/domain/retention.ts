@@ -12,6 +12,7 @@ export const RETENTION_WINDOWS: RetentionWindow[] = ['14_DAYS', '1_MONTH', '3_MO
 export interface RetentionDefaults {
   generalWindow: RetentionWindow;
   availableWindows: RetentionWindow[];
+  locationMode: LocationRetentionMode;
 }
 
 export type LocationRetentionMode = 'CURRENT_LAST_ONLY' | { window: RetentionWindow };

@@ -126,6 +126,9 @@ data class ScheduleEvaluationInput(
      * enforcement itself never pauses just because the device is offline (PCA-4 offline-first:
      * don't silently relax control when disconnected). */
     val lastPolicySyncAtUtc: Instant? = null,
+    /** Resolved by a platform adapter from documented OS roles/capabilities. These surfaces are
+     * protected in addition to the durable emergency baseline; no OEM dialer name is assumed. */
+    val protectedCommunicationTokens: Set<OpaqueAppToken> = emptySet(),
 )
 
 /**
@@ -152,6 +155,17 @@ data class SchedulePolicyV1(
     val effectiveFrom: Instant,
     val expiresAt: Instant? = null,
 ) {
+    /** PCA-FR-043B: a policy without an explicit bedtime window receives the owner-approved
+     * cross-midnight baseline at the single policy-to-evaluator boundary. An explicit bedtime
+     * window is preserved because weakening that baseline is a separate controlled owner action,
+     * not an accidental consequence of an omitted field. */
+    fun effectiveWindows(): List<ScheduleWindow> =
+        if (windows.any { it.kind == ScheduleWindowKind.BEDTIME }) {
+            windows
+        } else {
+            windows + SchedulePolicyDefaults.defaultNightProtection(timezone)
+        }
+
     /** See SchedulePolicyV1.md "Resolving an evaluation input". [evaluationTimezone] defaults to
      * the policy's own authored timezone but may be overridden with the device's current IANA
      * zone -- this only ever affects daily-limit local-date anchoring, never window activation. */
@@ -166,7 +180,7 @@ data class SchedulePolicyV1(
         nowUtc = nowUtc,
         timezone = evaluationTimezone,
         appToken = appToken,
-        windows = windows,
+        windows = effectiveWindows(),
         bonusGrants = bonusGrants,
         exceptions = parentExceptions,
         dailyLimit = dailyLimits.firstOrNull { appScopeIncludes(it.appScope, appToken) },

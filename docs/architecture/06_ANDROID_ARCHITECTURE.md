@@ -75,6 +75,8 @@ Provisioning/distribution legality and Google Play policy compatibility (Section
 
 **PCA-AND-003** The break-enforcement suspension/allowlist set MUST always include the platform emergency-dialer package and any OS-designated emergency/SOS surface; a policy envelope that would remove emergency access from the allowlist MUST be rejected client-side regardless of parent signature validity (a local, non-overridable safety floor, distinct from and in addition to the signature/version checks in doc 05 Section 6).
 
+**PCA-AND-003A** The Android enforcement layer MUST also preserve the telephony infrastructure and SMS transport required for incoming-call delivery and the OS-native incoming/in-call surface required to answer/end a call. Resolution MUST use documented platform roles/capabilities supplied by the device, not an OEM-specific hardcoded dialer package name. The resolved communication surfaces are local, non-overridable protected tokens; bedtime, school mode, block periods, daily limits, Break Shield, and parent restrictive scopes cannot intentionally remove them. No Accessibility abuse, hidden system manipulation, or undocumented package-control trick is permitted. This source contract does not by itself prove real-device telephony/SMS behavior.
+
 ## 9. Anti-tamper
 
 Monitor (values reported to doc 21's tamper-event model, not decided/owned here):

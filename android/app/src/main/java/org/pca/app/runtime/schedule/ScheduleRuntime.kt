@@ -45,7 +45,7 @@ class ScheduleRuntime(private val store: SchedulePolicyStore) {
      * (`feature/screentime/engine/ScreenTimeEngine.kt`'s `BREAK_SHIELD` mode). */
     fun isPcaBedtimeActive(nowUtc: Instant): Boolean {
         val policy = currentEffectivePolicy(nowUtc) ?: return false
-        return policy.windows.any {
+        return policy.effectiveWindows().any {
             it.kind == ScheduleWindowKind.BEDTIME && it.appScope is AppScope.All && isWindowActive(it, nowUtc)
         }
     }
@@ -55,7 +55,7 @@ class ScheduleRuntime(private val store: SchedulePolicyStore) {
      * `WellbeingScheduleContextSource.isScheduledQuietContext`. */
     fun isScheduledQuietContext(nowUtc: Instant): Boolean {
         val policy = currentEffectivePolicy(nowUtc) ?: return false
-        return policy.windows.any {
+        return policy.effectiveWindows().any {
             (it.kind == ScheduleWindowKind.BEDTIME || it.kind == ScheduleWindowKind.SCHOOL_MODE) &&
                 it.appScope is AppScope.All &&
                 isWindowActive(it, nowUtc)

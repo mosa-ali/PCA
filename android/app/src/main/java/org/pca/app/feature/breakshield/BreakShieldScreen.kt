@@ -204,6 +204,7 @@ private fun BreakShieldScreenPreview() {
             canRequestEmergencyException = true,
             remainingActiveBeforeBreak = Duration.ZERO,
             completedBreakCount = 2,
+            isCommunicationExceptionActive = false,
             overriddenBreakCount = 0,
             isEmergencyExceptionActive = false,
         ),

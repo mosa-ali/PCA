@@ -52,6 +52,9 @@ enum class ScreenTimeMode {
     ACTIVE,
     PAUSED,
     BREAK_SHIELD,
+    /** A normal phone call temporarily yields to the OS-native call surface without ending or
+     * consuming the underlying Break Shield recovery period. This is not an emergency state. */
+    COMMUNICATION_EXCEPTION,
     EMERGENCY_EXCEPTION,
 }
 
@@ -82,6 +85,10 @@ data class ScreenTimeState(
     val preEmergencyActiveElapsedNanos: Long,
     val preEmergencyBreakElapsedNanos: Long,
     val preEmergencyPauseElapsedNanos: Long,
+    val preCommunicationMode: ScreenTimeMode? = null,
+    val preCommunicationActiveElapsedNanos: Long = 0L,
+    val preCommunicationBreakElapsedNanos: Long = 0L,
+    val preCommunicationPauseElapsedNanos: Long = 0L,
 ) {
     companion object {
         fun initial(nowNanos: Long): ScreenTimeState = ScreenTimeState(
@@ -97,6 +104,10 @@ data class ScreenTimeState(
             preEmergencyActiveElapsedNanos = 0L,
             preEmergencyBreakElapsedNanos = 0L,
             preEmergencyPauseElapsedNanos = 0L,
+            preCommunicationMode = null,
+            preCommunicationActiveElapsedNanos = 0L,
+            preCommunicationBreakElapsedNanos = 0L,
+            preCommunicationPauseElapsedNanos = 0L,
         )
     }
 }
@@ -117,6 +128,8 @@ sealed interface ScreenTimeEvent {
     data class DhikrInteraction(override val nowNanos: Long) : ScreenTimeEvent
     data class EmergencyExceptionActivate(override val nowNanos: Long) : ScreenTimeEvent
     data class EmergencyExceptionDeactivate(override val nowNanos: Long) : ScreenTimeEvent
+    data class CommunicationExceptionActivate(override val nowNanos: Long) : ScreenTimeEvent
+    data class CommunicationExceptionDeactivate(override val nowNanos: Long) : ScreenTimeEvent
 }
 
 /**
@@ -140,6 +153,8 @@ object ScreenTimeEngine {
             is ScreenTimeEvent.DhikrInteraction -> applyDhikrInteraction(advanced)
             is ScreenTimeEvent.EmergencyExceptionActivate -> applyEmergencyActivate(advanced)
             is ScreenTimeEvent.EmergencyExceptionDeactivate -> applyEmergencyDeactivate(advanced)
+            is ScreenTimeEvent.CommunicationExceptionActivate -> applyCommunicationActivate(advanced)
+            is ScreenTimeEvent.CommunicationExceptionDeactivate -> applyCommunicationDeactivate(advanced)
         }
     }
 
@@ -220,6 +235,13 @@ object ScreenTimeEngine {
                     remaining = 0
                     current
                 }
+
+                // PCA-FR-015A: an ordinary answered call is a temporary communication exception;
+                // it must not consume Break Shield recovery time or reset completed progress.
+                ScreenTimeMode.COMMUNICATION_EXCEPTION -> {
+                    remaining = 0
+                    current
+                }
             }
         }
 
@@ -276,6 +298,35 @@ object ScreenTimeEngine {
                 preEmergencyActiveElapsedNanos = 0L,
                 preEmergencyBreakElapsedNanos = 0L,
                 preEmergencyPauseElapsedNanos = 0L,
+            )
+        } else {
+            state
+        }
+
+    private fun applyCommunicationActivate(state: ScreenTimeState): ScreenTimeState =
+        if (state.mode == ScreenTimeMode.COMMUNICATION_EXCEPTION || state.mode == ScreenTimeMode.EMERGENCY_EXCEPTION) {
+            state
+        } else {
+            state.copy(
+                mode = ScreenTimeMode.COMMUNICATION_EXCEPTION,
+                preCommunicationMode = state.mode,
+                preCommunicationActiveElapsedNanos = state.activeElapsedNanos,
+                preCommunicationBreakElapsedNanos = state.breakElapsedNanos,
+                preCommunicationPauseElapsedNanos = state.pauseElapsedNanos,
+            )
+        }
+
+    private fun applyCommunicationDeactivate(state: ScreenTimeState): ScreenTimeState =
+        if (state.mode == ScreenTimeMode.COMMUNICATION_EXCEPTION) {
+            state.copy(
+                mode = state.preCommunicationMode ?: ScreenTimeMode.ACTIVE,
+                activeElapsedNanos = state.preCommunicationActiveElapsedNanos,
+                breakElapsedNanos = state.preCommunicationBreakElapsedNanos,
+                pauseElapsedNanos = state.preCommunicationPauseElapsedNanos,
+                preCommunicationMode = null,
+                preCommunicationActiveElapsedNanos = 0L,
+                preCommunicationBreakElapsedNanos = 0L,
+                preCommunicationPauseElapsedNanos = 0L,
             )
         } else {
             state

@@ -62,6 +62,11 @@ describe('DeviceEnrollmentPanel', () => {
     renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
     await clickCreateInvitation();
     await screen.findByTestId('raw-invitation-token');
+    await screen.findByTestId('invitation-fallback-code');
+    await waitFor(() => {
+      expect(screen.getByTestId('invitation-qr-code').querySelector('img')).not.toBeNull();
+    });
+    await screen.findByRole('table');
 
     const clients = getApiClients();
     const listed = await clients.deviceEnrollment.listInvitations('dev-family-1');

@@ -303,7 +303,7 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 60, bucket: 'retention-defaults' })],
     },
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      return reply.code(200).send({ generalWindow: DEFAULT_RETENTION_WINDOW, availableWindows: RETENTION_WINDOWS });
+      return reply.code(200).send({ generalWindow: DEFAULT_RETENTION_WINDOW, availableWindows: RETENTION_WINDOWS, locationMode: 'CURRENT_LAST_ONLY' });
     },
   );
 

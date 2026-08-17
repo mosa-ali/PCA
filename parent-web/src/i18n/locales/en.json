@@ -537,7 +537,10 @@
   "screenTime": {
     "continuousLimit": "Continuous-use limit (minutes)",
     "breakDuration": "Break duration (minutes)",
-    "baselineWarning": "This child's saved screen-time policy predates the mandatory 60/30 anti-gaming baseline and does not meet it. Update the values below and save to bring it into compliance."
+    "baselineWarning": "This child's saved screen-time policy predates the mandatory 60/30 anti-gaming baseline and does not meet it. Update the values below and save to bring it into compliance.",
+    "nightProtection": "Night protection",
+    "nightProtectionWindow": "{{start}} - {{end}}",
+    "nightProtectionCommunication": "Calls remain available during night protection."
   },
   "location": {
     "accuracy": "Accuracy: {{value}}",
@@ -565,6 +568,10 @@
     "description": "Retention/deletion of children's activity is enforced locally by the device holding the plaintext; this screen sets the family-level policy value that devices honor.",
     "currentDefault": "Current architecture default: {{window}}.",
     "chooseWindow": "Choose the retention window for this family",
+    "chooseLocationWindow": "Choose location-history retention (no longer than general retention)",
+    "locationCurrentOnly": "Current/latest location only",
+    "locationWindowLabel": "Location history: {{window}}",
+    "locationMustNotExceedGeneral": "Location-history retention cannot exceed general activity retention.",
     "updatedStatus": "Retention policy validated and audited: {{window}}. Devices apply this value locally.",
     "windowLabels": {
       "14_DAYS": "14 days",

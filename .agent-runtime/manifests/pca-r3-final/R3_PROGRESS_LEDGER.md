@@ -6,8 +6,8 @@ Generated from the completion matrix and repository evidence on 2026-08-17.
 
 | Metric | Count |
 |---|---:|
-| Total matrix requirements | 371 |
-| SOURCE_COMPLETE | 242 |
+| Total matrix requirements | 375 |
+| SOURCE_COMPLETE | 246 |
 | PARTIAL | 89 |
 | NOT_STARTED | 21 |
 | NOT_APPLICABLE | 19 |
@@ -43,6 +43,10 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
+
+## Additive owner-controlled Wave 7: night lock and communication safety
+
+Owner decision `PCA-NIGHT-COMMUNICATION-SAFETY-1` adds four controlled requirements and changes the controlled denominator from 371 to 375. The source contracts now cover the cross-midnight 21:30-07:00 baseline, a distinct non-emergency communication exception that pauses Break Shield recovery, and resolved communication-surface tokens without an OEM dialer assumption. Android source tests cover the pure boundaries; real call/SMS behavior, iOS public-capability limits, and physical-device enforcement remain separate gates. New rows: `PCA-FR-043B`, `PCA-FR-043C`, `PCA-FR-015A`, `PCA-AND-003A`.
 - Terminology findings: R3_TERMINOLOGY_AUDIT.csv.
 - Interface and dependency assumptions: R3_INTERFACE_CONTRACTS.md and R3_DEPENDENCY_GRAPH.md.
 
@@ -94,3 +98,11 @@ R3 Writer Wave 2 closure: FR-040, FR-092, and FR-096 moved to SOURCE_COMPLETE fr
 - Focused Parent Web gate: `DeviceEnrollmentPanel.test.tsx`, 10 tests passed. Existing React `act(...)` warnings from asynchronous QR/panel updates remain non-failing test hygiene findings.
 - Counts after this implementation: SOURCE_COMPLETE=244; PARTIAL=87; NOT_STARTED=21; source backlog=108. Validation remains separate: the two closures are marked `SOURCE_COMPLETE_VALIDATION_PENDING`.
 - Source backlog classification now: `EXTERNAL_GATE/NOT_STARTED=5`, `EXTERNAL_GATE/PARTIAL=28`, `OWNER_OR_ENVIRONMENT_GATE/PARTIAL=20`, `SOURCE_TRIAGE_REQUIRED/NOT_STARTED=16`, `SOURCE_TRIAGE_REQUIRED/PARTIAL=39`; total `108`.
+
+## Writer Wave 6 retention implementation
+
+- PCA-FR-093: the Parent Web retention panel now exposes the real family retention policy contract and preserves the authenticated backend boundary.
+- PCA-FR-102: the panel now exposes `CURRENT_LAST_ONLY` or a separate location-history window; windows longer than general retention are disabled in the UI and rejected by the backend.
+- Focused validation: Parent Web retention component tests `2/2` passed; backend retention route tests `17/17` passed; backend TypeScript build passed.
+- Counts after this implementation: SOURCE_COMPLETE=246; PARTIAL=89; NOT_STARTED=21; source backlog=110. Validation remains separate: the two closures are marked `SOURCE_COMPLETE_VALIDATION_PENDING`.
+- Source backlog classification now: `EXTERNAL_GATE/NOT_STARTED=5`, `EXTERNAL_GATE/PARTIAL=28`, `OWNER_OR_ENVIRONMENT_GATE/PARTIAL=20`, `SOURCE_TRIAGE_REQUIRED/NOT_STARTED=16`, `SOURCE_TRIAGE_REQUIRED/PARTIAL=41`; total `110`.

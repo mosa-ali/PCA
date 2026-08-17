@@ -35,6 +35,22 @@ import java.security.MessageDigest
 object EmergencyAccessFloor {
 
     /**
+     * PCA-AND-003A: package/token resolution belongs to a platform adapter using documented
+     * Android roles and capability APIs. The pure enforcement layer receives only these resolved
+     * opaque tokens, keeping OEM package names and readable communication identifiers out of the
+     * policy contract.
+     */
+    fun resolveCommunicationSurfaceTokens(
+        incomingCallPackage: String?,
+        smsTransportPackage: String?,
+        emergencySurfacePackages: Set<String>,
+    ): Set<OpaqueAppToken> = buildSet {
+        incomingCallPackage?.takeIf(String::isNotBlank)?.let { add(opaqueToken(it)) }
+        smsTransportPackage?.takeIf(String::isNotBlank)?.let { add(opaqueToken(it)) }
+        emergencySurfacePackages.filter(String::isNotBlank).forEach { add(opaqueToken(it)) }
+    }
+
+    /**
      * AOSP telephony/emergency-dialer system package -- present on every Android device with
      * telephony hardware, and the process that actually places emergency calls at the framework
      * level (distinct from any OEM-branded dialer UI app, whose package name is not guaranteed
@@ -57,7 +73,10 @@ object EmergencyAccessFloor {
 
     /** True if [appToken] is one this floor protects -- i.e. [ScheduleEvaluator.evaluate] MUST
      * return an allowing decision for it no matter what the current policy says. */
-    fun isProtectedToken(appToken: OpaqueAppToken): Boolean = appToken in PROTECTED_APP_TOKENS
+    fun isProtectedToken(
+        appToken: OpaqueAppToken,
+        additionalProtectedTokens: Set<OpaqueAppToken> = emptySet(),
+    ): Boolean = appToken in PROTECTED_APP_TOKENS || appToken in additionalProtectedTokens
 
     /**
      * The decision unconditionally returned for a protected token. Deliberately reuses the

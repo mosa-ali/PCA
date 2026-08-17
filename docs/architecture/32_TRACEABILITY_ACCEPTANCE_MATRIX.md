@@ -221,7 +221,7 @@ $families = $defined | % { ($_ -split '-')[1] } | Group-Object | Sort-Object Nam
 [pscustomobject]@{defined=$defined.Count; rows=$rows.Count; duplicate=$duplicates.Count; missing=$missing.Count; orphan=$orphan.Count; family_breakdown=($families -join '; ')}
 ```
 
-**Recorded local evidence, 2026-08-10:** `defined normative IDs = 199; traceability rows = 199; duplicate IDs = 0; missing IDs = 0; orphan matrix IDs = 0; family breakdown = AI=1; AND=3; DATA=17; FR=112; IOS=3; NFR=43; PRIV=2; SEC=18`. Re-run after any controlled-document change and before independent review.
+**Recorded local evidence, 2026-08-10:** `defined normative IDs = 203; traceability rows = 203; duplicate IDs = 0; missing IDs = 0; orphan matrix IDs = 0; family breakdown = AI=1; AND=4; DATA=17; FR=115; IOS=3; NFR=43; PRIV=2; SEC=18`. Re-run after any controlled-document change and before independent review.
 
 ## Approved addenda (tracked separately, added by `PCA-DOC-REALIGN-1`, 2026-08-14)
 
@@ -233,3 +233,14 @@ This matrix's "Canonical normative inventory" above is the accepted A-100 baseli
 | `PCA-ADDENDUM-002` (Platform Administration and Billing) | `PCA-ADD-PA-001`–`054` (51 distinct IDs) and `PCA-ADD-BILL-001`–`047` (47 distinct IDs, including `PCA-ADD-BILL-005A`) — 98 requirements total | `PCA-PA-1`–`6`, `PCA-PA-UAT`, `PCA-BILL-1`–`3`, `PCA-BILL-UAT`, `PCA-MYKIDS-BILL-1` (see `docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md` Section 21) | `docs/implementation/PCA_IMPLEMENTATION_TRACEABILITY.md` (Addendum 002 rows to be added when implementation of that programme begins) |
 
 No requirement from either addendum is implemented merely by appearing in this cross-reference table, matching the discipline `PCA_IMPLEMENTATION_TRACEABILITY.md` already states for Addendum 001.
+
+## Additive owner-controlled requirements (2026-08-17)
+
+The approved `PCA-NIGHT-COMMUNICATION-SAFETY-1` feature adds four controlled requirements to the implementation inventory. These rows are source-controlled immediately; real telephony/SMS behavior remains a separate device/UAT gate.
+
+| Requirement ID | Normative source | Android source authority | iOS/source boundary | Acceptance evidence | Current source state |
+|---|---|---|---|---|---|
+| PCA-FR-043B | 03_FUNCTIONAL_REQUIREMENTS.md, bedtime section | SchedulePolicyDefaults + ScheduleEvaluator cross-midnight semantics | Public API capability classification only | Boundary tests for 21:30, midnight, 06:59:59, 07:00, restart/offline source paths | PARTIAL until runtime policy delivery and device enforcement are wired |
+| PCA-FR-043C | 03_FUNCTIONAL_REQUIREMENTS.md, night call safety | Communication-surface floor contract + schedule exception boundary | `REQUIRES_ENTITLEMENT`/`UNSUPPORTED` as applicable | Source state tests; real incoming-call behavior is REAL_UAT | PARTIAL |
+| PCA-FR-015A | 03_FUNCTIONAL_REQUIREMENTS.md, Break Shield communication safety | ScreenTimeEngine communication exception | Public API capability classification only | Break progress retained and call duration excluded in pure engine tests; SMS/call device test remains external | PARTIAL |
+| PCA-AND-003A | 06_ANDROID_ARCHITECTURE.md Section 8 | Resolved communication tokens, no OEM package assumption | Not applicable | Adversarial floor tests plus documented platform adapter contract | PARTIAL until runtime capability adapter is wired |

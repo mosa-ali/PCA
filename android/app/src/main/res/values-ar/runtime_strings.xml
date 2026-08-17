@@ -21,6 +21,7 @@
     <string name="child_home_screen_time_active">نشط — يتبقى %1$s دقيقة</string>
     <string name="child_home_screen_time_paused">متوقف مؤقتًا</string>
     <string name="child_home_screen_time_break">وقت الاستراحة</string>
+    <string name="child_home_screen_time_communication">مكالمة جارية؛ الحماية ما زالت مفعلة</string>
     <string name="child_home_screen_time_emergency">جارٍ استخدام وصول الطوارئ</string>
 
     <string name="child_home_break_state">الاستراحة</string>

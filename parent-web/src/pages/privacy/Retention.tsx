@@ -16,7 +16,7 @@ import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorState, LoadingState } from '../../components/common/States';
-import type { RetentionWindow } from '../../domain/retention';
+import type { LocationRetentionMode, RetentionWindow } from '../../domain/retention';
 
 export default function Retention() {
   const { t } = useTranslation();
@@ -24,25 +24,35 @@ export default function Retention() {
   const runFamilyAction = useFamilyAction();
   const { data: defaults, loading, error, reload } = useAsync(() => clients.retention.getDefaults(), []);
   const [selectedWindow, setSelectedWindow] = useState<RetentionWindow | null>(null);
+  const [selectedLocationMode, setSelectedLocationMode] = useState<LocationRetentionMode | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const effectiveWindow = selectedWindow ?? defaults?.generalWindow ?? null;
+  const effectiveLocationMode = selectedLocationMode ?? defaults?.locationMode ?? 'CURRENT_LAST_ONLY';
+  const locationWindow = typeof effectiveLocationMode === 'object' ? effectiveLocationMode.window : null;
+  const generalWindowIndex = defaults && effectiveWindow ? defaults.availableWindows.indexOf(effectiveWindow) : -1;
+  const locationWindowIndex = defaults && locationWindow ? defaults.availableWindows.indexOf(locationWindow) : -1;
+  const locationWindowExceedsGeneral = locationWindowIndex > generalWindowIndex && locationWindowIndex >= 0;
 
   const save = async () => {
     if (!effectiveWindow) return;
+    if (locationWindowExceedsGeneral) {
+      setSaveError(t('retention.locationMustNotExceedGeneral'));
+      return;
+    }
     setSaveError(null);
     setStatus(null);
     setSaving(true);
     try {
-      await runFamilyAction('CHANGE_RETENTION', async () => {
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const result = await clients.retention.submitPolicy({
-          generalWindow: effectiveWindow,
-          locationMode: 'CURRENT_LAST_ONLY',
-          timezone,
-        });
+          await runFamilyAction('CHANGE_RETENTION', async () => {
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const result = await clients.retention.submitPolicy({
+              generalWindow: effectiveWindow,
+              locationMode: effectiveLocationMode,
+              timezone,
+            });
         setStatus(t('retention.updatedStatus', { window: t(`retention.windowLabels.${result.policy.generalWindow}`) }));
       });
     } catch (e) {
@@ -72,6 +82,31 @@ export default function Retention() {
               </label>
             ))}
           </fieldset>
+          <fieldset disabled={saving}>
+            <legend>{t('retention.chooseLocationWindow')}</legend>
+            <label style={{ display: 'block' }}>
+              <input
+                type="radio"
+                name="location-retention-window"
+                checked={effectiveLocationMode === 'CURRENT_LAST_ONLY'}
+                onChange={() => setSelectedLocationMode('CURRENT_LAST_ONLY')}
+              />
+              {t('retention.locationCurrentOnly')}
+            </label>
+            {defaults.availableWindows.map((w, index) => (
+              <label key={`location-${w}`} style={{ display: 'block' }}>
+                <input
+                  type="radio"
+                  name="location-retention-window"
+                  checked={locationWindow === w}
+                  disabled={index > generalWindowIndex}
+                  onChange={() => setSelectedLocationMode({ window: w })}
+                />
+                {t('retention.locationWindowLabel', { window: t(`retention.windowLabels.${w}`) })}
+              </label>
+            ))}
+          </fieldset>
+          {locationWindowExceedsGeneral && <p role="alert">{t('retention.locationMustNotExceedGeneral')}</p>}
         </div>
       )}
 

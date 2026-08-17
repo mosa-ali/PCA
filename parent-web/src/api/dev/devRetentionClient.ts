@@ -11,14 +11,22 @@ import { RETENTION_WINDOWS } from '../../domain/retention';
 
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
+let lastSubmittedPolicy: RetentionPolicySettings | null = null;
+
+/** Test/dev-only observation hook; production clients never expose policy payloads through this module. */
+export function __devLastSubmittedRetentionPolicy(): RetentionPolicySettings | null {
+  return lastSubmittedPolicy;
+}
+
 export class DevRetentionClient implements RetentionClient {
   async getDefaults(): Promise<RetentionDefaults> {
     await delay();
-    return { generalWindow: '1_MONTH', availableWindows: RETENTION_WINDOWS };
+    return { generalWindow: '1_MONTH', availableWindows: RETENTION_WINDOWS, locationMode: 'CURRENT_LAST_ONLY' };
   }
 
   async submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult> {
     await delay();
+    lastSubmittedPolicy = policy;
     return { policy, accepted: true };
   }
 

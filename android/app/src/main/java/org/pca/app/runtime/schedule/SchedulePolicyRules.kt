@@ -17,6 +17,22 @@ fun validateScheduleWindow(window: ScheduleWindow): List<String> {
     return errors
 }
 
+/** PCA-FR-043B: owner-approved baseline used when a policy has not supplied a weaker bedtime
+ * alternative. The window deliberately crosses midnight and is anchored to the policy timezone. */
+object SchedulePolicyDefaults {
+    const val DEFAULT_NIGHT_PROTECTION_ID = "default-night-protection"
+
+    fun defaultNightProtection(timezone: String): ScheduleWindow = ScheduleWindow(
+        id = DEFAULT_NIGHT_PROTECTION_ID,
+        kind = ScheduleWindowKind.BEDTIME,
+        daysOfWeek = (0..6).toList(),
+        start = TimeOfDay(hour = 21, minute = 30),
+        end = TimeOfDay(hour = 7, minute = 0),
+        appScope = AppScope.All,
+        timezone = timezone,
+    )
+}
+
 /**
  * True when [nowUtc] falls inside [window], evaluated in the window's own authored timezone. A
  * window whose end-of-day minutes is not strictly after its start-of-day minutes is treated as

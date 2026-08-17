@@ -23,12 +23,15 @@ data class BreakShieldViewState(
     val completedBreakCount: Int,
     val overriddenBreakCount: Int,
     val isEmergencyExceptionActive: Boolean,
+    val isCommunicationExceptionActive: Boolean,
 )
 
 object BreakShieldController {
     fun viewState(state: ScreenTimeState, config: ScreenTimeConfig = ScreenTimeConfig()): BreakShieldViewState =
         BreakShieldViewState(
-            isShieldVisible = state.mode == ScreenTimeMode.BREAK_SHIELD,
+            isShieldVisible = state.mode == ScreenTimeMode.BREAK_SHIELD ||
+                (state.mode == ScreenTimeMode.COMMUNICATION_EXCEPTION &&
+                    state.preCommunicationMode == ScreenTimeMode.BREAK_SHIELD),
             remainingBreak = ScreenTimeEngine.remainingBreakNanos(state, config).nanoseconds,
             dhikrInteractionCount = state.dhikrInteractionCount,
             canInteractWithDhikr = state.mode == ScreenTimeMode.BREAK_SHIELD,
@@ -38,5 +41,6 @@ object BreakShieldController {
             completedBreakCount = state.completedBreakCount,
             overriddenBreakCount = state.overriddenBreakCount,
             isEmergencyExceptionActive = state.mode == ScreenTimeMode.EMERGENCY_EXCEPTION,
+            isCommunicationExceptionActive = state.mode == ScreenTimeMode.COMMUNICATION_EXCEPTION,
         )
 }

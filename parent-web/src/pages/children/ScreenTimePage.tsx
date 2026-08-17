@@ -22,6 +22,7 @@ import {
   isBaselineCompliantScreenTimePolicy,
   validateScreenTimePolicy,
 } from '../../domain/screenTimePolicy';
+import { DEFAULT_NIGHT_PROTECTION } from '../../domain/nightProtection';
 
 interface ScreenTimePageData {
   screenTime: ScreenTimeStatus;
@@ -141,6 +142,11 @@ export default function ScreenTimePage() {
         {t('dashboard.screenTime')}: <StatusBadge state={data.screenTime.state} /> (
         {data.screenTime.continuousUseElapsedMinutes}m /{data.screenTime.continuousUseLimitMinutes}m)
       </p>
+      <section aria-labelledby="night-protection-title" className="field">
+        <h2 id="night-protection-title">{t('screenTime.nightProtection')}</h2>
+        <p>{t('screenTime.nightProtectionWindow', DEFAULT_NIGHT_PROTECTION)}</p>
+        <p>{t('screenTime.nightProtectionCommunication')}</p>
+      </section>
       {policyStatus.snapshot && (
         <p>
           {t('policyStatus.label')} <PolicyStatusBadge status={policyStatus.snapshot.status} />

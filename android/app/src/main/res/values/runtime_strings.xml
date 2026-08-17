@@ -21,6 +21,7 @@
     <string name="child_home_screen_time_active">Active — %1$s minutes remaining</string>
     <string name="child_home_screen_time_paused">Paused</string>
     <string name="child_home_screen_time_break">Break time</string>
+    <string name="child_home_screen_time_communication">Call in progress; protection remains active</string>
     <string name="child_home_screen_time_emergency">Emergency access in use</string>
 
     <string name="child_home_break_state">Break</string>

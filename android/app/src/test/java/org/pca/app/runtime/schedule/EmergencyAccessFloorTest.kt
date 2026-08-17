@@ -34,6 +34,20 @@ class EmergencyAccessFloorTest {
         assertNotEquals(protectedToken, ordinaryToken)
     }
 
+    @Test
+    fun `resolved communication surfaces are protected without an OEM package assumption`() {
+        val resolved = EmergencyAccessFloor.resolveCommunicationSurfaceTokens(
+            incomingCallPackage = "resolved.call.surface",
+            smsTransportPackage = "resolved.sms.surface",
+            emergencySurfacePackages = setOf("resolved.sos.surface"),
+        )
+        assertEquals(3, resolved.size)
+        resolved.forEach { token ->
+            assertTrue(EmergencyAccessFloor.isProtectedToken(token, resolved))
+        }
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(ordinaryToken, resolved))
+    }
+
     // ---- Adversarial cases: a malicious/well-formed policy that explicitly targets the emergency
     // ---- dialer token by including it in a blocking window's app scope must still be rejected
     // ---- (i.e. never actually block it) at the evaluator, PCA-AND-003's actual requirement.

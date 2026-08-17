@@ -268,6 +268,7 @@ private fun screenTimeModeLabel(mode: ScreenTimeMode, remainingActiveMillis: Lon
     ScreenTimeMode.ACTIVE -> stringResource(R.string.child_home_screen_time_active, formatMinutes(remainingActiveMillis))
     ScreenTimeMode.PAUSED -> stringResource(R.string.child_home_screen_time_paused)
     ScreenTimeMode.BREAK_SHIELD -> stringResource(R.string.child_home_screen_time_break)
+    ScreenTimeMode.COMMUNICATION_EXCEPTION -> stringResource(R.string.child_home_screen_time_communication)
     ScreenTimeMode.EMERGENCY_EXCEPTION -> stringResource(R.string.child_home_screen_time_emergency)
 }
 

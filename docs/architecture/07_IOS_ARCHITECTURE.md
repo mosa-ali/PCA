@@ -145,6 +145,10 @@ Where on-device content classification (doc 14) requires local inference on iOS,
 - Doc 23 for on-device model/runtime selection referenced in Section 13.
 - Doc 33 for pending citations (Family Controls entitlement process, Device Activity Report data-exposure boundary, Screen Distance feature documentation).
 
+## 19A. Communication safety boundary (PCA-FR-043C, PCA-FR-015A)
+
+iOS source must preserve emergency/SOS behavior and must not claim that a normal consumer app can independently keep the Phone or Messages surfaces available during every managed restriction. Where public Family Controls/Managed Settings APIs expose a supported exception, PCA may model the communication exception; otherwise the requirement is `UNSUPPORTED` or `REQUIRES_ENTITLEMENT` and remains a real-device/external capability gate. PCA must never use private APIs, Accessibility abuse, or a hardcoded OEM-style package assumption. SMS receipt and incoming-call answer/end behavior require later physical-device UAT; source tests must not be presented as telephony evidence.
+
 ## 20. Acceptance criteria
 
 - [ ] Every capability claim in this document carries a doc 00 Section 8 label and matches doc 01 Section 10's cross-reference table.

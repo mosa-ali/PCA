@@ -192,6 +192,34 @@ class ScreenTimeEngineTest {
         assertEquals(once, state)
     }
 
+    @Test
+    fun `ordinary call pauses break shield without consuming recovery time and resumes remaining break`() {
+        var state = tick(ScreenTimeState.initial(0L), 60.minutes.inWholeNanoseconds)
+        state = tick(state, 70.minutes.inWholeNanoseconds)
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, state.breakElapsedNanos)
+
+        state = ScreenTimeEngine.reduce(
+            state,
+            ScreenTimeEvent.CommunicationExceptionActivate(70.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(ScreenTimeMode.COMMUNICATION_EXCEPTION, state.mode)
+
+        state = tick(state, 85.minutes.inWholeNanoseconds)
+        assertEquals(ScreenTimeMode.COMMUNICATION_EXCEPTION, state.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, state.preCommunicationBreakElapsedNanos)
+
+        state = ScreenTimeEngine.reduce(
+            state,
+            ScreenTimeEvent.CommunicationExceptionDeactivate(85.minutes.inWholeNanoseconds),
+            config,
+        )
+        assertEquals(ScreenTimeMode.BREAK_SHIELD, state.mode)
+        assertEquals(10.minutes.inWholeNanoseconds, state.breakElapsedNanos)
+        assertEquals(20.minutes.inWholeNanoseconds, ScreenTimeEngine.remainingBreakNanos(state, config))
+    }
+
     // ---- dhikr / remembrance ---------------------------------------------
 
     @Test
