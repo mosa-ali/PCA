@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -30,12 +29,6 @@ import org.pca.app.security.ui.AdminSecurityActivity
  * child request -- rather than being visually present but functionally dead.
  */
 class MainActivity : ComponentActivity() {
-    private val readPhoneStatePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) {
-        (application as PcaApplication).graph.runtime.refreshCommunicationCallStateObserver()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val runtime = (application as PcaApplication).graph.runtime
@@ -80,7 +73,10 @@ class MainActivity : ComponentActivity() {
                             CallStatePermissionPromptPolicy.Action.ALREADY_GRANTED -> runtime.refreshCommunicationCallStateObserver()
                             CallStatePermissionPromptPolicy.Action.REQUEST -> {
                                 preferences.edit().putBoolean(PHONE_STATE_PROMPT_SHOWN, true).apply()
-                                readPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                                requestPermissions(
+                                    arrayOf(Manifest.permission.READ_PHONE_STATE),
+                                    PHONE_STATE_PERMISSION_REQUEST_CODE,
+                                )
                             }
                             CallStatePermissionPromptPolicy.Action.OPEN_SETTINGS -> {
                                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -94,8 +90,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PHONE_STATE_PERMISSION_REQUEST_CODE) {
+            (application as PcaApplication).graph.runtime.refreshCommunicationCallStateObserver()
+        }
+    }
+
     private companion object {
         const val PERMISSION_PREFS = "pca_permission_prompts"
         const val PHONE_STATE_PROMPT_SHOWN = "read_phone_state_prompt_shown"
+        const val PHONE_STATE_PERMISSION_REQUEST_CODE = 4201
     }
 }
