@@ -5,6 +5,7 @@ package org.pca.app.runtime.communication
 interface CommunicationCallStateObserver {
     fun start(onState: (CommunicationExceptionCoordinator.CallState) -> Unit)
     fun stop()
+    fun isAvailable(): Boolean = false
 }
 
 /** Conservative capability fallback when READ_PHONE_STATE is unavailable or the platform cannot

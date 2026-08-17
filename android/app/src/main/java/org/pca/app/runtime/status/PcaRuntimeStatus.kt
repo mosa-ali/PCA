@@ -30,6 +30,7 @@ data class PcaRuntimeStatus(
     val wellbeingNotificationsAvailable: Boolean,
     val pendingChildRequestCount: Int,
     val scheduleEnforcementOutcome: ScheduleEnforcementOutcome = ScheduleEnforcementOutcome.NOT_ATTEMPTED,
+    val callStatePermissionAvailable: Boolean = false,
 ) {
     /** True whenever local enforcement can be trusted to be running, regardless of connectivity --
      * Section 0/15's "Protection active locally" honesty requirement. Local engines never depend

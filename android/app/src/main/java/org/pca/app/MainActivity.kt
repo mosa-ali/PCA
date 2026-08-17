@@ -1,7 +1,11 @@
 package org.pca.app
 
+import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -11,6 +15,7 @@ import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
 import org.pca.app.feature.youtube.ui.YouTubeModeActivity
 import org.pca.app.runtime.graph.newLocalRequestId
 import org.pca.app.runtime.ui.ChildHomeScreen
+import org.pca.app.runtime.ui.CallStatePermissionPromptPolicy
 import org.pca.app.security.ui.AdminSecurityActivity
 
 /**
@@ -25,6 +30,12 @@ import org.pca.app.security.ui.AdminSecurityActivity
  * child request -- rather than being visually present but functionally dead.
  */
 class MainActivity : ComponentActivity() {
+    private val readPhoneStatePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        (application as PcaApplication).graph.runtime.refreshCommunicationCallStateObserver()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val runtime = (application as PcaApplication).graph.runtime
@@ -56,8 +67,35 @@ class MainActivity : ComponentActivity() {
                     onOpenYouTubeMode = {
                         startActivity(Intent(this@MainActivity, YouTubeModeActivity::class.java))
                     },
+                    onRequestCallStatePermission = {
+                        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.READ_PHONE_STATE,
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        val preferences = getSharedPreferences(PERMISSION_PREFS, MODE_PRIVATE)
+                        when (CallStatePermissionPromptPolicy.nextAction(
+                            hasPermission = hasPermission,
+                            promptWasShown = preferences.getBoolean(PHONE_STATE_PROMPT_SHOWN, false),
+                        )) {
+                            CallStatePermissionPromptPolicy.Action.ALREADY_GRANTED -> runtime.refreshCommunicationCallStateObserver()
+                            CallStatePermissionPromptPolicy.Action.REQUEST -> {
+                                preferences.edit().putBoolean(PHONE_STATE_PROMPT_SHOWN, true).apply()
+                                readPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                            }
+                            CallStatePermissionPromptPolicy.Action.OPEN_SETTINGS -> {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                })
+                            }
+                        }
+                    },
                 )
             }
         }
+    }
+
+    private companion object {
+        const val PERMISSION_PREFS = "pca_permission_prompts"
+        const val PHONE_STATE_PROMPT_SHOWN = "read_phone_state_prompt_shown"
     }
 }

@@ -65,6 +65,12 @@
     <string name="child_home_wellbeing_unavailable">Unavailable</string>
 
     <string name="child_home_pending_requests">Pending requests to parent</string>
+    <string name="child_home_call_state_permission">Call timing permission</string>
+    <string name="child_home_call_state_title">Pause break timer during calls</string>
+    <string name="child_home_call_state_explanation">PCA uses phone-call state only to pause the break timer while a call is answered and to preserve call availability during protection periods. It does not read phone numbers, contacts, messages, or audio.</string>
+    <string name="child_home_call_state_enabled">Available</string>
+    <string name="child_home_call_state_unavailable">Unavailable; the break timer will not pause automatically during a call</string>
+    <string name="child_home_call_state_enable">Allow call-state access</string>
     <!-- PCA-16B: locale-owned format for a status row's merged accessibility description
          (label + value), so translators control punctuation/order per locale instead of a
          code-level concatenation. -->

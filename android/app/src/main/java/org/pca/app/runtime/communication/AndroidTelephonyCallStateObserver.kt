@@ -65,6 +65,8 @@ class AndroidTelephonyCallStateObserver(
         }
     }
 
+    override fun isAvailable(): Boolean = hasReadPhoneState()
+
     private fun hasReadPhoneState(): Boolean =
         ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED

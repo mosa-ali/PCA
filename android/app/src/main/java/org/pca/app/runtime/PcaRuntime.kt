@@ -203,6 +203,13 @@ class PcaRuntime(
         return outcome
     }
 
+    /** Re-reads live telephony permission state after the child returns from Android settings. */
+    fun refreshCommunicationCallStateObserver() {
+        communicationCallLifecycle.stop()
+        communicationCallLifecycle.start()
+        statusFlow.update { buildStatus() }
+    }
+
     fun pauseScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Pause(nowNanos))
     fun resumeScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Resume(nowNanos))
     /** PCA-FR-015A: ordinary answered calls pause Break Shield recovery without using the SOS
@@ -330,6 +337,7 @@ class PcaRuntime(
             wellbeingNotificationsAvailable = runCatching { notificationCapabilitySource.notificationsEnabled() }.getOrDefault(false),
             pendingChildRequestCount = childRequestQueue.outboxPendingCount(),
             scheduleEnforcementOutcome = scheduleEnforcementOutcomeFlow.value,
+            callStatePermissionAvailable = communicationCallStateObserver.isAvailable(),
         )
     }
 

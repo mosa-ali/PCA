@@ -52,6 +52,7 @@ fun ChildHomeScreen(
     onOpenSafeBrowser: () -> Unit = {},
     onOpenAdminSecurity: () -> Unit = {},
     onOpenYouTubeMode: () -> Unit = {},
+    onRequestCallStatePermission: () -> Unit = {},
 ) {
     val rows = statusRows(status)
     Surface(modifier = modifier.fillMaxSize()) {
@@ -65,6 +66,12 @@ fun ChildHomeScreen(
 
             items(rows) { row -> StatusRow(row) }
 
+            item {
+                CallStatePermissionCard(
+                    available = status.callStatePermissionAvailable,
+                    onClick = onRequestCallStatePermission,
+                )
+            }
             item { SafeBrowserEntryCard(onClick = onOpenSafeBrowser) }
             item { YouTubeModeEntryCard(onClick = onOpenYouTubeMode) }
             item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
@@ -172,7 +179,31 @@ private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listO
     StatusRowContent(stringResource(R.string.child_home_location_capability), locationCapabilityLabel(status.locationCapabilityLevel)),
     StatusRowContent(stringResource(R.string.child_home_wellbeing_availability), wellbeingLabel(status.wellbeingNotificationsAvailable)),
     StatusRowContent(stringResource(R.string.child_home_pending_requests), localizedNumber(status.pendingChildRequestCount.toLong())),
+    StatusRowContent(stringResource(R.string.child_home_call_state_permission), callStatePermissionLabel(status.callStatePermissionAvailable)),
 )
+
+@Composable
+private fun CallStatePermissionCard(available: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_call_state_title), style = MaterialTheme.typography.titleMedium)
+            Text(text = stringResource(R.string.child_home_call_state_explanation), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = if (available) {
+                    stringResource(R.string.child_home_call_state_enabled)
+                } else {
+                    stringResource(R.string.child_home_call_state_enable)
+                },
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
 
 @Composable
 private fun StatusRow(row: StatusRowContent) {
@@ -330,6 +361,10 @@ private fun locationCapabilityLabel(level: LocationCapabilityLevel): String = wh
 @Composable
 private fun wellbeingLabel(available: Boolean): String =
     if (available) stringResource(R.string.child_home_wellbeing_available) else stringResource(R.string.child_home_wellbeing_unavailable)
+
+@Composable
+private fun callStatePermissionLabel(available: Boolean): String =
+    if (available) stringResource(R.string.child_home_call_state_enabled) else stringResource(R.string.child_home_call_state_unavailable)
 
 @Composable
 private fun formatMinutes(millis: Long): String = localizedNumber(TimeUnit.MILLISECONDS.toMinutes(millis.coerceAtLeast(0L)))
