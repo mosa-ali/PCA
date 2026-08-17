@@ -3102,28 +3102,32 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/migrations/0001_mysql_baseline.sql (enrollment_invitations CHECK status IN CREATED,OPENED,REDEEMED,REVOKED) | backend/src/invitation/InvitationService.ts (EXPIRED computed/derived, never persisted)"
+        "backend/migrations/0016_invitation_lifecycle_states.sql | backend/src/invitation/types.ts | backend/src/invitation/InvitationService.ts | backend/src/invitation/MySqlInvitationRepository.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/invitation/service.test.mjs",
+        "backend/test/db/invitation.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Only 4 of the 8 required states are modeled in the schema. INSTALL_REQUIRED, APP_INSTALLED, and AUTHORIZATION_REQUIRED are entirely absent from backend. EXPIRED is derived, not an audited stored transition. Parent-web deviceEnrollmentClient.ts types status as a bare string, not the addendum's 7/8-st Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 reconciliation: all eight required states are modeled as persisted, timestamped states with validated forward transitions and immutable transition audit rows. Focused unit and MySQL test evidence exists; the elevated full backend unit/security suite passed 1,495 tests; MySQL integration execution remains an open validation gate."
     },
     {
       "requirementId": "PCA-ADD-ENR-006",
       "phase": [
         "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt (FailedInvitationInvalid fails closed generically)"
+        "backend/src/invitation/InvitationService.ts (loadRedeemable, applyForwardTransition, persistExpiryIfDue) | backend/src/invitation/InvitationRepository.ts"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/enrollment/"
+        "backend/test/invitation/service.test.mjs",
+        "backend/test/db/invitation.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit. Runtime reachability: REACHABLE via EnrollmentActivity"
+      "notes": "R3 reconciliation: redeemed, expired, revoked, malformed, and invalid-state paths fail closed through generic InvitationError outcomes; focused unit and MySQL test evidence exists. The elevated full backend unit/security suite passed 1,495 tests; MySQL integration execution remains an open validation gate."
     },
     {
       "requirementId": "PCA-ADD-ENR-007",
@@ -3144,11 +3148,22 @@
         "PCA-1",
         "PCA-2"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No App Link intent-filter or install-continuation logic surfaced in the Android or backend survey passes. AndroidManifest.xml declares only 3 activities and no App Link handling was found in this pass. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/AndroidManifest.xml (https autoVerify App Link intent-filter)",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentDeepLinkConfig.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentLinkParser.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentCoordinator.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/enrollment/UriEnrollmentLinkParserTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt"
+      ],
+      "externalGate": [
+        "ANDROID_APP_LINK_ASSETLINKS_HOSTING",
+        "ANDROID_PHYSICAL_INSTALL_CONTINUATION"
+      ],
+      "notes": "R3 reconciliation: supported App Link parsing, manifest autoVerify wiring, and install-continuation source are present. Verified Digital Asset Links hosting and physical install-return behavior remain external gates; no silent installation or unmanaged Device Owner claim is made."
     },
     {
       "requirementId": "PCA-ADD-ENR-009",
@@ -3361,13 +3376,16 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/invitation/MySqlInvitationRepository.ts (redeemAtomically) | backend/migrations/0001_mysql_baseline.sql (enrollment_invitations_token_hash_key UNIQUE index) | backend familyrbac FamilyAuditService.record calls in InvitationService.createInvitation/revokeInvitationForFamily (correlationId: record.invitationId)"
+        "backend/src/invitation/MySqlInvitationRepository.ts | backend/migrations/0016_invitation_lifecycle_states.sql | backend/src/invitation/InvitationService.ts | backend/src/invitation/InvitationRepository.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/invitation/service.test.mjs",
+        "backend/test/db/invitation.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Present and solid for the 4-state model that exists; incomplete relative to the full 8-state lifecycle ADD-ENR-005 requires. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 reconciliation: creation, forward transition, expiry, revocation, redemption, atomic single-redemption protection, opaque correlation identifiers, and immutable transition persistence are source-backed with focused unit and MySQL test evidence. The elevated full backend unit/security suite passed 1,495 tests; MySQL integration execution remains an open validation gate."
     },
     {
       "requirementId": "PCA-ADD-ENR-024",
@@ -6107,3 +6125,4 @@
     }
   ]
 }
+

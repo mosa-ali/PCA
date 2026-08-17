@@ -34,6 +34,10 @@ Round6 (`PCA-COMPLIMENTARY-CONSUMPTION-1` Writer60, `PCA-FREE-ACCESS-1` Writer61
 - **Left open, unchanged:** `PA-041` (dashboard settlement/service-health metrics — Round6 did not touch `Dashboard.tsx`), `PA-043` (5 of ~8 settings categories still missing — provider-credential, branding, notification, maintenance-mode, feature-flag), `BILL-020` (cross-batch USD-normalized reporting rollup still not located, though a new per-batch FX snapshot reinforces the recorded-rate discipline), `PA-048` (the sole remaining Addendum-002 `NOT_STARTED` row, unrelated to Round6's scope).
 
 `MISSING_IDS=0`, `DUPLICATE_IDS=0`, `ORPHAN_IDS=0` reconfirmed against the full 371-row inventory after this correction (programmatic uniqueness/completeness check re-run, not assumed carried-forward from R3).
+### R3 evidence reconciliation (2026-08-17)
+
+The live source tree was re-checked after the handoff range. PCA-ADD-ENR-005, PCA-ADD-ENR-006, and PCA-ADD-ENR-023 now have source-backed eight-state lifecycle, fail-closed transition, expiry, atomic redemption, and immutable-audit evidence; focused unit/MySQL test files are recorded in the matrix, while the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate open validation gate. PCA-ADD-ENR-008 has Android App Link parser, manifest, coordinator, and tests, but remains PARTIAL because Digital Asset Links hosting and physical install-return behavior are external gates. PCA-ADD-ENR-019 remains PARTIAL because no concrete runtime enrollment-to-AUTHORIZATION_REQUIRED transition is claimed.
+
 
 ### Correction R5 (PCA-FINAL-SOURCE-COMPLETION-100, base `e50a94799d1d99fbc8247ad50114a1696676f186`)
 
@@ -74,10 +78,10 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | PCA-ADD-ENR-002 | PCA-1, PCA-10 | PARTIAL | Link + raw token exist; no QR code, no short fallback code. |
 | PCA-ADD-ENR-003 | PCA-1, PCA-10 | PARTIAL | No secrets found in what exists (token, link); QR/fallback code don't exist to evaluate. |
 | PCA-ADD-ENR-004 | PCA-1 | SOURCE_COMPLETE | Token entropy (256-bit CSPRNG), SHA-256 hash-only storage, TTL, single-use, revocation all solid. |
-| PCA-ADD-ENR-005 | PCA-1 | PARTIAL | Only 4 of 8 required lifecycle states persisted (`CREATED/OPENED/REDEEMED/REVOKED`); `INSTALL_REQUIRED`/`APP_INSTALLED`/`AUTHORIZATION_REQUIRED` entirely absent; `EXPIRED` is derived, not stored. |
-| PCA-ADD-ENR-006 | PCA-1 | SOURCE_COMPLETE | Fail-closed redemption correct within the 4-state model that exists. |
+| PCA-ADD-ENR-005 | PCA-1 | SOURCE_COMPLETE | Full eight-state persisted lifecycle, validated forward transitions, timestamps, immutable transition audit rows, and focused unit/MySQL evidence are present; the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate validation gate. |
+| PCA-ADD-ENR-006 | PCA-1 | SOURCE_COMPLETE | Redeemed, expired, revoked, malformed, and invalid-state paths fail closed through generic outcomes; focused unit/MySQL evidence is recorded. |
 | PCA-ADD-ENR-007 | PCA-10 | SOURCE_COMPLETE | Status + revoke implemented backend and web without exposing a reusable token. |
-| PCA-ADD-ENR-008 | PCA-1, PCA-2 | NOT_STARTED | No App Link intent-filter or install-continuation logic found. |
+| PCA-ADD-ENR-008 | PCA-1, PCA-2 | PARTIAL | Android App Link parser, autoVerify manifest filter, coordinator wiring, and focused tests are present; Digital Asset Links hosting and physical install-return behavior remain external gates. |
 | PCA-ADD-ENR-009 | PCA-2 | NOT_STARTED | Android Protected provisioning correctly self-gated `PENDING_OWNER_DECISION`; no `DeviceAdminReceiver` exists. |
 | PCA-ADD-ENR-010 | PCA-15 | NOT_STARTED | iOS crypto/enrollment confirmed absent from source. |
 | PCA-ADD-ENR-011 | PCA-10, PCA-16 | PARTIAL | Child home screen exists; specific disclosure content not confirmed in this pass. |
@@ -92,7 +96,7 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | PCA-ADD-ENR-020 | PCA-11, PCA-13 | NOT_STARTED | No E2EE alert generator for the addendum's event list; no display component in Parent Web. |
 | PCA-ADD-ENR-021 | PCA-10, PCA-13, PCA-15 | NOT_STARTED | Emergency floor exists narrowly (manual toggle in Screen Time only), not evidenced across the required flows generally. |
 | PCA-ADD-ENR-022 | PCA-1, PCA-11 | SOURCE_COMPLETE | Strong schema-privacy regression test; enrollment table stores only hash/platform/mode/status/timestamps. |
-| PCA-ADD-ENR-023 | PCA-1 | PARTIAL | Solid for the 4-state model that exists; incomplete relative to the full 8-state lifecycle. |
+| PCA-ADD-ENR-023 | PCA-1 | SOURCE_COMPLETE | Creation, transition, expiry, revocation, atomic redemption, opaque correlation, immutable audit persistence, and focused unit/MySQL evidence are present; the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate validation gate. |
 | PCA-ADD-ENR-024 | PCA-1, PCA-11, PCA-13 | PARTIAL | Invitation-side reuse/expiry/revocation/wrong-family covered; removal-side unevaluable since that subsystem doesn't exist. |
 | PCA-ADD-ENR-025 | PCA-1, PCA-2, PCA-10, PCA-11, PCA-13, PCA-15 | NOT_STARTED | Per-row backend+DB+security+test evidence is not recorded for most of the 25 requirements; this meta-requirement cannot be marked implemented. |
 
@@ -333,3 +337,4 @@ Platform-limited requirements (PCA-15/iOS-linked, and any requirement depending 
 ## Preserved from R0
 
 The following were established in the R0 pass and are **not re-scored** by this R1 correction (per its narrow scope): the PCA-0..19/PCA-WELL-1 phase matrix, the Addendum-001 status distribution above, and all known source gaps (device-wide VPN filtering incomplete, SafeSearch incomplete, production crypto review not approved, real UAT 0/50, iOS Xcode/entitlement/device gates, YouTube Mode B gate, family-authority RBAC gap, PIN/removal subsystem gaps, Android tamper gap). See `PCA_CURRENT_IMPLEMENTATION_STATUS.md` for the full narrative, now updated only where Addendum 002 integration required it (Platform Administration/Billing sections).
+
