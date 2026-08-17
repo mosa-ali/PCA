@@ -5572,16 +5572,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicyRules.kt; android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt; android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt (accepted-policy default injection)",
         "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/ProductionScheduleRuntimePort.kt",
-        "android/app/src/test/java/org/pca/app/runtime/schedule/NightProtectionScheduleTest.kt"
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidDevicePolicyPackageSuspensionExecutor.kt",
+        "android/app/src/main/java/org/pca/app/platform/ForegroundAppPackageSource.kt",
+        "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/schedule/NightProtectionScheduleTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/schedule/NightProtectionScheduleTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: source default and boundary semantics exist. Runtime policy injection, persisted restart delivery, and real device enforcement remain source/runtime and external gates.",
+      "notes": "R3 source correction: additive baseline, runtime decision path, foreground package observation, and live device-owner package-suspension consumer are composed. Actual device-owner provisioning and physical restart/offline evidence remain external.",
       "iosSourceClassification": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "correctionWave": "R3 night communication safety correction"
     },
@@ -5593,18 +5597,22 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt (resolved communication-surface token contract)",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidCommunicationSurfaceResolver.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationCallLifecycleAdapter.kt",
+        "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinator.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
         "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationCallLifecycleAdapterTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
       "externalGate": [
         "REAL_DEVICE_TELEPHONY_UAT"
       ],
-      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: protected communication token contract exists without OEM package assumptions. Telecom/role capability adapter, call lifecycle wiring, and real incoming-call behavior remain open.",
+      "notes": "R3 source correction: public capability resolver and call-state lifecycle are composed; call-surface package-level preservation is implemented, but public Android APIs cannot separate call UI from all dialer UI and physical incoming-call evidence remains external.",
       "iosSourceClassification": "PARTIAL_SOURCE_GAP",
       "correctionWave": "R3 night communication safety correction"
     },
@@ -5615,19 +5623,23 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt (distinct COMMUNICATION_EXCEPTION freezes recovery progress)",
-        "parent-web/src/pages/children/ScreenTimePage.tsx (communication safety copy)",
+        "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt",
         "android/app/src/main/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinator.kt",
-        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationBreakShieldIntegrationTest.kt",
-        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinatorTest.kt"
+        "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
+        "android/app/src/main/java/org/pca/app/platform/ForegroundAppPackageSource.kt",
+        "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/screentime/engine/ScreenTimeEngineTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationBreakShieldIntegrationTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationExceptionCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/screentime/engine/ScreenTimeEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
       "externalGate": [
         "REAL_DEVICE_TELEPHONY_SMS_UAT"
       ],
-      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: pure Break Shield timer semantics are implemented and tested. OS call/SMS delivery integration and physical-device evidence remain open.",
+      "notes": "R3 source correction: Break Shield call pause/restore, foreground schedule handoff, and typed SMS transport preservation are composed; READ_PHONE_STATE permission UX and physical call/SMS delivery remain external.",
       "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     },
@@ -5638,18 +5650,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt (resolved protected token input)",
-        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt (documented resolver contract)",
-        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEvaluator.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/SchedulePolicy.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidCommunicationSurfaceResolver.kt",
-        "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt"
+        "android/app/src/main/java/org/pca/app/runtime/communication/AndroidTelephonyCallStateObserver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidDevicePolicyPackageSuspensionExecutor.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/communication/CommunicationCallLifecycleAdapterTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-NIGHT-COMMUNICATION-SAFETY-1: local non-overridable floor accepts resolved communication tokens and never assumes an OEM dialer. A production RoleManager/TelecomManager/SMS capability adapter and enforcement integration remain open.",
+      "notes": "R3 source correction: emergency floor, typed surfaces, foreground handoff, and device-owner consumer preserve emergency/call/SMS transport without a generic allowlist; physical validation remains external.",
       "iosSourceClassification": "PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION",
       "correctionWave": "R3 night communication safety correction"
     }
