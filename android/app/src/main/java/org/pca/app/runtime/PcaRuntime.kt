@@ -274,7 +274,7 @@ class PcaRuntime(
         val screenTime = screenTimeStateFlow.value
         val breakShieldView = BreakShieldController.viewState(screenTime, screenTimeConfig)
         return PcaRuntimeStatus(
-            protectionMode = runCatching { protectionCapabilities.currentMode() }.getOrDefault(ProtectionMode.STANDARD),
+            protectionMode = runCatching { protectionCapabilities.currentMode() }.getOrElse { ProtectionMode.NOT_SUPPORTED },
             screenTimeMode = screenTime.mode,
             remainingActiveMillis = ScreenTimeEngine.remainingActiveNanos(screenTime, screenTimeConfig) / 1_000_000L,
             isBreakShieldActive = breakShieldView.isShieldVisible,

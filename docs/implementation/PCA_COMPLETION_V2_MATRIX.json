@@ -3297,13 +3297,19 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [
-        "backend/src/tamper/types.ts (related but distinct TamperState enum: REVOKED/RECOVERY_REQUIRED/SUSPECTED_TAMPER/DEVICE_OFFLINE/EPOCH_STALE/DEGRADED/HEALTHY)"
+        "android/app/src/main/java/org/pca/app/platform/PlatformProtectionCapabilities.kt",
+        "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "parent-web/src/domain/types.ts",
+        "parent-web/src/api/dev/fixtures.ts",
+        "parent-web/src/components/common/StatusBadge.tsx",
+        "parent-web/src/styles/global.css"
       ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No STANDARD/PROTECTED/DEGRADED/AUTHORIZATION_REQUIRED/NOT_SUPPORTED protection-state enum found under this requirement's own vocabulary in backend or web. Runtime reachability: Not reachable — no implementation."
+      "notes": "Child runtime and parent-device surfaces now use the requirement vocabulary in user-facing status rendering for STANDARD/PROTECTED/NOT_SUPPORTED. This remains PARTIAL because AUTHORIZATION_REQUIRED remains a future enrollment/authority-transition state, not yet bound to a concrete backend-driven transition."
     },
     {
       "requirementId": "PCA-ADD-ENR-020",

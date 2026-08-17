@@ -16,6 +16,7 @@ import type {
   LocationStatus,
   PrayerSettings,
   ScreenTimeStatus,
+  ProtectionDisplayState,
   WebProtectionStatus,
   YouTubeStatus,
 } from '../../domain/types';
@@ -169,11 +170,19 @@ export const DEV_DEVICE_STATUS: DeviceProtectionStatus[] = DEV_CHILDREN.map((c) 
   deviceLabel: `${c.displayName} phone`,
   osFamily: c.childId === 'child-lina' ? 'IOS' : 'ANDROID',
   appVersion: '1.4.0',
-  protectionState: c.protectionCapabilityState,
+  protectionState: toProtectionDisplayState(c.childId),
   lastAcknowledgedPolicyRevision: c.childId === 'child-yousef' ? 11 : 14,
   trustSetEpoch: c.childId === 'child-yousef' ? 3 : 4,
   keyEpoch: c.childId === 'child-yousef' ? 3 : 4,
 }));
+
+function toProtectionDisplayState(childId: string): ProtectionDisplayState {
+  return childId === 'child-amir'
+    ? 'PROTECTED'
+    : childId === 'child-lina'
+      ? 'STANDARD'
+      : 'NOT_SUPPORTED';
+}
 
 export const DEV_REQUESTS: FamilyRequest[] = [
   {

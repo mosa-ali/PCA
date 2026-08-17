@@ -88,7 +88,7 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | PCA-ADD-ENR-016 | PCA-10, PCA-11, PCA-13 | NOT_STARTED | Zero source hits for `PARENT_APPROVAL_REQUIRED`. |
 | PCA-ADD-ENR-017 | PCA-10, PCA-11 | NOT_STARTED | Zero source hits for `KEEP_ACTIVE`/`TEMPORARILY_DISABLE`/`ALLOW_REMOVAL`. |
 | PCA-ADD-ENR-018 | PCA-11, PCA-13 | NOT_STARTED | No removal/disable decision route or service found. |
-| PCA-ADD-ENR-019 | PCA-2, PCA-10, PCA-13, PCA-15 | NOT_STARTED | No matching protection-state enum/UI found under this requirement's vocabulary. |
+| PCA-ADD-ENR-019 | PCA-2, PCA-10, PCA-13, PCA-15 | PARTIAL | Child-home and parent device UIs now use the requirement vocabulary (`STANDARD`/`PROTECTED`/`NOT_SUPPORTED`) with a mapped placeholder for `AUTHORIZATION_REQUIRED`; one explicit authorization-required path is still not end-to-end bound to an enrollment/authority transition. |
 | PCA-ADD-ENR-020 | PCA-11, PCA-13 | NOT_STARTED | No E2EE alert generator for the addendum's event list; no display component in Parent Web. |
 | PCA-ADD-ENR-021 | PCA-10, PCA-13, PCA-15 | NOT_STARTED | Emergency floor exists narrowly (manual toggle in Screen Time only), not evidenced across the required flows generally. |
 | PCA-ADD-ENR-022 | PCA-1, PCA-11 | SOURCE_COMPLETE | Strong schema-privacy regression test; enrollment table stores only hash/platform/mode/status/timestamps. |
@@ -101,8 +101,8 @@ Statuses below reflect actual backend (`backend/src`, `backend/test`, `backend/m
 | Status | Count | IDs |
 |---|---:|---|
 | SOURCE_COMPLETE | 4 | 004, 006, 007, 022 |
-| PARTIAL | 8 | 001, 002, 003, 005, 011, 013, 023, 024 |
-| NOT_STARTED | 12 | 008, 009, 010, 012, 014, 016, 017, 018, 019, 020, 021, 025 |
+| PARTIAL | 9 | 001, 002, 003, 005, 011, 013, 019, 023, 024 |
+| NOT_STARTED | 11 | 008, 009, 010, 012, 014, 016, 017, 018, 020, 021, 025 |
 | NOT_APPLICABLE | 1 | 015 |
 
 ## Addendum 002 implementation matrix

@@ -1,7 +1,12 @@
 package org.pca.app.platform
 
-/** Doc 06 Section 4 (PCA-AND-001): the two capability modes PCA operates under. */
-enum class ProtectionMode { STANDARD, PROTECTED }
+/** Doc 06 Section 4 (PCA-AND-001): display states for child-side protection posture. */
+enum class ProtectionMode {
+    STANDARD,
+    PROTECTED,
+    AUTHORIZATION_REQUIRED,
+    NOT_SUPPORTED,
+}
 
 /**
  * Determines the device's CURRENT protection mode by re-querying platform

@@ -81,7 +81,11 @@
     "PENDING_DELIVERY": "قيد التسليم",
     "PARTIALLY_APPLIED": "مطبَّق جزئياً",
     "EPOCH_STALE": "تحديث معلَّق (غير محدث)",
-    "REVOKED": "تم إلغاؤه"
+    "REVOKED": "تم إلغاؤه",
+    "STANDARD": "قياسي",
+    "PROTECTED": "محمي",
+    "AUTHORIZATION_REQUIRED": "يتطلب تفويضاً",
+    "NOT_SUPPORTED": "غير مدعوم"
   },
   "common": {
     "loading": "جارٍ التحميل...",

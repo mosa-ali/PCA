@@ -259,6 +259,8 @@ private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
 private fun protectionModeLabel(mode: ProtectionMode): String = when (mode) {
     ProtectionMode.PROTECTED -> stringResource(R.string.child_home_protection_protected)
     ProtectionMode.STANDARD -> stringResource(R.string.child_home_protection_standard)
+    ProtectionMode.AUTHORIZATION_REQUIRED -> stringResource(R.string.child_home_protection_authorization_required)
+    ProtectionMode.NOT_SUPPORTED -> stringResource(R.string.child_home_protection_not_supported)
 }
 
 @Composable

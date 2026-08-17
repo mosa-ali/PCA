@@ -23,6 +23,8 @@ export type CapabilityState =
   | 'EPOCH_STALE'
   | 'REVOKED';
 
+export type ProtectionDisplayState = 'STANDARD' | 'PROTECTED' | 'AUTHORIZATION_REQUIRED' | 'NOT_SUPPORTED';
+
 export interface FamilyEpochInfo {
   trustSetEpoch: number;
   keyEpoch: number;
@@ -115,7 +117,7 @@ export interface DeviceProtectionStatus {
   deviceLabel: string;
   osFamily: 'ANDROID' | 'IOS';
   appVersion: string;
-  protectionState: CapabilityState;
+  protectionState: ProtectionDisplayState;
   lastAcknowledgedPolicyRevision: number;
   trustSetEpoch: number;
   keyEpoch: number;

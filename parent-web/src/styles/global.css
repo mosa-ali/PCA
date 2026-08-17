@@ -327,6 +327,10 @@ textarea {
 .status-PARTIALLY_APPLIED .dot { background: var(--color-warning); }
 .status-EPOCH_STALE .dot { background: var(--color-danger); }
 .status-REVOKED .dot { background: var(--color-danger); }
+.status-STANDARD .dot { background: var(--color-success); }
+.status-PROTECTED .dot { background: var(--color-success); }
+.status-AUTHORIZATION_REQUIRED .dot { background: var(--color-warning); }
+.status-NOT_SUPPORTED .dot { background: var(--color-offline); }
 
 .policy-status-LOCAL_DRAFT .dot { background: var(--color-offline); }
 .policy-status-PENDING_SYNC .dot { background: var(--color-warning); }
