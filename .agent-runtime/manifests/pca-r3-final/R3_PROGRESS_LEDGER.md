@@ -86,3 +86,11 @@ R3 Writer Wave 2 closure: FR-040, FR-092, and FR-096 moved to SOURCE_COMPLETE fr
 | SOURCE_TRIAGE_REQUIRED | NOT_STARTED | 16 |
 | SOURCE_TRIAGE_REQUIRED | PARTIAL | 41 |
 | **Total** |  | **110** |
+
+## Writer Wave 5 source implementation
+
+- PCA-ADD-ENR-002: added a SHA-256-derived 12-character display-only fallback identifier to the one-time parent enrollment reveal, with English/Arabic labels and copy support. It is never persisted and is not accepted as an enrollment credential.
+- PCA-ADD-ENR-003: added focused privacy coverage proving the fallback identifier does not expose family data or the full raw bearer token; the full token remains the only authorization path.
+- Focused Parent Web gate: `DeviceEnrollmentPanel.test.tsx`, 10 tests passed. Existing React `act(...)` warnings from asynchronous QR/panel updates remain non-failing test hygiene findings.
+- Counts after this implementation: SOURCE_COMPLETE=244; PARTIAL=87; NOT_STARTED=21; source backlog=108. Validation remains separate: the two closures are marked `SOURCE_COMPLETE_VALIDATION_PENDING`.
+- Source backlog classification now: `EXTERNAL_GATE/NOT_STARTED=5`, `EXTERNAL_GATE/PARTIAL=28`, `OWNER_OR_ENVIRONMENT_GATE/PARTIAL=20`, `SOURCE_TRIAGE_REQUIRED/NOT_STARTED=16`, `SOURCE_TRIAGE_REQUIRED/PARTIAL=39`; total `108`.

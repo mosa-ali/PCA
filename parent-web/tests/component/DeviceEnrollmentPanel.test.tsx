@@ -33,6 +33,16 @@ describe('DeviceEnrollmentPanel', () => {
     expect(screen.queryByTestId('raw-invitation-token')).not.toBeInTheDocument();
   });
 
+  it('creating an invitation reveals a short opaque fallback identifier without exposing family data', async () => {
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+    await clickCreateInvitation();
+
+    const fallbackCode = await screen.findByTestId('invitation-fallback-code');
+    expect(fallbackCode.textContent).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    expect(fallbackCode.textContent).not.toContain('dev-family-1');
+    expect(fallbackCode.textContent).not.toContain(screen.getByTestId('raw-invitation-token').textContent);
+  });
+
   it('the raw invitation token never touches localStorage or sessionStorage', async () => {
     renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
     await clickCreateInvitation();

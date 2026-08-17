@@ -3103,13 +3103,15 @@
         "PCA-1",
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/invitation/token.ts (generateInvitationToken, 256-bit CSPRNG) | parent-web/src/pages/family/DeviceEnrollmentPanel.tsx (renders link + raw token once)"
+        "backend/src/invitation/token.ts (generateInvitationToken, 256-bit CSPRNG) | parent-web/src/pages/family/InvitationQrCode.tsx (local QR rendering) | parent-web/src/pages/family/invitationFallbackCode.ts (SHA-256-derived 12-character display-only identifier) | parent-web/src/pages/family/DeviceEnrollmentPanel.tsx (one-time link, QR, raw token, and fallback reveal)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/component/DeviceEnrollmentPanel.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Link + raw token exist. No QR code rendering and no short fallback code found anywhere in backend or parent-web source. Runtime reachability: Frontend evidence file(s) confirmed present in parent-web/platform-admin-web source tree; routing wiring spot-checked by AUDIT-C for the owning page set (see PA/BILL/COMP route confirmation notes), not individually re-traced per ID."
+      "notes": "Wave 5 source implementation: parent-side QR rendering, Android deep-link continuation, and a SHA-256-derived 12-character display-only fallback identifier are reachable and covered by focused Parent Web tests. The fallback identifier is never persisted or accepted for redemption; the full bearer token remains the only enrollment authorization."
     },
     {
       "requirementId": "PCA-ADD-ENR-003",
@@ -3117,13 +3119,15 @@
         "PCA-1",
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/invitation/token.ts | backend/src/invitation/InvitationService.ts (InvitationError messages are fixed generic strings, never interpolate secrets)"
+        "backend/src/invitation/token.ts | parent-web/src/pages/family/invitationFallbackCode.ts | parent-web/src/pages/family/DeviceEnrollmentPanel.tsx | parent-web/src/i18n/locales/en.json | parent-web/src/i18n/locales/ar.json"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/component/DeviceEnrollmentPanel.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Consistent with no-secret requirement for the pieces that exist (token, link). Not independently verifiable for QR/fallback code since those do not exist (see ENR-002). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "Wave 5 source implementation: the URL and QR retain the opaque invitation link, while the fallback identifier is derived from a SHA-256 digest and contains no parent password, PIN, key, recovery secret, child data, or policy plaintext. The fallback identifier is display-only and is not a replacement for the full bearer token."
     },
     {
       "requirementId": "PCA-ADD-ENR-004",

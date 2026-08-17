@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../api/client';
 import { config } from '../../config/env';
@@ -8,6 +8,7 @@ import { PermissionGate } from '../../rbac/PermissionGate';
 import { useAuth } from '../../state/AuthContext';
 import { DeviceEnrollmentError } from '../../api/deviceEnrollmentClient';
 import InvitationQrCode from './InvitationQrCode';
+import { deriveInvitationFallbackCode } from './invitationFallbackCode';
 import type {
   InvitationDto,
   InvitationPlatform,
@@ -84,6 +85,18 @@ export default function DeviceEnrollmentPanel() {
   const [justCreated, setJustCreated] = useState<{ invitation: InvitationDto; rawInvitationToken: string } | null>(
     null,
   );
+  const [fallbackCode, setFallbackCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFallbackCode(null);
+    if (!justCreated?.rawInvitationToken) return () => { cancelled = true; };
+
+    void deriveInvitationFallbackCode(justCreated.rawInvitationToken).then((code) => {
+      if (!cancelled) setFallbackCode(code);
+    });
+    return () => { cancelled = true; };
+  }, [justCreated]);
 
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -229,6 +242,16 @@ export default function DeviceEnrollmentPanel() {
               {t('deviceEnrollment.copyToken')}
             </button>
           </div>
+          {fallbackCode && (
+            <div className="copyable-value">
+              <span>{t('deviceEnrollment.fallbackCodeLabel')}</span>
+              <code data-testid="invitation-fallback-code">{fallbackCode}</code>
+              <button type="button" className="btn" onClick={() => copy(fallbackCode)}>
+                {t('deviceEnrollment.copyFallbackCode')}
+              </button>
+            </div>
+          )}
+          <p style={HINT_STYLE}>{t('deviceEnrollment.fallbackCodeBody')}</p>
           <p style={HINT_STYLE}>{t('deviceEnrollment.tokenNeverAgain')}</p>
           <button type="button" className="btn" onClick={() => setJustCreated(null)}>
             {t('common.close')}
