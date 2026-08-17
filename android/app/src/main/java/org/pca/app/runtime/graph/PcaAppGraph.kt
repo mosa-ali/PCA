@@ -56,6 +56,7 @@ import org.pca.app.persistence.PcaLocalPersistence
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
 import org.pca.app.platform.StandardDevicePolicyCapabilitySource
+import org.pca.app.platform.UsageForegroundAppPackageSource
 import org.pca.app.platform.StandardLocationCapabilitySource
 import org.pca.app.platform.StandardUsageObservationSource
 import org.pca.app.platform.UsageAccessAlertNotificationDelivery
@@ -90,6 +91,8 @@ import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
 import org.pca.app.runtime.schedule.AndroidCommunicationSurfaceResolver
+import org.pca.app.runtime.schedule.AndroidDevicePolicyPackageSuspensionExecutor
+import org.pca.app.runtime.schedule.DevicePolicyScheduleEnforcementConsumer
 import org.pca.app.runtime.schedule.EnforcementCapabilityState
 import org.pca.app.runtime.communication.AndroidTelephonyCallStateObserver
 import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
@@ -163,13 +166,21 @@ class PcaAppGraph private constructor(
     }
 
     val usageObservationSource = StandardUsageObservationSource(context, monotonicTimeSource, wallClockTimeSource)
+    val foregroundAppPackageSource = UsageForegroundAppPackageSource(usageObservationSource, monotonicTimeSource)
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
-    val protectionCapabilities = DevicePolicyProtectionCapabilities(StandardDevicePolicyCapabilitySource(context))
+    val devicePolicyCapabilitySource = StandardDevicePolicyCapabilitySource(context)
+    val protectionCapabilities = DevicePolicyProtectionCapabilities(devicePolicyCapabilitySource)
+    private val scheduleEnforcementConsumer = DevicePolicyScheduleEnforcementConsumer(
+        authoritySource = devicePolicyCapabilitySource,
+        packageSuspensionExecutor = AndroidDevicePolicyPackageSuspensionExecutor(context),
+    )
     val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
         ?: ProductionScheduleRuntimePort(
             scheduleRuntime = scheduleRuntime,
             wallClockTimeSource = wallClockTimeSource,
             connectivityObserver = connectivityObserver,
+            communicationSurfacesProvider = { communicationSurfaceResolver.resolveCommunicationSurfaces() },
+            enforcementConsumer = scheduleEnforcementConsumer,
             enforcementCapabilityProvider = {
                 if (protectionCapabilities.currentMode() == org.pca.app.platform.ProtectionMode.PROTECTED) {
                     EnforcementCapabilityState.ENFORCED
@@ -416,6 +427,7 @@ class PcaAppGraph private constructor(
         screenStateObserver = screenStateObserver,
         childRequestQueue = childRequestQueue,
         externalScope = coroutineScope,
+        foregroundAppPackageSource = foregroundAppPackageSource,
     )
 
     private fun buildWellbeingDispatcher(): WellbeingTriggerDispatcher = WellbeingTriggerDispatcher(

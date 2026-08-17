@@ -1,5 +1,14 @@
 package org.pca.app.runtime.port
 
+enum class ScheduleEnforcementOutcome {
+    NOT_ATTEMPTED,
+    APPLIED,
+    RELEASED,
+    PRESERVED_SAFETY_SURFACE,
+    UNAVAILABLE,
+    FAILED,
+}
+
 /**
  * Real, observable schedule-evaluation status this runtime can act on -- no default collapses to
  * a boolean "allowed"/"blocked". Section 8 of the PCA-RUNTIME-ANDROID-1 brief is explicit that
@@ -29,6 +38,9 @@ enum class ScheduleRuntimeStatus {
  */
 interface ScheduleRuntimePort {
     fun currentStatus(): ScheduleRuntimeStatus
+
+    /** Applies the current schedule decision to one locally observed package. */
+    fun enforce(packageName: String): ScheduleEnforcementOutcome = ScheduleEnforcementOutcome.UNAVAILABLE
 }
 
 /**

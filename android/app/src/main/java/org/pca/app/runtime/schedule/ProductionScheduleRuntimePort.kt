@@ -2,6 +2,7 @@ package org.pca.app.runtime.schedule
 
 import org.pca.app.foundation.WallClockTimeSource
 import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
+import org.pca.app.runtime.port.ScheduleEnforcementOutcome
 import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import java.time.Instant
@@ -19,6 +20,8 @@ class ProductionScheduleRuntimePort(
     private val wallClockTimeSource: WallClockTimeSource,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val enforcementCapabilityProvider: () -> EnforcementCapabilityState = { EnforcementCapabilityState.ENFORCED },
+    private val communicationSurfacesProvider: () -> CommunicationSafetySurfaceTokens = { CommunicationSafetySurfaceTokens() },
+    private val enforcementConsumer: ScheduleEnforcementConsumer = NoOpScheduleEnforcementConsumer,
 ) : ScheduleRuntimePort {
 
     override fun currentStatus(): ScheduleRuntimeStatus {
@@ -40,6 +43,28 @@ class ProductionScheduleRuntimePort(
             ScheduleRuntimeState.EPOCH_STALE -> ScheduleRuntimeStatus.EPOCH_STALE
             ScheduleRuntimeState.NO_ACCEPTED_POLICY, ScheduleRuntimeState.INVALID -> ScheduleRuntimeStatus.NOT_READY
         }
+    }
+
+    override fun enforce(packageName: String): ScheduleEnforcementOutcome {
+        if (packageName.isBlank()) return ScheduleEnforcementOutcome.UNAVAILABLE
+        val nowUtc = Instant.ofEpochMilli(wallClockTimeSource.currentTimeMillis())
+        val connectivity = if (connectivityObserver.isCurrentlyOnline()) Connectivity.ONLINE else Connectivity.OFFLINE
+        val communicationSurfaces = communicationSurfacesProvider()
+        val result = scheduleRuntime.evaluate(
+            nowUtc = nowUtc,
+            appToken = EmergencyAccessFloor.opaqueTokenForPackage(packageName),
+            enforcementCapability = enforcementCapabilityProvider(),
+            connectivity = connectivity,
+        )
+        if (result.runtimeState !in setOf(ScheduleRuntimeState.CURRENT, ScheduleRuntimeState.STALE_REMOTE)) {
+            return ScheduleEnforcementOutcome.UNAVAILABLE
+        }
+        return enforcementConsumer.apply(
+            packageName = packageName,
+            appToken = EmergencyAccessFloor.opaqueTokenForPackage(packageName),
+            decision = result.decision,
+            communicationSurfaces = communicationSurfaces,
+        )
     }
 
     private companion object {

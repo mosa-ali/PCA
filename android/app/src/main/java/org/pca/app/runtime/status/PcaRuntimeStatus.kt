@@ -5,6 +5,7 @@ import org.pca.app.platform.LocationCapabilityLevel
 import org.pca.app.platform.ProtectionMode
 import org.pca.app.platform.UsageAccessState
 import org.pca.app.runtime.port.FamilySyncConnectionState
+import org.pca.app.runtime.port.ScheduleEnforcementOutcome
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 
 /**
@@ -28,6 +29,7 @@ data class PcaRuntimeStatus(
     val locationCapabilityLevel: LocationCapabilityLevel,
     val wellbeingNotificationsAvailable: Boolean,
     val pendingChildRequestCount: Int,
+    val scheduleEnforcementOutcome: ScheduleEnforcementOutcome = ScheduleEnforcementOutcome.NOT_ATTEMPTED,
 ) {
     /** True whenever local enforcement can be trusted to be running, regardless of connectivity --
      * Section 0/15's "Protection active locally" honesty requirement. Local engines never depend

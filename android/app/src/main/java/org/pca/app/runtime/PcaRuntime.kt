@@ -30,6 +30,8 @@ import org.pca.app.feature.wellbeing.ports.NotificationCapabilitySource
 import org.pca.app.foundation.MonotonicTimeSource
 import org.pca.app.foundation.WallClockTimeSource
 import org.pca.app.platform.LocationCapabilitySource
+import org.pca.app.platform.ForegroundAppPackageSource
+import org.pca.app.platform.NoOpForegroundAppPackageSource
 import org.pca.app.platform.PlatformProtectionCapabilities
 import org.pca.app.platform.ProtectionMode
 import org.pca.app.platform.UsageAccessState
@@ -45,6 +47,7 @@ import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncRuntimePort
 import org.pca.app.runtime.port.ScheduleRuntimePort
+import org.pca.app.runtime.port.ScheduleEnforcementOutcome
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.status.PcaRuntimeStatus
 import org.pca.app.runtime.wellbeing.WellbeingRuntimeCoordinator
@@ -89,6 +92,7 @@ class PcaRuntime(
     private val screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
     private val eyeDistanceConfig: EyeDistanceConfig = EyeDistanceConfig(),
     private val tickIntervalMillis: Long = DEFAULT_TICK_INTERVAL_MILLIS,
+    private val foregroundAppPackageSource: ForegroundAppPackageSource = NoOpForegroundAppPackageSource,
 ) {
     private val startedOnce = AtomicBoolean(false)
     private var tickJob: Job? = null
@@ -99,6 +103,7 @@ class PcaRuntime(
 
     private val screenTimeStateFlow = MutableStateFlow(restoreScreenTimeState())
     private val eyeDistanceStateFlow = MutableStateFlow(restoreEyeDistanceState())
+    private val scheduleEnforcementOutcomeFlow = MutableStateFlow(ScheduleEnforcementOutcome.NOT_ATTEMPTED)
     private val isDeviceOnlineFlow = MutableStateFlow(connectivityObserver.isCurrentlyOnline())
     private val communicationExceptionCoordinator = CommunicationExceptionCoordinator(
         onCommunicationStarted = ::activateCommunicationException,
@@ -183,8 +188,19 @@ class PcaRuntime(
      * itself idempotent for a duplicate/near-duplicate timestamp (the underlying engines are). */
     fun tick() {
         applyScreenTimeEvent(ScreenTimeEvent.Tick(nowNanos))
+        foregroundAppPackageSource.currentForegroundPackage()?.let(::enforceScheduleForPackage)
         applyEyeDistanceObservation()
         statusFlow.update { buildStatus() }
+    }
+
+    /** Production schedule-to-platform handoff. The result is retained in the child status
+     * snapshot so an unavailable or failed platform operation cannot appear as active protection. */
+    fun enforceScheduleForPackage(packageName: String): ScheduleEnforcementOutcome {
+        val outcome = runCatching { scheduleRuntimePort.enforce(packageName) }
+            .getOrDefault(ScheduleEnforcementOutcome.FAILED)
+        scheduleEnforcementOutcomeFlow.value = outcome
+        statusFlow.update { buildStatus() }
+        return outcome
     }
 
     fun pauseScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Pause(nowNanos))
@@ -313,6 +329,7 @@ class PcaRuntime(
                 .getOrDefault(org.pca.app.platform.LocationCapabilityLevel.UNUSABLE),
             wellbeingNotificationsAvailable = runCatching { notificationCapabilitySource.notificationsEnabled() }.getOrDefault(false),
             pendingChildRequestCount = childRequestQueue.outboxPendingCount(),
+            scheduleEnforcementOutcome = scheduleEnforcementOutcomeFlow.value,
         )
     }
 

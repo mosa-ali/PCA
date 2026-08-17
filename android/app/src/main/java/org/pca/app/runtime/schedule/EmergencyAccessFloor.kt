@@ -88,6 +88,9 @@ object EmergencyAccessFloor {
         additionalProtectedTokens: Set<OpaqueAppToken> = emptySet(),
     ): Boolean = appToken in PROTECTED_APP_TOKENS || appToken in additionalProtectedTokens
 
+    /** Stable local mapping shared by schedule evaluation and the platform enforcement consumer. */
+    fun opaqueTokenForPackage(packageName: String): OpaqueAppToken = opaqueToken(packageName)
+
     /**
      * The decision unconditionally returned for a protected token. Deliberately reuses the
      * ordinary [ScheduleDecisionKind.ALLOWED] (rather than introducing a new enum case) so every
