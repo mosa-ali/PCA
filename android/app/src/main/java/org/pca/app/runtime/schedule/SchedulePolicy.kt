@@ -176,6 +176,7 @@ data class SchedulePolicyV1(
         connectivity: Connectivity,
         lastPolicySyncAtUtc: Instant?,
         evaluationTimezone: String = timezone,
+        protectedCommunicationTokens: Set<OpaqueAppToken> = emptySet(),
     ): ScheduleEvaluationInput = ScheduleEvaluationInput(
         nowUtc = nowUtc,
         timezone = evaluationTimezone,
@@ -187,5 +188,6 @@ data class SchedulePolicyV1(
         enforcementCapability = enforcementCapability,
         connectivity = connectivity,
         lastPolicySyncAtUtc = lastPolicySyncAtUtc,
+        protectedCommunicationTokens = protectedCommunicationTokens,
     )
 }

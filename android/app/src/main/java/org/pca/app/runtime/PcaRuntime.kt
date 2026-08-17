@@ -173,6 +173,14 @@ class PcaRuntime(
 
     fun pauseScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Pause(nowNanos))
     fun resumeScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Resume(nowNanos))
+    /** PCA-FR-015A: ordinary answered calls pause Break Shield recovery without using the SOS
+     * exception. The platform call observer owns the lifecycle and calls these hooks. */
+    fun activateCommunicationException() =
+        applyScreenTimeEvent(ScreenTimeEvent.CommunicationExceptionActivate(nowNanos))
+
+    fun deactivateCommunicationException() =
+        applyScreenTimeEvent(ScreenTimeEvent.CommunicationExceptionDeactivate(nowNanos))
+
     fun recordDhikrInteraction() = applyScreenTimeEvent(ScreenTimeEvent.DhikrInteraction(nowNanos))
 
     fun activateEmergencyException() {

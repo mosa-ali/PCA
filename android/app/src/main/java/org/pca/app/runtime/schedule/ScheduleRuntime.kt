@@ -12,7 +12,10 @@ import java.time.Instant
  * [nowUtc]/[connectivity]/[enforcementCapability] passed in by the caller, so it never itself
  * performs I/O beyond the injected [SchedulePolicyStore].
  */
-class ScheduleRuntime(private val store: SchedulePolicyStore) {
+class ScheduleRuntime(
+    private val store: SchedulePolicyStore,
+    private val protectedCommunicationTokensProvider: () -> Set<OpaqueAppToken> = { emptySet() },
+) {
 
     /** The full decision, including which [ScheduleRuntimeState] the underlying policy was in
      * (for honest parent-facing/UI freshness reporting) alongside the enforcement [ScheduleDecision]. */
@@ -33,6 +36,7 @@ class ScheduleRuntime(private val store: SchedulePolicyStore) {
             enforcementCapability = enforcementCapability,
             connectivity = connectivity,
             lastPolicySyncAtUtc = snapshot?.lastPolicySyncAtUtc,
+            protectedCommunicationTokens = protectedCommunicationTokensProvider(),
         ) ?: emptyEvaluationInput(nowUtc, appToken, enforcementCapability, connectivity, snapshot?.lastPolicySyncAtUtc)
 
         return Result(acceptance.state, ScheduleEvaluator.evaluate(evaluationInput))
@@ -99,5 +103,6 @@ class ScheduleRuntime(private val store: SchedulePolicyStore) {
         enforcementCapability = enforcementCapability,
         connectivity = connectivity,
         lastPolicySyncAtUtc = lastPolicySyncAtUtc,
+        protectedCommunicationTokens = protectedCommunicationTokensProvider(),
     )
 }

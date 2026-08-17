@@ -89,6 +89,7 @@ import org.pca.app.runtime.prayer.PrayerLocationStalenessNotificationDelivery
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
+import org.pca.app.runtime.schedule.AndroidCommunicationSurfaceResolver
 import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
@@ -153,7 +154,10 @@ class PcaAppGraph private constructor(
      * requirement) -- the single instance both [scheduleRuntimePort]'s status reporting and
      * [buildWellbeingDispatcher]'s WELL-3 closure read from, so they can never disagree. */
     val schedulePolicyStore = PersistentSchedulePolicyStore(runtimeStateStore)
-    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore)
+    private val communicationSurfaceResolver = AndroidCommunicationSurfaceResolver(context)
+    val scheduleRuntime = ScheduleRuntime(schedulePolicyStore) {
+        communicationSurfaceResolver.resolveProtectedTokens()
+    }
     val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
         ?: ProductionScheduleRuntimePort(scheduleRuntime, wallClockTimeSource, connectivityObserver)
 
