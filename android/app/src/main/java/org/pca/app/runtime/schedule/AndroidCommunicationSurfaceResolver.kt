@@ -10,16 +10,15 @@ import android.provider.Telephony
  * is unavailable or permission-gated. It only returns opaque tokens to the policy evaluator.
  */
 class AndroidCommunicationSurfaceResolver(private val context: Context) {
-    fun resolveProtectedTokens(): Set<OpaqueAppToken> {
+    fun resolveCommunicationSurfaces(): CommunicationSafetySurfaceTokens {
         val telecomManager = context.getSystemService(TelecomManager::class.java)
         val defaultDialer = runCatching { telecomManager?.defaultDialerPackage }.getOrNull()
         val defaultSms = runCatching { Telephony.Sms.getDefaultSmsPackage(context) }.getOrNull()
 
-        return EmergencyAccessFloor.PROTECTED_APP_TOKENS +
-            EmergencyAccessFloor.resolveCommunicationSurfaceTokens(
-                incomingCallPackage = defaultDialer,
-                smsTransportPackage = defaultSms,
-                emergencySurfacePackages = emptySet(),
-            )
+        return EmergencyAccessFloor.resolveCommunicationSurfaces(
+            incomingCallPackage = defaultDialer,
+            smsTransportPackage = defaultSms,
+            emergencySurfacePackages = emptySet(),
+        )
     }
 }

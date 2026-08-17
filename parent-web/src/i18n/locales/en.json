@@ -540,7 +540,9 @@
     "baselineWarning": "This child's saved screen-time policy predates the mandatory 60/30 anti-gaming baseline and does not meet it. Update the values below and save to bring it into compliance.",
     "nightProtection": "Night protection",
     "nightProtectionWindow": "{{start}} - {{end}}",
-    "nightProtectionCommunication": "Calls remain available during night protection."
+    "nightProtectionCommunication": "Calls remain available during night protection.",
+    "nightProtectionEmergency": "Emergency access remains available.",
+    "nightProtectionSms": "SMS delivery remains available; Messages app use is not automatically unlocked."
   },
   "location": {
     "accuracy": "Accuracy: {{value}}",

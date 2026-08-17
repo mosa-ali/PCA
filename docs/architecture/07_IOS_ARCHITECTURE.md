@@ -149,6 +149,15 @@ Where on-device content classification (doc 14) requires local inference on iOS,
 
 iOS source must preserve emergency/SOS behavior and must not claim that a normal consumer app can independently keep the Phone or Messages surfaces available during every managed restriction. Where public Family Controls/Managed Settings APIs expose a supported exception, PCA may model the communication exception; otherwise the requirement is `UNSUPPORTED` or `REQUIRES_ENTITLEMENT` and remains a real-device/external capability gate. PCA must never use private APIs, Accessibility abuse, or a hardcoded OEM-style package assumption. SMS receipt and incoming-call answer/end behavior require later physical-device UAT; source tests must not be presented as telephony evidence.
 
+### 19A.1 Four-requirement iOS source classification
+
+| Requirement | Classification | Source-side boundary |
+|---|---|---|
+| PCA-FR-043B | `SOURCE_COMPLETE_EXTERNAL_GATE` | Device Activity schedules plus Managed Settings shields can model the non-weakenable bedtime baseline; Family Controls entitlement, extension delivery, and physical-device enforcement remain external gates. |
+| PCA-FR-043C | `PARTIAL_SOURCE_GAP` | Emergency/SOS is preserved through the shield floor, but public iOS APIs do not give PCA a general Android-style package/call-state observer that proves native incoming-call exception reachability. Real telephony behavior remains external UAT. |
+| PCA-FR-015A | `PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION` | PCA can model a monotonic recovery timer in its own source, but cannot promise that a public iOS API will pause it on every external answered-call lifecycle while a Managed Settings shield remains active. The app must keep the break active rather than silently shortening it. |
+| PCA-AND-003A | `PLATFORM_UNSUPPORTED_WITH_HONEST_DEGRADATION` | Android package-token resolution has no iOS equivalent. iOS uses the system emergency-surface floor and opaque Family Controls selections; it must not invent package identifiers or claim SMS foreground exemptions. |
+
 ## 20. Acceptance criteria
 
 - [ ] Every capability claim in this document carries a doc 00 Section 8 label and matches doc 01 Section 10's cross-reference table.

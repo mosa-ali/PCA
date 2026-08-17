@@ -14,7 +14,7 @@ import java.time.Instant
  */
 class ScheduleRuntime(
     private val store: SchedulePolicyStore,
-    private val protectedCommunicationTokensProvider: () -> Set<OpaqueAppToken> = { emptySet() },
+    private val communicationSurfacesProvider: () -> CommunicationSafetySurfaceTokens = { CommunicationSafetySurfaceTokens() },
 ) {
 
     /** The full decision, including which [ScheduleRuntimeState] the underlying policy was in
@@ -36,7 +36,7 @@ class ScheduleRuntime(
             enforcementCapability = enforcementCapability,
             connectivity = connectivity,
             lastPolicySyncAtUtc = snapshot?.lastPolicySyncAtUtc,
-            protectedCommunicationTokens = protectedCommunicationTokensProvider(),
+            communicationSurfaces = communicationSurfacesProvider(),
         ) ?: emptyEvaluationInput(nowUtc, appToken, enforcementCapability, connectivity, snapshot?.lastPolicySyncAtUtc)
 
         return Result(acceptance.state, ScheduleEvaluator.evaluate(evaluationInput))
@@ -103,6 +103,6 @@ class ScheduleRuntime(
         enforcementCapability = enforcementCapability,
         connectivity = connectivity,
         lastPolicySyncAtUtc = lastPolicySyncAtUtc,
-        protectedCommunicationTokens = protectedCommunicationTokensProvider(),
+        communicationSurfaces = communicationSurfacesProvider(),
     )
 }

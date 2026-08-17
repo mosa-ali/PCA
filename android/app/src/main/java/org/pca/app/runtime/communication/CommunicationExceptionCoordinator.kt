@@ -2,7 +2,8 @@ package org.pca.app.runtime.communication
 
 /**
  * PCA-FR-015A: maps ordinary phone-call lifecycle signals to a distinct communication exception.
- * RINGING and OFFHOOK both keep the exception active; IDLE ends it. This coordinator deliberately
+ * RINGING keeps the native call UI available without starting the exception; OFFHOOK starts it;
+ * IDLE ends it. This coordinator deliberately
  * has no emergency/SOS semantics and does not grant Messages-app access.
  */
 class CommunicationExceptionCoordinator(
@@ -15,7 +16,8 @@ class CommunicationExceptionCoordinator(
 
     fun onCallState(state: CallState) {
         when (state) {
-            CallState.RINGING, CallState.OFFHOOK -> if (!active) {
+            CallState.RINGING -> Unit
+            CallState.OFFHOOK -> if (!active) {
                 active = true
                 onCommunicationStarted()
             }

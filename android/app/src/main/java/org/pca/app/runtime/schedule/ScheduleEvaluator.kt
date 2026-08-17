@@ -32,7 +32,7 @@ object ScheduleEvaluator {
         // first, before any window/config content is even read, so no policy shape -- malicious,
         // malformed, or validly-authored/signed -- can ever produce a blocking decision for a
         // protected emergency app token.
-        if (EmergencyAccessFloor.isProtectedToken(input.appToken, input.protectedCommunicationTokens)) {
+        if (EmergencyAccessFloor.isProtectedToken(input.appToken, input.communicationSurfaces.emergencySurfaceTokens)) {
             return EmergencyAccessFloor.ALWAYS_ALLOWED_DECISION
         }
 

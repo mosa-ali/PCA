@@ -90,6 +90,8 @@ import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
 import org.pca.app.runtime.schedule.AndroidCommunicationSurfaceResolver
+import org.pca.app.runtime.schedule.EnforcementCapabilityState
+import org.pca.app.runtime.communication.AndroidTelephonyCallStateObserver
 import org.pca.app.runtime.screenstate.AndroidScreenStateObserver
 import org.pca.app.runtime.screenstate.ScreenStateObserver
 import org.pca.app.runtime.usage.PersistentUsageObservationSnapshotStore
@@ -155,15 +157,27 @@ class PcaAppGraph private constructor(
      * [buildWellbeingDispatcher]'s WELL-3 closure read from, so they can never disagree. */
     val schedulePolicyStore = PersistentSchedulePolicyStore(runtimeStateStore)
     private val communicationSurfaceResolver = AndroidCommunicationSurfaceResolver(context)
+    private val communicationCallStateObserver = AndroidTelephonyCallStateObserver(context)
     val scheduleRuntime = ScheduleRuntime(schedulePolicyStore) {
-        communicationSurfaceResolver.resolveProtectedTokens()
+        communicationSurfaceResolver.resolveCommunicationSurfaces()
     }
-    val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
-        ?: ProductionScheduleRuntimePort(scheduleRuntime, wallClockTimeSource, connectivityObserver)
 
     val usageObservationSource = StandardUsageObservationSource(context, monotonicTimeSource, wallClockTimeSource)
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(StandardDevicePolicyCapabilitySource(context))
+    val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
+        ?: ProductionScheduleRuntimePort(
+            scheduleRuntime = scheduleRuntime,
+            wallClockTimeSource = wallClockTimeSource,
+            connectivityObserver = connectivityObserver,
+            enforcementCapabilityProvider = {
+                if (protectionCapabilities.currentMode() == org.pca.app.platform.ProtectionMode.PROTECTED) {
+                    EnforcementCapabilityState.ENFORCED
+                } else {
+                    EnforcementCapabilityState.UNAVAILABLE
+                }
+            },
+        )
 
     /** PCA-FR-081/PCA-FR-085 (WRITER68): the real evidence-backed usage-access history tracker
      * (previously constructed nowhere in production -- see its own doc comment) plus the one
@@ -390,6 +404,7 @@ class PcaAppGraph private constructor(
         currentBootId = bootId,
         connectivityObserver = connectivityObserver,
         scheduleRuntimePort = scheduleRuntimePort,
+        communicationCallStateObserver = communicationCallStateObserver,
         familySyncRuntimePort = familySyncRuntimePort,
         protectionCapabilities = protectionCapabilities,
         usageObservationSource = usageObservationSource,

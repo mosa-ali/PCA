@@ -146,6 +146,8 @@ export default function ScreenTimePage() {
         <h2 id="night-protection-title">{t('screenTime.nightProtection')}</h2>
         <p>{t('screenTime.nightProtectionWindow', DEFAULT_NIGHT_PROTECTION)}</p>
         <p>{t('screenTime.nightProtectionCommunication')}</p>
+        <p>{t('screenTime.nightProtectionEmergency')}</p>
+        <p>{t('screenTime.nightProtectionSms')}</p>
       </section>
       {policyStatus.snapshot && (
         <p>

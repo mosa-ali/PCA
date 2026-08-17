@@ -18,6 +18,7 @@ class ProductionScheduleRuntimePort(
     private val scheduleRuntime: ScheduleRuntime,
     private val wallClockTimeSource: WallClockTimeSource,
     private val connectivityObserver: NetworkConnectivityObserver,
+    private val enforcementCapabilityProvider: () -> EnforcementCapabilityState = { EnforcementCapabilityState.ENFORCED },
 ) : ScheduleRuntimePort {
 
     override fun currentStatus(): ScheduleRuntimeStatus {
@@ -26,11 +27,16 @@ class ProductionScheduleRuntimePort(
         val result = scheduleRuntime.evaluate(
             nowUtc = nowUtc,
             appToken = STATUS_PROBE_APP_TOKEN,
-            enforcementCapability = EnforcementCapabilityState.ENFORCED,
+            enforcementCapability = enforcementCapabilityProvider(),
             connectivity = connectivity,
         )
         return when (result.runtimeState) {
-            ScheduleRuntimeState.CURRENT, ScheduleRuntimeState.STALE_REMOTE -> ScheduleRuntimeStatus.AVAILABLE
+            ScheduleRuntimeState.CURRENT, ScheduleRuntimeState.STALE_REMOTE ->
+                if (result.decision.decision == ScheduleDecisionKind.ENFORCEMENT_UNAVAILABLE) {
+                    ScheduleRuntimeStatus.UNAVAILABLE
+                } else {
+                    ScheduleRuntimeStatus.AVAILABLE
+                }
             ScheduleRuntimeState.EPOCH_STALE -> ScheduleRuntimeStatus.EPOCH_STALE
             ScheduleRuntimeState.NO_ACCEPTED_POLICY, ScheduleRuntimeState.INVALID -> ScheduleRuntimeStatus.NOT_READY
         }

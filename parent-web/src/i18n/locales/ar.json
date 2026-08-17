@@ -543,7 +543,9 @@
     "baselineWarning": "سياسة وقت الشاشة المحفوظة لهذا الطفل سابقة للحد الأساسي الإلزامي 60/30 لمكافحة التحايل ولا تستوفيه. حدّث القيم أدناه واحفظها لتصبح متوافقة.",
     "nightProtection": "الحماية الليلية",
     "nightProtectionWindow": "{{start}} - {{end}}",
-    "nightProtectionCommunication": "تبقى المكالمات متاحة أثناء الحماية الليلية."
+    "nightProtectionCommunication": "تبقى المكالمات متاحة أثناء الحماية الليلية.",
+    "nightProtectionEmergency": "يبقى الوصول إلى الطوارئ متاحاً.",
+    "nightProtectionSms": "يبقى استلام الرسائل النصية متاحاً؛ ولا يُفتح استخدام تطبيق الرسائل تلقائياً."
   },
   "location": {
     "accuracy": "الدقة: {{value}}",

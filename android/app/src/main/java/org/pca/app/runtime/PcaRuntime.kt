@@ -37,6 +37,10 @@ import org.pca.app.platform.UsageObservationSource
 import org.pca.app.platform.proximity.ProximitySource
 import org.pca.app.platform.proximity.ProximitySourceAvailability
 import org.pca.app.runtime.child.ChildRequestOfflineQueue
+import org.pca.app.runtime.communication.CommunicationCallLifecycleAdapter
+import org.pca.app.runtime.communication.CommunicationCallStateObserver
+import org.pca.app.runtime.communication.CommunicationExceptionCoordinator
+import org.pca.app.runtime.communication.NoOpCommunicationCallStateObserver
 import org.pca.app.runtime.connectivity.NetworkConnectivityObserver
 import org.pca.app.runtime.port.ChildRequestPayload
 import org.pca.app.runtime.port.FamilySyncRuntimePort
@@ -79,6 +83,7 @@ class PcaRuntime(
     private val wellbeingDispatcherProvider: () -> WellbeingTriggerDispatcher,
     private val wellbeingCoordinator: WellbeingRuntimeCoordinator,
     private val screenStateObserver: ScreenStateObserver,
+    private val communicationCallStateObserver: CommunicationCallStateObserver = NoOpCommunicationCallStateObserver,
     private val childRequestQueue: ChildRequestOfflineQueue,
     private val externalScope: CoroutineScope,
     private val screenTimeConfig: ScreenTimeConfig = ScreenTimeConfig(),
@@ -95,6 +100,14 @@ class PcaRuntime(
     private val screenTimeStateFlow = MutableStateFlow(restoreScreenTimeState())
     private val eyeDistanceStateFlow = MutableStateFlow(restoreEyeDistanceState())
     private val isDeviceOnlineFlow = MutableStateFlow(connectivityObserver.isCurrentlyOnline())
+    private val communicationExceptionCoordinator = CommunicationExceptionCoordinator(
+        onCommunicationStarted = ::activateCommunicationException,
+        onCommunicationEnded = ::deactivateCommunicationException,
+    )
+    private val communicationCallLifecycle = CommunicationCallLifecycleAdapter(
+        observer = communicationCallStateObserver,
+        coordinator = communicationExceptionCoordinator,
+    )
 
     val screenTimeState: StateFlow<ScreenTimeState> = screenTimeStateFlow.asStateFlow()
     val eyeDistanceState: StateFlow<EyeDistanceState> = eyeDistanceStateFlow.asStateFlow()
@@ -150,12 +163,15 @@ class PcaRuntime(
                 }
             }
         }
+
+        communicationCallLifecycle.start()
     }
 
     fun stop() {
         tickJob?.cancel()
         connectivityJob?.cancel()
         screenStateJob?.cancel()
+        communicationCallLifecycle.stop()
         tickJob = null
         connectivityJob = null
         screenStateJob = null

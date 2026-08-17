@@ -19,5 +19,7 @@ describe('night protection presentation', () => {
     expect(await screen.findByRole('heading', { name: 'Night protection' })).toBeInTheDocument();
     expect(screen.getByText('21:30 - 07:00')).toBeInTheDocument();
     expect(screen.getByText('Calls remain available during night protection.')).toBeInTheDocument();
+    expect(screen.getByText('Emergency access remains available.')).toBeInTheDocument();
+    expect(screen.getByText('SMS delivery remains available; Messages app use is not automatically unlocked.')).toBeInTheDocument();
   });
 });

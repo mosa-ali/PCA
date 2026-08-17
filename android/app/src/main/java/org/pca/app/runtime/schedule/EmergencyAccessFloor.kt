@@ -40,15 +40,25 @@ object EmergencyAccessFloor {
      * opaque tokens, keeping OEM package names and readable communication identifiers out of the
      * policy contract.
      */
-    fun resolveCommunicationSurfaceTokens(
+    fun resolveCommunicationSurfaces(
         incomingCallPackage: String?,
         smsTransportPackage: String?,
         emergencySurfacePackages: Set<String>,
-    ): Set<OpaqueAppToken> = buildSet {
-        incomingCallPackage?.takeIf(String::isNotBlank)?.let { add(opaqueToken(it)) }
-        smsTransportPackage?.takeIf(String::isNotBlank)?.let { add(opaqueToken(it)) }
-        emergencySurfacePackages.filter(String::isNotBlank).forEach { add(opaqueToken(it)) }
-    }
+    ): CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(
+        emergencySurfaceTokens = PROTECTED_APP_TOKENS + emergencySurfacePackages
+            .filter(String::isNotBlank)
+            .map(::opaqueToken),
+        callSurfaceTokens = incomingCallPackage
+            ?.takeIf(String::isNotBlank)
+            ?.let(::opaqueToken)
+            ?.let(::setOf)
+            ?: emptySet(),
+        smsTransportTokens = smsTransportPackage
+            ?.takeIf(String::isNotBlank)
+            ?.let(::opaqueToken)
+            ?.let(::setOf)
+            ?: emptySet(),
+    )
 
     /**
      * AOSP telephony/emergency-dialer system package -- present on every Android device with

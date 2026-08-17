@@ -26,6 +26,13 @@
          enforcement engine; see Section 0/10 of the runtime brief. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- PCA-FR-043C/PCA-FR-015A: minimum public telephony state capability for observing only
+         RINGING/OFFHOOK/IDLE. The adapter never reads numbers, contacts, content, or audio; when
+         this dangerous permission is unavailable, call-exception timing remains unavailable
+         rather than being fabricated. No SMS permission is requested for this feature because
+         transport delivery remains an OS/default-handler concern, not a content reader. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
     <!-- PCA-RUNTIME-ANDROID-1 (org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler): exact
          alarms are the only reliable way to fire a prayer-time reminder at its real wall-clock
          moment. Special access granted via Settings on API 31+, not a runtime permission dialog. -->
@@ -178,4 +185,3 @@
         </service>
     </application>
 </manifest>
-

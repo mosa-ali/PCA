@@ -126,9 +126,17 @@ data class ScheduleEvaluationInput(
      * enforcement itself never pauses just because the device is offline (PCA-4 offline-first:
      * don't silently relax control when disconnected). */
     val lastPolicySyncAtUtc: Instant? = null,
-    /** Resolved by a platform adapter from documented OS roles/capabilities. These surfaces are
-     * protected in addition to the durable emergency baseline; no OEM dialer name is assumed. */
-    val protectedCommunicationTokens: Set<OpaqueAppToken> = emptySet(),
+    /** Resolved by a platform adapter from documented OS roles/capabilities. SMS transport is
+     * intentionally represented separately: delivery continuity does not grant its foreground
+     * messaging UI an unconditional schedule exemption. */
+    val communicationSurfaces: CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(),
+)
+
+/** Typed communication capabilities, not one generic interactive allowlist. */
+data class CommunicationSafetySurfaceTokens(
+    val emergencySurfaceTokens: Set<OpaqueAppToken> = emptySet(),
+    val callSurfaceTokens: Set<OpaqueAppToken> = emptySet(),
+    val smsTransportTokens: Set<OpaqueAppToken> = emptySet(),
 )
 
 /**
@@ -155,16 +163,11 @@ data class SchedulePolicyV1(
     val effectiveFrom: Instant,
     val expiresAt: Instant? = null,
 ) {
-    /** PCA-FR-043B: a policy without an explicit bedtime window receives the owner-approved
-     * cross-midnight baseline at the single policy-to-evaluator boundary. An explicit bedtime
-     * window is preserved because weakening that baseline is a separate controlled owner action,
-     * not an accidental consequence of an omitted field. */
+    /** PCA-FR-043B: the owner-approved baseline is always present. Parent-authored BEDTIME
+     * windows are additive, so they can strengthen coverage but can never replace or weaken the
+     * 21:30 -> 07:00 floor. */
     fun effectiveWindows(): List<ScheduleWindow> =
-        if (windows.any { it.kind == ScheduleWindowKind.BEDTIME }) {
-            windows
-        } else {
-            windows + SchedulePolicyDefaults.defaultNightProtection(timezone)
-        }
+        windows + SchedulePolicyDefaults.defaultNightProtection(timezone)
 
     /** See SchedulePolicyV1.md "Resolving an evaluation input". [evaluationTimezone] defaults to
      * the policy's own authored timezone but may be overridden with the device's current IANA
@@ -176,7 +179,7 @@ data class SchedulePolicyV1(
         connectivity: Connectivity,
         lastPolicySyncAtUtc: Instant?,
         evaluationTimezone: String = timezone,
-        protectedCommunicationTokens: Set<OpaqueAppToken> = emptySet(),
+        communicationSurfaces: CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(),
     ): ScheduleEvaluationInput = ScheduleEvaluationInput(
         nowUtc = nowUtc,
         timezone = evaluationTimezone,
@@ -188,6 +191,6 @@ data class SchedulePolicyV1(
         enforcementCapability = enforcementCapability,
         connectivity = connectivity,
         lastPolicySyncAtUtc = lastPolicySyncAtUtc,
-        protectedCommunicationTokens = protectedCommunicationTokens,
+        communicationSurfaces = communicationSurfaces,
     )
 }

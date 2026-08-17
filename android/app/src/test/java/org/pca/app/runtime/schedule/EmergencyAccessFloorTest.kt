@@ -36,16 +36,20 @@ class EmergencyAccessFloorTest {
 
     @Test
     fun `resolved communication surfaces are protected without an OEM package assumption`() {
-        val resolved = EmergencyAccessFloor.resolveCommunicationSurfaceTokens(
+        val resolved = EmergencyAccessFloor.resolveCommunicationSurfaces(
             incomingCallPackage = "resolved.call.surface",
             smsTransportPackage = "resolved.sms.surface",
             emergencySurfacePackages = setOf("resolved.sos.surface"),
         )
-        assertEquals(3, resolved.size)
-        resolved.forEach { token ->
-            assertTrue(EmergencyAccessFloor.isProtectedToken(token, resolved))
+        assertEquals(2, resolved.emergencySurfaceTokens.size)
+        assertEquals(1, resolved.callSurfaceTokens.size)
+        assertEquals(1, resolved.smsTransportTokens.size)
+        resolved.emergencySurfaceTokens.forEach { token ->
+            assertTrue(EmergencyAccessFloor.isProtectedToken(token, resolved.emergencySurfaceTokens))
         }
-        assertTrue(!EmergencyAccessFloor.isProtectedToken(ordinaryToken, resolved))
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(resolved.callSurfaceTokens.first(), resolved.emergencySurfaceTokens))
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(resolved.smsTransportTokens.first(), resolved.emergencySurfaceTokens))
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(ordinaryToken, resolved.emergencySurfaceTokens))
     }
 
     // ---- Adversarial cases: a malicious/well-formed policy that explicitly targets the emergency
@@ -71,6 +75,7 @@ class EmergencyAccessFloorTest {
         appToken: OpaqueAppToken,
         windows: List<ScheduleWindow>,
         nowUtc: Instant = Instant.parse("2026-01-07T12:00:00Z"),
+        communicationSurfaces: CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(),
     ) = ScheduleEvaluationInput(
         nowUtc = nowUtc,
         timezone = "UTC",
@@ -81,7 +86,25 @@ class EmergencyAccessFloorTest {
         dailyLimit = null,
         enforcementCapability = EnforcementCapabilityState.ENFORCED,
         connectivity = Connectivity.ONLINE,
+        communicationSurfaces = communicationSurfaces,
     )
+
+    @Test
+    fun `default SMS transport token does not become an interactive schedule allow`() {
+        val surfaces = EmergencyAccessFloor.resolveCommunicationSurfaces(
+            incomingCallPackage = "resolved.call.surface",
+            smsTransportPackage = "resolved.sms.surface",
+            emergencySurfacePackages = emptySet(),
+        )
+        val smsDecision = ScheduleEvaluator.evaluate(
+            evaluationInputFor(
+                appToken = surfaces.smsTransportTokens.first(),
+                windows = listOf(window(ScheduleWindowKind.BEDTIME, AppScope.All)),
+                communicationSurfaces = surfaces,
+            ),
+        )
+        assertEquals(ScheduleDecisionKind.BLOCKED_BEDTIME, smsDecision.decision)
+    }
 
     @Test
     fun `a malicious all-day BLOCK_PERIOD window explicitly naming the emergency token is still allowed`() {
