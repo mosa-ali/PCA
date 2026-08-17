@@ -78,7 +78,11 @@
     "PENDING_DELIVERY": "Pending delivery",
     "PARTIALLY_APPLIED": "Partially applied",
     "EPOCH_STALE": "Update pending (stale)",
-    "REVOKED": "Revoked"
+    "REVOKED": "Revoked",
+    "STANDARD": "Standard",
+    "PROTECTED": "Protected",
+    "AUTHORIZATION_REQUIRED": "Authorization required",
+    "NOT_SUPPORTED": "Not supported"
   },
   "common": {
     "loading": "Loading...",
