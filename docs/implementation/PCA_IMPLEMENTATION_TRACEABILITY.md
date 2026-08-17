@@ -36,6 +36,8 @@ Round6 (`PCA-COMPLIMENTARY-CONSUMPTION-1` Writer60, `PCA-FREE-ACCESS-1` Writer61
 `MISSING_IDS=0`, `DUPLICATE_IDS=0`, `ORPHAN_IDS=0` reconfirmed against the full 371-row inventory after this correction (programmatic uniqueness/completeness check re-run, not assumed carried-forward from R3).
 ### R3 evidence reconciliation (2026-08-17)
 
+R3 crosswalk closure: all 199 Base A-100 IDs now have explicit PCA programme/domain phases derived from the controlled normative sections and PCA-0..19 programme definitions. UNMAPPED_IDS=0 is now true in the controlled matrix itself. This closes phase ambiguity only; it does not upgrade source status, executable validation, owner decisions, platform gates, or independent-review outcomes, and architecture control is not claimed as 100%.
+
 The live source tree was re-checked after the handoff range. PCA-ADD-ENR-005, PCA-ADD-ENR-006, and PCA-ADD-ENR-023 now have source-backed eight-state lifecycle, fail-closed transition, expiry, atomic redemption, and immutable-audit evidence; focused unit/MySQL test files are recorded in the matrix, while the elevated backend unit/security suite passed 1,495 tests, while MySQL integration execution remains a separate open validation gate. PCA-ADD-ENR-008 has Android App Link parser, manifest, coordinator, and tests, but remains PARTIAL because Digital Asset Links hosting and physical install-return behavior are external gates. PCA-ADD-ENR-019 remains PARTIAL because no concrete runtime enrollment-to-AUTHORIZATION_REQUIRED transition is claimed.
 
 
@@ -338,3 +340,16 @@ Platform-limited requirements (PCA-15/iOS-linked, and any requirement depending 
 
 The following were established in the R0 pass and are **not re-scored** by this R1 correction (per its narrow scope): the PCA-0..19/PCA-WELL-1 phase matrix, the Addendum-001 status distribution above, and all known source gaps (device-wide VPN filtering incomplete, SafeSearch incomplete, production crypto review not approved, real UAT 0/50, iOS Xcode/entitlement/device gates, YouTube Mode B gate, family-authority RBAC gap, PIN/removal subsystem gaps, Android tamper gap). See `PCA_CURRENT_IMPLEMENTATION_STATUS.md` for the full narrative, now updated only where Addendum 002 integration required it (Platform Administration/Billing sections).
 
+
+R3 Writer Wave 1 closure: executable source and focused-test evidence closed PCA-AND-002, PCA-FR-037, PCA-FR-045, PCA-FR-031A, PCA-NFR-012, and PCA-FR-123. ENR-019 remains partial: runtime capability detection is implemented, but the authorized device-owner provisioning transition remains blocked by PCA-DEC-002/PCA-DEC-014/PCA-DEC-015 and is not claimed locally.
+
+
+R3 Writer Wave 2 closure: executable source and focused-test evidence closed PCA-FR-040, PCA-FR-092, and PCA-FR-096. Selected user-facing terminology now says children/children's or children's devices where the text describes monitored people/devices; internal family authority, Family Trust Set, familyId, and E2EE vocabulary was intentionally preserved.
+
+
+
+## R3 Writer Wave 3 source closure (2026-08-17)
+- PCA-FR-007: `EnrollmentScreen.InvitationReady` renders the localized informed-consent summary before bootstrap and exposes only explicit acceptance; `EnrollmentConsentStaticTest` proves the structural gate.
+- PCA-FR-044: `ChildHomeScreen` and `YouTubeModeScreen` map unsupported protection, location, usage, and mode states to localized labels; `CapabilityUnavailableLabelStaticTest` proves the mappings remain present.
+- PCA-FR-074A: `PrayerLocationStalenessDetector` stores only encrypted-local travel-episode state, detects >50 km offline movement, and `PcaAppGraph` invokes the permission-guarded localized notice delivery; `PrayerLocationStalenessDetectorTest` covers first sample, threshold, deduplication, reset, and below-threshold behavior.
+- These are source-completion records only; full validation, independent review, platform gates, and acceptance remain separate.

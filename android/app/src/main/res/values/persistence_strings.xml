@@ -7,12 +7,12 @@
 -->
 <resources>
     <string name="delete_now_title">Delete Now</string>
-    <string name="delete_now_description">Permanently deletes locally stored family data for the scope you choose. This cannot be undone.</string>
+    <string name="delete_now_description">Permanently deletes locally stored children\'s data for the scope you choose. This cannot be undone.</string>
 
     <string name="delete_now_scope_label">What to delete</string>
     <string name="delete_now_scope_device">This device only</string>
     <string name="delete_now_scope_child">%1$s (this child, all their devices)</string>
-    <string name="delete_now_scope_family">The whole family</string>
+    <string name="delete_now_scope_family">All children</string>
 
     <string name="delete_now_confirm_title">Delete permanently?</string>
     <string name="delete_now_confirm_message">This will permanently delete the selected local data now. This cannot be undone.</string>

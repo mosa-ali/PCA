@@ -28,6 +28,11 @@
     <string name="prayer_reminder_notification_channel_description">تذكيرات قبل وقت كل صلاة بوقت قصير.</string>
     <string name="prayer_reminder_notification_title">تذكير %1$s</string>
     <string name="prayer_reminder_notification_body">اقترب الوقت.</string>
+    <!-- PCA-FR-074A: تنبيه التحقق من أوقات الصلاة بعد السفر أثناء عدم الاتصال -->
+    <string name="prayer_location_stale_notification_channel_name">تنبيهات أوقات الصلاة</string>
+    <string name="prayer_location_stale_notification_channel_description">تنبيهات عندما قد يجعل السفر أوقات الصلاة المحفوظة غير دقيقة.</string>
+    <string name="prayer_location_stale_notification_title">تحقق من أوقات الصلاة</string>
+    <string name="prayer_location_stale_notification_body">تغير موقع الجهاز بشكل ملحوظ أثناء عدم الاتصال. تحقق من أوقات الصلاة قبل الاعتماد عليها.</string>
 
     <!-- Usage-access alert (PCA-FR-081, WRITER68) notification strings -->
     <string name="usage_access_alert_notification_channel_name">تنبيهات مراقبة الجهاز</string>
@@ -41,7 +46,7 @@
     <string name="emergency_dial_alert_notification_channel_name">تنبيهات الوصول الطارئ</string>
     <string name="emergency_dial_alert_notification_channel_description">تنبيهات عند فتح لوحة الاتصال الطارئ على هذا الجهاز.</string>
     <string name="emergency_dial_alert_title">تم فتح لوحة الاتصال الطارئ</string>
-    <string name="emergency_dial_alert_body">تم إدراج سجل بهذا الأمر لمزامنته عند توفر اتصال العائلة.</string>
+    <string name="emergency_dial_alert_body">تم إدراج سجل بهذا الأمر لمزامنته عند توفر اتصال الوالد.</string>
 
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">حماية الويب</string>
@@ -258,7 +263,7 @@
     <string name="child_home_safe_browser">المتصفح الآمن</string>
     <string name="safe_browser_address_bar_hint">عنوان الموقع</string>
     <string name="safe_browser_go_button">اذهب</string>
-    <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات العائلة، لذا فإن قواعد السلامة الأساسية فقط هي المفعّلة.</string>
+    <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات أطفالك، لذا فإن قواعد السلامة الأساسية فقط هي المفعّلة.</string>
     <string name="safe_browser_held_block_title">هذا الموقع محظور</string>
     <string name="safe_browser_held_review_title">هذا الموقع يحتاج إلى مراجعة أحد الوالدين</string>
     <string name="safe_browser_ask_parent_button">اسأل أحد الوالدين</string>

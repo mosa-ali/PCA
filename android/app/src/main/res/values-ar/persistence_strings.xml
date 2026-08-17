@@ -12,7 +12,7 @@
     <string name="delete_now_scope_label">ما الذي سيتم حذفه</string>
     <string name="delete_now_scope_device">هذا الجهاز فقط</string>
     <string name="delete_now_scope_child">%1$s (هذا الطفل، وجميع أجهزته)</string>
-    <string name="delete_now_scope_family">العائلة بالكامل</string>
+    <string name="delete_now_scope_family">كل الأطفال</string>
 
     <string name="delete_now_confirm_title">حذف بشكل نهائي؟</string>
     <string name="delete_now_confirm_message">سيؤدي هذا إلى حذف البيانات المحلية المحددة نهائيًا الآن. لا يمكن التراجع عن هذا الإجراء.</string>

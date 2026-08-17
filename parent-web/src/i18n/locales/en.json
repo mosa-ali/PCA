@@ -188,12 +188,12 @@
   "wellbeing": {
     "title": "Wellbeing Messages",
     "curated": "Curated suggestions",
-    "custom": "Family custom messages",
+    "custom": "Children's custom messages",
     "createCustom": "Create custom message",
     "category": "Category",
     "allCategories": "All categories",
     "supervisionNote": "Some suggestions are hazard-adjacent and may need adult supervision before enabling.",
-    "privateNote": "Custom family messages are private family content -- not server-readable in production.",
+    "privateNote": "Custom children's messages are private child-related content -- not server-readable in production.",
     "noFullScreenNote": "No ordinary wellbeing message previews as a full-screen interruption; impersonation/system-warning-style behaviour is prohibited.",
     "previewSimulator": "Delivery preview simulator",
     "surfaceInAppCard": "Small in-app card",
@@ -401,7 +401,7 @@
     "devicesReserved": "Pending invitations (reserved)",
     "devicesLimit": "Device limit",
     "devicesAvailable": "Available slots",
-    "overLimitDevices": "Your family is over your managed-device limit. Existing devices remain enrolled and functional, but you cannot enroll a new device until you are back within your entitlement.",
+    "overLimitDevices": "Your children's devices exceed your managed-device limit. Existing devices remain enrolled and functional, but you cannot enroll a new device until you are back within your entitlement.",
     "requestMoreDevices": "Request more devices",
     "memberAllowanceTitle": "Parent member allowance",
     "membersUsed": "Parent members used",
@@ -494,7 +494,7 @@
     "emailAlerts": "Email me for important alerts",
     "pushRequests": "Push notifications for requests",
     "preferencesNotYetConnected": "These delivery preferences are not yet backed by a server-side setting -- changing them here would not currently change what you receive, so they are shown read-only until that backend support exists.",
-    "payloadNote": "Notification payloads never contain family activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6).",
+    "payloadNote": "Notification payloads never contain children's activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6).",
     "commercialTitle": "Billing notifications",
     "commercialEmpty": "You have no billing notifications yet.",
     "unreadCount": "{{count}} unread",
@@ -559,7 +559,7 @@
     "generatedStatus": "Export request accepted (ref {{exportId}}) -- pending crypto review, not yet a downloadable file."
   },
   "retention": {
-    "description": "Retention/deletion of family activity is enforced locally by the device holding the plaintext; this screen sets the family-level policy value that devices honor.",
+    "description": "Retention/deletion of children's activity is enforced locally by the device holding the plaintext; this screen sets the family-level policy value that devices honor.",
     "currentDefault": "Current architecture default: {{window}}.",
     "chooseWindow": "Choose the retention window for this family",
     "updatedStatus": "Retention policy validated and audited: {{window}}. Devices apply this value locally.",
@@ -572,7 +572,7 @@
     }
   },
   "deleteNow": {
-    "description": "This issues a signed, one-time deletion instruction to family devices. It cannot retroactively erase a device that stays offline.",
+    "description": "This issues a signed, one-time deletion instruction to your children's devices. It cannot retroactively erase a device that stays offline.",
     "confirmBody": "This action cannot be undone once devices acknowledge it.",
     "issuedStatus": "Deletion instruction issued and audited -- delivery status: {{status}}."
   },
@@ -617,7 +617,7 @@
       "fullBrowsing": "Full browsing history or page content outside PCA's own filtered browsing mode.",
       "thirdParty": "Any activity from a third-party app or browser PCA has no legitimate access to."
     },
-    "encryptionNote": "Everything above is end-to-end encrypted between your family's own devices. PCA's servers relay encrypted data but hold no key that can read it -- see the Retention page for how long different categories are kept, and Security & Recovery for how your family's encryption keys work.",
+    "encryptionNote": "Everything above is end-to-end encrypted between your children's devices. PCA's servers relay encrypted data but hold no key that can read it -- see the Retention page for how long different categories are kept, and Security & Recovery for how your children's encryption keys work.",
     "sdkNote": "Third-party services this app relies on (crash reporting, payment processing, push-notification delivery) are listed with the specific data category each can access; PCA does not use advertising or tracking SDKs."
   },
   "recovery": {
@@ -639,7 +639,7 @@
     "verifyBody": "Enter the 6-digit code we sent to {{email}}.",
     "codeLabel": "Verification code",
     "verifySubmit": "Verify email",
-    "verifySuccess": "Your email is verified. Setting up your family...",
+    "verifySuccess": "Your email is verified. Setting up your children's protection...",
     "loginTitle": "Sign in to PCA",
     "loginSubmit": "Sign in",
     "needAccount": "Need an account?",

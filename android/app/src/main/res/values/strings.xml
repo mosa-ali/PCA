@@ -24,6 +24,11 @@
     <string name="prayer_reminder_notification_channel_description">Reminders shortly before each prayer time.</string>
     <string name="prayer_reminder_notification_title">%1$s reminder</string>
     <string name="prayer_reminder_notification_body">It\'s almost time.</string>
+    <!-- PCA-FR-074A: cached prayer-time verification after material offline travel -->
+    <string name="prayer_location_stale_notification_channel_name">Prayer time notices</string>
+    <string name="prayer_location_stale_notification_channel_description">Notices when travel may make cached prayer times inaccurate.</string>
+    <string name="prayer_location_stale_notification_title">Verify prayer times</string>
+    <string name="prayer_location_stale_notification_body">Your location changed materially while offline. Verify prayer times before relying on them.</string>
 
     <!-- Usage-access alert (PCA-FR-081, WRITER68) notification strings -->
     <string name="usage_access_alert_notification_channel_name">Device monitoring alerts</string>
@@ -37,7 +42,7 @@
     <string name="emergency_dial_alert_notification_channel_name">Emergency access alerts</string>
     <string name="emergency_dial_alert_notification_channel_description">Alerts when the emergency dialer is opened on this device.</string>
     <string name="emergency_dial_alert_title">Emergency dialer opened</string>
-    <string name="emergency_dial_alert_body">A record of this was queued to sync when the family connection is next available.</string>
+    <string name="emergency_dial_alert_body">A record of this was queued to sync when the parent connection is next available.</string>
 
     <!-- Web Protection VPN (PCA-5) -->
     <string name="web_protection_vpn_channel_name">Web protection</string>
@@ -259,7 +264,7 @@
     <string name="child_home_safe_browser">Safe Browser</string>
     <string name="safe_browser_address_bar_hint">Website address</string>
     <string name="safe_browser_go_button">Go</string>
-    <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your family\'s settings right now, so only basic safety rules are active.</string>
+    <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your children\'s settings right now, so only basic safety rules are active.</string>
     <string name="safe_browser_held_block_title">This site is blocked</string>
     <string name="safe_browser_held_review_title">This site needs a parent\'s review</string>
     <string name="safe_browser_ask_parent_button">Ask a parent</string>

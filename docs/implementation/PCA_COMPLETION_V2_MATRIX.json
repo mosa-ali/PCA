@@ -6,7 +6,7 @@
     "publishedBase": "5b9d76a4d11edd5e480df1e19f5eea8030139ee5",
     "protectedMain": "f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd",
     "generatedAtNote": "Timestamp intentionally omitted, see git commit metadata for this file for the actual generation time.",
-    "scopeLimitation": "Base A-100 requirements (199 IDs) were NOT individually re-derived at the normative-text level in this pass; they retain their prior architecture-doc status (DEFINED; IMPLEMENTATION TEST PENDING, represented here as NOT_STARTED) unless flagged otherwise. The 25 Addendum-001 requirements and the PCA-0..19 / PCA-WELL-1 phase matrix WERE evidence-based re-derived from actual source and tests via three read-only discovery sub-agents (backend, Android, web/iOS/release) covering backend/src, backend/test, backend/migrations, android/app/src, parent-web/src, parent-web/tests, ios/**, contracts/**, and docs/release_readiness/**. This correction pass (R1) additionally reconciles the newly integrated Addendum 002 (Platform Administration and Billing, 98 requirement IDs: PCA-ADD-PA-001..054 non-contiguous 51 IDs, PCA-ADD-BILL-001..047 non-contiguous 47 IDs including lettered PCA-ADD-BILL-005A) against docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md, now integrated and controlled architecture authority at base 6fba8e000614e772414ba973631fbfe2f20aef20. All 98 Addendum-002 requirements are NOT_STARTED, matching the addendum's own Section 21/22 self-declaration that no PCA-PA-*/PCA-BILL-*/PCA-MYKIDS-BILL-* source exists yet -- confirmed independently by this correction's own targeted repository search (zero billing/payment/platform-admin source found). The PCA-0..19/PCA-WELL-1 phase matrix and Addendum-001 findings from the prior pass (R0) were preserved unchanged; this is a narrow correction, not a second full implementation audit.",
+    "scopeLimitation": "R3 crosswalk closure: all 199 Base A-100 requirements now have explicit PCA programme/domain phases derived from their controlled normative source sections and the PCA-0..19 programme definition. This closes phase crosswalk ambiguity only; requirement status, source completeness, executable validation, platform gates, owner decisions, and independent review remain separately evidenced.",
     "correctionHistory": [
       {
         "revision": "R1",
@@ -37,7 +37,16 @@
         "mission": "PCA-FINAL-SOURCE-COMPLETION-100",
         "base": "e50a94799d1d99fbc8247ad50114a1696676f186",
         "reason": "Full-programme source-completion pass: 10 parallel Writers (63-72, five integration waves) plus a final Writer73 gap-eradication pass, each independently QA-verified before integration, closing the majority of source-solvable gaps across enrollment lifecycle, PIN/removal-decision (built from scratch), family-authority/trust hardening, platform/commercial ops, retention/export, Android runtime platform (WorkManager, prayer receiver, tamper detection, tombstones), Android protection experience (emergency-dialer floor, install-observer, YouTube Mode A/B UI, emergency-call action), Android wellbeing/sensors (geofencing, safety-conscious proximity classifier), iOS (AI fail-safe fix, anti-removal copy), and web accessibility/i18n/missing-panel-features. A mandatory second full 371-requirement audit (re-deriving status against real current source, including full Base A-100 reconciliation and a repo-wide gap hunt) ran after integration to independently confirm what changed and find what remained. 189 requirement IDs changed status from the pre-programme baseline; full before/after list in MATRIX_CHANGE_LOG.txt in the programme's working directory. No status was upgraded on phase-completion or self-report alone -- every change traces to file/test evidence independently read during the second-audit pass, and several individual writer/QA claims were caught and corrected during synthesis (e.g. a false-negative re-check on PCA-FR-141's already-complete fingerprint-confirmation UI). Genuinely remaining gaps (crypto-suite activation, Device Owner mode, YouTube Mode B, real camera-based proximity capture, several architecturally-significant items) are honestly left open, not smoothed over."
-      }
+      },
+      {
+        "revision": "R4",
+        "mission": "PCA-FINAL-COMPLETION-RECOVERY-R3-CROSSWALK",
+        "base": "2937ad72801cc66175c7251d83998046511710e5",
+        "reason": "Assigned all 199 Base A-100 requirements to explicit PCA programme/domain phases from the controlled architecture sections. No requirement status was upgraded by crosswalk closure alone."
+      },
+      "revision=R5; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-1; base=2937ad72801cc66175c7251d83998046511710e5; reason=Writers 74-76 reconciled six source-solvable rows from executable source/test evidence: AND-002, FR-037, FR-045, FR-031A, NFR-012, and FR-123. No external or owner gate was upgraded.",
+      "revision=R6; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-2; base=2937ad72801cc66175c7251d83998046511710e5; reason=Writers 77-79 reconciled FR-040, FR-092, and FR-096 from executable source/test evidence. User-facing monitored child/device terminology was corrected in selected English/Arabic locale and Android resource surfaces without renaming internal family authority, Family Trust Set, familyId, or E2EE terms.",
+      "revision=R7; mission=PCA-FINAL-COMPLETION-RECOVERY-R3-WRITER-WAVE-3; base=2937ad72801cc66175c7251d83998046511710e5; reason=Closed three source-solvable rows with executable Android evidence: informed-consent gate, capability-unavailable labels, and offline-travel prayer-time staleness notice. Validation backlog and external gates remain separate."
     ]
   },
   "publishedBase": "5b9d76a4d11edd5e480df1e19f5eea8030139ee5",
@@ -45,7 +54,7 @@
     {
       "requirementId": "PCA-AI-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-14"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -64,7 +73,7 @@
     {
       "requirementId": "PCA-AND-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -79,22 +88,18 @@
     {
       "requirementId": "PCA-AND-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt (new: real CoroutineWorker) + BackgroundExecutionScheduler.kt (WorkManagerBackgroundExecutionScheduler, PeriodicWorkRequestBuilder, 15-min period) + PcaAppGraph.kt:179 (started idempotently alongside the in-process loop)"
-      ],
-      "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt + BackgroundWorkMetricsTest.kt"
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was PARTIAL (\"only on-demand/in-process collection exists... monitoring does not auto-resume after reboot\"). Writer68 closed the resilient-background-component gap this round; usage ingestion now survives process death via WorkManager, not just foreground execution. Runtime reachability: GENUINELY SCHEDULED via WorkManager's enqueueUniquePeriodicWork, calling the exact same runUsageLocationIngestionCycle() production logic the foreground loop uses (single implementation, two callers, both Mutex-guarded against races)."
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt; android/app/src/main/java/org/pca/app/runtime/background/BackgroundExecutionScheduler.kt; android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:179",
+      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt; android/app/src/test/java/org/pca/app/runtime/background/BackgroundWorkMetricsTest.kt",
+      "externalGate": "",
+      "notes": "R3 Writer74 evidence reconciliation: WorkManager enqueueUniquePeriodicWork is production-wired and covered by real WorkManager tests; source gap closed."
     },
     {
       "requirementId": "PCA-AND-003",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -109,7 +114,7 @@
     {
       "requirementId": "PCA-DATA-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -127,7 +132,7 @@
     {
       "requirementId": "PCA-DATA-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -138,7 +143,7 @@
     {
       "requirementId": "PCA-DATA-010",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -154,7 +159,7 @@
     {
       "requirementId": "PCA-DATA-011",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -171,7 +176,7 @@
     {
       "requirementId": "PCA-DATA-012",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -187,7 +192,7 @@
     {
       "requirementId": "PCA-DATA-013",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -203,7 +208,7 @@
     {
       "requirementId": "PCA-DATA-014",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -214,7 +219,7 @@
     {
       "requirementId": "PCA-DATA-020",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -231,7 +236,8 @@
     {
       "requirementId": "PCA-DATA-021",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12",
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -244,7 +250,8 @@
     {
       "requirementId": "PCA-DATA-022",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -261,7 +268,7 @@
     {
       "requirementId": "PCA-DATA-023",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -276,7 +283,8 @@
     {
       "requirementId": "PCA-DATA-024",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12",
+        "PCA-11"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -287,7 +295,8 @@
     {
       "requirementId": "PCA-DATA-025",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -302,7 +311,7 @@
     {
       "requirementId": "PCA-DATA-026",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -317,7 +326,8 @@
     {
       "requirementId": "PCA-DATA-027",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -337,7 +347,7 @@
     {
       "requirementId": "PCA-DATA-028",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -348,7 +358,7 @@
     {
       "requirementId": "PCA-DATA-029",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -366,7 +376,7 @@
     {
       "requirementId": "PCA-FR-000",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [
@@ -379,7 +389,8 @@
     {
       "requirementId": "PCA-FR-000A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -392,7 +403,7 @@
     {
       "requirementId": "PCA-FR-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -403,7 +414,7 @@
     {
       "requirementId": "PCA-FR-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -418,7 +429,7 @@
     {
       "requirementId": "PCA-FR-002A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -434,7 +445,7 @@
     {
       "requirementId": "PCA-FR-003",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -449,7 +460,7 @@
     {
       "requirementId": "PCA-FR-004",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -460,7 +471,7 @@
     {
       "requirementId": "PCA-FR-004A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-PA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -475,7 +486,7 @@
     {
       "requirementId": "PCA-FR-005",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -494,7 +505,7 @@
     {
       "requirementId": "PCA-FR-006",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -515,22 +526,25 @@
     {
       "requirementId": "PCA-FR-007",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt"
+        "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt",
+        "android/app/src/main/res/values/strings.xml",
+        "android/app/src/main/res/values-ar/strings.xml"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/enrollment/"
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentConsentStaticTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Could not confirm a pre-completion 'what will/will not be monitored' informed-consent summary screen distinct from ordinary enrollment progress UI in EnrollmentScreen.kt; needs dedicated verification against the FR-121 disclosure content Runtime reachability: PARTIAL"
+      "notes": "R3 Writer Wave 3 source closure: InvitationReady is structurally gated by the localized informed-consent summary with monitored and not-monitored lists and explicit acceptance. Validation and independent review remain separate gates."
     },
     {
       "requirementId": "PCA-FR-008",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -541,7 +555,7 @@
     {
       "requirementId": "PCA-FR-010",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -556,7 +570,7 @@
     {
       "requirementId": "PCA-FR-011",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -571,7 +585,7 @@
     {
       "requirementId": "PCA-FR-011A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -586,7 +600,7 @@
     {
       "requirementId": "PCA-FR-012",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -601,7 +615,7 @@
     {
       "requirementId": "PCA-FR-012A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -616,7 +630,7 @@
     {
       "requirementId": "PCA-FR-013",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -631,7 +645,7 @@
     {
       "requirementId": "PCA-FR-014",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -646,7 +660,7 @@
     {
       "requirementId": "PCA-FR-014A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -659,7 +673,8 @@
     {
       "requirementId": "PCA-FR-015",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -674,7 +689,7 @@
     {
       "requirementId": "PCA-FR-016",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -689,7 +704,8 @@
     {
       "requirementId": "PCA-FR-017",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3",
+        "PCA-13"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -704,7 +720,7 @@
     {
       "requirementId": "PCA-FR-018",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -721,7 +737,7 @@
     {
       "requirementId": "PCA-FR-020",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -736,7 +752,7 @@
     {
       "requirementId": "PCA-FR-021",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -751,7 +767,7 @@
     {
       "requirementId": "PCA-FR-021A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -766,7 +782,7 @@
     {
       "requirementId": "PCA-FR-022",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -781,7 +797,7 @@
     {
       "requirementId": "PCA-FR-023",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [
@@ -795,7 +811,7 @@
     {
       "requirementId": "PCA-FR-024",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [
@@ -812,7 +828,7 @@
     {
       "requirementId": "PCA-FR-030",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -827,7 +843,7 @@
     {
       "requirementId": "PCA-FR-031",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -842,22 +858,18 @@
     {
       "requirementId": "PCA-FR-031A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebFilterTypes.kt"
-      ],
-      "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/webprotection/policy/"
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Category taxonomy in code did not include an explicit static/CI check proving no protected-characteristic category can ever be added (a doc-28-owned build gate, not confirmed present in this Android module) Runtime reachability: YES for what exists"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebFilterTypes.kt",
+      "testEvidence": "android/app/src/test/java/org/pca/app/feature/webprotection/policy/WebRuleTaxonomyStaticTest.kt",
+      "externalGate": "",
+      "notes": "R3 Writer76 implementation: exact WebRuleSource allowlist and protected-characteristic term guard prevent an unreviewed category taxonomy expansion."
     },
     {
       "requirementId": "PCA-FR-032",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -872,7 +884,7 @@
     {
       "requirementId": "PCA-FR-033",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -889,7 +901,7 @@
     {
       "requirementId": "PCA-FR-034",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -907,7 +919,7 @@
     {
       "requirementId": "PCA-FR-035",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -923,7 +935,7 @@
     {
       "requirementId": "PCA-FR-036",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -938,37 +950,29 @@
     {
       "requirementId": "PCA-FR-037",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/webprotection/safebrowser/ParentUnblockRequestService.kt"
-      ],
-      "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/webprotection/safebrowser/"
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Child-initiated unblock-request submission UI affordance not confirmed present in SafeBrowserScreen.kt/SafeBrowserUiState.kt Runtime reachability: PARTIAL - service class exists; child-side 'request unblock' submission path not confirmed wired into SafeBrowserScreen UI"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserScreen.kt:229-239; android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserController.kt:134-167",
+      "testEvidence": "android/app/src/test/java/org/pca/app/feature/webprotection/ui/SafeBrowserControllerTest.kt:192-230",
+      "externalGate": "",
+      "notes": "R3 Writer74 evidence reconciliation: held-page Ask Parent UI is wired to submitAskParent, with offline queue and live sync outcomes covered by focused tests; source gap closed."
     },
     {
       "requirementId": "PCA-FR-040",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/StandardUsageObservationSource.kt (UsageStatsManager duration query)"
-      ],
-      "testEvidence": [
-        "android/app/src/test/java/org/pca/app/platform/"
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Same background-resilience gap as PCA-AND-002 applies to per-app duration recording Runtime reachability: PARTIAL - works while process/app is running; see PCA-AND-002 background-collection gap"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/usage/UsageSessionRecorder.kt; android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:468; android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt",
+      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/usage/UsageSessionRecorderTest.kt; android/app/src/test/java/org/pca/app/runtime/background/UsageIngestionWorkerTest.kt; android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt",
+      "externalGate": "",
+      "notes": "R3 Writer78 evidence reconciliation: per-app usage recording is called through the same production ingestion cycle from both the foreground loop and WorkManager safety net; focused recorder, worker, and scheduler tests cover the path."
     },
     {
       "requirementId": "PCA-FR-041",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -983,7 +987,7 @@
     {
       "requirementId": "PCA-FR-042",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -998,7 +1002,7 @@
     {
       "requirementId": "PCA-FR-043",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-4"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1013,7 +1017,7 @@
     {
       "requirementId": "PCA-FR-043A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-4"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1028,36 +1032,35 @@
     {
       "requirementId": "PCA-FR-044",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/PlatformProtectionCapabilities.kt (capability reporting exists)"
+        "android/app/src/main/java/org/pca/app/platform/PlatformProtectionCapabilities.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "android/app/src/main/java/org/pca/app/feature/youtube/ui/YouTubeModeScreen.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/capabilities/CapabilityUnavailableLabelStaticTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Capability-unavailable labeling exists at the platform-adapter layer; not independently confirmed surfaced consistently on every relevant UI screen Runtime reachability: PARTIAL"
+      "notes": "R3 Writer Wave 3 source closure: relevant Android status and YouTube surfaces visibly map unsupported protection, unusable location, unsupported usage, and unavailable modes to localized labels; validation and independent review remain separate gates."
     },
     {
       "requirementId": "PCA-FR-045",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiver.kt (real PACKAGE_ADDED observer, install-time/label capture, EXTRA_REPLACING filtering)",
-        "AndroidManifest.xml:141-148 (registered, exported=true, matching intent-filter+data scheme)"
-      ],
-      "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/installobserver/ (present)"
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was NOT_STARTED (\"no BroadcastReceiver for PACKAGE_ADDED exists\"). Writer69/Coordinator built and registered the receiver this round. Scope remains deliberately conservative (visibility only, no install-blocking approval gate, matching doc 03's PROPOSED-not-committed installer-approval workflow) -- that narrower remainder is correctly self-gated, not a silent gap. Runtime reachability: GENUINELY REGISTERED AND WIRED -- OS PACKAGE_ADDED broadcasts reach it"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiver.kt; android/app/src/main/AndroidManifest.xml:141-148",
+      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiverTest.kt",
+      "externalGate": "",
+      "notes": "R3 Writer74 evidence reconciliation: PACKAGE_ADDED observer is manifest-registered, filters replacements, and has positive/negative tests; source gap closed."
     },
     {
       "requirementId": "PCA-FR-050",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-6"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1072,7 +1075,7 @@
     {
       "requirementId": "PCA-FR-051",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-6"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1087,7 +1090,7 @@
     {
       "requirementId": "PCA-FR-052",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-6"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [
@@ -1103,7 +1106,7 @@
     {
       "requirementId": "PCA-FR-053",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-6"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -1114,7 +1117,7 @@
     {
       "requirementId": "PCA-FR-054",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-6"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1132,7 +1135,7 @@
     {
       "requirementId": "PCA-FR-060",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1147,7 +1150,7 @@
     {
       "requirementId": "PCA-FR-061",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1162,7 +1165,7 @@
     {
       "requirementId": "PCA-FR-062",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1177,7 +1180,7 @@
     {
       "requirementId": "PCA-FR-063",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1193,7 +1196,7 @@
     {
       "requirementId": "PCA-FR-064",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1206,7 +1209,7 @@
     {
       "requirementId": "PCA-FR-065",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1221,7 +1224,7 @@
     {
       "requirementId": "PCA-FR-070",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1238,7 +1241,7 @@
     {
       "requirementId": "PCA-FR-071",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1253,7 +1256,7 @@
     {
       "requirementId": "PCA-FR-072",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1268,7 +1271,7 @@
     {
       "requirementId": "PCA-FR-073",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1284,7 +1287,7 @@
     {
       "requirementId": "PCA-FR-074",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1301,18 +1304,26 @@
     {
       "requirementId": "PCA-FR-074A",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-9"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/prayer/location/PrayerLocationStalenessDetector.kt",
+        "android/app/src/main/java/org/pca/app/runtime/prayer/PrayerLocationStalenessNotificationDelivery.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
+        "android/app/src/main/res/values/strings.xml",
+        "android/app/src/main/res/values-ar/strings.xml"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/prayer/location/PrayerLocationStalenessDetectorTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no 'location may be stale' notice-on-reconnect mechanism found under feature/prayer or runtime/prayer."
+      "notes": "R3 Writer Wave 3 source closure: encrypted-local offline travel anchoring detects movement above 50 km, requests one notice per offline episode, and the production graph delivers a permission-guarded localized prayer-time verification notification; validation and independent review remain separate gates."
     },
     {
       "requirementId": "PCA-FR-080",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1325,7 +1336,7 @@
     {
       "requirementId": "PCA-FR-081",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1340,7 +1351,7 @@
     {
       "requirementId": "PCA-FR-082",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1353,7 +1364,7 @@
     {
       "requirementId": "PCA-FR-083",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -1364,7 +1375,7 @@
     {
       "requirementId": "PCA-FR-084",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1381,7 +1392,7 @@
     {
       "requirementId": "PCA-FR-085",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1398,7 +1409,7 @@
     {
       "requirementId": "PCA-FR-090",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1414,7 +1425,7 @@
     {
       "requirementId": "PCA-FR-091",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [],
@@ -1425,24 +1436,18 @@
     {
       "requirementId": "PCA-FR-092",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "parent-web/src/pages/children/ActivityTimelinePage.tsx (NEW this round -- consolidated, chronological, category-level activity timeline per child",
-        "explicitly distinguished in its own header comment from security/Audit.tsx which is a policy-CHANGE log only) | parent-web/src/domain/activityTimeline.ts (ActivityTimelineCategory type: APP_USAGE/WEB_BROWSING/CONTENT_BLOCK/LOCATION/BREAK_SESSION/EYE_PROTECTION/PRAYER_REMINDER) | parent-web/src/App.tsx:23,84 (imported and registered at route path='activity' under the child-scoped route tree, nested beside overview/screen-time/etc.)"
-      ],
-      "testEvidence": [
-        "Not independently confirmed to have a dedicated component/unit test file this pass (not found under parent-web/tests for ActivityTimelinePage specifically)",
-        "page is reachable via the child layout nav."
-      ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). First audit found this entirely absent ('no consolidated activity timeline UI/aggregator anywhere'). Now source-complete and reachable end-to-end via the real family-data client (clients.parentFamilyData.getActivityTimeline). Remaining gap: no dedicated automated test file found for this specific page, and it is not yet included in parent-web's axe accessibility suite (23-page list did not include ActivityTimelinePage in this audit's spot check of the import list -- recommend adding to axe.test.tsx). Runtime reachability: CONFIRMED GENUINELY REACHABLE this round: App.tsx registers <Route path=\"activity\" element={<ActivityTimelinePage />} /> inside the real <Route path=\"children/:childId\" element={<ChildLayout />}> nested route tree (not a dead import) -- verified by direct read of App.tsx, not merely that the component file exists."
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "parent-web/src/pages/children/ActivityTimelinePage.tsx; parent-web/src/App.tsx:59-84; parent-web/src/nav/navConfig.ts:76-77",
+      "testEvidence": "parent-web/tests/accessibility/axe.test.tsx:146-155",
+      "externalGate": "",
+      "notes": "R3 Writer78 evidence reconciliation: consolidated child activity timeline is real-client wired, routed, navigation-registered, and included in the parent-web axe suite."
     },
     {
       "requirementId": "PCA-FR-093",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1457,7 +1462,7 @@
     {
       "requirementId": "PCA-FR-094",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1472,7 +1477,7 @@
     {
       "requirementId": "PCA-FR-095",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1488,21 +1493,18 @@
     {
       "requirementId": "PCA-FR-096",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "parent-web/src/pages/privacy/Transparency.tsx now provides the 'What Parents Can See' panel-navigation entry the first audit found entirely missing",
-        "reachable at route path='privacy/transparency'."
-      ],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Prior finding ('entire What-parents-can-see panel-navigation entry absent, depends on FR-121') is now closed at the source/routing level since FR-121 (the page itself) now exists and is registered. Not verified this pass whether a nav-menu link (as opposed to direct route registration) exists pointing users to it from the main sidebar -- worth a follow-up spot-check. Runtime reachability: Same reachability confirmation as PCA-FR-121 (same page/route)."
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "parent-web/src/pages/privacy/Transparency.tsx; parent-web/src/App.tsx:117; parent-web/src/nav/navConfig.ts:42-44",
+      "testEvidence": "parent-web/tests/accessibility/axe.test.tsx:136-144",
+      "externalGate": "",
+      "notes": "R3 Writer79 evidence reconciliation: What Parents Can See is a real routed page with a registered sidebar navigation entry and axe coverage; the prior missing-navigation finding is closed."
     },
     {
       "requirementId": "PCA-FR-100",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1517,7 +1519,7 @@
     {
       "requirementId": "PCA-FR-101",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1532,7 +1534,7 @@
     {
       "requirementId": "PCA-FR-102",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1547,7 +1549,7 @@
     {
       "requirementId": "PCA-FR-103",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1562,7 +1564,7 @@
     {
       "requirementId": "PCA-FR-104",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1579,7 +1581,7 @@
     {
       "requirementId": "PCA-FR-105",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -1590,7 +1592,7 @@
     {
       "requirementId": "PCA-FR-110",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1605,7 +1607,7 @@
     {
       "requirementId": "PCA-FR-111",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1620,7 +1622,7 @@
     {
       "requirementId": "PCA-FR-112",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1633,7 +1635,7 @@
     {
       "requirementId": "PCA-FR-113",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1646,7 +1648,7 @@
     {
       "requirementId": "PCA-FR-114",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1659,7 +1661,8 @@
     {
       "requirementId": "PCA-FR-120",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1674,7 +1677,7 @@
     {
       "requirementId": "PCA-FR-121",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1690,7 +1693,7 @@
     {
       "requirementId": "PCA-FR-122",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1705,18 +1708,18 @@
     {
       "requirementId": "PCA-FR-123",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No ad-SDK/data-broker inventory checks exist in backend/package.json, android/app/build.gradle*, or any CI script. Runtime reachability: N/A"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "backend/scripts/checkNoAdTrackingSdks.mjs; backend/src/sdkDisclosure/thirdPartySdks.generated.ts",
+      "testEvidence": "backend/test/security/checkNoAdTrackingSdks.test.mjs; backend/test/security/sdkDisclosure.test.mjs",
+      "externalGate": "",
+      "notes": "R3 Writer75 evidence reconciliation: dependency inventory and ad-tracking SDK gate execute against real manifests and failing fixtures; source regression guard exists."
     },
     {
       "requirementId": "PCA-FR-124",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1731,7 +1734,7 @@
     {
       "requirementId": "PCA-FR-125",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1749,7 +1752,8 @@
     {
       "requirementId": "PCA-FR-126",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8",
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1763,7 +1767,7 @@
     {
       "requirementId": "PCA-FR-127",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1776,7 +1780,8 @@
     {
       "requirementId": "PCA-FR-130",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3",
+        "PCA-10"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -1787,7 +1792,8 @@
     {
       "requirementId": "PCA-FR-131",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-10"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -1798,7 +1804,8 @@
     {
       "requirementId": "PCA-FR-132",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1813,7 +1820,7 @@
     {
       "requirementId": "PCA-FR-133",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -1824,7 +1831,8 @@
     {
       "requirementId": "PCA-FR-134",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1844,7 +1852,8 @@
     {
       "requirementId": "PCA-FR-135",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-7",
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1859,7 +1868,7 @@
     {
       "requirementId": "PCA-FR-136",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1874,7 +1883,7 @@
     {
       "requirementId": "PCA-FR-137",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1889,7 +1898,7 @@
     {
       "requirementId": "PCA-FR-138",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1906,7 +1915,8 @@
     {
       "requirementId": "PCA-FR-139",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10",
+        "PCA-11"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -1917,7 +1927,8 @@
     {
       "requirementId": "PCA-FR-140",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1930,7 +1941,8 @@
     {
       "requirementId": "PCA-FR-141",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -1946,7 +1958,8 @@
     {
       "requirementId": "PCA-FR-142",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1959,7 +1972,8 @@
     {
       "requirementId": "PCA-FR-143",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1978,7 +1992,8 @@
     {
       "requirementId": "PCA-FR-144",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11",
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -1995,7 +2010,8 @@
     {
       "requirementId": "PCA-FR-145",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13",
+        "PCA-15"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2008,7 +2024,8 @@
     {
       "requirementId": "PCA-FR-146",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11",
+        "PCA-13"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2025,7 +2042,7 @@
     {
       "requirementId": "PCA-IOS-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-15"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2046,7 +2063,7 @@
     {
       "requirementId": "PCA-IOS-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-15"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2062,7 +2079,7 @@
     {
       "requirementId": "PCA-IOS-003",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-15"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2081,7 +2098,7 @@
     {
       "requirementId": "PCA-NFR-000",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [
@@ -2094,7 +2111,8 @@
     {
       "requirementId": "PCA-NFR-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -2105,7 +2123,8 @@
     {
       "requirementId": "PCA-NFR-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2122,7 +2141,8 @@
     {
       "requirementId": "PCA-NFR-003",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -2133,7 +2153,8 @@
     {
       "requirementId": "PCA-NFR-004",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2150,7 +2171,8 @@
     {
       "requirementId": "PCA-NFR-005",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2163,7 +2185,8 @@
     {
       "requirementId": "PCA-NFR-006",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2178,7 +2201,8 @@
     {
       "requirementId": "PCA-NFR-007",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2195,7 +2219,8 @@
     {
       "requirementId": "PCA-NFR-008",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2212,7 +2237,8 @@
     {
       "requirementId": "PCA-NFR-009",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2228,7 +2254,7 @@
     {
       "requirementId": "PCA-NFR-010",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -2239,7 +2265,7 @@
     {
       "requirementId": "PCA-NFR-011",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2254,20 +2280,18 @@
     {
       "requirementId": "PCA-NFR-012",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [
-        "No backend telemetry-ingestion endpoint found under backend/src/http/routes for URLs/location/app-usage/face/child-content"
-      ],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No CI regression guard analogous to schema-privacy tests exists to keep a future telemetry endpoint from violating this exclusion list. Runtime reachability: Absence-based finding: grepped route registrations for a telemetry surface and found none, which is consistent with compliance but not independently proven by a positive test/allow-list guard."
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": "backend/src/http route registration surface",
+      "testEvidence": "backend/test/security/noTelemetryEndpoint.test.mjs",
+      "externalGate": "",
+      "notes": "R3 Writer75 evidence reconciliation: route-tree telemetry guard now proves both the real backend surface and a caught fixture violation; source regression guard exists."
     },
     {
       "requirementId": "PCA-NFR-013",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2283,7 +2307,7 @@
     {
       "requirementId": "PCA-NFR-014",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -2294,7 +2318,7 @@
     {
       "requirementId": "PCA-NFR-015",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2310,7 +2334,8 @@
     {
       "requirementId": "PCA-NFR-020",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-3",
+        "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2327,7 +2352,7 @@
     {
       "requirementId": "PCA-NFR-021",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2340,7 +2365,8 @@
     {
       "requirementId": "PCA-NFR-022",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5",
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2357,7 +2383,8 @@
     {
       "requirementId": "PCA-NFR-023",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-3"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2372,7 +2399,7 @@
     {
       "requirementId": "PCA-NFR-024",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2391,7 +2418,7 @@
     {
       "requirementId": "PCA-NFR-025",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2404,7 +2431,7 @@
     {
       "requirementId": "PCA-NFR-030",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2422,7 +2449,7 @@
     {
       "requirementId": "PCA-NFR-031",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2439,7 +2466,7 @@
     {
       "requirementId": "PCA-NFR-032",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2454,7 +2481,8 @@
     {
       "requirementId": "PCA-NFR-033",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-15"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2469,7 +2497,8 @@
     {
       "requirementId": "PCA-NFR-034",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2",
+        "PCA-15"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -2480,7 +2509,7 @@
     {
       "requirementId": "PCA-NFR-040",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2494,7 +2523,7 @@
     {
       "requirementId": "PCA-NFR-041",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2510,7 +2539,7 @@
     {
       "requirementId": "PCA-NFR-042",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2523,7 +2552,7 @@
     {
       "requirementId": "PCA-NFR-043",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2538,7 +2567,7 @@
     {
       "requirementId": "PCA-NFR-044",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -2549,7 +2578,7 @@
     {
       "requirementId": "PCA-NFR-045",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-16"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2565,7 +2594,7 @@
     {
       "requirementId": "PCA-NFR-050",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2578,7 +2607,8 @@
     {
       "requirementId": "PCA-NFR-051",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0",
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2594,7 +2624,7 @@
     {
       "requirementId": "PCA-NFR-052",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2608,7 +2638,8 @@
     {
       "requirementId": "PCA-NFR-053",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5",
+        "PCA-14"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2626,7 +2657,7 @@
     {
       "requirementId": "PCA-NFR-054",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-0"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2639,7 +2670,8 @@
     {
       "requirementId": "PCA-NFR-060",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [],
@@ -2650,7 +2682,8 @@
     {
       "requirementId": "PCA-NFR-061",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-10"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -2661,7 +2694,8 @@
     {
       "requirementId": "PCA-NFR-062",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-10"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2676,7 +2710,8 @@
     {
       "requirementId": "PCA-NFR-063",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2693,7 +2728,8 @@
     {
       "requirementId": "PCA-NFR-064",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17",
+        "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2711,7 +2747,7 @@
     {
       "requirementId": "PCA-PRIV-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-8"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2726,7 +2762,8 @@
     {
       "requirementId": "PCA-PRIV-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-5",
+        "PCA-17"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2742,7 +2779,7 @@
     {
       "requirementId": "PCA-SEC-001",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-1"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2760,7 +2797,7 @@
     {
       "requirementId": "PCA-SEC-002",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -2771,7 +2808,7 @@
     {
       "requirementId": "PCA-SEC-010",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2791,7 +2828,7 @@
     {
       "requirementId": "PCA-SEC-011",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2811,7 +2848,7 @@
     {
       "requirementId": "PCA-SEC-012",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2829,7 +2866,7 @@
     {
       "requirementId": "PCA-SEC-013",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2850,7 +2887,7 @@
     {
       "requirementId": "PCA-SEC-014",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2867,7 +2904,8 @@
     {
       "requirementId": "PCA-SEC-015",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13",
+        "PCA-15"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2885,7 +2923,7 @@
     {
       "requirementId": "PCA-SEC-017",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2903,7 +2941,8 @@
     {
       "requirementId": "PCA-SEC-018",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13",
+        "PCA-15"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2921,7 +2960,7 @@
     {
       "requirementId": "PCA-SEC-019",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2938,7 +2977,8 @@
     {
       "requirementId": "PCA-SEC-020",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13",
+        "PCA-15"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2958,7 +2998,7 @@
     {
       "requirementId": "PCA-SEC-021",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -2975,7 +3015,7 @@
     {
       "requirementId": "PCA-SEC-022",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-11"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -2994,7 +3034,7 @@
     {
       "requirementId": "PCA-SEC-023",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
@@ -3011,7 +3051,8 @@
     {
       "requirementId": "PCA-SEC-024",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-13",
+        "PCA-15"
       ],
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
@@ -3022,7 +3063,7 @@
     {
       "requirementId": "PCA-SEC-025",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-2"
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
@@ -3035,7 +3076,7 @@
     {
       "requirementId": "PCA-SEC-026",
       "phase": [
-        "UNMAPPED_PHASE_CROSSWALK_PENDING"
+        "PCA-12"
       ],
       "status": "NOT_STARTED",
       "sourceEvidence": [],
@@ -6125,4 +6166,3 @@
     }
   ]
 }
-

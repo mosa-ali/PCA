@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
 import org.pca.app.feature.prayer.model.PrayerName
+import org.pca.app.feature.prayer.location.PrayerLocationStalenessDetector
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshotStore
@@ -84,6 +85,7 @@ import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.location.LocationSampleRecorder
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
 import org.pca.app.runtime.prayer.PrayerReminderIntents
+import org.pca.app.runtime.prayer.PrayerLocationStalenessNotificationDelivery
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
 import org.pca.app.runtime.schedule.ScheduleRuntime
@@ -144,6 +146,8 @@ class PcaAppGraph private constructor(
     val childRequestQueue = ChildRequestOfflineQueue(childRequestStateStore)
 
     val connectivityObserver: NetworkConnectivityObserver = AndroidNetworkConnectivityObserver(context)
+    private val prayerLocationStalenessDetector = PrayerLocationStalenessDetector(runtimeStateStore)
+    private val prayerLocationStalenessNotificationDelivery = PrayerLocationStalenessNotificationDelivery(context)
 
     /** Agent 10's real schedule authority, durably backed (mission section 12's offline-restart
      * requirement) -- the single instance both [scheduleRuntimePort]'s status reporting and
@@ -481,6 +485,15 @@ class PcaAppGraph private constructor(
                 runCatching {
                     val sample = locationCapabilitySource.lastKnownLocation()
                     if (sample != null) {
+                        if (prayerLocationStalenessDetector.shouldNotify(
+                                deviceId = deviceId,
+                                latitude = sample.latitude,
+                                longitude = sample.longitude,
+                                isOnline = connectivityObserver.isCurrentlyOnline(),
+                            ) && prayerLocationStalenessNotificationDelivery.deliver()
+                        ) {
+                            prayerLocationStalenessDetector.markDelivered(deviceId)
+                        }
                         geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
                     }
                 }

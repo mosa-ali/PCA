@@ -7,16 +7,16 @@ Generated from the completion matrix and repository evidence on 2026-08-17.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 371 |
-| SOURCE_COMPLETE | 225 |
-| PARTIAL | 104 |
-| NOT_STARTED | 23 |
+| SOURCE_COMPLETE | 237 |
+| PARTIAL | 94 |
+| NOT_STARTED | 21 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started source backlog candidates | 127 |
+| Partial plus not-started | 115 |
 | External-gate rows | 55 |
 | Terminology audit rows | 209 |
 
-These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
+Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
 
 ## Handoff review
 
@@ -48,3 +48,18 @@ These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAP
 
 
 
+
+
+R3 Writer Wave 1 closure: six source-solvable rows moved to SOURCE_COMPLETE from executable evidence (AND-002, FR-037, FR-045, FR-031A, NFR-012, FR-123). The source backlog was reduced in that wave; ENR-019 remains partial pending the authorized Protected Mode provisioning decision.
+
+
+R3 Writer Wave 2 closure: FR-040, FR-092, and FR-096 moved to SOURCE_COMPLETE from executable source/test evidence. Monitored child/device terminology was corrected in selected user-facing English/Arabic and Android surfaces; internal family authority, Family Trust Set, familyId, and E2EE terms remain unchanged.
+
+
+
+## Writer Wave 3 closure
+- PCA-FR-007: localized informed-consent summary is a distinct InvitationReady gate, with static structural proof.
+- PCA-FR-044: Android status and YouTube surfaces map unsupported capabilities to localized unavailable labels, with static proof.
+- PCA-FR-074A: offline travel above 50 km now produces one permission-guarded prayer-time verification notice per offline episode, with detector tests and production graph wiring.
+- Counts after this wave: SOURCE_COMPLETE=237; PARTIAL=94; NOT_STARTED=21; source backlog=115.
+- Focused Android gate: BUILD SUCCESSFUL; all three new test classes compiled and executed.
