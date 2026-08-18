@@ -554,16 +554,21 @@
         "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx",
         "backend/src/invitation/InvitationService.ts",
         "android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentCoordinator.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt",
         "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
         "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
       ],
       "testEvidence": [
         "backend/test/invitation/enrollmentProfile.test.mjs",
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt",
-        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt"
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt"
       ],
       "externalGate": [],
-      "notes": "Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open."
+      "notes": "Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android child-side profile confirmation, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open."
     },
     {
       "requirementId": "PCA-FR-010",

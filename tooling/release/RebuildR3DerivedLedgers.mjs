@@ -20,6 +20,9 @@ const SOURCE_UPDATES = {
       'parent-web/src/pages/family/DeviceEnrollmentPanel.tsx',
       'backend/src/invitation/InvitationService.ts',
       'android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt',
+      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt',
+      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentCoordinator.kt',
+      'android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt',
       'android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt',
       'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift',
     ],
@@ -27,12 +30,14 @@ const SOURCE_UPDATES = {
       'backend/test/invitation/enrollmentProfile.test.mjs',
       'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt',
       'android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt',
+      'android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt',
+      'android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt',
     ],
     sourceSolvableClass: 'SOURCE_TRIAGE_REQUIRED',
-    currentGap: 'Age/profile defaults now drive Android screen-time and Safe Browser SafeSearch minimums, but the iOS runtime consumer and the complete content-filter catalogue remain open.',
+    currentGap: 'Child-side enrollment now presents and requires confirmation of the parent-authorized age/mode profile without allowing a weaker override. The iOS runtime consumer, remaining age-tier content-filter catalogue, and broader iOS source path remain open.',
     validationGap: 'Backend, Android persistence, default mapping, and Safe Browser composition are covered by automated evidence; iOS/macOS/Xcode and physical-device validation remain external.',
     nextAction: 'Complete iOS bootstrap/runtime consumption and the remaining age-tier content-filter catalogue before source closure.',
-    notes: 'Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open.',
+    notes: 'Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android child-side profile confirmation, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open.',
   },
   'PCA-ADD-ENR-001': {
     status: 'SOURCE_COMPLETE',
@@ -222,6 +227,10 @@ progress = updateFirstMetric(progress, 'NOT_STARTED', counts.NOT_STARTED);
 progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
 progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
+const currentHeadValidationEvidence = process.env.PCA_R3_BACKEND_UNIT_SECURITY_EVIDENCE
+  ?? progress.match(/- Backend build and full unit\/security suite:[^\n]*/)?.[0]
+  ?? '- Backend build and full unit/security suite: NOT_EXECUTED.';
+progress = progress.replace(/- Backend build and full unit\/security suite:[^\n]*/, currentHeadValidationEvidence);
 const previousDbStatus = progress.match(/CURRENT_HEAD_0019_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
 const dbStatus = process.env.PCA_R3_DB_VALIDATION ?? previousDbStatus;
 const dbPass = dbStatus === 'PASS';

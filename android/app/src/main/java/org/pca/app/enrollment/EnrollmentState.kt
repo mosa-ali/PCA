@@ -4,7 +4,8 @@ package org.pca.app.enrollment
  * Client-side child-device enrollment state machine (PCA-ANDROID-ENROLLMENT-1). Deliberately
  * narrower than [PairingState]: this sealed interface is what [EnrollmentCoordinator] itself
  * drives, and it never has an ACTIVE/PAIRED variant -- a device that has just bootstrapped only
- * ever lands in [PairingPending], matching the server's own documented first status
+ * ever lands in [ProfileConfirmation] first, then [PairingPending] after the child confirms the
+ * server-authorized profile, matching the server's own documented first status
  * (backend/src/http/dto.ts's BootstrapResultDto.status), never a locally-assumed higher state. A
  * later, separate feature slice reading the real, authenticated pairing status
  * ([org.pca.app.enrollment.PairingApiClient], parent-web/child-side follow-up) is the only thing
@@ -16,6 +17,18 @@ sealed interface EnrollmentState {
 
     /** A syntactically valid invitation link has been parsed and its opaque token is held in memory; nothing has been sent to the server yet. */
     data class InvitationReady(val serverBaseUrl: String) : EnrollmentState
+
+    /**
+     * The server has returned the parent-authorized profile, but this device has not yet
+     * committed it locally. The child must see and confirm the age/mode context before the
+     * enrollment result becomes local identity state. This is a confirmation model, not a
+     * child override: the values are authoritative server output from the invitation.
+     */
+    data class ProfileConfirmation(
+        val deviceId: String,
+        val ageUxTier: AgeUxTier,
+        val initialPolicyProfile: InitialPolicyProfile,
+    ) : EnrollmentState
 
     /** Generating this device's DSK/DEK key pairs, before any network call is attempted. */
     data object PreparingKeys : EnrollmentState

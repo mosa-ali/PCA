@@ -70,6 +70,7 @@ class EnrollmentCoordinator(
     val keyFingerprints: StateFlow<DeviceKeyFingerprints?> = _keyFingerprints.asStateFlow()
 
     private var rawInvitationToken: String? = null
+    private var pendingProfileConfirmation: DeviceBootstrapResult? = null
 
     private fun restoreInitialState(): EnrollmentState {
         val persisted = familyStateStore.currentState()
@@ -98,6 +99,7 @@ class EnrollmentCoordinator(
      * server-side 404, so this client never becomes a token/link validity oracle either.
      */
     fun submitInvitationLink(uri: String) {
+        if (pendingProfileConfirmation != null) return
         val parsed = linkParser.parse(uri)
         if (parsed == null) {
             rawInvitationToken = null
@@ -105,6 +107,7 @@ class EnrollmentCoordinator(
             return
         }
         rawInvitationToken = parsed.rawInvitationToken
+        pendingProfileConfirmation = null
         // A fresh attempt (including the add-another-device path) must never show a stale
         // fingerprint from a PRIOR device's key pair while this one is still being prepared.
         _keyFingerprints.value = null
@@ -227,10 +230,13 @@ class EnrollmentCoordinator(
             return
         }
 
-        persistSuccess(result)
-        pendingAttemptStore.clear()
         rawInvitationToken = null
-        _state.value = EnrollmentState.PairingPending(result.deviceId)
+        pendingProfileConfirmation = result
+        _state.value = EnrollmentState.ProfileConfirmation(
+            deviceId = result.deviceId,
+            ageUxTier = result.ageUxTier,
+            initialPolicyProfile = result.initialPolicyProfile,
+        )
     }
 
     /**
@@ -282,8 +288,28 @@ class EnrollmentCoordinator(
             return
         }
 
+        pendingProfileConfirmation = result
+        _state.value = EnrollmentState.ProfileConfirmation(
+            deviceId = result.deviceId,
+            ageUxTier = result.ageUxTier,
+            initialPolicyProfile = result.initialPolicyProfile,
+        )
+    }
+
+    /**
+     * Commits the server-authorized enrollment result only after the child has seen and confirmed
+     * the age/mode context. The child cannot provide a weaker replacement profile because this
+     * method accepts no profile input; it confirms the exact values returned by the invitation.
+     */
+    fun confirmProfile() {
+        val result = pendingProfileConfirmation
+        if (result == null || _state.value !is EnrollmentState.ProfileConfirmation) {
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        }
         persistSuccess(result)
         pendingAttemptStore.clear()
+        pendingProfileConfirmation = null
         _state.value = EnrollmentState.PairingPending(result.deviceId)
     }
 

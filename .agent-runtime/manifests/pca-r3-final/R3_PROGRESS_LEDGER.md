@@ -36,7 +36,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android full test: PASS after file-backed Robolectric tests use TRUNCATE journal mode; production database policy is unchanged.
 - Parent Web typecheck, lint, test, and build: PASS.
 - Parent Web test count: 49 files and 394 tests.
-- Backend build and full unit/security suite: PASS, 1,495 tests. Fresh disposable MySQL validation gate: PASS after reset-test-db recreated `pca_test` from empty; 389 tests, 385 passed, 0 failed, and 4 privilege checks intentionally skipped for the separate mandatory gate. Dedicated MySQL privilege gate: PASS, 4 tests, 4 passed, 0 failed, 0 skipped. Runtime grants: 62 table-level grants; `platform_admin_audit_events` SELECT/INSERT only; `schema_migrations` SELECT only; other 60 tables SELECT/INSERT/UPDATE/DELETE.
+- Backend build and full unit/security suite: PASS, 1,495/1,495 tests. Fresh disposable MySQL validation gate: PASS, 390/390 tests passed, 0 failed, 0 skipped. Dedicated MySQL privilege gate: PASS, 4/4 tests passed, 0 failed, 0 skipped.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work

@@ -35,6 +35,7 @@ class EnrollmentActivity : ComponentActivity() {
                     keyFingerprints = keyFingerprints,
                     onLinkSubmitted = { link -> coordinator.submitInvitationLink(link) },
                     onContinue = { lifecycleScope.launch { coordinator.beginBootstrap() } },
+                    onProfileConfirmed = { coordinator.confirmProfile() },
                     // PCA-ENROLLMENT-RUNTIME-2: one explicit, human-directed action covers both
                     // ambiguous-outcome recovery paths -- same-process retry (BootstrapResultUnknown,
                     // token still in memory) and post-restart recovery (RecoveryPending, token

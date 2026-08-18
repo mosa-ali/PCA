@@ -40,6 +40,7 @@ fun EnrollmentScreen(
     state: EnrollmentState,
     onLinkSubmitted: (String) -> Unit,
     onContinue: () -> Unit,
+    onProfileConfirmed: () -> Unit = {},
     onCheckStatus: () -> Unit = {},
     /** PCA-FR-140/141: this device's own DSK/DEK fingerprints (org.pca.app.enrollment.EnrollmentCoordinator.keyFingerprints), shown once available so the parent can visually compare them against the parent app's own display of the same device's fingerprints. */
     keyFingerprints: DeviceKeyFingerprints? = null,
@@ -70,6 +71,10 @@ fun EnrollmentScreen(
                 // flow enrolls. onContinue (-> EnrollmentCoordinator.beginBootstrap) is reachable
                 // ONLY through explicit acceptance here, never automatically.
                 InformedConsentStep(onAccept = onContinue)
+            }
+
+            is EnrollmentState.ProfileConfirmation -> {
+                ChildProfileConfirmationStep(state, onConfirm = onProfileConfirmed)
             }
 
             is EnrollmentState.PreparingKeys -> {
@@ -206,6 +211,41 @@ private fun InformedConsentStep(onAccept: () -> Unit) {
         }
         Button(onClick = onAccept, modifier = Modifier.padding(top = 16.dp)) {
             Text(stringResource(R.string.enrollment_consent_accept_button))
+        }
+    }
+}
+
+/**
+ * PCA-FR-008: child-side enrollment confirmation. The parent-selected profile is displayed from
+ * the server bootstrap result and is intentionally not editable here, so a child cannot weaken a
+ * stricter parent-authorized policy. The explicit action is still real: local enrollment state is
+ * not committed until this confirmation callback succeeds.
+ */
+@Composable
+private fun ChildProfileConfirmationStep(
+    state: EnrollmentState.ProfileConfirmation,
+    onConfirm: () -> Unit,
+) {
+    val ageLabel = when (state.ageUxTier) {
+        org.pca.app.enrollment.AgeUxTier.YOUNG_CHILD -> stringResource(R.string.enrollment_profile_age_young_child)
+        org.pca.app.enrollment.AgeUxTier.TEEN -> stringResource(R.string.enrollment_profile_age_teen)
+    }
+    val policyLabel = when (state.initialPolicyProfile) {
+        org.pca.app.enrollment.InitialPolicyProfile.BALANCED -> stringResource(R.string.enrollment_profile_policy_balanced)
+        org.pca.app.enrollment.InitialPolicyProfile.STRICT -> stringResource(R.string.enrollment_profile_policy_strict)
+    }
+
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            stringResource(R.string.enrollment_profile_confirmation_title),
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = headingModifier,
+        )
+        Text(stringResource(R.string.enrollment_profile_confirmation_body))
+        Text(stringResource(R.string.enrollment_profile_confirmation_age, ageLabel))
+        Text(stringResource(R.string.enrollment_profile_confirmation_policy, policyLabel))
+        Button(onClick = onConfirm) {
+            Text(stringResource(R.string.enrollment_profile_confirmation_button))
         }
     }
 }

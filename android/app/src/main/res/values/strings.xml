@@ -216,6 +216,15 @@
     <string name="enrollment_bootstrapping">Setting up this device…</string>
     <string name="enrollment_pairing_pending_title">Almost done</string>
     <string name="enrollment_pairing_pending_body">Waiting for a parent to confirm this device.</string>
+    <string name="enrollment_profile_confirmation_title">Confirm your protection profile</string>
+    <string name="enrollment_profile_confirmation_body">Your parent chose the profile below for this device. Review it and confirm to finish local setup. You cannot choose a weaker profile here.</string>
+    <string name="enrollment_profile_confirmation_age">Age and mode: %1$s</string>
+    <string name="enrollment_profile_confirmation_policy">Starting safety level: %1$s</string>
+    <string name="enrollment_profile_age_young_child">Young child</string>
+    <string name="enrollment_profile_age_teen">Teen</string>
+    <string name="enrollment_profile_policy_balanced">Balanced</string>
+    <string name="enrollment_profile_policy_strict">Strict</string>
+    <string name="enrollment_profile_confirmation_button">Confirm this profile</string>
     <!-- Deliberately generic: the server never distinguishes not-found/expired/revoked/already-redeemed to this client, and this text must not either. -->
     <string name="enrollment_invitation_unavailable">Invitation is no longer available. Ask the parent to create a new one.</string>
     <string name="enrollment_retryable_failure">Something went wrong. Please try again.</string>

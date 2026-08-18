@@ -222,6 +222,15 @@
     <string name="enrollment_bootstrapping">جارٍ إعداد هذا الجهاز…</string>
     <string name="enrollment_pairing_pending_title">اقتربنا من الانتهاء</string>
     <string name="enrollment_pairing_pending_body">بانتظار تأكيد أحد الوالدين لهذا الجهاز.</string>
+    <string name="enrollment_profile_confirmation_title">تأكيد ملف الحماية</string>
+    <string name="enrollment_profile_confirmation_body">اختار أحد الوالدين الملف التالي لهذا الجهاز. راجعه وأكّد لإكمال الإعداد المحلي. لا يمكنك اختيار ملف أضعف هنا.</string>
+    <string name="enrollment_profile_confirmation_age">العمر والوضع: %1$s</string>
+    <string name="enrollment_profile_confirmation_policy">مستوى الأمان الابتدائي: %1$s</string>
+    <string name="enrollment_profile_age_young_child">طفل صغير</string>
+    <string name="enrollment_profile_age_teen">مراهق</string>
+    <string name="enrollment_profile_policy_balanced">متوازن</string>
+    <string name="enrollment_profile_policy_strict">صارم</string>
+    <string name="enrollment_profile_confirmation_button">تأكيد هذا الملف</string>
     <string name="enrollment_invitation_unavailable">لم تعد الدعوة متاحة. اطلب من أحد الوالدين إنشاء دعوة جديدة.</string>
     <string name="enrollment_retryable_failure">حدث خطأ ما. يرجى المحاولة مرة أخرى.</string>
     <string name="enrollment_result_unknown">لم نتمكن من التأكد مما إذا كان الإعداد قد اكتمل. اضغط أدناه للتحقق، أو اسأل والديك قبل تجربة هذا الرابط مرة أخرى.</string>

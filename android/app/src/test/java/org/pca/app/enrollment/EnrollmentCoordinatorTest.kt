@@ -1,5 +1,7 @@
 package org.pca.app.enrollment
 
+import org.junit.Assert.assertNotNull
+
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -198,7 +200,7 @@ class EnrollmentCoordinatorTest {
     }
 
     @Test
-    fun `a full successful bootstrap persists exactly the server-issued deviceId, lands in PairingPending, and clears the pending attempt`() = runTest {
+    fun `a full successful bootstrap requires child profile confirmation before local persistence`() = runTest {
         val familyStateStore = PersistentFamilyStateStore(InMemoryPersistentStateStore())
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()
         val apiClient = FakeBootstrapApiClient { DeviceBootstrapResult(deviceId = "server-issued-device-id", status = "PAIRING_PENDING") }
@@ -207,6 +209,13 @@ class EnrollmentCoordinatorTest {
 
         c.beginBootstrap()
 
+        assertEquals(
+            EnrollmentState.ProfileConfirmation("server-issued-device-id", AgeUxTier.YOUNG_CHILD, InitialPolicyProfile.BALANCED),
+            c.state.value,
+        )
+        assertNull(familyStateStore.currentState())
+        assertNotNull(pendingAttemptStore.current())
+        c.confirmProfile()
         assertEquals(EnrollmentState.PairingPending("server-issued-device-id"), c.state.value)
         assertEquals("server-issued-device-id", familyStateStore.currentState()?.deviceId)
         assertEquals(1, apiClient.callCount)
@@ -253,6 +262,7 @@ class EnrollmentCoordinatorTest {
         )
         firstProcess.submitInvitationLink(LINK)
         firstProcess.beginBootstrap()
+        firstProcess.confirmProfile()
         assertEquals(EnrollmentState.PairingPending("device-abc"), firstProcess.state.value)
 
         // Simulate a process restart: a fresh coordinator instance over the SAME backing store,
@@ -401,6 +411,7 @@ class EnrollmentCoordinatorTest {
         assertEquals(1, keyGen.encryptionCallCount)
 
         c.retryBootstrap()
+        c.confirmProfile()
         assertEquals(EnrollmentState.PairingPending("device-retry"), c.state.value)
         // No new key pair was generated for the retry.
         assertEquals(1, keyGen.signingCallCount)
@@ -469,6 +480,7 @@ class EnrollmentCoordinatorTest {
         assertEquals(EnrollmentState.RecoveryPending("https://api.pca.app"), c.state.value)
 
         c.recoverAttempt()
+        c.confirmProfile()
 
         assertEquals(EnrollmentState.PairingPending("recovered-device-id"), c.state.value)
         assertEquals("recovered-device-id", familyStateStore.currentState()?.deviceId)
@@ -547,6 +559,7 @@ class EnrollmentCoordinatorTest {
         c.submitInvitationLink(LINK)
 
         c.beginBootstrap()
+        c.confirmProfile()
 
         val fingerprints = c.keyFingerprints.value
         assertTrue(fingerprints != null)
@@ -572,6 +585,7 @@ class EnrollmentCoordinatorTest {
         val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator())
         c.submitInvitationLink(LINK)
         c.beginBootstrap()
+        c.confirmProfile()
         assertTrue(c.keyFingerprints.value != null)
 
         // Add-another-device path: a fresh link submission must not keep showing the first
@@ -608,6 +622,7 @@ class EnrollmentCoordinatorTest {
         val c = coordinator(apiClient, TestConformanceDeviceKeyPairGenerator())
         c.submitInvitationLink(LINK)
         c.beginBootstrap()
+        c.confirmProfile()
         val firstAttemptId = apiClient.attemptIdsSeen.single()
 
         // A second, independent enrollment attempt (e.g. after successfully pairing this device
