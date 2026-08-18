@@ -1209,11 +1209,14 @@
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/runtime/sync/DeviceSessionManager.kt (heartbeat/session concept exists)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/sync/DeviceSessionManagerTest.kt (first-use challenge authentication, unexpired token reuse, and initial unauthenticated state)",
+        "android/app/src/test/java/org/pca/app/runtime/sync/ReconnectSyncOrchestratorTest.kt (reconnect/session recovery and offline queue behavior)"
+      ],
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "The Android lane has focused local coverage for device-session challenge authentication, session reuse, reconnect recovery, and offline queue behavior. This remains PARTIAL because production cryptographic acceptance and external security review are still required before claiming complete authenticated device-status assurance."
     },
     {
       "requirementId": "PCA-FR-063",
