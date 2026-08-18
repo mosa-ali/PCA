@@ -3399,11 +3399,22 @@
       "phase": [
         "PCA-13"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/security/Pbkdf2AdminPinVerifier.kt",
+        "android/app/src/main/java/org/pca/app/security/PinAttemptThrottle.kt",
+        "android/app/src/main/java/org/pca/app/security/ThrottledAdminPinVerifier.kt",
+        "android/app/src/main/java/org/pca/app/security/ui/AdminPinScreen.kt",
+        "android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/security/Pbkdf2AdminPinVerifierTest.kt",
+        "android/app/src/test/java/org/pca/app/security/PinAttemptThrottleTest.kt",
+        "android/app/src/test/java/org/pca/app/security/ThrottledAdminPinVerifierTest.kt",
+        "android/app/src/test/java/org/pca/app/security/PersistentPinThrottleStateStoreTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No PIN verifier module (salt + slow/memory-hard KDF, rate limiting, progressive delay) found anywhere in backend/src. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "This closes the local verifier requirement only; it does not close the separate parent-panel configuration requirement PCA-ADD-ENR-012 or claim independent cryptographic/security review."
     },
     {
       "requirementId": "PCA-ADD-ENR-015",

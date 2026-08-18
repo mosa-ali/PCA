@@ -336,6 +336,26 @@ const SOURCE_UPDATES = {
     nextAction: 'Add an Android Accessibility Service capability adapter only if the product enables that service, and independently implement/verify the iOS Family Controls authorization signal on macOS/Xcode.',
     notes: 'This increment closes the locally realizable camera-permission state distinction without fabricating an Accessibility Service or iOS authorization signal.',
   },
+  'PCA-ADD-ENR-014': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/security/Pbkdf2AdminPinVerifier.kt',
+      'android/app/src/main/java/org/pca/app/security/PinAttemptThrottle.kt',
+      'android/app/src/main/java/org/pca/app/security/ThrottledAdminPinVerifier.kt',
+      'android/app/src/main/java/org/pca/app/security/ui/AdminPinScreen.kt',
+      'android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/security/Pbkdf2AdminPinVerifierTest.kt',
+      'android/app/src/test/java/org/pca/app/security/PinAttemptThrottleTest.kt',
+      'android/app/src/test/java/org/pca/app/security/ThrottledAdminPinVerifierTest.kt',
+      'android/app/src/test/java/org/pca/app/security/PersistentPinThrottleStateStoreTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The Android local Administration PIN verifier uses a per-device random salt and deliberately slow PBKDF2 derivation, never stores the raw PIN, and composes persistent rate limiting with monotonic progressive failure delay before the reachable masked PIN UI accepts verification.',
+    nextAction: 'Retain the verifier/throttle composition and obtain independent security review before treating the PIN mechanism as production security approval.',
+    notes: 'This closes the local verifier requirement only; it does not close the separate parent-panel configuration requirement PCA-ADD-ENR-012 or claim independent cryptographic/security review.',
+  },
   'PCA-FR-127': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
