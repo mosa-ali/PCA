@@ -10,6 +10,21 @@ export type UsageCapabilityStatus = 'GRANTED' | 'REVOKED' | 'UNSUPPORTED';
 export type UsageSource = 'ANDROID_USAGE_STATS' | 'IOS_FAMILY_CONTROLS' | 'UNAVAILABLE';
 
 /**
+ * PCA-FR-053: the normal YouTube app exposes no compliant Restricted Mode
+ * signal through the Android integration paths used by this repository. Keep
+ * that limitation explicit instead of collapsing it into a false boolean.
+ * ENABLED/DISABLED are reserved for a future officially supported signal.
+ */
+export type YouTubeSafeContentStatus = 'ENABLED' | 'DISABLED' | 'UNSUPPORTED' | 'UNKNOWN';
+
+export type YouTubeSafeContentSource = 'YOUTUBE_RESTRICTED_MODE' | 'UNAVAILABLE';
+
+export interface YouTubeSafeContentCapability {
+  status: YouTubeSafeContentStatus;
+  source: YouTubeSafeContentSource;
+}
+
+/**
  * doc 15 Mode A: "VERIFIED_WITH_LIMITATION... must label this as `app usage
  * only`... cannot fabricate an exact watched-video list from normal-app
  * usage or network traffic." `label` is a fixed literal, never a caller-

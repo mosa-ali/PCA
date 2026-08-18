@@ -85,9 +85,18 @@ export interface WebProtectionStatus {
   state: CapabilityState;
 }
 
+/** PCA-FR-053: a boolean would falsely imply that the native YouTube app exposes a signal. */
+export type YouTubeSafeContentState = 'ENABLED' | 'DISABLED' | 'UNSUPPORTED' | 'UNKNOWN';
+export type YouTubeSafeContentSource = 'YOUTUBE_RESTRICTED_MODE' | 'UNAVAILABLE';
+
+export interface YouTubeSafeContentCapability {
+  status: YouTubeSafeContentState;
+  source: YouTubeSafeContentSource;
+}
+
 export interface YouTubeStatus {
   childId: string;
-  restrictedModeEnabled: boolean;
+  safeContentCapability: YouTubeSafeContentCapability;
   visibilityState: CapabilityState;
   approvedChannelCount: number;
 }

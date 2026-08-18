@@ -1,4 +1,13 @@
-import type { ModeBErrorCode, ModeBEventType, ModeBFeatureFlagState, ModeBPlaybackEvent, YouTubeMode } from './types.js';
+import type {
+  ModeBErrorCode,
+  ModeBEventType,
+  ModeBFeatureFlagState,
+  ModeBPlaybackEvent,
+  YouTubeMode,
+  YouTubeSafeContentCapability,
+  YouTubeSafeContentSource,
+  YouTubeSafeContentStatus,
+} from './types.js';
 
 export const MAX_VIDEO_ID_LENGTH = 64;
 export const MAX_CHANNEL_ID_LENGTH = 64;
@@ -7,6 +16,43 @@ export const MAX_TITLE_LENGTH = 512;
 /** doc 15: "MODE_B feature flag = OFF by default." The only zero-argument way to obtain a flag state in this module -- every FeatureFlagStore starts here. */
 export function defaultModeBFeatureFlagState(): ModeBFeatureFlagState {
   return { enabled: false, termsReviewedAt: null };
+}
+
+/**
+ * PCA-FR-053: no current native-YouTube integration path supplies a
+ * Restricted Mode signal, so the only honest default is explicit
+ * unsupported/unavailable. A future integration must identify the official
+ * signal source before ENABLED or DISABLED can be reported.
+ */
+export function defaultYouTubeSafeContentCapability(): YouTubeSafeContentCapability {
+  return { status: 'UNSUPPORTED', source: 'UNAVAILABLE' };
+}
+
+const SAFE_CONTENT_STATUSES: ReadonlySet<YouTubeSafeContentStatus> = new Set([
+  'ENABLED',
+  'DISABLED',
+  'UNSUPPORTED',
+  'UNKNOWN',
+]);
+
+const SAFE_CONTENT_SOURCES: ReadonlySet<YouTubeSafeContentSource> = new Set([
+  'YOUTUBE_RESTRICTED_MODE',
+  'UNAVAILABLE',
+]);
+
+/**
+ * Accept a safe-content result only when its status/source combination is
+ * truthful. In particular, an unavailable source can never carry an enabled
+ * or disabled claim, and a Restricted Mode claim cannot omit that source.
+ */
+export function isPlausibleYouTubeSafeContentCapability(candidate: unknown): candidate is YouTubeSafeContentCapability {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const value = candidate as Record<string, unknown>;
+  if (typeof value.status !== 'string' || !SAFE_CONTENT_STATUSES.has(value.status as YouTubeSafeContentStatus)) return false;
+  if (typeof value.source !== 'string' || !SAFE_CONTENT_SOURCES.has(value.source as YouTubeSafeContentSource)) return false;
+
+  if (value.source === 'UNAVAILABLE') return value.status === 'UNSUPPORTED' || value.status === 'UNKNOWN';
+  return value.status === 'ENABLED' || value.status === 'DISABLED';
 }
 
 /**

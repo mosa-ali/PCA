@@ -123,7 +123,13 @@ export const DEV_YOUTUBE: Record<string, YouTubeStatus> = Object.fromEntries(
     c.childId,
     {
       childId: c.childId,
-      restrictedModeEnabled: c.ageProfile !== 'TEEN',
+      // The native YouTube Android app has no compliant Restricted Mode signal
+      // path in this build. Never turn a synthetic age heuristic into an
+      // enabled/disabled safety claim.
+      safeContentCapability: {
+        status: 'UNSUPPORTED',
+        source: 'UNAVAILABLE',
+      },
       visibilityState: c.deviceState,
       approvedChannelCount: 8,
     } satisfies YouTubeStatus,
