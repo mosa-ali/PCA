@@ -319,6 +319,23 @@ const SOURCE_UPDATES = {
     nextAction: 'Retain the local authentication/removal boundary and independently verify Device Owner provisioning and uninstall behavior on an authorized real device.',
     notes: 'Local source does not claim that a normal app install can prevent uninstall; the remaining capability is represented by the explicit external gate.',
   },
+  'PCA-FR-080': {
+    status: 'PARTIAL',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt',
+      'android/app/src/main/java/org/pca/app/platform/CameraPermissionStateTracker.kt',
+      'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/platform/UsageAccessStateTrackerTest.kt',
+      'android/app/src/test/java/org/pca/app/platform/CameraPermissionStateTrackerTest.kt',
+      'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt',
+    ],
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'Android now has evidence-backed Usage Access and camera permission state, distinguishing initial denial, post-grant revocation, and capability unavailability while stopping camera estimation immediately. A distinct Accessibility Service capability signal is not implemented, and iOS Family Controls authorization remains outside this Windows Android validation lane.',
+    nextAction: 'Add an Android Accessibility Service capability adapter only if the product enables that service, and independently implement/verify the iOS Family Controls authorization signal on macOS/Xcode.',
+    notes: 'This increment closes the locally realizable camera-permission state distinction without fabricating an Accessibility Service or iOS authorization signal.',
+  },
   'PCA-FR-127': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [

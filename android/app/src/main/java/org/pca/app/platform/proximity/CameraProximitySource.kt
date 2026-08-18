@@ -1,6 +1,8 @@
 package org.pca.app.platform.proximity
 
 import org.pca.app.foundation.MonotonicTimeSource
+import org.pca.app.platform.CameraPermissionStateTracker
+import org.pca.app.platform.TrackedCameraPermissionState
 
 /**
  * Tier 2 of the sensor hierarchy (doc 13 Section 4): optional foreground camera-based proximity
@@ -32,6 +34,7 @@ class CameraProximitySource(
 ) : ProximitySource {
 
     @Volatile private var foregroundEligible: Boolean = false
+    private val cameraPermissionStateTracker = CameraPermissionStateTracker(hasCameraPermission)
 
     override val sourceClass = ProximitySourceClass.CAMERA_FACE_GEOMETRY
 
@@ -42,10 +45,13 @@ class CameraProximitySource(
         foregroundEligible = eligible
     }
 
-    override fun availability(): ProximitySourceAvailability = when {
-        !hasCameraPermission() -> ProximitySourceAvailability.PERMISSION_DENIED
-        !foregroundEligible -> ProximitySourceAvailability.UNAVAILABLE
-        else -> ProximitySourceAvailability.AVAILABLE
+    override fun availability(): ProximitySourceAvailability = when (cameraPermissionStateTracker.currentState()) {
+        TrackedCameraPermissionState.GRANTED ->
+            if (foregroundEligible) ProximitySourceAvailability.AVAILABLE else ProximitySourceAvailability.UNAVAILABLE
+        TrackedCameraPermissionState.DENIED,
+        TrackedCameraPermissionState.REVOKED,
+        -> ProximitySourceAvailability.PERMISSION_DENIED
+        TrackedCameraPermissionState.UNAVAILABLE -> ProximitySourceAvailability.UNAVAILABLE
     }
 
     override fun currentObservation(): ProximityObservation {

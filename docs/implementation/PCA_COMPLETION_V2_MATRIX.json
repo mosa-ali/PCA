@@ -1377,11 +1377,17 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt (usage-access loss detection)"
+        "android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt",
+        "android/app/src/main/java/org/pca/app/platform/CameraPermissionStateTracker.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/UsageAccessStateTrackerTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/CameraPermissionStateTrackerTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit; Accessibility-Service-disabled/camera-permission-revoked signals still not confirmed as distinct tracked signals (app uses no AccessibilityService at all)."
+      "notes": "This increment closes the locally realizable camera-permission state distinction without fabricating an Accessibility Service or iOS authorization signal."
     },
     {
       "requirementId": "PCA-FR-081",
