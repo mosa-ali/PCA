@@ -116,31 +116,31 @@ export interface PlatformDashboardSnapshot {
 }
 
 interface CountRow {
-  cnt: number;
+  count: number | string;
 }
 interface GroupedRow {
-  groupKey: string;
-  cnt: number;
+  group_key: string;
+  count: number | string;
 }
 interface StatusCurrencyRow {
-  status: string;
-  currency_code: string;
-  cnt: number;
+  status_value: string;
+  currency_code_value: string;
+  count: number | string;
 }
 interface CurrencyRow {
-  currency_code: string;
-  cnt: number;
+  currency_code_value: string;
+  count: number | string;
 }
 interface SumRow {
-  usedSum: number | string | null;
-  limitSum: number | string | null;
+  used_sum: number | string | null;
+  limit_sum: number | string | null;
 }
 interface GrowthRow {
   month_utc: string;
-  cnt: number | string;
+  count: number | string;
 }
 interface PlanUtilizationRow {
-  plan_ref: string;
+  plan_reference: string;
   used: number | string;
   reserved: number | string;
   limit_count: number | string;
@@ -153,13 +153,13 @@ interface RequestAgingRow {
   seven_days_or_more: number | string;
 }
 interface PaymentSummaryRow {
-  currency_code: string;
+  currency_code_value: string;
   total: number | string;
   succeeded: number | string;
   failed: number | string;
 }
 interface CountOnlyRow {
-  cnt: number | string;
+  count: number | string;
 }
 
 function toNumber(value: number | string | null): number {
@@ -170,32 +170,32 @@ function toNumber(value: number | string | null): number {
 export class DashboardReadModel {
   async build(now: Date = new Date()): Promise<PlatformDashboardSnapshot> {
     return runInTransaction(async (conn) => {
-      const { rows: accountsRows } = await execute<CountRow>(conn, `SELECT COUNT(*) AS cnt FROM families WHERE deleted_at IS NULL`);
+      const { rows: accountsRows } = await execute<CountRow>(conn, `SELECT COUNT(*) AS count FROM families WHERE deleted_at IS NULL`);
       const { rows: accountGrowthRows } = await execute<GrowthRow>(
         conn,
-        `SELECT DATE_FORMAT(created_at, '%Y-%m-01') AS month_utc, COUNT(*) AS cnt
+        `SELECT DATE_FORMAT(created_at, '%Y-%m-01') AS month_utc, COUNT(*) AS count
            FROM families
           WHERE deleted_at IS NULL AND created_at >= DATE_SUB(?, INTERVAL 11 MONTH)
           GROUP BY DATE_FORMAT(created_at, '%Y-%m-01')
           ORDER BY month_utc`,
         [now],
       );
-      const { rows: accountStatusRows } = await execute<{ status: 'ACTIVE' | 'SUSPENDED'; cnt: number }>(
+      const { rows: accountStatusRows } = await execute<{ account_status: 'ACTIVE' | 'SUSPENDED'; count: number | string }>(
         conn,
-        `SELECT status, COUNT(*) AS cnt FROM families WHERE deleted_at IS NULL GROUP BY status`,
+        `SELECT status AS account_status, COUNT(*) AS count FROM families WHERE deleted_at IS NULL GROUP BY status`,
       );
 
       const { rows: entitlementSumRows } = await execute<SumRow>(
         conn,
-        `SELECT SUM(parent_member_used_count) AS usedSum, SUM(parent_member_limit) AS limitSum FROM account_entitlements`,
+        `SELECT SUM(parent_member_used_count) AS used_sum, SUM(parent_member_limit) AS limit_sum FROM account_entitlements`,
       );
       const { rows: deviceSumRows } = await execute<SumRow>(
         conn,
-        `SELECT SUM(managed_device_active_count) AS usedSum, SUM(managed_device_limit) AS limitSum FROM account_entitlements`,
+        `SELECT SUM(managed_device_active_count) AS used_sum, SUM(managed_device_limit) AS limit_sum FROM account_entitlements`,
       );
       const { rows: devicePlanRows } = await execute<PlanUtilizationRow>(
         conn,
-        `SELECT plan_ref,
+        `SELECT plan_ref AS plan_reference,
                 COALESCE(SUM(managed_device_active_count), 0) AS used,
                 COALESCE(SUM(managed_device_reserved_count), 0) AS reserved,
                 COALESCE(SUM(managed_device_limit), 0) AS limit_count
@@ -205,16 +205,16 @@ export class DashboardReadModel {
       );
       const { rows: reservedRows } = await execute<CountRow>(
         conn,
-        `SELECT COALESCE(SUM(managed_device_reserved_count), 0) AS cnt FROM account_entitlements`,
+        `SELECT COALESCE(SUM(managed_device_reserved_count), 0) AS count FROM account_entitlements`,
       );
       const { rows: activeDeviceRows } = await execute<CountRow>(
         conn,
-        `SELECT COALESCE(SUM(managed_device_active_count), 0) AS cnt FROM account_entitlements`,
+        `SELECT COALESCE(SUM(managed_device_active_count), 0) AS count FROM account_entitlements`,
       );
 
       const { rows: pendingRequestRows } = await execute<CountRow>(
         conn,
-        `SELECT COUNT(*) AS cnt FROM entitlement_change_requests WHERE state IN ('PENDING', 'QUOTED', 'PAYMENT_PENDING')`,
+        `SELECT COUNT(*) AS count FROM entitlement_change_requests WHERE state IN ('PENDING', 'QUOTED', 'PAYMENT_PENDING')`,
       );
       const { rows: requestAgingRows } = await execute<RequestAgingRow>(
         conn,
@@ -229,27 +229,31 @@ export class DashboardReadModel {
       );
       const { rows: requestsByStateRows } = await execute<GroupedRow>(
         conn,
-        `SELECT state AS groupKey, COUNT(*) AS cnt FROM entitlement_change_requests GROUP BY state`,
+        `SELECT state AS group_key, COUNT(*) AS count FROM entitlement_change_requests GROUP BY state`,
       );
       const { rows: subsByStatusRows } = await execute<GroupedRow>(
         conn,
-        `SELECT status AS groupKey, COUNT(*) AS cnt FROM billing_subscriptions GROUP BY status`,
+        `SELECT status AS group_key, COUNT(*) AS count FROM billing_subscriptions GROUP BY status`,
       );
       const { rows: quotesByStatusRows } = await execute<GroupedRow>(
         conn,
-        `SELECT status AS groupKey, COUNT(*) AS cnt FROM billing_quotes GROUP BY status`,
+        `SELECT status AS group_key, COUNT(*) AS count FROM billing_quotes GROUP BY status`,
       );
       const { rows: invoiceRows } = await execute<StatusCurrencyRow>(
         conn,
-        `SELECT status, currency_code, COUNT(*) AS cnt FROM billing_invoices GROUP BY status, currency_code`,
+        `SELECT status AS status_value, currency_code AS currency_code_value, COUNT(*) AS count
+           FROM billing_invoices
+          GROUP BY status, currency_code`,
       );
       const { rows: paymentAttemptRows } = await execute<StatusCurrencyRow>(
         conn,
-        `SELECT status, currency_code, COUNT(*) AS cnt FROM billing_payment_attempts GROUP BY status, currency_code`,
+        `SELECT status AS status_value, currency_code AS currency_code_value, COUNT(*) AS count
+           FROM billing_payment_attempts
+          GROUP BY status, currency_code`,
       );
       const { rows: paymentSummaryRows } = await execute<PaymentSummaryRow>(
         conn,
-        `SELECT currency_code,
+        `SELECT currency_code AS currency_code_value,
                 COUNT(*) AS total,
                 SUM(status = 'CONFIRMED') AS succeeded,
                 SUM(status IN ('FAILED', 'CANCELLED')) AS failed
@@ -259,22 +263,24 @@ export class DashboardReadModel {
       );
       const { rows: refundRows } = await execute<CurrencyRow>(
         conn,
-        `SELECT currency_code, COUNT(*) AS cnt FROM billing_refunds GROUP BY currency_code`,
+        `SELECT currency_code AS currency_code_value, COUNT(*) AS count
+           FROM billing_refunds
+          GROUP BY currency_code`,
       );
       const { rows: openDisputeRows } = await execute<CountRow>(
         conn,
-        `SELECT COUNT(*) AS cnt FROM billing_disputes WHERE status IN ('OPEN', 'UNDER_REVIEW')`,
+        `SELECT COUNT(*) AS count FROM billing_disputes WHERE status IN ('OPEN', 'UNDER_REVIEW')`,
       );
       const { rows: stuckPaymentRows } = await execute<CountOnlyRow>(
         conn,
-        `SELECT COUNT(*) AS cnt
+        `SELECT COUNT(*) AS count
            FROM billing_payment_attempts
           WHERE status IN ('CREATED', 'PENDING') AND created_at < DATE_SUB(?, INTERVAL 24 HOUR)`,
         [now],
       );
       const { rows: expiredInvitationRows } = await execute<CountOnlyRow>(
         conn,
-        `SELECT COUNT(*) AS cnt
+        `SELECT COUNT(*) AS count
            FROM enrollment_invitations
            WHERE status IN ('CREATED', 'OPENED', 'INSTALL_REQUIRED', 'APP_INSTALLED', 'AUTHORIZATION_REQUIRED')
              AND expires_at <= ?`,
@@ -289,37 +295,37 @@ export class DashboardReadModel {
       const accountHealth = await settlementRepository.accountHealthSummary(conn);
 
       const groupedToRecord = (rows: GroupedRow[]): Record<string, number> =>
-        Object.fromEntries(rows.map((r) => [r.groupKey, toNumber(r.cnt as unknown as number)]));
+        Object.fromEntries(rows.map((r) => [r.group_key, toNumber(r.count)]));
 
       return {
         generatedAt: now.toISOString(),
-        accountsTotal: { capability: 'AVAILABLE', value: toNumber(accountsRows[0]?.cnt as unknown as number) },
+        accountsTotal: { capability: 'AVAILABLE', value: toNumber(accountsRows[0]?.count ?? null) },
         accountGrowthByMonth: {
           capability: 'AVAILABLE',
-          rows: accountGrowthRows.map((row) => ({ monthUtc: row.month_utc, created: toNumber(row.cnt) })),
+          rows: accountGrowthRows.map((row) => ({ monthUtc: row.month_utc, created: toNumber(row.count) })),
         },
         accountsActiveSuspended: {
           capability: 'AVAILABLE',
-          active: toNumber((accountStatusRows.find((r) => r.status === 'ACTIVE')?.cnt as unknown as number) ?? 0),
-          suspended: toNumber((accountStatusRows.find((r) => r.status === 'SUSPENDED')?.cnt as unknown as number) ?? 0),
+          active: toNumber(accountStatusRows.find((r) => r.account_status === 'ACTIVE')?.count ?? 0),
+          suspended: toNumber(accountStatusRows.find((r) => r.account_status === 'SUSPENDED')?.count ?? 0),
         },
         parentMemberEntitlementUtilization: {
           capability: 'AVAILABLE',
-          used: toNumber(entitlementSumRows[0]?.usedSum ?? null),
-          limit: toNumber(entitlementSumRows[0]?.limitSum ?? null),
+          used: toNumber(entitlementSumRows[0]?.used_sum ?? null),
+          limit: toNumber(entitlementSumRows[0]?.limit_sum ?? null),
         },
         managedDeviceEntitlementUtilization: {
           capability: 'AVAILABLE',
-          used: toNumber(deviceSumRows[0]?.usedSum ?? null),
-          limit: toNumber(deviceSumRows[0]?.limitSum ?? null),
+          used: toNumber(deviceSumRows[0]?.used_sum ?? null),
+          limit: toNumber(deviceSumRows[0]?.limit_sum ?? null),
         },
         managedDeviceEntitlementByPlan: {
           capability: 'AVAILABLE',
-          rows: devicePlanRows.map((row) => ({ planRef: row.plan_ref, used: toNumber(row.used), reserved: toNumber(row.reserved), limit: toNumber(row.limit_count) })),
+          rows: devicePlanRows.map((row) => ({ planRef: row.plan_reference, used: toNumber(row.used), reserved: toNumber(row.reserved), limit: toNumber(row.limit_count) })),
         },
-        managedDeviceActive: { capability: 'AVAILABLE', value: toNumber(activeDeviceRows[0]?.cnt as unknown as number) },
-        managedDeviceReserved: { capability: 'AVAILABLE', value: toNumber(reservedRows[0]?.cnt as unknown as number) },
-        pendingEntitlementRequests: { capability: 'AVAILABLE', value: toNumber(pendingRequestRows[0]?.cnt as unknown as number) },
+        managedDeviceActive: { capability: 'AVAILABLE', value: toNumber(activeDeviceRows[0]?.count ?? null) },
+        managedDeviceReserved: { capability: 'AVAILABLE', value: toNumber(reservedRows[0]?.count ?? null) },
+        pendingEntitlementRequests: { capability: 'AVAILABLE', value: toNumber(pendingRequestRows[0]?.count ?? null) },
         entitlementRequestAging: {
           capability: 'AVAILABLE',
           open: toNumber(requestAgingRows[0]?.open_count ?? null),
@@ -335,15 +341,15 @@ export class DashboardReadModel {
         quotesByStatus: { capability: 'AVAILABLE', byKey: groupedToRecord(quotesByStatusRows) },
         invoicesByStatusAndCurrency: {
           capability: 'AVAILABLE',
-          rows: invoiceRows.map((r) => ({ status: r.status, currencyCode: r.currency_code, count: toNumber(r.cnt as unknown as number) })),
+          rows: invoiceRows.map((r) => ({ status: r.status_value, currencyCode: r.currency_code_value, count: toNumber(r.count) })),
         },
         paymentAttemptsByStatusAndCurrency: {
           capability: 'AVAILABLE',
-          rows: paymentAttemptRows.map((r) => ({ status: r.status, currencyCode: r.currency_code, count: toNumber(r.cnt as unknown as number) })),
+          rows: paymentAttemptRows.map((r) => ({ status: r.status_value, currencyCode: r.currency_code_value, count: toNumber(r.count) })),
         },
         refundsByCurrency: {
           capability: 'AVAILABLE',
-          rows: refundRows.map((r) => ({ currencyCode: r.currency_code, count: toNumber(r.cnt as unknown as number) })),
+          rows: refundRows.map((r) => ({ currencyCode: r.currency_code_value, count: toNumber(r.count) })),
         },
         paymentSummaryByCurrency: {
           capability: 'AVAILABLE',
@@ -352,10 +358,10 @@ export class DashboardReadModel {
             const succeeded = toNumber(row.succeeded);
             const failed = toNumber(row.failed);
             const terminal = succeeded + failed;
-            return { currencyCode: row.currency_code, total, succeeded, failed, successRate: terminal === 0 ? null : succeeded / terminal };
+            return { currencyCode: row.currency_code_value, total, succeeded, failed, successRate: terminal === 0 ? null : succeeded / terminal };
           }),
         },
-        openDisputes: { capability: 'AVAILABLE', value: toNumber(openDisputeRows[0]?.cnt as unknown as number) },
+        openDisputes: { capability: 'AVAILABLE', value: toNumber(openDisputeRows[0]?.count ?? null) },
         settlementSummary: { capability: 'AVAILABLE', summary: settlementSummary },
         serviceHealth: {
           capability: 'AVAILABLE',
@@ -370,8 +376,8 @@ export class DashboardReadModel {
         },
         exceptionQueues: {
           capability: 'AVAILABLE',
-          stuckPaymentAttempts: toNumber(stuckPaymentRows[0]?.cnt ?? null),
-          expiredUnredeemedInvitations: toNumber(expiredInvitationRows[0]?.cnt ?? null),
+          stuckPaymentAttempts: toNumber(stuckPaymentRows[0]?.count ?? null),
+          expiredUnredeemedInvitations: toNumber(expiredInvitationRows[0]?.count ?? null),
           unresolvedReconciliations: settlementSummary.underInvestigationBatchCount,
         },
         operationalSignals: {

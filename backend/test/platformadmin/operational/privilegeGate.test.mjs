@@ -70,6 +70,20 @@ test('PLATFORM_ADMIN has no refund issuance or refund-read access', () => {
   assert.equal(authorizeBillingOperation(['PLATFORM_ADMIN'], 'VIEW_PRICE_BOOK'), 'ALLOW');
 });
 
+test('dashboard financial redaction follows the existing Billing and Settlement read authorities', () => {
+  const billingAndSettlementReaders = ['APP_OWNER', 'FINANCE_ADMIN', 'AUDITOR_READ_ONLY'];
+  const operationalOnlyReaders = ['PLATFORM_ADMIN', 'SUPPORT_ADMIN'];
+
+  for (const role of billingAndSettlementReaders) {
+    assert.equal(authorizeBillingOperation([role], 'VIEW_BILLING_RECORDS'), 'ALLOW', `${role} should receive aggregate billing summaries`);
+    assert.equal(authorizePlatformAdminOperation([role], 'VIEW_SETTLEMENT_RECORDS'), 'ALLOW', `${role} should receive settlement summaries`);
+  }
+  for (const role of operationalOnlyReaders) {
+    assert.equal(authorizeBillingOperation([role], 'VIEW_BILLING_RECORDS'), 'DENY', `${role} must not receive aggregate billing summaries`);
+    assert.equal(authorizePlatformAdminOperation([role], 'VIEW_SETTLEMENT_RECORDS'), 'DENY', `${role} must not receive settlement summaries`);
+  }
+});
+
 // Mission Section 21 scenario: FINANCE_ADMIN cannot mutate Platform
 // Administration operator-role assignments (adminUserRoutes.ts's
 // role-grant/revoke/create/disable/reactivate/session-revoke-all endpoints

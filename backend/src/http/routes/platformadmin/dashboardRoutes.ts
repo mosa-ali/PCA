@@ -1,15 +1,16 @@
 /**
  * PCA-PA-3B -- GET /platform-admin/dashboard (mission Section 7).
  * Metadata-only KPI aggregates, VIEW_PLATFORM_DASHBOARD (ALLOW for every
- * role per Section 3.7). Settlement/reconciliation fields remain separately
- * gated by VIEW_SETTLEMENT_RECORDS: SUPPORT_ADMIN and PLATFORM_ADMIN receive
- * the support-safe dashboard subset, while AUDITOR_READ_ONLY retains its
- * explicit read-only settlement visibility.
+ * role per Section 3.7). Billing-record summaries and settlement/reconciliation
+ * fields remain separately gated: APP_OWNER/FINANCE_ADMIN/AUDITOR_READ_ONLY
+ * receive the read-only financial subset, while PLATFORM_ADMIN/SUPPORT_ADMIN
+ * receive only the non-financial operational/support subset.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequirePlatformAdminSession } from '../../../platformadmin/auth/fastifyPlatformAdminAuthPlugin.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
+import { authorizeBillingOperation } from '../../../billing/rbac.js';
 import { DashboardReadModel } from '../../../platformadmin/readmodels/DashboardReadModel.js';
 import { moneyToJson } from '../../../billing/money.js';
 import type { createRateLimiter } from '../../rateLimit.js';
@@ -33,8 +34,25 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
         return reply.code(403).send({ error: 'forbidden' });
       }
       const snapshot = await readModel.build();
+      const canViewBilling = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
       const canViewSettlement = authorizePlatformAdminOperation(roles, 'VIEW_SETTLEMENT_RECORDS') === 'ALLOW';
-      const { settlementSummary: _settlementSummary, serviceHealth: _serviceHealth, ...dashboardSubset } = snapshot;
+      const {
+        settlementSummary: _settlementSummary,
+        serviceHealth: _serviceHealth,
+        invoicesByStatusAndCurrency: _invoicesByStatusAndCurrency,
+        paymentAttemptsByStatusAndCurrency: _paymentAttemptsByStatusAndCurrency,
+        refundsByCurrency: _refundsByCurrency,
+        paymentSummaryByCurrency: _paymentSummaryByCurrency,
+        openDisputes: _openDisputes,
+        ...dashboardWithoutRestrictedFields
+      } = snapshot;
+      const dashboardSubset = canViewBilling
+        ? dashboardWithoutRestrictedFields
+        : (() => {
+            const { stuckPaymentAttempts: _stuckPaymentAttempts, ...supportExceptionQueues } = snapshot.exceptionQueues;
+            const { exceptionQueues: _exceptionQueues, ...nonFinancialDashboard } = dashboardWithoutRestrictedFields;
+            return { ...nonFinancialDashboard, exceptionQueues: supportExceptionQueues };
+          })();
       // settlementSummary carries real Money/bigint domain values (see
       // SettlementDashboardSummary) -- JSON.stringify cannot serialize a
       // bigint, so this is the one field that needs an explicit wire
@@ -63,7 +81,11 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
               },
               serviceHealth: snapshot.serviceHealth,
             }
-          : dashboardSubset),
+          : (() => {
+              const { exceptionQueues, ...withoutSettlement } = dashboardSubset;
+              const { unresolvedReconciliations: _unresolvedReconciliations, ...nonSettlementExceptionQueues } = exceptionQueues;
+              return { ...withoutSettlement, exceptionQueues: nonSettlementExceptionQueues };
+            })()),
       });
     },
   );

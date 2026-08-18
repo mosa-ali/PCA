@@ -213,20 +213,40 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   assert.equal(snapshot.operationalSignals.crashRate, null);
 });
 
-test('HTTP: GET /platform-admin/dashboard redacts settlementSummary/serviceHealth from SUPPORT_ADMIN while retaining the broad dashboard subset', async () => {
-  const admin = await createAdmin({ role: 'SUPPORT_ADMIN' });
-  const app = Fastify({ logger: false });
-  registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: authService, rateLimiter: createRateLimiter() });
-  await app.ready();
-  try {
-    const response = await app.inject({ method: 'GET', url: '/platform-admin/dashboard', headers: { authorization: `Bearer ${admin.rawToken}` } });
-    assert.equal(response.statusCode, 200);
-    const body = response.json();
-    assert.equal(Object.prototype.hasOwnProperty.call(body, 'settlementSummary'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(body, 'serviceHealth'), false);
-    assert.ok(body.accountsTotal, 'support still receives the non-settlement dashboard subset');
-  } finally {
-    await app.close();
+test('HTTP: GET /platform-admin/dashboard applies billing and settlement redaction by role while retaining the permitted dashboard metadata', async () => {
+  const cases = [
+    { role: 'SUPPORT_ADMIN', canViewBilling: false, canViewSettlement: false },
+    { role: 'PLATFORM_ADMIN', canViewBilling: false, canViewSettlement: false },
+    { role: 'APP_OWNER', canViewBilling: true, canViewSettlement: true },
+    { role: 'FINANCE_ADMIN', canViewBilling: true, canViewSettlement: true },
+    { role: 'AUDITOR_READ_ONLY', canViewBilling: true, canViewSettlement: true },
+  ];
+
+  for (const expected of cases) {
+    const admin = await createAdmin({ role: expected.role });
+    const app = Fastify({ logger: false });
+    registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: authService, rateLimiter: createRateLimiter() });
+    await app.ready();
+    try {
+      const response = await app.inject({ method: 'GET', url: '/platform-admin/dashboard', headers: { authorization: `Bearer ${admin.rawToken}` } });
+      assert.equal(response.statusCode, 200, expected.role);
+      const body = response.json();
+      assert.ok(body.accountsTotal, `${expected.role} receives account metadata`);
+      assert.ok(body.accountGrowthByMonth, `${expected.role} receives the growth trend`);
+      assert.ok(body.entitlementRequestAging, `${expected.role} receives request aging`);
+      assert.ok(body.exceptionQueues, `${expected.role} receives the permitted exception queue container`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'invoicesByStatusAndCurrency'), expected.canViewBilling, `${expected.role} invoice redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentAttemptsByStatusAndCurrency'), expected.canViewBilling, `${expected.role} payment-attempt redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentSummaryByCurrency'), expected.canViewBilling, `${expected.role} payment-summary redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'refundsByCurrency'), expected.canViewBilling, `${expected.role} refund redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'openDisputes'), expected.canViewBilling, `${expected.role} dispute redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'settlementSummary'), expected.canViewSettlement, `${expected.role} settlement redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'serviceHealth'), expected.canViewSettlement, `${expected.role} service-health redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body.exceptionQueues, 'stuckPaymentAttempts'), expected.canViewBilling, `${expected.role} stuck-payment redaction`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body.exceptionQueues, 'unresolvedReconciliations'), expected.canViewSettlement, `${expected.role} reconciliation redaction`);
+    } finally {
+      await app.close();
+    }
   }
 });
 
