@@ -1,0 +1,210 @@
+{
+  "mission": "CURRENT_HEAD_MUTATION",
+  "entrySha": "45ff6166979ffafc4265661bffe65534221285e3",
+  "requirements": {
+    "PCA-NFR-014": {
+      "boundedClaim": "Default-off telemetry and no hidden ingestion surface; separate consent implementation remains out of scope because the entry tree has no shipped opt-in feature.",
+      "tests": [
+        "backend/test/mutation/privacyBoundaries.test.mjs",
+        "parent-web/tests/mutation/privacyBoundaries.test.ts",
+        "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt"
+      ]
+    },
+    "PCA-NFR-051": {
+      "boundedClaim": "The four mission IDs have explicit mutation-harness evidence paths; this does not rewrite or certify the central traceability ledger.",
+      "tests": [
+        "backend/test/mutation/privacyBoundaries.test.mjs",
+        "parent-web/tests/mutation/privacyBoundaries.test.ts",
+        "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt",
+        "tooling/mutation/run-mutation.mjs"
+      ]
+    },
+    "PCA-NFR-060": {
+      "boundedClaim": "Parent Web and Android disclosure/privacy boundaries are discoverable and do not introduce hidden monitoring markers in the bounded surfaces.",
+      "tests": [
+        "parent-web/tests/mutation/privacyBoundaries.test.ts",
+        "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt"
+      ]
+    },
+    "PCA-FR-137": {
+      "boundedClaim": "Relay diagnostics and production HTTP logging remain routing-only and never emit relay plaintext; this is not an infrastructure log-pipeline certification.",
+      "tests": [
+        "backend/test/mutation/privacyBoundaries.test.mjs"
+      ]
+    }
+  },
+  "mutants": [
+    {
+      "id": "B-FR137-001",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/diagnostics.ts",
+      "from": "if (byteLength <= 1024) return 'SMALL';",
+      "to": "if (byteLength < 1024) return 'SMALL';"
+    },
+    {
+      "id": "B-FR137-002",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/diagnostics.ts",
+      "from": "messageId: record.messageId,",
+      "to": "messageId: record.ciphertext.toString('utf8'),"
+    },
+    {
+      "id": "B-FR137-003",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/diagnostics.ts",
+      "from": "ciphertextSizeClass: classifyCiphertextSize(record.ciphertext.length),",
+      "to": "ciphertextSizeClass: record.ciphertext.toString('utf8') as RelayCiphertextSizeClass,"
+    },
+    {
+      "id": "B-FR137-004",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/http/buildServer.ts",
+      "from": "Fastify({ logger: false })",
+      "to": "Fastify({ logger: true })"
+    },
+    {
+      "id": "B-FR137-005",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/RelayService.ts",
+      "from": "} catch {\n      // Diagnostics are best-effort and must never alter delivery semantics.\n    }",
+      "to": "}"
+    },
+    {
+      "id": "B-NFR014-001",
+      "requirement": "PCA-NFR-014",
+      "surface": "backend",
+      "source": "src/http/buildServer.ts",
+      "from": "app.get('/health', async () => ({ service: 'pca-backend', status: 'ok' }));",
+      "to": "app.get('/health', async () => ({ service: 'pca-backend', status: 'ok' }));\n  app.post('/v1/telemetry/ingest', async () => ({ accepted: true }));"
+    },
+    {
+      "id": "B-FR137-EQUIV-001",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/diagnostics.ts",
+      "from": "if (byteLength <= 1024) return 'SMALL';",
+      "to": "if (byteLength < 1025) return 'SMALL';",
+      "expectedClassification": "EQUIVALENT",
+      "equivalenceReason": "Buffer.length is an integer, so < 1025 is identical to <= 1024 over the valid input domain."
+    },
+    {
+      "id": "B-FR137-INVALID-001",
+      "requirement": "PCA-FR-137",
+      "surface": "backend",
+      "source": "src/relay/diagnostics.ts",
+      "from": "messageId: record.messageId,",
+      "to": "messageId: doesNotExist,",
+      "expectedClassification": "INVALID",
+      "invalidReason": "TypeScript compilation must reject the undefined identifier."
+    },
+    {
+      "id": "W-NFR060-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "'location',",
+      "to": ""
+    },
+    {
+      "id": "W-NFR060-002",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "'screenshots',",
+      "to": ""
+    },
+    {
+      "id": "W-NFR060-003",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/App.tsx",
+      "from": "        <Route path=\"privacy/transparency\" element={<Transparency />} />\n",
+      "to": ""
+    },
+    {
+      "id": "W-NFR014-001",
+      "requirement": "PCA-NFR-014",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "  const { t } = useTranslation();",
+      "to": "  const { t } = useTranslation();\n  navigator.sendBeacon('/v1/telemetry/ingest', 'hidden');"
+    },
+    {
+      "id": "W-NFR060-004",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "  <p>{t('transparency.encryptionNote')}</p>",
+      "to": ""
+    },
+    {
+      "id": "W-NFR060-EQUIV-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "  const { t } = useTranslation();",
+      "to": "  const {t} = useTranslation();",
+      "expectedClassification": "EQUIVALENT",
+      "equivalenceReason": "Whitespace-only destructuring change preserves the compiled behavior."
+    },
+    {
+      "id": "W-NFR060-INVALID-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "parent-web",
+      "source": "src/pages/privacy/Transparency.tsx",
+      "from": "export default function Transparency()",
+      "to": "export default function Transparency(",
+      "expectedClassification": "INVALID",
+      "invalidReason": "The malformed function declaration is rejected by the source-shape validator."
+    },
+    {
+      "id": "A-NFR060-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
+      "from": ".setOngoing(true)",
+      "to": ".setOngoing(false)"
+    },
+    {
+      "id": "A-NFR060-002",
+      "requirement": "PCA-NFR-060",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
+      "from": ".addRoute(TUNNEL_DNS_ADDRESS, 32)",
+      "to": ".addRoute(\"0.0.0.0\", 0)"
+    },
+    {
+      "id": "A-NFR014-001",
+      "requirement": "PCA-NFR-014",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/feature/wellbeing/ports/WellbeingFeedbackSyncPort.kt",
+      "from": "interface WellbeingFeedbackSyncPort {",
+      "to": "interface WellbeingFeedbackSyncPort {\n    fun hiddenTelemetry() = println(\"hidden\")"
+    },
+    {
+      "id": "A-NFR060-EQUIV-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
+      "from": "private const val NOTIFICATION_ID = 6001",
+      "to": "private const val NOTIFICATION_ID = 6000 + 1",
+      "expectedClassification": "EQUIVALENT",
+      "equivalenceReason": "Both Kotlin constant expressions evaluate to the same notification id and do not change disclosure or privacy behavior."
+    },
+    {
+      "id": "A-NFR060-INVALID-001",
+      "requirement": "PCA-NFR-060",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
+      "from": "class WebProtectionVpnService : VpnService()",
+      "to": "class WebProtectionVpnService : VpnService(",
+      "expectedClassification": "INVALID",
+      "invalidReason": "The malformed Kotlin superclass declaration is rejected by the source-shape validator."
+    }
+  ]
+}
