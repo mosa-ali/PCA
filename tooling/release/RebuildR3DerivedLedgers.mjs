@@ -254,6 +254,26 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep the parity test in the Android unit suite and obtain native-language review for wording quality when translations change.',
     notes: 'Static resource parity is locally verified; this does not claim independent native-language editorial sign-off.',
   },
+  'PCA-FR-000A': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt',
+      'android/app/src/main/java/org/pca/app/runtime/schedule/ProductionScheduleRuntimePort.kt',
+      'android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt',
+      'parent-web/src/domain/types.ts',
+      'parent-web/src/pages/Dashboard.tsx',
+      'parent-web/src/pages/security/ProtectionStatus.tsx',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleRuntimeRebootOfflineTest.kt',
+      'android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt',
+      'parent-web/tests/component/DashboardCapabilityState.test.tsx',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Android resolves enforcement capability from the live device-policy authority in the production graph and fails closed when protected enforcement is unavailable; parent-web carries explicit capability states and renders unavailable/stale states as labeled statuses rather than presenting them as active.',
+    nextAction: 'Keep capability providers live and preserve explicit status rendering whenever a new enforcement surface is added.',
+    notes: 'The parent-web equivalent is a capability-state presentation boundary, not a fabricated claim that the browser can provision or enforce Android Device Owner authority.',
+  },
   'PCA-FR-127': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [

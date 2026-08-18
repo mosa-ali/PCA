@@ -401,13 +401,22 @@
         "PCA-2",
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android runtime/schedule/ScheduleRuntime.kt (EnforcementCapabilityState) + parent-web equivalents"
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ProductionScheduleRuntimePort.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
+        "parent-web/src/domain/types.ts",
+        "parent-web/src/pages/Dashboard.tsx",
+        "parent-web/src/pages/security/ProtectionStatus.tsx"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleRuntimeRebootOfflineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumerTest.kt",
+        "parent-web/tests/component/DashboardCapabilityState.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "The parent-web equivalent is a capability-state presentation boundary, not a fabricated claim that the browser can provision or enforce Android Device Owner authority."
     },
     {
       "requirementId": "PCA-FR-001",
