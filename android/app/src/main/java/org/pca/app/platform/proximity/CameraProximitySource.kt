@@ -7,9 +7,10 @@ import org.pca.app.platform.TrackedCameraPermissionState
 /**
  * Tier 2 of the sensor hierarchy (doc 13 Section 4): optional foreground camera-based proximity
  * estimation, used only when no [HardwareProximitySource] is available. This class owns the
- * SAFETY LIFECYCLE ONLY -- exactly when estimation is permitted to run at all -- and delegates
- * the actual computer-vision judgment to an injected [FaceProximityEstimator] (see its own doc:
- * no concrete algorithm is selected/implemented anywhere in this codebase yet).
+ * SAFETY LIFECYCLE -- exactly when estimation is permitted to run at all -- and delegates the
+ * actual computer-vision judgment to an injected [FaceProximityEstimator]. When the estimator is
+ * [ForegroundAwareFaceProximityEstimator], foreground and permission transitions are propagated
+ * so its camera-session adapter can stop immediately.
  *
  * Hard rules enforced HERE as code, not just documented (doc 13 Section 5 / task Section 3):
  *  - [setForegroundEligible]`(false)` immediately stops estimation from being invoked at all --
@@ -35,6 +36,7 @@ class CameraProximitySource(
 
     @Volatile private var foregroundEligible: Boolean = false
     private val cameraPermissionStateTracker = CameraPermissionStateTracker(hasCameraPermission)
+    private val foregroundAwareEstimator = estimator as? ForegroundAwareFaceProximityEstimator
 
     override val sourceClass = ProximitySourceClass.CAMERA_FACE_GEOMETRY
 
@@ -43,15 +45,24 @@ class CameraProximitySource(
      * eye-distance context is the one actively requesting estimation. */
     fun setForegroundEligible(eligible: Boolean) {
         foregroundEligible = eligible
+        syncEstimatorLifecycle(eligible && cameraPermissionStateTracker.currentState() == TrackedCameraPermissionState.GRANTED)
     }
 
-    override fun availability(): ProximitySourceAvailability = when (cameraPermissionStateTracker.currentState()) {
-        TrackedCameraPermissionState.GRANTED ->
-            if (foregroundEligible) ProximitySourceAvailability.AVAILABLE else ProximitySourceAvailability.UNAVAILABLE
-        TrackedCameraPermissionState.DENIED,
-        TrackedCameraPermissionState.REVOKED,
-        -> ProximitySourceAvailability.PERMISSION_DENIED
-        TrackedCameraPermissionState.UNAVAILABLE -> ProximitySourceAvailability.UNAVAILABLE
+    override fun availability(): ProximitySourceAvailability {
+        val availability = when (cameraPermissionStateTracker.currentState()) {
+            TrackedCameraPermissionState.GRANTED -> when {
+                !foregroundEligible -> ProximitySourceAvailability.UNAVAILABLE
+                foregroundAwareEstimator?.let { !runCatching { it.isAvailable() }.getOrDefault(false) } == true ->
+                    ProximitySourceAvailability.UNAVAILABLE
+                else -> ProximitySourceAvailability.AVAILABLE
+            }
+            TrackedCameraPermissionState.DENIED,
+            TrackedCameraPermissionState.REVOKED,
+            -> ProximitySourceAvailability.PERMISSION_DENIED
+            TrackedCameraPermissionState.UNAVAILABLE -> ProximitySourceAvailability.UNAVAILABLE
+        }
+        syncEstimatorLifecycle(availability == ProximitySourceAvailability.AVAILABLE)
+        return availability
     }
 
     override fun currentObservation(): ProximityObservation {
@@ -69,5 +80,9 @@ class CameraProximitySource(
             elapsedRealtimeNanos = monotonicTimeSource.elapsedRealtimeNanos(),
             degraded = false,
         )
+    }
+
+    private fun syncEstimatorLifecycle(eligible: Boolean) {
+        foregroundAwareEstimator?.setForegroundEligible(eligible)
     }
 }

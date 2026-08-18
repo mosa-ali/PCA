@@ -95,4 +95,31 @@ class CameraProximitySourceTest {
 
         assertEquals(ProximityReading.UNKNOWN, observation.reading)
     }
+
+    @Test
+    fun `permission revocation propagates to a session-owning estimator`() {
+        var granted = true
+        val estimator = RecordingForegroundAwareEstimator()
+        val source = CameraProximitySource(estimator, hasCameraPermission = { granted }, FakeMonotonicTimeSource())
+
+        source.setForegroundEligible(true)
+        source.currentObservation()
+        assertEquals(true, estimator.lastForegroundEligible)
+
+        granted = false
+        assertEquals(ProximitySourceAvailability.PERMISSION_DENIED, source.availability())
+        assertEquals(false, estimator.lastForegroundEligible)
+    }
+
+    private class RecordingForegroundAwareEstimator : ForegroundAwareFaceProximityEstimator {
+        var lastForegroundEligible = false
+
+        override fun setForegroundEligible(eligible: Boolean) {
+            lastForegroundEligible = eligible
+        }
+
+        override fun isAvailable(): Boolean = true
+
+        override fun estimate(): ProximityReading = ProximityReading.NEAR
+    }
 }
