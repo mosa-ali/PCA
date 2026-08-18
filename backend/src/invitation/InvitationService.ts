@@ -8,6 +8,8 @@ import type {
   OpaqueFamilyId,
   Platform,
   RequestedProtectionMode,
+  AgeUxTier,
+  InitialPolicyProfile,
 } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
@@ -44,6 +46,9 @@ export interface CreateInvitationInput {
   familyId: OpaqueFamilyId;
   platform: Platform;
   requestedProtectionMode: RequestedProtectionMode;
+  childProfileId?: string | null;
+  ageUxTier?: AgeUxTier;
+  initialPolicyProfile?: InitialPolicyProfile;
   /** Optional; omit to use the server default. Server rejects anything above the policy maximum -- see policy.ts. */
   ttlMs?: number;
 }
@@ -92,6 +97,11 @@ export class InvitationService {
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
+    if (!isPlatformProtectionModeCompatible(input.platform, input.requestedProtectionMode)) throw new RangeError('invalid protection mode');
+    const childProfileId = normalizeChildProfileId(input.childProfileId);
+    const ageUxTier = input.ageUxTier ?? 'YOUNG_CHILD';
+    const initialPolicyProfile = input.initialPolicyProfile ?? 'BALANCED';
+    if (!isAgeUxTier(ageUxTier) || !isInitialPolicyProfile(initialPolicyProfile)) throw new RangeError('invalid enrollment profile');
     const ttlMs = resolveInvitationTtlMs(input.ttlMs);
     const { rawToken, tokenHash } = generateInvitationToken();
     const createdAt = this.now();
@@ -114,6 +124,9 @@ export class InvitationService {
       tokenHash,
       platform: input.platform,
       requestedProtectionMode: input.requestedProtectionMode,
+      childProfileId,
+      ageUxTier,
+      initialPolicyProfile,
       status: 'CREATED',
       createdAt,
       expiresAt,
@@ -320,4 +333,26 @@ export class InvitationService {
     if (TERMINAL_STATUSES.has(record.status) || !this.isExpired(record)) return record;
     return this.repository.expireIfDue(record.invitationId, this.now());
   }
+}
+
+const CHILD_PROFILE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const VALID_AGE_UX_TIERS: ReadonlySet<string> = new Set(['YOUNG_CHILD', 'TEEN']);
+const VALID_INITIAL_POLICY_PROFILES: ReadonlySet<string> = new Set(['BALANCED', 'STRICT']);
+
+function normalizeChildProfileId(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  if (!CHILD_PROFILE_ID_PATTERN.test(value)) throw new RangeError('invalid child profile id');
+  return value;
+}
+
+function isAgeUxTier(value: string): value is AgeUxTier {
+  return VALID_AGE_UX_TIERS.has(value);
+}
+
+function isInitialPolicyProfile(value: string): value is InitialPolicyProfile {
+  return VALID_INITIAL_POLICY_PROFILES.has(value);
+}
+
+function isPlatformProtectionModeCompatible(platform: Platform, mode: RequestedProtectionMode): boolean {
+  return platform === 'IOS' ? mode === 'IOS_STANDARD' : mode === 'ANDROID_STANDARD' || mode === 'ANDROID_PROTECTED';
 }

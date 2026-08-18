@@ -22,6 +22,8 @@
 
 export type InvitationPlatform = 'ANDROID' | 'IOS';
 export type RequestedProtectionMode = 'ANDROID_STANDARD' | 'ANDROID_PROTECTED' | 'IOS_STANDARD';
+export type AgeUxTier = 'YOUNG_CHILD' | 'TEEN';
+export type InitialPolicyProfile = 'BALANCED' | 'STRICT';
 
 /** Explicit, allowlisted DTO shape mirroring backend/src/http/dto.ts InvitationDto exactly. */
 export interface InvitationDto {
@@ -29,6 +31,9 @@ export interface InvitationDto {
   familyId: string;
   platform: InvitationPlatform;
   requestedProtectionMode: RequestedProtectionMode;
+  childProfileId: string | null;
+  ageUxTier: AgeUxTier;
+  initialPolicyProfile: InitialPolicyProfile;
   status: string;
   createdAt: string;
   expiresAt: string;
@@ -59,6 +64,9 @@ export interface PairingRequestDto {
 export interface CreateInvitationInput {
   platform: InvitationPlatform;
   requestedProtectionMode: RequestedProtectionMode;
+  childProfileId?: string;
+  ageUxTier?: AgeUxTier;
+  initialPolicyProfile?: InitialPolicyProfile;
   /** Optional custom time-to-live in milliseconds; omitted uses the backend's default. */
   ttlMs?: number;
 }

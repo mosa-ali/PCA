@@ -145,6 +145,9 @@ export class EnrollmentCoordinator {
           encryptionKeyId: result.encryptionKeyId,
           familyId: result.familyId,
           invitationId: result.invitationId,
+          childProfileId: result.childProfileId,
+          ageUxTier: result.ageUxTier,
+          initialPolicyProfile: result.initialPolicyProfile,
           status: 'PAIRING_PENDING',
         };
       case 'NOT_FOUND':
@@ -193,7 +196,13 @@ export class EnrollmentCoordinator {
       throw new EnrollmentError('NOT_FOUND');
     }
 
-    return { deviceId: row.deviceId, status: 'PAIRING_PENDING' };
+    return {
+      deviceId: row.deviceId,
+      childProfileId: row.childProfileId,
+      ageUxTier: row.ageUxTier,
+      initialPolicyProfile: row.initialPolicyProfile,
+      status: 'PAIRING_PENDING',
+    };
   }
 }
 

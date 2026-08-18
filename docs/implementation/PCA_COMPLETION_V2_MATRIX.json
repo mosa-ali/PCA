@@ -549,11 +549,20 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx",
+        "backend/src/invitation/InvitationService.ts",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
+      ],
+      "testEvidence": [
+        "backend/test/invitation/enrollmentProfile.test.mjs",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no age/mode (young child vs teen) selection step found anywhere in android/app/src/main/java/org/pca/app/enrollment/."
+      "notes": "Enrollment age tier and controlled initial profile now flow through parent UI, invitation persistence, bootstrap, Android encrypted state, and initial Android screen-time defaults. Content-filter default consumption and full iOS transport/runtime wiring remain open."
     },
     {
       "requirementId": "PCA-FR-010",
@@ -3092,13 +3101,21 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/invitation/InvitationService.ts (createInvitation takes familyId/platform/requestedProtectionMode, no childId or initial-policy-profile field) | parent-web/src/pages/family/DeviceEnrollmentPanel.tsx (platform + protection-mode select UI)"
+        "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx",
+        "backend/src/http/routes/invitationRoutes.ts",
+        "backend/src/invitation/InvitationService.ts",
+        "backend/migrations/0019_enrollment_profile_contract.sql",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentApiClient.kt",
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/invitation/enrollmentProfile.test.mjs",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Platform/mode selection implemented backend+web. Child selection and initial policy profile are not modeled in the invitation record/schema at all — gap. Runtime reachability: Frontend evidence file(s) confirmed present in parent-web/platform-admin-web source tree; routing wiring spot-checked by AUDIT-C for the owning page set (see PA/BILL/COMP route confirmation notes), not individually re-traced per ID."
+      "notes": "Parent creation requires a selected child profile, target platform, requested protection mode, and controlled initial policy profile. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs."
     },
     {
       "requirementId": "PCA-ADD-ENR-002",

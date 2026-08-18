@@ -1,5 +1,7 @@
 export type Platform = 'ANDROID' | 'IOS';
 
+import type { AgeUxTier, InitialPolicyProfile } from '../invitation/types.js';
+
 export interface EnrollDeviceInput {
   rawInvitationToken: string;
   platform: Platform;
@@ -34,6 +36,9 @@ export interface EnrollDeviceResult {
   encryptionKeyId: string;
   familyId: string;
   invitationId: string;
+  childProfileId: string | null;
+  ageUxTier: AgeUxTier;
+  initialPolicyProfile: InitialPolicyProfile;
   status: 'PAIRING_PENDING';
 }
 
@@ -46,5 +51,8 @@ export interface RecoverAttemptInput {
 /** Same shape as a successful bootstrap so the HTTP layer can reuse one DTO for both. */
 export interface RecoverAttemptResult {
   deviceId: string;
+  childProfileId: string | null;
+  ageUxTier: AgeUxTier;
+  initialPolicyProfile: InitialPolicyProfile;
   status: 'PAIRING_PENDING';
 }

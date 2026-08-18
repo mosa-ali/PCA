@@ -6,7 +6,10 @@ interface InvitationRow {
   invitation_id: string;
   family_id: string;
   platform: Platform;
-  status: 'CREATED' | 'OPENED' | 'REDEEMED' | 'REVOKED';
+  child_profile_id: string | null;
+  age_ux_tier: 'YOUNG_CHILD' | 'TEEN';
+  initial_policy_profile: 'BALANCED' | 'STRICT';
+  status: 'CREATED' | 'OPENED' | 'INSTALL_REQUIRED' | 'APP_INSTALLED' | 'AUTHORIZATION_REQUIRED' | 'REDEEMED' | 'EXPIRED' | 'REVOKED';
   expires_at: Date;
 }
 
@@ -20,11 +23,17 @@ interface AttemptRow {
   encryption_key_id: string;
   invitation_id: string;
   family_id: string;
+  child_profile_id: string | null;
+  age_ux_tier: 'YOUNG_CHILD' | 'TEEN';
+  initial_policy_profile: 'BALANCED' | 'STRICT';
 }
 
 interface AttemptRecoveryDbRow {
   device_id: string;
   recovery_token_hash: string;
+  child_profile_id: string | null;
+  age_ux_tier: 'YOUNG_CHILD' | 'TEEN';
+  initial_policy_profile: 'BALANCED' | 'STRICT';
 }
 
 type EnrollmentSoftCode =
@@ -81,7 +90,7 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
       return await runInTransaction(async (conn) => {
         const invitationResult = await execute<InvitationRow>(
           conn,
-          `SELECT invitation_id, family_id, platform, status, expires_at
+          `SELECT invitation_id, family_id, platform, child_profile_id, age_ux_tier, initial_policy_profile, status, expires_at
            FROM enrollment_invitations
            WHERE token_hash = ?
            FOR UPDATE`,
@@ -94,10 +103,12 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
         if (invitation.status === 'REDEEMED') {
           const attemptResult = await execute<AttemptRow>(
             conn,
-            `SELECT attempt_id, token_hash, signing_public_key, encryption_public_key,
-                    device_id, signing_key_id, encryption_key_id, invitation_id, family_id
-             FROM enrollment_bootstrap_attempts
-             WHERE attempt_id = ?`,
+            `SELECT a.attempt_id, a.token_hash, a.signing_public_key, a.encryption_public_key,
+                    a.device_id, a.signing_key_id, a.encryption_key_id, a.invitation_id, a.family_id,
+                    i.child_profile_id, i.age_ux_tier, i.initial_policy_profile
+             FROM enrollment_bootstrap_attempts a
+             INNER JOIN enrollment_invitations i ON i.invitation_id = a.invitation_id
+             WHERE a.attempt_id = ?`,
             [attemptId],
           );
           const attempt = attemptResult.rows[0];
@@ -114,6 +125,9 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
               encryptionKeyId: attempt.encryption_key_id,
               familyId: attempt.family_id,
               invitationId: attempt.invitation_id,
+              childProfileId: attempt.child_profile_id,
+              ageUxTier: attempt.age_ux_tier,
+              initialPolicyProfile: attempt.initial_policy_profile,
             } as const;
           }
           throw new SoftFailure<EnrollmentSoftCode>('ALREADY_REDEEMED');
@@ -188,6 +202,9 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
           encryptionKeyId,
           familyId: invitation.family_id,
           invitationId: invitation.invitation_id,
+          childProfileId: invitation.child_profile_id,
+          ageUxTier: invitation.age_ux_tier,
+          initialPolicyProfile: invitation.initial_policy_profile,
         } as const;
       });
     } catch (error) {
@@ -207,11 +224,20 @@ export class MySqlEnrollmentCoordinatorRepository implements EnrollmentRepositor
    */
   async findAttemptForRecovery(attemptId: string): Promise<AttemptRecoveryRow | null> {
     const [rows] = await getPool().query(
-      `SELECT device_id, recovery_token_hash FROM enrollment_bootstrap_attempts WHERE attempt_id = ?`,
+      `SELECT a.device_id, a.recovery_token_hash, i.child_profile_id, i.age_ux_tier, i.initial_policy_profile
+       FROM enrollment_bootstrap_attempts a
+       INNER JOIN enrollment_invitations i ON i.invitation_id = a.invitation_id
+       WHERE a.attempt_id = ?`,
       [attemptId],
     );
     const row = (rows as AttemptRecoveryDbRow[])[0];
     if (!row) return null;
-    return { deviceId: row.device_id, recoveryTokenHash: row.recovery_token_hash };
+    return {
+      deviceId: row.device_id,
+      recoveryTokenHash: row.recovery_token_hash,
+      childProfileId: row.child_profile_id,
+      ageUxTier: row.age_ux_tier,
+      initialPolicyProfile: row.initial_policy_profile,
+    };
   }
 }

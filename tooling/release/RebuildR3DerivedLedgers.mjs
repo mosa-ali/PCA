@@ -1,0 +1,194 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const manifestRoot = `${root}/.agent-runtime/manifests/pca-r3-final`;
+const matrixPath = `${root}/docs/implementation/PCA_COMPLETION_V2_MATRIX.json`;
+
+const paths = {
+  audit: `${manifestRoot}/R3_REQUIREMENT_AUDIT.csv`,
+  source: `${manifestRoot}/R3_SOURCE_BACKLOG.csv`,
+  validation: `${manifestRoot}/R3_VALIDATION_BACKLOG.csv`,
+  external: `${manifestRoot}/R3_EXTERNAL_GATE_REGISTER.csv`,
+  progress: `${manifestRoot}/R3_PROGRESS_LEDGER.md`,
+};
+
+const SOURCE_UPDATES = {
+  'PCA-FR-008': {
+    status: 'PARTIAL',
+    sourceEvidence: [
+      'parent-web/src/pages/family/DeviceEnrollmentPanel.tsx',
+      'backend/src/invitation/InvitationService.ts',
+      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt',
+      'android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt',
+      'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift',
+    ],
+    testEvidence: ['backend/test/invitation/enrollmentProfile.test.mjs', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
+    notes: 'Enrollment age tier and controlled initial profile now flow through parent UI, invitation persistence, bootstrap, Android encrypted state, and initial Android screen-time defaults. Content-filter default consumption and full iOS transport/runtime wiring remain open.',
+  },
+  'PCA-ADD-ENR-001': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'parent-web/src/pages/family/DeviceEnrollmentPanel.tsx',
+      'backend/src/http/routes/invitationRoutes.ts',
+      'backend/src/invitation/InvitationService.ts',
+      'backend/migrations/0019_enrollment_profile_contract.sql',
+      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentApiClient.kt',
+      'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift',
+    ],
+    testEvidence: ['backend/test/invitation/enrollmentProfile.test.mjs', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
+    notes: 'Parent creation requires a selected child profile, target platform, requested protection mode, and controlled initial policy profile. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs.',
+  },
+};
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell.endsWith('\r') ? cell.slice(0, -1) : cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function serializeCsv(rows) {
+  return `${rows.map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n')}\n`;
+}
+
+function objectRows(text) {
+  const rows = parseCsv(text);
+  const headers = rows.shift();
+  return { headers, rows: rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']))) };
+}
+
+function csvText(headers, records) {
+  return serializeCsv([headers, ...records.map((record) => headers.map((header) => record[header] ?? ''))]);
+}
+
+function joinEvidence(values) {
+  return Array.isArray(values) ? values.join('; ') : '';
+}
+
+function splitGates(values) {
+  const result = new Set();
+  for (const raw of values ?? []) {
+    for (const value of String(raw).split(/[;|]/).map((part) => part.trim()).filter(Boolean)) {
+      if (/^[A-Z][A-Z0-9_]{2,}$/.test(value) && !new Set(['YES', 'NO']).has(value)) result.add(value);
+    }
+  }
+  return [...result];
+}
+
+function updateFirstMetric(content, label, value) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return content.replace(new RegExp(`(^\\| ${escaped} \\| )[^|]+( \\|$)`, 'm'), `$1${value}$2`);
+}
+
+const matrix = JSON.parse(await readFile(matrixPath, 'utf8'));
+const requirements = matrix.requirements;
+for (const requirement of requirements) {
+  const update = SOURCE_UPDATES[requirement.requirementId];
+  if (!update) continue;
+  requirement.status = update.status;
+  requirement.sourceEvidence = update.sourceEvidence;
+  requirement.testEvidence = update.testEvidence;
+  requirement.notes = update.notes;
+}
+await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`, 'utf8');
+
+const byId = new Map(requirements.map((requirement) => [requirement.requirementId, requirement]));
+const { headers: auditHeaders, rows: auditRows } = objectRows(await readFile(paths.audit, 'utf8'));
+for (const row of auditRows) {
+  const requirement = byId.get(row.REQUIREMENT_ID);
+  if (!requirement) continue;
+  row.CURRENT_STATUS = requirement.status;
+  row.SOURCE_EVIDENCE = joinEvidence(requirement.sourceEvidence);
+  row.TEST_EVIDENCE = joinEvidence(requirement.testEvidence);
+  row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
+}
+await writeFile(paths.audit, csvText(auditHeaders, auditRows), 'utf8');
+
+const { headers: sourceHeaders, rows: sourceRows } = objectRows(await readFile(paths.source, 'utf8'));
+const sourceBacklogRows = sourceRows
+  .filter((row) => ['PARTIAL', 'NOT_STARTED'].includes(byId.get(row.REQUIREMENT_ID)?.status))
+  .map((row) => {
+    const requirement = byId.get(row.REQUIREMENT_ID);
+    row.CURRENT_STATUS = requirement.status;
+    row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
+    return row;
+  });
+await writeFile(paths.source, csvText(sourceHeaders, sourceBacklogRows), 'utf8');
+
+const { headers: validationHeaders, rows: validationRows } = objectRows(await readFile(paths.validation, 'utf8'));
+for (const row of validationRows) {
+  const requirement = byId.get(row.REQUIREMENT_ID);
+  if (!requirement) continue;
+  row.CURRENT_STATUS = requirement.status;
+  row.TEST_EVIDENCE = joinEvidence(requirement.testEvidence);
+  row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
+  if (requirement.status === 'SOURCE_COMPLETE') row.VALIDATION_STATE = 'SOURCE_COMPLETE_VALIDATION_PENDING';
+}
+await writeFile(paths.validation, csvText(validationHeaders, validationRows), 'utf8');
+
+const ownerByRequirement = new Map([...sourceRows, ...auditRows].map((row) => [row.REQUIREMENT_ID, row.WRITER ?? row.PRIMARY_DOMAIN ?? 'Coordinator']));
+const externalRows = [];
+for (const requirement of requirements) {
+  for (const gate of splitGates(requirement.externalGate)) {
+    externalRows.push({
+      GATE_ID: gate,
+      REQUIREMENT_ID: requirement.requirementId,
+      STATUS: 'OPEN_UNVERIFIED',
+      EVIDENCE_REQUIRED: `Independent evidence for ${gate}`,
+      OWNER: ownerByRequirement.get(requirement.requirementId) || 'Coordinator',
+      BLOCKING_SCOPE: requirement.status === 'SOURCE_COMPLETE' ? 'SOURCE_COMPLETE_EXTERNAL_GATE' : 'SOURCE_OR_EXTERNAL_REMAINING',
+    });
+  }
+}
+await writeFile(paths.external, csvText(['GATE_ID', 'REQUIREMENT_ID', 'STATUS', 'EVIDENCE_REQUIRED', 'OWNER', 'BLOCKING_SCOPE'], externalRows), 'utf8');
+
+const counts = Object.fromEntries(['SOURCE_COMPLETE', 'PARTIAL', 'NOT_STARTED', 'NOT_APPLICABLE'].map((status) => [status, requirements.filter((r) => r.status === status).length]));
+const total = requirements.length;
+if (total !== 375 || counts.SOURCE_COMPLETE + counts.PARTIAL + counts.NOT_STARTED + counts.NOT_APPLICABLE !== total) {
+  throw new Error(`Unexpected R3 matrix counts: ${JSON.stringify({ total, counts })}`);
+}
+const partialPlusNotStarted = counts.PARTIAL + counts.NOT_STARTED;
+let progress = await readFile(paths.progress, 'utf8');
+progress = progress.replace(/Generated from the completion matrix and repository evidence on [^\.]+\./, `Generated from the completion matrix and repository evidence on ${new Date().toISOString().slice(0, 10)}.`);
+progress = updateFirstMetric(progress, 'Total matrix requirements', total);
+progress = updateFirstMetric(progress, 'SOURCE_COMPLETE', counts.SOURCE_COMPLETE);
+progress = updateFirstMetric(progress, 'PARTIAL', counts.PARTIAL);
+progress = updateFirstMetric(progress, 'NOT_STARTED', counts.NOT_STARTED);
+progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
+progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
+progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
+await writeFile(paths.progress, progress, 'utf8');
+
+const triageRequired = sourceBacklogRows.filter((row) => row.SOURCE_SOLVABLE_CLASS === 'SOURCE_TRIAGE_REQUIRED').length;
+console.log(JSON.stringify({ total, counts, partialPlusNotStarted, sourceBacklogRows: sourceBacklogRows.length, sourceTriageRequired: triageRequired, externalRegisterRows: externalRows.length }));

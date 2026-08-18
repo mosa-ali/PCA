@@ -2,6 +2,8 @@ export type InvitationId = string;
 export type OpaqueFamilyId = string;
 export type Platform = 'ANDROID' | 'IOS';
 export type RequestedProtectionMode = 'ANDROID_STANDARD' | 'ANDROID_PROTECTED' | 'IOS_STANDARD';
+export type AgeUxTier = 'YOUNG_CHILD' | 'TEEN';
+export type InitialPolicyProfile = 'BALANCED' | 'STRICT';
 /**
  * PCA-ADD-ENR-005 (Addendum 001): the full 8-state invitation lifecycle.
  * INSTALL_REQUIRED / APP_INSTALLED / AUTHORIZATION_REQUIRED are real,
@@ -33,6 +35,10 @@ export interface InvitationRecord {
   tokenHash: string;
   platform: Platform;
   requestedProtectionMode: RequestedProtectionMode;
+  /** Opaque family-scoped child profile reference. Never a display name. */
+  childProfileId: string | null;
+  ageUxTier: AgeUxTier;
+  initialPolicyProfile: InitialPolicyProfile;
   status: InvitationStatus;
   createdAt: Date;
   expiresAt: Date;

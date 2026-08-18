@@ -1,6 +1,8 @@
 package org.pca.app.storage
 
 import org.pca.app.enrollment.PairingState
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.InitialPolicyProfile
 import org.pca.app.foundation.PersistentStateStore
 
 /**
@@ -39,18 +41,25 @@ class PersistentFamilyStateStore(
         state.pairingState.name,
         state.trustSetEpoch.toString(),
         state.keyEpoch.toString(),
+        state.childProfileId.orEmpty(),
+        state.ageUxTier.name,
+        state.initialPolicyProfile.name,
     ).joinToString(FIELD_SEPARATOR)
 
     internal fun decode(raw: String): LocalFamilyState? {
         val parts = raw.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
         return try {
+            val legacy = parts.size == LEGACY_FIELD_COUNT
             LocalFamilyState(
                 familyId = parts[0],
                 deviceId = parts[1],
                 pairingState = PairingState.valueOf(parts[2]),
                 trustSetEpoch = parts[3].toInt(),
                 keyEpoch = parts[4].toInt(),
+                childProfileId = if (legacy || parts[5].isBlank()) null else parts[5],
+                ageUxTier = if (legacy) AgeUxTier.YOUNG_CHILD else AgeUxTier.valueOf(parts[6]),
+                initialPolicyProfile = if (legacy) InitialPolicyProfile.BALANCED else InitialPolicyProfile.valueOf(parts[7]),
             )
         } catch (_: IllegalArgumentException) {
             // Malformed/corrupt persisted value -- fail safe to "no local family state" rather
@@ -63,6 +72,7 @@ class PersistentFamilyStateStore(
     private companion object {
         const val KEY = "family_state_v1"
         const val FIELD_SEPARATOR = "|"
-        const val FIELD_COUNT = 5
+        const val LEGACY_FIELD_COUNT = 5
+        const val FIELD_COUNT = 8
     }
 }

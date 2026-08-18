@@ -231,7 +231,18 @@ class HttpDeviceBootstrapApiClient(
         val deviceId = json.optString("deviceId", "")
         val status = json.optString("status", "")
         if (deviceId.isBlank() || status.isBlank()) throw onAmbiguous()
-        return DeviceBootstrapResult(deviceId = deviceId, status = status)
+        val ageUxTier = runCatching { AgeUxTier.valueOf(json.optString("ageUxTier", AgeUxTier.YOUNG_CHILD.name)) }
+            .getOrElse { throw onAmbiguous() }
+        val initialPolicyProfile = runCatching {
+            InitialPolicyProfile.valueOf(json.optString("initialPolicyProfile", InitialPolicyProfile.BALANCED.name))
+        }.getOrElse { throw onAmbiguous() }
+        return DeviceBootstrapResult(
+            deviceId = deviceId,
+            status = status,
+            childProfileId = json.optString("childProfileId", "").ifBlank { null },
+            ageUxTier = ageUxTier,
+            initialPolicyProfile = initialPolicyProfile,
+        )
     }
 
     /**

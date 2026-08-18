@@ -39,6 +39,7 @@ import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
 import org.pca.app.enrollment.BootstrapEndpointConfig
 import org.pca.app.enrollment.DeviceBootstrapApiClient
 import org.pca.app.enrollment.EnrollmentCoordinator
+import org.pca.app.enrollment.screenTimeConfigForEnrollmentProfile
 import org.pca.app.enrollment.EnrollmentDeepLinkConfig
 import org.pca.app.enrollment.EnrollmentLinkParser
 import org.pca.app.enrollment.HttpDeviceBootstrapApiClient
@@ -359,7 +360,9 @@ class PcaAppGraph private constructor(
      * parent-authored policy-delivery path (gated on the same production-crypto review as every
      * other incoming signed policy) must call [ScreenTimePolicyApplier.apply] and persist its
      * result as the next `lastKnownGoodConfig`, never construct a [ScreenTimeConfig] directly. */
-    val screenTimeConfig: ScreenTimeConfig = ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
+    val screenTimeConfig: ScreenTimeConfig = familyStateStore.currentState()?.let { state ->
+        screenTimeConfigForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)
+    } ?: ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
 
     private val hardwareProximitySource = HardwareProximitySource(context, monotonicTimeSource)
     val proximitySource: ProximitySource = PrioritizedProximitySource(listOf(hardwareProximitySource))

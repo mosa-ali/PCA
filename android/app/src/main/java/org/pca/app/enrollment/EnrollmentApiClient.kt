@@ -20,7 +20,13 @@ interface EnrollmentApiClient {
 }
 
 /** Child-side mirror of backend BootstrapResultDto (backend/src/http/dto.ts). */
-data class DeviceBootstrapResult(val deviceId: String, val status: String)
+data class DeviceBootstrapResult(
+    val deviceId: String,
+    val status: String,
+    val childProfileId: String? = null,
+    val ageUxTier: AgeUxTier = AgeUxTier.YOUNG_CHILD,
+    val initialPolicyProfile: InitialPolicyProfile = InitialPolicyProfile.BALANCED,
+)
 
 /**
  * Client-side contract for the unauthenticated child bootstrap endpoint

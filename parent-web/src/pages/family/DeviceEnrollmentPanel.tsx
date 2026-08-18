@@ -14,6 +14,8 @@ import type {
   InvitationPlatform,
   PairingRequestDto,
   RequestedProtectionMode,
+  AgeUxTier,
+  InitialPolicyProfile,
 } from '../../api/deviceEnrollmentClient';
 
 const HINT_STYLE = { color: 'var(--color-text-muted)', fontSize: '0.85rem' } as const;
@@ -77,9 +79,12 @@ export default function DeviceEnrollmentPanel() {
     error: invitationsError,
     reload: reloadInvitations,
   } = useAsync(() => clients.deviceEnrollment.listInvitations(familyId), [familyId]);
+  const { data: dashboard } = useAsync(() => clients.parentFamilyData.getDashboard(), [familyId]);
 
   const [platform, setPlatform] = useState<InvitationPlatform>('ANDROID');
   const [protectionMode, setProtectionMode] = useState<RequestedProtectionMode>('ANDROID_STANDARD');
+  const [childProfileId, setChildProfileId] = useState('');
+  const [initialPolicyProfile, setInitialPolicyProfile] = useState<InitialPolicyProfile>('BALANCED');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<{ invitation: InvitationDto; rawInvitationToken: string } | null>(
@@ -108,6 +113,13 @@ export default function DeviceEnrollmentPanel() {
 
   const protectionModeOptions: RequestedProtectionMode[] =
     platform === 'ANDROID' ? ['ANDROID_STANDARD', 'ANDROID_PROTECTED'] : ['IOS_STANDARD'];
+  const children = dashboard?.children ?? [];
+  const selectedChild = children.find((child) => child.childId === childProfileId) ?? children[0];
+  const ageUxTier: AgeUxTier = selectedChild?.ageProfile === 'TEEN' ? 'TEEN' : 'YOUNG_CHILD';
+
+  useEffect(() => {
+    if (!childProfileId && children[0]) setChildProfileId(children[0].childId);
+  }, [childProfileId, children]);
 
   const handlePlatformChange = (next: InvitationPlatform) => {
     setPlatform(next);
@@ -121,6 +133,9 @@ export default function DeviceEnrollmentPanel() {
       const created = await clients.deviceEnrollment.createInvitation(familyId, {
         platform,
         requestedProtectionMode: protectionMode,
+        childProfileId: selectedChild?.childId,
+        ageUxTier,
+        initialPolicyProfile,
       });
       const { rawInvitationToken, ...invitation } = created;
       setJustCreated({ invitation, rawInvitationToken });
@@ -194,6 +209,38 @@ export default function DeviceEnrollmentPanel() {
 
       <PermissionGate action="CREATE_DEVICE_INVITATION" showDisabledFallback>
         <div className="field">
+          <label htmlFor="enrollment-child-profile">{t('deviceEnrollment.childProfile')}</label>
+          <select
+            id="enrollment-child-profile"
+            value={selectedChild?.childId ?? ''}
+            onChange={(e) => setChildProfileId(e.target.value)}
+            disabled={children.length === 0}
+          >
+            {children.length === 0 && <option value="">{t('deviceEnrollment.noChildProfiles')}</option>}
+            {children.map((child) => (
+              <option key={child.childId} value={child.childId}>{child.displayName}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="enrollment-age-tier">{t('deviceEnrollment.ageUxTier')}</label>
+          <select id="enrollment-age-tier" value={ageUxTier} disabled>
+            <option value="YOUNG_CHILD">{t('deviceEnrollment.ageTierYoungChild')}</option>
+            <option value="TEEN">{t('deviceEnrollment.ageTierTeen')}</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="enrollment-initial-policy">{t('deviceEnrollment.initialPolicyProfile')}</label>
+          <select
+            id="enrollment-initial-policy"
+            value={initialPolicyProfile}
+            onChange={(e) => setInitialPolicyProfile(e.target.value as InitialPolicyProfile)}
+          >
+            <option value="BALANCED">{t('deviceEnrollment.policyProfileBalanced')}</option>
+            <option value="STRICT">{t('deviceEnrollment.policyProfileStrict')}</option>
+          </select>
+        </div>
+        <div className="field">
           <label htmlFor="enrollment-platform">{t('deviceEnrollment.platform')}</label>
           <select
             id="enrollment-platform"
@@ -219,7 +266,7 @@ export default function DeviceEnrollmentPanel() {
           </select>
         </div>
         {protectionMode === 'ANDROID_PROTECTED' && <p style={HINT_STYLE}>{t('deviceEnrollment.protectedModeNote')}</p>}
-        <button type="button" className="btn btn-primary" onClick={create} disabled={creating || !familyId}>
+        <button type="button" className="btn btn-primary" onClick={create} disabled={creating || !familyId || !selectedChild}>
           {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.createInvitation')}
         </button>
         {createError && <ErrorState message={createError} />}

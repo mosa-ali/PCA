@@ -316,6 +316,9 @@ class EnrollmentCoordinator(
                 pairingState = serverPairingState,
                 trustSetEpoch = 0,
                 keyEpoch = 0,
+                childProfileId = result.childProfileId,
+                ageUxTier = result.ageUxTier,
+                initialPolicyProfile = result.initialPolicyProfile,
             ),
         )
     }

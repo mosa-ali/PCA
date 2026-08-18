@@ -45,6 +45,9 @@ export function createInMemoryEnrollmentRepository() {
             encryptionKeyId: attempt.encryptionKeyId,
             familyId: attempt.familyId,
             invitationId: attempt.invitationId,
+            childProfileId: attempt.childProfileId,
+            ageUxTier: attempt.ageUxTier,
+            initialPolicyProfile: attempt.initialPolicyProfile,
           };
         }
         return { outcome: 'ALREADY_REDEEMED' };
@@ -68,6 +71,9 @@ export function createInMemoryEnrollmentRepository() {
         encryptionKeyId,
         familyId: invitation.familyId,
         invitationId: invitation.invitationId,
+        childProfileId: invitation.childProfileId ?? null,
+        ageUxTier: invitation.ageUxTier ?? 'YOUNG_CHILD',
+        initialPolicyProfile: invitation.initialPolicyProfile ?? 'BALANCED',
         tokenHash,
         signingPublicKey,
         encryptionPublicKey,
@@ -82,13 +88,22 @@ export function createInMemoryEnrollmentRepository() {
         encryptionKeyId,
         familyId: invitation.familyId,
         invitationId: invitation.invitationId,
+        childProfileId: invitation.childProfileId ?? null,
+        ageUxTier: invitation.ageUxTier ?? 'YOUNG_CHILD',
+        initialPolicyProfile: invitation.initialPolicyProfile ?? 'BALANCED',
       };
     },
 
     async findAttemptForRecovery(attemptId) {
       const attempt = attemptsByAttemptId.get(attemptId);
       if (!attempt) return null;
-      return { deviceId: attempt.deviceId, recoveryTokenHash: attempt.recoveryTokenHash };
+      return {
+        deviceId: attempt.deviceId,
+        recoveryTokenHash: attempt.recoveryTokenHash,
+        childProfileId: attempt.childProfileId ?? null,
+        ageUxTier: attempt.ageUxTier ?? 'YOUNG_CHILD',
+        initialPolicyProfile: attempt.initialPolicyProfile ?? 'BALANCED',
+      };
     },
   };
 }

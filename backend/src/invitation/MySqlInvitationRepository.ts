@@ -10,6 +10,9 @@ interface InvitationRow {
   token_hash: string;
   platform: InvitationRecord['platform'];
   requested_protection_mode: InvitationRecord['requestedProtectionMode'];
+  child_profile_id: string | null;
+  age_ux_tier: InvitationRecord['ageUxTier'];
+  initial_policy_profile: InvitationRecord['initialPolicyProfile'];
   status: InvitationRecord['status'];
   created_at: Date;
   expires_at: Date;
@@ -52,6 +55,9 @@ function mapRow(row: InvitationRow): InvitationRecord {
     tokenHash: row.token_hash,
     platform: row.platform,
     requestedProtectionMode: row.requested_protection_mode,
+    childProfileId: row.child_profile_id,
+    ageUxTier: row.age_ux_tier,
+    initialPolicyProfile: row.initial_policy_profile,
     status: row.status,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
@@ -67,19 +73,26 @@ function mapRow(row: InvitationRow): InvitationRecord {
 
 export class MySqlInvitationRepository implements InvitationRepository {
   async create(record: InvitationRecord): Promise<void> {
+    const childProfileId = record.childProfileId ?? null;
+    const ageUxTier = record.ageUxTier ?? 'YOUNG_CHILD';
+    const initialPolicyProfile = record.initialPolicyProfile ?? 'BALANCED';
     await runInTransaction(async (conn) => {
       await execute(
         conn,
         `INSERT INTO enrollment_invitations
-           (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at,
-            opened_at, install_required_at, app_installed_at, authorization_required_at, redeemed_at, expired_at, revoked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (invitation_id, family_id, token_hash, platform, requested_protection_mode, child_profile_id, age_ux_tier,
+            initial_policy_profile, status, created_at, expires_at, opened_at, install_required_at, app_installed_at,
+            authorization_required_at, redeemed_at, expired_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           record.invitationId,
           record.familyId,
           record.tokenHash,
           record.platform,
           record.requestedProtectionMode,
+          childProfileId,
+          ageUxTier,
+          initialPolicyProfile,
           record.status,
           record.createdAt,
           record.expiresAt,

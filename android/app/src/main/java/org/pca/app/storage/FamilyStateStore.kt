@@ -1,6 +1,8 @@
 package org.pca.app.storage
 
 import org.pca.app.enrollment.PairingState
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.InitialPolicyProfile
 
 /**
  * This device's locally-persisted view of its own family membership --
@@ -14,6 +16,9 @@ data class LocalFamilyState(
     val pairingState: PairingState,
     val trustSetEpoch: Int,
     val keyEpoch: Int,
+    val childProfileId: String? = null,
+    val ageUxTier: AgeUxTier = AgeUxTier.YOUNG_CHILD,
+    val initialPolicyProfile: InitialPolicyProfile = InitialPolicyProfile.BALANCED,
 )
 
 interface FamilyStateStore {

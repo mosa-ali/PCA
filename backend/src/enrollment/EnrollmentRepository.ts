@@ -1,4 +1,5 @@
 import type { Platform } from './types.js';
+import type { AgeUxTier, InitialPolicyProfile } from '../invitation/types.js';
 
 export type EnrollDeviceOutcome =
   | {
@@ -8,6 +9,9 @@ export type EnrollDeviceOutcome =
       encryptionKeyId: string;
       familyId: string;
       invitationId: string;
+      childProfileId: string | null;
+      ageUxTier: AgeUxTier;
+      initialPolicyProfile: InitialPolicyProfile;
     }
   | { outcome: 'NOT_FOUND' }
   | { outcome: 'EXPIRED' }
@@ -28,6 +32,9 @@ export type EnrollDeviceOutcome =
 export interface AttemptRecoveryRow {
   deviceId: string;
   recoveryTokenHash: string;
+  childProfileId: string | null;
+  ageUxTier: AgeUxTier;
+  initialPolicyProfile: InitialPolicyProfile;
 }
 
 /**

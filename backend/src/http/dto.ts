@@ -12,6 +12,9 @@ export interface InvitationDto {
   familyId: string;
   platform: string;
   requestedProtectionMode: string;
+  childProfileId: string | null;
+  ageUxTier: string;
+  initialPolicyProfile: string;
   status: string;
   createdAt: string;
   expiresAt: string;
@@ -30,6 +33,9 @@ export function toInvitationDto(record: InvitationRecord): InvitationDto {
     familyId: record.familyId,
     platform: record.platform,
     requestedProtectionMode: record.requestedProtectionMode,
+    childProfileId: record.childProfileId,
+    ageUxTier: record.ageUxTier,
+    initialPolicyProfile: record.initialPolicyProfile,
     status: record.status,
     createdAt: record.createdAt.toISOString(),
     expiresAt: record.expiresAt.toISOString(),
@@ -90,8 +96,23 @@ export function toPairingRequestDto(view: PairingRequestView): PairingRequestDto
 export interface BootstrapResultDto {
   deviceId: string;
   status: string;
+  childProfileId: string | null;
+  ageUxTier: string;
+  initialPolicyProfile: string;
 }
 
-export function toBootstrapResultDto(result: { deviceId: string; status: string }): BootstrapResultDto {
-  return { deviceId: result.deviceId, status: result.status };
+export function toBootstrapResultDto(result: {
+  deviceId: string;
+  status: string;
+  childProfileId: string | null;
+  ageUxTier: string;
+  initialPolicyProfile: string;
+}): BootstrapResultDto {
+  return {
+    deviceId: result.deviceId,
+    status: result.status,
+    childProfileId: result.childProfileId,
+    ageUxTier: result.ageUxTier,
+    initialPolicyProfile: result.initialPolicyProfile,
+  };
 }

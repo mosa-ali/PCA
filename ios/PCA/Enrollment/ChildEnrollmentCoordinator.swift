@@ -1,5 +1,30 @@
 import Foundation
 
+/// Controlled child-side contract for the backend bootstrap profile. The child
+/// receives only the opaque profile reference and allowlisted defaults; no
+/// display name or family activity is part of this value.
+public enum PCAAgeUxTier: String, Codable {
+    case youngChild = "YOUNG_CHILD"
+    case teen = "TEEN"
+}
+
+public enum PCAInitialPolicyProfile: String, Codable {
+    case balanced = "BALANCED"
+    case strict = "STRICT"
+}
+
+public struct PCAEnrollmentProfile: Codable, Equatable {
+    public let childProfileId: String?
+    public let ageUxTier: PCAAgeUxTier
+    public let initialPolicyProfile: PCAInitialPolicyProfile
+
+    public init(childProfileId: String?, ageUxTier: PCAAgeUxTier, initialPolicyProfile: PCAInitialPolicyProfile) {
+        self.childProfileId = childProfileId
+        self.ageUxTier = ageUxTier
+        self.initialPolicyProfile = initialPolicyProfile
+    }
+}
+
 /// iOS-side enrollment steps ONLY (doc 07 Section 19 / doc 08). Consumes
 /// the EXISTING Secure Invite / pairing / Family Envelope contracts --
 /// this type invents no new protocol message, field, or endpoint. It

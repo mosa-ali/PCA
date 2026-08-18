@@ -10,6 +10,9 @@ import type { AuthzService } from '../../authz/AuthzService.js';
 const MAX_BODY_BYTES = 4 * 1024;
 const VALID_PLATFORMS = new Set(['ANDROID', 'IOS']);
 const VALID_PROTECTION_MODES = new Set(['ANDROID_STANDARD', 'ANDROID_PROTECTED', 'IOS_STANDARD']);
+const VALID_AGE_UX_TIERS = new Set(['YOUNG_CHILD', 'TEEN']);
+const VALID_INITIAL_POLICY_PROFILES = new Set(['BALANCED', 'STRICT']);
+const CHILD_PROFILE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_TOKEN_LENGTH = 64;
 
 /**
@@ -53,11 +56,22 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { platform, requestedProtectionMode, ttlMs } = body;
+      const { platform, requestedProtectionMode, childProfileId, ageUxTier, initialPolicyProfile, ttlMs } = body;
       if (typeof platform !== 'string' || !VALID_PLATFORMS.has(platform)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (typeof requestedProtectionMode !== 'string' || !VALID_PROTECTION_MODES.has(requestedProtectionMode)) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (platform === 'IOS' && requestedProtectionMode !== 'IOS_STANDARD') return reply.code(400).send({ error: 'invalid_request' });
+      if (platform === 'ANDROID' && requestedProtectionMode === 'IOS_STANDARD') return reply.code(400).send({ error: 'invalid_request' });
+      if (childProfileId !== undefined && (typeof childProfileId !== 'string' || !CHILD_PROFILE_ID_PATTERN.test(childProfileId))) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (ageUxTier !== undefined && (typeof ageUxTier !== 'string' || !VALID_AGE_UX_TIERS.has(ageUxTier))) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (initialPolicyProfile !== undefined && (typeof initialPolicyProfile !== 'string' || !VALID_INITIAL_POLICY_PROFILES.has(initialPolicyProfile))) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (ttlMs !== undefined && typeof ttlMs !== 'number') {
@@ -69,6 +83,9 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
           familyId,
           platform: platform as 'ANDROID' | 'IOS',
           requestedProtectionMode: requestedProtectionMode as 'ANDROID_STANDARD' | 'ANDROID_PROTECTED' | 'IOS_STANDARD',
+          childProfileId: childProfileId as string | undefined,
+          ageUxTier: ageUxTier as 'YOUNG_CHILD' | 'TEEN' | undefined,
+          initialPolicyProfile: initialPolicyProfile as 'BALANCED' | 'STRICT' | undefined,
           ttlMs: ttlMs as number | undefined,
         });
         return reply.code(201).send(toInvitationCreatedDto(record, rawToken));

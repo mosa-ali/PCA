@@ -1,19 +1,19 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-17.
+Generated from the completion matrix and repository evidence on 2026-08-18.
 
 ## Exact requirement counts
 
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 246 |
-| PARTIAL | 89 |
-| NOT_STARTED | 21 |
+| SOURCE_COMPLETE | 251 |
+| PARTIAL | 85 |
+| NOT_STARTED | 20 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 110 |
-| External-gate rows | 55 |
+| Partial plus not-started | 105 |
+| External-gate rows | 44 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
