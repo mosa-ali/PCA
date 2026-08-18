@@ -89,6 +89,19 @@ if ($ParityExitCode -ne 0) {
   $Failures.Add("EXTERNAL_GATE_PARITY = FAIL ($($ParityOutput -join ' ')).")
 }
 
+# --- 3b. R3 source/evidence discipline and canonical trust boundary --------
+foreach ($Validator in @('ValidateR3EvidenceDiscipline.mjs', 'ValidateCanonicalTrustBoundary.mjs', 'ValidateSafeZoneMutationBoundary.mjs')) {
+  $ValidatorPath = Join-Path $RepositoryRoot "tooling\release\$Validator"
+  if (-not (Test-Path -LiteralPath $ValidatorPath)) {
+    throw "Cannot evaluate release evidence discipline: $ValidatorPath not found."
+  }
+  $ValidatorOutput = & node $ValidatorPath 2>&1
+  $ValidatorExitCode = $LASTEXITCODE
+  if ($ValidatorExitCode -ne 0) {
+    $Failures.Add("$Validator = FAIL ($($ValidatorOutput -join ' ')).")
+  }
+}
+
 # --- 4. External gate matrix ------------------------------------------------
 $ExternalGateState = @()
 if (-not $IgnoreExternalGates) {

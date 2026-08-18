@@ -7,7 +7,6 @@ export interface SafeZone {
   ciphertextB64: string;
   nonceB64: string;
   keyEpoch: number;
-  enabled: boolean;
   revision: number;
   deliveryState: SafeZoneDeliveryState;
   createdAtUtc: string;
@@ -20,14 +19,12 @@ export interface NewSafeZone {
   ciphertextB64: string;
   nonceB64: string;
   keyEpoch: number;
-  enabled: boolean;
 }
 
 export interface SafeZonePatch {
   ciphertextB64?: string;
   nonceB64?: string;
   keyEpoch?: number;
-  enabled?: boolean;
 }
 
 export class SafeZoneError extends Error {

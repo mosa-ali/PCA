@@ -1209,13 +1209,21 @@
         "backend/src/location/SafeZoneRepository.ts",
         "backend/src/location/MySqlSafeZoneRepository.ts",
         "backend/src/http/routes/parentAccountRoutes.ts",
+        "backend/src/location/SafeZonePolicyAuthorization.ts",
+        "backend/src/familyrbac/ParentActionAuthorizationService.ts",
+        "backend/src/familyrbac/UnavailableTrustSetRoleResolver.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/main.ts",
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/real/realSafeZoneClient.ts",
         "backend/migrations/0020_parent_preferences_safe_zones.sql"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
-        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs",
+        "backend/test/parentaccount/preferencesSafeZonesSchema.test.mjs",
+        "backend/test/familyrbac/ParentActionAuthorizationService.test.mjs",
+        "tooling/release/ValidateSafeZoneMutationBoundary.mjs"
       ],
       "externalGate": [],
       "notes": "Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced."
@@ -1458,8 +1466,11 @@
       "sourceEvidence": [
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/interfaces.ts",
+        "parent-web/src/api/safeZonePolicyAuthoring.ts",
+        "parent-web/src/api/client.ts",
         "parent-web/src/api/real/realSafeZoneClient.ts",
-        "backend/src/http/routes/parentAccountRoutes.ts"
+        "backend/src/http/routes/parentAccountRoutes.ts",
+        "backend/src/location/SafeZonePolicyAuthorization.ts"
       ],
       "testEvidence": [
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
@@ -3597,11 +3608,17 @@
       "phase": [
         "PCA-PA-1"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md",
+        "tooling/release/ValidateCanonicalTrustBoundary.mjs",
+        "tooling/release/Invoke-ReleaseGateCheck.ps1"
+      ],
+      "testEvidence": [
+        "tooling/release/ValidateCanonicalTrustBoundary.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Doc-governance requirement binding future documents to the trust-boundary diagram; not testable via code inspection. Runtime reachability: Partially wired; see gap."
+      "notes": "This requirement is documentation governance, not a new runtime authority. The validator prevents accidental removal of the canonical boundary markers from the governed addendum source."
     },
     {
       "requirementId": "PCA-ADD-PA-007",
@@ -4948,11 +4965,18 @@
       "phase": [
         "PCA-PA-1"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "tooling/release/ValidateR3EvidenceDiscipline.mjs",
+        "tooling/release/ValidateExternalGateParity.mjs",
+        "tooling/release/Invoke-ReleaseGateCheck.ps1"
+      ],
+      "testEvidence": [
+        "tooling/release/ValidateR3EvidenceDiscipline.mjs",
+        "tooling/release/ValidateExternalGateParity.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Process/reporting-discipline rule; no code artifact (e.g. CI gate) enforces it programmatically. Runtime reachability: Not reachable — no implementation."
+      "notes": "The validator enforces reporting discipline without converting local source evidence into VALIDATED_COMPLETE or PRODUCTION_READY."
     },
     {
       "requirementId": "PCA-ADD-IDENT-001",

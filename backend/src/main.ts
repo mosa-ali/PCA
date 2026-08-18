@@ -31,6 +31,10 @@ import {
 } from './runtime-sync/index.js';
 import { InMemoryDeleteNowLedger } from './retention/InMemoryDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
+import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyLedger.js';
+import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
+import { defaultFamilyRbacPolicyConfig } from './familyrbac/types.js';
+import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
 import { PlatformAdminAuthService } from './platformadmin/auth/PlatformAdminAuthService.js';
 import { MySqlPlatformAdminAuthRepository } from './platformadmin/auth/MySqlAuthRepository.js';
 import { LoggingAlertAdapter } from './platformadmin/auth/alertPort.js';
@@ -113,6 +117,7 @@ import { ParentAccountService } from './parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
+import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
 import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSender.js';
 import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1 (Round5 Owner decision, Addendum 004):
@@ -360,6 +365,20 @@ async function start(): Promise<void> {
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
+  // Safe Zone routes are composed through the shared family-action matrix.
+  // The current production trust-set source is intentionally unavailable
+  // while the reviewed crypto suite remains fail-closed, so this explicit
+  // resolver returns NO_TRUST_SET rather than silently treating a session as
+  // Owner. The wiring is complete and the unavailable authority is visible.
+  const safeZoneParentActionAuthorization = new ParentActionAuthorizationService(
+    new UnavailableTrustSetRoleResolver(),
+    defaultFamilyRbacPolicyConfig,
+    new InMemoryActionIdempotencyLedger(),
+    () => new Date(),
+    undefined,
+    familyAuditService,
+  );
+  const safeZonePolicyAuthorizer = new ParentActionSafeZonePolicyAuthorizer(safeZoneParentActionAuthorization);
 
   // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
   // entitlement grants. Reuses the SAME platformAdminAuthService instance
@@ -448,6 +467,7 @@ async function start(): Promise<void> {
     parentAccountService,
     parentPreferenceRepository,
     safeZoneRepository,
+    safeZonePolicyAuthorizer,
     // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
     platformAdminComplimentaryGrantService,
     // PCA-FREE-ACCESS-1: real backend enforcement/admin surface.

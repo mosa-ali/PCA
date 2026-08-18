@@ -98,6 +98,7 @@ import { registerSdkDisclosureRoutes } from './routes/sdkDisclosureRoutes.js';
 import type { PlatformAdminSettlementService } from '../platformadmin/settlement/PlatformAdminSettlementService.js';
 import type { ParentPreferenceRepository } from '../parentaccount/ParentPreferenceRepository.js';
 import type { SafeZoneRepository } from '../location/SafeZoneRepository.js';
+import type { SafeZonePolicyAuthorizer } from '../location/SafeZonePolicyAuthorization.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -140,6 +141,7 @@ export interface ServerDependencies {
   parentAccountService: ParentAccountService;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
+  safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
   /** PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants -- see registerComplimentaryGrantRoutes below. */
   platformAdminComplimentaryGrantService: PlatformAdminComplimentaryGrantService;
   /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): plain domain service composed into familyCommercialRoutes.ts's additive entitlement fields -- optional, see that route's own doc comment. */
@@ -294,6 +296,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
+    safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
     freeAccessAccountRepository: deps.freeAccessAccountRepository,
   });
   registerComplimentaryGrantRoutes(app, {

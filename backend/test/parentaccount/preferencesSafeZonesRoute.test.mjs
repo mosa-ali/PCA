@@ -52,13 +52,18 @@ function buildApp(role = 'OWNER') {
     },
   };
   const safeZonePolicyAuthorizer = {
-    authorize({ operation }) {
+    authorizationRequests: [],
+    authorize({ operation, targetScope }) {
+      this.authorizationRequests.push({ operation, targetScope });
       if (role === 'VIEWER') return { verdict: operation === 'VIEW_DASHBOARD' ? 'ALLOW_READ_ONLY' : 'DENY' };
+      if (targetScope.kind === 'DEVICE' && targetScope.id !== 'device-a') return { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
       return { verdict: 'ALLOW' };
     },
   };
   const app = Fastify();
   registerParentAccountRoutes(app, { parentAccountService, parentPreferenceRepository, safeZoneRepository, safeZonePolicyAuthorizer });
+  app.safeZoneAuthorizationRequests = safeZonePolicyAuthorizer.authorizationRequests;
+  app.safeZoneZones = zones;
   return app;
 }
 
@@ -96,7 +101,7 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   const wrongFamily = await app.inject({ method: 'GET', url: '/api/parent/families/family-b/safe-zones', headers: authHeaders });
   assert.equal(wrongFamily.statusCode, 403);
 
-  const opaquePayload = { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const opaquePayload = { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
   const noCsrf = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders, payload: opaquePayload });
   assert.equal(noCsrf.statusCode, 403);
 
@@ -105,6 +110,7 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
 
   const created = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: opaquePayload });
   assert.equal(created.statusCode, 201);
+  assert.deepEqual(app.safeZoneAuthorizationRequests.at(-1), { operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'DEVICE', id: 'device-a' } });
   assert.equal(created.json().safeZone.deliveryState, 'PENDING_OFFLINE');
   assert.equal(created.json().safeZone.ciphertextB64, 'AQID');
 
@@ -113,15 +119,42 @@ test('safe zones accept only opaque encrypted policy envelopes and preserve offl
   assert.equal(list.json().safeZones.length, 1);
 });
 
+test('safe-zone update and delete re-authorize the stored recipient endpoint', async () => {
+  const app = buildApp();
+  app.safeZoneZones.set('zone-a', { zoneId: 'zone-a', familyId: 'family-a', recipientEndpointId: 'device-b' });
+
+  const update = await app.inject({ method: 'PATCH', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { ciphertextB64: 'BAUG' } });
+  assert.equal(update.statusCode, 403);
+
+  const remove = await app.inject({ method: 'DELETE', url: '/api/parent/families/family-a/safe-zones/zone-a', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' } });
+  assert.equal(remove.statusCode, 403);
+});
+
 test('safe-zone family policy authorization allows Owner and Administrator, denies Viewer mutations', async () => {
   const owner = await buildApp('OWNER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(owner.statusCode, 200);
 
-  const administrator = await buildApp('ADMINISTRATOR').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  const administrator = await buildApp('ADMINISTRATOR').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(administrator.statusCode, 201);
 
   const viewerRead = await buildApp('VIEWER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(viewerRead.statusCode, 200);
-  const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
   assert.equal(viewerMutation.statusCode, 403);
+
+  const crossFamilyRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'device-b', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  assert.equal(crossFamilyRecipient.statusCode, 403);
+
+  const unknownRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'unknown-device', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  assert.equal(unknownRecipient.statusCode, 403);
+
+  const malformedRecipient = await buildApp('OWNER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'not valid', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  assert.equal(malformedRecipient.statusCode, 400);
+
+  const noAuthority = Fastify();
+  const noAuthorityService = { async readSession() { return { accountId: 'account-a', familyId: 'family-a', emailVerified: true }; } };
+  const noAuthorityRepository = { async list() { return []; }, async create() { throw new Error('unexpected'); }, async update() { throw new Error('unexpected'); }, async remove() { return false; } };
+  registerParentAccountRoutes(noAuthority, { parentAccountService: noAuthorityService, safeZoneRepository: noAuthorityRepository });
+  const unavailable = await noAuthority.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
+  assert.equal(unavailable.statusCode, 503);
 });

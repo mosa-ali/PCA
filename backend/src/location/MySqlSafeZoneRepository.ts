@@ -9,7 +9,6 @@ interface SafeZoneRow {
   ciphertext: Buffer;
   nonce: Buffer;
   key_epoch: number;
-  enabled: number;
   revision: number;
   delivery_state: 'PENDING_OFFLINE' | 'READY';
   created_at: Date;
@@ -24,7 +23,6 @@ function toSafeZone(row: SafeZoneRow): SafeZone {
     ciphertextB64: row.ciphertext.toString('base64url'),
     nonceB64: row.nonce.toString('base64url'),
     keyEpoch: row.key_epoch,
-    enabled: row.enabled === 1,
     revision: row.revision,
     deliveryState: row.delivery_state,
     createdAtUtc: row.created_at.toISOString(),
@@ -32,7 +30,7 @@ function toSafeZone(row: SafeZoneRow): SafeZone {
   };
 }
 
-const SELECT_COLUMNS = `zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, enabled, revision, delivery_state, created_at, updated_at`;
+const SELECT_COLUMNS = `zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at`;
 
 export class MySqlSafeZoneRepository implements SafeZoneRepository {
   async list(familyId: string): Promise<SafeZone[]> {
@@ -43,7 +41,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
   async create(input: NewSafeZone): Promise<SafeZone> {
     const zoneId = randomUUID();
     const now = new Date();
-    await runInTransaction((conn) => execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, enabled, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, input.familyId, input.recipientEndpointId, Buffer.from(input.ciphertextB64, 'base64url'), Buffer.from(input.nonceB64, 'base64url'), input.keyEpoch, input.enabled ? 1 : 0, now, now]));
+    await runInTransaction((conn) => execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, input.familyId, input.recipientEndpointId, Buffer.from(input.ciphertextB64, 'base64url'), Buffer.from(input.nonceB64, 'base64url'), input.keyEpoch, now, now]));
     const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, input.familyId]));
     if (!rows[0]) throw new SafeZoneError('NOT_FOUND');
     return toSafeZone(rows[0]);
@@ -51,7 +49,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
     const now = new Date();
-    const { rowCount } = await runInTransaction((conn) => execute(conn, `UPDATE safe_zones SET ciphertext = COALESCE(?, ciphertext), nonce = COALESCE(?, nonce), key_epoch = COALESCE(?, key_epoch), enabled = COALESCE(?, enabled), revision = revision + 1, delivery_state = 'PENDING_OFFLINE', updated_at = ? WHERE zone_id = ? AND family_id = ?`, [patch.ciphertextB64 === undefined ? null : Buffer.from(patch.ciphertextB64, 'base64url'), patch.nonceB64 === undefined ? null : Buffer.from(patch.nonceB64, 'base64url'), patch.keyEpoch ?? null, patch.enabled === undefined ? null : patch.enabled ? 1 : 0, now, zoneId, familyId]));
+    const { rowCount } = await runInTransaction((conn) => execute(conn, `UPDATE safe_zones SET ciphertext = COALESCE(?, ciphertext), nonce = COALESCE(?, nonce), key_epoch = COALESCE(?, key_epoch), revision = revision + 1, delivery_state = 'PENDING_OFFLINE', updated_at = ? WHERE zone_id = ? AND family_id = ?`, [patch.ciphertextB64 === undefined ? null : Buffer.from(patch.ciphertextB64, 'base64url'), patch.nonceB64 === undefined ? null : Buffer.from(patch.nonceB64, 'base64url'), patch.keyEpoch ?? null, now, zoneId, familyId]));
     if (rowCount === 0) throw new SafeZoneError('NOT_FOUND');
     const { rows } = await runInTransaction((conn) => execute<SafeZoneRow>(conn, `SELECT ${SELECT_COLUMNS} FROM safe_zones WHERE zone_id = ? AND family_id = ?`, [zoneId, familyId]));
     if (!rows[0]) throw new SafeZoneError('NOT_FOUND');

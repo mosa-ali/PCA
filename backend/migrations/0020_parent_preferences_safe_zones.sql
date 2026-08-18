@@ -25,7 +25,6 @@ CREATE TABLE safe_zones (
   ciphertext MEDIUMBLOB NOT NULL,
   nonce VARBINARY(64) NOT NULL,
   key_epoch INT UNSIGNED NOT NULL,
-  enabled TINYINT(1) NOT NULL DEFAULT 1,
   revision INT UNSIGNED NOT NULL DEFAULT 1,
   delivery_state VARCHAR(24) NOT NULL DEFAULT 'PENDING_OFFLINE',
   created_at DATETIME(6) NOT NULL,
@@ -35,6 +34,5 @@ CREATE TABLE safe_zones (
   CONSTRAINT safe_zones_ciphertext_check CHECK (OCTET_LENGTH(ciphertext) BETWEEN 1 AND 65535),
   CONSTRAINT safe_zones_nonce_check CHECK (OCTET_LENGTH(nonce) BETWEEN 12 AND 64),
   CONSTRAINT safe_zones_key_epoch_check CHECK (key_epoch > 0),
-  CONSTRAINT safe_zones_enabled_check CHECK (enabled IN (0, 1)),
   CONSTRAINT safe_zones_delivery_state_check CHECK (delivery_state IN ('PENDING_OFFLINE', 'READY'))
 );

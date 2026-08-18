@@ -18,6 +18,7 @@ test('0020 keeps parent email destination fail-closed and safe-zone policy opaqu
   assert.match(migration, /ciphertext MEDIUMBLOB NOT NULL/);
   assert.match(migration, /nonce VARBINARY\(64\) NOT NULL/);
   assert.match(migration, /key_epoch INT UNSIGNED NOT NULL/);
+  assert.doesNotMatch(migration, /safe_zones[\s\S]*enabled TINYINT|safe_zones_enabled_check/);
   assert.match(migration, /delivery_state VARCHAR\(24\) NOT NULL DEFAULT 'PENDING_OFFLINE'/);
   assert.match(migration, /CHECK \(delivery_state IN \('PENDING_OFFLINE', 'READY'\)\)/);
   assert.match(migration, /KEY safe_zones_family_recipient_idx \(family_id, recipient_endpoint_id\)/);

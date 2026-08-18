@@ -7,12 +7,12 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 253 |
-| PARTIAL | 83 |
-| NOT_STARTED | 20 |
+| SOURCE_COMPLETE | 255 |
+| PARTIAL | 82 |
+| NOT_STARTED | 19 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 103 |
+| Partial plus not-started | 101 |
 | External-gate rows | 44 |
 | Terminology audit rows | 209 |
 
@@ -130,10 +130,15 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 ### Wave 11 database validation
 
 - PRE_WAVE11_DB_BASELINE = PASS
-- CURRENT_HEAD_0019_DB_VALIDATION = PASS
-- MIGRATION_0019_APPLIED = YES
-- MIGRATION_0019_SCHEMA_VERIFIED = YES
+- CURRENT_HEAD_0020_DB_VALIDATION = PASS
+- MIGRATION_0020_APPLIED = YES
+- MIGRATION_0020_SCHEMA_VERIFIED = YES
 - MYSQL_STANDARD = PASS
 - MYSQL_PRIVILEGE = PASS
 - DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
+### Current-head mutation validation
+
+- MUTATION = PASS (3/3 mutants killed)
+- VALID_MUTATION_SURVIVORS = 0
+- Scope: bounded Safe Zone privacy and recipient-authorization mutants; temporary compiled modules are restored/deleted after each case.

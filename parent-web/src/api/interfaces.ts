@@ -129,7 +129,6 @@ export interface SafeZone {
   ciphertextB64: string;
   nonceB64: string;
   keyEpoch: number;
-  enabled: boolean;
   revision: number;
   deliveryState: 'PENDING_OFFLINE' | 'READY';
   createdAtUtc: string;
@@ -141,14 +140,12 @@ export interface NewSafeZoneInput {
   ciphertextB64: string;
   nonceB64: string;
   keyEpoch: number;
-  enabled?: boolean;
 }
 
 export interface SafeZonePatch {
   ciphertextB64?: string;
   nonceB64?: string;
   keyEpoch?: number;
-  enabled?: boolean;
 }
 
 export interface SafeZoneClient {

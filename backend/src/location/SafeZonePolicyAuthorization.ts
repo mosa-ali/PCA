@@ -1,4 +1,5 @@
 import type { AuthorizationDecision, AuthorizeRequest } from '../familyrbac/ParentActionAuthorizationService.js';
+import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 
 /**
  * Safe-zone HTTP routes consume the existing family action-authorization
@@ -9,4 +10,13 @@ import type { AuthorizationDecision, AuthorizeRequest } from '../familyrbac/Pare
  */
 export interface SafeZonePolicyAuthorizer {
   authorize(request: AuthorizeRequest): AuthorizationDecision | Promise<AuthorizationDecision>;
+}
+
+/** Adapter that keeps Safe Zone routes on the shared family-action matrix. */
+export class ParentActionSafeZonePolicyAuthorizer implements SafeZonePolicyAuthorizer {
+  constructor(private readonly parentActionAuthorization: Pick<ParentActionAuthorizationService, 'authorize'>) {}
+
+  authorize(request: AuthorizeRequest): AuthorizationDecision {
+    return this.parentActionAuthorization.authorize(request);
+  }
 }

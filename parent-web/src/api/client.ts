@@ -84,6 +84,7 @@ import { RealCommercialNotificationClient } from './real/realCommercialNotificat
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
 import { RealSafeZoneClient } from './real/realSafeZoneClient';
+import { UnavailableSafeZonePolicyAuthoring, type SafeZonePolicyAuthoring } from './safeZonePolicyAuthoring';
 import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
 import { DevRetentionClient } from './dev/devRetentionClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
@@ -121,6 +122,7 @@ export interface PcaApiClients {
   freeAccessStatus: FreeAccessStatusClient;
   parentPreferences: ParentPreferencesClient;
   safeZones: SafeZoneClient;
+  safeZonePolicyAuthoring: SafeZonePolicyAuthoring;
   /**
    * PCA-FR-093: real, HTTP-backed against
    * backend/src/http/routes/retentionRoutes.ts outside demo mode. Same
@@ -149,6 +151,7 @@ function buildDevClients(): PcaApiClients {
     freeAccessStatus: new DevFreeAccessStatusClient(),
     parentPreferences: new DevParentPreferencesClient(),
     safeZones: new DevSafeZoneClient(),
+    safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('ENCRYPTION_UNAVAILABLE'),
     retention: new DevRetentionClient(),
     isFixtureBacked: true,
   };
@@ -206,7 +209,8 @@ function buildRealClients(): PcaApiClients {
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
-    safeZones: new RealSafeZoneClient(config.apiBaseUrl),
+    safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
+    safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
     // billing above -- see ./real/realRetentionClient.ts's header.
     retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, noRetentionFamilyContextAvailable),
