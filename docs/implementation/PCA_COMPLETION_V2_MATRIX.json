@@ -2716,16 +2716,19 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "Same evidence basis as PCA-NFR-041: axe-core's default ruleset (used in both parent-web/tests/accessibility/axe.test.tsx and the new platform-admin-web/tests/accessibility/axe.test.tsx) includes WCAG 2.1 AA color-contrast and target-size rules, so all 23 parent-web pages and all 21 platform-admin-web pages/surfaces now covered get real contrast/target-size coverage as a side effect of both suites passing."
+        "parent-web/src/styles/global.css",
+        "platform-admin-web/src/styles/global.css",
+        "parent-web/tests/accessibility/axe.test.tsx",
+        "platform-admin-web/tests/accessibility/axe.test.tsx"
       ],
       "testEvidence": [
-        "parent-web/tests/accessibility/axe.test.tsx (23/39, up from 13/39)",
-        "platform-admin-web/tests/accessibility/axe.test.tsx (21/21 real routed surfaces, up from 0/20)"
+        "parent-web/tests/accessibility/axe.test.tsx (40/40 PASS across all 38 App page routes plus dialog/banner states)",
+        "platform-admin-web/tests/accessibility/axe.test.tsx (21/21 PASS across all routed admin surfaces)"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Same underlying gap as PCA-NFR-041, now substantially smaller: platform-admin-web's contrast/touch-target claim is now verified across essentially its full page surface; parent-web still has ~16 of 39 pages unverified by automated test (spot-checked 4, no obvious defects found)."
+      "notes": "Parent axe suite passed 40/40 and TypeScript passed; JSDOM canvas and existing React act warnings remain test-environment noise, not accessibility violations."
     },
     {
       "requirementId": "PCA-NFR-050",

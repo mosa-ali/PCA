@@ -24,8 +24,23 @@ import ProtectionStatus from '../../src/pages/security/ProtectionStatus';
 import WellbeingAdmin from '../../src/pages/wellbeing/WellbeingAdmin';
 import Login from '../../src/pages/auth/Login';
 import Register from '../../src/pages/auth/Register';
+import VerifyEmail from '../../src/pages/auth/VerifyEmail';
 import CheckoutReturn from '../../src/pages/billing/CheckoutReturn';
+import ChildOverview from '../../src/pages/children/ChildOverview';
+import ChildWellbeingPage from '../../src/pages/children/ChildWellbeingPage';
+import EyeProtectionPage from '../../src/pages/children/EyeProtectionPage';
+import LocationPage from '../../src/pages/children/LocationPage';
+import PrayerPage from '../../src/pages/children/PrayerPage';
+import ScreenTimePage from '../../src/pages/children/ScreenTimePage';
+import WebProtectionPage from '../../src/pages/children/WebProtectionPage';
+import YouTubePage from '../../src/pages/children/YouTubePage';
+import Export from '../../src/pages/privacy/Export';
+import InvoiceDetail from '../../src/pages/billing/InvoiceDetail';
+import NotFound from '../../src/pages/NotFound';
+import NotPermitted from '../../src/pages/NotPermitted';
+import Recovery from '../../src/pages/security/Recovery';
 import Settings from '../../src/pages/Settings';
+import TrustedBrowser from '../../src/pages/security/TrustedBrowser';
 import { FreeAccessReminderBannerView } from '../../src/components/freeaccess/FreeAccessReminderBannerView';
 import { renderWithProviders } from '../utils/renderWithProviders';
 
@@ -183,6 +198,134 @@ describe('accessibility spot checks (axe)', () => {
 
   it('Settings page (language switcher form) has no critical axe violations', async () => {
     const { container } = renderWithProviders(<Settings />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('VerifyEmail page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<VerifyEmail />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ChildOverview page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/overview', <ChildOverview />), {
+      route: '/children/child-amir/overview',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ScreenTimePage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/screen-time', <ScreenTimePage />), {
+      route: '/children/child-amir/screen-time',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('WebProtectionPage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/web-protection', <WebProtectionPage />), {
+      route: '/children/child-amir/web-protection',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('YouTubePage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/youtube', <YouTubePage />), {
+      route: '/children/child-amir/youtube',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('LocationPage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/location', <LocationPage />), {
+      route: '/children/child-amir/location',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('EyeProtectionPage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/eye-protection', <EyeProtectionPage />), {
+      route: '/children/child-amir/eye-protection',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('PrayerPage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/prayer', <PrayerPage />), {
+      route: '/children/child-amir/prayer',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('ChildWellbeingPage has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/children/:childId/wellbeing-messages', <ChildWellbeingPage />), {
+      route: '/children/child-amir/wellbeing-messages',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Export page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Export />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('TrustedBrowser page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<TrustedBrowser />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('Recovery page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<Recovery />, { role: 'OWNER' });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('InvoiceDetail page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(withChildRoute('/subscription/invoices/:invoiceId', <InvoiceDetail />), {
+      route: '/subscription/invoices/invoice-1',
+      role: 'OWNER',
+    });
+    await new Promise((r) => setTimeout(r, 250));
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('NotPermitted page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<NotPermitted />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('NotFound page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<NotFound />);
     const results = await axe(container, AXE_OPTIONS);
     expect(results).toHaveNoViolations();
   });

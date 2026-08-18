@@ -105,6 +105,23 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep new Compose entry points inside PcaAccessibilityContent and preserve rem/logical sizing on web surfaces.',
     notes: 'Android module compilation and focused accessibility tests passed; browser zoom layout and physical-device rendering remain separate validation boundaries.'
   },
+  'PCA-NFR-045': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'parent-web/src/styles/global.css',
+      'platform-admin-web/src/styles/global.css',
+      'parent-web/tests/accessibility/axe.test.tsx',
+      'platform-admin-web/tests/accessibility/axe.test.tsx',
+    ],
+    testEvidence: [
+      'parent-web/tests/accessibility/axe.test.tsx (40/40 PASS across all 38 App page routes plus dialog/banner states)',
+      'platform-admin-web/tests/accessibility/axe.test.tsx (21/21 PASS across all routed admin surfaces)',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Parent-web axe coverage now exercises every App page route plus stateful dialog/banner surfaces, and platform-admin coverage remains complete; axe default rules include contrast and target-size checks.',
+    nextAction: 'Keep each new parent or platform-admin route represented by a real provider-backed accessibility case.',
+    notes: 'Parent axe suite passed 40/40 and TypeScript passed; JSDOM canvas and existing React act warnings remain test-environment noise, not accessibility violations.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -504,6 +521,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-042': 'SOURCE_COMPLETE',
   'PCA-FR-124': 'SOURCE_COMPLETE',
   'PCA-NFR-040': 'SOURCE_COMPLETE',
+  'PCA-NFR-045': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',
