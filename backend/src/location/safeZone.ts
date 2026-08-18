@@ -1,4 +1,5 @@
 import type { LocationCapabilityState, LocationSample } from './types.js';
+import { isLocationSampleFresh } from './freshness.js';
 
 export type SafeZoneTransitionType = 'ENTER' | 'EXIT' | 'DWELL';
 export type SafeZoneEventKind = 'ENTER' | 'EXIT' | 'DWELL' | 'UNKNOWN' | 'NOT_MONITORED';
@@ -61,8 +62,7 @@ export function evaluateSafeZoneTransition(input: EvaluateSafeZoneInput): SafeZo
   if (!input.sample) {
     return { event: 'UNKNOWN', currentInside: input.previousInside };
   }
-  const ageMs = input.nowUtc.getTime() - input.sample.measuredAtUtc.getTime();
-  if (ageMs < 0 || ageMs > input.freshnessThresholdMs) {
+  if (!isLocationSampleFresh(input.sample, input.nowUtc, input.freshnessThresholdMs)) {
     return { event: 'UNKNOWN', currentInside: input.previousInside };
   }
 

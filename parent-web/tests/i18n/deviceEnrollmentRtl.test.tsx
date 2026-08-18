@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import DeviceEnrollmentPanel from '../../src/pages/family/DeviceEnrollmentPanel';
@@ -34,5 +35,19 @@ describe('DeviceEnrollmentPanel Arabic/RTL', () => {
     // No untranslated English chrome strings should appear alongside the Arabic UI.
     expect(screen.queryByText('Create invitation')).not.toBeInTheDocument();
     expect(screen.queryByText('Confirm device pairing')).not.toBeInTheDocument();
+  });
+
+  it('renders monitored-family disclosure wording as children copy in Arabic', async () => {
+    await i18n.changeLanguage('ar');
+    applyDocumentDirection('ar');
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+
+    const createInvitationButton = await screen.findByRole('button', { name: 'إنشاء دعوة' });
+    await waitFor(() => expect(createInvitationButton).toBeEnabled());
+    await userEvent.click(createInvitationButton);
+
+    expect(await screen.findByText(/فئات استخدام أطفالك للتطبيقات والمواقع/)).toBeInTheDocument();
+    expect(screen.getByText(/ميزة منفصلة لأجهزة أطفالك/)).toBeInTheDocument();
+    expect(screen.queryByText(/قد ترى العائلة فئات/)).not.toBeInTheDocument();
   });
 });

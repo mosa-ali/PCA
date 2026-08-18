@@ -16,6 +16,12 @@ interface ZonedDateTime {
   second: number;
 }
 
+function assertValidInstant(instant: Date, label: string): void {
+  if (!(instant instanceof Date) || !Number.isFinite(instant.getTime())) {
+    throw new RangeError(`${label} must be a valid UTC instant.`);
+  }
+}
+
 function toZonedDateTime(instant: Date, timeZone: string): ZonedDateTime {
   let formatter: Intl.DateTimeFormat;
   try {
@@ -91,10 +97,14 @@ function resolveZonedInstant(target: ZonedDateTime, timeZone: string): Date {
 }
 
 export function computeFixedIntervalExpiryInstant(eventTimestampUtc: Date, days: number): Date {
+  assertValidInstant(eventTimestampUtc, 'eventTimestampUtc');
+  if (!Number.isFinite(days) || days < 0) throw new RangeError('days must be a non-negative finite duration.');
   return new Date(eventTimestampUtc.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
 export function computeCalendarMonthExpiryInstant(eventTimestampUtc: Date, timeZone: string, months: number): Date {
+  assertValidInstant(eventTimestampUtc, 'eventTimestampUtc');
+  if (!Number.isSafeInteger(months) || months <= 0) throw new RangeError('months must be a positive integer.');
   const zoned = toZonedDateTime(eventTimestampUtc, timeZone);
   const target = addCalendarMonths(zoned, months);
   return resolveZonedInstant(target, timeZone);

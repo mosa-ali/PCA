@@ -11,9 +11,12 @@ import Fastify from 'fastify';
 import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { registerCommercialNotificationRoutes } from '../../dist/http/routes/commercialNotificationRoutes.js';
+import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { createRateLimiter } from '../../dist/http/rateLimit.js';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
+import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
+import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
 import { AuthzService } from '../../dist/authz/AuthzService.js';
 import { MySqlAuthzRepository } from '../../dist/authz/MySqlAuthzRepository.js';
 import { PlatformAdminAuthService } from '../../dist/platformadmin/auth/PlatformAdminAuthService.js';
@@ -35,6 +38,25 @@ const commercialNotificationService = new CommercialNotificationService(commerci
 const commercialNotificationSupportService = new CommercialNotificationSupportService(commercialNotificationRepository);
 const publisher = new MySqlCommercialNotificationPublisher(commercialNotificationRepository);
 
+class RecordingEmailSender {
+  codes = new Map();
+
+  async sendVerificationCode(email, code) {
+    this.codes.set(email, code);
+  }
+
+  codeFor(email) {
+    return this.codes.get(email);
+  }
+}
+
+const parentEmailSender = new RecordingEmailSender();
+const parentAccountService = new ParentAccountService({
+  repository: new MySqlParentAccountRepository(),
+  authService,
+  emailSender: parentEmailSender,
+});
+
 function server() {
   const app = Fastify({ logger: false });
   const rateLimiter = createRateLimiter();
@@ -47,6 +69,7 @@ function server() {
     rateLimiter,
     authAttemptLimiter: rateLimiter({ windowMs: 60_000, max: 60, bucket: 'auth-attempt' }),
   });
+  registerParentAccountRoutes(app, { parentAccountService });
   return app;
 }
 
@@ -68,7 +91,7 @@ async function grantScope(accountId, familyId, status = 'ACTIVE') {
 
 test('MySQL HTTP: family-facing commercial-notification list/unread-count/read/acknowledge round-trip end to end through the real server', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
-  const familyId = family();
+  const familyId = randomUUID();
   await grantScope(accountId, familyId);
 
   const published = await publisher.publish({
@@ -148,6 +171,59 @@ test('MySQL HTTP: an account with NO family scope for this family gets 403, neve
       headers: { authorization: `Bearer ${rawToken}` },
     });
     assert.equal(response.statusCode, 403);
+  } finally {
+    await app.close();
+  }
+});
+
+test('MySQL HTTP: the real parent session cookie reaches /api/parent/session and family notifications, with CSRF required for acknowledgement', async () => {
+  const email = `cookie-notify-${randomUUID()}@example.test`;
+  const password = 'a genuinely long password';
+  await parentAccountService.register(email, password, password);
+  const verificationCode = parentEmailSender.codeFor(email);
+  assert.equal(typeof verificationCode, 'string');
+  const verified = await parentAccountService.verifyEmail(email, verificationCode);
+  const serviceAccountId = await authService.validateSession(verified.rawSessionToken);
+  const familyId = randomUUID();
+  await getPool().query(`UPDATE parent_accounts SET family_id = ? WHERE account_id = ?`, [familyId, verified.accountId]);
+  await grantScope(serviceAccountId, familyId);
+  const published = await publisher.publish({
+    accountRef: familyId,
+    eventType: 'PAYMENT_FAILED',
+    dedupeKey: `PAYMENT_FAILED:${randomUUID()}`,
+    resourceRef: null,
+    messageKey: DEFAULT_MESSAGE_KEYS.PAYMENT_FAILED,
+    params: null,
+  });
+  const csrfToken = randomBytes(32).toString('base64url');
+  const cookie = `pca_family_session=${encodeURIComponent(verified.rawSessionToken)}; pca_family_csrf=${encodeURIComponent(csrfToken)}`;
+  const app = server();
+  try {
+    const session = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie } });
+    assert.equal(session.statusCode, 200);
+    assert.equal(session.json().familyId, familyId);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: `/v1/families/${familyId}/commercial-notifications`,
+      headers: { cookie },
+    });
+    assert.equal(list.statusCode, 200);
+    assert.equal(list.json().notifications[0].notificationId, published.notification.notificationId);
+
+    const missingCsrf = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/commercial-notifications/${published.notification.notificationId}/acknowledge`,
+      headers: { cookie },
+    });
+    assert.equal(missingCsrf.statusCode, 403);
+
+    const acknowledge = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/commercial-notifications/${published.notification.notificationId}/acknowledge`,
+      headers: { cookie, 'x-pca-csrf-token': csrfToken },
+    });
+    assert.equal(acknowledge.statusCode, 200);
   } finally {
     await app.close();
   }

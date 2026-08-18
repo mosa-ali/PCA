@@ -10,6 +10,7 @@ import type { OutboundRelayService } from '../runtime-sync/OutboundRelayService.
 import type { InboundReconnectService } from '../runtime-sync/InboundReconnectService.js';
 import type { DeviceSyncStatusTracker } from '../runtime-sync/StatusService.js';
 import { createRateLimiter } from './rateLimit.js';
+import { registerParentWebCors } from './parentWebCors.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
@@ -167,6 +168,7 @@ export interface ServerDependencies {
  */
 export function buildServer(deps: ServerDependencies): FastifyInstance {
   const app = Fastify({ logger: false });
+  registerParentWebCors(app);
   const rateLimiter = createRateLimiter();
   // Bounds how many session-validation DB round-trips a single IP can force
   // by flooding well-formed-looking-but-invalid bearer tokens, independent

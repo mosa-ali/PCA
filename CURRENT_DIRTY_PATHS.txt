@@ -1,7 +1,7 @@
-# Snapshot captured after the shared-agent safety stop on 2026-08-18.
-# All paths below are coordinator-held until independently reviewed and
-# deliberately committed. The first five were the pre-entry dirty paths;
-# the remaining paths were written by shared-checkout writer lanes.
+# Snapshot refreshed after coordinator integration review on 2026-08-18.
+# All paths below are coordinator-held until deliberately committed. This
+# inventory includes tracked modifications and untracked files; it excludes
+# this inventory file itself.
 android/app/src/main/java/org/pca/app/persistence/retention/RetentionCutoffCalculator.kt
 android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt
 android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt
@@ -16,6 +16,9 @@ android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceZoneStat
 android/app/src/test/java/org/pca/app/i18n/MonitoredFamilyTerminologyTest.kt
 backend/src/export/manifest.ts
 backend/src/export/types.ts
+backend/src/http/buildServer.ts
+backend/src/http/parentWebCors.ts
+backend/src/http/routes/platformadmin/dashboardRoutes.ts
 backend/src/location/domain.ts
 backend/src/location/safeZone.ts
 backend/src/location/freshness.ts
@@ -30,8 +33,11 @@ backend/src/retention/deletionStateMachine.ts
 backend/src/retention/engine.ts
 backend/src/retention/policy.ts
 backend/src/tamper/TrustedTimeTamperBridge.ts
-backend/src/familyenvelope/FamilyEnvelopeVerifier.ts
+backend/src/platformadmin/readmodels/DashboardReadModel.ts
+backend/test/db/commercialNotificationsHttp.mysql.test.mjs
+backend/test/db/dashboardSettlementMetrics.mysql.test.mjs
 backend/test/export/pipeline.test.mjs
+backend/test/http/cors.test.mjs
 backend/test/location/domain.test.mjs
 backend/test/location/safeZone.test.mjs
 backend/test/relay/service.test.mjs
@@ -51,4 +57,5 @@ parent-web/tests/i18n/monitoredFamilyTerminology.test.ts
 parent-web/tests/unit/realSafeZoneClient.test.ts
 parent-web/tests/unit/retention.test.ts
 parent-web/tests/unit/safeZonePolicyAuthoring.test.ts
-CURRENT_DIRTY_PATHS.txt
+parent-web/tests/unit/securityHeadersPlugin.test.ts
+parent-web/vite/securityHeadersPlugin.ts

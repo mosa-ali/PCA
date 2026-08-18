@@ -13,7 +13,7 @@
     <string name="child_home_management_authorization_required">PCA needs device authorization before stronger protection can apply. The current state is shown below.</string>
     <string name="child_home_management_not_supported">PCA protection is not supported by this device capability. The current state is shown below.</string>
     <string name="child_home_parent_visibility_title">What your parent can see</string>
-    <string name="child_home_parent_visibility_body">Your parent can see protection status, screen-time and policy events, and family-enabled activity categories. PCA does not store camera frames or facial identity as family monitoring history.</string>
+    <string name="child_home_parent_visibility_body">Your parent can see protection status, screen-time and policy events, and activity categories enabled for your device. PCA does not store camera frames or facial identity as a children\'s monitoring history.</string>
 
     <string name="child_home_local_protection_active">Protection is active on this device</string>
     <string name="child_home_remote_updates_pending">Remote updates are pending until this device reconnects</string>

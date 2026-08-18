@@ -6,8 +6,7 @@ import org.pca.app.platform.LocationSample
  * PCA-FR-063: pure, deterministic geofence entry/exit reducer -- same discipline as
  * [org.pca.app.feature.eyedistance.engine.EyeDistanceEngine]: no I/O, no clock reads, every
  * decision derived only from its explicit inputs, and safe to call repeatedly/out-of-order (a
- * stale or duplicate sample can only ever re-confirm or fail to confirm a candidate streak, never
- * corrupt state).
+ * stale, duplicate, or out-of-order sample can only ever be ignored, never corrupt state).
  *
  * Two independent defenses against a false alert from a single noisy fix, matching this codebase's
  * "trust feature" framing (PCA-FR-135: an opt-in alert, not silent continuous tracking, so a false
@@ -38,10 +37,43 @@ object GeofenceEngine {
         require(zone.zoneId == state.zoneId) {
             "zone/state id mismatch: zone=${zone.zoneId} state=${state.zoneId}"
         }
+        require(nowMonotonicNanos >= 0L) { "nowMonotonicNanos must not be negative" }
 
         val distanceMeters = GeofenceMath.haversineMeters(
             zone.centerLatitude, zone.centerLongitude, sample.latitude, sample.longitude,
         )
+
+        val sampleElapsedMillis = sample.elapsedRealtimeMillis
+        require(sampleElapsedMillis >= 0L) { "sample elapsedRealtimeMillis must not be negative" }
+
+        // SystemClock.elapsedRealtime() is the source of truth for runtime samples. The zero
+        // origin is valid during the first boot instant, but cannot establish ordering; once a
+        // positive origin exists, every positive sample must be strictly newer and within the
+        // configured freshness window. This also makes delayed last-known fixes fail closed.
+        if (sampleElapsedMillis > 0L) {
+            val nowElapsedMillis = nowMonotonicNanos / NANOS_PER_MILLISECOND
+            val sampleAgeMillis = nowElapsedMillis - sampleElapsedMillis
+            if (sampleAgeMillis < 0L || sampleAgeMillis > config.maxSampleAgeMillis) {
+                return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+            }
+            val previousAccepted = state.lastAcceptedSampleElapsedRealtimeMillis
+            if (previousAccepted != null && sampleElapsedMillis <= previousAccepted) {
+                return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+            }
+        } else if (state.lastAcceptedSampleElapsedRealtimeMillis != null && state.lastAcceptedSampleElapsedRealtimeMillis > 0L) {
+            // A legacy/boot-zero sample cannot establish ordering after a positive sample has
+            // already been accepted; fail closed instead of allowing it to reverse membership.
+            return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+        }
+        if (state.lastEvaluatedMonotonicNanos > 0L && nowMonotonicNanos < state.lastEvaluatedMonotonicNanos) {
+            return GeofenceEvaluation(state, transition = null, distanceMeters = distanceMeters)
+        }
+
+        val acceptedSampleElapsedMillis = if (sampleElapsedMillis == 0L) {
+            state.lastAcceptedSampleElapsedRealtimeMillis ?: 0L
+        } else {
+            sampleElapsedMillis
+        }
 
         val rawMembership = rawMembershipFor(zone, state.confirmedMembership, distanceMeters, config)
 
@@ -52,6 +84,7 @@ object GeofenceEngine {
                     candidateMembership = state.confirmedMembership,
                     candidateStreak = 0,
                     lastEvaluatedMonotonicNanos = nowMonotonicNanos,
+                    lastAcceptedSampleElapsedRealtimeMillis = acceptedSampleElapsedMillis,
                 ),
                 transition = null,
                 distanceMeters = distanceMeters,
@@ -67,6 +100,7 @@ object GeofenceEngine {
                     candidateMembership = rawMembership,
                     candidateStreak = streak,
                     lastEvaluatedMonotonicNanos = nowMonotonicNanos,
+                    lastAcceptedSampleElapsedRealtimeMillis = acceptedSampleElapsedMillis,
                 ),
                 transition = null,
                 distanceMeters = distanceMeters,
@@ -88,6 +122,7 @@ object GeofenceEngine {
                 candidateMembership = rawMembership,
                 candidateStreak = 0,
                 lastEvaluatedMonotonicNanos = nowMonotonicNanos,
+                lastAcceptedSampleElapsedRealtimeMillis = acceptedSampleElapsedMillis,
             ),
             transition = transition,
             distanceMeters = distanceMeters,
@@ -105,4 +140,6 @@ object GeofenceEngine {
         GeofenceMembership.OUTSIDE, GeofenceMembership.UNKNOWN ->
             if (distanceMeters <= zone.radiusMeters) GeofenceMembership.INSIDE else GeofenceMembership.OUTSIDE
     }
+
+    private const val NANOS_PER_MILLISECOND = 1_000_000L
 }

@@ -65,6 +65,21 @@ class RetentionCutoffCalculatorTest {
         assertEquals(twelveMonthCutoff, floorWithLongestGeneral)
     }
 
+    @Test
+    fun `tombstone cutoff is the fixed fourteen-day bounded lifetime`() {
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+
+        assertEquals(now.minusSeconds(14L * 24 * 60 * 60), RetentionCutoffCalculator.tombstoneCutoff(now, utc))
+    }
+
+    @Test
+    fun `location retention is valid only when no longer than general retention`() {
+        assertEquals(true, RetentionCutoffCalculator.isLocationRetentionAllowed(RetentionPolicy.THREE_MONTHS, RetentionPolicy.ONE_MONTH))
+        assertEquals(true, RetentionCutoffCalculator.isLocationRetentionAllowed(RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.LATEST_ONLY))
+        assertEquals(false, RetentionCutoffCalculator.isLocationRetentionAllowed(RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.ONE_MONTH))
+        assertEquals(false, RetentionCutoffCalculator.isLocationRetentionAllowed(RetentionPolicy.LATEST_ONLY, RetentionPolicy.LATEST_ONLY))
+    }
+
     @Test(expected = IllegalStateException::class)
     fun `LATEST_ONLY has no time-based cutoff`() {
         RetentionCutoffCalculator.cutoffFor(RetentionPolicy.LATEST_ONLY, Instant.now(), utc)

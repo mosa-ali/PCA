@@ -42,3 +42,12 @@ test('two different actionIds are independent -- no cross-contamination', () => 
   assert.deepEqual(a.plan.toDelete.map((e) => e.id), ['a1']);
   assert.deepEqual(b.plan.toDelete.map((e) => e.id), ['b1']);
 });
+
+test('stored Delete Now plans are defensive copies and cannot be changed by a caller', () => {
+  const ledger = new InMemoryDeleteNowLedger();
+  const first = applyDeleteNow('action-1', [record()], ledger, new Date('2026-02-01T00:00:00.000Z'));
+  first.plan.toDelete[0].id = 'caller-mutated';
+
+  const replay = applyDeleteNow('action-1', [record()], ledger, new Date('2026-02-01T00:00:00.000Z'));
+  assert.equal(replay.plan.toDelete[0].id, 'r1');
+});

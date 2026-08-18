@@ -37,6 +37,35 @@ test('queue valid opaque envelope', async () => {
   assert.equal(record.acknowledgedAt, null);
 });
 
+test('relay diagnostics expose routing metadata and ciphertext size class, never ciphertext bytes', async () => {
+  const repository = createInMemoryRelayRepository();
+  let currentTime = BASE_TIME;
+  const diagnostics = [];
+  const service = new RelayService(repository, () => new Date(currentTime), (event) => diagnostics.push(event));
+  const sentinel = 'SENTINEL-family-history-plaintext';
+  const input = envelope({ ciphertext: Buffer.from(sentinel) });
+
+  await service.queueEnvelope(input);
+
+  assert.equal(diagnostics.length, 1);
+  assert.deepEqual(Object.keys(diagnostics[0]).sort(), [
+    'acknowledgedAtUtc', 'ciphertextSizeClass', 'createdAtUtc', 'event', 'expiresAtUtc',
+    'familyId', 'messageId', 'outcome', 'recipientDeviceId', 'senderDeviceId', 'state',
+  ].sort());
+  assert.equal(diagnostics[0].ciphertextSizeClass, 'SMALL');
+  assert.equal(JSON.stringify(diagnostics[0]).includes(sentinel), false);
+});
+
+test('relay invokes optional expired-row cleanup without requiring it on test repositories', async () => {
+  const { service, repository } = buildService();
+  let purgeCalls = 0;
+  repository.purgeExpired = async () => { purgeCalls += 1; return 0; };
+
+  await service.listQueuedForRecipient('device-r1');
+
+  assert.equal(purgeCalls, 1);
+});
+
 test('retrieve by correct recipient', async () => {
   const { service } = buildService();
   const input = envelope();

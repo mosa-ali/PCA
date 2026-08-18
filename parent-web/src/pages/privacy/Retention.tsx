@@ -17,6 +17,7 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { ErrorState, LoadingState } from '../../components/common/States';
 import type { LocationRetentionMode, RetentionWindow } from '../../domain/retention';
+import { isLocationRetentionWithinGeneral } from '../../api/retention';
 
 export default function Retention() {
   const { t } = useTranslation();
@@ -32,9 +33,7 @@ export default function Retention() {
   const effectiveWindow = selectedWindow ?? defaults?.generalWindow ?? null;
   const effectiveLocationMode = selectedLocationMode ?? defaults?.locationMode ?? 'CURRENT_LAST_ONLY';
   const locationWindow = typeof effectiveLocationMode === 'object' ? effectiveLocationMode.window : null;
-  const generalWindowIndex = defaults && effectiveWindow ? defaults.availableWindows.indexOf(effectiveWindow) : -1;
-  const locationWindowIndex = defaults && locationWindow ? defaults.availableWindows.indexOf(locationWindow) : -1;
-  const locationWindowExceedsGeneral = locationWindowIndex > generalWindowIndex && locationWindowIndex >= 0;
+  const locationWindowExceedsGeneral = locationWindow !== null && !isLocationRetentionWithinGeneral(effectiveWindow, effectiveLocationMode);
 
   const save = async () => {
     if (!effectiveWindow) return;
@@ -93,13 +92,13 @@ export default function Retention() {
               />
               {t('retention.locationCurrentOnly')}
             </label>
-            {defaults.availableWindows.map((w, index) => (
+            {defaults.availableWindows.map((w) => (
               <label key={`location-${w}`} style={{ display: 'block' }}>
                 <input
                   type="radio"
                   name="location-retention-window"
                   checked={locationWindow === w}
-                  disabled={index > generalWindowIndex}
+                  disabled={!isLocationRetentionWithinGeneral(effectiveWindow, { window: w })}
                   onChange={() => setSelectedLocationMode({ window: w })}
                 />
                 {t('retention.locationWindowLabel', { window: t(`retention.windowLabels.${w}`) })}

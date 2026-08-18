@@ -107,6 +107,23 @@ test('a stale sample (delayed geofence signal) never manufactures an exit', () =
   assert.equal(result.currentInside, true);
 });
 
+test('an explicitly expired sample never manufactures an exit even when measured time is fresh', () => {
+  const result = evaluateSafeZoneTransition({
+    zone: zone(),
+    previousInside: true,
+    sample: sample({
+      latitude: FAR_AWAY.latitude,
+      longitude: FAR_AWAY.longitude,
+      expiresAtUtc: new Date('2026-01-07T11:59:00.000Z'),
+    }),
+    capabilityState: 'ACTIVE',
+    freshnessThresholdMs: 900_000,
+    nowUtc: now,
+  });
+  assert.equal(result.event, 'UNKNOWN');
+  assert.equal(result.currentInside, true);
+});
+
 test('a disabled zone is NOT_MONITORED regardless of sample', () => {
   const result = evaluateSafeZoneTransition({
     zone: zone({ enabled: false }),

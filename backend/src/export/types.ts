@@ -1,4 +1,4 @@
-import type { RetentionEntityClass } from '../retention/types.js';
+import type { RetentionEntityClass, RetentionPolicySettings } from '../retention/types.js';
 
 export const EXPORT_MANIFEST_FORMAT_VERSION = 1;
 
@@ -15,6 +15,8 @@ export interface ExportManifest {
   createdAtUtc: Date;
   includedCategories: RetentionEntityClass[];
   recordCounts: Record<string, number>;
+  /** Explicit policy scope carried with the encrypted export so an external copy cannot be mistaken for current data. */
+  retentionScope: RetentionPolicySettings;
   retentionCutoffUtc: Date | null;
   schemaVersions: Record<string, string>;
   integrityDigestAlgorithm: string;

@@ -101,13 +101,13 @@ class RetentionEngineTest {
     // ---- PCA-DATA-026: tombstone bounded-lifetime pruning ----
 
     @Test
-    fun `pruneTombstones deletes only tombstones past the fixed six-month floor`() = runTest {
+    fun `pruneTombstones deletes only tombstones past the fixed fourteen-day floor`() = runTest {
         val now = Instant.parse("2026-08-12T00:00:00Z")
-        val sevenMonthsAgo = now.atZone(zone).minusMonths(7).toInstant().toEpochMilli()
-        val oneMonthAgo = now.atZone(zone).minusMonths(1).toInstant().toEpochMilli()
+        val fifteenDaysAgo = now.minusSeconds(15L * 24 * 60 * 60).toEpochMilli()
+        val oneDayAgo = now.minusSeconds(24 * 60 * 60).toEpochMilli()
 
-        db.tombstoneRecordDao().insert(TombstoneRecordEntity("old", "family-1", "device-1", "Device", sevenMonthsAgo))
-        db.tombstoneRecordDao().insert(TombstoneRecordEntity("recent", "family-1", "device-2", "Device", oneMonthAgo))
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("old", "family-1", "device-1", "Device", fifteenDaysAgo))
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("recent", "family-1", "device-2", "Device", oneDayAgo))
 
         val deleted = engine.pruneTombstones(now, zone)
 
@@ -118,15 +118,33 @@ class RetentionEngineTest {
     }
 
     @Test
-    fun `pruneTombstones never touches a tombstone still within its six-month floor`() = runTest {
+    fun `pruneTombstones never touches a tombstone still within its fourteen-day floor`() = runTest {
         val now = Instant.parse("2026-08-12T00:00:00Z")
-        val fiveMonthsAgo = now.atZone(zone).minusMonths(5).toInstant().toEpochMilli()
-        db.tombstoneRecordDao().insert(TombstoneRecordEntity("t1", "family-1", "device-1", "Device", fiveMonthsAgo))
+        val oneDayAgo = now.minusSeconds(24 * 60 * 60).toEpochMilli()
+        db.tombstoneRecordDao().insert(TombstoneRecordEntity("t1", "family-1", "device-1", "Device", oneDayAgo))
 
         val deleted = engine.pruneTombstones(now, zone)
 
         assertEquals(0, deleted)
         assertEquals(1, db.tombstoneRecordDao().count())
+    }
+
+    @Test
+    fun `general cycle rejects a location window longer than general before deleting any rows`() = runTest {
+        val webVisitRepo = WebVisitRepository(db.webVisitDao(), PersistenceTestSupport.testCipher())
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        val oldMillis = now.minusSeconds(15L * 24 * 60 * 60).toEpochMilli()
+        webVisitRepo.record("device-1", "old.example", null, null, "cat", "v1", WebVisitAction.ALLOWED, oldMillis, id = "old")
+
+        val invalid = DeviceRetentionContext("device-1", RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.ONE_MONTH, zone)
+        try {
+            engine.runGeneralCycle("family-1", now, listOf(invalid))
+            throw AssertionError("an invalid location retention policy must be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected: policy validation runs before the transaction starts.
+        }
+
+        assertEquals(1, webVisitRepo.getForDevice("device-1").size)
     }
 
     @Test

@@ -276,7 +276,8 @@ export class DashboardReadModel {
         conn,
         `SELECT COUNT(*) AS cnt
            FROM enrollment_invitations
-          WHERE status IN ('CREATED', 'OPENED') AND expires_at <= ?`,
+           WHERE status IN ('CREATED', 'OPENED', 'INSTALL_REQUIRED', 'APP_INSTALLED', 'AUTHORIZATION_REQUIRED')
+             AND expires_at <= ?`,
         [now],
       );
 

@@ -18,8 +18,9 @@ describe('securityHeadersPlugin', () => {
     expect(CSP_CONTENT).toContain("frame-ancestors 'none'");
     expect(CSP_CONTENT).toContain("object-src 'none'");
     expect(CSP_CONTENT).toContain("default-src 'self'");
-    // connect-src is deliberately same-origin only -- see module doc comment.
+    // connect-src stays explicit and includes the checked-in local API origin.
     expect(CSP_CONTENT).toContain("connect-src 'self'");
+    expect(CSP_CONTENT).toContain('http://localhost:4001');
     expect(CSP_CONTENT).not.toContain('unsafe-eval');
   });
 

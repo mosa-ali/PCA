@@ -17,6 +17,7 @@ function buildManifest(overrides = {}) {
     createdAtUtc: new Date('2026-02-01T00:00:00.000Z'),
     records: records(),
     dataBytes: Buffer.from('plaintext-payload'),
+    retentionScope: { generalWindow: '1_MONTH', locationMode: 'CURRENT_LAST_ONLY', timezone: 'UTC' },
     retentionCutoffUtc: new Date('2026-01-15T00:00:00.000Z'),
     schemaVersions: { WEB_VISIT: '1', USAGE_SESSION: '1' },
     ...overrides,
@@ -47,6 +48,7 @@ test('manifest integrity digest is a deterministic function of the plaintext byt
     createdAtUtc: new Date(),
     records: [],
     dataBytes: Buffer.from('same-content'),
+    retentionScope: { generalWindow: '1_MONTH', locationMode: 'CURRENT_LAST_ONLY', timezone: 'UTC' },
     retentionCutoffUtc: null,
     schemaVersions: {},
   });
@@ -55,6 +57,7 @@ test('manifest integrity digest is a deterministic function of the plaintext byt
     createdAtUtc: new Date(),
     records: [],
     dataBytes: Buffer.from('same-content'),
+    retentionScope: { generalWindow: '1_MONTH', locationMode: 'CURRENT_LAST_ONLY', timezone: 'UTC' },
     retentionCutoffUtc: null,
     schemaVersions: {},
   });
@@ -64,6 +67,26 @@ test('manifest integrity digest is a deterministic function of the plaintext byt
 test('manifest contains only metadata -- never the raw data bytes themselves', () => {
   const manifest = buildManifest();
   assert.equal(JSON.stringify(manifest).includes('plaintext-payload'), false);
+});
+
+test('manifest carries the exact retention scope and creation timestamp as export metadata', () => {
+  const manifest = buildManifest({
+    createdAtUtc: new Date('2026-02-02T03:04:05.000Z'),
+    retentionScope: { generalWindow: '3_MONTHS', locationMode: { window: '14_DAYS' }, timezone: 'Asia/Riyadh' },
+  });
+  assert.equal(manifest.createdAtUtc.toISOString(), '2026-02-02T03:04:05.000Z');
+  assert.deepEqual(manifest.retentionScope, {
+    generalWindow: '3_MONTHS',
+    locationMode: { window: '14_DAYS' },
+    timezone: 'Asia/Riyadh',
+  });
+});
+
+test('manifest rejects an invalid retention scope before encryption can begin', () => {
+  assert.throws(
+    () => buildManifest({ retentionScope: { generalWindow: '14_DAYS', locationMode: { window: '9_MONTHS' }, timezone: 'UTC' } }),
+    /LOCATION_WINDOW_EXCEEDS_GENERAL/,
+  );
 });
 
 // ---- pipeline happy path ----

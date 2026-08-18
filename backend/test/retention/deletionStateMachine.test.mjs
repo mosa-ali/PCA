@@ -33,6 +33,18 @@ test('re-applying REMOTE_ACKNOWLEDGED to an already-DELETION_CONFIRMED state is 
   assert.equal(result.state.state, 'DELETION_CONFIRMED');
 });
 
+test('replaying a delete request or local completion in an already-progressed state is idempotent', () => {
+  const requested = state({ state: 'DELETE_REQUESTED' });
+  const requestedReplay = applyDeletionEvent(requested, { kind: 'DELETION_REQUESTED' });
+  assert.equal(requestedReplay.applied, true);
+  assert.equal(requestedReplay.state, requested);
+
+  const local = state({ state: 'DELETED_LOCAL' });
+  const localReplay = applyDeletionEvent(local, { kind: 'LOCAL_DELETE_COMPLETED' });
+  assert.equal(localReplay.applied, true);
+  assert.equal(localReplay.state, local);
+});
+
 test('an invalid transition (e.g. LOCAL_DELETE_COMPLETED on a still-ACTIVE record) is rejected, not silently applied', () => {
   const result = applyDeletionEvent(state({ state: 'ACTIVE' }), { kind: 'LOCAL_DELETE_COMPLETED' });
   assert.equal(result.applied, false);

@@ -29,6 +29,13 @@ function mapRow(row: RelayRow): RelayEnvelopeRecord {
 }
 
 export class MySqlRelayRepository implements RelayRepository {
+  async purgeExpired(now: Date): Promise<number> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `DELETE FROM relay_envelopes WHERE expires_at <= ?`, [now]),
+    );
+    return rowCount;
+  }
+
   /**
    * The INSERT is atomic at the statement level (InnoDB's primary-key
    * uniqueness check), so two concurrent submissions of the same messageId

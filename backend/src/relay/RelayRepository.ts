@@ -30,6 +30,8 @@ export interface RelayRepository {
   createOrMatchEnvelope(record: RelayEnvelopeRecord): Promise<CreateEnvelopeResult>;
   findForRecipient(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord | null>;
   listQueuedForRecipient(recipientDeviceId: OpaqueDeviceId, now: Date): Promise<RelayEnvelopeRecord[]>;
+  /** Best-effort operational cleanup; expired ciphertext must not accumulate in relay storage. */
+  purgeExpired?(now: Date): Promise<number>;
   acknowledgeAtomically(
     recipientDeviceId: OpaqueDeviceId,
     messageId: MessageId,

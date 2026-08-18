@@ -181,6 +181,14 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
      VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'OPENED', ?, ?)`,
     [randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z')],
   );
+  for (const status of ['INSTALL_REQUIRED', 'APP_INSTALLED', 'AUTHORIZATION_REQUIRED']) {
+    await getPool().query(
+      `INSERT INTO enrollment_invitations
+         (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at)
+       VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', ?, ?, ?)`,
+      [randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), status, new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z')],
+    );
+  }
 
   const snapshot = await new DashboardReadModel().build(now);
   const plan = snapshot.managedDeviceEntitlementByPlan.rows.find((row) => row.planRef === planRef);
@@ -200,12 +208,12 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   const beforeTerminal = (beforeUsd?.succeeded ?? 0) + (beforeUsd?.failed ?? 0);
   assert.equal(usd.successRate, ((beforeUsd?.succeeded ?? 0) + 1) / (beforeTerminal + 2));
   assert.equal(snapshot.exceptionQueues.stuckPaymentAttempts, (before.exceptionQueues.stuckPaymentAttempts ?? 0) + 1);
-  assert.equal(snapshot.exceptionQueues.expiredUnredeemedInvitations, (before.exceptionQueues.expiredUnredeemedInvitations ?? 0) + 1);
+  assert.equal(snapshot.exceptionQueues.expiredUnredeemedInvitations, (before.exceptionQueues.expiredUnredeemedInvitations ?? 0) + 4);
   assert.equal(snapshot.operationalSignals.capability, 'UNAVAILABLE');
   assert.equal(snapshot.operationalSignals.crashRate, null);
 });
 
-test('HTTP: GET /platform-admin/dashboard exposes settlementSummary/serviceHealth to a real SUPPORT_ADMIN caller (VIEW_PLATFORM_DASHBOARD is ALLOW for every role)', async () => {
+test('HTTP: GET /platform-admin/dashboard redacts settlementSummary/serviceHealth from SUPPORT_ADMIN while retaining the broad dashboard subset', async () => {
   const admin = await createAdmin({ role: 'SUPPORT_ADMIN' });
   const app = Fastify({ logger: false });
   registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: authService, rateLimiter: createRateLimiter() });
@@ -214,9 +222,9 @@ test('HTTP: GET /platform-admin/dashboard exposes settlementSummary/serviceHealt
     const response = await app.inject({ method: 'GET', url: '/platform-admin/dashboard', headers: { authorization: `Bearer ${admin.rawToken}` } });
     assert.equal(response.statusCode, 200);
     const body = response.json();
-    assert.equal(body.settlementSummary.capability, 'AVAILABLE');
-    assert.equal(body.serviceHealth.capability, 'AVAILABLE');
-    assert.ok(Array.isArray(body.serviceHealth.mostRecentBatchStatusByAccount));
+    assert.equal(Object.prototype.hasOwnProperty.call(body, 'settlementSummary'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(body, 'serviceHealth'), false);
+    assert.ok(body.accountsTotal, 'support still receives the non-settlement dashboard subset');
   } finally {
     await app.close();
   }

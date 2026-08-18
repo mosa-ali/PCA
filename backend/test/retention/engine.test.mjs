@@ -52,6 +52,28 @@ test('CURRENT_LAST_ONLY location mode is always valid, regardless of general win
   assert.deepEqual(validateRetentionPolicy(policy({ generalWindow: '14_DAYS', locationMode: 'CURRENT_LAST_ONLY' })), []);
 });
 
+test('malformed policy windows and timezone are rejected at the runtime boundary', () => {
+  assert.deepEqual(
+    validateRetentionPolicy({ generalWindow: 'UNLIMITED', locationMode: { window: '9_MONTHS' }, timezone: 'Not/AZone' }),
+    ['INVALID_GENERAL_WINDOW', 'INVALID_TIMEZONE'],
+  );
+  assert.deepEqual(
+    validateRetentionPolicy({ generalWindow: '1_MONTH', locationMode: { window: 'UNSUPPORTED' }, timezone: 'UTC' }),
+    ['INVALID_LOCATION_WINDOW'],
+  );
+});
+
+test('purge planning refuses malformed policy and invalid current time before selecting records', () => {
+  assert.throws(
+    () => planPurge([record()], policy({ generalWindow: 'UNLIMITED' }), new Date('2026-02-01T00:00:00.000Z')),
+    /INVALID_GENERAL_WINDOW/,
+  );
+  assert.throws(
+    () => planPurge([record()], policy(), new Date(Number.NaN)),
+    /nowUtc must be a valid UTC instant/,
+  );
+});
+
 test('audit entity classes resolve to AUDIT_FLOOR regardless of general/location window', () => {
   assert.equal(resolveEffectiveWindow('PARENT_ACTION_AUDIT', policy({ generalWindow: '14_DAYS' })), 'AUDIT_FLOOR');
   assert.equal(resolveEffectiveWindow('TAMPER_EVENT', policy({ generalWindow: '9_MONTHS' })), 'AUDIT_FLOOR');

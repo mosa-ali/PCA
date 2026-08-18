@@ -1,5 +1,6 @@
 import { isPlausibleCiphertext, isPlausibleOpaqueId, resolveRelayTtlMs, computeExpiryInstant } from './policy.js';
 import type { AcknowledgeResult, CreateEnvelopeResult, RelayRepository } from './RelayRepository.js';
+import { buildRelayDiagnosticEvent, type RelayDiagnosticEvent, type RelayDiagnosticOutcome } from './diagnostics.js';
 import type { MessageId, OpaqueDeviceId, OpaqueFamilyId, RelayEnvelopeRecord } from './types.js';
 
 export type RelayErrorCode = 'INVALID_INPUT' | 'CONFLICT' | 'NOT_FOUND' | 'EXPIRED';
@@ -37,10 +38,34 @@ export interface QueueEnvelopeInput {
 export class RelayService {
   private readonly repository: RelayRepository;
   private readonly now: () => Date;
+  private readonly diagnosticSink: ((event: RelayDiagnosticEvent) => void) | undefined;
 
-  constructor(repository: RelayRepository, now: () => Date = () => new Date()) {
+  constructor(
+    repository: RelayRepository,
+    now: () => Date = () => new Date(),
+    diagnosticSink?: (event: RelayDiagnosticEvent) => void,
+  ) {
     this.repository = repository;
     this.now = now;
+    this.diagnosticSink = diagnosticSink;
+  }
+
+  private emitDiagnostic(record: RelayEnvelopeRecord, outcome: RelayDiagnosticOutcome): void {
+    if (!this.diagnosticSink) return;
+    try {
+      this.diagnosticSink(buildRelayDiagnosticEvent(record, outcome));
+    } catch {
+      // Diagnostics are best-effort and must never alter delivery semantics.
+    }
+  }
+
+  private async purgeExpired(now: Date): Promise<void> {
+    if (!this.repository.purgeExpired) return;
+    try {
+      await this.repository.purgeExpired(now);
+    } catch {
+      // Expiry filtering remains enforced by the read/ack queries; cleanup is housekeeping.
+    }
   }
 
   /**
@@ -58,8 +83,10 @@ export class RelayService {
     }
     if (!isPlausibleCiphertext(input.ciphertext)) throw new RelayError('INVALID_INPUT');
 
+    const now = this.now();
+    await this.purgeExpired(now);
     const ttlMs = resolveRelayTtlMs(input.ttlMs);
-    const createdAt = this.now();
+    const createdAt = now;
     const record: RelayEnvelopeRecord = {
       messageId: input.messageId,
       familyId: input.familyId,
@@ -76,6 +103,7 @@ export class RelayService {
     switch (result.outcome) {
       case 'CREATED':
       case 'IDEMPOTENT_MATCH':
+        this.emitDiagnostic(result.record, 'QUEUED');
         return result.record;
       case 'CONFLICT':
         throw new RelayError('CONFLICT');
@@ -84,7 +112,11 @@ export class RelayService {
 
   async listQueuedForRecipient(recipientDeviceId: OpaqueDeviceId): Promise<RelayEnvelopeRecord[]> {
     if (!isPlausibleOpaqueId(recipientDeviceId)) throw new RelayError('INVALID_INPUT');
-    return this.repository.listQueuedForRecipient(recipientDeviceId, this.now());
+    const now = this.now();
+    await this.purgeExpired(now);
+    const records = await this.repository.listQueuedForRecipient(recipientDeviceId, now);
+    records.forEach((record) => this.emitDiagnostic(record, 'LISTED'));
+    return records;
   }
 
   async fetchEnvelope(recipientDeviceId: OpaqueDeviceId, messageId: MessageId): Promise<RelayEnvelopeRecord> {
@@ -93,9 +125,14 @@ export class RelayService {
     }
     const record = await this.repository.findForRecipient(recipientDeviceId, messageId);
     if (!record) throw new RelayError('NOT_FOUND');
-    if (record.state === 'QUEUED' && this.now().getTime() >= record.expiresAt.getTime()) {
+    const now = this.now();
+    const expired = record.state === 'EXPIRED' || (record.state === 'QUEUED' && now.getTime() >= record.expiresAt.getTime());
+    await this.purgeExpired(now);
+    if (expired) {
+      this.emitDiagnostic(record, 'EXPIRED');
       throw new RelayError('EXPIRED');
     }
+    this.emitDiagnostic(record, 'DELIVERED');
     return record;
   }
 
@@ -104,13 +141,16 @@ export class RelayService {
     if (!isPlausibleOpaqueId(recipientDeviceId) || !isPlausibleOpaqueId(messageId)) {
       throw new RelayError('INVALID_INPUT');
     }
+    const now = this.now();
     const result: AcknowledgeResult = await this.repository.acknowledgeAtomically(
       recipientDeviceId,
       messageId,
-      this.now(),
+      now,
     );
+    await this.purgeExpired(now);
     switch (result.outcome) {
       case 'ACKNOWLEDGED':
+        this.emitDiagnostic(result.record, 'ACKNOWLEDGED');
         return result.record;
       case 'EXPIRED':
         throw new RelayError('EXPIRED');

@@ -11,21 +11,35 @@ import type { Plugin } from 'vite';
  * the same clickjacking risk X-Frame-Options addresses, in browsers that
  * honor CSP.
  *
- * connect-src is deliberately 'self' only: VITE_PCA_API_BASE_URL is a
- * runtime-configurable env var, not something safe to bake a specific
- * origin for into a static built asset. If a deployment's backend lives on
- * a different origin than this app is served from, the real HTTP-response
- * CSP header that deployment's server sets should list that exact origin
- * explicitly -- do not widen this meta tag with a wildcard.
+ * connect-src includes the exact configured API origin (or the local backend
+ * default) so the checked-in local parent-web/backend configuration is
+ * reachable. It never uses a wildcard. A deployment that changes
+ * VITE_PCA_API_BASE_URL must rebuild the SPA so this policy changes with the
+ * client endpoint.
  *
  * apply: 'build' only -- Vite's dev server injects its own inline
  * <script type="module"> React Fast Refresh preamble ahead of <head>,
  * which a strict script-src 'self' CSP correctly blocks, so this must not
  * run during `npm run dev`.
  */
+const DEFAULT_API_BASE_URL = 'http://localhost:4001';
+
+function resolveApiOrigin(apiBaseUrl: string): string | null {
+  try {
+    const parsed = new URL(apiBaseUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+const configuredApiOrigin = resolveApiOrigin(process.env.VITE_PCA_API_BASE_URL ?? DEFAULT_API_BASE_URL);
+const connectSources = configuredApiOrigin ? `'self' ${configuredApiOrigin}` : "'self'";
+
 export const CSP_CONTENT =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; " +
+  `img-src 'self' data:; font-src 'self'; connect-src ${connectSources}; frame-ancestors 'none'; ` +
   "base-uri 'self'; form-action 'self'; object-src 'none'";
 
 export function securityHeadersPlugin(): Plugin {

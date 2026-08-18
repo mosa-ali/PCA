@@ -145,6 +145,55 @@ class GeofenceEngineTest {
         assertEquals(250.0, evaluation.distanceMeters, 0.5)
     }
 
+    @Test
+    fun `expired monotonic sample is ignored without changing debounce state`() {
+        val state = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+            candidateMembership = GeofenceMembership.OUTSIDE,
+            candidateStreak = 1,
+            lastEvaluatedMonotonicNanos = 1_000_000_000L,
+            lastAcceptedSampleElapsedRealtimeMillis = 1_000L,
+        )
+        val evaluation = GeofenceEngine.evaluate(
+            zone,
+            state,
+            sampleAtDistance(500.0).copy(elapsedRealtimeMillis = 1_001L),
+            nowMonotonicNanos = 901_002_000_000L,
+            config = GeofenceConfig(maxSampleAgeMillis = 900_000L),
+        )
+
+        assertEquals(state, evaluation.newState)
+        assertNull(evaluation.transition)
+    }
+
+    @Test
+    fun `out-of-order positive sample cannot reverse a confirmed transition`() {
+        val config = GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1)
+        val inside = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+        )
+        val exited = GeofenceEngine.evaluate(
+            zone,
+            inside,
+            sampleAtDistance(500.0).copy(elapsedRealtimeMillis = 2_000L),
+            nowMonotonicNanos = 2_000_000_000L,
+            config = config,
+        )
+        assertEquals(GeofenceTransitionType.EXIT, exited.transition)
+
+        val replay = GeofenceEngine.evaluate(
+            zone,
+            exited.newState,
+            sampleAtDistance(10.0).copy(elapsedRealtimeMillis = 1_000L),
+            nowMonotonicNanos = 2_001_000_000L,
+            config = config,
+        )
+        assertEquals(exited.newState, replay.newState)
+        assertNull(replay.transition)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `mismatched zone and state ids fail fast`() {
         GeofenceEngine.evaluate(zone, GeofenceZoneState(zoneId = "other-zone"), sampleAtDistance(0.0), 1L)

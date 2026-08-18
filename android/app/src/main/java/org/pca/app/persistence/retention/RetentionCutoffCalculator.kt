@@ -21,6 +21,22 @@ import org.pca.app.persistence.entity.RetentionPolicy
  */
 object RetentionCutoffCalculator {
 
+    /** PCA-DATA-022: location history may be shorter than or equal to general activity history. */
+    fun isLocationRetentionAllowed(generalPolicy: RetentionPolicy, locationPolicy: RetentionPolicy): Boolean {
+        if (generalPolicy == RetentionPolicy.LATEST_ONLY) return false
+        if (locationPolicy == RetentionPolicy.LATEST_ONLY) return true
+        return windowRank(locationPolicy) <= windowRank(generalPolicy)
+    }
+
+    private fun windowRank(policy: RetentionPolicy): Int = when (policy) {
+        RetentionPolicy.FOURTEEN_DAYS -> 0
+        RetentionPolicy.ONE_MONTH -> 1
+        RetentionPolicy.THREE_MONTHS -> 2
+        RetentionPolicy.SIX_MONTHS -> 3
+        RetentionPolicy.NINE_MONTHS -> 4
+        RetentionPolicy.LATEST_ONLY -> error("LATEST_ONLY is not a general time window")
+    }
+
     /** [RetentionPolicy.LATEST_ONLY] has no time-based cutoff -- callers must branch on it separately. */
     fun cutoffFor(policy: RetentionPolicy, nowUtc: Instant, policyZone: ZoneId): Instant = when (policy) {
         RetentionPolicy.FOURTEEN_DAYS -> nowUtc.minus(Duration.ofDays(14))
@@ -40,14 +56,15 @@ object RetentionCutoffCalculator {
     /**
      * PCA-DATA-026: a tombstone's own fixed, family-policy-independent bounded lifetime -- a
      * tombstone's only job is to let a short post-deletion reconciliation window distinguish
-     * "deleted" from "never existed"; six months is deliberately generous (well past any
-     * plausible sync/convergence delay this app could ever have) while still being finite,
-     * satisfying the "bounded lifetime" requirement rather than retaining tombstones forever.
+     * "deleted" from "never existed"; fourteen days is the shortest supported retention
+     * window and is deliberately finite, satisfying the bounded-lifetime requirement without
+     * allowing deletion metadata to outlive the app's shortest activity-history window.
      */
-    private val TOMBSTONE_LIFETIME = Period.ofMonths(6)
+    private val TOMBSTONE_LIFETIME = Duration.ofDays(14)
 
+    @Suppress("UNUSED_PARAMETER")
     fun tombstoneCutoff(nowUtc: Instant, policyZone: ZoneId): Instant =
-        nowUtc.atZone(policyZone).minus(TOMBSTONE_LIFETIME).toInstant()
+        nowUtc.minus(TOMBSTONE_LIFETIME)
 
     /**
      * PCA-DATA-021: audit-trail retention floor is the family's general

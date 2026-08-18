@@ -31,6 +31,16 @@ test('precise fresh sample yields FRESH location with accuracy and source', () =
   assert.equal(result.location.source, 'precise');
 });
 
+test('an explicitly expired sample is STALE even when its measured time is within the freshness window', () => {
+  const result = computeLocationDisplayState({
+    sample: sample({ expiresAtUtc: new Date('2026-01-07T12:04:00.000Z') }),
+    lastSeen: null,
+    capabilityState: 'ACTIVE',
+    nowUtc: new Date('2026-01-07T12:05:00.000Z'),
+  });
+  assert.equal(result.location.freshness, 'STALE');
+});
+
 test('approximate capability still reports the sample honestly with its own source label', () => {
   const result = computeLocationDisplayState({
     sample: sample({ source: 'approximate', horizontalAccuracyMeters: 1500 }),

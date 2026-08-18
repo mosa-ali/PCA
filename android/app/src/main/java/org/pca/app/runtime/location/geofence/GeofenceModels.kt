@@ -34,10 +34,15 @@ data class GeofenceConfig(
      * and a transition event is emitted -- defends against a single noisy/rapid boundary-crossing
      * sample producing a spurious alert. */
     val requiredConsecutiveSamplesToConfirm: Int = 2,
+    /** Maximum age of a monotonic location sample before it can affect membership. A sample with
+     * an elapsed-realtime origin of zero is accepted as the boot-time origin; real recorder samples
+     * advance beyond zero and are checked against this bound. */
+    val maxSampleAgeMillis: Long = 15 * 60 * 1000L,
 ) {
     init {
         require(hysteresisMeters >= 0.0) { "hysteresisMeters must not be negative" }
         require(requiredConsecutiveSamplesToConfirm >= 1) { "requiredConsecutiveSamplesToConfirm must be at least 1" }
+        require(maxSampleAgeMillis > 0L) { "maxSampleAgeMillis must be positive" }
     }
 }
 
@@ -55,6 +60,9 @@ data class GeofenceZoneState(
     val candidateMembership: GeofenceMembership = GeofenceMembership.UNKNOWN,
     val candidateStreak: Int = 0,
     val lastEvaluatedMonotonicNanos: Long = 0L,
+    /** Elapsed-realtime timestamp of the newest accepted sample, used to reject duplicate or
+     * out-of-order fixes after process restart. Null preserves compatibility with old state rows. */
+    val lastAcceptedSampleElapsedRealtimeMillis: Long? = null,
 )
 
 /** Result of one [GeofenceEngine.evaluate] call. [transition] is non-null only on the exact call

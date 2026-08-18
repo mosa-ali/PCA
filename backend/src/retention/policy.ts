@@ -3,6 +3,10 @@ import type { AuditRetentionEntityClass, RetentionEntityClass, RetentionWindow }
 /** doc 11 Section 2 -- the only supported family-selectable windows. No "unlimited" option exists; do not silently invent one. */
 export const RETENTION_WINDOWS: RetentionWindow[] = ['14_DAYS', '1_MONTH', '3_MONTHS', '6_MONTHS', '9_MONTHS'];
 
+export function isRetentionWindow(value: unknown): value is RetentionWindow {
+  return typeof value === 'string' && RETENTION_WINDOWS.includes(value as RetentionWindow);
+}
+
 /** doc 11 Section 2 -- architecture default at first enrollment, shown for explicit parent confirmation, never silently applied by this module (confirmation UX is a caller concern). */
 export const DEFAULT_RETENTION_WINDOW: RetentionWindow = '1_MONTH';
 
@@ -21,6 +25,7 @@ export function monthsForWindow(window: RetentionWindow): number | null {
 export const AUDIT_RETENTION_FLOOR_MONTHS = 12;
 
 export function effectiveAuditRetentionMonths(generalWindow: RetentionWindow): number {
+  if (!isRetentionWindow(generalWindow)) throw new RangeError(`Unrecognized retention window: ${generalWindow}`);
   const generalMonths = monthsForWindow(generalWindow) ?? 14 / 30; // 14_DAYS approximated only for this max() comparison, never for actual cutoff math
   return Math.max(generalMonths, AUDIT_RETENTION_FLOOR_MONTHS);
 }
@@ -36,5 +41,19 @@ const WINDOW_ORDER: RetentionWindow[] = ['14_DAYS', '1_MONTH', '3_MONTHS', '6_MO
 
 /** Negative if `a` is strictly shorter/equal-or-shorter than `b`... actually: returns a<b?-1 : a>b?1 : 0, by ordinal strictness position. */
 export function compareRetentionWindows(a: RetentionWindow, b: RetentionWindow): number {
+  if (!isRetentionWindow(a) || !isRetentionWindow(b)) {
+    throw new RangeError(`Unrecognized retention window: ${!isRetentionWindow(a) ? a : b}`);
+  }
   return WINDOW_ORDER.indexOf(a) - WINDOW_ORDER.indexOf(b);
+}
+
+/** IANA timezone validation at the policy boundary; invalid zones must not be persisted or echoed as accepted policy. */
+export function isValidPolicyTimezone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== 'string' || timeZone.length === 0 || timeZone.trim() !== timeZone) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
 }

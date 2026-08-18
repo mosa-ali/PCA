@@ -8,6 +8,12 @@ test('14 days is an exact 14*24h UTC interval, timezone-independent', () => {
   assert.equal(expiry.toISOString(), '2026-01-15T10:00:00.000Z');
 });
 
+test('calendar and fixed retention arithmetic reject invalid inputs instead of returning invalid dates', () => {
+  assert.throws(() => computeFixedIntervalExpiryInstant(new Date(Number.NaN), 14), RangeError);
+  assert.throws(() => computeFixedIntervalExpiryInstant(new Date('2026-01-01T00:00:00.000Z'), -1), RangeError);
+  assert.throws(() => computeCalendarMonthExpiryInstant(new Date('2026-01-01T00:00:00.000Z'), 'UTC', 0), RangeError);
+});
+
 test('1-month calendar arithmetic in UTC-fixed-offset zone', () => {
   const event = new Date('2026-01-15T12:00:00.000Z'); // 15:00 Riyadh (UTC+3)
   const expiry = computeCalendarMonthExpiryInstant(event, 'Asia/Riyadh', 1);

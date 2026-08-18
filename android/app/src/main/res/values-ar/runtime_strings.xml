@@ -13,7 +13,7 @@
     <string name="child_home_management_authorization_required">يحتاج PCA إلى تفويض الجهاز قبل تطبيق الحماية الأقوى. تظهر الحالة الحالية أدناه.</string>
     <string name="child_home_management_not_supported">لا تدعم إمكانات هذا الجهاز حماية PCA. تظهر الحالة الحالية أدناه.</string>
     <string name="child_home_parent_visibility_title">ما الذي يمكن لولي أمرك رؤيته</string>
-    <string name="child_home_parent_visibility_body">يمكن لولي أمرك رؤية حالة الحماية ووقت الشاشة وأحداث السياسات وفئات النشاط التي تتيحها العائلة. لا يخزن PCA إطارات الكاميرا أو الهوية الوجهية كسجل مراقبة عائلي.</string>
+    <string name="child_home_parent_visibility_body">يمكن لولي أمرك رؤية حالة الحماية ووقت الشاشة وأحداث السياسات وفئات النشاط المفعّلة على جهازك. لا يخزن PCA إطارات الكاميرا أو الهوية الوجهية كسجل لمراقبة نشاط الأطفال.</string>
 
     <string name="child_home_local_protection_active">الحماية نشطة على هذا الجهاز</string>
     <string name="child_home_remote_updates_pending">التحديثات عن بُعد معلّقة حتى إعادة اتصال هذا الجهاز</string>

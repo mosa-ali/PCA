@@ -23,6 +23,7 @@ class GeofenceZoneStateStoreTest {
             candidateMembership = GeofenceMembership.OUTSIDE,
             candidateStreak = 2,
             lastEvaluatedMonotonicNanos = 123_456_789L,
+            lastAcceptedSampleElapsedRealtimeMillis = 987_654L,
         )
         store.save(state)
         assertEquals(state, store.load("zone-1"))
@@ -51,5 +52,17 @@ class GeofenceZoneStateStoreTest {
     fun `corrupt raw value degrades to null rather than crashing`() {
         backing.putString("geofence_zone_state_v1_zone-1", "garbage")
         assertNull(store.load("zone-1"))
+    }
+
+    @Test
+    fun `reads legacy four-field state rows without inventing a sample timestamp`() {
+        backing.putString(
+            "geofence_zone_state_v1_zone-1",
+            "INSIDE|INSIDE|0|123456789",
+        )
+
+        val state = store.load("zone-1")
+        assertEquals(GeofenceMembership.INSIDE, state?.confirmedMembership)
+        assertNull(state?.lastAcceptedSampleElapsedRealtimeMillis)
     }
 }

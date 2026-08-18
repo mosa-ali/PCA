@@ -34,11 +34,12 @@ class GeofenceZoneStateStore(
         state.candidateMembership.name,
         state.candidateStreak.toString(),
         state.lastEvaluatedMonotonicNanos.toString(),
+        state.lastAcceptedSampleElapsedRealtimeMillis?.toString() ?: "-",
     ).joinToString(SEP)
 
     private fun decode(zoneId: String, raw: String): GeofenceZoneState? {
         val parts = raw.split(SEP)
-        if (parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != FIELD_COUNT) return null
         return try {
             GeofenceZoneState(
                 zoneId = zoneId,
@@ -46,6 +47,7 @@ class GeofenceZoneStateStore(
                 candidateMembership = GeofenceMembership.valueOf(parts[1]),
                 candidateStreak = parts[2].toInt(),
                 lastEvaluatedMonotonicNanos = parts[3].toLong(),
+                lastAcceptedSampleElapsedRealtimeMillis = parts.getOrNull(4)?.takeUnless { it == "-" }?.toLong(),
             )
         } catch (_: IllegalArgumentException) {
             null
@@ -55,6 +57,7 @@ class GeofenceZoneStateStore(
     private companion object {
         const val KEY_PREFIX = "geofence_zone_state_v1_"
         const val SEP = "|"
-        const val FIELD_COUNT = 4
+        const val LEGACY_FIELD_COUNT = 4
+        const val FIELD_COUNT = 5
     }
 }

@@ -35,6 +35,11 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
         nowUtc: Instant,
         devices: List<DeviceRetentionContext>,
     ): List<RetentionDeletionReceiptEntity> {
+        devices.forEach { ctx ->
+            require(RetentionCutoffCalculator.isLocationRetentionAllowed(ctx.generalRetentionPolicy, ctx.locationRetentionPolicy)) {
+                "Location retention must be shorter than or equal to general retention for device ${ctx.deviceId}."
+            }
+        }
         val receipts = mutableListOf<RetentionDeletionReceiptEntity>()
         database.withTransaction {
             for (ctx in devices) {
@@ -48,7 +53,7 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
 
     /**
      * PCA-DATA-026: prunes `tombstone_records` past their own fixed, bounded lifetime (see
-     * [RetentionCutoffCalculator.tombstoneCutoff]'s own doc comment for why six months, independent
+     * [RetentionCutoffCalculator.tombstoneCutoff]'s own doc comment for its fixed 14-day lifetime, independent
      * of any family retention policy). Deliberately its own cycle, not folded into
      * [runGeneralCycle] or [runAuditFloorCycle] -- a tombstone is neither ordinary activity data
      * nor an audit trail, it is proof-of-deletion metadata with its own distinct lifetime rule.

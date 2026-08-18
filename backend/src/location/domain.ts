@@ -1,4 +1,5 @@
 import type { LocationCapabilityState, LocationDisplayState, LastSeenRecord, LocationSample } from './types.js';
+import { isLocationSampleFresh } from './freshness.js';
 
 /** doc 16 Section 1: "Current" default freshness threshold -- a display state, not proof of physical presence. */
 export const DEFAULT_FRESHNESS_THRESHOLD_MS = 15 * 60 * 1000;
@@ -28,8 +29,9 @@ export function computeLocationDisplayState(input: ComputeDisplayStateInput): Lo
     if (!input.sample) {
       return { freshness: 'NO_SAMPLE' as const, measuredAtUtc: null, accuracyMeters: null, source: null };
     }
-    const ageMs = input.nowUtc.getTime() - input.sample.measuredAtUtc.getTime();
-    const freshness = ageMs >= 0 && ageMs <= freshnessThresholdMs ? ('FRESH' as const) : ('STALE' as const);
+    const freshness = isLocationSampleFresh(input.sample, input.nowUtc, freshnessThresholdMs)
+      ? ('FRESH' as const)
+      : ('STALE' as const);
     return {
       freshness,
       measuredAtUtc: input.sample.measuredAtUtc,

@@ -1,4 +1,4 @@
-import { planDeleteNow, type PurgePlan } from './engine.js';
+import { clonePurgePlan, planDeleteNow, type PurgePlan } from './engine.js';
 import type { DeleteNowLedger } from './DeleteNowLedger.js';
 import type { RetentionRecord } from './types.js';
 
@@ -23,11 +23,13 @@ export interface DeleteNowResult {
  * arrived after the original action completed.
  */
 export function applyDeleteNow(actionId: string, records: RetentionRecord[], ledger: DeleteNowLedger, nowUtc: Date): DeleteNowResult {
+  if (typeof actionId !== 'string' || actionId.length === 0) throw new RangeError('actionId must be a non-empty string.');
+  if (!(nowUtc instanceof Date) || !Number.isFinite(nowUtc.getTime())) throw new RangeError('nowUtc must be a valid UTC instant.');
   const existing = ledger.get(actionId);
   if (existing) {
-    return { plan: existing.plan, idempotent: true };
+    return { plan: clonePurgePlan(existing.plan), idempotent: true };
   }
   const plan = planDeleteNow(records);
   ledger.record(actionId, plan, nowUtc);
-  return { plan, idempotent: false };
+  return { plan: clonePurgePlan(plan), idempotent: false };
 }
