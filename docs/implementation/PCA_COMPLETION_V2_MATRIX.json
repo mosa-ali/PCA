@@ -2772,13 +2772,18 @@
       "phase": [
         "PCA-0"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicy.kt"
+        "android/app/src/main/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicy.kt",
+        "android/app/src/main/java/org/pca/app/feature/screentime/policy/ScreenTimePolicyApplier.kt",
+        "android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicyTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimePolicyApplierTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Focused Android baseline and policy-applier tests passed; no production behavior change was required."
     },
     {
       "requirementId": "PCA-NFR-060",

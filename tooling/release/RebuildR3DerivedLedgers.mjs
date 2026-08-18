@@ -30,6 +30,22 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep freshness state sourced from actual device and synchronization observations; never infer LIVE from a cached timestamp alone.',
     notes: 'This closes the parent-web source contract without claiming live transport, relay, or real-device validation.'
   },
+  'PCA-NFR-054': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicy.kt',
+      'android/app/src/main/java/org/pca/app/feature/screentime/policy/ScreenTimePolicyApplier.kt',
+      'android/app/src/main/java/org/pca/app/feature/screentime/engine/ScreenTimeEngine.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicyTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimePolicyApplierTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The Android screen-time baseline is enforced at configuration construction and policy application, rejecting weaker or out-of-range values and retaining the last-known-good policy offline.',
+    nextAction: 'Keep the non-weakenable baseline as the single validation boundary for future screen-time policy inputs.',
+    notes: 'Focused Android baseline and policy-applier tests passed; no production behavior change was required.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -425,6 +441,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-144': 'REAL_SOURCE_GAP',
   'PCA-NFR-014': 'REAL_SOURCE_GAP',
   'PCA-NFR-021': 'SOURCE_COMPLETE',
+  'PCA-NFR-054': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',

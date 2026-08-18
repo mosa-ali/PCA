@@ -99,7 +99,7 @@
 "PCA-NFR-050","PCA-0","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-NFR-051","PCA-0;PCA-17","PARTIAL","backend/test/** (extensive suite exists)","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-NFR-052","PCA-0","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
-"PCA-NFR-054","PCA-0","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
+"PCA-NFR-054","PCA-0","SOURCE_COMPLETE","android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimeBaselinePolicyTest.kt; android/app/src/test/java/org/pca/app/feature/screentime/policy/ScreenTimePolicyApplierTest.kt","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-NFR-060","PCA-17;PCA-10","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-NFR-061","PCA-17;PCA-10","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-NFR-062","PCA-17;PCA-10","PARTIAL","backend/test/retention/retentionRoutes.test.mjs","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
