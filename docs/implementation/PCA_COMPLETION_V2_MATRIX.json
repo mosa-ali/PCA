@@ -1427,17 +1427,27 @@
       "phase": [
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt (real PIN/biometric-gated entry point, composes AdminPinScreen + RemovalDecisionScreen) + Pbkdf2AdminPinVerifier.kt/RealBiometricAuthGate.kt (real gates, not concepts)"
+        "android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt",
+        "android/app/src/main/java/org/pca/app/security/Pbkdf2AdminPinVerifier.kt",
+        "android/app/src/main/java/org/pca/app/security/RealBiometricAuthGate.kt",
+        "android/app/src/main/java/org/pca/app/feature/removaldecision/ui/RemovalDecisionScreen.kt",
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/src/main/java/org/pca/app/MainActivity.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/security/ + feature/removaldecision/"
+        "android/app/src/test/java/org/pca/app/security/Pbkdf2AdminPinVerifierTest.kt",
+        "android/app/src/test/java/org/pca/app/security/UnavailableBiometricAuthGateTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionStateMachineTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/removaldecision/PersistentRemovalDecisionRepositoryTest.kt"
       ],
       "externalGate": [
-        "PRODUCTION_CRYPTO_SECURITY_REVIEW (for cross-device authority claims)"
+        "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was PARTIAL (\"local PIN gate concept... app is trivially uninstallable via ordinary Android uninstall\"). The PIN gate and removal-decision UI are now real and reachable; the underlying claim that Android has no way to actually prevent uninstall (no Device Owner) remains true and is a legitimate, documented product-scope gap, not an implementation defect. Runtime reachability: GENUINELY REACHABLE -- see runtime spot-check (a) below: AndroidManifest.xml:106-108 registers AdminSecurityActivity (exported=false); MainActivity.kt:52-54 wires ChildHomeScreen's onOpenAdminSecurity callback to startActivity(AdminSecurityActivity); ChildHomeScreen.kt:70,96-109 (AdminSecurityEntryCard) is a real clickable Card with semantics, not a placeholder. Note: AdminSecurityActivity.kt's own doc comment (lines 46-51) is now STALE -- it still says \"NOT YET registered in AndroidManifest.xml or linked from any existing screen,\" but Wave-B Coordinator glue (per ChildHomeScreen.kt:90-95's own comment, \"Coordinator glue (Wave B integration)\") has since done exactly that. Functionally correct, but the doc comment should be updated to avoid misleading future readers."
+      "notes": "Local source does not claim that a normal app install can prevent uninstall; the remaining capability is represented by the explicit external gate."
     },
     {
       "requirementId": "PCA-FR-085",

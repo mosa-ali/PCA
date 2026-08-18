@@ -295,6 +295,30 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep locale key parity tests running when either web surface adds user-facing copy and obtain native-language review for wording quality when translations change.',
     notes: 'The repository proves direction/key-set behavior and rendered parent-web RTL paths; this does not claim independent native-language editorial sign-off.',
   },
+  'PCA-FR-084': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt',
+      'android/app/src/main/java/org/pca/app/security/Pbkdf2AdminPinVerifier.kt',
+      'android/app/src/main/java/org/pca/app/security/RealBiometricAuthGate.kt',
+      'android/app/src/main/java/org/pca/app/feature/removaldecision/ui/RemovalDecisionScreen.kt',
+      'android/app/src/main/AndroidManifest.xml',
+      'android/app/src/main/java/org/pca/app/MainActivity.kt',
+      'android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/security/Pbkdf2AdminPinVerifierTest.kt',
+      'android/app/src/test/java/org/pca/app/security/UnavailableBiometricAuthGateTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionStateMachineTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionCoordinatorTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/removaldecision/PersistentRemovalDecisionRepositoryTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
+    externalGate: ['DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION'],
+    currentGap: 'The Android PIN/biometric-gated admin entry point and removal-decision state machine are real, registered, reachable, persisted, and locally tested. Ordinary Android uninstall prevention still requires verified Device Owner authority on a real child device.',
+    nextAction: 'Retain the local authentication/removal boundary and independently verify Device Owner provisioning and uninstall behavior on an authorized real device.',
+    notes: 'Local source does not claim that a normal app install can prevent uninstall; the remaining capability is represented by the explicit external gate.',
+  },
   'PCA-FR-127': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
