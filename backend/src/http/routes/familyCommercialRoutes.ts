@@ -114,6 +114,8 @@ function familyCommercialErrorToHttpStatus(code: FamilyCommercialError['code']):
       return 400;
     case 'INVALID_STATE':
       return 409;
+    case 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED':
+      return 403;
   }
 }
 

@@ -13,6 +13,7 @@ import type {
 } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
+import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 
 export type InvitationErrorCode =
   | 'INVALID_TOKEN'
@@ -21,7 +22,8 @@ export type InvitationErrorCode =
   | 'REVOKED'
   | 'ALREADY_REDEEMED'
   /** PCA-ADD-ENR-005: an INSTALL_REQUIRED/APP_INSTALLED/AUTHORIZATION_REQUIRED transition was requested out of order (e.g. requesting an earlier state than the invitation has already reached). Never leaks the current status beyond this generic code. */
-  | 'INVALID_STATE';
+  | 'INVALID_STATE'
+  | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED';
 
 /** Message text is always a fixed, generic string per code — never interpolates the raw token or family data. */
 export class InvitationError extends Error {
@@ -40,6 +42,7 @@ const INVITATION_ERROR_MESSAGES: Record<InvitationErrorCode, string> = {
   REVOKED: 'Invitation was revoked.',
   ALREADY_REDEEMED: 'Invitation was already redeemed.',
   INVALID_STATE: 'Invitation is not in a state that allows this action.',
+  FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED: 'New managed-device capacity is unavailable after free access expires.',
 };
 
 export interface CreateInvitationInput {
@@ -115,7 +118,12 @@ export class InvitationService {
     // invitations are a separate, not-yet-implemented family-RBAC flow
     // this service does not own.
     if (this.slotReservationService) {
-      await this.slotReservationService.reserveForInvitation(input.familyId, invitationId, expiresAt);
+      try {
+        await this.slotReservationService.reserveForInvitation(input.familyId, invitationId, expiresAt);
+      } catch (error) {
+        if (error instanceof FreeAccessEnforcementError) throw new InvitationError('FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED');
+        throw error;
+      }
     }
 
     const record: InvitationRecord = {

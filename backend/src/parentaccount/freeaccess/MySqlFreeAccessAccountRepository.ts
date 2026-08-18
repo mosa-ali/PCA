@@ -42,6 +42,13 @@ export class MySqlFreeAccessAccountRepository implements FreeAccessAccountReposi
     return rows[0] ? rowToRecord(rows[0]) : null;
   }
 
+  async findByFamilyId(familyId: string): Promise<FreeAccessAccountRow | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<Row>(conn, `SELECT ${SELECT_COLUMNS} FROM parent_accounts WHERE family_id = ? AND status = 'VERIFIED' ORDER BY account_id LIMIT 1`, [familyId]),
+    );
+    return rows[0] ? rowToRecord(rows[0]) : null;
+  }
+
   async adjustFreeAccess(accountId: ParentAccountId, action: FreeAccessAdjustmentAction, now: Date): Promise<FreeAccessAdjustmentResult | null> {
     return runInTransaction((conn) => this.adjustFreeAccessWithinTransaction(conn, accountId, action, now));
   }

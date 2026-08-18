@@ -142,6 +142,7 @@ import { MySqlCommercialMaintenanceRunner, loadCommercialMaintenanceConfig } fro
 // the Round5 FreeAccessSnapshot.
 import { MySqlFreeAccessAccountRepository } from './parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
 import { FreeAccessAdminService } from './parentaccount/freeaccess/FreeAccessAdminService.js';
+import { FreeAccessAcquisitionPolicy } from './parentaccount/freeaccess/FreeAccessAcquisitionPolicy.js';
 // PCA-BILL-3 (Round6): Settlement/Reconciliation domain.
 import { MySqlSettlementRepository } from './billing/settlement/MySqlSettlementRepository.js';
 import { SettlementService } from './billing/settlement/SettlementService.js';
@@ -291,6 +292,8 @@ async function start(): Promise<void> {
   // argument (Writer60's own backward-compatible design); passing it here
   // is what actually activates the effective-limit behavior in production.
   const complimentaryGrantRepositoryForConsumption = new MySqlComplimentaryGrantRepository();
+  const freeAccessAccountRepository = new MySqlFreeAccessAccountRepository();
+  const freeAccessAcquisitionPolicy = new FreeAccessAcquisitionPolicy(freeAccessAccountRepository, complimentaryGrantRepositoryForConsumption);
   const entitlementRepository = new MySqlEntitlementRepository(complimentaryGrantRepositoryForConsumption);
   const changeRequestRepository = new MySqlChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
@@ -305,6 +308,8 @@ async function start(): Promise<void> {
     entitlementService,
     new PriceBookQuotePort(priceBookRepository),
     commercialNotificationPublisher,
+    undefined,
+    freeAccessAcquisitionPolicy,
   );
   const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
 
@@ -312,6 +317,8 @@ async function start(): Promise<void> {
   const platformAdminAccountService = new PlatformAdminAccountService(new MySqlPlatformAdminAuthRepository());
   const slotReservationService = new SlotReservationService(
     new MySqlSlotReservationRepository(entitlementRepository, complimentaryGrantRepositoryForConsumption),
+    () => new Date(),
+    freeAccessAcquisitionPolicy,
   );
   const platformAdminEntitlementService = new PlatformAdminEntitlementService(
     platformAdminAuthService,
@@ -395,7 +402,6 @@ async function start(): Promise<void> {
   // parent-facing free-access status read and the admin adjustment
   // service. Reuses the SAME authService instance the rest of the parent
   // identity plane shares.
-  const freeAccessAccountRepository = new MySqlFreeAccessAccountRepository();
   const freeAccessAdminService = new FreeAccessAdminService(platformAdminAuthService, freeAccessAccountRepository);
 
   // PCA-BILL-3 (Round6, Writer62): Settlement/Reconciliation. Reuses the
@@ -408,7 +414,7 @@ async function start(): Promise<void> {
     authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,
-    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService),
+    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService),
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService: new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService),

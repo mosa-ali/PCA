@@ -94,6 +94,9 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         return reply.code(201).send(toInvitationCreatedDto(record, rawToken));
       } catch (error) {
         if (error instanceof RangeError) return reply.code(400).send({ error: 'invalid_request' });
+        if (error instanceof InvitationError && error.code === 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED') {
+          return reply.code(403).send({ error: 'forbidden', code: error.code });
+        }
         throw error;
       }
     },

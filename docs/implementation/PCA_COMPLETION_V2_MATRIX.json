@@ -5259,11 +5259,22 @@
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "PARTIAL",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.ts",
+        "backend/src/parentaccount/freeaccess/MySqlFreeAccessAccountRepository.ts",
+        "backend/src/entitlements/slots/SlotReservationService.ts",
+        "backend/src/entitlements/requests/ChangeRequestService.ts",
+        "backend/src/invitation/InvitationService.ts",
+        "backend/src/familycommercial/FamilyCommercialService.ts",
+        "backend/src/main.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.test.mjs",
+        "backend/test/entitlements/FreeAccessAcquisitionCallSites.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Round6 (Writer61): the allowed/denied operation matrix (auth/billing/status remain available; existing enrolled protections are never disabled/suspended/removed on FREE_ACCESS expiry) is correct by construction -- no code path anywhere disables protection on FREE_ACCESS expiry, and GET /api/parent/f Runtime reachability: Partially wired; see gap."
+      "notes": "The policy is server-clock-driven and fail-closed. Legacy families without a parent FREE_ACCESS snapshot remain compatible; active complimentary COMMERCIAL_ACCESS is evaluated from durable grant state, never caller input."
     },
     {
       "requirementId": "PCA-ADD-IDENT-022",

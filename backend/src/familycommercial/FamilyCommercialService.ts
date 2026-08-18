@@ -28,6 +28,7 @@ import { isCommercialMarket, MARKET_DEFAULT_CURRENCY } from '../billing/market.j
 import type { CommercialMarket } from '../billing/market.js';
 import { isSupportedCurrency } from '../billing/currency.js';
 import type { CurrencyCode } from '../billing/currency.js';
+import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 import { FamilyInvoiceReadRepository } from './FamilyInvoiceReadRepository.js';
 import type { FamilyInvoiceLineRow, FamilyInvoiceRow } from './FamilyInvoiceReadRepository.js';
 
@@ -37,7 +38,8 @@ export type FamilyCommercialErrorCode =
   | 'INVALID_STATE'
   | 'CROSS_FAMILY'
   | 'INVALID_MARKET'
-  | 'INVALID_CURRENCY';
+  | 'INVALID_CURRENCY'
+  | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED';
 
 export class FamilyCommercialError extends Error {
   readonly code: FamilyCommercialErrorCode;
@@ -117,6 +119,7 @@ export class FamilyCommercialService {
       return await this.changeRequestService.createRequest(input.familyId, 'MANAGED_DEVICE_LIMIT', input.targetLimit, market, currencyCode);
     } catch (error) {
       if (error instanceof ChangeRequestError && error.code === 'INVALID_TARGET') throw new FamilyCommercialError('INVALID_TARGET');
+      if (error instanceof FreeAccessEnforcementError) throw new FamilyCommercialError('FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED');
       throw error;
     }
   }
@@ -138,6 +141,7 @@ export class FamilyCommercialService {
       return await this.changeRequestService.createRequest(input.familyId, 'PARENT_MEMBER_LIMIT', input.targetLimit, market, currencyCode);
     } catch (error) {
       if (error instanceof ChangeRequestError && error.code === 'INVALID_TARGET') throw new FamilyCommercialError('INVALID_TARGET');
+      if (error instanceof FreeAccessEnforcementError) throw new FamilyCommercialError('FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED');
       throw error;
     }
   }

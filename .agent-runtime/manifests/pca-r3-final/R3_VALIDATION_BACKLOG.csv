@@ -183,7 +183,7 @@
 "PCA-ADD-IDENT-018","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-ADD-IDENT-019","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-ADD-IDENT-020","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
-"PCA-ADD-IDENT-021","PCA-AUTH-SESSION-1","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
+"PCA-ADD-IDENT-021","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","backend/test/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.test.mjs; backend/test/entitlements/FreeAccessAcquisitionCallSites.test.mjs","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-ADD-IDENT-022","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-ADD-IDENT-023","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-ADD-IDENT-024","PCA-AUTH-SESSION-1","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"

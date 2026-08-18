@@ -16,6 +16,7 @@ import type { EntitlementChangeRequestRecord, EntitlementChangeRequestState, Lim
 // state before transitioning), so requestId alone is a sufficient,
 // stable, retry-safe dedupe identity for every hook in this file.
 import type { CommercialNotificationPublisher } from '../../commercialnotifications/CommercialNotificationPublisher.js';
+import type { NewCapacityAcquisitionPolicy } from '../../parentaccount/freeaccess/FreeAccessAcquisitionPolicy.js';
 
 export type ChangeRequestErrorCode =
   | 'INVALID_TARGET'
@@ -58,6 +59,7 @@ export class ChangeRequestService {
   private readonly quotePort: QuotePort;
   private readonly notificationPublisher: CommercialNotificationPublisher;
   private readonly now: () => Date;
+  private readonly newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null;
 
   constructor(
     changeRequestRepository: ChangeRequestRepository,
@@ -66,6 +68,7 @@ export class ChangeRequestService {
     quotePort: QuotePort,
     notificationPublisher: CommercialNotificationPublisher,
     now: () => Date = () => new Date(),
+    newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null = null,
   ) {
     this.changeRequestRepository = changeRequestRepository;
     this.entitlementRepository = entitlementRepository;
@@ -73,6 +76,7 @@ export class ChangeRequestService {
     this.quotePort = quotePort;
     this.notificationPublisher = notificationPublisher;
     this.now = now;
+    this.newCapacityAcquisitionPolicy = newCapacityAcquisitionPolicy;
   }
 
   private async publishQuoteReady(request: EntitlementChangeRequestRecord, now: Date): Promise<void> {
@@ -99,6 +103,7 @@ export class ChangeRequestService {
   async createRequest(familyId: OpaqueFamilyId, limitType: LimitType, targetLimit: number, market: ResolveStandardQuoteInput['commercialMarket'], currencyCode: string): Promise<EntitlementChangeRequestRecord> {
     if (!Number.isInteger(targetLimit) || targetLimit < 0) throw new ChangeRequestError('INVALID_TARGET');
     const now = this.now();
+    await this.newCapacityAcquisitionPolicy?.assertAllowed(familyId, now);
     // EFFECTIVE_ENTITLEMENT_V2 (PCA-COMPLIMENTARY-CONSUMPTION-1, Writer60
     // Round6): compares against the EFFECTIVE limit (base + ACTIVE
     // complimentary capacity for this limitType), not the base limit alone

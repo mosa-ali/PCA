@@ -14,6 +14,26 @@ const paths = {
 };
 
 const SOURCE_UPDATES = {
+  'PCA-ADD-IDENT-021': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.ts',
+      'backend/src/parentaccount/freeaccess/MySqlFreeAccessAccountRepository.ts',
+      'backend/src/entitlements/slots/SlotReservationService.ts',
+      'backend/src/entitlements/requests/ChangeRequestService.ts',
+      'backend/src/invitation/InvitationService.ts',
+      'backend/src/familycommercial/FamilyCommercialService.ts',
+      'backend/src/main.ts',
+    ],
+    testEvidence: [
+      'backend/test/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.test.mjs',
+      'backend/test/entitlements/FreeAccessAcquisitionCallSites.test.mjs',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The persisted FREE_ACCESS expiry gate is enforced at the real managed-device invitation reservation and family commercial capacity-request call sites. Existing protections are never removed, and an active complimentary COMMERCIAL_ACCESS grant is the explicit override.',
+    nextAction: 'Retain the gate and re-check it when a new commercial-capability acquisition call site is introduced.',
+    notes: 'The policy is server-clock-driven and fail-closed. Legacy families without a parent FREE_ACCESS snapshot remain compatible; active complimentary COMMERCIAL_ACCESS is evaluated from durable grant state, never caller input.',
+  },
   'PCA-FR-008': {
     status: 'PARTIAL',
     sourceEvidence: [

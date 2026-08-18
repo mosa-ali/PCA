@@ -29,6 +29,8 @@ export interface FreeAccessAdjustmentResult {
  */
 export interface FreeAccessAccountRepository {
   findByAccountId(accountId: ParentAccountId): Promise<FreeAccessAccountRow | null>;
+  /** Family-scoped lookup for the commercial-capability acquisition gate. */
+  findByFamilyId(familyId: string): Promise<FreeAccessAccountRow | null>;
 
   /**
    * Convenience wrapper around `adjustFreeAccessWithinTransaction` that

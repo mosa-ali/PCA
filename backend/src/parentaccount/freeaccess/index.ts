@@ -5,5 +5,7 @@ export type { FreeAccessAdjustmentAction, FreeAccessAdjustmentErrorCode } from '
 export { computeAdjustedSnapshot, FreeAccessAdjustmentError } from './adjustment.js';
 export type { FreeAccessAccountRepository, FreeAccessAccountRow, FreeAccessAdjustmentResult } from './FreeAccessAccountRepository.js';
 export { MySqlFreeAccessAccountRepository } from './MySqlFreeAccessAccountRepository.js';
+export type { NewCapacityAcquisitionPolicy } from './FreeAccessAcquisitionPolicy.js';
+export { FreeAccessAcquisitionPolicy } from './FreeAccessAcquisitionPolicy.js';
 export type { FreeAccessAdminActor, FreeAccessAdminErrorCode } from './FreeAccessAdminService.js';
 export { FreeAccessAdminService, FreeAccessAdminError } from './FreeAccessAdminService.js';

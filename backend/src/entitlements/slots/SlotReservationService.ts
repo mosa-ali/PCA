@@ -1,4 +1,5 @@
 import type { OpaqueFamilyId, SlotReleaseReason, SlotReservationRecord } from '../types.js';
+import type { NewCapacityAcquisitionPolicy } from '../../parentaccount/freeaccess/FreeAccessAcquisitionPolicy.js';
 import type { SlotReservationRepository } from './SlotReservationRepository.js';
 
 export type SlotReservationErrorCode = 'NO_AVAILABLE_SLOT' | 'ENTITLEMENT_NOT_FOUND';
@@ -21,13 +22,19 @@ export class SlotReservationError extends Error {
 export class SlotReservationService {
   private readonly repository: SlotReservationRepository;
   private readonly now: () => Date;
+  private readonly newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null;
 
-  constructor(repository: SlotReservationRepository, now: () => Date = () => new Date()) {
+  constructor(repository: SlotReservationRepository, now: () => Date = () => new Date(), newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null = null) {
     this.repository = repository;
     this.now = now;
+    this.newCapacityAcquisitionPolicy = newCapacityAcquisitionPolicy;
   }
 
   async reserveForInvitation(familyId: OpaqueFamilyId, invitationId: string, expiresAt: Date): Promise<SlotReservationRecord> {
+    // A retry of an already-created reservation is not a new acquisition and
+    // must remain idempotent even if FREE_ACCESS expired between attempts.
+    const existing = await this.repository.findByInvitationId(invitationId);
+    if (!existing) await this.newCapacityAcquisitionPolicy?.assertAllowed(familyId, this.now());
     const result = await this.repository.reserve(familyId, invitationId, this.now(), expiresAt);
     switch (result.outcome) {
       case 'RESERVED':
