@@ -139,6 +139,19 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep disclosure copy synchronized with the canonical privacy inventory and preserve truthful pending/offline wording for requests.',
     notes: 'Android resource compilation and focused disclosure tests passed; no system-identity simulation or unavailable direct removal control was added.'
   },
+  'PCA-SEC-025': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/AndroidManifest.xml',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/security/AllowBackupManifestTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Android application backup is explicitly disabled at the application boundary, and the focused test verifies the OS-derived ApplicationInfo flag rather than only matching manifest text.',
+    nextAction: 'Keep backup disabled unless a reviewed allow-list and encrypted export boundary replace the whole-app exclusion.',
+    notes: 'Focused Android manifest backup test passed; no production change was required.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -540,6 +553,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-040': 'SOURCE_COMPLETE',
   'PCA-NFR-045': 'SOURCE_COMPLETE',
   'PCA-ADD-ENR-011': 'SOURCE_COMPLETE',
+  'PCA-SEC-025': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',

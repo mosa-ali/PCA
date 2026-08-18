@@ -3208,13 +3208,15 @@
       "phase": [
         "PCA-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "AndroidManifest.xml:46 (android:allowBackup=\"false\" at the application level)"
+        "android/app/src/main/AndroidManifest.xml"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/security/AllowBackupManifestTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: a valid"
+      "notes": "Focused Android manifest backup test passed; no production change was required."
     },
     {
       "requirementId": "PCA-SEC-026",
