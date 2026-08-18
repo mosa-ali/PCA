@@ -48,6 +48,29 @@ test('an idempotent reservation retry does not re-run the new-acquisition gate',
   assert.equal(policy.calls, 0);
 });
 
+test('expired FREE_ACCESS never blocks consumption or release of an already-held reservation', async () => {
+  const policy = deniedPolicy();
+  let consumed = 0;
+  let released = 0;
+  const service = new SlotReservationService({
+    consumeByInvitationId: async () => {
+      consumed += 1;
+      return { outcome: 'CONSUMED' };
+    },
+    releaseByInvitationId: async () => {
+      released += 1;
+      return { outcome: 'RELEASED' };
+    },
+  }, () => NOW, policy);
+
+  await service.consumeForInvitation('invitation-a');
+  await service.releaseForInvitation('invitation-a', 'EXPIRED');
+
+  assert.equal(consumed, 1);
+  assert.equal(released, 1);
+  assert.equal(policy.calls, 0, 'FREE_ACCESS is an acquisition gate, not a protection-removal gate');
+});
+
 test('family commercial capacity requests enforce FREE_ACCESS before entitlement or quote work', async () => {
   const policy = deniedPolicy();
   let snapshotRead = false;

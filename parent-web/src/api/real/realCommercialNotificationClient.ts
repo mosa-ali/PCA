@@ -1,9 +1,10 @@
 // PCA-MYKIDS-BILL-3: real, HTTP-backed CommercialNotificationClient against
 // backend/src/http/routes/commercialNotificationRoutes.ts's family-facing
-// routes. Same session-transport gap as ../real/realBillingClient.ts (see
-// that file's header) -- genuine plumbing, fails fast with a distinct
-// SERVICE_SESSION_UNAVAILABLE-shaped error before ever calling fetch when no
-// bearer token/family context is available yet.
+// routes. The client supports the browser's existing HttpOnly family-session
+// transport when constructed with cookieSession=true; the explicit bearer
+// mode remains available for non-browser callers and fails fast with a
+// SERVICE_SESSION_UNAVAILABLE-shaped error when no token/family context is
+// available.
 import type { CommercialNotificationClient } from '../interfaces';
 import type { CommercialNotification, CommercialNotificationEventType, CommercialNotificationParamValue } from '../../domain/billing';
 import { BillingApiError, noFamilyContextAvailable, noServiceBearerTokenAvailable } from './realBillingClient';
@@ -34,8 +35,20 @@ function toNotification(wire: WireNotification): CommercialNotification {
 
 function readBrowserCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.split('; ').find((entry) => entry.startsWith(`${name}=`));
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.slice(prefix.length));
+  } catch {
+    // A malformed client-readable cookie must never crash the notification
+    // client or turn into an invented CSRF value. Send no token and let the
+    // server's existing double-submit check fail closed with 403.
+    return null;
+  }
 }
 
 function isMutationMethod(method: string): boolean {

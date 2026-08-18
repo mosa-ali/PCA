@@ -15,6 +15,7 @@ describe('RealCommercialNotificationClient', () => {
   });
 
   afterEach(() => {
+    document.cookie = 'pca_family_csrf=; Max-Age=0';
     vi.unstubAllGlobals();
   });
 
@@ -35,6 +36,29 @@ describe('RealCommercialNotificationClient', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe('include');
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBeUndefined();
+  });
+
+  it('cookie-session mutations echo the readable CSRF cookie', async () => {
+    document.cookie = 'pca_family_csrf=csrf-token';
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { status: 'read' }));
+    const c = new RealCommercialNotificationClient(apiBaseUrl, async () => null, async () => 'fam-1', true);
+
+    await c.markRead('n-1');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-token');
+  });
+
+  it('malformed CSRF cookies fail closed without crashing before fetch', async () => {
+    document.cookie = 'pca_family_csrf=%E0%A4%A';
+    fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'csrf_mismatch' }));
+    const c = new RealCommercialNotificationClient(apiBaseUrl, async () => null, async () => 'fam-1', true);
+
+    await expect(c.markRead('n-1')).rejects.toMatchObject({ code: 'FORBIDDEN', httpStatus: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('');
   });
 
   it('list calls GET .../commercial-notifications with an optional limit query param, no cursor/offset', async () => {
