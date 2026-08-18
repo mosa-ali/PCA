@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import org.pca.app.PcaApplication
+import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.feature.webprotection.policy.WebLocale
 
 /**
@@ -36,8 +37,10 @@ class SafeBrowserActivity : ComponentActivity() {
         )
 
         setContent {
-            MaterialTheme {
-                SafeBrowserScreen(controller = controller, locale = deviceWebLocale())
+            PcaAccessibilityContent {
+                MaterialTheme {
+                    SafeBrowserScreen(controller = controller, locale = deviceWebLocale())
+                }
             }
         }
     }

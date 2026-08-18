@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.pca.app.PcaApplication
+import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.enrollment.ui.EnrollmentScreen
 
 /**
@@ -27,10 +28,11 @@ class EnrollmentActivity : ComponentActivity() {
         intent?.dataString?.let { coordinator.submitInvitationLink(it) }
 
         setContent {
-            val state by coordinator.state.collectAsState()
-            val keyFingerprints by coordinator.keyFingerprints.collectAsState()
-            MaterialTheme {
-                EnrollmentScreen(
+            PcaAccessibilityContent {
+                val state by coordinator.state.collectAsState()
+                val keyFingerprints by coordinator.keyFingerprints.collectAsState()
+                MaterialTheme {
+                    EnrollmentScreen(
                     state = state,
                     keyFingerprints = keyFingerprints,
                     onLinkSubmitted = { link -> coordinator.submitInvitationLink(link) },
@@ -49,7 +51,8 @@ class EnrollmentActivity : ComponentActivity() {
                             }
                         }
                     },
-                )
+                    )
+                }
             }
         }
     }

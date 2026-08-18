@@ -11,6 +11,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.pca.app.PcaApplication
+import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.feature.removaldecision.PersistentRemovalDecisionRepository
 import org.pca.app.feature.removaldecision.RemovalDecisionAuditRecorder
 import org.pca.app.feature.removaldecision.RemovalDecisionCoordinator
@@ -83,56 +84,58 @@ class AdminSecurityActivity : FragmentActivity() {
         )
 
         setContent {
-            MaterialTheme {
-                var isAuthenticated by remember { mutableStateOf(false) }
-                var pinErrorMessage by remember { mutableStateOf<String?>(null) }
-                var record by remember { mutableStateOf(coordinator.currentRecord()) }
+            PcaAccessibilityContent {
+                MaterialTheme {
+                    var isAuthenticated by remember { mutableStateOf(false) }
+                    var pinErrorMessage by remember { mutableStateOf<String?>(null) }
+                    var record by remember { mutableStateOf(coordinator.currentRecord()) }
 
-                if (!isAuthenticated) {
-                    val mode = if (pinVerifier.isPinSet()) AdminPinScreenMode.Verify else AdminPinScreenMode.Setup
-                    AdminPinScreen(
-                        mode = mode,
-                        state = AdminPinScreenState(
-                            isLockedOut = pinVerifier.isLockedOut(),
-                            remainingLockoutMillis = pinVerifier.remainingLockoutMillis(),
-                            errorMessage = pinErrorMessage,
-                        ),
-                        onSubmitNewPin = { newPin ->
-                            pinVerifier.setPin(newPin)
-                            isAuthenticated = true
-                        },
-                        onVerifyPin = { candidate ->
-                            if (pinVerifier.verify(candidate)) {
-                                pinErrorMessage = null
+                    if (!isAuthenticated) {
+                        val mode = if (pinVerifier.isPinSet()) AdminPinScreenMode.Verify else AdminPinScreenMode.Setup
+                        AdminPinScreen(
+                            mode = mode,
+                            state = AdminPinScreenState(
+                                isLockedOut = pinVerifier.isLockedOut(),
+                                remainingLockoutMillis = pinVerifier.remainingLockoutMillis(),
+                                errorMessage = pinErrorMessage,
+                            ),
+                            onSubmitNewPin = { newPin ->
+                                pinVerifier.setPin(newPin)
                                 isAuthenticated = true
-                            } else {
-                                pinErrorMessage = "Incorrect PIN"
-                            }
-                        },
-                        onCancel = { finish() },
-                        onUseBiometricInstead = if (biometricGate.isAvailable()) {
-                            {
-                                biometricGate.authenticate(BiometricAuthReason.OPEN_REMOVAL_DECISION) { result ->
-                                    if (result is BiometricAuthResult.Success) isAuthenticated = true
+                            },
+                            onVerifyPin = { candidate ->
+                                if (pinVerifier.verify(candidate)) {
+                                    pinErrorMessage = null
+                                    isAuthenticated = true
+                                } else {
+                                    pinErrorMessage = "Incorrect PIN"
                                 }
-                            }
-                        } else null,
-                    )
-                } else {
-                    RemovalDecisionScreen(
-                        record = record,
-                        onKeepActive = {
-                            applyOutcome(coordinator.decideKeepActive(isAuthenticated = true)) { record = it }
-                        },
-                        onTemporarilyDisable = { until ->
-                            applyOutcome(coordinator.decideTemporarilyDisable(isAuthenticated = true, untilEpochMillis = until)) { record = it }
-                        },
-                        onAllowRemoval = {
-                            lifecycleScope.launch {
-                                applyOutcome(coordinator.decideAllowRemoval(isAuthenticated = true)) { record = it }
-                            }
-                        },
-                    )
+                            },
+                            onCancel = { finish() },
+                            onUseBiometricInstead = if (biometricGate.isAvailable()) {
+                                {
+                                    biometricGate.authenticate(BiometricAuthReason.OPEN_REMOVAL_DECISION) { result ->
+                                        if (result is BiometricAuthResult.Success) isAuthenticated = true
+                                    }
+                                }
+                            } else null,
+                        )
+                    } else {
+                        RemovalDecisionScreen(
+                            record = record,
+                            onKeepActive = {
+                                applyOutcome(coordinator.decideKeepActive(isAuthenticated = true)) { record = it }
+                            },
+                            onTemporarilyDisable = { until ->
+                                applyOutcome(coordinator.decideTemporarilyDisable(isAuthenticated = true, untilEpochMillis = until)) { record = it }
+                            },
+                            onAllowRemoval = {
+                                lifecycleScope.launch {
+                                    applyOutcome(coordinator.decideAllowRemoval(isAuthenticated = true)) { record = it }
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }

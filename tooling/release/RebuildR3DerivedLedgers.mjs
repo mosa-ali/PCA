@@ -84,6 +84,27 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep any platform share/file caller local and preserve the separate encrypted family-data export boundary required by PCA-FR-125.',
     notes: 'Focused Android export, retention, and delete-now persistence tests passed; no readable central audit store or upload path was added.'
   },
+  'PCA-NFR-040': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/accessibility/PcaAccessibilityContent.kt',
+      'android/app/src/main/java/org/pca/app/accessibility/AccessibilityPreferences.kt',
+      'android/app/src/main/java/org/pca/app/MainActivity.kt',
+      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentActivity.kt',
+      'android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserActivity.kt',
+      'android/app/src/main/java/org/pca/app/feature/youtube/ui/YouTubeModeActivity.kt',
+      'android/app/src/main/java/org/pca/app/security/ui/AdminSecurityActivity.kt',
+      'parent-web/src/styles/global.css',
+      'platform-admin-web/src/styles/global.css',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/accessibility/AccessibilityPreferencesTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Android Compose child surfaces now share the tested system font-scale boundary, while parent and platform-admin web surfaces use rem-based sizing that remains responsive to browser text zoom.',
+    nextAction: 'Keep new Compose entry points inside PcaAccessibilityContent and preserve rem/logical sizing on web surfaces.',
+    notes: 'Android module compilation and focused accessibility tests passed; browser zoom layout and physical-device rendering remain separate validation boundaries.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -482,6 +503,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-054': 'SOURCE_COMPLETE',
   'PCA-NFR-042': 'SOURCE_COMPLETE',
   'PCA-FR-124': 'SOURCE_COMPLETE',
+  'PCA-NFR-040': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',

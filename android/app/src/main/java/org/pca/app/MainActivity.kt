@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.feature.webprotection.ui.SafeBrowserActivity
 import org.pca.app.feature.youtube.ui.YouTubeModeActivity
 import org.pca.app.runtime.graph.newLocalRequestId
@@ -36,9 +37,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val runtime = (application as PcaApplication).graph.runtime
         setContent {
-            val status by runtime.status.collectAsState()
-            MaterialTheme {
-                ChildHomeScreen(
+            PcaAccessibilityContent {
+                val status by runtime.status.collectAsState()
+                MaterialTheme {
+                    ChildHomeScreen(
                     status = status,
                     onEmergencyAccess = {
                         if (status.isEmergencyExceptionActive) {
@@ -89,7 +91,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                )
+                    )
+                }
             }
         }
     }

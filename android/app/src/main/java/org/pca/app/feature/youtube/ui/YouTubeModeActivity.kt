@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.PcaApplication
 import org.pca.app.R
+import org.pca.app.accessibility.PcaAccessibilityContent
 
 /**
  * PCA-FR-054 closure (Writer73): the real hosting Activity for [YouTubeModeScreen], which existed
@@ -51,15 +52,17 @@ class YouTubeModeActivity : ComponentActivity() {
         )
 
         setContent {
-            MaterialTheme {
-                var loadState by remember { mutableStateOf<YouTubeModeLoadState>(YouTubeModeLoadState.Loading) }
-                LaunchedEffect(Unit) {
-                    loadState = loader.load()
-                }
-                when (val state = loadState) {
-                    is YouTubeModeLoadState.Loading -> YouTubeModeLoadingContent()
-                    is YouTubeModeLoadState.Success -> YouTubeModeScreen(state = state.viewState)
-                    is YouTubeModeLoadState.Error -> YouTubeModeErrorContent()
+            PcaAccessibilityContent {
+                MaterialTheme {
+                    var loadState by remember { mutableStateOf<YouTubeModeLoadState>(YouTubeModeLoadState.Loading) }
+                    LaunchedEffect(Unit) {
+                        loadState = loader.load()
+                    }
+                    when (val state = loadState) {
+                        is YouTubeModeLoadState.Loading -> YouTubeModeLoadingContent()
+                        is YouTubeModeLoadState.Success -> YouTubeModeScreen(state = state.viewState)
+                        is YouTubeModeLoadState.Error -> YouTubeModeErrorContent()
+                    }
                 }
             }
         }
