@@ -83,6 +83,98 @@ final class OpaqueBlobStoreTests: XCTestCase {
 }
 
 final class ChildEnrollmentCoordinatorTests: XCTestCase {
+    // PCA-FR-008: age and initial policy change defaults without changing the
+    // privacy boundary or permitting a child-side weakening.
+    func testProfileConsumerAppliesStricterMinimumForYoungChild() {
+        let profile = PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .youngChild,
+            initialPolicyProfile: .balanced
+        )
+        let coordinator = makeCoordinator()
+
+        XCTAssertEqual(
+            coordinator.consumeProfile(profile, authorization: .approved),
+            .ready(
+                PCAEnrollmentRuntimeDefaults(
+                    contentFilterDefault: .strict,
+                    activeUseThresholdMinutes: 45,
+                    breakDurationMinutes: 30
+                )
+            )
+        )
+    }
+
+    func testProfileConsumerProvidesCompleteTeenAndPolicyCatalogue() {
+        let coordinator = makeCoordinator()
+        let profiles: [(PCAAgeUxTier, PCAInitialPolicyProfile, PCAContentFilterDefault, Int)] = [
+            (.youngChild, .balanced, .strict, 45),
+            (.youngChild, .strict, .strict, 45),
+            (.teen, .balanced, .moderate, 60),
+            (.teen, .strict, .strict, 45),
+        ]
+
+        for (age, policy, filter, threshold) in profiles {
+            let result = coordinator.consumeProfile(
+                PCAEnrollmentProfile(childProfileId: nil, ageUxTier: age, initialPolicyProfile: policy),
+                authorization: .approved
+            )
+            XCTAssertEqual(
+                result,
+                .ready(
+                    PCAEnrollmentRuntimeDefaults(
+                        contentFilterDefault: filter,
+                        activeUseThresholdMinutes: threshold,
+                        breakDurationMinutes: 30
+                    )
+                )
+            )
+        }
+    }
+
+    func testProfileConsumerBlocksEveryNonApprovedAuthorizationState() {
+        let coordinator = makeCoordinator()
+        let profile = PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .teen,
+            initialPolicyProfile: .balanced
+        )
+        let states: [ChildAuthorizationState] = [
+            .notDetermined,
+            .denied,
+            .revoked(to: .denied),
+            .revoked(to: .notDetermined),
+            .entitlementUnavailable,
+        ]
+
+        for authorization in states {
+            XCTAssertEqual(
+                coordinator.consumeProfile(profile, authorization: authorization),
+                .authorizationRequired(
+                    PCAEnrollmentRuntimeDefaults(
+                        contentFilterDefault: .moderate,
+                        activeUseThresholdMinutes: 60,
+                        breakDurationMinutes: 30
+                    )
+                )
+            )
+        }
+    }
+
+    func testProfileConsumerDoesNotCarryOpaqueChildIdIntoRuntimeDefaults() throws {
+        let profile = PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .teen,
+            initialPolicyProfile: .balanced
+        )
+        let defaults = PCAEnrollmentProfileConsumer().defaults(for: profile)
+        let encoded = try JSONEncoder().encode(defaults)
+        let serialized = String(decoding: encoded, as: UTF8.self)
+
+        XCTAssertFalse(serialized.contains("opaque-child"))
+        XCTAssertFalse(serialized.contains("childProfileId"))
+    }
+
     func testKeyMaterialPersistsBothDSKAndDEKIndependently() {
         let keychain = InMemoryKeychainStore()
         let keyMaterialStore = FamilyKeyMaterialStore(keychain: keychain, serviceNamespace: "com.pca.app")
@@ -103,5 +195,15 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
 
         let result = await coordinator.requestChildAuthorization()
         XCTAssertEqual(result, .authorizationState(.approved))
+    }
+
+    private func makeCoordinator() -> ChildEnrollmentCoordinator {
+        ChildEnrollmentCoordinator(
+            keyMaterialStore: FamilyKeyMaterialStore(
+                keychain: InMemoryKeychainStore(),
+                serviceNamespace: "com.pca.app"
+            ),
+            authorizationCenter: ChildAuthorizationCenter(source: FakeAuthorizationStatusSource())
+        )
     }
 }

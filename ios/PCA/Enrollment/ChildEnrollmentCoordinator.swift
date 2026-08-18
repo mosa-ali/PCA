@@ -25,6 +25,67 @@ public struct PCAEnrollmentProfile: Codable, Equatable {
     }
 }
 
+/// PCA-FR-008 / PCA-FR-133: the only age/profile-dependent values that this enrollment slice may
+/// choose locally. The signed family policy remains authoritative after
+/// enrollment; these are bounded starting defaults, not a second policy
+/// authority.
+public enum PCAContentFilterDefault: String, Codable, Equatable {
+    case moderate = "MODERATE"
+    case strict = "STRICT"
+}
+
+public struct PCAEnrollmentRuntimeDefaults: Codable, Equatable {
+    public let contentFilterDefault: PCAContentFilterDefault
+    public let activeUseThresholdMinutes: Int
+    public let breakDurationMinutes: Int
+
+    public init(
+        contentFilterDefault: PCAContentFilterDefault,
+        activeUseThresholdMinutes: Int,
+        breakDurationMinutes: Int
+    ) {
+        self.contentFilterDefault = contentFilterDefault
+        self.activeUseThresholdMinutes = activeUseThresholdMinutes
+        self.breakDurationMinutes = breakDurationMinutes
+    }
+}
+
+/// Result of consuming a parent-authorized enrollment profile. Defaults may
+/// be calculated before authorization is available, but callers must not
+/// apply enforcement-dependent settings until the result is `.ready`.
+public enum PCAEnrollmentProfileConsumption: Equatable {
+    case ready(PCAEnrollmentRuntimeDefaults)
+    case authorizationRequired(PCAEnrollmentRuntimeDefaults)
+}
+
+/// Maps the controlled enrollment profile into the small, privacy-neutral
+/// default catalogue used by the iOS runtime. `childProfileId` is
+/// deliberately not copied into the result: it is an opaque bootstrap
+/// correlation value, not runtime policy data.
+public struct PCAEnrollmentProfileConsumer {
+    public init() {}
+
+    public func defaults(for profile: PCAEnrollmentProfile) -> PCAEnrollmentRuntimeDefaults {
+        let isStrict = profile.ageUxTier == .youngChild || profile.initialPolicyProfile == .strict
+        return PCAEnrollmentRuntimeDefaults(
+            contentFilterDefault: isStrict ? .strict : .moderate,
+            activeUseThresholdMinutes: isStrict ? 45 : 60,
+            breakDurationMinutes: 30
+        )
+    }
+
+    public func consume(
+        _ profile: PCAEnrollmentProfile,
+        authorization: ChildAuthorizationState
+    ) -> PCAEnrollmentProfileConsumption {
+        let defaults = defaults(for: profile)
+        guard authorization.permitsEnforcement else {
+            return .authorizationRequired(defaults)
+        }
+        return .ready(defaults)
+    }
+}
+
 /// iOS-side enrollment steps ONLY (doc 07 Section 19 / doc 08). Consumes
 /// the EXISTING Secure Invite / pairing / Family Envelope contracts --
 /// this type invents no new protocol message, field, or endpoint. It
@@ -46,6 +107,16 @@ public struct ChildEnrollmentCoordinator {
     public init(keyMaterialStore: FamilyKeyMaterialStore, authorizationCenter: ChildAuthorizationCenter) {
         self.keyMaterialStore = keyMaterialStore
         self.authorizationCenter = authorizationCenter
+    }
+
+    /// Consumes the parent-authorized age/mode profile without copying child
+    /// identity or family data into the runtime defaults. Enforcement remains
+    /// fail-closed until Family Controls reports `.approved`.
+    public func consumeProfile(
+        _ profile: PCAEnrollmentProfile,
+        authorization: ChildAuthorizationState
+    ) -> PCAEnrollmentProfileConsumption {
+        PCAEnrollmentProfileConsumer().consume(profile, authorization: authorization)
     }
 
     /// Stores ALREADY-GENERATED key bytes (generation/algorithm is
