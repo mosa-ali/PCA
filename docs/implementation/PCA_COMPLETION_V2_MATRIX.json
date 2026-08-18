@@ -1272,7 +1272,8 @@
         "android/app/src/main/java/org/pca/app/persistence/retention/RetentionCutoffCalculator.kt (location retention distinct from/bounded by general retention)"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/persistence/retention/"
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt (device, child, and family deletion scope/isolation, policy snapshot erasure, receipts, and tombstones)",
+        "android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt (Delete Now request validation and coordinator delegation)"
       ],
       "externalGate": [],
       "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: YES"
@@ -1663,7 +1664,7 @@
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Delete Now is wired from DeleteNowScreen through DeleteNowUseCase to the transaction-scoped coordinator, with focused Android coverage for device/child/family scope isolation, policy snapshot erasure, count-only receipts, tombstones, and request validation. This remains PARTIAL because production cryptographic acceptance and external security review are still required for end-to-end propagation assurance."
     },
     {
       "requirementId": "PCA-FR-105",
