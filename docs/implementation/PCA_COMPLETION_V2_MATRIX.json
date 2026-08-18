@@ -1812,15 +1812,22 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt + dao/ParentActionAuditDao.kt"
+        "android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt",
+        "android/app/src/main/java/org/pca/app/persistence/dao/ParentActionAuditDao.kt",
+        "android/app/src/main/java/org/pca/app/persistence/entity/TamperEventEntity.kt",
+        "android/app/src/main/java/org/pca/app/persistence/dao/TamperEventDao.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/AuditRecordExportService.kt",
+        "android/app/src/main/java/org/pca/app/persistence/PcaLocalPersistence.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/persistence/"
+        "android/app/src/test/java/org/pca/app/persistence/AuditRecordExportServiceTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Focused Android export, retention, and delete-now persistence tests passed; no readable central audit store or upload path was added."
     },
     {
       "requirementId": "PCA-FR-125",

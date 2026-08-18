@@ -14,6 +14,9 @@ interface TamperEventDao {
     @Query("SELECT * FROM tamper_events WHERE deviceId = :deviceId ORDER BY detectedAtEpochMillis DESC")
     suspend fun getForDevice(deviceId: String): List<TamperEventEntity>
 
+    @Query("SELECT * FROM tamper_events WHERE deviceId IN " + FamilyScopeSql.DEVICE_IDS_FOR_FAMILY + " ORDER BY detectedAtEpochMillis DESC")
+    suspend fun getForFamily(familyId: String): List<TamperEventEntity>
+
     /** Audit floor deletion only (PCA-DATA-021) -- never the general activity cutoff. */
     @Query("DELETE FROM tamper_events WHERE detectedAtEpochMillis < :auditFloorCutoffEpochMillis")
     suspend fun deleteOlderThanAuditFloor(auditFloorCutoffEpochMillis: Long): Int

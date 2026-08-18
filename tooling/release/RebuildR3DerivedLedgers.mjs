@@ -64,6 +64,26 @@ const SOURCE_UPDATES = {
     nextAction: 'Preserve explicit text and semantic labels for any future Break Shield status or action state.',
     notes: 'Focused Android tests passed; screenshot-level contrast and physical-device rendering remain separate validation boundaries.'
   },
+  'PCA-FR-124': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt',
+      'android/app/src/main/java/org/pca/app/persistence/dao/ParentActionAuditDao.kt',
+      'android/app/src/main/java/org/pca/app/persistence/entity/TamperEventEntity.kt',
+      'android/app/src/main/java/org/pca/app/persistence/dao/TamperEventDao.kt',
+      'android/app/src/main/java/org/pca/app/persistence/export/AuditRecordExportService.kt',
+      'android/app/src/main/java/org/pca/app/persistence/PcaLocalPersistence.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/persistence/AuditRecordExportServiceTest.kt',
+      'android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt',
+      'android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Android now provides a family-scoped local audit export containing policy/role/retention/deletion actions and tamper events in chronological JSON without decrypting optional action reasons.',
+    nextAction: 'Keep any platform share/file caller local and preserve the separate encrypted family-data export boundary required by PCA-FR-125.',
+    notes: 'Focused Android export, retention, and delete-now persistence tests passed; no readable central audit store or upload path was added.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -461,6 +481,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-021': 'SOURCE_COMPLETE',
   'PCA-NFR-054': 'SOURCE_COMPLETE',
   'PCA-NFR-042': 'SOURCE_COMPLETE',
+  'PCA-FR-124': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',

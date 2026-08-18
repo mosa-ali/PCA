@@ -19,6 +19,7 @@ private class FakeTamperEventDao : TamperEventDao {
     override suspend fun upsert(entity: TamperEventEntity) { rows[entity.id] = entity }
     override suspend fun getForDevice(deviceId: String): List<TamperEventEntity> =
         rows.values.filter { it.deviceId == deviceId }.sortedByDescending { it.detectedAtEpochMillis }
+    override suspend fun getForFamily(familyId: String): List<TamperEventEntity> = emptyList()
     override suspend fun deleteOlderThanAuditFloor(auditFloorCutoffEpochMillis: Long): Int = 0
     override suspend fun countOlderThanAuditFloor(auditFloorCutoffEpochMillis: Long): Int = 0
     override suspend fun deleteAllForDevice(deviceId: String): Int = 0

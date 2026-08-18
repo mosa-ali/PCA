@@ -14,6 +14,9 @@ interface ParentActionAuditDao {
     @Query("SELECT * FROM parent_action_audits WHERE actorMemberId = :memberId ORDER BY timestampEpochMillis DESC")
     suspend fun getForActor(memberId: String): List<ParentActionAuditEntity>
 
+    @Query("SELECT parent_action_audits.* FROM parent_action_audits INNER JOIN family_members ON family_members.memberId = parent_action_audits.actorMemberId WHERE family_members.familyId = :familyId ORDER BY parent_action_audits.timestampEpochMillis DESC")
+    suspend fun getForFamily(familyId: String): List<ParentActionAuditEntity>
+
     /** Audit floor deletion only (PCA-DATA-021) -- never the general activity cutoff. */
     @Query("DELETE FROM parent_action_audits WHERE timestampEpochMillis < :auditFloorCutoffEpochMillis")
     suspend fun deleteOlderThanAuditFloor(auditFloorCutoffEpochMillis: Long): Int
