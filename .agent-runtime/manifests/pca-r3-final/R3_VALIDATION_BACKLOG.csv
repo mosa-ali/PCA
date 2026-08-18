@@ -60,7 +60,7 @@
 "PCA-FR-124","PCA-12","PARTIAL","android/app/src/test/java/org/pca/app/persistence/","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-FR-125","PCA-12","PARTIAL","backend/test/export/pipeline.test.mjs","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","CRYPTO_ACTIVATION","Coordinator"
 "PCA-FR-126","PCA-8;PCA-17","SOURCE_COMPLETE","","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
-"PCA-FR-127","PCA-17","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
+"PCA-FR-127","PCA-17","SOURCE_COMPLETE","backend/scripts/checkNoAdTrackingSdks.mjs","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-FR-130","PCA-3;PCA-10","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-FR-131","PCA-2;PCA-10","NOT_STARTED","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-FR-133","PCA-1","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"

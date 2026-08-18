@@ -231,6 +231,21 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep the parity test in the Android unit suite and obtain native-language review for wording quality when translations change.',
     notes: 'Static resource parity is locally verified; this does not claim independent native-language editorial sign-off.',
   },
+  'PCA-FR-127': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/build.gradle.kts',
+      'android/build.gradle.kts',
+      'android/gradle/libs.versions.toml',
+    ],
+    testEvidence: [
+      'backend/scripts/checkNoAdTrackingSdks.mjs',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The Android dependency manifests contain no ad-serving, install-attribution, or cross-app data-broker SDK coordinates; the repository scanner checks the real Android and web/backend manifests against the maintained blocked-coordinate inventory.',
+    nextAction: 'Run the no-ad/data-broker scanner whenever dependency manifests change; keep any future analytics or product-measurement decision separate from prohibited ad/tracking SDK inventory.',
+    notes: 'The direct scanner passes against the current repository. The subprocess test file has five Windows child-process cases that remain environment-blocked by spawn EPERM, so this closure does not claim those subprocess cases passed.',
+  },
 };
 
 const SOURCE_CLASSIFICATIONS = {
@@ -245,7 +260,6 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-080': 'REAL_SOURCE_GAP',
   'PCA-FR-113': 'REAL_SOURCE_GAP',
   'PCA-FR-124': 'REAL_SOURCE_GAP',
-  'PCA-FR-127': 'REAL_SOURCE_GAP',
   'PCA-FR-131': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-FR-135': 'REAL_SOURCE_GAP',
   'PCA-FR-137': 'REAL_SOURCE_GAP',

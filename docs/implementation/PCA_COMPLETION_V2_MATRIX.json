@@ -1835,13 +1835,17 @@
       "phase": [
         "PCA-17"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/build.gradle (not fully re-inspected this pass for ad-SDK dependency inventory)"
+        "android/app/build.gradle.kts",
+        "android/build.gradle.kts",
+        "android/gradle/libs.versions.toml"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/scripts/checkNoAdTrackingSdks.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "The direct scanner passes against the current repository. The subprocess test file has five Windows child-process cases that remain environment-blocked by spawn EPERM, so this closure does not claim those subprocess cases passed."
     },
     {
       "requirementId": "PCA-FR-130",
