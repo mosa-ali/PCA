@@ -4836,11 +4836,15 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "backend/src/platformadmin/readmodels/DashboardReadModel.ts"
+        "backend/src/platformadmin/readmodels/DashboardReadModel.ts",
+        "backend/src/http/routes/platformadmin/dashboardRoutes.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs",
+        "backend/test/platformadmin/operational/httpAuthzBoundary.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged this round -- Writer62's ownership was the Settlement/Reconciliation domain and its own dedicated pages, not Dashboard.tsx. Dashboard still lacks settlement summary and service-health/exception metrics. Real remaining gap, not touched by Round6. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "Settlement summary and service-health/exception metrics are wired into the real dashboard read model and route, with live MySQL coverage for matched/under-investigation batches, latest-account status, HTTP exposure, currency grouping, and authorization boundaries. This remains partial because the remaining named dashboard views are not yet sourced."
     },
     {
       "requirementId": "PCA-ADD-PA-042",

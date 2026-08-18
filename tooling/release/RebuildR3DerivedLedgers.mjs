@@ -66,6 +66,21 @@ const SOURCE_UPDATES = {
     nextAction: 'Configure and independently verify the external delivery worker/provider for PLATFORM_ADMIN_ALERT_DELIVERY; retain the durable pending-row boundary.',
     notes: 'Unknown identities never create recipient rows. The local source does not store raw operator contact data, family data, or provider credentials.',
   },
+  'PCA-ADD-PA-041': {
+    status: 'PARTIAL',
+    sourceEvidence: [
+      'backend/src/platformadmin/readmodels/DashboardReadModel.ts',
+      'backend/src/http/routes/platformadmin/dashboardRoutes.ts',
+    ],
+    testEvidence: [
+      'backend/test/db/dashboardSettlementMetrics.mysql.test.mjs',
+      'backend/test/platformadmin/operational/httpAuthzBoundary.test.mjs',
+    ],
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'The metadata-only dashboard read model now exposes the available account, entitlement, request, subscription, quote, invoice/payment, refund, dispute, settlement, reconciliation-exception, and settlement-account-health aggregates from one consistent MySQL snapshot. The named growth-trend, request-aging, and enrollment/payment exception-queue views still need authoritative local source fields or source tables before this requirement can be closed; no family-activity fields are exposed.',
+    nextAction: 'Add authoritative local source data and focused dashboard coverage for growth trends, request aging, and enrollment/payment exception queues, or document an accepted unavailable-metric boundary before closure.',
+    notes: 'Settlement summary and service-health/exception metrics are wired into the real dashboard read model and route, with live MySQL coverage for matched/under-investigation batches, latest-account status, HTTP exposure, currency grouping, and authorization boundaries. This remains partial because the remaining named dashboard views are not yet sourced.',
+  },
   'PCA-FR-008': {
     status: 'PARTIAL',
     sourceEvidence: [
