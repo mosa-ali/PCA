@@ -1,6 +1,5 @@
 import type { NewSafeZoneInput, SafeZone, SafeZoneClient, SafeZonePatch } from '../interfaces';
 
-let sequence = 0;
 let zones: SafeZone[] = [];
 
 export class DevSafeZoneClient implements SafeZoneClient {
@@ -9,18 +8,16 @@ export class DevSafeZoneClient implements SafeZoneClient {
   }
 
   async create(familyId: string, input: NewSafeZoneInput): Promise<SafeZone> {
-    const now = new Date().toISOString();
-    const zone: SafeZone = { zoneId: `dev-zone-${++sequence}`, familyId, ...input, enabled: input.enabled ?? true, revision: 1, deliveryState: 'PENDING_OFFLINE', createdAtUtc: now, updatedAtUtc: now };
-    zones = [...zones, zone];
-    return { ...zone };
+    void familyId;
+    void input;
+    throw new Error('SAFE_ZONE_ENCRYPTION_UNAVAILABLE');
   }
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
-    const current = zones.find((zone) => zone.familyId === familyId && zone.zoneId === zoneId);
-    if (!current) throw new Error('Safe zone not found');
-    const updated = { ...current, ...patch, revision: current.revision + 1, deliveryState: 'PENDING_OFFLINE' as const, updatedAtUtc: new Date().toISOString() };
-    zones = zones.map((zone) => zone.zoneId === zoneId ? updated : zone);
-    return { ...updated };
+    void familyId;
+    void zoneId;
+    void patch;
+    throw new Error('SAFE_ZONE_ENCRYPTION_UNAVAILABLE');
   }
 
   async remove(familyId: string, zoneId: string): Promise<void> {

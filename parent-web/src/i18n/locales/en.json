@@ -504,6 +504,9 @@
   "notifications": {
     "emailAlerts": "Email me for important alerts",
     "pushRequests": "Push notifications for requests",
+    "emailDestination": "Email destination",
+    "saveEmailDestination": "Save email destination",
+    "emailDestinationUnverified": "This destination is saved but unverified. Email delivery remains disabled until verification is completed.",
     "preferencesNotYetConnected": "These delivery preferences are not yet backed by a server-side setting -- changing them here would not currently change what you receive, so they are shown read-only until that backend support exists.",
     "payloadNote": "Notification payloads never contain children's activity detail -- only a generic wake signal (docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 6).",
     "commercialTitle": "Billing notifications",
@@ -558,6 +561,7 @@
     "stale": "This location data is stale.",
     "safeZones": "Safe zones",
     "safeZonePrivacy": "PCA stores policy metadata only. It does not create a readable movement history.",
+    "safeZoneEncryptionUnavailable": "Safe-zone authoring is locked until this browser can create and verify the family-encrypted policy envelope. No readable location policy is sent to PCA.",
     "safeZoneEmpty": "No safe zone is configured for this child.",
     "safeZonePending": "Pending offline delivery",
     "safeZoneReady": "Ready",

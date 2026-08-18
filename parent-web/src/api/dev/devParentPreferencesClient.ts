@@ -5,6 +5,8 @@ let preferences: ParentPreferences = {
   language: 'en',
   emailAlertsEnabled: true,
   pushRequestsEnabled: true,
+  emailDestination: null,
+  emailDestinationState: 'UNVERIFIED',
   updatedAtUtc: new Date(0).toISOString(),
 };
 

@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import { registerParentAccountRoutes } from '../../dist/http/routes/parentAccountRoutes.js';
 import { SafeZoneError } from '../../dist/location/SafeZoneRepository.js';
 
-function buildApp() {
+function buildApp(role = 'OWNER') {
   const sessions = new Map([
     ['session-a', { accountId: 'account-a', familyId: 'family-a', emailVerified: true }],
     ['session-b', { accountId: 'account-b', familyId: 'family-a', emailVerified: true }],
@@ -20,7 +20,7 @@ function buildApp() {
   };
   const parentPreferenceRepository = {
     async get(accountId) {
-      return preferences.get(accountId) ?? { accountId, language: 'en', emailAlertsEnabled: true, pushRequestsEnabled: true, updatedAtUtc: new Date(0).toISOString() };
+      return preferences.get(accountId) ?? { accountId, language: 'en', emailAlertsEnabled: true, pushRequestsEnabled: true, emailDestination: null, emailDestinationState: 'UNVERIFIED', updatedAtUtc: new Date(0).toISOString() };
     },
     async update(accountId, patch) {
       const next = { ...(await this.get(accountId)), ...patch, updatedAtUtc: new Date().toISOString() };
@@ -33,7 +33,6 @@ function buildApp() {
       return [...zones.values()].filter((zone) => zone.familyId === familyId);
     },
     async create(input) {
-      if (input.childProfileId !== 'child-a') throw new SafeZoneError('CHILD_NOT_IN_FAMILY');
       const zone = { zoneId: 'zone-a', ...input, revision: 1, deliveryState: 'PENDING_OFFLINE', createdAtUtc: new Date().toISOString(), updatedAtUtc: new Date().toISOString() };
       zones.set(zone.zoneId, zone);
       return zone;
@@ -52,12 +51,18 @@ function buildApp() {
       return true;
     },
   };
+  const safeZonePolicyAuthorizer = {
+    authorize({ operation }) {
+      if (role === 'VIEWER') return { verdict: operation === 'VIEW_DASHBOARD' ? 'ALLOW_READ_ONLY' : 'DENY' };
+      return { verdict: 'ALLOW' };
+    },
+  };
   const app = Fastify();
-  registerParentAccountRoutes(app, { parentAccountService, parentPreferenceRepository, safeZoneRepository });
+  registerParentAccountRoutes(app, { parentAccountService, parentPreferenceRepository, safeZoneRepository, safeZonePolicyAuthorizer });
   return app;
 }
 
-const authHeaders = { cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a' };
+const authHeaders = { cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a', 'x-pca-actor-device-id': 'device-a' };
 
 test('preferences are account-scoped and mutations require matching CSRF', async () => {
   const app = buildApp();
@@ -76,24 +81,47 @@ test('preferences are account-scoped and mutations require matching CSRF', async
   assert.equal(other.statusCode, 200);
   assert.equal(other.json().preferences.language, 'en');
   assert.equal(other.json().preferences.emailAlertsEnabled, true);
+
+  const invalidDestination = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { emailDestination: 'not-an-email' } });
+  assert.equal(invalidDestination.statusCode, 400);
+
+  const destination = await app.inject({ method: 'PATCH', url: '/api/parent/preferences', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { emailDestination: 'parent@example.test' } });
+  assert.equal(destination.statusCode, 200);
+  assert.equal(destination.json().preferences.emailDestination, 'parent@example.test');
+  assert.equal(destination.json().preferences.emailDestinationState, 'UNVERIFIED');
 });
 
-test('safe zones enforce family path scope, CSRF, child membership, and offline delivery state', async () => {
+test('safe zones accept only opaque encrypted policy envelopes and preserve offline delivery state', async () => {
   const app = buildApp();
   const wrongFamily = await app.inject({ method: 'GET', url: '/api/parent/families/family-b/safe-zones', headers: authHeaders });
   assert.equal(wrongFamily.statusCode, 403);
 
-  const noCsrf = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders, payload: { childProfileId: 'child-a', label: 'Home', latitude: 1, longitude: 2, radiusMeters: 100 } });
+  const opaquePayload = { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 };
+  const noCsrf = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders, payload: opaquePayload });
   assert.equal(noCsrf.statusCode, 403);
 
-  const wrongChild = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { childProfileId: 'child-b', label: 'Other', latitude: 1, longitude: 2, radiusMeters: 100 } });
-  assert.equal(wrongChild.statusCode, 403);
+  const plaintext = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { childProfileId: 'child-a', label: 'Home', latitude: 1, longitude: 2, radiusMeters: 100 } });
+  assert.equal(plaintext.statusCode, 400);
 
-  const created = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { childProfileId: 'child-a', label: 'Home', latitude: 1, longitude: 2, radiusMeters: 100 } });
+  const created = await app.inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: opaquePayload });
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().safeZone.deliveryState, 'PENDING_OFFLINE');
+  assert.equal(created.json().safeZone.ciphertextB64, 'AQID');
 
   const list = await app.inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
   assert.equal(list.statusCode, 200);
   assert.equal(list.json().safeZones.length, 1);
+});
+
+test('safe-zone family policy authorization allows Owner and Administrator, denies Viewer mutations', async () => {
+  const owner = await buildApp('OWNER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
+  assert.equal(owner.statusCode, 200);
+
+  const administrator = await buildApp('ADMINISTRATOR').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  assert.equal(administrator.statusCode, 201);
+
+  const viewerRead = await buildApp('VIEWER').inject({ method: 'GET', url: '/api/parent/families/family-a/safe-zones', headers: authHeaders });
+  assert.equal(viewerRead.statusCode, 200);
+  const viewerMutation = await buildApp('VIEWER').inject({ method: 'POST', url: '/api/parent/families/family-a/safe-zones', headers: { ...authHeaders, 'x-pca-csrf-token': 'csrf-a' }, payload: { recipientEndpointId: 'endpoint-a', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1 } });
+  assert.equal(viewerMutation.statusCode, 403);
 });

@@ -1,6 +1,6 @@
 {
   "$schemaNote": "Machine-readable external/human gate state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. Every gate here is BLOCKED or EXTERNAL by definition until an owner outside this repository-editing lane closes it and records evidence. Do not set status to CLOSED/GREEN from within an automated script or an agent lane -- it must be updated by hand by the accountable human owner with an evidence reference.",
-  "lastUpdatedUtc": "2026-08-13T00:00:00Z",
+  "lastUpdatedUtc": "2026-08-18T03:13:29.4089973Z",
   "gates": [
     {
       "id": "CRYPTO_SECURITY_REVIEW",

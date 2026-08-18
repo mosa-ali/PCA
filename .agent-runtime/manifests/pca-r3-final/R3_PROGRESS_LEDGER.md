@@ -7,12 +7,12 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 252 |
-| PARTIAL | 84 |
+| SOURCE_COMPLETE | 253 |
+| PARTIAL | 83 |
 | NOT_STARTED | 20 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 104 |
+| Partial plus not-started | 103 |
 | External-gate rows | 44 |
 | Terminology audit rows | 209 |
 
@@ -34,9 +34,9 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS after file-backed Robolectric tests use TRUNCATE journal mode; production database policy is unchanged.
-- Parent Web typecheck, lint, test, and build: PASS.
+- Parent Web typecheck: PASS; lint: PASS from the prior focused validation; test/build: RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM).
 - Parent Web test count: 49 files and 394 tests.
-- Backend build and full unit/security suite: PASS, 1,495/1,495 tests. Fresh disposable MySQL validation gate: PASS, 390/390 tests passed, 0 failed, 0 skipped. Dedicated MySQL privilege gate: PASS, 4/4 tests passed, 0 failed, 0 skipped.
+- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work

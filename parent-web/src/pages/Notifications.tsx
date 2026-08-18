@@ -16,12 +16,15 @@ export default function Notifications() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const [preferences, setPreferences] = useState<Awaited<ReturnType<typeof clients.parentPreferences.get>> | null>(null);
+  const [emailDestinationDraft, setEmailDestinationDraft] = useState('');
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [savingPreference, setSavingPreference] = useState<string | null>(null);
 
   const loadPreferences = useCallback(async () => {
     try {
-      setPreferences(await clients.parentPreferences.get());
+      const next = await clients.parentPreferences.get();
+      setPreferences(next);
+      setEmailDestinationDraft(next.emailDestination ?? '');
       setPreferencesError(null);
     } catch (error) {
       setPreferencesError(error instanceof Error ? error.message : 'Unable to load notification preferences.');
@@ -39,6 +42,20 @@ export default function Notifications() {
       setPreferencesError(null);
     } catch (error) {
       setPreferencesError(error instanceof Error ? error.message : 'Unable to save notification preferences.');
+    } finally {
+      setSavingPreference(null);
+    }
+  };
+
+  const saveEmailDestination = async () => {
+    setSavingPreference('emailDestination');
+    try {
+      const next = await clients.parentPreferences.update({ emailDestination: emailDestinationDraft.trim() || null });
+      setPreferences(next);
+      setEmailDestinationDraft(next.emailDestination ?? '');
+      setPreferencesError(null);
+    } catch (error) {
+      setPreferencesError(error instanceof Error ? error.message : 'Unable to save notification destination.');
     } finally {
       setSavingPreference(null);
     }
@@ -73,6 +90,12 @@ export default function Notifications() {
         <label className="checkbox-row">
           <input type="checkbox" checked={preferences?.pushRequestsEnabled ?? false} disabled={!preferences || savingPreference !== null} onChange={(e) => void updatePreference('pushRequestsEnabled', e.target.checked)} /> {t('notifications.pushRequests')}
         </label>
+        <div className="field">
+          <label htmlFor="notification-email-destination">{t('notifications.emailDestination')}</label>
+          <input id="notification-email-destination" type="email" value={emailDestinationDraft} disabled={!preferences || savingPreference !== null} onChange={(event) => setEmailDestinationDraft(event.target.value)} />
+          <button type="button" className="btn btn-sm" onClick={() => void saveEmailDestination()} disabled={!preferences || savingPreference !== null}>{t('notifications.saveEmailDestination')}</button>
+          {preferences?.emailDestinationState === 'UNVERIFIED' && <p>{t('notifications.emailDestinationUnverified')}</p>}
+        </div>
         <button type="button" className="btn btn-sm" onClick={() => void loadPreferences()} disabled={savingPreference !== null}>{t('common.retry')}</button>
       </div>
       <p style={{ color: 'var(--color-text-muted)' }}>{t('notifications.payloadNote')}</p>

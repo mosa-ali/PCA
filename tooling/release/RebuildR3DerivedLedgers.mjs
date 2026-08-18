@@ -72,31 +72,31 @@ const SOURCE_UPDATES = {
       'backend/migrations/0020_parent_preferences_safe_zones.sql',
     ],
     testEvidence: ['android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt', 'backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs'],
-    sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
-    currentGap: 'Parent authoring, validation, family/child authorization, revisioning, and pending-offline policy metadata are now real. Applying the policy to the child device and marking delivery READY still depends on the runtime sync/crypto and device validation gates.',
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'The previous implementation exposed readable location policy and lacked a server-reachable family-role authority. The corrected source stores only encrypted envelopes and fails closed until the verified Owner/Administrator/Viewer authority is wired.',
     validationGap: 'Focused route behavior passes in-process; Node worker mode is blocked by environment spawn EPERM, and disposable MySQL plus Android device delivery validation remain unexecuted.',
-    nextAction: 'Keep the external runtime delivery gate open and validate the migration, sync delivery, and device application when those environments are available.',
-    notes: 'Safe zones store opaque child assignment and policy metadata only. No central readable movement history is introduced.',
+    nextAction: 'Wire the verified family trust-set role authority, then validate encrypted delivery and device application.',
+    notes: 'Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced.',
   },
   'PCA-FR-091': {
     status: 'PARTIAL',
     sourceEvidence: ['parent-web/src/pages/children/LocationPage.tsx', 'parent-web/src/api/interfaces.ts', 'parent-web/src/api/real/realSafeZoneClient.ts', 'backend/src/http/routes/parentAccountRoutes.ts'],
     testEvidence: ['backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs'],
-    sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
-    currentGap: 'Parent Web now exposes localized safe-zone create/list/enable/disable/delete controls with validation and pending-offline status. Child-device policy application remains externally gated by runtime sync and device validation.',
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'Parent Web is intentionally fail-closed because no trusted local encryption and family-role authority path is available yet; plaintext safe-zone authoring was removed.',
     validationGap: 'Parent Web typecheck passes and focused route behavior passes in-process; browser axe/RTL journey and live MySQL validation remain pending.',
-    nextAction: 'Run the routed browser accessibility journey and disposable MySQL migration/authz tests when available.',
-    notes: 'The UI deliberately renders policy metadata and delivery state, not a movement timeline.',
+    nextAction: 'Bind the trusted browser envelope authoring path and verified family-role authority before reopening controls.',
+    notes: 'The UI never collects or renders readable location policy until the encrypted family-policy boundary exists.',
   },
   'PCA-FR-094': {
-    status: 'PARTIAL',
+    status: 'SOURCE_COMPLETE',
     sourceEvidence: ['backend/src/parentaccount/ParentPreferenceRepository.ts', 'backend/src/parentaccount/MySqlParentPreferenceRepository.ts', 'backend/src/http/routes/parentAccountRoutes.ts', 'backend/migrations/0020_parent_preferences_safe_zones.sql', 'parent-web/src/pages/Notifications.tsx', 'parent-web/src/api/real/realParentPreferencesClient.ts'],
     testEvidence: ['backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs'],
-    sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
-    currentGap: 'Approved email-alert and push-request categories now persist per authenticated parent account and the UI has retry/error behavior. Provider delivery, destination enrollment, and live MySQL validation remain external or unexecuted.',
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Approved email-alert and push-request categories plus a validated, unverified-by-default email destination now persist per authenticated parent account. Provider delivery remains an external gate.',
     validationGap: 'Focused account-isolation/CSRF behavior passes in-process and Parent Web typecheck passes; Node worker mode is blocked by spawn EPERM and MySQL/provider delivery evidence is pending.',
     nextAction: 'Validate migration and downstream notification delivery without introducing invasive or child-content categories.',
-    notes: 'The preference vocabulary is intentionally closed to the two approved categories; no invasive child-activity notification category is exposed.',
+    notes: 'The preference vocabulary is intentionally closed to the two approved categories; email delivery cannot use an unverified destination and no invasive child-activity category is exposed.',
   },
   'PCA-FR-112': {
     status: 'SOURCE_COMPLETE',
@@ -116,19 +116,21 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-008': 'REAL_SOURCE_GAP',
   'PCA-FR-021': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-FR-023': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-FR-053': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-FR-024': 'REAL_SOURCE_GAP',
+  'PCA-FR-084': 'REAL_SOURCE_GAP',
+  'PCA-FR-053': 'REAL_SOURCE_GAP',
   'PCA-FR-080': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-FR-113': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-FR-113': 'REAL_SOURCE_GAP',
   'PCA-FR-114': 'REAL_SOURCE_GAP',
   'PCA-FR-124': 'REAL_SOURCE_GAP',
-  'PCA-FR-127': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-FR-127': 'REAL_SOURCE_GAP',
   'PCA-FR-131': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-FR-135': 'SOURCE_COMPLETE_EXTERNAL_GATE',
-  'PCA-FR-137': 'SOURCE_COMPLETE_EXTERNAL_GATE',
-  'PCA-FR-140': 'SOURCE_COMPLETE_EXTERNAL_GATE',
-  'PCA-FR-142': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-FR-135': 'REAL_SOURCE_GAP',
+  'PCA-FR-137': 'REAL_SOURCE_GAP',
+  'PCA-FR-140': 'REAL_SOURCE_GAP',
+  'PCA-FR-142': 'REAL_SOURCE_GAP',
   'PCA-FR-144': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-NFR-014': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-NFR-014': 'REAL_SOURCE_GAP',
   'PCA-NFR-021': 'REAL_SOURCE_GAP',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
@@ -137,18 +139,22 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-043': 'REAL_SOURCE_GAP',
   'PCA-NFR-044': 'REAL_SOURCE_GAP',
   'PCA-NFR-045': 'REAL_SOURCE_GAP',
-  'PCA-NFR-051': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-NFR-051': 'REAL_SOURCE_GAP',
   'PCA-NFR-054': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-NFR-060': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-NFR-060': 'REAL_SOURCE_GAP',
   'PCA-SEC-025': 'REAL_SOURCE_GAP',
   'PCA-SEC-026': 'REAL_SOURCE_GAP',
+  'PCA-PRIV-001': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-011': 'REAL_SOURCE_GAP',
+  'PCA-ADD-ENR-010': 'REAL_SOURCE_GAP',
+  'PCA-ADD-ENR-018': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-012': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-014': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-016': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-017': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-020': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-021': 'REAL_SOURCE_GAP',
+  'PCA-ADD-ENR-009': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-025': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-006': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-ADD-PA-020': 'REAL_SOURCE_GAP',
@@ -156,10 +162,10 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-ADD-BILL-026': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-041': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-043': 'REAL_SOURCE_GAP',
-  'PCA-ADD-BILL-039': 'SOURCE_COMPLETE_EXTERNAL_GATE',
-  'PCA-ADD-PA-047': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-ADD-BILL-039': 'REAL_SOURCE_GAP',
+  'PCA-ADD-PA-047': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-048': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-ADD-IDENT-021': 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  'PCA-ADD-IDENT-021': 'REAL_SOURCE_GAP',
 };
 
 function parseCsv(text) {
@@ -240,12 +246,10 @@ function applyDerivedFields(row, requirement) {
   setIfPresent(row, 'TEST_EVIDENCE', joinEvidence(testEvidence));
   setIfPresent(row, 'EXTERNAL_GATE', splitGates(requirement.externalGate).join('; '));
   const sourceClass = update?.sourceSolvableClass ?? SOURCE_CLASSIFICATIONS[requirement.requirementId] ?? row.SOURCE_SOLVABLE_CLASS;
-  const normalizedBacklogClass = {
-    EXTERNAL_GATE: 'SOURCE_COMPLETE_EXTERNAL_GATE',
-    OWNER_OR_ENVIRONMENT_GATE: 'SOURCE_COMPLETE_OWNER_DECISION_GATE',
-    SOURCE_TRIAGE_REQUIRED: 'REAL_SOURCE_GAP',
-  }[sourceClass] ?? sourceClass;
-  setIfPresent(row, 'SOURCE_SOLVABLE_CLASS', requirement.status === 'PARTIAL' || requirement.status === 'NOT_STARTED' ? normalizedBacklogClass : sourceClass);
+  // Preserve the audited classification exactly. Legacy classes are not
+  // evidence and must be independently reclassified before any ledger can
+  // claim source completion; never normalize them mechanically here.
+  setIfPresent(row, 'SOURCE_SOLVABLE_CLASS', sourceClass);
   setIfPresent(row, 'CURRENT_GAP', update?.currentGap ?? row.CURRENT_GAP);
   setIfPresent(row, 'SOURCE_GAP', update?.currentGap ?? row.SOURCE_GAP);
   setIfPresent(row, 'NEXT_ACTION', update?.nextAction ?? row.NEXT_ACTION);
@@ -268,6 +272,13 @@ for (const requirement of requirements) {
   requirement.testEvidence = update.testEvidence;
   requirement.notes = update.notes;
 }
+const sourceCompleteExternalWithoutGate = requirements
+  .filter((requirement) => (SOURCE_UPDATES[requirement.requirementId]?.sourceSolvableClass ?? SOURCE_CLASSIFICATIONS[requirement.requirementId]) === 'SOURCE_COMPLETE_EXTERNAL_GATE')
+  .filter((requirement) => splitGates(requirement.externalGate).length === 0)
+  .map((requirement) => requirement.requirementId);
+if (sourceCompleteExternalWithoutGate.length > 0) {
+  throw new Error(`SOURCE_COMPLETE_EXTERNAL_GATE rows require an explicit external gate: ${sourceCompleteExternalWithoutGate.join(', ')}`);
+}
 await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`, 'utf8');
 
 const byId = new Map(requirements.map((requirement) => [requirement.requirementId, requirement]));
@@ -280,6 +291,12 @@ for (const row of auditRows) {
 await writeFile(paths.audit, csvText(auditHeaders, auditRows), 'utf8');
 
 const { headers: sourceHeaders, rows: sourceRows } = objectRows(await readFile(paths.source, 'utf8'));
+const existingSourceRowsWithoutExternalGate = sourceRows
+  .filter((row) => row.SOURCE_SOLVABLE_CLASS === 'SOURCE_COMPLETE_EXTERNAL_GATE' && splitGates(row.EXTERNAL_GATE).length === 0)
+  .map((row) => row.REQUIREMENT_ID);
+if (existingSourceRowsWithoutExternalGate.length > 0) {
+  throw new Error(`Existing SOURCE_COMPLETE_EXTERNAL_GATE rows require an explicit external gate: ${existingSourceRowsWithoutExternalGate.join(', ')}`);
+}
 const sourceBacklogRows = sourceRows
   .filter((row) => ['PARTIAL', 'NOT_STARTED'].includes(byId.get(row.REQUIREMENT_ID)?.status))
   .map((row) => {
@@ -335,9 +352,9 @@ progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
 progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
 const currentHeadValidationEvidence = process.env.PCA_R3_BACKEND_UNIT_SECURITY_EVIDENCE
-  ?? progress.match(/- Backend build and full unit\/security suite:[^\n]*/)?.[0]
-  ?? '- Backend build and full unit/security suite: NOT_EXECUTED.';
+  ?? '- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.';
 progress = progress.replace(/- Backend build and full unit\/security suite:[^\n]*/, currentHeadValidationEvidence);
+progress = progress.replace(/- Parent Web typecheck, lint, test, and build:[^\n]*/, '- Parent Web typecheck: PASS; lint: PASS from the prior focused validation; test/build: RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM).');
 const previousDbStatus = progress.match(/CURRENT_HEAD_0019_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
 const dbStatus = process.env.PCA_R3_DB_VALIDATION ?? previousDbStatus;
 const dbPass = dbStatus === 'PASS';

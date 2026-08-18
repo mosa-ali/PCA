@@ -77,7 +77,19 @@ if ($RealUatState -ne 'COMPLETE') {
   $Failures.Add("REAL_UAT = $RealUatState (docs/release_readiness/uat_execution_log.json status must be COMPLETE with a recorded go/no-go decision; cases logged: $($UatLog.casesLogged) of $($UatLog.totalCasesInPlan)).")
 }
 
-# --- 3. External gate matrix ------------------------------------------------
+# --- 3. External gate register/matrix parity -------------------------------
+$ParityScriptPath = Join-Path $RepositoryRoot 'tooling\release\ValidateExternalGateParity.mjs'
+if (-not (Test-Path -LiteralPath $ParityScriptPath)) {
+  throw "Cannot evaluate external gate parity: $ParityScriptPath not found."
+}
+$ParityOutput = & node $ParityScriptPath 2>&1
+$ParityExitCode = $LASTEXITCODE
+$ParityState = if ($ParityExitCode -eq 0) { 'PASS' } else { 'FAIL' }
+if ($ParityExitCode -ne 0) {
+  $Failures.Add("EXTERNAL_GATE_PARITY = FAIL ($($ParityOutput -join ' ')).")
+}
+
+# --- 4. External gate matrix ------------------------------------------------
 $ExternalGateState = @()
 if (-not $IgnoreExternalGates) {
   $GateMatrixPath = Join-Path $RepositoryRoot 'docs\release_readiness\external_gate_matrix.json'
@@ -100,6 +112,7 @@ Write-Host ''
 Write-Host '=== PCA Release Gate ==='
 Write-Host "PRODUCTION_CRYPTO_SUITE: $CryptoSuiteState"
 Write-Host "REAL_UAT: $RealUatState ($($UatLog.casesLogged)/$($UatLog.totalCasesInPlan) cases logged)"
+Write-Host "EXTERNAL_GATE_PARITY: $ParityState"
 if (-not $IgnoreExternalGates) {
   foreach ($g in $ExternalGateState) { Write-Host "External gate $($g.id): $($g.status)" }
 }

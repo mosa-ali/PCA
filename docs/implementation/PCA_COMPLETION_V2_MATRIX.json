@@ -1218,7 +1218,7 @@
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Safe zones store opaque child assignment and policy metadata only. No central readable movement history is introduced."
+      "notes": "Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced."
     },
     {
       "requirementId": "PCA-FR-064",
@@ -1465,7 +1465,7 @@
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
       ],
       "externalGate": [],
-      "notes": "The UI deliberately renders policy metadata and delivery state, not a movement timeline."
+      "notes": "The UI never collects or renders readable location policy until the encrypted family-policy boundary exists."
     },
     {
       "requirementId": "PCA-FR-092",
@@ -1498,7 +1498,7 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/parentaccount/ParentPreferenceRepository.ts",
         "backend/src/parentaccount/MySqlParentPreferenceRepository.ts",
@@ -1511,7 +1511,7 @@
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
       ],
       "externalGate": [],
-      "notes": "The preference vocabulary is intentionally closed to the two approved categories; no invasive child-activity notification category is exposed."
+      "notes": "The preference vocabulary is intentionally closed to the two approved categories; email delivery cannot use an unverified destination and no invasive child-activity category is exposed."
     },
     {
       "requirementId": "PCA-FR-095",

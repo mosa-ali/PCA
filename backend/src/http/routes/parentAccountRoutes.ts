@@ -47,14 +47,18 @@ import { deriveFreeAccessStatus } from '../../parentaccount/freeaccess/deriveFre
 import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess/FreeAccessAccountRepository.js';
 import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage } from '../../parentaccount/ParentPreferenceRepository.js';
 import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
+import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
+const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
 const CSRF_TOKEN_BYTES = 32;
+const ACTOR_DEVICE_HEADER = 'x-pca-actor-device-id';
 
 export interface ParentAccountRoutesDeps {
   parentAccountService: ParentAccountService;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
+  safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
   /**
    * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): backs the new
    * GET /api/parent/free-access-status route below. A distinct,
@@ -316,16 +320,18 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body as Record<string, unknown>;
     const keys = Object.keys(body);
-    if (keys.some((key) => !['language', 'emailAlertsEnabled', 'pushRequestsEnabled'].includes(key)) || keys.length === 0) return reply.code(400).send({ error: 'invalid_request' });
+    if (keys.some((key) => !['language', 'emailAlertsEnabled', 'pushRequestsEnabled', 'emailDestination'].includes(key)) || keys.length === 0) return reply.code(400).send({ error: 'invalid_request' });
     if (body.language !== undefined && body.language !== 'en' && body.language !== 'ar') return reply.code(400).send({ error: 'invalid_request' });
     if (body.emailAlertsEnabled !== undefined && typeof body.emailAlertsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
     if (body.pushRequestsEnabled !== undefined && typeof body.pushRequestsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+    if (body.emailDestination !== undefined && body.emailDestination !== null && (typeof body.emailDestination !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.emailDestination) || body.emailDestination.length > 320)) return reply.code(400).send({ error: 'invalid_request' });
     try {
       const session = await parentAccountService.readSession(token);
       const patch: ParentPreferencesPatch = {
         language: body.language as ParentLanguage | undefined,
         emailAlertsEnabled: body.emailAlertsEnabled as boolean | undefined,
         pushRequestsEnabled: body.pushRequestsEnabled as boolean | undefined,
+        emailDestination: body.emailDestination as string | null | undefined,
       };
       return reply.code(200).send({ preferences: await deps.parentPreferenceRepository.update(session.accountId, patch) });
     } catch (error) {
@@ -361,53 +367,84 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
   }
 
+  function validOpaqueBase64(value: unknown, maxLength: number): value is string {
+    return typeof value === 'string' && value.length >= 2 && value.length <= maxLength && /^[A-Za-z0-9_-]+$/.test(value);
+  }
+
   function validSafeZoneBody(body: unknown): body is Omit<NewSafeZone, 'familyId'> {
     if (!isPlainObject(body)) return false;
     const value = body as Record<string, unknown>;
-    return typeof value.childProfileId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value.childProfileId)
-      && typeof value.label === 'string' && value.label.trim().length >= 1 && value.label.length <= 80
-      && typeof value.latitude === 'number' && Number.isFinite(value.latitude) && value.latitude >= -90 && value.latitude <= 90
-      && typeof value.longitude === 'number' && Number.isFinite(value.longitude) && value.longitude >= -180 && value.longitude <= 180
-      && typeof value.radiusMeters === 'number' && Number.isInteger(value.radiusMeters) && value.radiusMeters >= 50 && value.radiusMeters <= 100000
+    return typeof value.recipientEndpointId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value.recipientEndpointId)
+      && validOpaqueBase64(value.ciphertextB64, 87380)
+      && validOpaqueBase64(value.nonceB64, 88)
+      && typeof value.keyEpoch === 'number' && Number.isInteger(value.keyEpoch) && value.keyEpoch > 0
       && (value.enabled === undefined || typeof value.enabled === 'boolean');
+  }
+
+  async function authorizeSafeZoneRequest(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    session: { accountId: string; familyId: string },
+    operation: 'VIEW_DASHBOARD' | 'EDIT_CHILD_POLICY',
+  ): Promise<boolean> {
+    const actorDeviceId = request.headers[ACTOR_DEVICE_HEADER];
+    if (!deps.safeZonePolicyAuthorizer || typeof actorDeviceId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(actorDeviceId)) {
+      await reply.code(503).send({ error: 'family_authority_unavailable' });
+      return false;
+    }
+    const issuedAt = new Date();
+    const decision = await deps.safeZonePolicyAuthorizer.authorize({
+      familyId: session.familyId,
+      actorDeviceId,
+      operation,
+      targetScope: { kind: 'FAMILY', id: session.familyId },
+      issuedAt,
+      expiresAt: new Date(issuedAt.getTime() + 15 * 60 * 1000),
+      stepUp: null,
+      idempotencyKey: randomBytes(16).toString('hex'),
+      actionId: randomBytes(16).toString('hex'),
+    });
+    const allowed = decision.verdict !== 'DENY' && (operation === 'VIEW_DASHBOARD' || decision.verdict === 'ALLOW');
+    if (!allowed) {
+      await reply.code(403).send({ error: 'forbidden' });
+      return false;
+    }
+    return true;
   }
 
   app.get('/api/parent/families/:familyId/safe-zones', async (request: FastifyRequest, reply: FastifyReply) => {
     if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await authorizeSafeZoneRequest(request, reply, session, 'VIEW_DASHBOARD'))) return;
     return reply.code(200).send({ safeZones: await deps.safeZoneRepository.list(session.familyId) });
   });
 
-  app.post('/api/parent/families/:familyId/safe-zones', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/api/parent/families/:familyId/safe-zones', { bodyLimit: MAX_SAFE_ZONE_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
     if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await authorizeSafeZoneRequest(request, reply, session, 'EDIT_CHILD_POLICY'))) return;
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!validSafeZoneBody(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body;
-    try {
-      const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId, enabled: body.enabled ?? true });
-      return reply.code(201).send({ safeZone: zone });
-    } catch (error) {
-      if (error instanceof SafeZoneError && error.code === 'CHILD_NOT_IN_FAMILY') return reply.code(403).send({ error: 'child_scope_forbidden' });
-      throw error;
-    }
+    const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId, enabled: body.enabled ?? true });
+    return reply.code(201).send({ safeZone: zone });
   });
 
-  app.patch('/api/parent/families/:familyId/safe-zones/:zoneId', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.patch('/api/parent/families/:familyId/safe-zones/:zoneId', { bodyLimit: MAX_SAFE_ZONE_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
     if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await authorizeSafeZoneRequest(request, reply, session, 'EDIT_CHILD_POLICY'))) return;
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const value = request.body as Record<string, unknown>;
     const keys = Object.keys(value);
-    if (keys.length === 0 || keys.some((key) => !['label', 'latitude', 'longitude', 'radiusMeters', 'enabled'].includes(key))) return reply.code(400).send({ error: 'invalid_request' });
-    if (value.label !== undefined && (typeof value.label !== 'string' || value.label.trim().length < 1 || value.label.length > 80)) return reply.code(400).send({ error: 'invalid_request' });
-    if (value.latitude !== undefined && (typeof value.latitude !== 'number' || !Number.isFinite(value.latitude) || value.latitude < -90 || value.latitude > 90)) return reply.code(400).send({ error: 'invalid_request' });
-    if (value.longitude !== undefined && (typeof value.longitude !== 'number' || !Number.isFinite(value.longitude) || value.longitude < -180 || value.longitude > 180)) return reply.code(400).send({ error: 'invalid_request' });
-    if (value.radiusMeters !== undefined && (typeof value.radiusMeters !== 'number' || !Number.isInteger(value.radiusMeters) || value.radiusMeters < 50 || value.radiusMeters > 100000)) return reply.code(400).send({ error: 'invalid_request' });
+    if (keys.length === 0 || keys.some((key) => !['ciphertextB64', 'nonceB64', 'keyEpoch', 'enabled'].includes(key))) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.ciphertextB64 !== undefined && !validOpaqueBase64(value.ciphertextB64, 87380)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.nonceB64 !== undefined && !validOpaqueBase64(value.nonceB64, 88)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.keyEpoch !== undefined && (typeof value.keyEpoch !== 'number' || !Number.isInteger(value.keyEpoch) || value.keyEpoch <= 0)) return reply.code(400).send({ error: 'invalid_request' });
     if (value.enabled !== undefined && typeof value.enabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
     const { zoneId } = request.params as { zoneId?: string };
     if (!zoneId || !/^[A-Za-z0-9_-]{1,128}$/.test(zoneId)) return reply.code(400).send({ error: 'invalid_request' });
@@ -424,6 +461,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
     const session = await familySession(request, reply);
     if (!session) return;
+    if (!(await authorizeSafeZoneRequest(request, reply, session, 'EDIT_CHILD_POLICY'))) return;
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     const { zoneId } = request.params as { zoneId?: string };
     if (!zoneId || !/^[A-Za-z0-9_-]{1,128}$/.test(zoneId)) return reply.code(400).send({ error: 'invalid_request' });

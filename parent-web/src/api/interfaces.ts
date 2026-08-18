@@ -105,6 +105,8 @@ export interface ParentPreferences {
   language: ParentLanguage;
   emailAlertsEnabled: boolean;
   pushRequestsEnabled: boolean;
+  emailDestination: string | null;
+  emailDestinationState: 'UNVERIFIED' | 'VERIFIED';
   updatedAtUtc: string;
 }
 
@@ -112,6 +114,7 @@ export interface ParentPreferencesPatch {
   language?: ParentLanguage;
   emailAlertsEnabled?: boolean;
   pushRequestsEnabled?: boolean;
+  emailDestination?: string | null;
 }
 
 export interface ParentPreferencesClient {
@@ -122,11 +125,10 @@ export interface ParentPreferencesClient {
 export interface SafeZone {
   zoneId: string;
   familyId: string;
-  childProfileId: string;
-  label: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  recipientEndpointId: string;
+  ciphertextB64: string;
+  nonceB64: string;
+  keyEpoch: number;
   enabled: boolean;
   revision: number;
   deliveryState: 'PENDING_OFFLINE' | 'READY';
@@ -135,19 +137,17 @@ export interface SafeZone {
 }
 
 export interface NewSafeZoneInput {
-  childProfileId: string;
-  label: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  recipientEndpointId: string;
+  ciphertextB64: string;
+  nonceB64: string;
+  keyEpoch: number;
   enabled?: boolean;
 }
 
 export interface SafeZonePatch {
-  label?: string;
-  latitude?: number;
-  longitude?: number;
-  radiusMeters?: number;
+  ciphertextB64?: string;
+  nonceB64?: string;
+  keyEpoch?: number;
   enabled?: boolean;
 }
 

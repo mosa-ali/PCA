@@ -3,11 +3,10 @@ export type SafeZoneDeliveryState = 'PENDING_OFFLINE' | 'READY';
 export interface SafeZone {
   zoneId: string;
   familyId: string;
-  childProfileId: string;
-  label: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  recipientEndpointId: string;
+  ciphertextB64: string;
+  nonceB64: string;
+  keyEpoch: number;
   enabled: boolean;
   revision: number;
   deliveryState: SafeZoneDeliveryState;
@@ -17,24 +16,22 @@ export interface SafeZone {
 
 export interface NewSafeZone {
   familyId: string;
-  childProfileId: string;
-  label: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
+  recipientEndpointId: string;
+  ciphertextB64: string;
+  nonceB64: string;
+  keyEpoch: number;
   enabled: boolean;
 }
 
 export interface SafeZonePatch {
-  label?: string;
-  latitude?: number;
-  longitude?: number;
-  radiusMeters?: number;
+  ciphertextB64?: string;
+  nonceB64?: string;
+  keyEpoch?: number;
   enabled?: boolean;
 }
 
 export class SafeZoneError extends Error {
-  constructor(readonly code: 'CHILD_NOT_IN_FAMILY' | 'NOT_FOUND') {
+  constructor(readonly code: 'NOT_FOUND') {
     super(code);
     this.name = 'SafeZoneError';
   }
