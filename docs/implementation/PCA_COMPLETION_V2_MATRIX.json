@@ -311,11 +311,14 @@
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt (general expiry deletion, audit-floor separation, tombstone pruning, and LATEST_ONLY convergence)",
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionCutoffCalculatorTest.kt (elapsed, calendar-month, timezone, and audit-floor cutoff boundaries)"
+      ],
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Local retention scheduling and deletion mechanics have focused Android coverage for general expiry, audit-floor separation, tombstone pruning, LATEST_ONLY convergence, calendar/timezone cutoff boundaries, and the non-sensitive receipt path. This remains PARTIAL because production cryptographic acceptance and external security review are still required before claiming complete end-to-end retention assurance."
     },
     {
       "requirementId": "PCA-DATA-026",
