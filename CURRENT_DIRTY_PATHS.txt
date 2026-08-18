@@ -1,0 +1,54 @@
+# Snapshot captured after the shared-agent safety stop on 2026-08-18.
+# All paths below are coordinator-held until independently reviewed and
+# deliberately committed. The first five were the pre-entry dirty paths;
+# the remaining paths were written by shared-checkout writer lanes.
+android/app/src/main/java/org/pca/app/persistence/retention/RetentionCutoffCalculator.kt
+android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt
+android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt
+android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceModels.kt
+android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt
+android/app/src/main/res/values-ar/runtime_strings.xml
+android/app/src/main/res/values/runtime_strings.xml
+android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt
+android/app/src/test/java/org/pca/app/persistence/retention/RetentionCutoffCalculatorTest.kt
+android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt
+android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStoreTest.kt
+android/app/src/test/java/org/pca/app/i18n/MonitoredFamilyTerminologyTest.kt
+backend/src/export/manifest.ts
+backend/src/export/types.ts
+backend/src/location/domain.ts
+backend/src/location/safeZone.ts
+backend/src/location/freshness.ts
+backend/src/relay/MySqlRelayRepository.ts
+backend/src/relay/RelayRepository.ts
+backend/src/relay/RelayService.ts
+backend/src/relay/diagnostics.ts
+backend/src/retention/InMemoryDeleteNowLedger.ts
+backend/src/retention/calendar.ts
+backend/src/retention/deleteNow.ts
+backend/src/retention/deletionStateMachine.ts
+backend/src/retention/engine.ts
+backend/src/retention/policy.ts
+backend/src/tamper/TrustedTimeTamperBridge.ts
+backend/src/familyenvelope/FamilyEnvelopeVerifier.ts
+backend/test/export/pipeline.test.mjs
+backend/test/location/domain.test.mjs
+backend/test/location/safeZone.test.mjs
+backend/test/relay/service.test.mjs
+backend/test/retention/calendar.test.mjs
+backend/test/retention/deleteNow.test.mjs
+backend/test/retention/deletionStateMachine.test.mjs
+backend/test/retention/engine.test.mjs
+backend/test/tamper/TrustedTimeTamperBridge.test.mjs
+parent-web/src/api/real/realSafeZoneClient.ts
+parent-web/src/api/safeZonePolicyAuthoring.ts
+parent-web/src/api/retention.ts
+parent-web/src/i18n/locales/ar.json
+parent-web/src/i18n/locales/en.json
+parent-web/src/pages/privacy/Retention.tsx
+parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx
+parent-web/tests/i18n/monitoredFamilyTerminology.test.ts
+parent-web/tests/unit/realSafeZoneClient.test.ts
+parent-web/tests/unit/retention.test.ts
+parent-web/tests/unit/safeZonePolicyAuthoring.test.ts
+CURRENT_DIRTY_PATHS.txt

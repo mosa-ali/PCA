@@ -236,10 +236,16 @@ export async function evaluateEnvelope(
   if (envelope.keyEpoch < context.minimumAcceptedKeyEpoch) {
     return { accepted: false, reason: 'STALE_KEY_EPOCH' };
   }
-  if (await replayLedger.hasProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce)) {
+  // With the production MySQL atomic-acceptance path, replay and semantic
+  // version reads here would be advisory only: a concurrent identical retry
+  // can pass the message-id read before the winner commits, then observe the
+  // winner's replay row before it reaches the transaction and be misclassified
+  // as REPLAYED instead of idempotently accepted. The atomic transaction owns
+  // both decisions authoritatively and arbitrates the message-id first.
+  if (!options.atomicAcceptance && (await replayLedger.hasProcessed(context.familyId, envelope.senderKeyId, envelope.sequenceOrNonce))) {
     return { accepted: false, reason: 'REPLAYED' };
   }
-  if (requiresStrictVersionIncrease(envelope.messageType)) {
+  if (!options.atomicAcceptance && requiresStrictVersionIncrease(envelope.messageType)) {
     const lastVersion = await versionLedger.getLastAcceptedVersion(context.familyId, envelope.senderKeyId);
     if (lastVersion !== null && compareSemanticVersions(envelope.semanticVersion, lastVersion) <= 0) {
       return { accepted: false, reason: 'VERSION_NOT_MONOTONIC' };
