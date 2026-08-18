@@ -16,5 +16,13 @@
 	<array>
 		<string>group.org.pca.app</string>
 	</array>
+	<!-- PCA-ADD-ENR-010: Universal Link continuation. The associated
+	     domain's apple-app-site-association file and entitlement approval are
+	     external release gates; no claim of live domain verification is made
+	     by this source entry. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:enroll.pca.app</string>
+	</array>
 </dict>
 </plist>

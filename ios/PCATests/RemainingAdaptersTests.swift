@@ -207,3 +207,143 @@ final class ChildEnrollmentCoordinatorTests: XCTestCase {
         )
     }
 }
+
+final class PCAEnrollmentProfileRuntimeTests: XCTestCase {
+    func testUniversalLinkAndCustomSchemeAcceptOnlyCanonicalOpaqueTokens() {
+        let parser = PCAEnrollmentLinkParser()
+        let token = String(repeating: "A", count: 43)
+
+        let universal = parser.parse(URL(string: "https://enroll.pca.app/\(token)")!)
+        XCTAssertEqual(universal?.rawInvitationToken, token)
+        XCTAssertEqual(universal?.serverBaseURL.absoluteString, "https://enroll.pca.app")
+
+        let custom = parser.parse(URL(string: "pca://enroll?token=\(token)")!)
+        XCTAssertEqual(custom?.rawInvitationToken, token)
+        XCTAssertEqual(custom?.serverBaseURL.absoluteString, "pca://enroll")
+
+        XCTAssertNil(parser.parse(URL(string: "https://evil.example/\(token)")!))
+        XCTAssertNil(parser.parse(URL(string: "https://enroll.pca.app/\(token)&other=child")!))
+        XCTAssertNil(parser.parse(URL(string: "pca://enroll?token=short")!))
+
+        let router = PCAEnrollmentLinkRouter()
+        XCTAssertTrue(router.receive(URL(string: "https://enroll.pca.app/\(token)")!))
+        XCTAssertEqual(router.takePendingLink()?.rawInvitationToken, token)
+        XCTAssertNil(router.takePendingLink())
+    }
+
+    func testProfileIsDisplayedUnchangedAndPersistedOnlyAfterExplicitChildConfirmation() throws {
+        let store = InMemoryPCAEnrollmentProfileStore()
+        let audit = InMemoryPCAEnrollmentAuditSink()
+        let profile = PCAEnrollmentProfile(
+            childProfileId: "opaque-child",
+            ageUxTier: .youngChild,
+            initialPolicyProfile: .strict
+        )
+        let controller = PCAEnrollmentProfileRuntimeController(
+            deviceId: "opaque-device",
+            store: store,
+            authorization: .approved,
+            auditSink: audit,
+            now: { Date(timeIntervalSince1970: 1_700_000_000) }
+        )
+
+        controller.receiveParentAuthorizedProfile(profile)
+        guard case let .awaitingChildConfirmation(received, disclosure) = controller.state else {
+            return XCTFail("the parent profile must require child confirmation")
+        }
+        XCTAssertEqual(received, profile)
+        XCTAssertTrue(disclosure.parentSelectedProfile)
+        XCTAssertNil(try store.load(forDeviceId: "opaque-device"))
+
+        guard case let .ready(confirmed, defaults) = controller.confirmChildProfile() else {
+            return XCTFail("approved authorization should make the confirmed profile ready")
+        }
+        XCTAssertEqual(confirmed, profile)
+        XCTAssertEqual(defaults.contentFilterDefault, .strict)
+        XCTAssertEqual(try store.load(forDeviceId: "opaque-device"), profile)
+        XCTAssertEqual(audit.events.map(\.transition), [.parentProfilePresented, .childProfileConfirmed, .authorizationApproved])
+        XCTAssertTrue(audit.events.allSatisfy { $0.actor == "CHILD_DEVICE" && $0.occurredAtUtc.timeIntervalSince1970 == 1_700_000_000 })
+    }
+
+    func testAuthorizationRequiredStateNeverPermitsRuntimeBeforeAppleApproval() {
+        let profile = PCAEnrollmentProfile(childProfileId: nil, ageUxTier: .teen, initialPolicyProfile: .balanced)
+        let controller = PCAEnrollmentProfileRuntimeController(
+            deviceId: "opaque-device",
+            store: InMemoryPCAEnrollmentProfileStore(),
+            authorization: .notDetermined
+        )
+        controller.receiveParentAuthorizedProfile(profile)
+
+        guard case .authorizationRequired = controller.confirmChildProfile() else {
+            return XCTFail("profile confirmation must not imply Family Controls authorization")
+        }
+        XCTAssertFalse(controller.state.isRuntimeReady)
+
+        guard case .ready = controller.updateAuthorization(.approved) else {
+            return XCTFail("approved Family Controls state should open the runtime gate")
+        }
+        XCTAssertTrue(controller.state.isRuntimeReady)
+    }
+
+    func testUserDefaultsStoreRoundTripsOnlyTheParentAuthorizedProfile() throws {
+        let suiteName = "pca-w85-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsPCAEnrollmentProfileStore(defaults: defaults, namespace: "test.profile")
+        let profile = PCAEnrollmentProfile(childProfileId: "opaque-child", ageUxTier: .teen, initialPolicyProfile: .balanced)
+
+        try store.save(profile, forDeviceId: "opaque-device")
+
+        XCTAssertEqual(try store.load(forDeviceId: "opaque-device"), profile)
+        XCTAssertNil(defaults.string(forKey: "test.profile.opaque-device"))
+        let restored = PCAEnrollmentProfileRuntimeController(
+            deviceId: "opaque-device",
+            store: store,
+            authorization: .approved
+        )
+        guard case .ready = restored.restorePersistedProfile() else {
+            return XCTFail("a persisted profile must restore only after the approved runtime gate")
+        }
+        try store.remove(forDeviceId: "opaque-device")
+        XCTAssertNil(try store.load(forDeviceId: "opaque-device"))
+    }
+
+    func testAgeTierChangesDefaultsButNotPrivacyDisclosure() {
+        let young = PCAEnrollmentDisclosure.forProfile(
+            PCAEnrollmentProfile(childProfileId: nil, ageUxTier: .youngChild, initialPolicyProfile: .balanced)
+        )
+        let teen = PCAEnrollmentDisclosure.forProfile(
+            PCAEnrollmentProfile(childProfileId: nil, ageUxTier: .teen, initialPolicyProfile: .balanced)
+        )
+
+        XCTAssertEqual(young.readingLevel, .simple)
+        XCTAssertEqual(teen.readingLevel, .clear)
+        XCTAssertNotEqual(young.title, teen.title)
+        XCTAssertEqual(young.monitoredSummary, teen.monitoredSummary)
+        XCTAssertEqual(young.notMonitoredSummary, teen.notMonitoredSummary)
+        XCTAssertEqual(young.emergencySummary, teen.emergencySummary)
+        XCTAssertFalse(young.notMonitoredSummary.localizedCaseInsensitiveContains("appearance"))
+        XCTAssertFalse(young.notMonitoredSummary.localizedCaseInsensitiveContains("body image"))
+    }
+}
+
+private extension PCAEnrollmentProfileRuntimeState {
+    var isRuntimeReady: Bool {
+        if case .ready = self { return true }
+        return false
+    }
+}
+
+final class PCARecoverySecretDisclosureGateTests: XCTestCase {
+    func testSingleParentAndMissingSecretDisclosureMustBeAcknowledgedBeforeGeneration() {
+        var gate = PCARecoverySecretDisclosureGate()
+        XCTAssertFalse(gate.authorizeGeneration())
+        XCTAssertTrue(PCARecoverySecretDisclosureGate.summary.contains("only parent"))
+        XCTAssertTrue(PCARecoverySecretDisclosureGate.summary.contains("lose the Recovery Secret"))
+        XCTAssertTrue(PCARecoverySecretDisclosureGate.summary.contains("start a new family enrollment"))
+        XCTAssertTrue(PCARecoverySecretDisclosureGate.summary.contains("support cannot recover"))
+
+        gate.acknowledge()
+        XCTAssertTrue(gate.authorizeGeneration())
+    }
+}
