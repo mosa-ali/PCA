@@ -37,6 +37,19 @@
     <string name="usage_access_alert_revoked_body">This device\'s usage monitoring permission was revoked. Screen-time reporting may be incomplete until it is re-enabled.</string>
     <string name="usage_access_alert_degraded_title">Usage monitoring may need attention</string>
     <string name="usage_access_alert_degraded_body">This device hasn\'t reported any usage activity recently even though access is still granted.</string>
+    <string name="usage_access_alert_unavailable_title">Usage monitoring is unavailable</string>
+    <string name="usage_access_alert_unavailable_body">Android did not provide the usage-monitoring service. PCA cannot claim complete usage reporting on this device.</string>
+
+    <string name="capability_alert_notification_channel_name">PCA protection alerts</string>
+    <string name="capability_alert_notification_channel_description">Alerts when a documented Android protection capability changes or stops working.</string>
+    <string name="capability_alert_device_owner_lost_title">Protected authority changed</string>
+    <string name="capability_alert_device_owner_lost_body">Android no longer reports PCA as device owner. Protected-mode controls are unavailable until supported authority is restored.</string>
+    <string name="capability_alert_device_policy_unavailable_title">Device policy status unavailable</string>
+    <string name="capability_alert_device_policy_unavailable_body">Android did not provide device-policy status. PCA cannot claim managed-device controls.</string>
+    <string name="capability_alert_vpn_revoked_title">VPN consent was revoked</string>
+    <string name="capability_alert_vpn_revoked_body">PCA web filtering stopped because Android VPN consent is no longer available.</string>
+    <string name="capability_alert_vpn_degraded_title">VPN filtering needs attention</string>
+    <string name="capability_alert_vpn_degraded_body">PCA no longer has evidence that its user-consented web-filtering VPN is enforcing.</string>
 
     <!-- Emergency-dial trusted-contact alert (PCA-FR-132, Writer73) notification strings -->
     <string name="emergency_dial_alert_notification_channel_name">Emergency access alerts</string>

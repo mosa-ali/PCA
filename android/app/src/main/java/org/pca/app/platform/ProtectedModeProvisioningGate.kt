@@ -25,6 +25,30 @@ interface ProtectedModeProvisioningGate {
 }
 
 /**
+ * Read-only authority gate for any future protected provisioning or policy
+ * operation. It does not start provisioning, request hidden authority, or
+ * register a DeviceAdminReceiver. Callers may proceed only when the live OS
+ * reports device-owner authority.
+ */
+enum class ProtectedModeAuthorityState { PROVEN, NOT_PROVEN, NOT_SUPPORTED }
+
+interface ProtectedModeAuthorityGate {
+    fun currentState(): ProtectedModeAuthorityState
+}
+
+class DeviceOwnerAuthorityGate(
+    private val devicePolicyCapabilitySource: DevicePolicyCapabilitySource,
+) : ProtectedModeAuthorityGate {
+    override fun currentState(): ProtectedModeAuthorityState = when (devicePolicyCapabilitySource.currentAuthority()) {
+        ManagedDeviceAuthority.DEVICE_OWNER -> ProtectedModeAuthorityState.PROVEN
+        ManagedDeviceAuthority.UNAVAILABLE -> ProtectedModeAuthorityState.NOT_SUPPORTED
+        ManagedDeviceAuthority.NONE,
+        ManagedDeviceAuthority.PROFILE_OWNER,
+        -> ProtectedModeAuthorityState.NOT_PROVEN
+    }
+}
+
+/**
  * Baseline implementation: unconditionally reports PENDING_OWNER_DECISION.
  * This is not a placeholder bug -- it is the CORRECT behavior until a
  * human owner resolves PCA-DEC-002/014/015, at which point THIS CLASS

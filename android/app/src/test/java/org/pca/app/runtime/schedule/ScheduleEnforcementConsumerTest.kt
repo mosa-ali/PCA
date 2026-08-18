@@ -36,6 +36,29 @@ class ScheduleEnforcementConsumerTest {
     }
 
     @Test
+    fun `authority loss between schedule ticks fails closed without a stale suspension call`() {
+        var authority = ManagedDeviceAuthority.DEVICE_OWNER
+        val executor = RecordingExecutor()
+        val consumer = DevicePolicyScheduleEnforcementConsumer(
+            authoritySource = object : DevicePolicyCapabilitySource {
+                override fun currentAuthority(): ManagedDeviceAuthority = authority
+            },
+            packageSuspensionExecutor = executor,
+        )
+
+        assertEquals(
+            ScheduleEnforcementOutcome.APPLIED,
+            consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens()),
+        )
+        authority = ManagedDeviceAuthority.NONE
+        assertEquals(
+            ScheduleEnforcementOutcome.UNAVAILABLE,
+            consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens()),
+        )
+        assertEquals(listOf("com.example.game" to true), executor.calls)
+    }
+
+    @Test
     fun communicationSurfacesArePreservedWithoutGenericAllowlist() {
         val executor = RecordingExecutor()
         val consumer = consumer(ManagedDeviceAuthority.DEVICE_OWNER, executor)

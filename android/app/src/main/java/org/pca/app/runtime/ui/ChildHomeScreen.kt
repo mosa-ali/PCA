@@ -161,6 +161,7 @@ private fun ManagementDisclosureCard(mode: ProtectionMode) {
                 text = when (mode) {
                     ProtectionMode.PROTECTED -> stringResource(R.string.child_home_management_active)
                     ProtectionMode.STANDARD -> stringResource(R.string.child_home_management_standard)
+                    ProtectionMode.DEGRADED -> stringResource(R.string.child_home_management_degraded)
                     ProtectionMode.AUTHORIZATION_REQUIRED -> stringResource(R.string.child_home_management_authorization_required)
                     ProtectionMode.NOT_SUPPORTED -> stringResource(R.string.child_home_management_not_supported)
                 },
@@ -339,6 +340,7 @@ private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
 private fun protectionModeLabel(mode: ProtectionMode): String = when (mode) {
     ProtectionMode.PROTECTED -> stringResource(R.string.child_home_protection_protected)
     ProtectionMode.STANDARD -> stringResource(R.string.child_home_protection_standard)
+    ProtectionMode.DEGRADED -> stringResource(R.string.child_home_protection_degraded)
     ProtectionMode.AUTHORIZATION_REQUIRED -> stringResource(R.string.child_home_protection_authorization_required)
     ProtectionMode.NOT_SUPPORTED -> stringResource(R.string.child_home_protection_not_supported)
 }

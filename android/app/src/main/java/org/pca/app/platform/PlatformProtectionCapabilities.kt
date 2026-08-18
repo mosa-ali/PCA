@@ -4,6 +4,7 @@ package org.pca.app.platform
 enum class ProtectionMode {
     STANDARD,
     PROTECTED,
+    DEGRADED,
     AUTHORIZATION_REQUIRED,
     NOT_SUPPORTED,
 }
@@ -31,9 +32,21 @@ interface PlatformProtectionCapabilities {
 class DevicePolicyProtectionCapabilities(
     private val devicePolicyCapabilitySource: DevicePolicyCapabilitySource,
 ) : PlatformProtectionCapabilities {
-    override fun currentMode(): ProtectionMode =
-        when (devicePolicyCapabilitySource.currentAuthority()) {
+    private val trackedAuthority = devicePolicyCapabilitySource as? DevicePolicyAuthorityTracker
+
+    override fun currentMode(): ProtectionMode = when {
+        trackedAuthority != null -> when (trackedAuthority.currentState()) {
+            TrackedDevicePolicyState.DEVICE_OWNER -> ProtectionMode.PROTECTED
+            TrackedDevicePolicyState.DEVICE_OWNER_REVOKED -> ProtectionMode.DEGRADED
+            TrackedDevicePolicyState.UNAVAILABLE -> ProtectionMode.NOT_SUPPORTED
+            TrackedDevicePolicyState.PROFILE_OWNER,
+            TrackedDevicePolicyState.STANDARD,
+            -> ProtectionMode.STANDARD
+        }
+        else -> when (devicePolicyCapabilitySource.currentAuthority()) {
             ManagedDeviceAuthority.DEVICE_OWNER -> ProtectionMode.PROTECTED
+            ManagedDeviceAuthority.UNAVAILABLE -> ProtectionMode.NOT_SUPPORTED
             ManagedDeviceAuthority.PROFILE_OWNER, ManagedDeviceAuthority.NONE -> ProtectionMode.STANDARD
         }
+    }
 }

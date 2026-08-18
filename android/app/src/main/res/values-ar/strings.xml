@@ -41,6 +41,19 @@
     <string name="usage_access_alert_revoked_body">تم إلغاء صلاحية مراقبة الاستخدام لهذا الجهاز. قد يكون تقرير وقت الشاشة غير مكتمل حتى إعادة تفعيلها.</string>
     <string name="usage_access_alert_degraded_title">قد تحتاج مراقبة الاستخدام إلى انتباه</string>
     <string name="usage_access_alert_degraded_body">لم يُبلغ هذا الجهاز عن أي نشاط استخدام مؤخرًا رغم أن الصلاحية لا تزال ممنوحة.</string>
+    <string name="usage_access_alert_unavailable_title">مراقبة الاستخدام غير متاحة</string>
+    <string name="usage_access_alert_unavailable_body">لم يوفّر Android خدمة مراقبة الاستخدام. لا يستطيع PCA ادعاء اكتمال تقرير الاستخدام على هذا الجهاز.</string>
+
+    <string name="capability_alert_notification_channel_name">تنبيهات حماية PCA</string>
+    <string name="capability_alert_notification_channel_description">تنبيهات عند تغير قدرة حماية موثقة في Android أو توقفها عن العمل.</string>
+    <string name="capability_alert_device_owner_lost_title">تغير تفويض الحماية</string>
+    <string name="capability_alert_device_owner_lost_body">لم يعد Android يبلّغ بأن PCA مالك الجهاز. لا تتوفر عناصر الوضع المحمي حتى استعادة تفويض مدعوم.</string>
+    <string name="capability_alert_device_policy_unavailable_title">حالة سياسة الجهاز غير متاحة</string>
+    <string name="capability_alert_device_policy_unavailable_body">لم يوفّر Android حالة سياسة الجهاز. لا يستطيع PCA ادعاء عناصر الجهاز المُدار.</string>
+    <string name="capability_alert_vpn_revoked_title">تم إلغاء موافقة VPN</string>
+    <string name="capability_alert_vpn_revoked_body">توقفت حماية PCA للويب لأن موافقة Android على VPN لم تعد متاحة.</string>
+    <string name="capability_alert_vpn_degraded_title">تحتاج تصفية VPN إلى انتباه</string>
+    <string name="capability_alert_vpn_degraded_body">لم يعد لدى PCA دليل على أن VPN لتصفية الويب، الذي وافق عليه المستخدم، يفرض الحماية.</string>
 
     <!-- تنبيه جهة الاتصال الموثوقة عند استخدام الاتصال الطارئ (PCA-FR-132, Writer73) -->
     <string name="emergency_dial_alert_notification_channel_name">تنبيهات الوصول الطارئ</string>

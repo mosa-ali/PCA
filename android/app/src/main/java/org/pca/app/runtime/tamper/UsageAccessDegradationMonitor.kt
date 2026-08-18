@@ -55,8 +55,9 @@ class UsageAccessDegradationMonitor(
     private val checkMutex = Mutex()
 
     /**
-     * Re-evaluates live state via [tracker] and acts only on a genuine transition INTO REVOKED or
-     * DEGRADED (never on every call, never on a transition between two non-alerting states). Safe
+     * Re-evaluates live state via [tracker] and acts only on a genuine transition INTO REVOKED,
+     * DEGRADED, or an abnormal UNAVAILABLE state (never on every call, never on a transition between
+     * two non-alerting states). Safe
      * to call from both the in-process poll loop and the `WorkManager` safety-net job -- state is
      * held on this single monitor instance (constructed once in
      * [org.pca.app.runtime.graph.PcaAppGraph], never per-call), so both callers see and update the
@@ -71,26 +72,30 @@ class UsageAccessDegradationMonitor(
         if (previous == state) return@withLock
         if (previous == null) return@withLock // first-ever observation is a baseline, not a transition.
 
-        when (state) {
-            TrackedUsageAccessState.REVOKED -> {
-                val deviceId = deviceIdProvider()
-                if (deviceId != null) {
-                    val now = wallClockTimeSource.currentTimeMillis()
-                    tamperEventRepository.record(
-                        id = UUID.nameUUIDFromBytes("$deviceId|USAGE_ACCESS_REVOKED|$now".toByteArray(Charsets.UTF_8)).toString(),
-                        deviceId = deviceId,
-                        conditionType = CONDITION_USAGE_ACCESS_REVOKED,
-                        detectedAtEpochMillis = now,
-                    )
-                }
-                notifyParent(state)
+        val condition = when (state) {
+            TrackedUsageAccessState.REVOKED -> CONDITION_USAGE_ACCESS_REVOKED
+            TrackedUsageAccessState.DEGRADED -> CONDITION_USAGE_ACCESS_DEGRADED
+            TrackedUsageAccessState.UNAVAILABLE -> CONDITION_USAGE_ACCESS_UNAVAILABLE
+            else -> null
+        }
+        if (condition != null) {
+            val deviceId = deviceIdProvider()
+            if (deviceId != null) {
+                val now = wallClockTimeSource.currentTimeMillis()
+                tamperEventRepository.record(
+                    id = UUID.nameUUIDFromBytes("$deviceId|$condition|$now".toByteArray(Charsets.UTF_8)).toString(),
+                    deviceId = deviceId,
+                    conditionType = condition,
+                    detectedAtEpochMillis = now,
+                )
             }
-            TrackedUsageAccessState.DEGRADED -> notifyParent(state)
-            else -> Unit
+            notifyParent(state)
         }
     }
 
     companion object {
         const val CONDITION_USAGE_ACCESS_REVOKED = "USAGE_ACCESS_REVOKED"
+        const val CONDITION_USAGE_ACCESS_DEGRADED = "USAGE_ACCESS_DEGRADED"
+        const val CONDITION_USAGE_ACCESS_UNAVAILABLE = "USAGE_ACCESS_UNAVAILABLE"
     }
 }

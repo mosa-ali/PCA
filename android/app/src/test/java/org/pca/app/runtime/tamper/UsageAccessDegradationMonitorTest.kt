@@ -42,7 +42,7 @@ private class FakeWallClockTimeSource(var nowMillis: Long = 5_000_000L) : WallCl
 
 /**
  * PCA-FR-085/PCA-FR-081: proves the one real tamper-signal producer this lane adds actually writes
- * a [org.pca.app.persistence.entity.TamperEventEntity] row on a genuine REVOKED transition (via a
+ * a [org.pca.app.persistence.entity.TamperEventEntity] row on a genuine REVOKED or DEGRADED transition (via a
  * real Room DB, same discipline as [org.pca.app.persistence.RetentionEngineTest]), notifies on both
  * REVOKED and DEGRADED, and never repeat-fires while the state is unchanged.
  */
@@ -125,7 +125,7 @@ class UsageAccessDegradationMonitorTest {
     }
 
     @Test
-    fun `DEGRADED notifies but never writes a TamperEvent row`() = runTest {
+    fun `DEGRADED writes a timestamped TamperEvent row and notifies`() = runTest {
         val notified = mutableListOf<TrackedUsageAccessState>()
         val source = FakeUsageObservationSource().apply { state = UsageAccessState.DENIED }
         val monitor = buildMonitor(source, notified = notified)
@@ -136,7 +136,11 @@ class UsageAccessDegradationMonitorTest {
         monitor.checkAndHandle()
 
         assertEquals(listOf(TrackedUsageAccessState.DEGRADED), notified)
-        assertEquals(0, db.tamperEventDao().count())
+        assertEquals(1, db.tamperEventDao().count())
+        assertEquals(
+            UsageAccessDegradationMonitor.CONDITION_USAGE_ACCESS_DEGRADED,
+            db.tamperEventDao().getForDevice("device-1").single().conditionType,
+        )
     }
 
     @Test

@@ -10,6 +10,7 @@
     <string name="child_home_management_notice_title">حالة الرقابة الأبوية في PCA</string>
     <string name="child_home_management_active">الرقابة الأبوية مفعّلة على هذا الجهاز. تظهر القيود الحالية وحدود الإمكانات أدناه.</string>
     <string name="child_home_management_standard">يوجد PCA على هذا الجهاز في الوضع القياسي. تظهر القيود الحالية وحدود الإمكانات أدناه.</string>
+    <string name="child_home_management_degraded">لم تعد سلطة الحماية المحمية متاحة. خفّض PCA ادعاءاته إلى الإمكانات التي يوفّرها الجهاز حاليًا.</string>
     <string name="child_home_management_authorization_required">يحتاج PCA إلى تفويض الجهاز قبل تطبيق الحماية الأقوى. تظهر الحالة الحالية أدناه.</string>
     <string name="child_home_management_not_supported">لا تدعم إمكانات هذا الجهاز حماية PCA. تظهر الحالة الحالية أدناه.</string>
     <string name="child_home_parent_visibility_title">ما الذي يمكن لولي أمرك رؤيته</string>
@@ -21,6 +22,7 @@
     <string name="child_home_protection_status">وضع الحماية</string>
     <string name="child_home_protection_protected">الوضع المحمي</string>
     <string name="child_home_protection_standard">الوضع القياسي</string>
+    <string name="child_home_protection_degraded">حماية متدهورة</string>
     <string name="child_home_protection_authorization_required">مطلوب التفويض</string>
     <string name="child_home_protection_not_supported">الحماية غير مدعومة</string>
 

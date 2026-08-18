@@ -56,18 +56,24 @@ import org.pca.app.foundation.SystemWallClockTimeSource
 import org.pca.app.persistence.PcaLocalPersistence
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
+import org.pca.app.platform.DevicePolicyAuthorityTracker
+import org.pca.app.platform.DeviceOwnerAuthorityGate
+import org.pca.app.platform.CapabilityTamperAlertNotificationDelivery
 import org.pca.app.platform.StandardDevicePolicyCapabilitySource
 import org.pca.app.platform.UsageForegroundAppPackageSource
 import org.pca.app.platform.StandardLocationCapabilitySource
 import org.pca.app.platform.StandardUsageObservationSource
 import org.pca.app.platform.UsageAccessAlertNotificationDelivery
 import org.pca.app.platform.UsageAccessStateTracker
+import org.pca.app.platform.VpnCapabilityStateTracker
 import org.pca.app.platform.proximity.HardwareProximitySource
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
 import org.pca.app.runtime.background.BackgroundExecutionScheduler
 import org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler
 import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
+import org.pca.app.runtime.tamper.DevicePolicyDegradationMonitor
+import org.pca.app.runtime.tamper.VpnDegradationMonitor
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
 import org.pca.app.runtime.PcaRuntime
@@ -171,7 +177,11 @@ class PcaAppGraph private constructor(
     val usageObservationSource = StandardUsageObservationSource(context, monotonicTimeSource, wallClockTimeSource)
     val foregroundAppPackageSource = UsageForegroundAppPackageSource(usageObservationSource, monotonicTimeSource)
     val locationCapabilitySource = StandardLocationCapabilitySource(context)
-    val devicePolicyCapabilitySource = StandardDevicePolicyCapabilitySource(context)
+    private val rawDevicePolicyCapabilitySource = StandardDevicePolicyCapabilitySource(context)
+    /** Live DPM authority plus process-local evidence of a later device-owner loss. */
+    val devicePolicyCapabilitySource = DevicePolicyAuthorityTracker(rawDevicePolicyCapabilitySource)
+    /** Read-only gate; no provisioning action is exposed from the composition root. */
+    val protectedModeAuthorityGate = DeviceOwnerAuthorityGate(devicePolicyCapabilitySource)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(devicePolicyCapabilitySource)
     private val scheduleEnforcementConsumer = DevicePolicyScheduleEnforcementConsumer(
         authoritySource = devicePolicyCapabilitySource,
@@ -198,7 +208,9 @@ class PcaAppGraph private constructor(
      * degradation-response producer built on top of it. [usageAccessAlertNotificationDelivery] is
      * the local notification half; [usageAccessDegradationMonitor] is the decision layer that ties
      * tracker state to both that notification and a real [org.pca.app.persistence.entity.TamperEventEntity]
-     * row on REVOKED. See [UsageAccessDegradationMonitor]'s own doc comment for the full picture. */
+     * row on a detected REVOKED/DEGRADED/UNAVAILABLE transition. DPM and VPN have analogous
+     * monitors below; all three are local evidence paths and do not claim remote parent delivery
+     * until the authenticated sync boundary is active. */
     val usageAccessStateTracker = UsageAccessStateTracker(usageObservationSource, monotonicTimeSource)
     private val usageAccessAlertNotificationDelivery = UsageAccessAlertNotificationDelivery(context)
     val usageAccessDegradationMonitor = UsageAccessDegradationMonitor(
@@ -207,6 +219,14 @@ class PcaAppGraph private constructor(
         wallClockTimeSource = wallClockTimeSource,
         tamperEventRepository = persistence.tamperEventRepository,
         notifyParent = { state -> usageAccessAlertNotificationDelivery.deliver(state) },
+    )
+    private val capabilityTamperAlertNotificationDelivery = CapabilityTamperAlertNotificationDelivery(context)
+    val devicePolicyDegradationMonitor = DevicePolicyDegradationMonitor(
+        tracker = devicePolicyCapabilitySource,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
+        wallClockTimeSource = wallClockTimeSource,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
     )
 
     /** PCA-AND-002/PCA-NFR-033 (WRITER68): the app's first real background-execution primitive
@@ -355,6 +375,14 @@ class PcaAppGraph private constructor(
     val signedRulePackageVerifier = NotApprovedSignedRulePackageVerifier()
     val signedRulePackageConsumer = SignedRulePackageConsumer(webRuleRepository, signedRulePackageVerifier)
     val vpnCapabilitySource = StandardVpnCapabilitySource(context)
+    val vpnCapabilityStateTracker = VpnCapabilityStateTracker(vpnCapabilitySource)
+    val vpnDegradationMonitor = VpnDegradationMonitor(
+        tracker = vpnCapabilityStateTracker,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
+        wallClockTimeSource = wallClockTimeSource,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
+    )
     /** Doc 14 layer-2 real enforcement (PCA-5 closure): [vpnDnsDecisionChannel] is the in-process bridge [org.pca.app.feature.webprotection.vpn.WebProtectionVpnService] populates while actually running -- [vpnMetadataDecisionAdapter] now reports a real ALLOWED/BLOCKED verdict whenever that service is connected and has itself decided a domain, and honestly UNAVAILABLE otherwise (see both classes' own doc comments). [vpnSafeSearchPolicyStore] defaults to OFF until explicitly set -- SafeSearch is never fabricated at the DNS layer either. [vpnEnforcementController] is the real, reachable consent/start/stop orchestration seam a future parent settings screen wires a button to (no such screen exists in this pass -- see traceability doc). */
     val vpnDnsDecisionChannel = VpnDnsDecisionChannel()
     val vpnSafeSearchPolicyStore = VpnSafeSearchPolicyStore(runtimeStateStore)
@@ -550,6 +578,8 @@ class PcaAppGraph private constructor(
             }
         }
         runCatching { usageAccessDegradationMonitor.checkAndHandle() }
+        runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
+        runCatching { vpnDegradationMonitor.checkAndHandle() }
     }
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the

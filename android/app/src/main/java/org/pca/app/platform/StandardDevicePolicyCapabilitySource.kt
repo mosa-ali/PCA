@@ -12,7 +12,7 @@ class StandardDevicePolicyCapabilitySource(private val context: Context) : Devic
 
     override fun currentAuthority(): ManagedDeviceAuthority {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-            ?: return ManagedDeviceAuthority.NONE
+            ?: return ManagedDeviceAuthority.UNAVAILABLE
         return when {
             dpm.isDeviceOwnerApp(context.packageName) -> ManagedDeviceAuthority.DEVICE_OWNER
             dpm.isProfileOwnerApp(context.packageName) -> ManagedDeviceAuthority.PROFILE_OWNER

@@ -10,6 +10,7 @@
     <string name="child_home_management_notice_title">PCA parental-control status</string>
     <string name="child_home_management_active">Parental controls are active on this device. Current restrictions and capability limits are shown below.</string>
     <string name="child_home_management_standard">PCA is present on this device in standard mode. Current restrictions and capability limits are shown below.</string>
+    <string name="child_home_management_degraded">Protected authority is no longer available. PCA has downgraded its claims to the capabilities the device currently exposes.</string>
     <string name="child_home_management_authorization_required">PCA needs device authorization before stronger protection can apply. The current state is shown below.</string>
     <string name="child_home_management_not_supported">PCA protection is not supported by this device capability. The current state is shown below.</string>
     <string name="child_home_parent_visibility_title">What your parent can see</string>
@@ -21,6 +22,7 @@
     <string name="child_home_protection_status">Protection mode</string>
     <string name="child_home_protection_protected">Protected mode</string>
     <string name="child_home_protection_standard">Standard mode</string>
+    <string name="child_home_protection_degraded">Degraded protection</string>
     <string name="child_home_protection_authorization_required">Authorization required</string>
     <string name="child_home_protection_not_supported">Protection not supported</string>
 

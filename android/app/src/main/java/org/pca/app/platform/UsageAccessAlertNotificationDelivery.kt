@@ -51,14 +51,18 @@ class UsageAccessAlertNotificationDelivery(private val context: Context) {
      * no-op -- callers (e.g. tests) can assert on this rather than needing to inspect
      * `NotificationManager` state themselves. */
     fun deliver(state: TrackedUsageAccessState): Boolean {
-        if (state != TrackedUsageAccessState.REVOKED && state != TrackedUsageAccessState.DEGRADED) return false
+        if (state != TrackedUsageAccessState.REVOKED &&
+            state != TrackedUsageAccessState.DEGRADED &&
+            state != TrackedUsageAccessState.UNAVAILABLE
+        ) return false
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
         ensureChannel()
 
-        val (titleRes, bodyRes) = if (state == TrackedUsageAccessState.REVOKED) {
-            R.string.usage_access_alert_revoked_title to R.string.usage_access_alert_revoked_body
-        } else {
-            R.string.usage_access_alert_degraded_title to R.string.usage_access_alert_degraded_body
+        val (titleRes, bodyRes) = when (state) {
+            TrackedUsageAccessState.REVOKED -> R.string.usage_access_alert_revoked_title to R.string.usage_access_alert_revoked_body
+            TrackedUsageAccessState.DEGRADED -> R.string.usage_access_alert_degraded_title to R.string.usage_access_alert_degraded_body
+            TrackedUsageAccessState.UNAVAILABLE -> R.string.usage_access_alert_unavailable_title to R.string.usage_access_alert_unavailable_body
+            else -> return false
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
