@@ -5112,9 +5112,12 @@
       "sourceEvidence": [
         "backend/src/billing/provider/providerRegistry.ts | backend/src/billing/provider/secretResolver.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/billing/providerRegistry.test.mjs (unknown-provider failure, duplicate registration, empty production registry, and exact-name production activation kill-switch)",
+        "backend/test/billing/sandboxProvider.test.mjs (sandbox-only construction and secret-reference isolation)"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No real production payment-provider adapter exists yet (only a test/dev-restricted sandbox); no explicit engineered \"refuse in production\" kill-switch exists for a hypothetical future adapter. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "The repository has no real production payment-provider adapter yet, so the external PAYMENT_PROVIDER_SELECTION gate remains open. The provider registry nevertheless fails closed in production, registers only the test/development sandbox, resolves secrets by opaque reference, and enforces an exact-name production activation kill-switch for any future adapter; focused unit tests cover those boundaries. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
     },
     {
       "requirementId": "PCA-ADD-PA-048",
