@@ -539,6 +539,43 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep the billing logging-privacy test in the standard backend suite and extend its sensitive-field inventory when billing surfaces change.',
     notes: 'The evidence covers both static call-site scanning and runtime output capture; it does not claim infrastructure-level log sink configuration or production observability review.',
   },
+  'PCA-ADD-BILL-039': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/auth/fastifyAuthPlugin.ts',
+      'backend/src/http/routes/parentAccountRoutes.ts',
+      'parent-web/src/api/real/realBillingClient.ts',
+      'parent-web/src/api/real/realCommercialNotificationClient.ts',
+      'parent-web/src/api/client.ts',
+    ],
+    testEvidence: [
+      'backend/test/auth/fastifyAuthPlugin.test.mjs',
+      'parent-web/tests/unit/realBillingClient.test.ts',
+      'parent-web/tests/unit/realCommercialNotificationClient.test.ts',
+      'parent-web/tests/unit/apiClientFactory.test.ts',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The real parent-web billing and commercial-notification clients now use the existing HttpOnly family session cookie, resolve family scope through the browser-reachable parent session projection, and send CSRF headers for mutations instead of failing with SERVICE_SESSION_UNAVAILABLE.',
+    nextAction: 'Keep cookie-session and CSRF transport tests aligned with any future family-commercial route changes; retain payment-provider activation as a separate gate.',
+    notes: 'This closes the browser session transport gap only. It does not claim a real payment provider, family-owner cryptographic authority activation, or production readiness.',
+  },
+  'PCA-ADD-PA-047': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/auth/fastifyAuthPlugin.ts',
+      'backend/src/http/routes/familyCommercialRoutes.ts',
+      'parent-web/src/api/real/realBillingClient.ts',
+      'parent-web/src/api/client.ts',
+    ],
+    testEvidence: [
+      'backend/test/auth/fastifyAuthPlugin.test.mjs',
+      'parent-web/tests/unit/realBillingClient.test.ts',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Parent-web real billing requests now have a browser-reachable cookie session transport and server-side family-scoped session validation; direct parent entitlement writes remain unavailable through the family-owner authority gate.',
+    nextAction: 'Retain the server-side no-direct-write boundary and obtain the separate family-owner authority evidence before enabling owner mutations.',
+    notes: 'The session transport is locally complete; this does not bypass or claim completion of the independent family-owner authority boundary.',
+  },
 };
 
 const SOURCE_CLASSIFICATIONS = {
@@ -598,7 +635,8 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-ADD-BILL-026': 'SOURCE_COMPLETE',
   'PCA-ADD-PA-041': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-043': 'REAL_SOURCE_GAP',
-  'PCA-ADD-BILL-039': 'REAL_SOURCE_GAP',
+  'PCA-ADD-BILL-039': 'SOURCE_COMPLETE',
+  'PCA-ADD-PA-047': 'SOURCE_COMPLETE',
   'PCA-ADD-PA-047': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-048': 'SOURCE_COMPLETE',
   'PCA-ADD-IDENT-021': 'SOURCE_COMPLETE',

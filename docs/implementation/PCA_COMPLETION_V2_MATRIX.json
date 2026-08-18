@@ -5040,30 +5040,41 @@
       "phase": [
         "PCA-MYKIDS-BILL-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/pages/Subscription.tsx | parent-web/src/pages/billing/DeviceIncreaseRequest.tsx | backend/src/http/routes/familyCommercialRoutes.ts"
+        "backend/src/auth/fastifyAuthPlugin.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts",
+        "parent-web/src/api/real/realBillingClient.ts",
+        "parent-web/src/api/real/realCommercialNotificationClient.ts",
+        "parent-web/src/api/client.ts"
       ],
       "testEvidence": [
-        "backend/test/familycommercial/familyCommercialRoutes.test.mjs"
+        "backend/test/auth/fastifyAuthPlugin.test.mjs",
+        "parent-web/tests/unit/realBillingClient.test.ts",
+        "parent-web/tests/unit/realCommercialNotificationClient.test.ts",
+        "parent-web/tests/unit/apiClientFactory.test.ts"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Full UI+backend flow genuinely exists (contradicting the addendum's own stale \"placeholder\" claim), but unreachable end-to-end today: SERVICE_SESSION_UNAVAILABLE. Closed by Round5 PCA-AUTH-SESSION-1. Runtime reachability: Frontend evidence file(s) confirmed present in parent-web/platform-admin-web source tree; routing wiring spot-checked by AUDIT-C for the owning page set (see PA/BILL/COMP route confirmation notes), not individually re-traced per ID."
+      "notes": "This closes the browser session transport gap only. It does not claim a real payment provider, family-owner cryptographic authority activation, or production readiness."
     },
     {
       "requirementId": "PCA-ADD-PA-047",
       "phase": [
         "PCA-MYKIDS-BILL-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/http/routes/familyCommercialRoutes.ts"
+        "backend/src/auth/fastifyAuthPlugin.ts",
+        "backend/src/http/routes/familyCommercialRoutes.ts",
+        "parent-web/src/api/real/realBillingClient.ts",
+        "parent-web/src/api/client.ts"
       ],
       "testEvidence": [
-        "backend/test/familycommercial/familyCommercialRoutes.test.mjs"
+        "backend/test/auth/fastifyAuthPlugin.test.mjs",
+        "parent-web/tests/unit/realBillingClient.test.ts"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Server correctly prevents direct parent entitlement writes; unreachable end-to-end today because no browser-reachable session-issuance route exists (SERVICE_SESSION_UNAVAILABLE) — see parent-web/src/api/real/realBillingClient.ts. Closed by Round5 PCA-AUTH-SESSION-1. Runtime reachability: Partially wired; see gap."
+      "notes": "The session transport is locally complete; this does not bypass or claim completion of the independent family-owner authority boundary."
     },
     {
       "requirementId": "PCA-ADD-BILL-040",

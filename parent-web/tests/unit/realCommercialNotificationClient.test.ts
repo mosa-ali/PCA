@@ -28,6 +28,15 @@ describe('RealCommercialNotificationClient', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('cookie-session mode sends browser credentials without exposing a bearer token', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { notifications: [] }));
+    const c = new RealCommercialNotificationClient(apiBaseUrl, async () => null, async () => 'fam-1', true);
+    await c.list();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
   it('list calls GET .../commercial-notifications with an optional limit query param, no cursor/offset', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {

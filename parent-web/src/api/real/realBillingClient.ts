@@ -93,6 +93,32 @@ export async function noFamilyContextAvailable(): Promise<string | null> {
   return null;
 }
 
+/** Resolves the browser's HttpOnly family session through the server-owned session projection. */
+export async function cookieSessionFamilyId(apiBaseUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl.replace(/\/+$/, '')}/api/parent/session`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { familyId?: unknown };
+    return typeof body.familyId === 'string' && body.familyId.length > 0 ? body.familyId : null;
+  } catch {
+    return null;
+  }
+}
+
+function readBrowserCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.split('; ').find((entry) => entry.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+function isMutationMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+}
+
 /**
  * Default actorDeviceId source: this codebase's only existing device-identity
  * concept is TrustedBrowserProvider's `browserEndpointId` (assigned at
@@ -297,6 +323,7 @@ export class RealBillingClient implements BillingClient {
     private readonly getBearerToken: () => Promise<string | null> = noServiceBearerTokenAvailable,
     private readonly getFamilyId: () => Promise<string | null> = noFamilyContextAvailable,
     private readonly getActorDeviceId: ActorDeviceIdAccessor = async () => null,
+    private readonly cookieSession = false,
   ) {}
 
   private url(path: string): string {
@@ -305,6 +332,7 @@ export class RealBillingClient implements BillingClient {
 
   /** Checked FIRST in every public method, before familyId/actorDeviceId resolution -- "is this client even authenticated" is a more fundamental gap than "which family", so it must be the first honest error a caller sees. */
   private async ensureBearerToken(operation: string): Promise<void> {
+    if (this.cookieSession) return;
     const token = await this.getBearerToken();
     if (!token) {
       throw new BillingApiError(
@@ -338,8 +366,8 @@ export class RealBillingClient implements BillingClient {
   }
 
   private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
-    const token = await this.getBearerToken();
-    if (!token) {
+    const token = this.cookieSession ? null : await this.getBearerToken();
+    if (!this.cookieSession && !token) {
       throw new BillingApiError(
         'SERVICE_SESSION_UNAVAILABLE',
         `${operation}: no service-session bearer token is available to authenticate this request. This is a genuine backend-integration gap (no browser-reachable token-issuance flow yet), not a network failure.`,
@@ -348,10 +376,14 @@ export class RealBillingClient implements BillingClient {
     try {
       return await fetch(this.url(path), {
         ...init,
+        ...(this.cookieSession ? { credentials: 'include' as const } : {}),
         headers: {
           Accept: 'application/json',
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(this.cookieSession && isMutationMethod(init?.method ?? 'GET')
+            ? { 'X-PCA-CSRF-Token': readBrowserCookie('pca_family_csrf') ?? '' }
+            : {}),
           ...(init?.headers ?? {}),
         },
       });
@@ -461,7 +493,7 @@ export class RealBillingClient implements BillingClient {
    * header and ../client.ts's KNOWN_BACKEND_INTEGRATION_ACTION notes.
    */
   isPaymentProviderAvailable(): boolean {
-    return this.getBearerToken !== noServiceBearerTokenAvailable;
+    return this.cookieSession || this.getBearerToken !== noServiceBearerTokenAvailable;
   }
 
   async requestLimitIncrease(limitType: LimitType, targetLimit: number): Promise<EntitlementChangeRequest> {

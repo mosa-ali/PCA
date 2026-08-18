@@ -12,6 +12,9 @@ function buildHarness() {
   app.get('/protected', { preHandler: createRequireServiceSession(authService) }, async (request) => ({
     accountId: request.accountId,
   }));
+  app.post('/mutating', { preHandler: createRequireServiceSession(authService) }, async (request) => ({
+    accountId: request.accountId,
+  }));
   return { app, authService };
 }
 
@@ -51,6 +54,29 @@ test('valid session token is accepted and the account id is attached to the requ
   const response = await app.inject({ method: 'GET', url: '/protected', headers: { authorization: `Bearer ${rawToken}` } });
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { accountId: session.accountId });
+});
+
+test('family session cookie authenticates reads, while cookie-authenticated mutations require the matching CSRF cookie and header', async () => {
+  const { app, authService } = buildHarness();
+  const { rawToken, session } = await authService.issueSession(verifyTestOnlyIdentity('subject-cookie'));
+  const csrfToken = 'csrf-test-token';
+  const cookie = `pca_family_session=${rawToken}; pca_family_csrf=${csrfToken}`;
+
+  const read = await app.inject({ method: 'GET', url: '/protected', headers: { cookie } });
+  assert.equal(read.statusCode, 200);
+  assert.deepEqual(read.json(), { accountId: session.accountId });
+
+  const missingCsrf = await app.inject({ method: 'POST', url: '/mutating', headers: { cookie } });
+  assert.equal(missingCsrf.statusCode, 403);
+  assert.deepEqual(missingCsrf.json(), { error: 'csrf_mismatch' });
+
+  const mutation = await app.inject({
+    method: 'POST',
+    url: '/mutating',
+    headers: { cookie, 'x-pca-csrf-token': csrfToken },
+  });
+  assert.equal(mutation.statusCode, 200);
+  assert.deepEqual(mutation.json(), { accountId: session.accountId });
 });
 
 test('revoked token is rejected with generic 401, indistinguishable from an unknown token', async () => {

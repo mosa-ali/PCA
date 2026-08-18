@@ -32,6 +32,16 @@ function toNotification(wire: WireNotification): CommercialNotification {
   };
 }
 
+function readBrowserCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.split('; ').find((entry) => entry.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+function isMutationMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+}
+
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   try {
     return (await response.json()) as T;
@@ -45,6 +55,7 @@ export class RealCommercialNotificationClient implements CommercialNotificationC
     private readonly apiBaseUrl: string,
     private readonly getBearerToken: () => Promise<string | null> = noServiceBearerTokenAvailable,
     private readonly getFamilyId: () => Promise<string | null> = noFamilyContextAvailable,
+    private readonly cookieSession = false,
   ) {}
 
   private url(path: string): string {
@@ -53,6 +64,7 @@ export class RealCommercialNotificationClient implements CommercialNotificationC
 
   /** Checked FIRST in every public method, before familyId resolution -- see RealBillingClient's identical discipline. */
   private async ensureBearerToken(operation: string): Promise<void> {
+    if (this.cookieSession) return;
     const token = await this.getBearerToken();
     if (!token) {
       throw new BillingApiError(
@@ -75,8 +87,8 @@ export class RealCommercialNotificationClient implements CommercialNotificationC
   }
 
   private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
-    const token = await this.getBearerToken();
-    if (!token) {
+    const token = this.cookieSession ? null : await this.getBearerToken();
+    if (!this.cookieSession && !token) {
       throw new BillingApiError(
         'SERVICE_SESSION_UNAVAILABLE',
         `${operation}: no service-session bearer token is available to authenticate this request.`,
@@ -85,10 +97,14 @@ export class RealCommercialNotificationClient implements CommercialNotificationC
     try {
       return await fetch(this.url(path), {
         ...init,
+        ...(this.cookieSession ? { credentials: 'include' as const } : {}),
         headers: {
           Accept: 'application/json',
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(this.cookieSession && isMutationMethod(init?.method ?? 'GET')
+            ? { 'X-PCA-CSRF-Token': readBrowserCookie('pca_family_csrf') ?? '' }
+            : {}),
           ...(init?.headers ?? {}),
         },
       });

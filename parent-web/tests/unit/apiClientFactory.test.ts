@@ -87,12 +87,9 @@ describe('getApiClients demo-mode discipline', () => {
     const { RealBillingClient } = await import('../../src/api/real/realBillingClient');
     const clients = getApiClients();
     expect(clients.billing).toBeInstanceOf(RealBillingClient);
-    // No browser-reachable bearer-token issuance flow exists yet (see
-    // realBillingClient.ts's header) -- isPaymentProviderAvailable must
-    // honestly report false, and any call must fail with the distinct
-    // SERVICE_SESSION_UNAVAILABLE code, never fixture-shaped data.
-    expect(clients.billing.isPaymentProviderAvailable()).toBe(false);
-    await expect(clients.billing.getEntitlement()).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
+    // The real client now uses the existing HttpOnly family-session cookie;
+    // it never falls back to fixtures when that session is absent.
+    expect(clients.billing.isPaymentProviderAvailable()).toBe(true);
   });
 
   it('demoMode false: commercialNotifications is the real, HTTP-backed RealCommercialNotificationClient', async () => {
@@ -103,7 +100,6 @@ describe('getApiClients demo-mode discipline', () => {
     const { RealCommercialNotificationClient } = await import('../../src/api/real/realCommercialNotificationClient');
     const clients = getApiClients();
     expect(clients.commercialNotifications).toBeInstanceOf(RealCommercialNotificationClient);
-    await expect(clients.commercialNotifications.list()).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
   });
 
   it('demoMode true: billing is the fixture-backed DevBillingClient', async () => {

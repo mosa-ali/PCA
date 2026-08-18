@@ -55,11 +55,24 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('isPaymentProviderAvailable is false when using the default (no browser-reachable token flow) accessor', () => {
-      const c = new RealBillingClient(apiBaseUrl);
-      expect(c.isPaymentProviderAvailable()).toBe(false);
-    });
+  it('isPaymentProviderAvailable is false when using the default (no browser-reachable token flow) accessor', () => {
+    const c = new RealBillingClient(apiBaseUrl);
+    expect(c.isPaymentProviderAvailable()).toBe(false);
   });
+
+  it('cookie-session mode sends browser credentials without exposing a bearer token', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+      tier: 'FREE_STARTER', parentMemberLimit: 1, parentMemberUsed: 0, managedDeviceLimit: 1,
+      managedDeviceActive: 0, managedDeviceReserved: 0, availableDeviceSlots: 1,
+      overLimitParentMember: false, overLimitManagedDevice: false, openRequests: [],
+    }));
+    const c = new RealBillingClient(apiBaseUrl, async () => null, async () => 'fam-1', async () => null, true);
+    await c.getEntitlement();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+});
 
   describe('endpoint mapping against the verified backend contract', () => {
     it('getEntitlement calls GET /v1/families/:familyId/commercial/entitlement and never Number()s amountMinor', async () => {

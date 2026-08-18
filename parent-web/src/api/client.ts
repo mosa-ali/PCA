@@ -79,7 +79,7 @@ import { RealRequestClient } from './real/realRequestClient';
 import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEnrollmentBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
-import { RealBillingClient, noFamilyContextAvailable, noServiceBearerTokenAvailable as noBillingBearerTokenAvailable } from './real/realBillingClient';
+import { RealBillingClient, cookieSessionFamilyId } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
@@ -193,20 +193,21 @@ function buildRealClients(): PcaApiClients {
     // backend/src/http/routes/{invitationRoutes,pairingRoutes}.ts; replace
     // this accessor with a real one once a token-issuance flow exists.
     deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noDeviceEnrollmentBearerTokenAvailable),
-    // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
-    // deviceEnrollment above -- see ./real/realBillingClient.ts's header.
-    // actorDeviceId reuses TrustedBrowserProvider's browserEndpointId (this
+    // Browser billing uses the existing HttpOnly family-session cookie and
+    // resolves family scope through /api/parent/session. Mutations carry the
+    // non-HttpOnly CSRF token; actorDeviceId reuses
+    // TrustedBrowserProvider's browserEndpointId (this
     // codebase's only existing device-identity concept; billing routes do
     // not themselves require E2EE trust, so this is a pragmatic reuse, not
     // a claim that billing depends on the crypto-review gate) -- resolves
     // to null until requestPairing() has run at least once, at which point
     // RealBillingClient honestly rejects mutating calls with
     // DEVICE_IDENTITY_UNAVAILABLE rather than sending an empty/fabricated id.
-    billing: new RealBillingClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable, async () => {
+    billing: new RealBillingClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), async () => {
       const snapshot = await trustedBrowser.getSnapshot();
       return snapshot.browserEndpointId;
-    }),
-    commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
+    }, true),
+    commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, undefined, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
     safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
