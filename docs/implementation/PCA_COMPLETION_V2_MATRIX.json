@@ -559,10 +559,11 @@
       ],
       "testEvidence": [
         "backend/test/invitation/enrollmentProfile.test.mjs",
-        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt"
       ],
       "externalGate": [],
-      "notes": "Enrollment age tier and controlled initial profile now flow through parent UI, invitation persistence, bootstrap, Android encrypted state, and initial Android screen-time defaults. Content-filter default consumption and full iOS transport/runtime wiring remain open."
+      "notes": "Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open."
     },
     {
       "requirementId": "PCA-FR-010",
@@ -3112,10 +3113,11 @@
       ],
       "testEvidence": [
         "backend/test/invitation/enrollmentProfile.test.mjs",
+        "backend/test/db/http.mysql.test.mjs",
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
       ],
       "externalGate": [],
-      "notes": "Parent creation requires a selected child profile, target platform, requested protection mode, and controlled initial policy profile. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs."
+      "notes": "The parent administration HTTP contract requires child selection, target platform, requested protection mode, and initial policy profile. Legacy internal callers and pre-0019 rows remain default-compatible without weakening the new parent-facing contract. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs."
     },
     {
       "requirementId": "PCA-ADD-ENR-002",

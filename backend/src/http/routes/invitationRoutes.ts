@@ -65,13 +65,16 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       }
       if (platform === 'IOS' && requestedProtectionMode !== 'IOS_STANDARD') return reply.code(400).send({ error: 'invalid_request' });
       if (platform === 'ANDROID' && requestedProtectionMode === 'IOS_STANDARD') return reply.code(400).send({ error: 'invalid_request' });
-      if (childProfileId !== undefined && (typeof childProfileId !== 'string' || !CHILD_PROFILE_ID_PATTERN.test(childProfileId))) {
+      // PCA-ADD-ENR-001: legacy service callers and pre-0019 rows remain
+      // compatible, but every new parent-facing invitation must bind all
+      // three controlled profile values before persistence.
+      if (typeof childProfileId !== 'string' || !CHILD_PROFILE_ID_PATTERN.test(childProfileId)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (ageUxTier !== undefined && (typeof ageUxTier !== 'string' || !VALID_AGE_UX_TIERS.has(ageUxTier))) {
+      if (typeof ageUxTier !== 'string' || !VALID_AGE_UX_TIERS.has(ageUxTier)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (initialPolicyProfile !== undefined && (typeof initialPolicyProfile !== 'string' || !VALID_INITIAL_POLICY_PROFILES.has(initialPolicyProfile))) {
+      if (typeof initialPolicyProfile !== 'string' || !VALID_INITIAL_POLICY_PROFILES.has(initialPolicyProfile)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (ttlMs !== undefined && typeof ttlMs !== 'number') {

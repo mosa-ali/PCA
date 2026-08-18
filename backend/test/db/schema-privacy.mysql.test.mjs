@@ -19,6 +19,14 @@ const PROHIBITED_TERMS = [
   'content', 'ip_address',
 ];
 
+// PCA-FR-008/PCA-ADD-ENR-001: this is a bounded enum selecting the initial
+// child protection profile. It is not a readable policy document, activity
+// record, or parent-authored monitoring surface. Keep this exception exact;
+// no other column containing "policy" is implicitly allowed.
+const ALLOWED_CONTROLLED_CONFIGURATION_COLUMNS = new Set([
+  'enrollment_invitations.initial_policy_profile',
+]);
+
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
 // signing_key_id/encryption_key_id/signing_public_key/encryption_public_key
@@ -104,6 +112,7 @@ test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-
   for (const { table_name: table, column_name: column } of columns) {
     const lower = column.toLowerCase();
     for (const term of scannedTerms) {
+      if (ALLOWED_CONTROLLED_CONFIGURATION_COLUMNS.has(`${table}.${column}`) && term === 'policy') continue;
       if (lower.includes(term)) violations.push(`${table}.${column} matches prohibited term "${term}"`);
     }
     if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`${table}.${column} matches prohibited term "title" outside the "entitlement" false-positive`);

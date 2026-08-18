@@ -224,7 +224,7 @@ test('MySQL HTTP: correct family + license succeeds creating an invitation', asy
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   assert.equal(response.statusCode, 201);
 });
@@ -239,6 +239,17 @@ test('MySQL HTTP: wrong family is 403', async () => {
   assert.equal(response.statusCode, 403);
 });
 
+test('MySQL HTTP: parent invitation creation requires the controlled enrollment profile fields', async () => {
+  const parent = await authorizedParent();
+  const response = await freshApp().inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/invitations`,
+    headers: authHeader(parent.rawToken),
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+  });
+  assert.equal(response.statusCode, 400);
+});
+
 test('MySQL HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
@@ -247,7 +258,7 @@ test('MySQL HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
     method: 'POST',
     url: `/v1/families/${familyId}/invitations`,
     headers: authHeader(rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   assert.equal(response.statusCode, 403);
 });
@@ -269,7 +280,7 @@ test('MySQL HTTP: create -> status -> list -> revoke -> repeated revoke idempote
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   assert.equal(created.statusCode, 201);
   const createdBody = created.json();
@@ -318,7 +329,7 @@ test('MySQL HTTP: wrong-family invitation status/revoke is 404 (family-scoped lo
     method: 'POST',
     url: `/v1/families/${owner.familyId}/invitations`,
     headers: authHeader(owner.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   const invitationId = created.json().invitationId;
 
@@ -357,7 +368,7 @@ test('MySQL HTTP: a family with no scope at all on the target family is 403 befo
     method: 'POST',
     url: `/v1/families/${owner.familyId}/invitations`,
     headers: authHeader(owner.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   const invitationId = created.json().invitationId;
 
@@ -773,7 +784,7 @@ test('MySQL E2E: parent creates invitation -> Android bootstraps -> server commi
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   assert.equal(invitationResponse.statusCode, 201);
   const rawInvitationToken = invitationResponse.json().rawInvitationToken;
@@ -999,7 +1010,7 @@ test('MySQL HTTP: rate limiting kicks in on repeated invitation-creation request
         method: 'POST',
         url: `/v1/families/${parent.familyId}/invitations`,
         headers: authHeader(parent.rawToken),
-        payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+        payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
       }),
     );
   }
@@ -1044,7 +1055,7 @@ test('MySQL HTTP PRIVACY: server runs with logging disabled -- no bearer/raw-inv
     method: 'POST',
     url: `/v1/families/${parent.familyId}/invitations`,
     headers: authHeader(parent.rawToken),
-    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' },
+    payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
   assert.equal(response.statusCode, 201);
 });

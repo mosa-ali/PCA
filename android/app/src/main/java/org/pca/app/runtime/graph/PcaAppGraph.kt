@@ -104,6 +104,8 @@ import org.pca.app.storage.FamilyStateStore
 import org.pca.app.storage.PendingEnrollmentAttemptStore
 import org.pca.app.storage.PersistentFamilyStateStore
 import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
+import org.pca.app.enrollment.ContentFilterDefault
+import org.pca.app.enrollment.contentFilterDefaultForEnrollmentProfile
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
@@ -332,7 +334,21 @@ class PcaAppGraph private constructor(
      * path (doc 32), never production. */
     val webRuleRepository = PersistentWebRuleRepository(runtimeStateStore)
     val webFilterEngine = WebFilterEngine(webRuleRepository)
-    val safeBrowserNavigationPolicy = SafeBrowserNavigationPolicy(webFilterEngine, persistence.webVisitRepository)
+    val safeBrowserNavigationPolicy = SafeBrowserNavigationPolicy(
+        engine = webFilterEngine,
+        webVisits = persistence.webVisitRepository,
+        enrollmentSafeSearchDefault = {
+            familyStateStore.currentState()?.let { state ->
+                org.pca.app.feature.webprotection.policy.SafeSearchDirective(
+                    mode = when (contentFilterDefaultForEnrollmentProfile(state.ageUxTier, state.initialPolicyProfile)) {
+                        ContentFilterDefault.MODERATE -> org.pca.app.feature.webprotection.policy.SafeSearchMode.MODERATE
+                        ContentFilterDefault.STRICT -> org.pca.app.feature.webprotection.policy.SafeSearchMode.STRICT
+                    },
+                    serviceSupportsSafeSearch = true,
+                )
+            }
+        },
+    )
     val webProtectionIdentityContextProvider: WebProtectionIdentityContextProvider =
         RealWebProtectionIdentityContextProvider(familyStateStore, deviceIdentityProvider)
     val webRulePolicyConsumer = WebRulePolicyConsumer(webRuleRepository)

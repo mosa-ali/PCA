@@ -8,6 +8,9 @@ enum class AgeUxTier { YOUNG_CHILD, TEEN }
 
 enum class InitialPolicyProfile { BALANCED, STRICT }
 
+/** The real Safe Browser default vocabulary already supported by the Android policy layer. */
+enum class ContentFilterDefault { MODERATE, STRICT }
+
 /** Initial defaults are always baseline-compliant; later signed policy delivery remains authoritative. */
 fun screenTimeConfigForEnrollmentProfile(
     ageUxTier: AgeUxTier,
@@ -17,3 +20,14 @@ fun screenTimeConfigForEnrollmentProfile(
     val activeMinutes = if (initialPolicyProfile == InitialPolicyProfile.STRICT || stricterAgeDefault) 45 else 60
     return ScreenTimeConfig(activeThreshold = activeMinutes.minutes, breakDuration = 30.minutes)
 }
+
+/** Age/profile defaults are only a minimum; a stricter parent policy wins. */
+fun contentFilterDefaultForEnrollmentProfile(
+    ageUxTier: AgeUxTier,
+    initialPolicyProfile: InitialPolicyProfile,
+): ContentFilterDefault =
+    if (ageUxTier == AgeUxTier.YOUNG_CHILD || initialPolicyProfile == InitialPolicyProfile.STRICT) {
+        ContentFilterDefault.STRICT
+    } else {
+        ContentFilterDefault.MODERATE
+    }

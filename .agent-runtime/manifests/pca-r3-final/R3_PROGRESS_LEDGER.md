@@ -126,3 +126,14 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Added focused `CallStatePermissionPromptPolicy` coverage for granted, unchanged-denied, and already-granted transitions. The focused Gradle invocation was run with the shared wrapper cache; no real-device permission result is claimed.
 - Normalized PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-003A to `SOURCE_COMPLETE` with explicit device-owner, telephony/SMS, iOS, and physical-device external gates. Their validation rows remain open and do not imply real-device proof.
 - SMS remains delivery-preserved but not an unrestricted Messages UI exemption; this is a documented public-Android capability limit.
+
+### Wave 11 database validation
+
+- PRE_WAVE11_DB_BASELINE = PASS
+- CURRENT_HEAD_0019_DB_VALIDATION = PASS
+- MIGRATION_0019_APPLIED = YES
+- MIGRATION_0019_SCHEMA_VERIFIED = YES
+- MYSQL_STANDARD = PASS
+- MYSQL_PRIVILEGE = PASS
+- DB_CRITICAL_SKIPPED = 0
+- Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.

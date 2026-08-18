@@ -39,6 +39,7 @@ class SafeBrowserNavigationPolicy(
     private val webVisits: WebVisitRepository,
     private val now: () -> Long = { System.currentTimeMillis() },
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    private val enrollmentSafeSearchDefault: () -> SafeSearchDirective? = { null },
 ) {
     suspend fun evaluateNavigation(
         familyId: OpaqueFamilyId,
@@ -56,7 +57,8 @@ class SafeBrowserNavigationPolicy(
         val decision = engine.decide(familyId, domain, classifierResult, vpnDecision, locale)
 
         if (decision.outcome == WebDecisionOutcome.ALLOW) {
-            val safeSearchMode = safeSearch?.let(::resolveEffectiveSafeSearchMode) ?: SafeSearchMode.OFF
+            val effectiveSafeSearch = mergeEnrollmentMinimum(enrollmentSafeSearchDefault(), safeSearch)
+            val safeSearchMode = effectiveSafeSearch?.let(::resolveEffectiveSafeSearchMode) ?: SafeSearchMode.OFF
             val rewrite = applySafeSearchQueryParameter(url, domain, safeSearchMode)
             return NavigationOutcome.Allow(safeSearchMode, rewrite.url, rewrite.applied)
         }
@@ -92,5 +94,21 @@ class SafeBrowserNavigationPolicy(
             createdAtEpochMillis = timestamp,
         )
         return NavigationOutcome.Held(blockDecision)
+    }
+
+    private fun mergeEnrollmentMinimum(
+        enrollmentMinimum: SafeSearchDirective?,
+        requested: SafeSearchDirective?,
+    ): SafeSearchDirective? {
+        if (requested == null) return enrollmentMinimum
+        if (!requested.serviceSupportsSafeSearch || enrollmentMinimum == null) return requested
+        val mode = if (enrollmentMinimum.mode.rank() > requested.mode.rank()) enrollmentMinimum.mode else requested.mode
+        return SafeSearchDirective(mode, serviceSupportsSafeSearch = true)
+    }
+
+    private fun SafeSearchMode.rank(): Int = when (this) {
+        SafeSearchMode.OFF -> 0
+        SafeSearchMode.MODERATE -> 1
+        SafeSearchMode.STRICT -> 2
     }
 }

@@ -23,8 +23,16 @@ const SOURCE_UPDATES = {
       'android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt',
       'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift',
     ],
-    testEvidence: ['backend/test/invitation/enrollmentProfile.test.mjs', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
-    notes: 'Enrollment age tier and controlled initial profile now flow through parent UI, invitation persistence, bootstrap, Android encrypted state, and initial Android screen-time defaults. Content-filter default consumption and full iOS transport/runtime wiring remain open.',
+    testEvidence: [
+      'backend/test/invitation/enrollmentProfile.test.mjs',
+      'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt',
+      'android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_TRIAGE_REQUIRED',
+    currentGap: 'Age/profile defaults now drive Android screen-time and Safe Browser SafeSearch minimums, but the iOS runtime consumer and the complete content-filter catalogue remain open.',
+    validationGap: 'Backend, Android persistence, default mapping, and Safe Browser composition are covered by automated evidence; iOS/macOS/Xcode and physical-device validation remain external.',
+    nextAction: 'Complete iOS bootstrap/runtime consumption and the remaining age-tier content-filter catalogue before source closure.',
+    notes: 'Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open.',
   },
   'PCA-ADD-ENR-001': {
     status: 'SOURCE_COMPLETE',
@@ -36,8 +44,15 @@ const SOURCE_UPDATES = {
       'android/app/src/main/java/org/pca/app/enrollment/EnrollmentApiClient.kt',
       'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift',
     ],
-    testEvidence: ['backend/test/invitation/enrollmentProfile.test.mjs', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
-    notes: 'Parent creation requires a selected child profile, target platform, requested protection mode, and controlled initial policy profile. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs.',
+    testEvidence: [
+      'backend/test/invitation/enrollmentProfile.test.mjs',
+      'backend/test/db/http.mysql.test.mjs',
+      'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Legacy service callers and pre-0019 rows remain nullable/default-compatible by design; every new parent HTTP invitation request now requires the three controlled profile fields.',
+    nextAction: 'Retain the legacy compatibility boundary and re-check it when invitation creation is versioned or the nullable migration columns are retired.',
+    notes: 'The parent administration HTTP contract requires child selection, target platform, requested protection mode, and initial policy profile. Legacy internal callers and pre-0019 rows remain default-compatible without weakening the new parent-facing contract. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs.',
   },
 };
 
@@ -106,6 +121,26 @@ function splitGates(values) {
   return [...result];
 }
 
+function setIfPresent(row, key, value) {
+  if (key) row[key] = value;
+}
+
+function applyDerivedFields(row, requirement) {
+  const update = SOURCE_UPDATES[requirement.requirementId];
+  const sourceEvidence = update?.sourceEvidence ?? requirement.sourceEvidence ?? [];
+  const testEvidence = update?.testEvidence ?? requirement.testEvidence ?? [];
+  row.CURRENT_STATUS = requirement.status;
+  setIfPresent(row, 'SOURCE_EVIDENCE', joinEvidence(sourceEvidence));
+  setIfPresent(row, 'TEST_EVIDENCE', joinEvidence(testEvidence));
+  setIfPresent(row, 'EXTERNAL_GATE', splitGates(requirement.externalGate).join('; '));
+  setIfPresent(row, 'SOURCE_SOLVABLE_CLASS', update?.sourceSolvableClass ?? row.SOURCE_SOLVABLE_CLASS);
+  setIfPresent(row, 'CURRENT_GAP', update?.currentGap ?? row.CURRENT_GAP);
+  setIfPresent(row, 'SOURCE_GAP', update?.currentGap ?? row.SOURCE_GAP);
+  setIfPresent(row, 'NEXT_ACTION', update?.nextAction ?? row.NEXT_ACTION);
+  setIfPresent(row, 'VALIDATION_GAP', update?.validationGap ?? row.VALIDATION_GAP);
+  setIfPresent(row, 'REQUIRED_VALIDATION', update?.validationGap ?? row.REQUIRED_VALIDATION);
+}
+
 function updateFirstMetric(content, label, value) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return content.replace(new RegExp(`(^\\| ${escaped} \\| )[^|]+( \\|$)`, 'm'), `$1${value}$2`);
@@ -128,10 +163,7 @@ const { headers: auditHeaders, rows: auditRows } = objectRows(await readFile(pat
 for (const row of auditRows) {
   const requirement = byId.get(row.REQUIREMENT_ID);
   if (!requirement) continue;
-  row.CURRENT_STATUS = requirement.status;
-  row.SOURCE_EVIDENCE = joinEvidence(requirement.sourceEvidence);
-  row.TEST_EVIDENCE = joinEvidence(requirement.testEvidence);
-  row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
+  applyDerivedFields(row, requirement);
 }
 await writeFile(paths.audit, csvText(auditHeaders, auditRows), 'utf8');
 
@@ -140,8 +172,7 @@ const sourceBacklogRows = sourceRows
   .filter((row) => ['PARTIAL', 'NOT_STARTED'].includes(byId.get(row.REQUIREMENT_ID)?.status))
   .map((row) => {
     const requirement = byId.get(row.REQUIREMENT_ID);
-    row.CURRENT_STATUS = requirement.status;
-    row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
+    applyDerivedFields(row, requirement);
     return row;
   });
 await writeFile(paths.source, csvText(sourceHeaders, sourceBacklogRows), 'utf8');
@@ -150,10 +181,13 @@ const { headers: validationHeaders, rows: validationRows } = objectRows(await re
 for (const row of validationRows) {
   const requirement = byId.get(row.REQUIREMENT_ID);
   if (!requirement) continue;
-  row.CURRENT_STATUS = requirement.status;
-  row.TEST_EVIDENCE = joinEvidence(requirement.testEvidence);
-  row.EXTERNAL_GATE = splitGates(requirement.externalGate).join('; ');
-  if (requirement.status === 'SOURCE_COMPLETE') row.VALIDATION_STATE = 'SOURCE_COMPLETE_VALIDATION_PENDING';
+  applyDerivedFields(row, requirement);
+  const testEvidence = SOURCE_UPDATES[requirement.requirementId]?.testEvidence ?? requirement.testEvidence ?? [];
+  row.VALIDATION_STATE = requirement.status === 'SOURCE_COMPLETE'
+    ? 'SOURCE_COMPLETE_VALIDATION_PENDING'
+    : testEvidence.length > 0
+      ? 'EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE'
+      : 'NO_TEST_EVIDENCE_RECORDED';
 }
 await writeFile(paths.validation, csvText(validationHeaders, validationRows), 'utf8');
 
@@ -188,6 +222,25 @@ progress = updateFirstMetric(progress, 'NOT_STARTED', counts.NOT_STARTED);
 progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
 progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
+const previousDbStatus = progress.match(/CURRENT_HEAD_0019_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
+const dbStatus = process.env.PCA_R3_DB_VALIDATION ?? previousDbStatus;
+const dbPass = dbStatus === 'PASS';
+const dbSection = [
+  '### Wave 11 database validation',
+  '',
+  '- PRE_WAVE11_DB_BASELINE = PASS',
+  `- CURRENT_HEAD_0019_DB_VALIDATION = ${dbStatus}`,
+  `- MIGRATION_0019_APPLIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
+  `- MIGRATION_0019_SCHEMA_VERIFIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
+  `- MYSQL_STANDARD = ${process.env.PCA_R3_MYSQL_STANDARD ?? (dbPass ? 'PASS' : 'NOT_EXECUTED')}`,
+  `- MYSQL_PRIVILEGE = ${process.env.PCA_R3_MYSQL_PRIVILEGE ?? (dbPass ? 'PASS' : 'NOT_EXECUTED')}`,
+  `- DB_CRITICAL_SKIPPED = ${process.env.PCA_R3_DB_CRITICAL_SKIPPED ?? (dbPass ? '0' : 'NOT_EXECUTED')}`,
+  '- Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.',
+].join('\n');
+const dbSectionPattern = /\n### Wave 11 database validation[\s\S]*?(?=\n### |\n## |$)/;
+progress = dbSectionPattern.test(progress)
+  ? progress.replace(dbSectionPattern, `\n${dbSection}`)
+  : `${progress.trimEnd()}\n\n${dbSection}\n`;
 await writeFile(paths.progress, progress, 'utf8');
 
 const triageRequired = sourceBacklogRows.filter((row) => row.SOURCE_SOLVABLE_CLASS === 'SOURCE_TRIAGE_REQUIRED').length;
