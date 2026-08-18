@@ -415,7 +415,7 @@ async function start(): Promise<void> {
     authzService: new AuthzService(authzRepository),
     authzRepository,
     invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService),
-    enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService),
+    enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService: new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService),
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),

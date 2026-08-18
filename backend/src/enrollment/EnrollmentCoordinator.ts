@@ -5,6 +5,7 @@ import { hashAttemptRecoveryToken, isPlausibleAttemptId, isPlausibleAttemptRecov
 import type { EnrollDeviceOutcome, EnrollmentRepository } from './EnrollmentRepository.js';
 import type { EnrollDeviceInput, EnrollDeviceResult, Platform, RecoverAttemptInput, RecoverAttemptResult } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
+import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 
 export type EnrollmentErrorCode =
   | 'INVALID_TOKEN'
@@ -77,15 +78,18 @@ export class EnrollmentCoordinator {
   private readonly repository: EnrollmentRepository;
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
+  private readonly slotReservationService: SlotReservationService | null;
 
   constructor(
     repository: EnrollmentRepository,
     now: () => Date = () => new Date(),
     auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
+    slotReservationService: SlotReservationService | null = null,
   ) {
     this.repository = repository;
     this.now = now;
     this.auditService = auditService;
+    this.slotReservationService = slotReservationService;
   }
 
   async enrollDevice(input: EnrollDeviceInput): Promise<EnrollDeviceResult> {
@@ -123,6 +127,7 @@ export class EnrollmentCoordinator {
 
     switch (result.outcome) {
       case 'PAIRING_REQUEST_CREATED':
+        if (this.slotReservationService) await this.slotReservationService.consumeForInvitation(result.invitationId);
         await this.auditService.record({
           familyId: result.familyId,
           actionType: 'ROLE_ACCEPT',

@@ -2,12 +2,18 @@ import type { OpaqueFamilyId, SlotReleaseReason, SlotReservationRecord } from '.
 import type { NewCapacityAcquisitionPolicy } from '../../parentaccount/freeaccess/FreeAccessAcquisitionPolicy.js';
 import type { SlotReservationRepository } from './SlotReservationRepository.js';
 
-export type SlotReservationErrorCode = 'NO_AVAILABLE_SLOT' | 'ENTITLEMENT_NOT_FOUND';
+export type SlotReservationErrorCode = 'NO_AVAILABLE_SLOT' | 'ENTITLEMENT_NOT_FOUND' | 'INVALID_STATE';
 
 export class SlotReservationError extends Error {
   readonly code: SlotReservationErrorCode;
   constructor(code: SlotReservationErrorCode) {
-    super(code === 'NO_AVAILABLE_SLOT' ? 'No managed-device slot is currently available for this family.' : 'No entitlement record exists for this family.');
+    super(
+      code === 'NO_AVAILABLE_SLOT'
+        ? 'No managed-device slot is currently available for this family.'
+        : code === 'ENTITLEMENT_NOT_FOUND'
+          ? 'No entitlement record exists for this family.'
+          : 'The managed-device slot reservation is not in a consumable state.',
+    );
     this.name = 'SlotReservationError';
     this.code = code;
   }
@@ -50,6 +56,24 @@ export class SlotReservationService {
   /** Idempotent -- see MySqlSlotReservationRepository.releaseByInvitationId. Never throws for an unknown/already-released invitation. */
   async releaseForInvitation(invitationId: string, reason: SlotReleaseReason): Promise<void> {
     await this.repository.releaseByInvitationId(invitationId, reason, this.now());
+  }
+
+  /**
+   * PCA-ADD-PA-036 stage 4: successful enrollment consumes the reservation
+   * and moves the durable entitlement count from reserved to active. A
+   * missing row is a legacy/no-reservation compatibility case; retries of a
+   * completed bootstrap are idempotent through ALREADY_CONSUMED.
+   */
+  async consumeForInvitation(invitationId: string): Promise<void> {
+    const result = await this.repository.consumeByInvitationId(invitationId, this.now());
+    switch (result.outcome) {
+      case 'CONSUMED':
+      case 'ALREADY_CONSUMED':
+      case 'NOT_FOUND':
+        return;
+      case 'INVALID_STATE':
+        throw new SlotReservationError('INVALID_STATE');
+    }
   }
 
   async listForFamily(familyId: OpaqueFamilyId): Promise<SlotReservationRecord[]> {

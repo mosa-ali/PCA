@@ -14,6 +14,19 @@ const paths = {
 };
 
 const SOURCE_UPDATES = {
+  'PCA-ADD-PA-036': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/entitlements/slots/SlotReservationService.ts',
+      'backend/src/enrollment/EnrollmentCoordinator.ts',
+      'backend/src/main.ts',
+    ],
+    testEvidence: ['backend/test/enrollment/slotConsumption.test.mjs', 'backend/test/db/platformEntitlementsSlots.mysql.test.mjs', 'backend/test/db/enrollment.mysql.test.mjs'],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The stage-4 reservation transition is now wired to successful enrollment bootstrap, with retry-safe consumption and legacy no-reservation compatibility.',
+    nextAction: 'Retain the consume-on-success invariant and re-check it if enrollment becomes transactionally composed with another capacity-consuming flow.',
+    notes: 'A successful PAIRING_PENDING enrollment consumes the durable invitation reservation and moves reserved capacity to active capacity. The parent confirmation/trust transition remains separate and is not required to consume the commercial slot.',
+  },
   'PCA-ADD-IDENT-021': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [

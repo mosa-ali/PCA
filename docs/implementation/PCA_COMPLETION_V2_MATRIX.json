@@ -4102,15 +4102,19 @@
         "PCA-PA-2",
         "PCA-BILL-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/migrations/0006_platform_entitlements_enrollment_limits.sql"
+        "backend/src/entitlements/slots/SlotReservationService.ts",
+        "backend/src/enrollment/EnrollmentCoordinator.ts",
+        "backend/src/main.ts"
       ],
       "testEvidence": [
-        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs"
+        "backend/test/enrollment/slotConsumption.test.mjs",
+        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs",
+        "backend/test/db/enrollment.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Stages 1-3 of the 4-stage slot pipeline wired; stage 4 (CONSUMED-on-ACTIVE) is a dormant, isolated-tested hook. Runtime reachability: Partially wired; see gap."
+      "notes": "A successful PAIRING_PENDING enrollment consumes the durable invitation reservation and moves reserved capacity to active capacity. The parent confirmation/trust transition remains separate and is not required to consume the commercial slot."
     },
     {
       "requirementId": "PCA-ADD-PA-037",
