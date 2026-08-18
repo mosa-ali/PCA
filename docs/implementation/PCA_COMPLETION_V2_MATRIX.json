@@ -1714,13 +1714,16 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/res/values-ar/strings.xml (prayer/screen-time/break terms present)"
+        "android/app/src/main/res/values/strings.xml",
+        "android/app/src/main/res/values-ar/strings.xml"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/i18n/ArabicResourceParityTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Static resource parity is locally verified; this does not claim independent native-language editorial sign-off."
     },
     {
       "requirementId": "PCA-FR-120",

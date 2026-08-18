@@ -217,6 +217,20 @@ const SOURCE_UPDATES = {
     nextAction: 'Run the release gate before publishing any completion or production-readiness claim.',
     notes: 'The validator enforces reporting discipline without converting local source evidence into VALIDATED_COMPLETE or PRODUCTION_READY.',
   },
+  'PCA-FR-114': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/res/values/strings.xml',
+      'android/app/src/main/res/values-ar/strings.xml',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/i18n/ArabicResourceParityTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The Android Arabic locale now contains an exact key-set match for the default string and plural resources, preventing newly added user-facing keys from silently falling back to English.',
+    nextAction: 'Keep the parity test in the Android unit suite and obtain native-language review for wording quality when translations change.',
+    notes: 'Static resource parity is locally verified; this does not claim independent native-language editorial sign-off.',
+  },
 };
 
 const SOURCE_CLASSIFICATIONS = {
@@ -230,7 +244,6 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-053': 'REAL_SOURCE_GAP',
   'PCA-FR-080': 'REAL_SOURCE_GAP',
   'PCA-FR-113': 'REAL_SOURCE_GAP',
-  'PCA-FR-114': 'REAL_SOURCE_GAP',
   'PCA-FR-124': 'REAL_SOURCE_GAP',
   'PCA-FR-127': 'REAL_SOURCE_GAP',
   'PCA-FR-131': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
