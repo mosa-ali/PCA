@@ -1737,9 +1737,13 @@
       "sourceEvidence": [
         "parent-web/src/pages/Notifications.tsx and platform-admin-web notification-adjacent surfaces use t() translation calls throughout (spot-checked, no raw hardcoded English string literals found rendered directly to users in either app's page-level JSX)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/i18n/notificationsRtl.test.tsx (real Notifications page under Arabic/RTL asserts document direction and Arabic heading)",
+        "parent-web/tests/i18n/rtl.test.tsx (real Dashboard Arabic/English direction and label coverage)",
+        "platform-admin-web/tests/i18n/rtl.test.tsx (real platform-admin Dashboard Arabic/RTL direction and label coverage)"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Web-side display surfaces appear consistently localized on spot-check, but this requirement's normative scope also covers backend-generated notice/report/deletion-confirmation TEXT CONTENT (e.g. email/notification bodies), which is backend-owned and outside AUDIT-C's direct verification -- AUDIT-C can only confirm the web rendering layer does not itself hardcode English fallback text, not that every backend-generated notice body is fully localized end-to-end. Runtime reachability: Notifications.tsx is routed at parent-web/src/App.tsx path=\"\"notifications\"\" -- real reachable page."
+      "notes": "The web display layer now has real Arabic/RTL page coverage for parent notifications and both dashboard surfaces, while the page components continue to use production translation keys rather than hardcoded labels. This remains PARTIAL because the normative scope also includes backend-generated notice/report/deletion-confirmation text bodies, which are not fully localized end-to-end in this repository. Runtime reachability: Notifications.tsx is routed at parent-web/src/App.tsx path=\"\"notifications\"\" -- real reachable page."
     },
     {
       "requirementId": "PCA-FR-114",
