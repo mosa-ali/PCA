@@ -555,7 +555,21 @@
   "location": {
     "accuracy": "Accuracy: {{value}}",
     "accuracyUnknown": "Accuracy: --",
-    "stale": "This location data is stale."
+    "stale": "This location data is stale.",
+    "safeZones": "Safe zones",
+    "safeZonePrivacy": "PCA stores policy metadata only. It does not create a readable movement history.",
+    "safeZoneEmpty": "No safe zone is configured for this child.",
+    "safeZonePending": "Pending offline delivery",
+    "safeZoneReady": "Ready",
+    "safeZoneLabel": "Zone label",
+    "safeZoneLatitude": "Latitude",
+    "safeZoneLongitude": "Longitude",
+    "safeZoneRadius": "Radius in meters",
+    "safeZoneCreate": "Create safe zone",
+    "safeZoneDisable": "Disable",
+    "safeZoneEnable": "Enable",
+    "safeZoneDeleteConfirm": "Delete this safe zone?",
+    "safeZoneSaveFailed": "The safe zone could not be saved."
   },
   "eyeProtection": {
     "reminders": "Reminders: {{status}}"

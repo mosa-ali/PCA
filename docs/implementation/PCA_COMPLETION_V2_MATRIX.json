@@ -1204,14 +1204,21 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt + GeofenceMonitor.kt + GeofenceMath.kt + GeofenceZoneStore.kt + GeofenceZoneStateStore.kt + AndroidGeofenceAlertDelivery.kt (real entry/exit engine with hysteresis+debounce)",
-        "PcaAppGraph.kt:277-280,484 (geofenceMonitor.evaluateSample called every ingestion cycle)"
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceMonitor.kt",
+        "backend/src/location/SafeZoneRepository.ts",
+        "backend/src/location/MySqlSafeZoneRepository.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts",
+        "parent-web/src/pages/children/LocationPage.tsx",
+        "parent-web/src/api/real/realSafeZoneClient.ts",
+        "backend/migrations/0020_parent_preferences_safe_zones.sql"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt + GeofenceMathTest.kt + GeofenceMonitorTest.kt + GeofenceZoneStateStoreTest.kt + GeofenceZoneStoreTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was NOT_STARTED (\"only point sampling exists\"). Writer70 built and wired a real geofence entry/exit engine this round. Zone AUTHORING still has no UI (parent-web LocationPage.tsx does not render safeZones, no HTTP route registers backend safeZone.ts) -- entry/exit detection itself is real and reachable, but a parent cannot yet define a zone through any UI. Runtime reachability: GENUINELY INVOKED FROM THE REAL SCHEDULED LOCATION-INGESTION CYCLE -- see runtime spot-check (c) below: PcaAppGraph.runUsageLocationIngestionCycle() (called both by the in-process poll loop and the WorkManager UsageIngestionWorker) calls geofenceMonitor.evaluateSample() on every fresh location fix, not only from tests."
+      "notes": "Safe zones store opaque child assignment and policy metadata only. No central readable movement history is introduced."
     },
     {
       "requirementId": "PCA-FR-064",
@@ -1448,10 +1455,17 @@
         "PCA-10"
       ],
       "status": "PARTIAL",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "parent-web/src/pages/children/LocationPage.tsx",
+        "parent-web/src/api/interfaces.ts",
+        "parent-web/src/api/real/realSafeZoneClient.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit (parent-web scope; no dedicated geofence-zone-authoring UI despite the Android geofence engine now existing)."
+      "notes": "The UI deliberately renders policy metadata and delivery state, not a movement timeline."
     },
     {
       "requirementId": "PCA-FR-092",
@@ -1486,13 +1500,18 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "parent-web/src/pages/Notifications.tsx"
+        "backend/src/parentaccount/ParentPreferenceRepository.ts",
+        "backend/src/parentaccount/MySqlParentPreferenceRepository.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts",
+        "backend/migrations/0020_parent_preferences_safe_zones.sql",
+        "parent-web/src/pages/Notifications.tsx",
+        "parent-web/src/api/real/realParentPreferencesClient.ts"
       ],
       "testEvidence": [
-        "none found"
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No email-destination field, no persistence for alert/notification preferences. Runtime reachability: Route reachable but preference toggles are non-functional (static defaultChecked, no onChange/save handler)"
+      "notes": "The preference vocabulary is intentionally closed to the two approved categories; no invasive child-activity notification category is exposed."
     },
     {
       "requirementId": "PCA-FR-095",
@@ -1644,13 +1663,21 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/i18n/index.ts (detection: order ['querystring','navigator'], caches: [] -- language is resolved per browser session/URL, not persisted to any per-parent-user or per-family record)"
+        "backend/src/parentaccount/ParentPreferenceRepository.ts",
+        "backend/src/parentaccount/MySqlParentPreferenceRepository.ts",
+        "backend/src/http/routes/parentAccountRoutes.ts",
+        "parent-web/src/pages/Settings.tsx",
+        "parent-web/src/i18n/index.ts",
+        "parent-web/src/api/real/realParentPreferencesClient.ts",
+        "backend/migrations/0020_parent_preferences_safe_zones.sql"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No persisted per-parent-user language preference exists (caches: [] means the choice isn't even remembered across a browser restart, only per-URL-querystring or per-browser-locale). The letter of 'may use different languages simultaneously' is satisfied by accident (independent browser sessions), not by a designed, tested cross-device-language guarantee. Runtime reachability: Reachable but trivial: every browser tab/session independently resolves its own language, so a parent on one device and a child's Android/iOS device naturally CAN differ -- but this is an accident of browser-per-session detection, not a deliberate 'family members may use different languages' design with an explicit stored preference or test proving no cross-contamination."
+      "notes": "Only English and Arabic are accepted; invalid language values are rejected server-side and no family/global language record is used."
     },
     {
       "requirementId": "PCA-FR-113",

@@ -4,6 +4,7 @@
 // assumes it will -- see domain/billing.ts's CommercialNotificationEventType
 // doc comment. The list endpoint has no cursor/offset pagination (limit
 // only), so this page renders the single fetched page as-is.
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
@@ -14,6 +15,34 @@ const NOTIFICATION_LIST_LIMIT = 50;
 export default function Notifications() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
+  const [preferences, setPreferences] = useState<Awaited<ReturnType<typeof clients.parentPreferences.get>> | null>(null);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [savingPreference, setSavingPreference] = useState<string | null>(null);
+
+  const loadPreferences = useCallback(async () => {
+    try {
+      setPreferences(await clients.parentPreferences.get());
+      setPreferencesError(null);
+    } catch (error) {
+      setPreferencesError(error instanceof Error ? error.message : 'Unable to load notification preferences.');
+    }
+  }, [clients.parentPreferences]);
+
+  useEffect(() => {
+    void loadPreferences();
+  }, [loadPreferences]);
+
+  const updatePreference = async (key: 'emailAlertsEnabled' | 'pushRequestsEnabled', value: boolean) => {
+    setSavingPreference(key);
+    try {
+      setPreferences(await clients.parentPreferences.update({ [key]: value }));
+      setPreferencesError(null);
+    } catch (error) {
+      setPreferencesError(error instanceof Error ? error.message : 'Unable to save notification preferences.');
+    } finally {
+      setSavingPreference(null);
+    }
+  };
 
   const { data, loading, error, reload } = useAsync(
     () =>
@@ -37,26 +66,14 @@ export default function Notifications() {
     <section aria-labelledby="notifications-title">
       <h1 id="notifications-title">{t('nav.notifications')}</h1>
       <div className="card">
-        {/*
-          PCA-FR-094: no backend notification-preference endpoint exists in
-          this repository slice (checked backend/src/http/routes/
-          parentAccountRoutes.ts and the whole backend tree for
-          notification-preference/email-destination surface -- none found).
-          Rendering these as live, silently-no-op checkboxes would mislead a
-          parent into believing a choice here changes delivery. They are
-          disabled and explicitly labeled as not-yet-connected rather than
-          faked; see ICR-PCA-FR-094-NOTIFICATION-PREFS filed alongside this
-          change for the real backend work this needs.
-        */}
+        {preferencesError && <p role="alert">{preferencesError}</p>}
         <label className="checkbox-row">
-          <input type="checkbox" checked disabled aria-describedby="notification-prefs-gap-note" /> {t('notifications.emailAlerts')}
+          <input type="checkbox" checked={preferences?.emailAlertsEnabled ?? false} disabled={!preferences || savingPreference !== null} onChange={(e) => void updatePreference('emailAlertsEnabled', e.target.checked)} /> {t('notifications.emailAlerts')}
         </label>
         <label className="checkbox-row">
-          <input type="checkbox" checked disabled aria-describedby="notification-prefs-gap-note" /> {t('notifications.pushRequests')}
+          <input type="checkbox" checked={preferences?.pushRequestsEnabled ?? false} disabled={!preferences || savingPreference !== null} onChange={(e) => void updatePreference('pushRequestsEnabled', e.target.checked)} /> {t('notifications.pushRequests')}
         </label>
-        <p id="notification-prefs-gap-note" role="status">
-          {t('notifications.preferencesNotYetConnected')}
-        </p>
+        <button type="button" className="btn btn-sm" onClick={() => void loadPreferences()} disabled={savingPreference !== null}>{t('common.retry')}</button>
       </div>
       <p style={{ color: 'var(--color-text-muted)' }}>{t('notifications.payloadNote')}</p>
 

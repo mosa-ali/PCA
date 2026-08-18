@@ -44,6 +44,8 @@ import type {
   DeviceStatusClient,
   FamilyAuthorityGateway,
   FreeAccessStatusClient,
+  ParentPreferencesClient,
+  SafeZoneClient,
   ParentFamilyDataGateway,
   RequestClient,
   RetentionClient,
@@ -67,6 +69,8 @@ import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
 import { DevBillingClient } from './dev/devBillingClient';
 import { DevCommercialNotificationClient } from './dev/devCommercialNotificationClient';
 import { DevFreeAccessStatusClient } from './dev/devFreeAccessStatusClient';
+import { DevParentPreferencesClient } from './dev/devParentPreferencesClient';
+import { DevSafeZoneClient } from './dev/devSafeZoneClient';
 import { RealServiceAuthClient } from './real/realServiceAuthClient';
 import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
@@ -78,6 +82,8 @@ import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, noFamilyContextAvailable, noServiceBearerTokenAvailable as noBillingBearerTokenAvailable } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
+import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
+import { RealSafeZoneClient } from './real/realSafeZoneClient';
 import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
 import { DevRetentionClient } from './dev/devRetentionClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
@@ -113,6 +119,8 @@ export interface PcaApiClients {
    * `serviceAuth` already relies on.
    */
   freeAccessStatus: FreeAccessStatusClient;
+  parentPreferences: ParentPreferencesClient;
+  safeZones: SafeZoneClient;
   /**
    * PCA-FR-093: real, HTTP-backed against
    * backend/src/http/routes/retentionRoutes.ts outside demo mode. Same
@@ -139,6 +147,8 @@ function buildDevClients(): PcaApiClients {
     billing: new DevBillingClient(),
     commercialNotifications: new DevCommercialNotificationClient(),
     freeAccessStatus: new DevFreeAccessStatusClient(),
+    parentPreferences: new DevParentPreferencesClient(),
+    safeZones: new DevSafeZoneClient(),
     retention: new DevRetentionClient(),
     isFixtureBacked: true,
   };
@@ -195,6 +205,8 @@ function buildRealClients(): PcaApiClients {
     }),
     commercialNotifications: new RealCommercialNotificationClient(config.apiBaseUrl, noBillingBearerTokenAvailable, noFamilyContextAvailable),
     freeAccessStatus: new RealFreeAccessStatusClient(config.apiBaseUrl),
+    parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
+    safeZones: new RealSafeZoneClient(config.apiBaseUrl),
     // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
     // billing above -- see ./real/realRetentionClient.ts's header.
     retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, noRetentionFamilyContextAvailable),

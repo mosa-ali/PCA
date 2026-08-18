@@ -111,6 +111,8 @@ import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/au
 // through the identical, unmodified verification path.
 import { ParentAccountService } from './parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
+import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
+import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSender.js';
 import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1 (Round5 Owner decision, Addendum 004):
@@ -356,6 +358,8 @@ async function start(): Promise<void> {
     // exactly like every other crypto-gated surface in this file.
     familyGenesisEngine: familyAuthorityChainEngine,
   });
+  const parentPreferenceRepository = new MySqlParentPreferenceRepository();
+  const safeZoneRepository = new MySqlSafeZoneRepository();
 
   // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
   // entitlement grants. Reuses the SAME platformAdminAuthService instance
@@ -442,6 +446,8 @@ async function start(): Promise<void> {
     familyCommercialService,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
     parentAccountService,
+    parentPreferenceRepository,
+    safeZoneRepository,
     // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
     platformAdminComplimentaryGrantService,
     // PCA-FREE-ACCESS-1: real backend enforcement/admin surface.

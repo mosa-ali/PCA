@@ -96,6 +96,8 @@ import type { FreeAccessAdminService } from '../parentaccount/freeaccess/FreeAcc
 import { registerSettlementRoutes } from './routes/platformadmin/settlementRoutes.js';
 import { registerSdkDisclosureRoutes } from './routes/sdkDisclosureRoutes.js';
 import type { PlatformAdminSettlementService } from '../platformadmin/settlement/PlatformAdminSettlementService.js';
+import type { ParentPreferenceRepository } from '../parentaccount/ParentPreferenceRepository.js';
+import type { SafeZoneRepository } from '../location/SafeZoneRepository.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -136,6 +138,8 @@ export interface ServerDependencies {
   familyCommercialService: FamilyCommercialService;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
   parentAccountService: ParentAccountService;
+  parentPreferenceRepository?: ParentPreferenceRepository;
+  safeZoneRepository?: SafeZoneRepository;
   /** PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants -- see registerComplimentaryGrantRoutes below. */
   platformAdminComplimentaryGrantService: PlatformAdminComplimentaryGrantService;
   /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): plain domain service composed into familyCommercialRoutes.ts's additive entitlement fields -- optional, see that route's own doc comment. */
@@ -288,6 +292,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,
+    parentPreferenceRepository: deps.parentPreferenceRepository,
+    safeZoneRepository: deps.safeZoneRepository,
     freeAccessAccountRepository: deps.freeAccessAccountRepository,
   });
   registerComplimentaryGrantRoutes(app, {

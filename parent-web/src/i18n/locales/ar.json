@@ -558,7 +558,21 @@
   "location": {
     "accuracy": "الدقة: {{value}}",
     "accuracyUnknown": "الدقة: --",
-    "stale": "بيانات الموقع هذه غير محدثة."
+    "stale": "بيانات الموقع هذه غير محدثة.",
+    "safeZones": "المناطق الآمنة",
+    "safeZonePrivacy": "تخزن PCA بيانات السياسة فقط، ولا تنشئ سجل حركة مقروءاً.",
+    "safeZoneEmpty": "لا توجد منطقة آمنة مضبوطة لهذا الابن.",
+    "safeZonePending": "معلّقة للتسليم عند الاتصال",
+    "safeZoneReady": "جاهزة",
+    "safeZoneLabel": "اسم المنطقة",
+    "safeZoneLatitude": "خط العرض",
+    "safeZoneLongitude": "خط الطول",
+    "safeZoneRadius": "نصف القطر بالمتر",
+    "safeZoneCreate": "إنشاء منطقة آمنة",
+    "safeZoneDisable": "تعطيل",
+    "safeZoneEnable": "تفعيل",
+    "safeZoneDeleteConfirm": "هل تريد حذف هذه المنطقة الآمنة؟",
+    "safeZoneSaveFailed": "تعذر حفظ المنطقة الآمنة."
   },
   "eyeProtection": {
     "reminders": "التذكيرات: {{status}}"

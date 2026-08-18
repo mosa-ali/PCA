@@ -45,12 +45,16 @@ import {
 } from '../../parentaccount/policy.js';
 import { deriveFreeAccessStatus } from '../../parentaccount/freeaccess/deriveFreeAccessStatus.js';
 import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess/FreeAccessAccountRepository.js';
+import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage } from '../../parentaccount/ParentPreferenceRepository.js';
+import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const CSRF_TOKEN_BYTES = 32;
 
 export interface ParentAccountRoutesDeps {
   parentAccountService: ParentAccountService;
+  parentPreferenceRepository?: ParentPreferenceRepository;
+  safeZoneRepository?: SafeZoneRepository;
   /**
    * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): backs the new
    * GET /api/parent/free-access-status route below. A distinct,
@@ -289,5 +293,141 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     clearSessionCookies(reply);
     await reply.code(204).send();
+  });
+
+  app.get('/api/parent/preferences', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    try {
+      const session = await parentAccountService.readSession(token);
+      return reply.code(200).send({ preferences: await deps.parentPreferenceRepository.get(session.accountId) });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
+  });
+
+  app.patch('/api/parent/preferences', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.parentPreferenceRepository) return reply.code(503).send({ error: 'not_configured' });
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const body = request.body as Record<string, unknown>;
+    const keys = Object.keys(body);
+    if (keys.some((key) => !['language', 'emailAlertsEnabled', 'pushRequestsEnabled'].includes(key)) || keys.length === 0) return reply.code(400).send({ error: 'invalid_request' });
+    if (body.language !== undefined && body.language !== 'en' && body.language !== 'ar') return reply.code(400).send({ error: 'invalid_request' });
+    if (body.emailAlertsEnabled !== undefined && typeof body.emailAlertsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+    if (body.pushRequestsEnabled !== undefined && typeof body.pushRequestsEnabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+    try {
+      const session = await parentAccountService.readSession(token);
+      const patch: ParentPreferencesPatch = {
+        language: body.language as ParentLanguage | undefined,
+        emailAlertsEnabled: body.emailAlertsEnabled as boolean | undefined,
+        pushRequestsEnabled: body.pushRequestsEnabled as boolean | undefined,
+      };
+      return reply.code(200).send({ preferences: await deps.parentPreferenceRepository.update(session.accountId, patch) });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
+  });
+
+  async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
+    const token = readSessionCookie(request);
+    if (token === null) {
+      await reply.code(401).send({ error: 'unauthorized' });
+      return null;
+    }
+    try {
+      const session = await parentAccountService.readSession(token);
+      if (!session.familyId) {
+        await reply.code(403).send({ error: 'family_scope_required' });
+        return null;
+      }
+      const { familyId } = request.params as { familyId?: string };
+      if (!familyId || familyId !== session.familyId) {
+        await reply.code(403).send({ error: 'family_scope_forbidden' });
+        return null;
+      }
+      return { accountId: session.accountId, familyId: session.familyId };
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        await reply.code(401).send({ error: 'unauthorized' });
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  function validSafeZoneBody(body: unknown): body is Omit<NewSafeZone, 'familyId'> {
+    if (!isPlainObject(body)) return false;
+    const value = body as Record<string, unknown>;
+    return typeof value.childProfileId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value.childProfileId)
+      && typeof value.label === 'string' && value.label.trim().length >= 1 && value.label.length <= 80
+      && typeof value.latitude === 'number' && Number.isFinite(value.latitude) && value.latitude >= -90 && value.latitude <= 90
+      && typeof value.longitude === 'number' && Number.isFinite(value.longitude) && value.longitude >= -180 && value.longitude <= 180
+      && typeof value.radiusMeters === 'number' && Number.isInteger(value.radiusMeters) && value.radiusMeters >= 50 && value.radiusMeters <= 100000
+      && (value.enabled === undefined || typeof value.enabled === 'boolean');
+  }
+
+  app.get('/api/parent/families/:familyId/safe-zones', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
+    const session = await familySession(request, reply);
+    if (!session) return;
+    return reply.code(200).send({ safeZones: await deps.safeZoneRepository.list(session.familyId) });
+  });
+
+  app.post('/api/parent/families/:familyId/safe-zones', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
+    const session = await familySession(request, reply);
+    if (!session) return;
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!validSafeZoneBody(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const body = request.body;
+    try {
+      const zone = await deps.safeZoneRepository.create({ ...body, familyId: session.familyId, enabled: body.enabled ?? true });
+      return reply.code(201).send({ safeZone: zone });
+    } catch (error) {
+      if (error instanceof SafeZoneError && error.code === 'CHILD_NOT_IN_FAMILY') return reply.code(403).send({ error: 'child_scope_forbidden' });
+      throw error;
+    }
+  });
+
+  app.patch('/api/parent/families/:familyId/safe-zones/:zoneId', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
+    const session = await familySession(request, reply);
+    if (!session) return;
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const value = request.body as Record<string, unknown>;
+    const keys = Object.keys(value);
+    if (keys.length === 0 || keys.some((key) => !['label', 'latitude', 'longitude', 'radiusMeters', 'enabled'].includes(key))) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.label !== undefined && (typeof value.label !== 'string' || value.label.trim().length < 1 || value.label.length > 80)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.latitude !== undefined && (typeof value.latitude !== 'number' || !Number.isFinite(value.latitude) || value.latitude < -90 || value.latitude > 90)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.longitude !== undefined && (typeof value.longitude !== 'number' || !Number.isFinite(value.longitude) || value.longitude < -180 || value.longitude > 180)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.radiusMeters !== undefined && (typeof value.radiusMeters !== 'number' || !Number.isInteger(value.radiusMeters) || value.radiusMeters < 50 || value.radiusMeters > 100000)) return reply.code(400).send({ error: 'invalid_request' });
+    if (value.enabled !== undefined && typeof value.enabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' });
+    const { zoneId } = request.params as { zoneId?: string };
+    if (!zoneId || !/^[A-Za-z0-9_-]{1,128}$/.test(zoneId)) return reply.code(400).send({ error: 'invalid_request' });
+    try {
+      const zone = await deps.safeZoneRepository.update(session.familyId, zoneId, value as SafeZonePatch);
+      return reply.code(200).send({ safeZone: zone });
+    } catch (error) {
+      if (error instanceof SafeZoneError && error.code === 'NOT_FOUND') return reply.code(404).send({ error: 'not_found' });
+      throw error;
+    }
+  });
+
+  app.delete('/api/parent/families/:familyId/safe-zones/:zoneId', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!deps.safeZoneRepository) return reply.code(503).send({ error: 'not_configured' });
+    const session = await familySession(request, reply);
+    if (!session) return;
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    const { zoneId } = request.params as { zoneId?: string };
+    if (!zoneId || !/^[A-Za-z0-9_-]{1,128}$/.test(zoneId)) return reply.code(400).send({ error: 'invalid_request' });
+    const removed = await deps.safeZoneRepository.remove(session.familyId, zoneId);
+    return removed ? reply.code(204).send() : reply.code(404).send({ error: 'not_found' });
   });
 }

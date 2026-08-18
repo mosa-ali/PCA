@@ -98,6 +98,66 @@ export interface FreeAccessStatusClient {
   getStatus(): Promise<FreeAccessStatus | null>;
 }
 
+export type ParentLanguage = 'en' | 'ar';
+
+export interface ParentPreferences {
+  accountId: string;
+  language: ParentLanguage;
+  emailAlertsEnabled: boolean;
+  pushRequestsEnabled: boolean;
+  updatedAtUtc: string;
+}
+
+export interface ParentPreferencesPatch {
+  language?: ParentLanguage;
+  emailAlertsEnabled?: boolean;
+  pushRequestsEnabled?: boolean;
+}
+
+export interface ParentPreferencesClient {
+  get(): Promise<ParentPreferences>;
+  update(patch: ParentPreferencesPatch): Promise<ParentPreferences>;
+}
+
+export interface SafeZone {
+  zoneId: string;
+  familyId: string;
+  childProfileId: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  enabled: boolean;
+  revision: number;
+  deliveryState: 'PENDING_OFFLINE' | 'READY';
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface NewSafeZoneInput {
+  childProfileId: string;
+  label: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  enabled?: boolean;
+}
+
+export interface SafeZonePatch {
+  label?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusMeters?: number;
+  enabled?: boolean;
+}
+
+export interface SafeZoneClient {
+  list(familyId: string): Promise<SafeZone[]>;
+  create(familyId: string, input: NewSafeZoneInput): Promise<SafeZone>;
+  update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone>;
+  remove(familyId: string, zoneId: string): Promise<void>;
+}
+
 /**
  * FamilyAuthorityGateway -- every role-authority action is modeled as a
  * signed, epoch-bound, auditable request going through this gateway, never

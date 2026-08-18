@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../api/client';
 import { config } from '../../config/env';
@@ -113,7 +113,7 @@ export default function DeviceEnrollmentPanel() {
 
   const protectionModeOptions: RequestedProtectionMode[] =
     platform === 'ANDROID' ? ['ANDROID_STANDARD', 'ANDROID_PROTECTED'] : ['IOS_STANDARD'];
-  const children = dashboard?.children ?? [];
+  const children = useMemo(() => dashboard?.children ?? [], [dashboard?.children]);
   const selectedChild = children.find((child) => child.childId === childProfileId) ?? children[0];
   const ageUxTier: AgeUxTier = selectedChild?.ageProfile === 'TEEN' ? 'TEEN' : 'YOUNG_CHILD';
 
