@@ -31,6 +31,8 @@ export interface FamilyEpochInfo {
   lastAcknowledgedPolicyRevision: number;
 }
 
+export type DataFreshnessState = 'LIVE' | 'CACHED' | 'UNAVAILABLE';
+
 export interface ChildSummary {
   childId: string;
   displayName: string;
@@ -43,6 +45,7 @@ export interface ChildSummary {
   batteryState: CapabilityState;
   lastSeenUtc: string | null;
   lastSeenState: CapabilityState;
+  dataFreshnessState: DataFreshnessState;
   protectionCapabilityState: CapabilityState;
   policyDeliveryState: CapabilityState;
   pendingRequestCount: number;

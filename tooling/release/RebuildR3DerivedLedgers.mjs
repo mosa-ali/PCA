@@ -14,6 +14,22 @@ const paths = {
 };
 
 const SOURCE_UPDATES = {
+  'PCA-NFR-021': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'parent-web/src/domain/types.ts',
+      'parent-web/src/pages/Dashboard.tsx',
+      'parent-web/src/components/common/DeviceOfflineNotice.tsx',
+    ],
+    testEvidence: [
+      'parent-web/tests/component/DashboardFreshnessState.test.tsx',
+      'parent-web/tests/component/DeviceOfflineNotice.test.tsx',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The parent dashboard now distinguishes LIVE, CACHED, and UNAVAILABLE data freshness while retaining stale-data and local-protection messaging for offline devices.',
+    nextAction: 'Keep freshness state sourced from actual device and synchronization observations; never infer LIVE from a cached timestamp alone.',
+    notes: 'This closes the parent-web source contract without claiming live transport, relay, or real-device validation.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -408,7 +424,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-142': 'REAL_SOURCE_GAP',
   'PCA-FR-144': 'REAL_SOURCE_GAP',
   'PCA-NFR-014': 'REAL_SOURCE_GAP',
-  'PCA-NFR-021': 'REAL_SOURCE_GAP',
+  'PCA-NFR-021': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',

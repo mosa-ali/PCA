@@ -73,6 +73,16 @@ function ChildCard({ child }: { child: ChildSummary }) {
           <bdi className="iso">{relativeTime(child.lastSeenUtc, i18n.language)}</bdi>{' '}
           <StatusBadge state={child.lastSeenState} />
         </dd>
+        <dt>{t('dashboard.dataFreshness')}</dt>
+        <dd>
+          <span className="status-badge">
+            {{
+              LIVE: t('dashboard.dataFreshnessLive'),
+              CACHED: t('dashboard.dataFreshnessCached'),
+              UNAVAILABLE: t('dashboard.dataFreshnessUnavailable'),
+            }[child.dataFreshnessState]}
+          </span>
+        </dd>
         <dt>{t('dashboard.protectionCapability')}</dt>
         <dd><StatusBadge state={child.protectionCapabilityState} /></dd>
         <dt>{t('dashboard.policyDelivery')}</dt>

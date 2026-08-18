@@ -2454,13 +2454,18 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/status/PcaRuntimeStatus.kt"
+        "parent-web/src/domain/types.ts",
+        "parent-web/src/pages/Dashboard.tsx",
+        "parent-web/src/components/common/DeviceOfflineNotice.tsx"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/component/DashboardFreshnessState.test.tsx",
+        "parent-web/tests/component/DeviceOfflineNotice.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "This closes the parent-web source contract without claiming live transport, relay, or real-device validation."
     },
     {
       "requirementId": "PCA-NFR-022",
