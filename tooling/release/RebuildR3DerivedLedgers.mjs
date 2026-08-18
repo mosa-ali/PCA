@@ -46,6 +46,24 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep the non-weakenable baseline as the single validation boundary for future screen-time policy inputs.',
     notes: 'Focused Android baseline and policy-applier tests passed; no production behavior change was required.'
   },
+  'PCA-NFR-042': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/feature/breakshield/BreakShieldScreen.kt',
+      'android/app/src/main/res/values/strings.xml',
+      'android/app/src/main/res/values-ar/strings.xml',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/feature/breakshield/BreakShieldAccessibilityWiringTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/breakshield/BreakShieldFormatDurationTest.kt',
+      'android/app/src/test/java/org/pca/app/feature/breakshield/EmergencyDialIntentTest.kt',
+      'android/app/src/test/java/org/pca/app/i18n/NoHardcodedUiStringsTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Break Shield communicates its state and actions through localized visible text, labels, and accessibility semantics rather than relying on color alone.',
+    nextAction: 'Preserve explicit text and semantic labels for any future Break Shield status or action state.',
+    notes: 'Focused Android tests passed; screenshot-level contrast and physical-device rendering remain separate validation boundaries.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -442,6 +460,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-NFR-014': 'REAL_SOURCE_GAP',
   'PCA-NFR-021': 'SOURCE_COMPLETE',
   'PCA-NFR-054': 'SOURCE_COMPLETE',
+  'PCA-NFR-042': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',
