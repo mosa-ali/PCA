@@ -133,7 +133,7 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - CURRENT_HEAD_0020_DB_VALIDATION = PASS
 - MIGRATION_0020_APPLIED = YES
 - MIGRATION_0020_SCHEMA_VERIFIED = YES
-- MYSQL_STANDARD = PASS (392/392, 0 fail, 0 skipped, 0 todo; 19 migrations including 0020 and 0021)
+- MYSQL_STANDARD = PASS (393/393, 0 fail, 0 skipped, 0 todo; 19 migrations including 0020 and 0021)
 - MYSQL_PRIVILEGE = PASS (4/4)
 - DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.

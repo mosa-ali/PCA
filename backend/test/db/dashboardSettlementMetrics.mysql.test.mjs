@@ -140,6 +140,71 @@ test('DashboardReadModel.build(): settlementSummary reflects real settlement_bat
   assert.equal(accountRow.mostRecentBatchStatus, 'UNDER_INVESTIGATION', 'the LATER (by period_end) batch must win, not the earlier MATCHED one');
 });
 
+test('DashboardReadModel.build(): operational/commercial dashboard metrics are sourced from metadata tables with explicit aging, outcome, and exception semantics', async () => {
+  const now = new Date('2026-08-18T12:00:00.000Z');
+  const before = await new DashboardReadModel().build(now);
+  const familyRecent = randomUUID();
+  const familyOlder = randomUUID();
+  const planRef = `PLAN_${randomUUID().slice(0, 8)}`;
+  const createdRecent = new Date('2026-08-17T12:00:00.000Z');
+  const createdOlder = new Date('2026-08-01T12:00:00.000Z');
+
+  await getPool().query(
+    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, ?), (?, ?, ?)`,
+    [familyRecent, Buffer.from(randomUUID()), createdRecent, familyOlder, Buffer.from(randomUUID()), createdOlder],
+  );
+  await getPool().query(
+    `INSERT INTO account_entitlements
+       (family_id, plan_ref, parent_member_limit, managed_device_limit, managed_device_active_count, managed_device_reserved_count, created_at, updated_at)
+     VALUES (?, ?, 2, 5, 2, 1, ?, ?), (?, ?, 1, 3, 1, 0, ?, ?)`,
+    [familyRecent, planRef, createdRecent, createdRecent, familyOlder, planRef, createdOlder, createdOlder],
+  );
+  await getPool().query(
+    `INSERT INTO entitlement_change_requests
+       (request_id, family_id, limit_type, current_limit_at_request, target_limit, state, created_at, updated_at)
+     VALUES (?, ?, 'MANAGED_DEVICE_LIMIT', 3, 4, 'PENDING', ?, ?)`,
+    [randomUUID(), familyRecent, new Date('2026-08-08T12:00:00.000Z'), new Date('2026-08-08T12:00:00.000Z')],
+  );
+  await getPool().query(
+    `INSERT INTO billing_payment_attempts
+       (payment_attempt_id, account_ref, amount_minor, currency_code, status, created_at, updated_at)
+     VALUES (?, ?, 1000, 'USD', 'CONFIRMED', ?, ?), (?, ?, 1000, 'USD', 'FAILED', ?, ?), (?, ?, 1000, 'USD', 'PENDING', ?, ?)`,
+    [
+      randomUUID(), familyRecent, createdRecent, createdRecent,
+      randomUUID(), familyRecent, createdRecent, createdRecent,
+      randomUUID(), familyRecent, new Date('2026-08-16T12:00:00.000Z'), new Date('2026-08-16T12:00:00.000Z'),
+    ],
+  );
+  await getPool().query(
+    `INSERT INTO enrollment_invitations
+       (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at)
+     VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'OPENED', ?, ?)`,
+    [randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z')],
+  );
+
+  const snapshot = await new DashboardReadModel().build(now);
+  const plan = snapshot.managedDeviceEntitlementByPlan.rows.find((row) => row.planRef === planRef);
+  assert.deepEqual(plan, { planRef, used: 3, reserved: 1, limit: 8 });
+  assert.equal(snapshot.accountGrowthByMonth.capability, 'AVAILABLE');
+  const beforeAugust = before.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2026-08-01');
+  const afterAugust = snapshot.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2026-08-01');
+  assert.equal(afterAugust.created, (beforeAugust?.created ?? 0) + 2);
+  assert.equal(snapshot.entitlementRequestAging.open, (before.entitlementRequestAging.open ?? 0) + 1);
+  assert.equal(snapshot.entitlementRequestAging.buckets.sevenDaysOrMore, (before.entitlementRequestAging.buckets?.sevenDaysOrMore ?? 0) + 1);
+
+  const usd = snapshot.paymentSummaryByCurrency.rows.find((row) => row.currencyCode === 'USD');
+  const beforeUsd = before.paymentSummaryByCurrency.rows.find((row) => row.currencyCode === 'USD');
+  assert.equal(usd.total, (beforeUsd?.total ?? 0) + 3);
+  assert.equal(usd.succeeded, (beforeUsd?.succeeded ?? 0) + 1);
+  assert.equal(usd.failed, (beforeUsd?.failed ?? 0) + 1);
+  const beforeTerminal = (beforeUsd?.succeeded ?? 0) + (beforeUsd?.failed ?? 0);
+  assert.equal(usd.successRate, ((beforeUsd?.succeeded ?? 0) + 1) / (beforeTerminal + 2));
+  assert.equal(snapshot.exceptionQueues.stuckPaymentAttempts, (before.exceptionQueues.stuckPaymentAttempts ?? 0) + 1);
+  assert.equal(snapshot.exceptionQueues.expiredUnredeemedInvitations, (before.exceptionQueues.expiredUnredeemedInvitations ?? 0) + 1);
+  assert.equal(snapshot.operationalSignals.capability, 'UNAVAILABLE');
+  assert.equal(snapshot.operationalSignals.crashRate, null);
+});
+
 test('HTTP: GET /platform-admin/dashboard exposes settlementSummary/serviceHealth to a real SUPPORT_ADMIN caller (VIEW_PLATFORM_DASHBOARD is ALLOW for every role)', async () => {
   const admin = await createAdmin({ role: 'SUPPORT_ADMIN' });
   const app = Fastify({ logger: false });
