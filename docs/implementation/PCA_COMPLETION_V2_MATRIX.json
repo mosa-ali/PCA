@@ -4673,9 +4673,14 @@
       "sourceEvidence": [
         "backend/src/billing/priceBook.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/billingCore.mysql.test.mjs (explicit per-market/currency PriceBook rows, currency scope, and no fabricated fallback pricing)",
+        "backend/test/db/billingCorePriceBookConcurrency.mysql.test.mjs (concurrent publication and version uniqueness for one commercial key)",
+        "backend/test/entitlements/priceBookQuotePort.test.mjs (active-row quote resolution and REQUIRES_CUSTOM_QUOTE when no row exists)",
+        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs (recorded-rate-only USD rollup and write-once normalization boundary)"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Round6 adds a new, related piece of evidence -- SettlementBatch's optional 1:1 RecordedSettlementFxSnapshotRecord (recordedRate, effectiveTimestamp, providerRef) captures the provider's stated conversion rate per batch, reinforcing the no-live-FX-fetch/recorded-rate-only discipline. This does not it Runtime reachability: Partially wired; see gap."
+      "notes": "PriceBook stores explicit market/currency amounts without deriving SAR or YER from USD, and dashboard USD normalization uses an explicitly recorded, immutable rate with no live-FX fallback. Focused MySQL and quote-port tests cover those boundaries. This remains PARTIAL because the operator-facing cross-currency presentation is not yet fully surfaced across every dashboard view; no live-provider conversion or production settlement capability is claimed."
     },
     {
       "requirementId": "PCA-ADD-BILL-021",
