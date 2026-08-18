@@ -53,20 +53,48 @@ class GeofenceZoneStore(
         zone.centerLatitude.toString(),
         zone.centerLongitude.toString(),
         zone.radiusMeters.toString(),
+        zone.enabled.toString(),
+        zone.transitionTypes.map { it.name }.sorted().joinToString(TRANSITION_SEP),
+        zone.revision.toString(),
     ).joinToString(FIELD_SEP)
 
     private fun sanitize(value: String): String = value.replace(FIELD_SEP, " ").replace(ZONE_SEP, " ")
 
     private fun decodeZone(raw: String): GeofenceZone? {
         val parts = raw.split(FIELD_SEP)
-        if (parts.size != FIELD_COUNT) return null
+        if (parts.size != LEGACY_FIELD_COUNT && parts.size != ENABLED_FIELD_COUNT && parts.size != FIELD_COUNT) return null
         return try {
+            val enabled = if (parts.size == LEGACY_FIELD_COUNT) {
+                true
+            } else {
+                when (parts[5]) {
+                    "true" -> true
+                    "false" -> false
+                    else -> return null
+                }
+            }
+            val transitions = if (parts.size == LEGACY_FIELD_COUNT) {
+                DEFAULT_TRANSITIONS
+            } else {
+                parts[6].split(TRANSITION_SEP).mapNotNull { value ->
+                    runCatching { GeofenceTransitionType.valueOf(value) }.getOrNull()
+                }.toSet().takeIf { it.size == parts[6].split(TRANSITION_SEP).size && it.isNotEmpty() }
+                    ?: return null
+            }
+            val revision = if (parts.size < FIELD_COUNT) {
+                1L
+            } else {
+                parts[7].toLong().takeIf { it > 0L } ?: return null
+            }
             GeofenceZone(
                 zoneId = parts[0],
                 label = parts[1],
                 centerLatitude = parts[2].toDouble(),
                 centerLongitude = parts[3].toDouble(),
                 radiusMeters = parts[4].toDouble(),
+                enabled = enabled,
+                transitionTypes = transitions,
+                revision = revision,
             )
         } catch (_: IllegalArgumentException) {
             null
@@ -77,6 +105,10 @@ class GeofenceZoneStore(
         const val KEY = "geofence_zones_v1"
         const val ZONE_SEP = "\n"
         const val FIELD_SEP = "|"
-        const val FIELD_COUNT = 5
+        const val TRANSITION_SEP = ","
+        const val LEGACY_FIELD_COUNT = 5
+        const val ENABLED_FIELD_COUNT = 7
+        const val FIELD_COUNT = 8
+        val DEFAULT_TRANSITIONS = setOf(GeofenceTransitionType.ENTRY, GeofenceTransitionType.EXIT)
     }
 }

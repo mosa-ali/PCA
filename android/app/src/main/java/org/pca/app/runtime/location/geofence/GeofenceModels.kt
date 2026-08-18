@@ -13,12 +13,23 @@ data class GeofenceZone(
     val centerLatitude: Double,
     val centerLongitude: Double,
     val radiusMeters: Double,
+    /** Parent policy state. Disabled zones remain local state but never monitor or alert. */
+    val enabled: Boolean = true,
+    /** Parent-selected local transition policy; no server notification path exists. */
+    val transitionTypes: Set<GeofenceTransitionType> = setOf(
+        GeofenceTransitionType.ENTRY,
+        GeofenceTransitionType.EXIT,
+    ),
+    /** Monotonic family-policy revision used to reject stale/replayed local updates. */
+    val revision: Long = 1L,
 ) {
     init {
         require(zoneId.isNotBlank()) { "zoneId must not be blank" }
         require(radiusMeters > 0.0) { "radiusMeters must be positive" }
         require(centerLatitude in -90.0..90.0) { "centerLatitude out of range" }
         require(centerLongitude in -180.0..180.0) { "centerLongitude out of range" }
+        require(transitionTypes.isNotEmpty()) { "transitionTypes must not be empty" }
+        require(revision > 0L) { "revision must be positive" }
     }
 }
 

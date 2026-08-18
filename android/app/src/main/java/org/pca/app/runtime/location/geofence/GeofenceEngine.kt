@@ -43,6 +43,22 @@ object GeofenceEngine {
             zone.centerLatitude, zone.centerLongitude, sample.latitude, sample.longitude,
         )
 
+        if (!zone.enabled) {
+            // A disabled policy is not an OUTSIDE observation and must not
+            // manufacture an EXIT. Reset the local baseline so re-enabling
+            // starts conservatively from UNKNOWN and cannot alert on stale
+            // state that was captured before the policy was disabled.
+            return GeofenceEvaluation(
+                newState = state.copy(
+                    confirmedMembership = GeofenceMembership.UNKNOWN,
+                    candidateMembership = GeofenceMembership.UNKNOWN,
+                    candidateStreak = 0,
+                ),
+                transition = null,
+                distanceMeters = distanceMeters,
+            )
+        }
+
         val sampleElapsedMillis = sample.elapsedRealtimeMillis
         require(sampleElapsedMillis >= 0L) { "sample elapsedRealtimeMillis must not be negative" }
 
@@ -111,7 +127,11 @@ object GeofenceEngine {
         // confirmed state was itself known -- see class doc on cold start.
         val wasKnown = state.confirmedMembership != GeofenceMembership.UNKNOWN
         val transition = if (wasKnown) {
-            if (rawMembership == GeofenceMembership.INSIDE) GeofenceTransitionType.ENTRY else GeofenceTransitionType.EXIT
+            if (rawMembership == GeofenceMembership.INSIDE) {
+                GeofenceTransitionType.ENTRY.takeIf { it in zone.transitionTypes }
+            } else {
+                GeofenceTransitionType.EXIT.takeIf { it in zone.transitionTypes }
+            }
         } else {
             null
         }
