@@ -3398,13 +3398,19 @@
         "PCA-10",
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/MainActivity.kt (ChildHomeScreen composition)"
+        "android/app/src/main/java/org/pca/app/MainActivity.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "android/app/src/main/res/values/runtime_strings.xml",
+        "android/app/src/main/res/values-ar/runtime_strings.xml"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/ui/ChildHomeDisclosureStaticTest.kt",
+        "android/app/src/test/java/org/pca/app/i18n/NoHardcodedUiStringsTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). A child-facing home screen exists but this survey did not confirm the specific disclosure content (active-management notice, parent-visible categories, request-more-time/policy-change/removal-request/emergency-access paths) is present verbatim. Low confidence; needs a follow-up read of ChildHomeScre Runtime reachability: Partially wired; see gap."
+      "notes": "Android resource compilation and focused disclosure tests passed; no system-identity simulation or unavailable direct removal control was added."
     },
     {
       "requirementId": "PCA-ADD-ENR-012",

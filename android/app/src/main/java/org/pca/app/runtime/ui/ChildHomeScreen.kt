@@ -62,6 +62,8 @@ fun ChildHomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { ScreenHeading() }
+            item { ManagementDisclosureCard(status.protectionMode) }
+            item { ParentVisibilityCard() }
             item { OfflineBanner(status) }
 
             items(rows) { row -> StatusRow(row) }
@@ -142,6 +144,49 @@ private fun ScreenHeading() {
         style = MaterialTheme.typography.headlineSmall,
         modifier = Modifier.semantics { heading() },
     )
+}
+
+@Composable
+private fun ManagementDisclosureCard(mode: ProtectionMode) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.child_home_management_notice_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = when (mode) {
+                    ProtectionMode.PROTECTED -> stringResource(R.string.child_home_management_active)
+                    ProtectionMode.STANDARD -> stringResource(R.string.child_home_management_standard)
+                    ProtectionMode.AUTHORIZATION_REQUIRED -> stringResource(R.string.child_home_management_authorization_required)
+                    ProtectionMode.NOT_SUPPORTED -> stringResource(R.string.child_home_management_not_supported)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ParentVisibilityCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.child_home_parent_visibility_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.child_home_parent_visibility_body),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
 }
 
 @Composable
@@ -276,6 +321,10 @@ private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = stringResource(R.string.child_home_parent_contact), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.child_home_parent_contact_explanation),
+                style = MaterialTheme.typography.bodyMedium,
+            )
             if (pendingCount > 0) {
                 Text(
                     text = stringResource(R.string.child_home_parent_contact_pending, localizedNumber(pendingCount.toLong())),

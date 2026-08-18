@@ -122,6 +122,23 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep each new parent or platform-admin route represented by a real provider-backed accessibility case.',
     notes: 'Parent axe suite passed 40/40 and TypeScript passed; JSDOM canvas and existing React act warnings remain test-environment noise, not accessibility violations.'
   },
+  'PCA-ADD-ENR-011': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/MainActivity.kt',
+      'android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt',
+      'android/app/src/main/res/values/runtime_strings.xml',
+      'android/app/src/main/res/values-ar/runtime_strings.xml',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/runtime/ui/ChildHomeDisclosureStaticTest.kt',
+      'android/app/src/test/java/org/pca/app/i18n/NoHardcodedUiStringsTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The reachable child home surface now plainly discloses PCA management state, parent-visible category boundaries, current restrictions/capability limits, parent-contact routes for more time/policy/removal requests, and emergency access in English and Arabic.',
+    nextAction: 'Keep disclosure copy synchronized with the canonical privacy inventory and preserve truthful pending/offline wording for requests.',
+    notes: 'Android resource compilation and focused disclosure tests passed; no system-identity simulation or unavailable direct removal control was added.'
+  },
   'PCA-ADD-PA-036': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -522,6 +539,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-124': 'SOURCE_COMPLETE',
   'PCA-NFR-040': 'SOURCE_COMPLETE',
   'PCA-NFR-045': 'SOURCE_COMPLETE',
+  'PCA-ADD-ENR-011': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-NFR-040': 'REAL_SOURCE_GAP',
