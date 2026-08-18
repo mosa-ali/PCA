@@ -4746,15 +4746,16 @@
       "phase": [
         "PCA-BILL-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/billing/webhook/WebhookService.ts"
+        "backend/src/billing/webhook/WebhookService.ts",
+        "backend/src/billing/settlement/SettlementService.ts"
       ],
       "testEvidence": [
-        "backend/test/billing/schemaPrivacy.test.mjs | backend/test/billing/refundOperationsSchemaPrivacy.test.mjs"
+        "backend/test/billing/loggingPrivacy.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). DB-schema absence of forbidden terms is tested; no runtime log/diagnostic-output absence test exists for Billing. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "The evidence covers both static call-site scanning and runtime output capture; it does not claim infrastructure-level log sink configuration or production observability review."
     },
     {
       "requirementId": "PCA-ADD-BILL-027",

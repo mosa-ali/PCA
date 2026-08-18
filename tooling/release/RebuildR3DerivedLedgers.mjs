@@ -525,6 +525,20 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep the disclosure gate before any future invitation-creation path and obtain independent product/privacy review when the monitoring scope changes.',
     notes: 'This closes the repository-owned consent timing and disclosure surface for adding a device. It does not claim independent legal/privacy review or native-language editorial sign-off.',
   },
+  'PCA-ADD-BILL-026': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/billing/webhook/WebhookService.ts',
+      'backend/src/billing/settlement/SettlementService.ts',
+    ],
+    testEvidence: [
+      'backend/test/billing/loggingPrivacy.test.mjs',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Billing source contains a static sensitive-field logging scan and a runtime console-capture regression test that carries a secret-shaped provider reference without emitting diagnostic output.',
+    nextAction: 'Keep the billing logging-privacy test in the standard backend suite and extend its sensitive-field inventory when billing surfaces change.',
+    notes: 'The evidence covers both static call-site scanning and runtime output capture; it does not claim infrastructure-level log sink configuration or production observability review.',
+  },
 };
 
 const SOURCE_CLASSIFICATIONS = {
@@ -581,7 +595,7 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-ADD-PA-006': 'SOURCE_COMPLETE',
   'PCA-ADD-PA-020': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-036': 'REAL_SOURCE_GAP',
-  'PCA-ADD-BILL-026': 'REAL_SOURCE_GAP',
+  'PCA-ADD-BILL-026': 'SOURCE_COMPLETE',
   'PCA-ADD-PA-041': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-043': 'REAL_SOURCE_GAP',
   'PCA-ADD-BILL-039': 'REAL_SOURCE_GAP',
