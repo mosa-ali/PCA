@@ -3819,16 +3819,22 @@
       "phase": [
         "PCA-PA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/platformadmin/auth/PlatformAdminAuthService.ts"
+        "backend/src/platformadmin/auth/PlatformAdminAuthService.ts",
+        "backend/src/platformadmin/auth/MySqlPlatformAdminAlertAdapter.ts",
+        "backend/migrations/0021_platform_admin_security_alerts.sql",
+        "backend/src/main.ts"
       ],
       "testEvidence": [
-        "backend/test/platformadmin/policy.test.mjs",
-        "backend/test/platformadmin/authService.test.mjs"
+        "backend/test/platformadmin/authService.test.mjs",
+        "backend/test/db/platformAdminAlerts.mysql.test.mjs",
+        "backend/test/schema-privacy.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Lockout-alert delivery remains a console-log-only adapter (unchanged from first audit); no real delivery channel (email/SMS/push) was found. Runtime reachability: Second-audit finding: same underlying gap as PCA-ADD-PA-017 — FAMILY_ACCOUNT_SUSPEND/REACTIVATE step-up scope now exists and is checked at the platformadmin route layer, but the suspend flag itself is not enforced anywhere downstream (see PCA-ADD-PA-017 second-audit note)."
+      "externalGate": [
+        "PLATFORM_ADMIN_ALERT_DELIVERY"
+      ],
+      "notes": "Unknown identities never create recipient rows. The local source does not store raw operator contact data, family data, or provider credentials."
     },
     {
       "requirementId": "PCA-ADD-PA-021",

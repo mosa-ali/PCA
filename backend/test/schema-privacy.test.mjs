@@ -171,6 +171,18 @@ test('platform-admin-identity-rbac-audit migration shares no foreign key with th
   }
 });
 
+const platformAdminAlertsMigration = await readFile(new URL('../migrations/0021_platform_admin_security_alerts.sql', import.meta.url), 'utf8');
+
+test('platform-admin security alerts migration creates only opaque recipient-scoped operational rows', () => {
+  assert.match(platformAdminAlertsMigration, /CREATE TABLE platform_admin_security_alerts \(/);
+  assert.match(platformAdminAlertsMigration, /recipient_admin_id CHAR\(36\)/);
+  assert.match(platformAdminAlertsMigration, /source_admin_id CHAR\(36\)/);
+  assert.match(platformAdminAlertsMigration, /delivery_state VARCHAR\(16\)/);
+  const schema = platformAdminAlertsMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+  assert.equal(/email|phone|address|raw|secret/i.test(schema), false, 'alert rows must not add contact or secret fields');
+});
+
 // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, Option A): 0011_family_commercial_authority.sql
 // adds the genesis-anchored Owner-attestation chain tables (see that
 // migration's own header and backend/src/familycommercial/authority/).

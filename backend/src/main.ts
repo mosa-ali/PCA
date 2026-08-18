@@ -37,7 +37,7 @@ import { defaultFamilyRbacPolicyConfig } from './familyrbac/types.js';
 import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
 import { PlatformAdminAuthService } from './platformadmin/auth/PlatformAdminAuthService.js';
 import { MySqlPlatformAdminAuthRepository } from './platformadmin/auth/MySqlAuthRepository.js';
-import { LoggingAlertAdapter } from './platformadmin/auth/alertPort.js';
+import { MySqlPlatformAdminAlertAdapter } from './platformadmin/auth/MySqlPlatformAdminAlertAdapter.js';
 import { PlatformAdminAuditService } from './platformadmin/audit/PlatformAdminAuditService.js';
 import { MySqlPlatformAdminAuditRepository } from './platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
 // PCA-BILL-2A: payment orchestration wiring. Every service below is real,
@@ -245,7 +245,7 @@ async function start(): Promise<void> {
   // -- every downstream Platform Admin surface (billing refunds below,
   // PCA-PA-3B operational routes, buildServer's own auth route) reuses
   // this ONE instance rather than each constructing its own.
-  const platformAdminAuthService = new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new LoggingAlertAdapter());
+  const platformAdminAuthService = new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new MySqlPlatformAdminAlertAdapter());
 
   // PCA-BILL-2A wiring -- see this block's own imports above for the
   // external-gate note on PaymentProvider selection.

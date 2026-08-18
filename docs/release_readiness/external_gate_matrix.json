@@ -122,6 +122,13 @@
       "evidence": null
     },
     {
+      "id": "PLATFORM_ADMIN_ALERT_DELIVERY",
+      "status": "EXTERNAL",
+      "description": "Durable Platform Administration security-alert rows are generated locally; configuring and independently verifying delivery to other APP_OWNER accounts through an approved email/SMS/paging channel requires an external operations provider.",
+      "owner": "Platform operations owner (not yet assigned)",
+      "evidence": null
+    },
+    {
       "id": "REAL_DEVICE_TELEPHONY_UAT",
       "status": "EXTERNAL",
       "description": "Real-device telephony behavior requires hardware, carrier, and controlled UAT evidence.",

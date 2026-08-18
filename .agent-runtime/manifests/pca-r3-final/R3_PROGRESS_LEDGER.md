@@ -7,13 +7,13 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 257 |
-| PARTIAL | 80 |
+| SOURCE_COMPLETE | 258 |
+| PARTIAL | 79 |
 | NOT_STARTED | 19 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 99 |
-| External-gate rows | 44 |
+| Partial plus not-started | 98 |
+| External-gate rows | 45 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -133,8 +133,8 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - CURRENT_HEAD_0020_DB_VALIDATION = PASS
 - MIGRATION_0020_APPLIED = YES
 - MIGRATION_0020_SCHEMA_VERIFIED = YES
-- MYSQL_STANDARD = PASS
-- MYSQL_PRIVILEGE = PASS
+- MYSQL_STANDARD = PASS (392/392, 0 fail, 0 skipped, 0 todo; 19 migrations including 0020 and 0021)
+- MYSQL_PRIVILEGE = PASS (4/4)
 - DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Current-head mutation validation

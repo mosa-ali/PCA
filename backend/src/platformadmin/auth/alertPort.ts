@@ -1,3 +1,5 @@
+import type { PlatformAdminId } from './types.js';
+
 /**
  * PCA-ADD-PA-020: a failed-login or lockout event on an APP_OWNER/
  * FINANCE_ADMIN account must generate an immediate alert to other
@@ -15,7 +17,9 @@
  */
 export interface PlatformAdminAlertEvent {
   kind: 'LOGIN_FAILED' | 'LOCKED_OUT';
+  sourceAdminId: PlatformAdminId | null;
   adminEmailHash: Buffer;
+  correlationId: string;
   occurredAt: Date;
 }
 
@@ -24,11 +28,11 @@ export interface PlatformAdminAlertPort {
 }
 
 /**
- * Reference implementation: writes a structured, non-secret, non-PII log
- * line only. Wiring a real notification channel (email/SMS/paging) is an
- * explicit external integration a future operations workstream supplies by
- * implementing PlatformAdminAlertPort against a real provider -- this
- * adapter is intentionally the only implementation this lane ships.
+ * Reference implementation for tests/development: writes a structured,
+ * non-secret, non-PII log line only. Production wiring persists a durable
+ * recipient-scoped alert before any external email/SMS/paging delivery. The
+ * external delivery channel remains an explicit gate and is not fabricated
+ * by this adapter.
  */
 export class LoggingAlertAdapter implements PlatformAdminAlertPort {
   async notifyAppOwners(event: PlatformAdminAlertEvent): Promise<void> {
@@ -37,6 +41,8 @@ export class LoggingAlertAdapter implements PlatformAdminAlertPort {
       JSON.stringify({
         alert: 'PLATFORM_ADMIN_SECURITY_ALERT',
         kind: event.kind,
+        correlationId: event.correlationId,
+        sourceAdminId: event.sourceAdminId,
         occurredAt: event.occurredAt.toISOString(),
         emailHashPrefix: event.adminEmailHash.toString('hex').slice(0, 8),
       }),

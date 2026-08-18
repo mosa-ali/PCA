@@ -197,7 +197,9 @@ export class PlatformAdminAuthService {
     if (roles.some((role) => ALERT_TRIGGERING_ROLES.has(role))) {
       await this.alertPort.notifyAppOwners({
         kind: outcome === 'LOCKED_OUT' ? 'LOCKED_OUT' : 'LOGIN_FAILED',
+        sourceAdminId: adminId,
         adminEmailHash: emailHash,
+        correlationId,
         occurredAt: now,
       });
     }

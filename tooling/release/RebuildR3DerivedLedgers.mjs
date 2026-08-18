@@ -47,6 +47,25 @@ const SOURCE_UPDATES = {
     nextAction: 'Retain the gate and re-check it when a new commercial-capability acquisition call site is introduced.',
     notes: 'The policy is server-clock-driven and fail-closed. Legacy families without a parent FREE_ACCESS snapshot remain compatible; active complimentary COMMERCIAL_ACCESS is evaluated from durable grant state, never caller input.',
   },
+  'PCA-ADD-PA-020': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/platformadmin/auth/PlatformAdminAuthService.ts',
+      'backend/src/platformadmin/auth/MySqlPlatformAdminAlertAdapter.ts',
+      'backend/migrations/0021_platform_admin_security_alerts.sql',
+      'backend/src/main.ts',
+    ],
+    testEvidence: [
+      'backend/test/platformadmin/authService.test.mjs',
+      'backend/test/db/platformAdminAlerts.mysql.test.mjs',
+      'backend/test/schema-privacy.test.mjs',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
+    externalGate: ['PLATFORM_ADMIN_ALERT_DELIVERY'],
+    currentGap: 'Rate limiting and lockout are enforced, and triggering APP_OWNER/FINANCE_ADMIN failures now create a durable pending alert row for every other active APP_OWNER with opaque IDs and idempotent correlation. Actual email/SMS/paging delivery remains an external operations gate.',
+    nextAction: 'Configure and independently verify the external delivery worker/provider for PLATFORM_ADMIN_ALERT_DELIVERY; retain the durable pending-row boundary.',
+    notes: 'Unknown identities never create recipient rows. The local source does not store raw operator contact data, family data, or provider credentials.',
+  },
   'PCA-FR-008': {
     status: 'PARTIAL',
     sourceEvidence: [
@@ -328,6 +347,7 @@ for (const requirement of requirements) {
   requirement.status = update.status;
   requirement.sourceEvidence = update.sourceEvidence;
   requirement.testEvidence = update.testEvidence;
+  if (update.externalGate) requirement.externalGate = update.externalGate;
   requirement.notes = update.notes;
 }
 const sourceCompleteExternalWithoutGate = requirements
