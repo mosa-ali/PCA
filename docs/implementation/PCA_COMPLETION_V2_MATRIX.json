@@ -4877,13 +4877,25 @@
       "phase": [
         "PCA-PA-3"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/http/routes/platformadmin/settingsRoutes.ts"
+        "backend/src/http/routes/platformadmin/settingsRoutes.ts",
+        "backend/src/platformadmin/settings/PlatformAdminSettingsService.ts",
+        "backend/src/platformadmin/settings/PlatformAdminSettingsRepository.ts",
+        "backend/src/platformadmin/settlement/PlatformAdminSettlementService.ts",
+        "backend/src/entitlements/EntitlementRepository.ts",
+        "backend/src/billing/currency.ts",
+        "backend/src/billing/market.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/platformAdminSettingsCategories.mysql.test.mjs",
+        "backend/test/db/settlement.mysql.test.mjs",
+        "backend/test/db/billingCore.mysql.test.mjs",
+        "backend/test/billing/currency.test.mjs",
+        "backend/test/billing/market.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Round6: the settlement-configuration category (SettlementAccount references, access-gated per Section 14) named in this requirement is now real and administrable -- via the dedicated /settlement/accounts surface rather than the generic Settings page, but the substantive requirement (settlement confi Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "The prior matrix note that provider, branding, notification, maintenance, and feature-flag surfaces were absent is stale. Generic category routes and service are backed by MySQL and covered by live category/RBAC/masking tests; billing and settlement suites cover the related configuration references."
     },
     {
       "requirementId": "PCA-ADD-PA-044",

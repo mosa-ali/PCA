@@ -81,6 +81,29 @@ const SOURCE_UPDATES = {
     nextAction: 'Add authoritative local source data and focused dashboard coverage for growth trends, request aging, and enrollment/payment exception queues, or document an accepted unavailable-metric boundary before closure.',
     notes: 'Settlement summary and service-health/exception metrics are wired into the real dashboard read model and route, with live MySQL coverage for matched/under-investigation batches, latest-account status, HTTP exposure, currency grouping, and authorization boundaries. This remains partial because the remaining named dashboard views are not yet sourced.',
   },
+  'PCA-ADD-PA-043': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'backend/src/http/routes/platformadmin/settingsRoutes.ts',
+      'backend/src/platformadmin/settings/PlatformAdminSettingsService.ts',
+      'backend/src/platformadmin/settings/PlatformAdminSettingsRepository.ts',
+      'backend/src/platformadmin/settlement/PlatformAdminSettlementService.ts',
+      'backend/src/entitlements/EntitlementRepository.ts',
+      'backend/src/billing/currency.ts',
+      'backend/src/billing/market.ts',
+    ],
+    testEvidence: [
+      'backend/test/db/platformAdminSettingsCategories.mysql.test.mjs',
+      'backend/test/db/settlement.mysql.test.mjs',
+      'backend/test/db/billingCore.mysql.test.mjs',
+      'backend/test/billing/currency.test.mjs',
+      'backend/test/billing/market.test.mjs',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Platform settings are now repository-reachable across branding/support metadata, FREE_STARTER defaults, currencies and market mapping, price-book/plan configuration surfaces, payment-provider references, settlement references, notification settings, maintenance mode, and Platform Administration/Billing feature flags. Sensitive provider and settlement values remain masked or reference-only on reads.',
+    nextAction: 'Keep each settings category behind its existing role operation and extend the category test whenever a new setting family is introduced.',
+    notes: 'The prior matrix note that provider, branding, notification, maintenance, and feature-flag surfaces were absent is stale. Generic category routes and service are backed by MySQL and covered by live category/RBAC/masking tests; billing and settlement suites cover the related configuration references.',
+  },
   'PCA-DATA-021': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
