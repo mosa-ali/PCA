@@ -50,6 +50,90 @@
       "description": "Owner decision on cloud-based AI classifier usage (vs. on-device only) has not been made. On-device model lifecycle/package verification gate exists but cloud-provider decision is unresolved.",
       "owner": "Product/privacy owner (not yet assigned)",
       "evidence": null
+    },
+    {
+      "id": "PRODUCTION_CRYPTO_SECURITY_REVIEW",
+      "status": "BLOCKED",
+      "description": "Production crypto verifier activation requires the independent security review recorded by the release gate.",
+      "owner": "External security reviewer (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "CRYPTO_ACTIVATION",
+      "status": "BLOCKED",
+      "description": "Signed runtime acceptance and delivery remain fail-closed until the reviewed production crypto suite is activated.",
+      "owner": "Security and release owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "ANDROID_APP_LINK_ASSETLINKS_HOSTING",
+      "status": "EXTERNAL",
+      "description": "Android App Link assetlinks hosting and ownership verification require the production domain owner.",
+      "owner": "Android/domain owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "ANDROID_PHYSICAL_INSTALL_CONTINUATION",
+      "status": "EXTERNAL",
+      "description": "Physical Android install and continuation testing require a real device and production distribution path.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "SUPPORTED_CHARGE_CURRENCIES",
+      "status": "EXTERNAL",
+      "description": "Supported charge-currency approval is a commercial and finance owner decision, not a local source-only claim.",
+      "owner": "Commercial/finance owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "SUPPORTED_SETTLEMENT_CURRENCIES",
+      "status": "EXTERNAL",
+      "description": "Supported settlement-currency approval requires the accountable finance and settlement owner.",
+      "owner": "Finance/settlement owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "PAYMENT_PROVIDER_SELECTION",
+      "status": "EXTERNAL",
+      "description": "A production payment provider has not been selected and approved for this repository lane.",
+      "owner": "Commercial/finance owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "MERCHANT_ACCOUNT_APPROVAL",
+      "status": "EXTERNAL",
+      "description": "Merchant-account onboarding and approval require an external provider and accountable finance owner.",
+      "owner": "Commercial/finance owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "SETTLEMENT_BANK_CONFIGURATION",
+      "status": "EXTERNAL",
+      "description": "Settlement bank configuration requires an external finance owner and provider-approved account.",
+      "owner": "Finance/settlement owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION",
+      "status": "EXTERNAL",
+      "description": "Android device-owner authority and real-device authorization cannot be established by repository source alone.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "REAL_DEVICE_TELEPHONY_UAT",
+      "status": "EXTERNAL",
+      "description": "Real-device telephony behavior requires hardware, carrier, and controlled UAT evidence.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "REAL_DEVICE_TELEPHONY_SMS_UAT",
+      "status": "EXTERNAL",
+      "description": "Real-device SMS delivery and locked-state behavior require hardware, carrier, and controlled UAT evidence.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
     }
   ]
 }
