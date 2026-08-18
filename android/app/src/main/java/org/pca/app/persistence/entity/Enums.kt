@@ -51,7 +51,7 @@ enum class PrayerDeliveryState { SCHEDULED, DELIVERED, MISSED, CANCELLED }
 enum class RetentionPolicy { FOURTEEN_DAYS, ONE_MONTH, THREE_MONTHS, SIX_MONTHS, NINE_MONTHS, LATEST_ONLY }
 
 /** doc 10 Section 5 -- ParentActionAudit.actionType (doc 03 PCA-FR-124). */
-enum class ParentActionType { ROLE_CHANGE, POLICY_EDIT, RETENTION_CHANGE, DELETION, DEVICE_LIFECYCLE_TRANSITION }
+enum class ParentActionType { ROLE_CHANGE, POLICY_EDIT, RETENTION_CHANGE, DELETION, DEVICE_LIFECYCLE_TRANSITION, EXPORT }
 
 /** doc 21 -- TamperEvent.conditionType is free-form per the monitored-condition list; kept as String, not enumerated here. */
 

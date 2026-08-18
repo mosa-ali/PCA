@@ -4,6 +4,7 @@ import android.content.Context
 import org.pca.app.persistence.crypto.AndroidKeystoreLocalRecordCipher
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.export.AuditRecordExportService
+import org.pca.app.persistence.export.LocalRoomFamilyExportDataSource
 import org.pca.app.persistence.repository.BreakSessionRepository
 import org.pca.app.persistence.repository.FamilyMemberRepository
 import org.pca.app.persistence.repository.InstalledAppEventRepository
@@ -69,7 +70,11 @@ class PcaLocalPersistence private constructor(
     val syncReceiptRepository = SyncReceiptRepository(database.syncReceiptDao())
     val retentionEngine = RetentionEngine(database)
     val deleteNowCoordinator = DeleteNowCoordinator(database)
-    val auditRecordExportService = AuditRecordExportService(database)
+    val auditRecordExportService = AuditRecordExportService(
+        database = database,
+        dataSource = LocalRoomFamilyExportDataSource(database, cipher),
+        localCipher = cipher,
+    )
 
     companion object {
         @Volatile private var instance: PcaLocalPersistence? = null
