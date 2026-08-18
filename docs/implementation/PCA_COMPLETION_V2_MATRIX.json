@@ -2633,15 +2633,23 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/styles/global.css:134 mirrored-nav CSS rule | parent-web/src/i18n/index.ts applyDocumentDirection -- unchanged, PLUS parent-web/tests/i18n/rtl.test.tsx and 4 sibling RTL test files (see PCA-FR-111) now provide real automated proof that dir flips to rtl and Arabic content renders for at least 5 real pages (Dashboard, DeviceEnrollmentPanel, FreeAccess-related page, Settings, Subscription)."
+        "platform-admin-web/src/i18n/index.ts",
+        "platform-admin-web/src/i18n/locales/en.json",
+        "platform-admin-web/src/i18n/locales/ar.json",
+        "platform-admin-web/src/styles/global.css"
       ],
       "testEvidence": [
-        "parent-web/tests/i18n/rtl.test.tsx + 4 sibling files"
+        "platform-admin-web/tests/unit/i18nRtl.test.ts",
+        "parent-web/tests/i18n/rtl.test.tsx",
+        "parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx",
+        "parent-web/tests/i18n/freeAccessRtl.test.tsx",
+        "parent-web/tests/i18n/settingsRtl.test.tsx",
+        "parent-web/tests/i18n/subscriptionRtl.test.tsx"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Narrowed: RTL now has real automated test coverage for 5 parent-web pages/flows (previously zero). Full nav+forms+tables matrix across all 39 pages is still unverified, and platform-admin-web has no RTL test at all."
+      "notes": "The repository proves direction/key-set behavior and rendered parent-web RTL paths; this does not claim independent native-language editorial sign-off."
     },
     {
       "requirementId": "PCA-NFR-044",

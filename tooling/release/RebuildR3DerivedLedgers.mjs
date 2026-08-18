@@ -274,6 +274,27 @@ const SOURCE_UPDATES = {
     nextAction: 'Keep capability providers live and preserve explicit status rendering whenever a new enforcement surface is added.',
     notes: 'The parent-web equivalent is a capability-state presentation boundary, not a fabricated claim that the browser can provision or enforce Android Device Owner authority.',
   },
+  'PCA-NFR-043': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'platform-admin-web/src/i18n/index.ts',
+      'platform-admin-web/src/i18n/locales/en.json',
+      'platform-admin-web/src/i18n/locales/ar.json',
+      'platform-admin-web/src/styles/global.css',
+    ],
+    testEvidence: [
+      'platform-admin-web/tests/unit/i18nRtl.test.ts',
+      'parent-web/tests/i18n/rtl.test.tsx',
+      'parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx',
+      'parent-web/tests/i18n/freeAccessRtl.test.tsx',
+      'parent-web/tests/i18n/settingsRtl.test.tsx',
+      'parent-web/tests/i18n/subscriptionRtl.test.tsx',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'Both web surfaces have explicit Arabic resource parity, RTL direction wiring, mirrored-navigation styling, and focused RTL coverage; platform-admin-web now has its own RTL test rather than relying only on parent-web coverage.',
+    nextAction: 'Keep locale key parity tests running when either web surface adds user-facing copy and obtain native-language review for wording quality when translations change.',
+    notes: 'The repository proves direction/key-set behavior and rendered parent-web RTL paths; this does not claim independent native-language editorial sign-off.',
+  },
   'PCA-FR-127': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
