@@ -8,6 +8,9 @@
   },
   "freeAccess": {
     "remainingDaysHeadline_one": "{{count}} day remaining in your free access period",
+    "remainingDaysHeadline_two": "Two days remaining in your free access period",
+    "remainingDaysHeadline_few": "{{count}} days remaining in your free access period",
+    "remainingDaysHeadline_many": "{{count}} days remaining in your free access period",
     "remainingDaysHeadline_other": "{{count}} days remaining in your free access period",
     "expiresTodayHeadline": "Your free access period expires today",
     "expiresOnBody": "It expires on {{date}}.",
@@ -103,6 +106,7 @@
     "disable": "Disable",
     "approve": "Approve",
     "deny": "Deny",
+    "remove": "Remove",
     "back": "Back",
     "lastSeen": "Last seen {{time}}",
     "battery": "Battery {{percent}}%",
@@ -260,7 +264,8 @@
     "changeRole": "Change role",
     "transferOwnership": "Transfer ownership",
     "newAdministratorName": "New Admin",
-    "newViewerName": "New Viewer"
+    "newViewerName": "New Viewer",
+    "removeMemberNotice": "Removing a non-owner parent ends that member's family access. It is separate from removing a child device and from Delete Now."
   },
   "deviceEnrollment": {
     "title": "Add a child device",
@@ -311,6 +316,8 @@
     "dekFingerprint": "Device encryption-key (DEK) fingerprint",
     "fingerprintPending": "Not yet available",
     "fingerprintCompareInstruction": "Compare both fingerprints against the ones shown on the child device's own setup screen before confirming. Do not confirm if they do not match exactly.",
+    "invitationSecurityNotice": "Enrollment links and fallback codes are short-lived and single-use. Treat them as sensitive setup material and send them only to the intended child device.",
+    "pairingSecurityNotice": "Pairing adds the device keys to the family trust set. Confirm only after both fingerprints match exactly; do not treat a requested protection mode as proof that managed provisioning succeeded.",
     "confirmPairing": "Confirm pairing",
     "confirming": "Confirming...",
     "paired": "This device is now paired.",
@@ -332,7 +339,12 @@
     "child": "Child",
     "reason": "Reason",
     "created": "Created",
-    "status": "Status"
+    "status": "Status",
+    "decisionApproved": "Approved",
+    "decisionDenied": "Denied",
+    "decisionPending": "Pending parent decision",
+    "decisionExpired": "Expired",
+    "decisionNotice": "Each decision is made by an authorized parent role and recorded for this child. A pending child request is not an approval."
   },
   "policyStatus": {
     "label": "Policy status:",
@@ -539,7 +551,8 @@
     "protection": "Protection",
     "policyRevision": "Policy revision",
     "epoch": "Epoch",
-    "epochValue": "trust {{trust}} / key {{key}}"
+    "epochValue": "trust {{trust}} / key {{key}}",
+    "removalNotice": "Removing or revoking a child device changes family trust; it is separate from Delete Now. An offline device may remain pending until it reconnects."
   },
   "appsTable": {
     "app": "App",
@@ -571,6 +584,7 @@
     "stale": "This location data is stale.",
     "safeZones": "Safe zones",
     "safeZonePrivacy": "PCA stores policy metadata only. It does not create a readable movement history.",
+    "safeZoneBoundaryNotice": "Safe zones are optional entry/exit alerts for boundaries you define, not continuous live tracking. Unavailable location capability is reported as unavailable, not as no movement.",
     "safeZoneEncryptionUnavailable": "Safe-zone authoring is locked until this browser can create and verify the family-encrypted policy envelope. No readable location policy is sent to PCA.",
     "safeZoneEmpty": "No safe zone is configured for this child.",
     "safeZonePending": "Pending offline delivery",
@@ -590,7 +604,10 @@
   },
   "youtube": {
     "restrictedMode": "Restricted mode: {{status}}",
-    "approvedChannels": "Approved channels: {{count}}"
+    "approvedChannels": "Approved channels: {{count}}",
+    "modeA": "Mode A — normal YouTube app: app-usage duration only. PCA does not show an exact video list or the normal app's watch history.",
+    "modeB": "Mode B — PCA-controlled player: only playback attempts and events started inside that player may be recorded locally. It is unavailable until separate terms, policy, and security review.",
+    "capabilityNotice": "YouTube evidence is unavailable when the device or required permission cannot provide it; unavailable does not mean zero use."
   },
   "prayer": {
     "calculationMethod": "Calculation method: {{method}}"
@@ -600,7 +617,9 @@
   },
   "export": {
     "description": "An export is generated and encrypted entirely on this device; only the family's own key material can open it. Requesting one here records a pending export intake request with the service -- it is not yet a downloadable file (crypto-review pending).",
-    "generatedStatus": "Export request accepted (ref {{exportId}}) -- pending crypto review, not yet a downloadable file."
+    "generatedStatus": "Export request accepted (ref {{exportId}}) -- pending crypto review, not yet a downloadable file.",
+    "scopeNotice": "The export is limited to the authorized family data and retention scope shown at creation; it is not a complete copy of data PCA cannot lawfully or technically obtain.",
+    "externalCopyNotice": "Once an encrypted export is saved outside PCA-managed storage, it is an external copy. PCA retention and Delete Now cannot remove it; the family must delete it from its chosen storage."
   },
   "retention": {
     "description": "Retention/deletion of children's activity is enforced locally by the device holding the plaintext; this screen sets the family-level policy value that devices honor.",
@@ -611,6 +630,8 @@
     "locationWindowLabel": "Location history: {{window}}",
     "locationMustNotExceedGeneral": "Location-history retention cannot exceed general activity retention.",
     "updatedStatus": "Retention policy validated and audited: {{window}}. Devices apply this value locally.",
+    "localEnforcementNotice": "Each device enforces retention against the local copy it holds. Network access is not required for local expiry deletion, but a remote delivery or acknowledgement can remain pending while a device is offline.",
+    "auditRetentionNotice": "Audit and tamper records have a separate floor of the active general-retention window or 12 months, whichever is longer; ordinary activity retention does not remove them.",
     "windowLabels": {
       "14_DAYS": "14 days",
       "1_MONTH": "1 month",
@@ -622,7 +643,11 @@
   "deleteNow": {
     "description": "This issues a signed, one-time deletion instruction to your children's devices. It cannot retroactively erase a device that stays offline.",
     "confirmBody": "This action cannot be undone once devices acknowledge it.",
-    "issuedStatus": "Deletion instruction issued and audited -- delivery status: {{status}}."
+    "issuedStatus": "Deletion instruction issued and audited -- delivery status: {{status}}.",
+    "scopeNotice": "Delete Now removes activity content only. It does not remove enrollment keys, policies, roles, or recovery configuration; full device or family removal is a separate, strongly confirmed action.",
+    "offlineNotice": "A child device that stays offline cannot be reported as erased. Its deletion remains pending until the device can acknowledge the instruction.",
+    "externalCopyNotice": "Delete Now does not erase encrypted exports or backups outside PCA-managed storage. Those copies must be removed using the storage provider's controls.",
+    "secureEraseNotice": "PCA does not promise forensic-grade physical erasure on flash storage. Local encryption and best-effort platform/database cleanup reduce exposure without claiming more than the device can prove."
   },
   "childWellbeing": {
     "noMessages": "No custom wellbeing messages target this child yet."
@@ -641,9 +666,25 @@
       "PRAYER_REMINDER": "Prayer reminder"
     }
   },
+  "privacy": {
+    "title": "Privacy boundary",
+    "childDataNotice": "Parent-visible monitoring copy refers to your children's devices and the active family policy; it is not a promise of universal visibility into every app or network.",
+    "serverNotice": "PCA central services relay encrypted family data but do not hold a key that can read the activity.",
+    "notAUniversalView": "Unavailable or unsupported evidence is reported as unavailable, not as zero activity or complete protection."
+  },
+  "reports": {
+    "title": "Reports and coverage",
+    "description": "Reports show only evidence the child device and platform can lawfully and technically provide. Read each result with its source, coverage, precision, permission or capability state, and retention state.",
+    "unavailable": "Unavailable is a valid result. It does not mean zero activity.",
+    "stale": "This report may be stale or incomplete until the child device reconnects or the required permission is restored.",
+    "appUsageOnly": "App-usage duration does not reveal messages, searches, videos, or contacts inside the app.",
+    "locationApproximate": "Location is a coarse or last-seen safety state, not a continuous precise GPS trace.",
+    "modeBEvents": "PCA-controlled YouTube entries describe playback started, playback state observed, or a completed signal observed; they do not claim normal-app watch history."
+  },
   "transparency": {
     "title": "What Parents Can See",
     "intro": "This page lists, in plain language, exactly what PCA lets you (the parent) see about your child's device, and what PCA never collects or shows to anyone -- including PCA itself.",
+    "scopeNotice": "The categories below describe the active policy and the capabilities actually available on the child device. A limited or unavailable capability must remain visible as such.",
     "visibleTitle": "What you can see in this console",
     "visible": {
       "appUsage": "Which apps your child uses and for how long (category/app-level, using the device's own usage-tracking API where the platform provides one).",

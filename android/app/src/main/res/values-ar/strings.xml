@@ -272,7 +272,7 @@
     <string name="child_home_safe_browser">المتصفح الآمن</string>
     <string name="safe_browser_address_bar_hint">عنوان الموقع</string>
     <string name="safe_browser_go_button">اذهب</string>
-    <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات أطفالك، لذا فإن قواعد السلامة الأساسية فقط هي المفعّلة.</string>
+    <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات والديك، لذا لا تعمل الآن إلا قواعد السلامة الأساسية.</string>
     <string name="safe_browser_held_block_title">هذا الموقع محظور</string>
     <string name="safe_browser_held_review_title">هذا الموقع يحتاج إلى مراجعة أحد الوالدين</string>
     <string name="safe_browser_ask_parent_button">اسأل أحد الوالدين</string>
@@ -309,17 +309,18 @@
     <string name="removal_decision_allow_removal_confirm_message">هذا يصرّح بشكل دائم بإمكانية إزالة الحماية عن هذا الجهاز. يتم تسجيل هذا الإجراء ولا يمكن التراجع عنه.</string>
     <string name="removal_decision_confirm_button">تأكيد</string>
     <string name="removal_decision_cancel_button">إلغاء</string>
+    <string name="removal_decision_scope_note">يغيّر هذا القرار الحماية على هذا الجهاز فقط. ولا يحذف بحد ذاته سجل النشاط أو يزيل هذا الجهاز من العائلة.</string>
 
     <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
     <string name="youtube_mode_screen_title">مراقبة يوتيوب</string>
     <string name="youtube_mode_a_title">النمط A: استخدام التطبيق فقط</string>
-    <string name="youtube_mode_a_description">يُظهر مدة استخدام تطبيق يوتيوب استنادًا إلى بيانات استخدام التطبيقات على الجهاز. لا يُظهر أبدًا الفيديوهات التي تمت مشاهدتها أو البحث عنها.</string>
+    <string name="youtube_mode_a_description">يُظهر مدة استخدام تطبيق يوتيوب استنادًا إلى بيانات استخدام التطبيقات على الجهاز. ولا يعرض قائمة فيديوهات أو سجل بحث.</string>
     <string name="youtube_mode_a_status_loading">جارٍ التحقق من الاستخدام الحالي…</string>
     <string name="youtube_mode_a_status_unsupported">غير متاح على هذا الجهاز</string>
     <string name="youtube_mode_a_status_permission_needed">فعّل إذن الوصول إلى الاستخدام لرؤية هذا</string>
     <string name="youtube_mode_a_status_measured">%1$s دقيقة اليوم</string>
-    <string name="youtube_mode_b_title">النمط B: تفاصيل على مستوى الفيديو</string>
-    <string name="youtube_mode_b_description">سيُظهر الفيديوهات المحددة التي تمت مشاهدتها. يتطلب هذا مراجعة منفصلة وليس متاحًا كإعداد يمكن تفعيله.</string>
+    <string name="youtube_mode_b_title">النمط B: تشغيل يتحكم فيه PCA</string>
+    <string name="youtube_mode_b_description">يمكن لمشغّل تتحكم فيه PCA مستقبلاً تسجيل محاولات وأحداث التشغيل التي تبدأ داخله فقط. وهذا ليس سجل مشاهدة تطبيق يوتيوب العادي، ويتطلب مراجعة منفصلة للشروط والسياسات والأمان، وليس متاحًا كإعداد.</string>
     <string name="youtube_mode_b_unavailable">غير متاح بعد</string>
     <string name="youtube_mode_unavailable_error">مراقبة يوتيوب غير متاحة على هذا الجهاز حاليًا. حاول مرة أخرى لاحقًا.</string>
 

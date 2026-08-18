@@ -273,7 +273,7 @@
     <string name="child_home_safe_browser">Safe Browser</string>
     <string name="safe_browser_address_bar_hint">Website address</string>
     <string name="safe_browser_go_button">Go</string>
-    <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your children\'s settings right now, so only basic safety rules are active.</string>
+    <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your parent\'s settings right now, so only basic safety rules are active.</string>
     <string name="safe_browser_held_block_title">This site is blocked</string>
     <string name="safe_browser_held_review_title">This site needs a parent\'s review</string>
     <string name="safe_browser_ask_parent_button">Ask a parent</string>
@@ -310,17 +310,18 @@
     <string name="removal_decision_allow_removal_confirm_message">This permanently authorizes protection to be removed from this device. This action is recorded and cannot be undone.</string>
     <string name="removal_decision_confirm_button">Confirm</string>
     <string name="removal_decision_cancel_button">Cancel</string>
+    <string name="removal_decision_scope_note">This decision changes protection on this device only. It does not by itself delete activity history or remove this device from the family.</string>
 
     <!-- PCA-FR-054: YouTube Mode A/Mode B parent-facing trade-off framing. -->
     <string name="youtube_mode_screen_title">YouTube monitoring</string>
     <string name="youtube_mode_a_title">Mode A: App usage only</string>
-    <string name="youtube_mode_a_description">Shows how much time was spent in the YouTube app, based on device app-usage data. It never shows which videos were watched or searched.</string>
+    <string name="youtube_mode_a_description">Shows how much time was spent in the YouTube app, based on device app-usage data. It does not show a video list or search history.</string>
     <string name="youtube_mode_a_status_loading">Checking current usage…</string>
     <string name="youtube_mode_a_status_unsupported">Not available on this device</string>
     <string name="youtube_mode_a_status_permission_needed">Turn on Usage Access to see this</string>
     <string name="youtube_mode_a_status_measured">%1$s minutes today</string>
-    <string name="youtube_mode_b_title">Mode B: Video-level detail</string>
-    <string name="youtube_mode_b_description">Would show which specific videos were watched. This requires a separate review and is not offered as a setting you can turn on.</string>
+    <string name="youtube_mode_b_title">Mode B: PCA-controlled playback</string>
+    <string name="youtube_mode_b_description">A future PCA-controlled player could record playback attempts and events started inside that player only. It is not the normal YouTube app\'s watch history, requires separate terms/policy and security review, and is not available as a setting.</string>
     <string name="youtube_mode_b_unavailable">Not available yet</string>
     <string name="youtube_mode_unavailable_error">YouTube monitoring isn\'t available on this device right now. Try again later.</string>
 
