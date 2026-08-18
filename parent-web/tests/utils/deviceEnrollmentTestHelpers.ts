@@ -10,4 +10,5 @@ export async function clickCreateInvitation(): Promise<void> {
   const button = await screen.findByRole('button', { name: 'Create invitation' });
   await waitFor(() => expect(button).not.toBeDisabled());
   await userEvent.click(button);
+  await userEvent.click(await screen.findByRole('button', { name: 'I understand, create invitation' }));
 }

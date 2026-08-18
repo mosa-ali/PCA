@@ -371,6 +371,22 @@ const SOURCE_UPDATES = {
     nextAction: 'Run the no-ad/data-broker scanner whenever dependency manifests change; keep any future analytics or product-measurement decision separate from prohibited ad/tracking SDK inventory.',
     notes: 'The direct scanner passes against the current repository. The subprocess test file has five Windows child-process cases that remain environment-blocked by spawn EPERM, so this closure does not claim those subprocess cases passed.',
   },
+  'PCA-FR-142': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'parent-web/src/pages/family/DeviceEnrollmentPanel.tsx',
+      'parent-web/src/i18n/locales/en.json',
+      'parent-web/src/i18n/locales/ar.json',
+    ],
+    testEvidence: [
+      'parent-web/tests/component/DeviceEnrollmentPanel.test.tsx',
+      'parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The parent device-enrollment surface now presents a localized monitoring-scope summary and requires explicit confirmation before the one-time invitation API call can mint a token; canceling the disclosure leaves the invitation uncreated.',
+    nextAction: 'Keep the disclosure gate before any future invitation-creation path and obtain independent product/privacy review when the monitoring scope changes.',
+    notes: 'This closes the repository-owned consent timing and disclosure surface for adding a device. It does not claim independent legal/privacy review or native-language editorial sign-off.',
+  },
 };
 
 const SOURCE_CLASSIFICATIONS = {

@@ -278,6 +278,12 @@
       "IOS_STANDARD": "iOS -- Standard"
     },
     "protectedModeNote": "Protected mode is only a REQUEST at invitation time -- it does not itself confirm Device Owner provisioning succeeded on the child device.",
+    "consentTitle": "Before creating this device invitation",
+    "consentBody": "Review this monitoring summary before PCA creates the one-time enrollment token for the new device.",
+    "consentMonitored": "The family may see category-level app and website activity, screen-time and break status, protection status, requests, and configured trust-zone alerts.",
+    "consentNotMonitored": "PCA does not receive message or call content, camera images, exact browsing history, or precise live location unless a separate family feature is enabled. PCA infrastructure cannot read encrypted family activity.",
+    "consentCancel": "Cancel",
+    "consentContinue": "I understand, create invitation",
     "createInvitation": "Create invitation",
     "creating": "Creating invitation...",
     "tokenRevealTitle": "Enrollment link -- copy it now",

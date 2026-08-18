@@ -7,12 +7,12 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 266 |
-| PARTIAL | 72 |
+| SOURCE_COMPLETE | 267 |
+| PARTIAL | 71 |
 | NOT_STARTED | 18 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 90 |
+| Partial plus not-started | 89 |
 | External-gate rows | 46 |
 | Terminology audit rows | 209 |
 

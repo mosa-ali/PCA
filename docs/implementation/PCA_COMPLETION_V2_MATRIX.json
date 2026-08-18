@@ -2056,13 +2056,18 @@
         "PCA-1",
         "PCA-11"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt"
+        "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx",
+        "parent-web/src/i18n/locales/en.json",
+        "parent-web/src/i18n/locales/ar.json"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/component/DeviceEnrollmentPanel.test.tsx",
+        "parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "This closes the repository-owned consent timing and disclosure surface for adding a device. It does not claim independent legal/privacy review or native-language editorial sign-off."
     },
     {
       "requirementId": "PCA-FR-143",

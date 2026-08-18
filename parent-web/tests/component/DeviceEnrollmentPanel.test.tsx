@@ -18,6 +18,21 @@ describe('DeviceEnrollmentPanel', () => {
     sessionStorage.clear();
   });
 
+  it('requires monitoring-scope confirmation before creating the one-time invitation', async () => {
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+    const createButton = await screen.findByRole('button', { name: 'Create invitation' });
+    await waitFor(() => expect(createButton).not.toBeDisabled());
+
+    await userEvent.click(createButton);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByTestId('raw-invitation-token')).not.toBeInTheDocument();
+    expect((await getApiClients()).deviceEnrollment).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('raw-invitation-token')).not.toBeInTheDocument();
+  });
+
   it('creating an invitation reveals the raw token and enrollment link exactly once', async () => {
     renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
     await clickCreateInvitation();

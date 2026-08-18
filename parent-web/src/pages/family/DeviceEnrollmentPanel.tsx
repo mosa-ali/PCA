@@ -86,6 +86,7 @@ export default function DeviceEnrollmentPanel() {
   const [childProfileId, setChildProfileId] = useState('');
   const [initialPolicyProfile, setInitialPolicyProfile] = useState<InitialPolicyProfile>('BALANCED');
   const [creating, setCreating] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<{ invitation: InvitationDto; rawInvitationToken: string } | null>(
     null,
@@ -144,6 +145,7 @@ export default function DeviceEnrollmentPanel() {
       setCreateError(t(errorMessageKey(e)));
     } finally {
       setCreating(false);
+      setConsentOpen(false);
     }
   };
 
@@ -266,11 +268,35 @@ export default function DeviceEnrollmentPanel() {
           </select>
         </div>
         {protectionMode === 'ANDROID_PROTECTED' && <p style={HINT_STYLE}>{t('deviceEnrollment.protectedModeNote')}</p>}
-        <button type="button" className="btn btn-primary" onClick={create} disabled={creating || !familyId || !selectedChild}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => setConsentOpen(true)}
+          disabled={creating || !familyId || !selectedChild}
+        >
           {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.createInvitation')}
         </button>
         {createError && <ErrorState message={createError} />}
       </PermissionGate>
+
+      {consentOpen && (
+        <div className="modal-overlay" role="presentation">
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-consent-title">
+            <h3 id="enrollment-consent-title">{t('deviceEnrollment.consentTitle')}</h3>
+            <p>{t('deviceEnrollment.consentBody')}</p>
+            <p>{t('deviceEnrollment.consentMonitored')}</p>
+            <p>{t('deviceEnrollment.consentNotMonitored')}</p>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setConsentOpen(false)} disabled={creating}>
+                {t('deviceEnrollment.consentCancel')}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={create} disabled={creating}>
+                {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.consentContinue')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {justCreated && enrollmentLink && (
         <div className="token-reveal-once" role="region" aria-labelledby="token-reveal-title">
