@@ -5,7 +5,7 @@
 "PCA-DATA-002","PCA-12","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-DATA-014","PCA-0","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-DATA-020","PCA-12","PARTIAL","backend/test/retention/deletionStateMachine.test.mjs; backend/test/retention/engine.test.mjs","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
-"PCA-DATA-021","PCA-12;PCA-13","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
+"PCA-DATA-021","PCA-12;PCA-13","SOURCE_COMPLETE","android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt","SOURCE_COMPLETE_VALIDATION_PENDING","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-DATA-022","PCA-12;PCA-11","PARTIAL","backend/test/retention/*.test.mjs; backend/test/familyenvelope/policy.test.mjs","EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-DATA-024","PCA-12;PCA-11","NOT_APPLICABLE","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","","Coordinator"
 "PCA-DATA-025","PCA-12;PCA-11","PARTIAL","","NO_TEST_EVIDENCE_RECORDED","Requirement-specific unit, integration, device, security, or e2e evidence as applicable","PRODUCTION_CRYPTO_SECURITY_REVIEW","Coordinator"

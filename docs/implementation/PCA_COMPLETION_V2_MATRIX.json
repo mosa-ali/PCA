@@ -242,13 +242,19 @@
         "PCA-12",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt + TamperEventEntity.kt"
+        "android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt",
+        "android/app/src/main/java/org/pca/app/persistence/entity/TamperEventEntity.kt",
+        "android/app/src/main/java/org/pca/app/persistence/dao/ParentActionAuditDao.kt",
+        "android/app/src/main/java/org/pca/app/persistence/dao/TamperEventDao.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Focused Robolectric coverage now proves old and recent tamper and parent-action audit rows are handled identically, including one deletion receipt per category; the general-cycle non-interference test remains in the same suite."
     },
     {
       "requirementId": "PCA-DATA-022",

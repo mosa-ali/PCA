@@ -81,6 +81,23 @@ const SOURCE_UPDATES = {
     nextAction: 'Add authoritative local source data and focused dashboard coverage for growth trends, request aging, and enrollment/payment exception queues, or document an accepted unavailable-metric boundary before closure.',
     notes: 'Settlement summary and service-health/exception metrics are wired into the real dashboard read model and route, with live MySQL coverage for matched/under-investigation batches, latest-account status, HTTP exposure, currency grouping, and authorization boundaries. This remains partial because the remaining named dashboard views are not yet sourced.',
   },
+  'PCA-DATA-021': {
+    status: 'SOURCE_COMPLETE',
+    sourceEvidence: [
+      'android/app/src/main/java/org/pca/app/persistence/entity/ParentActionAuditEntity.kt',
+      'android/app/src/main/java/org/pca/app/persistence/entity/TamperEventEntity.kt',
+      'android/app/src/main/java/org/pca/app/persistence/dao/ParentActionAuditDao.kt',
+      'android/app/src/main/java/org/pca/app/persistence/dao/TamperEventDao.kt',
+      'android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt',
+    ],
+    testEvidence: [
+      'android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt',
+    ],
+    sourceSolvableClass: 'SOURCE_COMPLETE',
+    currentGap: 'The Android local database persists parent-action audit and tamper rows with a distinct longer audit floor. General activity retention never targets either table; the separate transactional audit-floor cycle deletes only rows older than the configured twelve-month floor and receipts each deletion category.',
+    nextAction: 'Retain the separate audit-floor boundary and extend the focused retention test if either audit entity gains new fields or scope rules.',
+    notes: 'Focused Robolectric coverage now proves old and recent tamper and parent-action audit rows are handled identically, including one deletion receipt per category; the general-cycle non-interference test remains in the same suite.',
+  },
   'PCA-FR-008': {
     status: 'PARTIAL',
     sourceEvidence: [

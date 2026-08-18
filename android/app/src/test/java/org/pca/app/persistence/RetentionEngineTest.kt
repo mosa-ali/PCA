@@ -79,12 +79,23 @@ class RetentionEngineTest {
 
         db.tamperEventDao().upsert(TamperEventEntity("old", "device-1", "ROOT_DETECTED", thirteenMonthsAgo, null))
         db.tamperEventDao().upsert(TamperEventEntity("recent", "device-1", "ROOT_DETECTED", sixMonthsAgo, null))
+        db.parentActionAuditDao().upsert(
+            ParentActionAuditEntity("old-audit", "member-1", ParentActionType.POLICY_EDIT, "Policy:old", thirteenMonthsAgo, null, null),
+        )
+        db.parentActionAuditDao().upsert(
+            ParentActionAuditEntity("recent-audit", "member-1", ParentActionType.POLICY_EDIT, "Policy:recent", sixMonthsAgo, null, null),
+        )
 
-        engine.runAuditFloorCycle("family-1", now, RetentionPolicy.FOURTEEN_DAYS, zone)
+        val receipts = engine.runAuditFloorCycle("family-1", now, RetentionPolicy.FOURTEEN_DAYS, zone)
 
         val remaining = db.tamperEventDao().getForDevice("device-1")
         assertEquals(1, remaining.size)
         assertEquals("recent", remaining.single().id)
+        val remainingAudits = db.parentActionAuditDao().getForActor("member-1")
+        assertEquals(1, remainingAudits.size)
+        assertEquals("recent-audit", remainingAudits.single().id)
+        assertTrue(receipts.any { it.entityCategory == "TamperEvent" && it.deletedCount == 1 })
+        assertTrue(receipts.any { it.entityCategory == "ParentActionAudit" && it.deletedCount == 1 })
     }
 
     // ---- PCA-DATA-026: tombstone bounded-lifetime pruning ----
