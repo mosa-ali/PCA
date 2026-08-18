@@ -13,7 +13,7 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
 | Partial plus not-started | 78 |
-| External-gate rows | 46 |
+| External-gate rows | 69 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -34,14 +34,14 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS after file-backed Robolectric tests use TRUNCATE journal mode; production database policy is unchanged.
-- Parent Web typecheck: PASS; lint: PASS from the prior focused validation; test/build: RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM).
-- Parent Web test count: 49 files and 394 tests.
-- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
+- Parent Web typecheck: PASS; test: PASS (58 files, 431 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
+- Backend build and full unit/security suite: PASS (1509/1509); disposable MySQL validation: PASS (394/394, 0 fail, 0 skipped, 0 todo).
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
+- Source backlog reconciliation: 78 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (60 + 18).
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
 
 ## Additive owner-controlled Wave 7: night lock and communication safety
@@ -133,12 +133,12 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - CURRENT_HEAD_0020_DB_VALIDATION = PASS
 - MIGRATION_0020_APPLIED = YES
 - MIGRATION_0020_SCHEMA_VERIFIED = YES
-- MYSQL_STANDARD = PASS (393/393, 0 fail, 0 skipped, 0 todo; 19 migrations including 0020 and 0021)
+- MYSQL_STANDARD = PASS (394/394, 0 fail, 0 skipped, 0 todo; 19 migrations)
 - MYSQL_PRIVILEGE = PASS (4/4)
 - DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Current-head mutation validation
 
-- MUTATION = PASS (3/3 mutants killed)
-- VALID_MUTATION_SURVIVORS = 0
+- MUTATION = NOT_EXECUTED
+- VALID_MUTATION_SURVIVORS = NOT_EXECUTED
 - Scope: bounded Safe Zone privacy and recipient-authorization mutants; temporary compiled modules are restored/deleted after each case.
