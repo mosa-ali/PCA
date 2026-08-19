@@ -3,6 +3,7 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { ProtectionAlertPanel } from './ProtectionAlertPanel';
 
 export default function ProtectionStatus() {
   const { t } = useTranslation();
@@ -30,6 +31,7 @@ export default function ProtectionStatus() {
           </article>
         ))}
       </div>
+      <ProtectionAlertPanel alerts={[]} feedState="PENDING_TRUSTED_DECRYPTION" />
     </section>
   );
 }
