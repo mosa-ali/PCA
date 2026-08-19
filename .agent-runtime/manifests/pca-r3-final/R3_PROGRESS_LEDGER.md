@@ -1,6 +1,6 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-18.
+Generated from the completion matrix and repository evidence on 2026-08-19.
 
 ## Exact requirement counts
 
@@ -13,7 +13,7 @@ Generated from the completion matrix and repository evidence on 2026-08-18.
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
 | Partial plus not-started | 78 |
-| External-gate rows | 69 |
+| External-gate rows | 46 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -33,9 +33,9 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android compileDebugKotlin: PASS.
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
-- Android full test: PASS after file-backed Robolectric tests use TRUNCATE journal mode; production database policy is unchanged.
-- Parent Web typecheck: PASS; test: PASS (58 files, 431 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build and full unit/security suite: PASS (1509/1509); disposable MySQL validation: PASS (394/394, 0 fail, 0 skipped, 0 todo).
+- Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
+- Parent Web typecheck: PASS; test: PASS (61 files, 449 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
+- Backend build and full unit/security suite: PASS (npm test completed successfully; elevated local worker permissions were required).
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -139,6 +139,7 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Current-head mutation validation
 
-- MUTATION = NOT_EXECUTED
-- VALID_MUTATION_SURVIVORS = NOT_EXECUTED
+- CURRENT_HEAD_MUTATION = NOT_EXECUTED (the runner is pinned to the R3 entry SHA; the current-head coordinator fix is outside the bounded mutation scope).
+- ENTRY_SHA_MUTATION = PASS (14 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry SHA 45ff6166979ffafc4265661bffe65534221285e3).
+- VALID_ENTRY_SHA_MUTATION_SURVIVORS = 0
 - Scope: bounded Safe Zone privacy and recipient-authorization mutants; temporary compiled modules are restored/deleted after each case.
