@@ -54,6 +54,9 @@ const TARGET_KEYS = [
   'reports.locationApproximate',
   'reports.modeBEvents',
   'transparency.scopeNotice',
+  'transparency.visible.youtube',
+  'transparency.visible.wellbeing',
+  'transparency.visible.childRequests',
 ] as const;
 
 describe('PCA-FR-113 parent-web locale contract', () => {
@@ -128,6 +131,15 @@ describe('PCA-FR-113 honest capability and privacy notices', () => {
     expect(text(ar, 'location.safeZoneBoundaryNotice')).toContain('ليست تتبعاً مباشراً مستمراً');
     expect(text(ar, 'reports.unavailable')).toContain('لا يعني عدم وجود نشاط');
     expect(text(ar, 'reports.locationApproximate')).toContain('وليس مسار GPS دقيقاً');
+  });
+
+  it('discloses shipped YouTube, wellbeing, and child-request surfaces without widening monitoring claims', () => {
+    expect(text(en, 'transparency.visible.youtube')).toContain('normal YouTube app watch history is not visible');
+    expect(text(en, 'transparency.visible.wellbeing')).toContain('stays on the device');
+    expect(text(en, 'transparency.visible.childRequests')).toContain('decision state');
+    expect(text(ar, 'transparency.visible.youtube')).toContain('ولا يظهر سجل مشاهدة');
+    expect(text(ar, 'transparency.visible.wellbeing')).toContain('على الجهاز');
+    expect(text(ar, 'transparency.visible.childRequests')).toContain('حالة القرار');
   });
 
   it('separates child-request decisions and device removal from Delete Now', () => {

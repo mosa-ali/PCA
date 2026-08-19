@@ -9,7 +9,20 @@
 // is also where any third-party SDK's specific data access is disclosed.
 import { useTranslation } from 'react-i18next';
 
-const VISIBLE_KEYS = ['appUsage', 'webBrowsing', 'contentBlocks', 'location', 'screenTime', 'eyeProtection', 'prayerReminders', 'deviceStatus', 'policyChanges'] as const;
+const VISIBLE_KEYS = [
+  'appUsage',
+  'webBrowsing',
+  'contentBlocks',
+  'location',
+  'screenTime',
+  'eyeProtection',
+  'prayerReminders',
+  'deviceStatus',
+  'policyChanges',
+  'youtube',
+  'wellbeing',
+  'childRequests',
+] as const;
 const NOT_VISIBLE_KEYS = ['messages', 'screenshots', 'biometrics', 'preciseWithoutConsent', 'fullBrowsing', 'thirdParty'] as const;
 
 export default function Transparency() {

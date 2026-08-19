@@ -12,6 +12,7 @@ const transparency = () => read('src/pages/privacy/Transparency.tsx');
 const visibleKeys = [
   'appUsage', 'webBrowsing', 'contentBlocks', 'location', 'screenTime',
   'eyeProtection', 'prayerReminders', 'deviceStatus', 'policyChanges',
+  'youtube', 'wellbeing', 'childRequests',
 ];
 const notVisibleKeys = [
   'messages', 'screenshots', 'biometrics', 'preciseWithoutConsent',

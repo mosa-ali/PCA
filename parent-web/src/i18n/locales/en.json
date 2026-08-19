@@ -695,7 +695,10 @@
       "eyeProtection": "When an eye-rest reminder was shown -- never a camera image or any biometric measurement.",
       "prayerReminders": "When a prayer reminder was scheduled and delivered.",
       "deviceStatus": "Whether the device is online, its last sync time, and whether its protection is fully applied.",
-      "policyChanges": "A full audit trail of every setting change made by any family member (see the Audit page)."
+      "policyChanges": "A full audit trail of every setting change made by any family member (see the Audit page).",
+      "youtube": "Whether PCA-controlled YouTube events are available and, only in that player, playback events that began there; normal YouTube app watch history is not visible.",
+      "wellbeing": "Which parent-approved wellbeing messages or reminders are enabled for this child and their delivery state; message interaction content stays on the device.",
+      "childRequests": "Requests sent by your child (such as more time or an unblock request), their decision state, and the parent decision record."
     },
     "notVisibleTitle": "What PCA never collects or shows -- to anyone, including PCA",
     "notVisible": {
@@ -711,7 +714,11 @@
   },
   "recovery": {
     "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",
-    "startTransaction": "Start recovery transaction (dev stub)"
+    "startTransaction": "Start recovery transaction (dev stub)",
+    "secretDisclosureTitle": "Before you create your Recovery Secret",
+    "secretDisclosureBody": "PCA infrastructure never receives or stores this secret. Keep it offline and available to the family owner.",
+    "secretDisclosureWarning": "If you lose the Recovery Secret and all active parent devices, family recovery is permanently impossible. PCA support cannot recover it; start a new family enrollment instead.",
+    "secretDisclosureAcknowledgement": "I understand that losing both recovery paths permanently prevents recovery."
   },
   "auth": {
     "registerTitle": "Create your PCA account",
