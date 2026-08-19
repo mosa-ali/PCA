@@ -34,7 +34,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
-- Parent Web typecheck: PASS; test: PASS (61 files, 449 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
+- Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
 - Backend build and full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); focused Safe Zone tests: PASS (28/28); Writer84 enrollment tests: PASS (11/11); Writer87 Android focused tests: PASS (32/32); disposable MySQL validation remains PASS from unchanged DB-affecting candidate (394/394, 0 fail, 0 skipped, 0 todo). Parent Web full test: PASS (61 files, 452 tests); Parent Web production build: PASS; Parent Web Safe Zone tests: PASS (12/12); Android full testDebugUnitTest: PASS; Writer85/Writer88 focused Android tests: PASS; iOS XCTest is unavailable on Windows.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
@@ -149,6 +149,12 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - `PCA-FR-063`, `PCA-FR-091`, `PCA-FR-135`, and `PCA-ADD-PA-041` remain `PARTIAL`/`REAL_SOURCE_GAP` where verified trust-set authority, reviewed crypto, browser/device delivery, or remaining authoritative dashboard sources are absent.
 - `PCA-ADD-ENR-012`, `PCA-ADD-ENR-016`, `PCA-ADD-ENR-017`, `PCA-FR-008`, `PCA-FR-021`, `PCA-FR-023`, `PCA-NFR-044`, `PCA-PRIV-001`, and `PCA-ADD-ENR-010` remain partial/source-gap items where persistence, authority, Apple, camera, or device composition is incomplete.
 - Current source backlog: 77 rows, including 29 exact `REAL_SOURCE_GAP` rows. Assignment coverage is exact: 29 assigned, 29 unique, no duplicates, no unassigned, no extraneous IDs.
+
+### Wave 13 continuous next-10 source leases
+
+- Writers84-89 were re-leased against the remaining runtime-composition portions of their partially closed requirement clusters; Writers90-93 retain their exact ready assignments and are queued behind the current agent-pool capacity.
+- Lease scope remains source-only and sequentially reviewable: coordinator ledgers, matrix, and external-gate claims are not writer-owned.
+- The Parent Web current-head evidence is authoritative at 61 files and 452 tests; the former 449-count line was corrected.
 
 ### Current-head mutation validation
 
