@@ -65,6 +65,9 @@ class AuditRecordExportService(
         if (familyId.isBlank() || actorMemberId.isBlank() || createdAtEpochMillis < 0) {
             return FamilyExportOutcome.Failed(FamilyExportOutcome.Failed.Code.INVALID_REQUEST)
         }
+        if (!RetentionCutoffCalculator.isLocationRetentionAllowed(retentionScope.generalPolicy, retentionScope.locationPolicy)) {
+            return FamilyExportOutcome.Failed(FamilyExportOutcome.Failed.Code.INVALID_REQUEST)
+        }
 
         when (val authorization = authorizer.authorize(familyId, actorMemberId, stepUpSatisfied)) {
             is FamilyExportAuthorization.Denied -> {

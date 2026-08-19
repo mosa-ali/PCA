@@ -2,6 +2,7 @@ package org.pca.app.persistence
 
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -11,6 +12,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.pca.app.persistence.entity.ParentActionType
 import org.pca.app.persistence.entity.ParentActionAuditEntity
+import org.pca.app.persistence.entity.DeviceEnrollmentState
+import org.pca.app.persistence.entity.DeviceEntity
+import org.pca.app.persistence.entity.DevicePlatform
+import org.pca.app.persistence.entity.DeviceTrustState
+import org.pca.app.persistence.entity.FamilyMemberEntity
+import org.pca.app.persistence.entity.FamilyMemberRole
+import org.pca.app.persistence.entity.FamilyMemberStatus
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.entity.TamperEventEntity
 import org.pca.app.persistence.entity.TombstoneRecordEntity
@@ -30,6 +38,17 @@ class RetentionEngineTest {
     fun setUp() {
         db = PersistenceTestSupport.inMemoryDb()
         engine = RetentionEngine(db)
+        runBlocking {
+            db.familyMemberDao().upsert(
+                FamilyMemberEntity("member-1", "family-1", FamilyMemberRole.CHILD, "enc", "iv", FamilyMemberStatus.ACTIVE, "8-12", 1L),
+            )
+            db.deviceDao().upsert(
+                DeviceEntity(
+                    "device-1", "member-1", DevicePlatform.ANDROID, "35", "1", "signing", "encryption",
+                    1L, 1L, DeviceTrustState.ACTIVE, DeviceEnrollmentState.ACTIVE, 1L, "{}",
+                ),
+            )
+        }
     }
 
     @After
@@ -169,5 +188,38 @@ class RetentionEngineTest {
         val remaining = db.locationPointDao().getForDevice("device-1")
         assertEquals(1, remaining.size)
         assertEquals("p-new", remaining.single().id)
+    }
+
+    @Test
+    fun `general cycle rejects a device from another family before deleting anything`() = runTest {
+        val webVisitRepo = WebVisitRepository(db.webVisitDao(), PersistenceTestSupport.testCipher())
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        db.familyMemberDao().upsert(
+            FamilyMemberEntity("member-2", "family-2", FamilyMemberRole.CHILD, "enc", "iv", FamilyMemberStatus.ACTIVE, "8-12", 1L),
+        )
+        db.deviceDao().upsert(
+            DeviceEntity(
+                "device-2", "member-2", DevicePlatform.ANDROID, "35", "1", "signing-2", "encryption-2",
+                1L, 1L, DeviceTrustState.ACTIVE, DeviceEnrollmentState.ACTIVE, 1L, "{}",
+            ),
+        )
+        webVisitRepo.record(
+            "device-2", "other-family.example", null, null, "cat", "v1", WebVisitAction.ALLOWED,
+            now.minusSeconds(15L * 24 * 60 * 60).toEpochMilli(), id = "other-family-old",
+        )
+
+        try {
+            engine.runGeneralCycle(
+                "family-1",
+                now,
+                listOf(DeviceRetentionContext("device-2", RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.FOURTEEN_DAYS, zone)),
+            )
+            throw AssertionError("a cross-family retention scope must be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected: membership validation runs inside the deletion transaction.
+        }
+
+        assertEquals(1, webVisitRepo.getForDevice("device-2").size)
+        assertTrue(db.retentionDeletionReceiptDao().getForFamily("family-1").isEmpty())
     }
 }

@@ -202,6 +202,24 @@ class FamilyExportContractTest {
     }
 
     @Test
+    fun `malformed location scope fails closed before source collection or encryption`() = runTest {
+        val encryptor = RecordingEncryptor()
+        val outcome = service().generateEncryptedExport(
+            "family-a",
+            "owner-a",
+            scope.copy(locationPolicy = RetentionPolicy.ONE_MONTH),
+            now.toEpochMilli(),
+            true,
+            encryptor,
+            fileStore(),
+        )
+
+        assertEquals(FamilyExportOutcome.Failed.Code.INVALID_REQUEST, (outcome as FamilyExportOutcome.Failed).code)
+        assertTrue("invalid scope never reaches the encryptor", encryptor.calls.isEmpty())
+        assertTrue("invalid scope never creates a file", tempDirectory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun `atomic file store rejects unsafe ids and removes app managed copies`() {
         val store = fileStore()
         val artifact = EncryptedFamilyExportArtifact(

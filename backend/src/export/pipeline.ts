@@ -45,6 +45,14 @@ export async function runExport(
     return { kind: 'FAILED', manifest, failureReason: `ENCRYPTION_FAILED: ${errorMessage(error)}` };
   }
 
+  // A provider that returns an empty ciphertext has not produced an export
+  // artifact. Treat that as encryption failure before any sink is touched;
+  // otherwise a caller could incorrectly record COMPLETED for an empty or
+  // plaintext-substitute file.
+  if (!artifact || !artifact.ciphertext || artifact.ciphertext.length === 0) {
+    return { kind: 'FAILED', manifest, failureReason: 'ENCRYPTION_FAILED: EMPTY_CIPHERTEXT' };
+  }
+
   if (options.isCancelled?.()) {
     return { kind: 'CANCELLED', manifest };
   }

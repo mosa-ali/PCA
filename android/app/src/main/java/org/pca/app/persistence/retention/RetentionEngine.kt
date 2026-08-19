@@ -35,20 +35,45 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
         nowUtc: Instant,
         devices: List<DeviceRetentionContext>,
     ): List<RetentionDeletionReceiptEntity> {
-        devices.forEach { ctx ->
-            require(RetentionCutoffCalculator.isLocationRetentionAllowed(ctx.generalRetentionPolicy, ctx.locationRetentionPolicy)) {
-                "Location retention must be shorter than or equal to general retention for device ${ctx.deviceId}."
+        require(familyId.isNotBlank()) { "retention scope is not available" }
+        return database.withTransaction {
+            validateDeviceScopes(familyId, devices)
+            devices.forEach { ctx ->
+                require(RetentionCutoffCalculator.isLocationRetentionAllowed(ctx.generalRetentionPolicy, ctx.locationRetentionPolicy)) {
+                    "Location retention must be shorter than or equal to general retention for device ${ctx.deviceId}."
+                }
             }
-        }
-        val receipts = mutableListOf<RetentionDeletionReceiptEntity>()
-        database.withTransaction {
+            val receipts = mutableListOf<RetentionDeletionReceiptEntity>()
             for (ctx in devices) {
                 receipts += runLocationCleanup(familyId, ctx, nowUtc)
                 receipts += runGeneralWindowCleanup(familyId, ctx, nowUtc)
             }
             receipts.forEach { database.retentionDeletionReceiptDao().insert(it) }
+            receipts
         }
-        return receipts
+    }
+
+    /**
+     * Device ids are opaque caller input. Resolve the member relation inside
+     * the same Room transaction as deletion so a family-scoped maintenance
+     * pass cannot delete another family's rows or race a membership change
+     * between validation and the delete statements.
+     */
+    private suspend fun validateDeviceScopes(
+        familyId: String,
+        devices: List<DeviceRetentionContext>,
+    ) {
+        val seenDeviceIds = mutableSetOf<String>()
+        for (ctx in devices) {
+            require(ctx.deviceId.isNotBlank() && seenDeviceIds.add(ctx.deviceId)) {
+                "retention scope is not available"
+            }
+            val device = database.deviceDao().getById(ctx.deviceId)
+            val member = device?.let { database.familyMemberDao().getById(it.memberId) }
+            require(member?.familyId == familyId) {
+                "retention scope is not available"
+            }
+        }
     }
 
     /**

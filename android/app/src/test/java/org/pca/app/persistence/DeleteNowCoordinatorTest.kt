@@ -251,6 +251,42 @@ class DeleteNowCoordinatorTest {
     }
 
     @Test
+    fun `red team deleteDevice rejects a known device from another family without touching it`() = runTest {
+        seedFullFamily("family-A", "member-A", "device-A", seq = 1L)
+        seedFullFamily("family-B", "member-B", "device-B", seq = 1L)
+        val before = snapshotFor("device-B", "member-B")
+
+        try {
+            coordinator.deleteDevice("family-A", "device-B", Instant.parse("2026-08-12T00:00:00Z"))
+            throw AssertionError("cross-family device deletion must be rejected")
+        } catch (_: IllegalArgumentException) {
+            // Expected: family ownership is validated before destructive SQL.
+        }
+
+        assertEquals(before, snapshotFor("device-B", "member-B"))
+        assertTrue(db.retentionDeletionReceiptDao().getForFamily("family-A").isEmpty())
+    }
+
+    @Test
+    fun `red team deleteChild rejects a foreign device id instead of trusting caller scope`() = runTest {
+        seedFullFamily("family-A", "member-A", "device-A", seq = 1L)
+        seedFullFamily("family-B", "member-B", "device-B", seq = 1L)
+        val beforeA = snapshotFor("device-A", "member-A")
+        val beforeB = snapshotFor("device-B", "member-B")
+
+        try {
+            coordinator.deleteChild("family-A", "member-A", listOf("device-B"), Instant.parse("2026-08-12T00:00:00Z"))
+            throw AssertionError("a child delete must reject a device outside the child scope")
+        } catch (_: IllegalArgumentException) {
+            // Expected: requested device ids are checked against the local relation.
+        }
+
+        assertEquals(beforeA, snapshotFor("device-A", "member-A"))
+        assertEquals(beforeB, snapshotFor("device-B", "member-B"))
+        assertTrue(db.retentionDeletionReceiptDao().getForFamily("family-A").isEmpty())
+    }
+
+    @Test
     fun `deleteFamily wipes every family-scoped table`() = runTest {
         seedFamily()
 

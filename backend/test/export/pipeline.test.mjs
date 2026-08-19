@@ -113,6 +113,21 @@ test('export interrupted / provider failure during encryption: FAILED outcome, s
   assert.equal(sink.writes.length, 0, 'no plaintext or partial artifact must ever reach the sink on encryption failure');
 });
 
+test('empty ciphertext is rejected before the sink can record a false completed export', async () => {
+  const manifest = buildManifest();
+  const sink = inMemorySink();
+  const outcome = await runExport(
+    manifest,
+    Buffer.from('plaintext-payload'),
+    { async encrypt() { return { ciphertext: Buffer.alloc(0), encryptionMetadata: Buffer.from('metadata') }; } },
+    sink,
+  );
+
+  assert.equal(outcome.kind, 'FAILED');
+  assert.match(outcome.failureReason, /EMPTY_CIPHERTEXT/);
+  assert.equal(sink.writes.length, 0);
+});
+
 test('invalid destination / insufficient storage / partial write: FAILED outcome, distinguishable from encryption failure', async () => {
   const manifest = buildManifest();
   const failingSink = {

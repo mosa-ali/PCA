@@ -29,26 +29,43 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
 
     /** Deletes every local row scoped to [deviceId] across all activity/security tables owned by that device. */
     suspend fun deleteDevice(familyId: String, deviceId: String, nowUtc: Instant): RetentionDeletionReceiptEntity {
-        var total = 0
-        database.withTransaction {
-            total += deleteDeviceScopedRows(deviceId)
-            insertTombstone(familyId, deviceId, "Device", nowUtc)
+        require(familyId.isNotBlank() && deviceId.isNotBlank()) { "delete scope is not available" }
+        return database.withTransaction {
+            val device = database.deviceDao().getById(deviceId)
+            if (device != null) {
+                requireDeviceBelongsToFamily(familyId, device.memberId)
+            }
+            val total = if (device == null) 0 else deleteDeviceScopedRows(deviceId)
+            if (device != null) {
+                insertTombstone(familyId, deviceId, "Device", nowUtc)
+            }
+            insertReceipt(familyId, deviceId, "device_all_categories", total, nowUtc, "delete_now_device")
         }
-        return insertReceipt(familyId, deviceId, "device_all_categories", total, nowUtc, "delete_now_device")
     }
 
     /** Deletes every local row belonging to one family member (a child, across all their devices) plus the member record itself. */
     suspend fun deleteChild(familyId: String, memberId: String, childDeviceIds: List<String>, nowUtc: Instant): RetentionDeletionReceiptEntity {
-        var total = 0
-        database.withTransaction {
-            for (deviceId in childDeviceIds) {
+        require(familyId.isNotBlank() && memberId.isNotBlank()) { "delete scope is not available" }
+        return database.withTransaction {
+            requireDeviceBelongsToFamily(familyId, memberId)
+            val actualDeviceIds = database.deviceDao().getAll()
+                .filter { it.memberId == memberId }
+                .map { it.deviceId }
+                .toSet()
+            require(childDeviceIds.distinct().size == childDeviceIds.size && childDeviceIds.all { it in actualDeviceIds }) {
+                "delete scope is not available"
+            }
+            var total = 0
+            // The database relation is authoritative. A stale caller list
+            // cannot omit a newly enrolled device from a child-wide delete.
+            for (deviceId in actualDeviceIds) {
                 total += deleteDeviceScopedRows(deviceId)
             }
             total += database.parentActionAuditDao().deleteAllForActor(memberId)
             total += database.familyMemberDao().deleteById(memberId)
             insertTombstone(familyId, memberId, "FamilyMember", nowUtc)
+            insertReceipt(familyId, null, "child_all_categories", total, nowUtc, "delete_now_child:$memberId")
         }
-        return insertReceipt(familyId, null, "child_all_categories", total, nowUtc, "delete_now_child:$memberId")
     }
 
     /** Every table keyed by `deviceId` (or `childDeviceId`), including [PolicySnapshotEntity] (F1 fix: previously left behind). */
@@ -81,8 +98,9 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
      * themselves deleted, or the join would already find nothing.
      */
     suspend fun deleteFamily(familyId: String, nowUtc: Instant): RetentionDeletionReceiptEntity {
-        var total = 0
-        database.withTransaction {
+        require(familyId.isNotBlank()) { "delete scope is not available" }
+        return database.withTransaction {
+            var total = 0
             // 1. Tables scoped via devices -> family_members (devices/family_members must still exist).
             total += database.usageSessionDao().deleteAllForFamily(familyId)
             total += database.webVisitDao().deleteAllForFamily(familyId)
@@ -106,8 +124,18 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
             // 5. family_members last -- every subquery above depends on it still existing.
             total += database.familyMemberDao().deleteAllForFamily(familyId)
             insertTombstone(familyId, familyId, "Family", nowUtc)
+            insertReceipt(familyId, null, "family_all_categories", total, nowUtc, "delete_now_family")
         }
-        return insertReceipt(familyId, null, "family_all_categories", total, nowUtc, "delete_now_family")
+    }
+
+    /**
+     * Delete scope ids are untrusted local caller input. Keep the failure
+     * deliberately generic so a caller cannot use this boundary as a
+     * cross-family membership oracle.
+     */
+    private suspend fun requireDeviceBelongsToFamily(familyId: String, memberId: String) {
+        val member = database.familyMemberDao().getById(memberId)
+        require(member?.familyId == familyId) { "delete scope is not available" }
     }
 
     private suspend fun insertTombstone(familyId: String, recordId: String, recordCategory: String, nowUtc: Instant) {

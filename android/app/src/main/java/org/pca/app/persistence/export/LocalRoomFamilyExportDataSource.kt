@@ -27,6 +27,10 @@ class LocalRoomFamilyExportDataSource(
         scope: FamilyExportRetentionScope,
         now: Instant,
     ): List<FamilyExportRecord> {
+        require(familyId.isNotBlank()) { "familyId must not be blank" }
+        require(RetentionCutoffCalculator.isLocationRetentionAllowed(scope.generalPolicy, scope.locationPolicy)) {
+            "Location retention must be shorter than or equal to general retention."
+        }
         val members = database.familyMemberDao().observeByFamily(familyId).first()
         val memberIds = members.map { it.memberId }.toSet()
         val deviceIds = database.deviceDao().getAll()
