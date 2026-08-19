@@ -25,16 +25,30 @@ data class EyeDistanceShieldViewState(
     val remainingRest: Duration,
     val canRequestEmergencyException: Boolean,
     val isExceptionActive: Boolean,
+    val platformEnforcementPermitted: Boolean,
     val phase: EyeDistancePhase,
 )
 
 object EyeDistanceShieldController {
-    fun viewState(state: EyeDistanceState, config: EyeDistanceConfig = EyeDistanceConfig()): EyeDistanceShieldViewState =
+    /**
+     * Derives the child-facing eye-rest state. The caller must provide the real platform
+     * capability; REST_ACTIVE alone is not evidence that a visible shield can be enforced. A
+     * coordinator may pass false when the shared enforcement surface is unavailable, while the
+     * engine's one-minute countdown remains intact and auditable in [remainingRest].
+     */
+    fun viewState(
+        state: EyeDistanceState,
+        config: EyeDistanceConfig,
+        platformEnforcementPermitted: Boolean,
+    ): EyeDistanceShieldViewState =
         EyeDistanceShieldViewState(
-            isShieldVisible = state.phase == EyeDistancePhase.REST_ACTIVE && !state.exceptionActive,
+            isShieldVisible = platformEnforcementPermitted &&
+                state.phase == EyeDistancePhase.REST_ACTIVE &&
+                !state.exceptionActive,
             remainingRest = EyeDistanceEngine.remainingRestNanos(state, config).nanoseconds,
             canRequestEmergencyException = !state.exceptionActive,
             isExceptionActive = state.exceptionActive,
+            platformEnforcementPermitted = platformEnforcementPermitted,
             phase = state.phase,
         )
 }

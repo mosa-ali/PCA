@@ -15,21 +15,21 @@ class EyeDistanceShieldViewStateTest {
     @Test
     fun `shield is visible exactly when REST_ACTIVE and no exception is in progress`() {
         val state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE)
-        val viewState = EyeDistanceShieldController.viewState(state, config)
+        val viewState = EyeDistanceShieldController.viewState(state, config, platformEnforcementPermitted = true)
         assertTrue(viewState.isShieldVisible)
     }
 
     @Test
     fun `shield is not visible during MONITORING`() {
         val state = EyeDistanceState(phase = EyeDistancePhase.MONITORING)
-        val viewState = EyeDistanceShieldController.viewState(state, config)
+        val viewState = EyeDistanceShieldController.viewState(state, config, platformEnforcementPermitted = true)
         assertFalse(viewState.isShieldVisible)
     }
 
     @Test
     fun `an active exception hides the shield even during REST_ACTIVE, transparently reflecting engine state`() {
         val state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE, exceptionActive = true)
-        val viewState = EyeDistanceShieldController.viewState(state, config)
+        val viewState = EyeDistanceShieldController.viewState(state, config, platformEnforcementPermitted = true)
         assertFalse(viewState.isShieldVisible)
         assertTrue(viewState.isExceptionActive)
     }
@@ -37,7 +37,17 @@ class EyeDistanceShieldViewStateTest {
     @Test
     fun `remaining rest reflects the engine's own countdown, not a separately tracked value`() {
         val state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE, restElapsedNanos = 40_000_000_000L)
-        val viewState = EyeDistanceShieldController.viewState(state, config)
+        val viewState = EyeDistanceShieldController.viewState(state, config, platformEnforcementPermitted = true)
         assertEquals(20_000_000_000L, viewState.remainingRest.inWholeNanoseconds)
+    }
+
+    @Test
+    fun `unavailable platform enforcement does not claim a visible eye-rest action`() {
+        val state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE)
+        val viewState = EyeDistanceShieldController.viewState(state, config, platformEnforcementPermitted = false)
+
+        assertFalse(viewState.isShieldVisible)
+        assertFalse(viewState.platformEnforcementPermitted)
+        assertEquals(60_000_000_000L, viewState.remainingRest.inWholeNanoseconds)
     }
 }

@@ -8,26 +8,14 @@ package org.pca.app.platform.proximity
  * ML-Kit-specific type, so it can be fully unit-tested without a camera, a device, or an emulator,
  * and reused verbatim by whichever concrete camera pipeline eventually backs it.
  *
- * WHY THIS EXISTS BUT [FaceProximityEstimator] STILL HAS NO CONCRETE IMPLEMENTATION: a real
- * face-DETECTION library (ML Kit Face Detection, on-device, no frame retained by the library
- * itself) is confirmed available and resolvable from this project's configured Maven repositories.
- * The blocker is not the detector -- it is safely OWNING A CAMERA SESSION's lifecycle. Every
- * concrete camera source in this file ([HardwareProximitySource]) is either a passive
- * platform-managed sensor listener or (per [CameraProximitySource]'s own doc) driven by a
- * synchronous, stateless, no-session `estimate()` call. A real camera-backed implementation needs
- * to OPEN a camera session while foreground-eligible and GUARANTEE it is closed the instant
- * eligibility ends -- but [CameraProximitySource] only tells an estimator whether to answer
- * `estimate()`, it has no hook to tell a stateful estimator to open/close a session. Wiring a real
- * camera underneath the current interface would mean either (a) a session that opens lazily on
- * first `estimate()` with no code-enforced close path when foreground-eligibility flips false
- * (exactly the kind of "enforced only by documentation, not by code" gap this codebase's sibling
- * classes -- see [CameraProximitySource]'s own doc -- explicitly refuse to ship), or (b) extending
- * the [FaceProximityEstimator]/[CameraProximitySource] contract with explicit session lifecycle
- * hooks, which is exactly the kind of interface change this feature's own original doc comment
- * flags as needing its own dedicated review, plus real on-device camera-open/frame/camera-close
- * verification this sandboxed environment has no camera hardware or emulator to perform. Shipping
- * that unverified for a child-facing camera feature is the "any doubt, stop and report" case this
- * mission explicitly calls out -- so only this safe, fully-verifiable half is built now.
+ * A concrete estimator and an Android on-device detector now exist in
+ * [OnDeviceApproximateFaceProximityEstimator] and [AndroidFaceGeometryDetector]. The remaining
+ * boundary is deliberately narrower: a coordinator must supply a real foreground camera-session
+ * adapter that creates [AndroidBitmapCameraFrame] values, honors permission and lifecycle
+ * transitions, and closes the session immediately when eligibility ends. This package does not
+ * invent a camera session, background capture path, or external ML dependency. Until that adapter
+ * is bound and verified on a supported device, the camera capability remains unavailable and the
+ * hardware sensor remains the only production source in the current graph.
  */
 object FaceProximityClassifier {
 
