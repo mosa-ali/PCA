@@ -62,7 +62,6 @@ class SafeZoneRuntimeTest {
     fun `accepted policy reaches local geofence alert port`() = runTest {
         val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
         val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
-        stateStore.save(GeofenceZoneState(zone.zoneId, confirmedMembership = GeofenceMembership.OUTSIDE))
         val alerts = RecordingGeofenceAlertPort()
         val runtime = SafeZoneRuntime(
             SafeZonePolicyReceiver(
@@ -78,6 +77,7 @@ class SafeZoneRuntimeTest {
                         SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", zone.zoneId, 1L, 3L, zone))
                 },
                 zoneStore = zoneStore,
+                zoneStateStore = stateStore,
             ),
             GeofenceMonitor(
                 zoneStore,
@@ -88,6 +88,9 @@ class SafeZoneRuntimeTest {
         )
 
         assertEquals(SafeZonePolicyReceiveResult.APPLIED, runtime.receivePolicy(envelope(), 2_000L))
+        // Policy application resets any prior baseline; establish the
+        // post-application known state before testing a genuine entry.
+        stateStore.save(GeofenceZoneState(zone.zoneId, confirmedMembership = GeofenceMembership.OUTSIDE))
         val events = runtime.evaluateSample(
             LocationSample(zone.centerLatitude, zone.centerLongitude, 5f, 0L),
             1L,
@@ -111,6 +114,7 @@ class SafeZoneRuntimeTest {
                 },
                 decryptor = RejectingSafeZonePayloadDecryptor(),
                 zoneStore = zoneStore,
+                zoneStateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore()),
             ),
             GeofenceMonitor(
                 zoneStore,

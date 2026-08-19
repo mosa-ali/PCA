@@ -78,6 +78,7 @@ export interface ParentApprovalAuthority {
 
 export interface ProtectionApprovalRepository {
   get(requestId: string): Promise<ProtectionApprovalRequest | null>;
+  listForFamily(familyId: string): Promise<ProtectionApprovalRequest[]>;
   create(request: ProtectionApprovalRequest): Promise<void>;
   decide(requestId: string, next: ProtectionApprovalRequest): Promise<'APPLIED' | 'ALREADY_DECIDED' | 'CONFLICT'>;
 }
@@ -88,6 +89,13 @@ export class InMemoryProtectionApprovalRepository implements ProtectionApprovalR
   async get(requestId: string): Promise<ProtectionApprovalRequest | null> {
     const request = this.requests.get(requestId);
     return request === undefined ? null : cloneRequest(request);
+  }
+
+  async listForFamily(familyId: string): Promise<ProtectionApprovalRequest[]> {
+    return [...this.requests.values()]
+      .filter((request) => request.familyId === familyId)
+      .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime())
+      .map(cloneRequest);
   }
 
   async create(request: ProtectionApprovalRequest): Promise<void> {
@@ -168,8 +176,25 @@ export class ProtectionApprovalService {
       decisionMethod: null,
       temporaryDisableUntil: null,
     };
-    await this.repository.create(request);
+    try {
+      await this.repository.create(request);
+    } catch (error) {
+      // A client retry may race the original create. The opaque request id is
+      // the durable correlation/idempotency key; replaying the exact request
+      // returns the committed state, while reusing it for different target or
+      // authority data remains a conflict.
+      if (error instanceof ProtectionApprovalError && error.code === 'CONFLICT') {
+        const existing = await this.repository.get(request.requestId);
+        if (existing !== null && sameRequest(existing, request)) return cloneRequest(existing);
+      }
+      throw error;
+    }
     return cloneRequest(request);
+  }
+
+  async listRequests(familyId: string): Promise<ProtectionApprovalRequest[]> {
+    if (!isOpaqueId(familyId)) throw new ProtectionApprovalError('INVALID_INPUT');
+    return (await this.repository.listForFamily(familyId)).map(cloneRequest);
   }
 
   async getRequest(familyId: string, requestId: string): Promise<ProtectionApprovalRequest | null> {
@@ -303,6 +328,23 @@ function isOpaqueId(value: string): boolean {
 
 function sameDecision(a: ProtectionApprovalRequest, b: ProtectionApprovalRequest): boolean {
   return a.state === b.state && a.decisionMethod === b.decisionMethod && a.temporaryDisableUntil?.getTime() === b.temporaryDisableUntil?.getTime();
+}
+
+function sameRequest(a: ProtectionApprovalRequest, b: ProtectionApprovalRequest): boolean {
+  return a.requestId === b.requestId
+    && a.familyId === b.familyId
+    && a.childId === b.childId
+    && a.deviceId === b.deviceId
+    && a.operation === b.operation
+    && a.protectionLevel === b.protectionLevel
+    && a.requestedAt.getTime() === b.requestedAt.getTime()
+    && a.expiresAt.getTime() === b.expiresAt.getTime()
+    && a.reasonCategory === b.reasonCategory
+    && a.protectiveAuthorityApplies === b.protectiveAuthorityApplies
+    && a.state === b.state
+    && a.decidedAt === b.decidedAt
+    && a.decisionMethod === b.decisionMethod
+    && a.temporaryDisableUntil === b.temporaryDisableUntil;
 }
 
 function cloneRequest(request: ProtectionApprovalRequest): ProtectionApprovalRequest {

@@ -10,6 +10,7 @@ import org.pca.app.platform.LocationSample
 class SafeZonePolicyReceiverTest {
 
     private val zoneStore = GeofenceZoneStore(InMemoryPersistentStateStore())
+    private val zoneStateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
 
     private val zone = GeofenceZone(
         zoneId = "zone-home",
@@ -84,6 +85,7 @@ class SafeZonePolicyReceiverTest {
                     error("cross-family recipient must never reach decrypt")
             },
             zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
         )
 
         val crossFamily = receiver.receive(envelope(familyId = "family-b", recipientEndpointId = "child-b"), nowEpochMillis = 2_000L)
@@ -107,6 +109,7 @@ class SafeZonePolicyReceiverTest {
                     error("Viewer must never reach decrypt")
             },
             zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
         )
 
         assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
@@ -122,6 +125,7 @@ class SafeZonePolicyReceiverTest {
             signatureVerifier = approvingVerifier,
             decryptor = RejectingSafeZonePayloadDecryptor(),
             zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
         )
 
         assertEquals(SafeZonePolicyReceiveResult.BLOCKED_CRYPTO_REVIEW, receiver.receive(envelope(), nowEpochMillis = 2_000L))
@@ -146,6 +150,7 @@ class SafeZonePolicyReceiverTest {
                     error("stale key epoch must never reach decrypt")
             },
             zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
         )
 
         assertEquals(
@@ -167,6 +172,7 @@ class SafeZonePolicyReceiverTest {
                     SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone.copy(label = "Home|secret")))
             },
             zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
         )
 
         assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
@@ -175,6 +181,7 @@ class SafeZonePolicyReceiverTest {
 
     @Test
     fun `verified owner payload applies locally and monitor emits only local entry notification`() = runTest {
+        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
         val receiver = SafeZonePolicyReceiver(
             localFamilyId = "family-a",
             localEndpointId = "child-a",
@@ -185,12 +192,12 @@ class SafeZonePolicyReceiverTest {
                     envelope.payloadForTest()
             },
             zoneStore = zoneStore,
+            zoneStateStore = stateStore,
         )
 
         assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
         assertEquals(zone, zoneStore.loadZones().single())
 
-        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
         stateStore.save(GeofenceZoneState(zoneId = "zone-home", confirmedMembership = GeofenceMembership.OUTSIDE))
         val alerts = RecordingGeofenceAlertPort()
         val monitor = GeofenceMonitor(
@@ -216,8 +223,54 @@ class SafeZonePolicyReceiverTest {
     }
 
     @Test
+    fun `newer policy revision clears prior membership baseline before local monitoring`() = runTest {
+        zoneStateStore.save(
+            GeofenceZoneState(
+                zoneId = zone.zoneId,
+                confirmedMembership = GeofenceMembership.INSIDE,
+            ),
+        )
+        val updatedZone = zone.copy(centerLatitude = 25.01, revision = 2L)
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray =
+                    SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", zone.zoneId, 2L, 3L, updatedZone))
+            },
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+        )
+
+        assertEquals(
+            SafeZonePolicyReceiveResult.APPLIED,
+            receiver.receive(envelope().copy(revision = 2L), nowEpochMillis = 2_000L),
+        )
+        assertEquals(null, zoneStateStore.load(zone.zoneId))
+
+        val alerts = RecordingGeofenceAlertPort()
+        val monitor = GeofenceMonitor(
+            zoneStore = zoneStore,
+            zoneStateStore = zoneStateStore,
+            alertPort = alerts,
+            config = GeofenceConfig(hysteresisMeters = 0.0, requiredConsecutiveSamplesToConfirm = 1),
+        )
+        val events = monitor.evaluateSample(
+            LocationSample(zone.centerLatitude, zone.centerLongitude, 5f, 0L),
+            1L,
+        )
+
+        assertTrue(events.isEmpty())
+        assertTrue(alerts.delivered.isEmpty())
+        assertEquals(GeofenceMembership.OUTSIDE, zoneStateStore.load(zone.zoneId)?.confirmedMembership)
+    }
+
+    @Test
     fun `disabled policy is stored locally but cannot manufacture an exit alert`() = runTest {
         val disabledZone = zone.copy(enabled = false, transitionTypes = setOf(GeofenceTransitionType.EXIT))
+        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
         val receiver = SafeZonePolicyReceiver(
             localFamilyId = "family-a",
             localEndpointId = "child-a",
@@ -228,10 +281,10 @@ class SafeZonePolicyReceiverTest {
                     SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, disabledZone))
             },
             zoneStore = zoneStore,
+            zoneStateStore = stateStore,
         )
 
         assertEquals(SafeZonePolicyReceiveResult.APPLIED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
-        val stateStore = GeofenceZoneStateStore(InMemoryPersistentStateStore())
         stateStore.save(GeofenceZoneState(zoneId = "zone-home", confirmedMembership = GeofenceMembership.INSIDE))
         val alerts = RecordingGeofenceAlertPort()
         val monitor = GeofenceMonitor(zoneStore, stateStore, alerts, GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1))

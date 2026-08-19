@@ -253,6 +253,7 @@ class SafeZonePolicyReceiver(
     private val signatureVerifier: SafeZoneEnvelopeSignatureVerifier,
     private val decryptor: SafeZonePayloadDecryptor,
     private val zoneStore: GeofenceZoneStore,
+    private val zoneStateStore: GeofenceZoneStateStore,
 ) {
     suspend fun receive(
         envelope: SafeZonePolicyEnvelope,
@@ -296,6 +297,12 @@ class SafeZonePolicyReceiver(
             if (current != null && payload.revision <= current.revision) {
                 return SafeZonePolicyReceiveResult.REJECTED
             }
+            // A policy revision changes the meaning of the zone id. Do not
+            // carry membership/debounce state across new geometry or a
+            // re-enable; clear it before replacing the zone so a state-store
+            // failure leaves the previously applied policy in place rather
+            // than pairing new geometry with an old baseline.
+            zoneStateStore.clear(payload.zoneId)
             zoneStore.addOrReplace(payload.zone)
             SafeZonePolicyReceiveResult.APPLIED
         } catch (_: Exception) {
