@@ -1,6 +1,6 @@
 {
   "mission": "CURRENT_HEAD_MUTATION",
-  "entrySha": "b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1",
+  "entrySha": "33ef143b93148e4b795ba1d0813c3bab99b69ede",
   "requirements": {
     "PCA-NFR-014": {
       "boundedClaim": "Default-off telemetry and no hidden ingestion surface; separate consent implementation remains out of scope because the entry tree has no shipped opt-in feature.",
@@ -30,6 +30,27 @@
       "boundedClaim": "Relay diagnostics and production HTTP logging remain routing-only and never emit relay plaintext; this is not an infrastructure log-pipeline certification.",
       "tests": [
         "backend/test/mutation/privacyBoundaries.test.mjs"
+      ]
+    },
+    "PCA-FR-063": {
+      "boundedClaim": "Safe Zone storage, browser authoring, and Android receiver boundaries reject readable policy fields, malformed envelopes, and stale key epochs; trust-set authority and delivery remain open.",
+      "tests": [
+        "backend/test/mutation/privacyBoundaries.test.mjs",
+        "parent-web/tests/mutation/privacyBoundaries.test.ts",
+        "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt"
+      ]
+    },
+    "PCA-FR-091": {
+      "boundedClaim": "Parent Web Safe Zone mutations remain opaque and recipient-bound before HTTP; reviewed local encryption and family authority are not certified by this harness.",
+      "tests": [
+        "parent-web/tests/mutation/privacyBoundaries.test.ts"
+      ]
+    },
+    "PCA-FR-135": {
+      "boundedClaim": "The local geofence receiver preserves key-epoch and malformed-payload rejection boundaries; end-to-end browser authoring and device delivery remain outside this bounded run.",
+      "tests": [
+        "backend/test/mutation/privacyBoundaries.test.mjs",
+        "android/app/src/test/java/org/pca/app/mutation/PrivacyBoundaryMutationTest.kt"
       ]
     }
   },
@@ -205,6 +226,70 @@
       "to": "class WebProtectionVpnService : VpnService(",
       "expectedClassification": "INVALID",
       "invalidReason": "The malformed Kotlin superclass declaration is rejected by the source-shape validator."
+    },
+    {
+      "id": "B-FR063-001",
+      "requirement": "PCA-FR-063",
+      "surface": "backend",
+      "source": "src/location/SafeZoneRepository.ts",
+      "from": "assertCanonicalBase64Url(input.nonceB64, 12, 64);",
+      "to": "assertCanonicalBase64Url(input.nonceB64, 1, 64);"
+    },
+    {
+      "id": "B-FR063-002",
+      "requirement": "PCA-FR-063",
+      "surface": "backend",
+      "source": "src/location/SafeZoneRepository.ts",
+      "from": "keys.some((key) => !['ciphertextB64', 'nonceB64', 'keyEpoch'].includes(key))",
+      "to": "keys.some((key) => !['ciphertextB64', 'nonceB64', 'keyEpoch', 'label'].includes(key))"
+    },
+    {
+      "id": "W-FR091-001",
+      "requirement": "PCA-FR-091",
+      "surface": "parent-web",
+      "source": "src/api/real/realSafeZoneClient.ts",
+      "from": "validateOpaqueSafeZonePatch(patch);",
+      "to": "void patch;"
+    },
+    {
+      "id": "W-FR091-002",
+      "requirement": "PCA-FR-091",
+      "surface": "parent-web",
+      "source": "src/api/real/realSafeZoneClient.ts",
+      "from": "async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {\n    assertSafeZoneIdentifier(familyId);",
+      "to": "async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {\n    assertSafeZoneIdentifier(zoneId);"
+    },
+    {
+      "id": "W-FR091-003",
+      "requirement": "PCA-FR-091",
+      "surface": "parent-web",
+      "source": "src/api/safeZonePolicyAuthoring.ts",
+      "from": "if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64))) {",
+      "to": "if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{1,86}$/.test(value.nonceB64))) {"
+    },
+    {
+      "id": "A-FR063-001",
+      "requirement": "PCA-FR-063",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+      "from": "label.contains('|') || label.contains('\\n')",
+      "to": "label.contains('\\n')"
+    },
+    {
+      "id": "A-FR063-002",
+      "requirement": "PCA-FR-063",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+      "from": "authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)",
+      "to": "authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, 0L)"
+    },
+    {
+      "id": "A-FR063-003",
+      "requirement": "PCA-FR-063",
+      "surface": "android-static",
+      "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+      "from": "envelope.trustSetEpoch,\n                envelope.keyEpoch,",
+      "to": "envelope.trustSetEpoch,"
     }
   ]
 }

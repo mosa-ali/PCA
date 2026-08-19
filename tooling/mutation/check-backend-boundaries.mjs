@@ -26,6 +26,7 @@ async function listTypeScriptFiles(directory) {
 const diagnostics = await read('src/relay/diagnostics.ts');
 const service = await read('src/relay/RelayService.ts');
 const server = await read('src/http/buildServer.ts');
+const safeZone = await read('src/location/SafeZoneRepository.ts');
 const diagnosticMethodStart = service.indexOf('  private emitDiagnostic(');
 const diagnosticMethodEnd = service.indexOf('  private async purgeExpired(', diagnosticMethodStart);
 const diagnosticMethod = service.slice(diagnosticMethodStart, diagnosticMethodEnd);
@@ -46,6 +47,11 @@ requireText(diagnosticMethod, 'this.diagnosticSink', 'diagnostic sink');
 requireText(diagnosticMethod, 'catch {', 'diagnostic failure catch');
 requireText(server, 'Fastify({ logger: false })', 'disabled Fastify logger');
 forbidText(server, 'logger: true', 'enabled Fastify logger');
+requireText(safeZone, 'assertOpaqueToken(input.familyId);', 'Safe Zone family identifier validation');
+requireText(safeZone, 'assertOpaqueToken(input.recipientEndpointId);', 'Safe Zone recipient identifier validation');
+requireText(safeZone, 'assertCanonicalBase64Url(input.ciphertextB64, 1, 65_535);', 'Safe Zone ciphertext envelope validation');
+requireText(safeZone, 'assertCanonicalBase64Url(input.nonceB64, 12, 64);', 'Safe Zone nonce envelope validation');
+forbidText(safeZone, 'label', 'readable Safe Zone policy field');
 
 const prohibited = ['telemetry', 'analytics', '/collect', '/ingest', '/usage-report', '/metrics/report'];
 const routePattern = /\bapp\.(get|post|put|patch|delete)\(\s*[`'\"]([^`'\"]+)[`'\"]/g;

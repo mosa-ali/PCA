@@ -7,13 +7,13 @@ Generated from the completion matrix and repository evidence on 2026-08-19.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 278 |
-| PARTIAL | 60 |
-| NOT_STARTED | 18 |
+| SOURCE_COMPLETE | 279 |
+| PARTIAL | 67 |
+| NOT_STARTED | 10 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 78 |
-| External-gate rows | 46 |
+| Partial plus not-started | 77 |
+| External-gate rows | 47 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -35,13 +35,13 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 449 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build and full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); disposable MySQL validation remains PASS from the unchanged DB-affecting candidate (394/394, 0 fail, 0 skipped, 0 todo).
+- Backend build and full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); focused Safe Zone tests: PASS (28/28); Writer84 enrollment tests: PASS (11/11); Writer87 Android focused tests: PASS (32/32); disposable MySQL validation remains PASS from unchanged DB-affecting candidate (394/394, 0 fail, 0 skipped, 0 todo). Parent Web full test: PASS (61 files, 452 tests); Parent Web production build: PASS; Parent Web Safe Zone tests: PASS (12/12); Android full testDebugUnitTest: PASS; Writer85/Writer88 focused Android tests: PASS; iOS XCTest is unavailable on Windows.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
-- Source backlog reconciliation: 78 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (60 + 18).
+- Source backlog reconciliation: 77 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (67 + 10).
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
 
 ## Additive owner-controlled Wave 7: night lock and communication safety
@@ -137,9 +137,21 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - MYSQL_PRIVILEGE = PASS (4/4)
 - DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
+### Wave 12 source-boundary hardening
+
+- Writer86 integrated `53a55980`: Safe Zone repository and Parent Web opaque-envelope validation, Android malformed-sample/key-epoch rejection, and focused tests.
+- Writer89 integrated `ca0a3fd`: UTC-bounded dashboard growth, updated-at payment aging, valid enrollment exception filtering, and metadata-only redaction coverage.
+- Writer84 integrated `1c75e5c`: fail-closed administration PIN and parent-approval/removal decision service/UI boundaries with focused tests; persistence, route, authority, and device composition remain open.
+- Writer85 integrated `1eabce8`: non-weakenable Android/iOS enrollment defaults and focused source tests; Apple host/toolchain/device gates remain open.
+- Writer88 integrated `9a8f7d8`: ephemeral Android face-frame ownership, coarse on-device geometry, and explicit enforcement gating with focused tests; camera session and permission/lifecycle wiring remain open.
+- Writer87 integrated `33ef143`: local retention/export boundaries plus protected-state Delete Now correction; 32 focused Android tests and full `testDebugUnitTest` passed, while owner-authorized runtime composition, HTTP delivery, and per-row traceability remain open.
+- Focused evidence: Parent Web Safe Zone tests 12/12; backend Safe Zone/domain/route/schema tests 28/28; Writer84 enrollment tests 11/11; Android geofence/receiver and proximity focused tests PASS; backend full suite 1,510/1,510. iOS XCTest is unavailable on Windows.
+- `PCA-FR-063`, `PCA-FR-091`, `PCA-FR-135`, and `PCA-ADD-PA-041` remain `PARTIAL`/`REAL_SOURCE_GAP` where verified trust-set authority, reviewed crypto, browser/device delivery, or remaining authoritative dashboard sources are absent.
+- `PCA-ADD-ENR-012`, `PCA-ADD-ENR-016`, `PCA-ADD-ENR-017`, `PCA-FR-008`, `PCA-FR-021`, `PCA-FR-023`, `PCA-NFR-044`, `PCA-PRIV-001`, and `PCA-ADD-ENR-010` remain partial/source-gap items where persistence, authority, Apple, camera, or device composition is incomplete.
+- Current source backlog: 77 rows, including 29 exact `REAL_SOURCE_GAP` rows. Assignment coverage is exact: 29 assigned, 29 unique, no duplicates, no unassigned, no extraneous IDs.
+
 ### Current-head mutation validation
 
-- MUTATION_HEAD = b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1
-- MUTATION_TOTAL = 20; KILLED = 14; EQUIVALENT = 3; INVALID = 3; SURVIVED = 0
+- MUTATION = PASS (head 33ef143; total 28; KILLED 22; EQUIVALENT 3; INVALID 3; SURVIVED 0)
 - VALID_MUTATION_SURVIVORS = 0
-- Scope: current-head bounded mutation run before the evidence-only publication commit; the runner now follows the declared mutation SHA instead of a hard-coded entry SHA.
+- Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.

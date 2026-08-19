@@ -34,11 +34,15 @@ requireText(vpn, '.addRoute(TUNNEL_DNS_ADDRESS, 32)', 'DNS-only route');
 forbidText(vpn, '.addRoute("0.0.0.0", 0)', 'general packet route');
 
 const wellbeing = await text('app/src/main/java/org/pca/app/feature/wellbeing/ports/WellbeingFeedbackSyncPort.kt');
+const safeZone = await text('app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt');
 requireText(wellbeing, 'NudgeAggregateSummary', 'aggregate-only wellbeing export');
 requireText(wellbeing, 'exportAggregateSummary', 'aggregate export port');
 for (const token of ['android.util.Log', 'println(', 'sendBeacon', 'HttpURLConnection', 'OkHttpClient', 'telemetry']) {
   forbidText(wellbeing.toLowerCase(), token.toLowerCase(), 'wellbeing hidden transport/logging marker');
 }
+requireText(safeZone, "label.contains('|') || label.contains('\\n')", 'Safe Zone payload delimiter rejection');
+requireText(safeZone, 'authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)', 'Safe Zone recipient key-epoch authorization');
+requireText(safeZone, 'envelope.trustSetEpoch,\n                envelope.keyEpoch,', 'Safe Zone sender key-epoch authorization');
 
 if (failures.length > 0) {
   console.error(JSON.stringify({ root, failures }));

@@ -583,7 +583,9 @@
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt",
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt",
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt",
-        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt"
+        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt",
+        "ios/PCATests/EnrollmentProfileTests.swift"
       ],
       "externalGate": [],
       "notes": "Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android child-side profile confirmation, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open."
@@ -794,13 +796,17 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt"
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/eyedistance/engine/"
+        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit. Runtime reachability: Engine reachable/tested; end-to-end camera trigger blocked pending FaceProximityEstimator (see FR-023)"
+      "notes": "The detector reports only coarse near/far/unknown geometry and the hardware sensor remains the active production source until the camera adapter is verified."
     },
     {
       "requirementId": "PCA-FR-021A",
@@ -837,14 +843,16 @@
       "phase": [
         "PCA-8"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityEstimator.kt (fun interface only",
-        "doc comment explicitly: \"No concrete face-detection/face-geometry algorithm is implemented anywhere behind this interface\")"
+        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit; deliberate, correctly-gated design boundary (Writer70's own scope note), not a silent gap -- camera capture remains unbuilt by design per this audit's brief. Runtime reachability: UNREACHABLE (no concrete implementation to reach)"
+      "notes": "No centimeter estimate, recognition, biometric template, persistence, or network path is introduced."
     },
     {
       "requirementId": "PCA-FR-024",
@@ -1229,6 +1237,7 @@
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceMonitor.kt",
         "backend/src/location/SafeZoneRepository.ts",
         "backend/src/location/MySqlSafeZoneRepository.ts",
+        "backend/test/location/safeZoneRepository.test.mjs",
         "backend/src/http/routes/parentAccountRoutes.ts",
         "backend/src/location/SafeZonePolicyAuthorization.ts",
         "backend/src/familyrbac/ParentActionAuthorizationService.ts",
@@ -1237,13 +1246,21 @@
         "backend/src/main.ts",
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/real/realSafeZoneClient.ts",
+        "parent-web/src/api/safeZonePolicyAuthoring.ts",
+        "parent-web/tests/unit/realSafeZoneClient.test.ts",
+        "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
         "backend/migrations/0020_parent_preferences_safe_zones.sql"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt",
+        "backend/test/location/safeZoneRepository.test.mjs",
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs",
         "backend/test/parentaccount/preferencesSafeZonesSchema.test.mjs",
         "backend/test/familyrbac/ParentActionAuthorizationService.test.mjs",
+        "parent-web/tests/unit/realSafeZoneClient.test.ts",
+        "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts",
         "tooling/release/ValidateSafeZoneMutationBoundary.mjs"
       ],
       "externalGate": [],
@@ -1511,7 +1528,9 @@
         "backend/src/location/SafeZonePolicyAuthorization.ts"
       ],
       "testEvidence": [
-        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs"
+        "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs",
+        "parent-web/tests/unit/realSafeZoneClient.test.ts",
+        "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts"
       ],
       "externalGate": [],
       "notes": "The UI never collects or renders readable location policy until the encrypted family-policy boundary exists."
@@ -1970,13 +1989,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "backend/src/location/safeZone.ts (evaluateSafeZoneTransition, unchanged) + android/app/src/main/java/org/pca/app/runtime/location/geofence/** (new: real Android-side geofence engine, see PCA-FR-063)"
+        "backend/src/location/safeZone.ts",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+        "parent-web/src/pages/children/LocationPage.tsx",
+        "parent-web/src/api/real/realSafeZoneClient.ts"
       ],
       "testEvidence": [
-        "backend/test/location/safeZone.test.mjs + android/app/src/test/java/org/pca/app/runtime/location/geofence/"
+        "backend/test/location/safeZone.test.mjs",
+        "backend/test/location/safeZoneRepository.test.mjs",
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was \"no geofence string anywhere in android/app/src\" -- that specific finding is now false; Android-side detection exists and is wired. The larger gap (no zone-authoring UI, no backend route) is unchanged. Runtime reachability: Android-side detection genuinely reachable (see PCA-FR-063); no HTTP route registers the backend evaluator, and parent-web LocationPage.tsx still does not render safeZones or offer zone authoring."
+      "notes": "This writer slice hardens local malformed-sample handling, key-epoch binding, and opaque authoring/storage validation; it does not claim end-to-end authoring or device delivery."
     },
     {
       "requirementId": "PCA-FR-136",
@@ -2545,11 +2571,21 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/persistence/PcaLocalPersistence.kt"
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt",
+        "backend/src/retention/**",
+        "backend/src/export/pipeline.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt",
+        "backend/test/retention/**",
+        "backend/test/export/pipeline.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "Writer87 integrated source and focused tests, including the protected-state Delete Now red-team correction. This is progress evidence only; the remaining runtime composition and device/owner gates keep the requirement partial."
     },
     {
       "requirementId": "PCA-NFR-030",
@@ -2716,11 +2752,18 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "ios/PCATests/EnrollmentProfileTests.swift"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit (depends on the still-absent FR-008 age-tier feature)."
+      "notes": "Writer88 and Writer85 add source-backed privacy boundaries without claiming an active camera capability."
     },
     {
       "requirementId": "PCA-NFR-045",
@@ -2906,13 +2949,18 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt (permission-gated lifecycle)"
+        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt"
+      ],
       "externalGate": [
         "see FR-023)"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: UNREACHABLE end-to-end (no estimator"
+      "notes": "This preserves the camera capability as unavailable until the explicit platform boundary is integrated and verified."
     },
     {
       "requirementId": "PCA-PRIV-002",
@@ -3234,11 +3282,20 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no family-data export generation found on the Android side."
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/persistence/export/FamilyExportContract.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/AuditRecordExportService.kt",
+        "android/app/src/main/java/org/pca/app/persistence/PcaLocalPersistence.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/export/FamilyExportContractTest.kt"
+      ],
+      "externalGate": [
+        "CRYPTO_ACTIVATION"
+      ],
+      "notes": "Source closure is based on the integrated Android export contract and focused Robolectric coverage; no production crypto activation or external sharing capability is claimed."
     },
     {
       "requirementId": "PCA-ADD-ENR-001",
@@ -3395,15 +3452,23 @@
       "phase": [
         "PCA-15"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift",
+        "ios/PCATests/EnrollmentProfileTests.swift",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+      ],
+      "testEvidence": [
+        "ios/PCATests/EnrollmentProfileTests.swift",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+      ],
       "externalGate": [
         "IOS_FAMILY_CONTROLS_ENTITLEMENT",
         "IOS_MAC_XCODE",
         "IOS_PHYSICAL_DEVICE"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). iOS crypto/enrollment confirmed absent from source per docs/security/production-crypto-review/PCA_PRODUCTION_CRYPTO_REVIEW_PACKAGE.md (iOS Keychain/CryptoKit = NOT_IMPLEMENTED, no source, no design commitment). Runtime reachability: Not reachable — no implementation."
+      "notes": "Writer85 added source-backed iOS profile/default behavior without claiming Apple authorization or runtime readiness."
     },
     {
       "requirementId": "PCA-ADD-ENR-011",
@@ -3431,11 +3496,17 @@
         "PCA-10",
         "PCA-13"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/enrollment/AdministrationPinService.ts",
+        "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
+        "parent-web/src/pages/family/Devices.tsx"
+      ],
+      "testEvidence": [
+        "backend/test/enrollment/AdministrationPinService.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No PIN-configuration symbol or UI found anywhere in backend/src or parent-web/src (confirmed by targeted grep in both domains). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "Writer84 added a fail-closed PIN service and UI boundary; this is source progress, not a completion claim."
     },
     {
       "requirementId": "PCA-ADD-ENR-013",
@@ -3499,11 +3570,17 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/enrollment/ProtectionApprovalService.ts",
+        "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
+        "parent-web/src/pages/family/Devices.tsx"
+      ],
+      "testEvidence": [
+        "backend/test/enrollment/ProtectionApprovalService.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). grep for PARENT_APPROVAL_REQUIRED across backend/src and parent-web/src: zero source hits (only appears in the addendum doc itself). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "Writer84 added the approval state boundary and fail-closed UI; unresolved composition remains explicit."
     },
     {
       "requirementId": "PCA-ADD-ENR-017",
@@ -3511,11 +3588,17 @@
         "PCA-10",
         "PCA-11"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/enrollment/ProtectionApprovalService.ts",
+        "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
+        "parent-web/src/pages/family/Devices.tsx"
+      ],
+      "testEvidence": [
+        "backend/test/enrollment/ProtectionApprovalService.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). grep for KEEP_ACTIVE / TEMPORARILY_DISABLE / ALLOW_REMOVAL across the whole repo: zero source hits outside the addendum doc itself. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "No silent weakening or plaintext PIN path was introduced; the remaining gap is end-to-end reachability and persistence."
     },
     {
       "requirementId": "PCA-ADD-ENR-018",
@@ -3641,11 +3724,23 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt",
+        "backend/src/retention/**",
+        "backend/src/export/**"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt",
+        "backend/test/retention/**",
+        "backend/test/export/pipeline.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Cross-cutting meta-requirement: per-row backend+DB+security+test evidence is not recorded for most of the 25 requirements (see per-ID rows above); this requirement itself therefore cannot be marked implemented. Runtime reachability: Not reachable — no implementation."
+      "notes": "Writer87 evidence is recorded without converting the cross-cutting traceability requirement into a false completion claim."
     },
     {
       "requirementId": "PCA-ADD-PA-001",

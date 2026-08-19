@@ -18,6 +18,8 @@ function keysFromSource(source, name) {
 
 const transparency = await read('src/pages/privacy/Transparency.tsx');
 const app = await read('src/App.tsx');
+const safeZoneClient = await read('src/api/real/realSafeZoneClient.ts');
+const safeZoneAuthoring = await read('src/api/safeZonePolicyAuthoring.ts');
 const english = JSON.parse(await read('src/i18n/locales/en.json'));
 const arabic = JSON.parse(await read('src/i18n/locales/ar.json'));
 
@@ -32,6 +34,10 @@ requireText(transparency, "t('transparency.encryptionNote')", 'E2EE disclosure')
 requireText(transparency, "t('transparency.sdkNote')", 'SDK disclosure');
 requireText(app, "import Transparency from './pages/privacy/Transparency'", 'transparency import');
 requireText(app, 'path="privacy/transparency" element={<Transparency />}', 'transparency route');
+requireText(safeZoneClient, 'validateOpaqueSafeZonePatch(patch);', 'opaque Safe Zone patch validation');
+requireText(safeZoneClient, 'async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {\n    assertSafeZoneIdentifier(familyId);', 'Safe Zone update family binding');
+requireText(safeZoneAuthoring, "if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64))) {", 'Safe Zone patch nonce length boundary');
+requireText(safeZoneAuthoring, 'value.recipientEndpointId !== expectedRecipientEndpointId', 'Safe Zone recipient binding');
 
 for (const [locale, data] of [['en', english], ['ar', arabic]]) {
   if (JSON.stringify(Object.keys(data.transparency.visible).sort()) !== JSON.stringify([...visible].sort())) failures.push(`${locale} visible locale keys changed`);
