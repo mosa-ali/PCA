@@ -23,6 +23,8 @@ enum class TrackedDevicePolicyState {
     PROFILE_OWNER,
     STANDARD,
     DEVICE_OWNER_REVOKED,
+    /** Device-owner authority was proven earlier, but the current documented query failed. */
+    DEVICE_OWNER_UNVERIFIABLE,
     UNAVAILABLE,
 }
 
@@ -33,7 +35,8 @@ class DevicePolicyAuthorityTracker(
 
     @Synchronized
     override fun currentAuthority(): ManagedDeviceAuthority {
-        val authority = source.currentAuthority()
+        val authority = runCatching { source.currentAuthority() }
+            .getOrDefault(ManagedDeviceAuthority.UNAVAILABLE)
         if (authority == ManagedDeviceAuthority.DEVICE_OWNER) {
             everObservedDeviceOwner = true
         }
@@ -49,6 +52,8 @@ class DevicePolicyAuthorityTracker(
         ManagedDeviceAuthority.NONE ->
             if (everObservedDeviceOwner) TrackedDevicePolicyState.DEVICE_OWNER_REVOKED
             else TrackedDevicePolicyState.STANDARD
-        ManagedDeviceAuthority.UNAVAILABLE -> TrackedDevicePolicyState.UNAVAILABLE
+        ManagedDeviceAuthority.UNAVAILABLE ->
+            if (everObservedDeviceOwner) TrackedDevicePolicyState.DEVICE_OWNER_UNVERIFIABLE
+            else TrackedDevicePolicyState.UNAVAILABLE
     }
 }

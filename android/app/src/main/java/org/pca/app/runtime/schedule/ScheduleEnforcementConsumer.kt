@@ -25,7 +25,16 @@ object NoOpScheduleEnforcementConsumer : ScheduleEnforcementConsumer {
         appToken: OpaqueAppToken,
         decision: ScheduleDecision,
         communicationSurfaces: CommunicationSafetySurfaceTokens,
-    ): ScheduleEnforcementOutcome = ScheduleEnforcementOutcome.UNAVAILABLE
+    ): ScheduleEnforcementOutcome = if (
+        appToken == EmergencyAccessFloor.opaqueTokenForPackage(packageName) &&
+            (EmergencyAccessFloor.isProtectedToken(appToken, communicationSurfaces.emergencySurfaceTokens) ||
+                appToken in communicationSurfaces.callSurfaceTokens ||
+                appToken in communicationSurfaces.smsTransportTokens)
+    ) {
+        ScheduleEnforcementOutcome.PRESERVED_SAFETY_SURFACE
+    } else {
+        ScheduleEnforcementOutcome.UNAVAILABLE
+    }
 }
 
 /**
@@ -47,6 +56,12 @@ class DevicePolicyScheduleEnforcementConsumer(
         communicationSurfaces: CommunicationSafetySurfaceTokens,
     ): ScheduleEnforcementOutcome {
         if (packageName.isBlank()) return ScheduleEnforcementOutcome.UNAVAILABLE
+
+        // The package name is the authority-bearing input. Never let a caller pair an ordinary
+        // package with a protected token and thereby widen the safety exception by assertion.
+        if (appToken != EmergencyAccessFloor.opaqueTokenForPackage(packageName)) {
+            return ScheduleEnforcementOutcome.UNAVAILABLE
+        }
 
         if (
             EmergencyAccessFloor.isProtectedToken(appToken, communicationSurfaces.emergencySurfaceTokens) ||

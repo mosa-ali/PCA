@@ -41,11 +41,19 @@ object EmergencyAccessFloor {
      * policy contract.
      */
     fun resolveCommunicationSurfaces(
+        systemDialerPackage: String? = null,
         incomingCallPackage: String?,
         smsTransportPackage: String?,
         emergencySurfacePackages: Set<String>,
     ): CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(
-        emergencySurfaceTokens = PROTECTED_APP_TOKENS + emergencySurfacePackages
+        // Android's documented TelecomManager.getSystemDialerPackage() is the only stable
+        // platform-provided identity this layer may treat as the system emergency surface.
+        // Do not substitute an OEM/AOSP package literal: the API may legitimately return null.
+        emergencySurfaceTokens = (systemDialerPackage
+            ?.takeIf(String::isNotBlank)
+            ?.let(::opaqueToken)
+            ?.let(::setOf)
+            ?: emptySet()) + emergencySurfacePackages
             .filter(String::isNotBlank)
             .map(::opaqueToken),
         callSurfaceTokens = incomingCallPackage
@@ -61,25 +69,12 @@ object EmergencyAccessFloor {
     )
 
     /**
-     * AOSP telephony/emergency-dialer system package -- present on every Android device with
-     * telephony hardware, and the process that actually places emergency calls at the framework
-     * level (distinct from any OEM-branded dialer UI app, whose package name is not guaranteed
-     * across vendors). Kept as the durable, platform-guaranteed floor baseline; a caller MAY widen
-     * [PROTECTED_APP_TOKENS] with the device's actual default/system-dialer package (e.g. resolved
-     * via `TelecomManager.getSystemDialerPackage()`, a platform-adapter concern out of scope for
-     * this pure module) for extra coverage, but this baseline alone already satisfies PCA-AND-003's
-     * "platform emergency-dialer package" floor on every telephony-capable Android device.
+     * Kept empty deliberately. Emergency/system package identities are device-provided by
+     * [resolveCommunicationSurfaces]; a hardcoded package would make a false cross-OEM claim.
+     * The public value remains for source compatibility with older callers, but no token is
+     * protected unless the documented platform resolver supplied it.
      */
-    const val TELEPHONY_SYSTEM_PACKAGE = "com.android.phone"
-
-    /**
-     * [OpaqueAppToken]s this floor always protects, computed with the exact same
-     * package-name -> token hashing scheme production usage-ingestion code uses (see
-     * `UsageSessionRecorder.opaqueToken` / `RuntimeEligibleAppSignalSource.opaqueToken`), so a
-     * protected token here matches the token real enforcement code would compute for the same
-     * package name at runtime.
-     */
-    val PROTECTED_APP_TOKENS: Set<OpaqueAppToken> = setOf(opaqueToken(TELEPHONY_SYSTEM_PACKAGE))
+    val PROTECTED_APP_TOKENS: Set<OpaqueAppToken> = emptySet()
 
     /** True if [appToken] is one this floor protects -- i.e. [ScheduleEvaluator.evaluate] MUST
      * return an allowing decision for it no matter what the current policy says. */

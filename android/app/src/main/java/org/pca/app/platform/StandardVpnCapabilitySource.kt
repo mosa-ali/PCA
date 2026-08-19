@@ -16,11 +16,15 @@ import java.util.concurrent.atomic.AtomicReference
 class StandardVpnCapabilitySource(private val context: Context) : VpnCapabilitySource {
     private val state = AtomicReference(VpnConnectionState.DISCONNECTED)
 
-    override fun isPermissionGranted(): Boolean = VpnService.prepare(context) == null
+    override fun isPermissionGranted(): Boolean = runCatching {
+        VpnService.prepare(context) == null
+    }.getOrDefault(false)
 
     override fun connectionState(): VpnConnectionState = state.get()
 
-    override fun createConsentIntentIfNeeded(): Intent? = VpnService.prepare(context)
+    override fun createConsentIntentIfNeeded(): Intent? = runCatching {
+        VpnService.prepare(context)
+    }.getOrNull()
 
     /** Called by the concrete VpnService implementation as its lifecycle changes. Not part of [VpnCapabilitySource] itself -- callers needing only the read-side capability never need this. */
     fun updateState(newState: VpnConnectionState) {

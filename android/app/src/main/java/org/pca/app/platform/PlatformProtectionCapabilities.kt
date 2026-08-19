@@ -38,6 +38,7 @@ class DevicePolicyProtectionCapabilities(
         trackedAuthority != null -> when (trackedAuthority.currentState()) {
             TrackedDevicePolicyState.DEVICE_OWNER -> ProtectionMode.PROTECTED
             TrackedDevicePolicyState.DEVICE_OWNER_REVOKED -> ProtectionMode.DEGRADED
+            TrackedDevicePolicyState.DEVICE_OWNER_UNVERIFIABLE -> ProtectionMode.DEGRADED
             TrackedDevicePolicyState.UNAVAILABLE -> ProtectionMode.NOT_SUPPORTED
             TrackedDevicePolicyState.PROFILE_OWNER,
             TrackedDevicePolicyState.STANDARD,

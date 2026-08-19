@@ -56,8 +56,10 @@ class UsageAccessStateTracker(
      * itself -- every call re-queries [source] live, same anti-caching
      * discipline as every other capability adapter in this package.
      */
+    @Synchronized
     fun currentState(): TrackedUsageAccessState {
-        val rawState = source.accessState()
+        val rawState = runCatching { source.accessState() }
+            .getOrDefault(UsageAccessState.UNAVAILABLE)
         return when (rawState) {
             UsageAccessState.GRANTED -> {
                 everObservedGranted = true
@@ -72,7 +74,8 @@ class UsageAccessStateTracker(
     private fun hasRecentEvidence(): Boolean {
         val nowElapsed = monotonicTimeSource.elapsedRealtimeMillis()
         val windowStart = (nowElapsed - degradedObservationWindowMillis).coerceAtLeast(0)
-        return source.queryEventsSince(windowStart).isNotEmpty()
+        return runCatching { source.queryEventsSince(windowStart).isNotEmpty() }
+            .getOrDefault(false)
     }
 
     private companion object {

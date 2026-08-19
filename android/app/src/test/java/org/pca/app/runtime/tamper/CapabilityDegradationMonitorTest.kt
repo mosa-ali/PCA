@@ -78,6 +78,33 @@ class CapabilityDegradationMonitorTest {
     }
 
     @Test
+    fun `device owner query failure is reported as unavailable rather than revoked`() = runTest {
+        var authority = ManagedDeviceAuthority.DEVICE_OWNER
+        val tracker = DevicePolicyAuthorityTracker(object : DevicePolicyCapabilitySource {
+            override fun currentAuthority(): ManagedDeviceAuthority = authority
+        })
+        val notified = mutableListOf<String>()
+        val monitor = DevicePolicyDegradationMonitor(
+            tracker = tracker,
+            deviceIdProvider = { "device-1" },
+            wallClockTimeSource = wallClock,
+            tamperEventRepository = repository,
+            notifyParent = { notified += it; true },
+        )
+
+        monitor.checkAndHandle()
+        authority = ManagedDeviceAuthority.UNAVAILABLE
+        monitor.checkAndHandle()
+        monitor.checkAndHandle()
+
+        assertEquals(listOf(DevicePolicyDegradationMonitor.CONDITION_DEVICE_POLICY_UNAVAILABLE), notified)
+        assertEquals(
+            DevicePolicyDegradationMonitor.CONDITION_DEVICE_POLICY_UNAVAILABLE,
+            db.tamperEventDao().getForDevice("device-1").single().conditionType,
+        )
+    }
+
+    @Test
     fun `VPN loss after connected creates a local tamper event`() = runTest {
         val source = FakeVpnSource()
         val notified = mutableListOf<String>()

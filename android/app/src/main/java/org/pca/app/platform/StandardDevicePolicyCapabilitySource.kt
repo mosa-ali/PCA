@@ -10,13 +10,13 @@ import android.content.Context
  */
 class StandardDevicePolicyCapabilitySource(private val context: Context) : DevicePolicyCapabilitySource {
 
-    override fun currentAuthority(): ManagedDeviceAuthority {
+    override fun currentAuthority(): ManagedDeviceAuthority = runCatching {
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-            ?: return ManagedDeviceAuthority.UNAVAILABLE
-        return when {
+            ?: return@runCatching ManagedDeviceAuthority.UNAVAILABLE
+        when {
             dpm.isDeviceOwnerApp(context.packageName) -> ManagedDeviceAuthority.DEVICE_OWNER
             dpm.isProfileOwnerApp(context.packageName) -> ManagedDeviceAuthority.PROFILE_OWNER
             else -> ManagedDeviceAuthority.NONE
         }
-    }
+    }.getOrDefault(ManagedDeviceAuthority.UNAVAILABLE)
 }

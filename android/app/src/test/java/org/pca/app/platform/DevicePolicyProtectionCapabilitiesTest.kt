@@ -46,6 +46,20 @@ class DevicePolicyProtectionCapabilitiesTest {
     }
 
     @Test
+    fun `previously proven device owner with an unavailable live query maps to DEGRADED`() {
+        var authority = ManagedDeviceAuthority.DEVICE_OWNER
+        val source = DevicePolicyAuthorityTracker(object : DevicePolicyCapabilitySource {
+            override fun currentAuthority(): ManagedDeviceAuthority = authority
+        })
+        val capabilities = DevicePolicyProtectionCapabilities(source)
+
+        assertEquals(ProtectionMode.PROTECTED, capabilities.currentMode())
+        authority = ManagedDeviceAuthority.UNAVAILABLE
+
+        assertEquals(ProtectionMode.DEGRADED, capabilities.currentMode())
+    }
+
+    @Test
     fun `mode is re-derived on every call, never cached across authority changes`() {
         var authority = ManagedDeviceAuthority.NONE
         val source = object : DevicePolicyCapabilitySource {

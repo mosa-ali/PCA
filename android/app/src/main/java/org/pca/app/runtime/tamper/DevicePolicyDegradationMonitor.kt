@@ -32,6 +32,7 @@ class DevicePolicyDegradationMonitor(
 
         val condition = when (state) {
             TrackedDevicePolicyState.DEVICE_OWNER_REVOKED -> CONDITION_DEVICE_OWNER_REVOKED
+            TrackedDevicePolicyState.DEVICE_OWNER_UNVERIFIABLE -> CONDITION_DEVICE_POLICY_UNAVAILABLE
             TrackedDevicePolicyState.UNAVAILABLE -> CONDITION_DEVICE_POLICY_UNAVAILABLE
             else -> null
         } ?: return@withLock

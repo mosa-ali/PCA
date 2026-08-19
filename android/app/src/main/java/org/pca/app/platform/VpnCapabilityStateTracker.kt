@@ -21,11 +21,13 @@ class VpnCapabilityStateTracker(
 
     @Synchronized
     fun currentState(): TrackedVpnState {
-        if (!source.isPermissionGranted()) {
+        val permissionGranted = runCatching { source.isPermissionGranted() }
+            .getOrElse { return TrackedVpnState.DEGRADED }
+        if (!permissionGranted) {
             return if (everObservedConnected) TrackedVpnState.REVOKED else TrackedVpnState.CONSENT_REQUIRED
         }
 
-        return when (source.connectionState()) {
+        return when (runCatching { source.connectionState() }.getOrElse { VpnConnectionState.ERROR }) {
             VpnConnectionState.CONNECTED -> {
                 everObservedConnected = true
                 TrackedVpnState.CONNECTED

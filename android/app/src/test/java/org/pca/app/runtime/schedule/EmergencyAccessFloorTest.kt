@@ -16,12 +16,19 @@ import org.junit.Test
  */
 class EmergencyAccessFloorTest {
 
-    private val protectedToken = EmergencyAccessFloor.PROTECTED_APP_TOKENS.first()
+    private val systemDialerPackage = "resolved.system.dialer"
+    private val protectedToken = EmergencyAccessFloor.opaqueTokenForPackage(systemDialerPackage)
     private val ordinaryToken = "some-other-app-token"
+    private val resolvedSafetySurfaces = EmergencyAccessFloor.resolveCommunicationSurfaces(
+        systemDialerPackage = systemDialerPackage,
+        incomingCallPackage = null,
+        smsTransportPackage = null,
+        emergencySurfacePackages = emptySet(),
+    )
 
     @Test
-    fun `protected token is the sha256 of the telephony system package truncated to 16 hex chars, matching production hashing`() {
-        val digest = MessageDigest.getInstance("SHA-256").digest("com.android.phone".toByteArray(Charsets.UTF_8))
+    fun `protected token is the sha256 of the documented system dialer package truncated to 16 hex chars`() {
+        val digest = MessageDigest.getInstance("SHA-256").digest(systemDialerPackage.toByteArray(Charsets.UTF_8))
         val expected = digest.joinToString(separator = "") { "%02x".format(it) }.take(16)
         assertEquals(expected, protectedToken)
         assertEquals(16, protectedToken.length)
@@ -29,14 +36,24 @@ class EmergencyAccessFloorTest {
 
     @Test
     fun `isProtectedToken is true only for the protected token, not an arbitrary token`() {
-        assertTrue(EmergencyAccessFloor.isProtectedToken(protectedToken))
-        assertTrue(!EmergencyAccessFloor.isProtectedToken(ordinaryToken))
+        assertTrue(EmergencyAccessFloor.isProtectedToken(protectedToken, resolvedSafetySurfaces.emergencySurfaceTokens))
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(ordinaryToken, resolvedSafetySurfaces.emergencySurfaceTokens))
         assertNotEquals(protectedToken, ordinaryToken)
+    }
+
+    @Test
+    fun `no hardcoded OEM or AOSP package is protected without a documented resolver result`() {
+        assertTrue(EmergencyAccessFloor.PROTECTED_APP_TOKENS.isEmpty())
+        assertTrue(!EmergencyAccessFloor.isProtectedToken(
+            EmergencyAccessFloor.opaqueTokenForPackage("com.android.phone"),
+            emptySet(),
+        ))
     }
 
     @Test
     fun `resolved communication surfaces are protected without an OEM package assumption`() {
         val resolved = EmergencyAccessFloor.resolveCommunicationSurfaces(
+            systemDialerPackage = "resolved.system.dialer",
             incomingCallPackage = "resolved.call.surface",
             smsTransportPackage = "resolved.sms.surface",
             emergencySurfacePackages = setOf("resolved.sos.surface"),
@@ -75,7 +92,7 @@ class EmergencyAccessFloorTest {
         appToken: OpaqueAppToken,
         windows: List<ScheduleWindow>,
         nowUtc: Instant = Instant.parse("2026-01-07T12:00:00Z"),
-        communicationSurfaces: CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(),
+        communicationSurfaces: CommunicationSafetySurfaceTokens = resolvedSafetySurfaces,
     ) = ScheduleEvaluationInput(
         nowUtc = nowUtc,
         timezone = "UTC",
@@ -204,7 +221,7 @@ class EmergencyAccessFloorTest {
                 deviceKeyEpoch = 1,
             ),
         )
-        val runtime = ScheduleRuntime(store)
+        val runtime = ScheduleRuntime(store) { resolvedSafetySurfaces }
         val result = runtime.evaluate(
             nowUtc = Instant.parse("2026-01-07T12:00:00Z"),
             appToken = protectedToken,

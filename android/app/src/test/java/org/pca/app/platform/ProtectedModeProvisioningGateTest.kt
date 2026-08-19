@@ -25,4 +25,18 @@ class ProtectedModeProvisioningGateTest {
         authority = ManagedDeviceAuthority.UNAVAILABLE
         assertEquals(ProtectedModeAuthorityState.NOT_SUPPORTED, gate.currentState())
     }
+
+    @Test
+    fun `authority that was proven but can no longer be queried is not treated as supported`() {
+        var authority = ManagedDeviceAuthority.DEVICE_OWNER
+        val tracker = DevicePolicyAuthorityTracker(object : DevicePolicyCapabilitySource {
+            override fun currentAuthority(): ManagedDeviceAuthority = authority
+        })
+        val gate = DeviceOwnerAuthorityGate(tracker)
+
+        assertEquals(ProtectedModeAuthorityState.PROVEN, gate.currentState())
+        authority = ManagedDeviceAuthority.UNAVAILABLE
+
+        assertEquals(ProtectedModeAuthorityState.NOT_PROVEN, gate.currentState())
+    }
 }

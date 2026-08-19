@@ -39,12 +39,28 @@ interface ProtectedModeAuthorityGate {
 class DeviceOwnerAuthorityGate(
     private val devicePolicyCapabilitySource: DevicePolicyCapabilitySource,
 ) : ProtectedModeAuthorityGate {
-    override fun currentState(): ProtectedModeAuthorityState = when (devicePolicyCapabilitySource.currentAuthority()) {
-        ManagedDeviceAuthority.DEVICE_OWNER -> ProtectedModeAuthorityState.PROVEN
-        ManagedDeviceAuthority.UNAVAILABLE -> ProtectedModeAuthorityState.NOT_SUPPORTED
-        ManagedDeviceAuthority.NONE,
-        ManagedDeviceAuthority.PROFILE_OWNER,
-        -> ProtectedModeAuthorityState.NOT_PROVEN
+    override fun currentState(): ProtectedModeAuthorityState {
+        val tracker = devicePolicyCapabilitySource as? DevicePolicyAuthorityTracker
+        return if (tracker != null) {
+            when (tracker.currentState()) {
+                TrackedDevicePolicyState.DEVICE_OWNER -> ProtectedModeAuthorityState.PROVEN
+                TrackedDevicePolicyState.UNAVAILABLE -> ProtectedModeAuthorityState.NOT_SUPPORTED
+                TrackedDevicePolicyState.DEVICE_OWNER_REVOKED,
+                TrackedDevicePolicyState.DEVICE_OWNER_UNVERIFIABLE,
+                TrackedDevicePolicyState.PROFILE_OWNER,
+                TrackedDevicePolicyState.STANDARD,
+                -> ProtectedModeAuthorityState.NOT_PROVEN
+            }
+        } else {
+            when (runCatching { devicePolicyCapabilitySource.currentAuthority() }
+                .getOrDefault(ManagedDeviceAuthority.UNAVAILABLE)) {
+                ManagedDeviceAuthority.DEVICE_OWNER -> ProtectedModeAuthorityState.PROVEN
+                ManagedDeviceAuthority.UNAVAILABLE -> ProtectedModeAuthorityState.NOT_SUPPORTED
+                ManagedDeviceAuthority.NONE,
+                ManagedDeviceAuthority.PROFILE_OWNER,
+                -> ProtectedModeAuthorityState.NOT_PROVEN
+            }
+        }
     }
 }
 
