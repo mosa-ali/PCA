@@ -28,6 +28,55 @@ public struct PCAEnrollmentProfile: Codable, Equatable {
     }
 }
 
+/// Owner-configurable starting defaults for the age/profile catalogue. The
+/// baseline values mirror the platform-neutral 60/30 safety floor; a stricter
+/// family policy may be supplied without changing the enrollment protocol.
+///
+/// This is deliberately data, not a second policy authority. The signed
+/// family policy remains authoritative after enrollment, and an unsafe
+/// configuration is sanitized back to the baseline rather than weakening the
+/// child device.
+public struct PCAEnrollmentDefaultsConfiguration: Codable, Equatable, Sendable {
+    public let balancedActiveUseThresholdMinutes: Int
+    public let strictActiveUseThresholdMinutes: Int
+    public let balancedBreakDurationMinutes: Int
+    public let strictBreakDurationMinutes: Int
+
+    public static let baseline = PCAEnrollmentDefaultsConfiguration(
+        balancedActiveUseThresholdMinutes: 60,
+        strictActiveUseThresholdMinutes: 45,
+        balancedBreakDurationMinutes: 30,
+        strictBreakDurationMinutes: 30
+    )
+
+    public init(
+        balancedActiveUseThresholdMinutes: Int,
+        strictActiveUseThresholdMinutes: Int,
+        balancedBreakDurationMinutes: Int,
+        strictBreakDurationMinutes: Int
+    ) {
+        self.balancedActiveUseThresholdMinutes = balancedActiveUseThresholdMinutes
+        self.strictActiveUseThresholdMinutes = strictActiveUseThresholdMinutes
+        self.balancedBreakDurationMinutes = balancedBreakDurationMinutes
+        self.strictBreakDurationMinutes = strictBreakDurationMinutes
+    }
+
+    /// The same non-weakenable bounds used by the Android screen-time policy.
+    /// Strict values may be more protective, never weaker than balanced values.
+    public var isBaselineCompliant: Bool {
+        (15...60).contains(balancedActiveUseThresholdMinutes) &&
+            (15...60).contains(strictActiveUseThresholdMinutes) &&
+            strictActiveUseThresholdMinutes <= balancedActiveUseThresholdMinutes &&
+            (30...120).contains(balancedBreakDurationMinutes) &&
+            (30...120).contains(strictBreakDurationMinutes) &&
+            strictBreakDurationMinutes >= balancedBreakDurationMinutes
+    }
+
+    public var sanitized: PCAEnrollmentDefaultsConfiguration {
+        isBaselineCompliant ? self : .baseline
+    }
+}
+
 /// PCA-FR-008 / PCA-FR-133: the only age/profile-dependent values that this enrollment slice may
 /// choose locally. The signed family policy remains authoritative after
 /// enrollment; these are bounded starting defaults, not a second policy
@@ -86,14 +135,18 @@ public struct PCAEnrollmentDisclosure: Codable, Equatable {
         return PCAEnrollmentDisclosure(
             readingLevel: youngChild ? .simple : .clear,
             title: youngChild ? "Check your safety settings" : "Review your safety settings",
-            summary: "Your parent chose these starting settings for this device. Check them, then confirm to finish setup.",
+            summary: youngChild
+                ? "Your parent chose these settings. Check them, then tap confirm."
+                : "Your parent chose these starting settings for this device. Check them, then confirm to finish setup.",
             selectedAgeLabel: youngChild ? "Young child" : "Teen",
             startingSafetyLabel: strict ? "Stricter starting settings" : "Starting settings",
             monitoredSummary: "PCA may show your parent protection status, screen-time totals, selected app or website categories, and requests you send.",
             notMonitoredSummary: "PCA does not read your message or call content, save camera images, or keep a readable history of exact searches.",
             emergencySummary: "Emergency calling and emergency help remain available.",
-            authorizationSummary: "Apple authorization is required before iOS protection controls can run.",
-            confirmLabel: "Confirm these settings",
+            authorizationSummary: youngChild
+                ? "Apple approval is needed before safety controls can start."
+                : "Apple authorization is required before iOS protection controls can run.",
+            confirmLabel: youngChild ? "Confirm settings" : "Confirm these settings",
             parentSelectedProfile: true
         )
     }
@@ -112,7 +165,11 @@ public enum PCAEnrollmentProfileConsumption: Equatable {
 /// deliberately not copied into the result: it is an opaque bootstrap
 /// correlation value, not runtime policy data.
 public struct PCAEnrollmentProfileConsumer {
-    public init() {}
+    public let configuration: PCAEnrollmentDefaultsConfiguration
+
+    public init(configuration: PCAEnrollmentDefaultsConfiguration = .baseline) {
+        self.configuration = configuration.sanitized
+    }
 
     public func disclosure(for profile: PCAEnrollmentProfile) -> PCAEnrollmentDisclosure {
         PCAEnrollmentDisclosure.forProfile(profile)
@@ -122,8 +179,12 @@ public struct PCAEnrollmentProfileConsumer {
         let isStrict = profile.ageUxTier == .youngChild || profile.initialPolicyProfile == .strict
         return PCAEnrollmentRuntimeDefaults(
             contentFilterDefault: isStrict ? .strict : .moderate,
-            activeUseThresholdMinutes: isStrict ? 45 : 60,
-            breakDurationMinutes: 30
+            activeUseThresholdMinutes: isStrict
+                ? configuration.strictActiveUseThresholdMinutes
+                : configuration.balancedActiveUseThresholdMinutes,
+            breakDurationMinutes: isStrict
+                ? configuration.strictBreakDurationMinutes
+                : configuration.balancedBreakDurationMinutes
         )
     }
 
@@ -371,7 +432,7 @@ public final class PCAEnrollmentProfileRuntimeController {
     private let store: PCAEnrollmentProfileStore
     private let auditSink: PCAEnrollmentAuditSink
     private let now: () -> Date
-    private let consumer = PCAEnrollmentProfileConsumer()
+    private let consumer: PCAEnrollmentProfileConsumer
     private var confirmedProfile: PCAEnrollmentProfile?
     private var authorization: ChildAuthorizationState
 
@@ -382,13 +443,15 @@ public final class PCAEnrollmentProfileRuntimeController {
         store: PCAEnrollmentProfileStore,
         authorization: ChildAuthorizationState = .notDetermined,
         auditSink: PCAEnrollmentAuditSink = NoopPCAEnrollmentAuditSink(),
-        now: @escaping () -> Date = { Date() }
+        now: @escaping () -> Date = { Date() },
+        defaultsConfiguration: PCAEnrollmentDefaultsConfiguration = .baseline
     ) {
         self.deviceId = deviceId
         self.store = store
         self.authorization = authorization
         self.auditSink = auditSink
         self.now = now
+        self.consumer = PCAEnrollmentProfileConsumer(configuration: defaultsConfiguration)
     }
 
     public func receiveParentAuthorizedProfile(_ profile: PCAEnrollmentProfile) {
@@ -541,10 +604,16 @@ public enum ChildEnrollmentStepResult: Equatable {
 public struct ChildEnrollmentCoordinator {
     private let keyMaterialStore: FamilyKeyMaterialStore
     private let authorizationCenter: ChildAuthorizationCenter
+    private let defaultsConfiguration: PCAEnrollmentDefaultsConfiguration
 
-    public init(keyMaterialStore: FamilyKeyMaterialStore, authorizationCenter: ChildAuthorizationCenter) {
+    public init(
+        keyMaterialStore: FamilyKeyMaterialStore,
+        authorizationCenter: ChildAuthorizationCenter,
+        defaultsConfiguration: PCAEnrollmentDefaultsConfiguration = .baseline
+    ) {
         self.keyMaterialStore = keyMaterialStore
         self.authorizationCenter = authorizationCenter
+        self.defaultsConfiguration = defaultsConfiguration.sanitized
     }
 
     /// Consumes the parent-authorized age/mode profile without copying child
@@ -554,7 +623,7 @@ public struct ChildEnrollmentCoordinator {
         _ profile: PCAEnrollmentProfile,
         authorization: ChildAuthorizationState
     ) -> PCAEnrollmentProfileConsumption {
-        PCAEnrollmentProfileConsumer().consume(profile, authorization: authorization)
+        PCAEnrollmentProfileConsumer(configuration: defaultsConfiguration).consume(profile, authorization: authorization)
     }
 
     /// Stores ALREADY-GENERATED key bytes (generation/algorithm is

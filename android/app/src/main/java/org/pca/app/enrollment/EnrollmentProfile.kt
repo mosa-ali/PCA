@@ -11,14 +11,53 @@ enum class InitialPolicyProfile { BALANCED, STRICT }
 /** The real Safe Browser default vocabulary already supported by the Android policy layer. */
 enum class ContentFilterDefault { MODERATE, STRICT }
 
+/**
+ * Owner-configurable enrollment defaults. The baseline keeps the existing
+ * 60/30 safety floor; stricter age/profile values may be supplied without
+ * changing the enrollment protocol or weakening a child device.
+ */
+data class EnrollmentDefaultsConfiguration(
+    val balancedActiveThresholdMinutes: Int = 60,
+    val strictActiveThresholdMinutes: Int = 45,
+    val balancedBreakDurationMinutes: Int = 30,
+    val strictBreakDurationMinutes: Int = 30,
+) {
+    fun isBaselineCompliant(): Boolean =
+        balancedActiveThresholdMinutes in 15..60 &&
+            strictActiveThresholdMinutes in 15..60 &&
+            strictActiveThresholdMinutes <= balancedActiveThresholdMinutes &&
+            balancedBreakDurationMinutes in 30..120 &&
+            strictBreakDurationMinutes in 30..120 &&
+            strictBreakDurationMinutes >= balancedBreakDurationMinutes
+
+    fun sanitized(): EnrollmentDefaultsConfiguration =
+        if (isBaselineCompliant()) this else BASELINE
+
+    companion object {
+        val BASELINE = EnrollmentDefaultsConfiguration()
+    }
+}
+
 /** Initial defaults are always baseline-compliant; later signed policy delivery remains authoritative. */
 fun screenTimeConfigForEnrollmentProfile(
     ageUxTier: AgeUxTier,
     initialPolicyProfile: InitialPolicyProfile,
+    configuration: EnrollmentDefaultsConfiguration = EnrollmentDefaultsConfiguration.BASELINE,
 ): ScreenTimeConfig {
+    val safeConfiguration = configuration.sanitized()
     val stricterAgeDefault = ageUxTier == AgeUxTier.YOUNG_CHILD
-    val activeMinutes = if (initialPolicyProfile == InitialPolicyProfile.STRICT || stricterAgeDefault) 45 else 60
-    return ScreenTimeConfig(activeThreshold = activeMinutes.minutes, breakDuration = 30.minutes)
+    val strict = initialPolicyProfile == InitialPolicyProfile.STRICT || stricterAgeDefault
+    val activeMinutes = if (strict) {
+        safeConfiguration.strictActiveThresholdMinutes
+    } else {
+        safeConfiguration.balancedActiveThresholdMinutes
+    }
+    val breakMinutes = if (strict) {
+        safeConfiguration.strictBreakDurationMinutes
+    } else {
+        safeConfiguration.balancedBreakDurationMinutes
+    }
+    return ScreenTimeConfig(activeThreshold = activeMinutes.minutes, breakDuration = breakMinutes.minutes)
 }
 
 /** Age/profile defaults are only a minimum; a stricter parent policy wins. */
