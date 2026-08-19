@@ -1,10 +1,39 @@
 import { createHash } from 'node:crypto';
 import type { DeviceSignatureVerifier } from '../deviceauth/DeviceSignatureVerifier.js';
+import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
+import type {
+  OpaqueProtectionAlertComposer,
+  ProtectionAlertProducer,
+} from '../alerts/ProtectionAlertProducer.js';
 import { FamilyAuditService } from './FamilyAuditStore.js';
 import { MAX_ACTION_LIFETIME_MS, isPlausibleActionId, isPlausibleIdempotencyKey, isPlausibleOpaqueId } from './policy.js';
 import type { ParentActionAuthorizationService } from './ParentActionAuthorizationService.js';
 import { isActorResolutionFailure, type TrustSetRoleResolver } from './TrustSetRoleResolver.js';
 import type { ParentOperation, ReasonCategory, StepUpAssertion } from './types.js';
+
+/**
+ * Consolidated durable removal/disable decision authority for
+ * PCA-ADD-ENR-012/016/017/018/020.
+ *
+ * This class replaces the two previously independent, never-composed,
+ * never-routed implementations of the same decision authority:
+ *
+ *   - `enrollment/ProtectionApprovalService.ts` (deleted): owned the
+ *     PARENT_APPROVAL_REQUIRED lifecycle plus local-PIN and
+ *     authorized-recovery decision modes, backed by real MySQL persistence
+ *     (`MySqlProtectionApprovalRepository.ts`, migration 0022).
+ *   - `familyrbac/RemovalDecisionService.ts` (deleted, folded in here):
+ *     owned the signed-remote-parent decision mode with exact request
+ *     binding, signature verification, trust-set epoch checks, RBAC via
+ *     `ParentActionAuthorizationService`, anti-replay, and audit via
+ *     `FamilyAuditService` -- but only ever had an in-memory repository.
+ *
+ * There is now exactly ONE durable request/state record model, ONE audit
+ * trail (`FamilyAuditService`, injected once and shared by every decision
+ * mode), and three supported decision paths that all terminate in the same
+ * closed state vocabulary: PARENT_APPROVAL_REQUIRED -> {KEEP_ACTIVE,
+ * TEMPORARILY_DISABLE, ALLOW_REMOVAL}.
+ */
 
 /** The two existing family-RBAC operations that can protect a removal decision. */
 export type RemovalDecisionOperation = Extract<ParentOperation, 'REMOVE_REVOKE_DEVICE' | 'DISABLE_PROTECTION_POLICY'>;
@@ -19,8 +48,9 @@ export type RemovalProtectionLevel = 'STANDARD' | 'PROTECTED' | 'DEGRADED' | 'AU
 
 /** PCA-ADD-ENR-016/017: no additional lifecycle values are admitted here. */
 export type RemovalDecisionState = 'PARENT_APPROVAL_REQUIRED' | 'KEEP_ACTIVE' | 'TEMPORARILY_DISABLE' | 'ALLOW_REMOVAL';
+export type RemovalDecision = Exclude<RemovalDecisionState, 'PARENT_APPROVAL_REQUIRED'>;
 
-export const REMOVAL_DECISIONS: ReadonlySet<RemovalDecisionState> = new Set([
+export const REMOVAL_DECISIONS: ReadonlySet<RemovalDecision> = new Set([
   'KEEP_ACTIVE',
   'TEMPORARILY_DISABLE',
   'ALLOW_REMOVAL',
@@ -43,6 +73,8 @@ export const REMOVAL_REASON_CATEGORIES: ReadonlySet<ReasonCategory> = new Set([
   'OTHER',
 ]);
 
+export type RemovalDecisionMethod = 'REMOTE_PARENT' | 'LOCAL_ADMINISTRATION_PIN' | 'AUTHORIZED_RECOVERY';
+
 export interface RemovalDecisionRequestInput {
   requestId: string;
   familyId: string;
@@ -53,21 +85,35 @@ export interface RemovalDecisionRequestInput {
   requestedAt: Date;
   expiresAt: Date;
   reasonCategory: ReasonCategory | null;
+  /** The coordinator supplies this only after resolving the device's authority state (PCA-ADD-ENR-016). */
+  protectiveAuthorityApplies: true;
 }
 
 /** Durable parent-facing record. IDs are opaque references; no child profile or policy plaintext is stored. */
 export interface RemovalDecisionRecord extends RemovalDecisionRequestInput {
   state: RemovalDecisionState;
   decidedAt: Date | null;
+  decisionMethod: RemovalDecisionMethod | null;
+  temporaryDisableUntil: Date | null;
+  /** Populated only by the signed remote-parent mode; null for PIN/recovery decisions. */
   decidedByDeviceId: string | null;
   decisionActionId: string | null;
   idempotencyKey: string | null;
-  temporaryDisableUntil: Date | null;
-  /** SHA-256 of the signed decision's canonical binding, never the signature or a PIN. */
+  /** SHA-256 of the signed decision's canonical binding. Null for non-signed decision modes. */
   decisionFingerprint: string | null;
 }
 
-/** The signed, exact child/device/request binding accepted by this service. */
+export interface RemovalDecisionInput {
+  decision: RemovalDecision;
+  temporaryDisableUntil: Date | null;
+}
+
+/** Transient only; never part of a stored request, decision result, or error message. */
+export interface LocalPinDecisionInput extends RemovalDecisionInput {
+  pin: string;
+}
+
+/** The signed, exact child/device/request binding accepted by the remote-parent mode. */
 export interface SignedRemovalDecision {
   requestId: string;
   familyId: string;
@@ -76,7 +122,7 @@ export interface SignedRemovalDecision {
   operation: RemovalDecisionOperation;
   protectionLevel: RemovalProtectionLevel;
   reasonCategory: ReasonCategory | null;
-  decision: Exclude<RemovalDecisionState, 'PARENT_APPROVAL_REQUIRED'>;
+  decision: RemovalDecision;
   temporaryDisableUntil: Date | null;
   actorDeviceId: string;
   actionId: string;
@@ -98,6 +144,21 @@ export interface RemovalDecisionSigningKey {
 /** Production composition supplies the key from the verified family/device authority boundary. */
 export interface RemovalDecisionSigningKeyResolver {
   resolve(familyId: string, actorDeviceId: string): Promise<RemovalDecisionSigningKey | null>;
+}
+
+export interface AuthorizedRecoveryProof {
+  /** Opaque recovery proof; this module never interprets recovery material. */
+  proof: string;
+  recoveryTransactionId: string;
+}
+
+/** Coordinator binding for the authorized-recovery decision mode -- must verify the approved recovery protocol and exact request binding. */
+export interface AuthorizedRecoveryAuthority {
+  verifyAuthorizedRecovery(input: {
+    request: RemovalDecisionRecord;
+    decision: RemovalDecisionInput;
+    proof: AuthorizedRecoveryProof;
+  }): Promise<boolean>;
 }
 
 /** The replay key is scoped by family and action; implementations must make claim atomic across callers. */
@@ -126,6 +187,7 @@ export type CommitRemovalDecisionResult = 'APPLIED' | 'ALREADY_DECIDED' | 'CONFL
 /** Repository port with an atomic pending-to-decision operation. */
 export interface RemovalDecisionRepository {
   get(requestId: string): Promise<RemovalDecisionRecord | null>;
+  listForFamily(familyId: string): Promise<RemovalDecisionRecord[]>;
   create(record: RemovalDecisionRecord): Promise<void>;
   commitDecision(requestId: string, next: RemovalDecisionRecord): Promise<CommitRemovalDecisionResult>;
 }
@@ -135,25 +197,29 @@ export class InMemoryRemovalDecisionRepository implements RemovalDecisionReposit
   private readonly records = new Map<string, RemovalDecisionRecord>();
 
   async get(requestId: string): Promise<RemovalDecisionRecord | null> {
-    return this.records.get(requestId) ?? null;
+    const record = this.records.get(requestId);
+    return record === undefined ? null : cloneRecord(record);
+  }
+
+  async listForFamily(familyId: string): Promise<RemovalDecisionRecord[]> {
+    return [...this.records.values()]
+      .filter((record) => record.familyId === familyId)
+      .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime())
+      .map(cloneRecord);
   }
 
   async create(record: RemovalDecisionRecord): Promise<void> {
-    if (this.records.has(record.requestId)) throw new Error('REMOVAL_REQUEST_ALREADY_EXISTS');
-    this.records.set(record.requestId, record);
+    if (this.records.has(record.requestId)) throw new RemovalDecisionError('CONFLICT');
+    this.records.set(record.requestId, cloneRecord(record));
   }
 
   async commitDecision(requestId: string, next: RemovalDecisionRecord): Promise<CommitRemovalDecisionResult> {
     const current = this.records.get(requestId);
     if (current === undefined) return 'CONFLICT';
     if (current.state !== 'PARENT_APPROVAL_REQUIRED') {
-      const sameDecision =
-        current.decisionFingerprint === next.decisionFingerprint &&
-        current.decisionActionId === next.decisionActionId &&
-        current.idempotencyKey === next.idempotencyKey;
-      return sameDecision ? 'ALREADY_DECIDED' : 'CONFLICT';
+      return sameDecisionOutcome(current, next) ? 'ALREADY_DECIDED' : 'CONFLICT';
     }
-    this.records.set(requestId, next);
+    this.records.set(requestId, cloneRecord(next));
     return 'APPLIED';
   }
 }
@@ -162,19 +228,29 @@ export type RemovalDecisionErrorCode =
   | 'INVALID_INPUT'
   | 'NOT_FOUND'
   | 'ACTION_EXPIRED'
+  | 'EXPIRED'
   | 'INVALID_SIGNATURE'
   | 'NOT_AUTHORIZED'
   | 'REPLAYED_ACTION'
-  | 'INVALID_STATE';
+  | 'INVALID_STATE'
+  | 'PIN_NOT_CONFIGURED'
+  | 'PIN_INVALID'
+  | 'RATE_LIMITED'
+  | 'CONFLICT';
 
 const REMOVAL_DECISION_ERROR_MESSAGES: Record<RemovalDecisionErrorCode, string> = {
   INVALID_INPUT: 'Removal decision input is not valid.',
   NOT_FOUND: 'Removal decision request was not found.',
   ACTION_EXPIRED: 'Removal decision authorization has expired.',
+  EXPIRED: 'Removal decision request has expired.',
   INVALID_SIGNATURE: 'Removal decision authorization could not be verified.',
   NOT_AUTHORIZED: 'Removal decision authorization was denied.',
   REPLAYED_ACTION: 'Removal decision authorization was already used.',
   INVALID_STATE: 'Removal decision request is not awaiting parent approval.',
+  PIN_NOT_CONFIGURED: 'Administration PIN is not configured.',
+  PIN_INVALID: 'Administration PIN was not accepted.',
+  RATE_LIMITED: 'Administration PIN authorization is temporarily rate limited.',
+  CONFLICT: 'Removal decision request conflicts with an existing request.',
 };
 
 export class RemovalDecisionError extends Error {
@@ -187,23 +263,45 @@ export class RemovalDecisionError extends Error {
   }
 }
 
+/** PCA-ADD-ENR-020 alerting composition. Best-effort/optional: alert delivery failure never blocks or reverses a decision. */
+export interface RemovalDecisionAlerting {
+  producer: ProtectionAlertProducer;
+  composeOpaquePayload: OpaqueProtectionAlertComposer;
+  alertsEnabled: boolean | (() => boolean);
+  /** Resolves the family's current parent devices/key epoch for alert addressing. Coordinator-owned, verified trust-set-backed binding. */
+  resolveParentDevices(familyId: string): Promise<Array<{ deviceId: string; keyEpoch: number }>>;
+}
+
 /**
- * Controlled remote decision boundary for PCA-ADD-ENR-016/017/018/024.
+ * Controlled removal/disable decision boundary for PCA-ADD-ENR-012/016/017/018/020.
  *
- * The caller supplies a signed decision, but this service independently
- * re-binds it to the stored request, verifies the signature against the
- * family/device key boundary, and asks ParentActionAuthorizationService for
- * the role verdict. That existing service owns the operation matrix and its
- * ActionIdempotencyLedger; this class never accepts a caller-supplied role.
+ * Three decision modes share one durable record, one validation contract,
+ * and one audit trail:
+ *
+ *   - decideWithSignedRemoteParent: re-binds the caller's signed decision to
+ *     the stored request, verifies the signature against the family/device
+ *     key boundary, asks ParentActionAuthorizationService for the role
+ *     verdict, and claims an anti-replay ledger slot (folded in from the
+ *     former RemovalDecisionService).
+ *   - decideWithLocalPin: verifies the family's offline Administration PIN
+ *     via AdministrationPinService (folded in from the former
+ *     ProtectionApprovalService); the PIN itself is never stored, logged,
+ *     or reflected in an error.
+ *   - decideWithAuthorizedRecovery: delegates to an injected
+ *     AuthorizedRecoveryAuthority binding (folded in from the former
+ *     ProtectionApprovalService).
  */
-export class RemovalDecisionService {
+export class RemovalDecisionAuthority {
   private readonly repository: RemovalDecisionRepository;
   private readonly authorization: ParentActionAuthorizationService;
   private readonly signingKeyResolver: RemovalDecisionSigningKeyResolver;
   private readonly signatureVerifier: DeviceSignatureVerifier;
   private readonly targetDeviceRoleResolver: TrustSetRoleResolver;
   private readonly replayLedger: RemovalDecisionReplayLedger;
+  private readonly pinService: AdministrationPinService;
+  private readonly recoveryAuthority: AuthorizedRecoveryAuthority;
   private readonly auditService: FamilyAuditService;
+  private readonly alerting: RemovalDecisionAlerting | null;
   private readonly now: () => Date;
 
   constructor(options: {
@@ -212,8 +310,11 @@ export class RemovalDecisionService {
     signingKeyResolver: RemovalDecisionSigningKeyResolver;
     signatureVerifier: DeviceSignatureVerifier;
     targetDeviceRoleResolver: TrustSetRoleResolver;
+    pinService: AdministrationPinService;
+    recoveryAuthority: AuthorizedRecoveryAuthority;
     replayLedger?: RemovalDecisionReplayLedger;
     auditService: FamilyAuditService;
+    alerting?: RemovalDecisionAlerting;
     now?: () => Date;
   }) {
     this.repository = options.repository;
@@ -221,8 +322,11 @@ export class RemovalDecisionService {
     this.signingKeyResolver = options.signingKeyResolver;
     this.signatureVerifier = options.signatureVerifier;
     this.targetDeviceRoleResolver = options.targetDeviceRoleResolver;
+    this.pinService = options.pinService;
+    this.recoveryAuthority = options.recoveryAuthority;
     this.replayLedger = options.replayLedger ?? new InMemoryRemovalDecisionReplayLedger();
     this.auditService = options.auditService;
+    this.alerting = options.alerting ?? null;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -233,13 +337,26 @@ export class RemovalDecisionService {
       ...input,
       state: 'PARENT_APPROVAL_REQUIRED',
       decidedAt: null,
+      decisionMethod: null,
+      temporaryDisableUntil: null,
       decidedByDeviceId: null,
       decisionActionId: null,
       idempotencyKey: null,
-      temporaryDisableUntil: null,
       decisionFingerprint: null,
     };
-    await this.repository.create(record);
+    try {
+      await this.repository.create(record);
+    } catch (error) {
+      // A client retry may race the original create. The opaque request id is
+      // the durable correlation/idempotency key; replaying the exact request
+      // returns the committed state, while reusing it for a different target
+      // remains a conflict.
+      if (error instanceof RemovalDecisionError && error.code === 'CONFLICT') {
+        const existing = await this.repository.get(record.requestId);
+        if (existing !== null && sameRequest(existing, record)) return existing;
+      }
+      throw error;
+    }
     await this.auditService.record({
       familyId: input.familyId,
       actionType: input.operation,
@@ -257,15 +374,58 @@ export class RemovalDecisionService {
       actionId: null,
       freeTextNote: null,
     });
+    await this.emitAlert(record, 'DISABLE_OR_REMOVAL_REQUESTED');
     return record;
   }
 
-  async getRequest(requestId: string): Promise<RemovalDecisionRecord | null> {
-    if (!isPlausibleOpaqueId(requestId)) throw new RemovalDecisionError('INVALID_INPUT');
-    return this.repository.get(requestId);
+  async listRequests(familyId: string): Promise<RemovalDecisionRecord[]> {
+    if (!isPlausibleOpaqueId(familyId)) throw new RemovalDecisionError('INVALID_INPUT');
+    return this.repository.listForFamily(familyId);
   }
 
-  async decide(signedDecision: SignedRemovalDecision): Promise<RemovalDecisionRecord> {
+  /** Family-scoped read: an unknown request and a cross-family request collapse to the same null result (no membership oracle). */
+  async getRequest(familyId: string, requestId: string): Promise<RemovalDecisionRecord | null> {
+    if (!isPlausibleOpaqueId(familyId) || !isPlausibleOpaqueId(requestId)) throw new RemovalDecisionError('INVALID_INPUT');
+    const record = await this.repository.get(requestId);
+    return record === null || record.familyId !== familyId ? null : record;
+  }
+
+  async decideWithLocalPin(requestId: string, familyId: string, decision: LocalPinDecisionInput): Promise<RemovalDecisionRecord> {
+    const request = await this.requirePending(requestId, familyId);
+    const result = await this.pinService.verifyPin(familyId, decision.pin);
+    // The PIN is accepted only as a transient argument and is never copied
+    // into a request, proof, audit field, or error message.
+    if (!result.ok) {
+      if (result.code === 'NOT_CONFIGURED') throw new RemovalDecisionError('PIN_NOT_CONFIGURED');
+      if (result.code === 'RATE_LIMITED') throw new RemovalDecisionError('RATE_LIMITED');
+      throw new RemovalDecisionError('PIN_INVALID');
+    }
+    return this.commitSimpleDecision(
+      request,
+      { decision: decision.decision, temporaryDisableUntil: decision.temporaryDisableUntil },
+      'LOCAL_ADMINISTRATION_PIN',
+      'local-administration-pin',
+    );
+  }
+
+  async decideWithAuthorizedRecovery(
+    requestId: string,
+    familyId: string,
+    decision: RemovalDecisionInput,
+    proof: AuthorizedRecoveryProof,
+  ): Promise<RemovalDecisionRecord> {
+    const request = await this.requirePending(requestId, familyId);
+    const authorized = await this.recoveryAuthority.verifyAuthorizedRecovery({ request, decision, proof }).catch(() => false);
+    if (!authorized) throw new RemovalDecisionError('NOT_AUTHORIZED');
+    return this.commitSimpleDecision(
+      request,
+      decision,
+      'AUTHORIZED_RECOVERY',
+      `authorized-recovery:${isPlausibleOpaqueId(proof.recoveryTransactionId) ? proof.recoveryTransactionId : 'unknown'}`,
+    );
+  }
+
+  async decideWithSignedRemoteParent(signedDecision: SignedRemovalDecision): Promise<RemovalDecisionRecord> {
     if (!isSignedRemovalDecisionObject(signedDecision)) throw new RemovalDecisionError('INVALID_INPUT');
     const request = await this.repository.get(signedDecision.requestId);
     if (request === null) throw new RemovalDecisionError('NOT_FOUND');
@@ -307,11 +467,8 @@ export class RemovalDecisionService {
     }
 
     // A completed action can be retried idempotently, but only for the exact
-    // signed binding previously committed. Signature verification above still
-    // applies on this path; a caller cannot turn knowledge of an action ID
-    // into a protected record read by presenting a forged retry.
-    // A different action or payload can never turn a completed request into a
-    // second decision.
+    // signed binding previously committed. A different action or payload can
+    // never turn a completed request into a second decision.
     if (request.state !== 'PARENT_APPROVAL_REQUIRED') {
       if (
         request.decisionFingerprint === decisionFingerprint &&
@@ -351,6 +508,7 @@ export class RemovalDecisionService {
       ...request,
       state: signedDecision.decision,
       decidedAt: this.now(),
+      decisionMethod: 'REMOTE_PARENT',
       decidedByDeviceId: signedDecision.actorDeviceId,
       decisionActionId: signedDecision.actionId,
       idempotencyKey: signedDecision.idempotencyKey,
@@ -388,7 +546,85 @@ export class RemovalDecisionService {
       actionId: signedDecision.actionId,
       freeTextNote: signedDecision.decision,
     });
+    await this.emitAlert(decided, 'AUTHORITY_CHANGE');
     return decided;
+  }
+
+  private async requirePending(requestId: string, familyId: string): Promise<RemovalDecisionRecord> {
+    if (!isPlausibleOpaqueId(requestId) || !isPlausibleOpaqueId(familyId)) throw new RemovalDecisionError('INVALID_INPUT');
+    const request = await this.repository.get(requestId);
+    if (request === null || request.familyId !== familyId) throw new RemovalDecisionError('NOT_FOUND');
+    if (request.state !== 'PARENT_APPROVAL_REQUIRED') throw new RemovalDecisionError('INVALID_STATE');
+    if (this.now().getTime() >= request.expiresAt.getTime()) throw new RemovalDecisionError('EXPIRED');
+    return request;
+  }
+
+  private async commitSimpleDecision(
+    request: RemovalDecisionRecord,
+    input: RemovalDecisionInput,
+    method: RemovalDecisionMethod,
+    auditActorId: string,
+  ): Promise<RemovalDecisionRecord> {
+    validateDecisionShape(request, input, this.now());
+    const next: RemovalDecisionRecord = {
+      ...request,
+      state: input.decision,
+      decidedAt: this.now(),
+      decisionMethod: method,
+      temporaryDisableUntil: input.temporaryDisableUntil,
+      decidedByDeviceId: null,
+      decisionActionId: null,
+      idempotencyKey: null,
+      decisionFingerprint: null,
+    };
+    const result = await this.repository.commitDecision(request.requestId, next);
+    if (result === 'ALREADY_DECIDED') {
+      const current = await this.repository.get(request.requestId);
+      if (current !== null && sameDecisionOutcome(current, next)) return current;
+    }
+    if (result !== 'APPLIED') throw new RemovalDecisionError('CONFLICT');
+
+    await this.auditService.record({
+      familyId: request.familyId,
+      actionType: request.operation,
+      actorDeviceId: auditActorId,
+      actorMemberId: null,
+      targetScope: { kind: 'CHILD_PROFILE', id: request.childId },
+      authorizationRole: null,
+      trustSetEpoch: 0,
+      policyRevision: null,
+      clientMonotonicSequence: null,
+      resultStatus: 'SUCCESS',
+      targetAcknowledgementCount: 0,
+      reasonCategory: request.reasonCategory,
+      correlationId: request.requestId,
+      actionId: null,
+      freeTextNote: `${method}:${input.decision}`,
+    });
+    await this.emitAlert(next, 'AUTHORITY_CHANGE');
+    return next;
+  }
+
+  /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses a decision. */
+  private async emitAlert(record: RemovalDecisionRecord, trigger: 'DISABLE_OR_REMOVAL_REQUESTED' | 'AUTHORITY_CHANGE'): Promise<void> {
+    if (this.alerting === null) return;
+    const alertsEnabled = typeof this.alerting.alertsEnabled === 'function' ? this.alerting.alertsEnabled() : this.alerting.alertsEnabled;
+    if (!alertsEnabled) return;
+    try {
+      const parentDevices = await this.alerting.resolveParentDevices(record.familyId);
+      for (const parentDevice of parentDevices) {
+        await this.alerting.producer.produce({
+          familyId: record.familyId,
+          deviceId: record.deviceId,
+          parentDeviceId: parentDevice.deviceId,
+          trigger,
+          keyEpoch: parentDevice.keyEpoch,
+          alertsEnabled: true,
+        });
+      }
+    } catch {
+      // Alerting is deliberately non-blocking: the durable decision record above has already committed.
+    }
   }
 
   private async recordDenied(
@@ -453,8 +689,25 @@ function validateRequestInput(input: RemovalDecisionRequestInput): void {
     input.expiresAt.getTime() <= input.requestedAt.getTime() ||
     input.expiresAt.getTime() - input.requestedAt.getTime() > MAX_ACTION_LIFETIME_MS ||
     !REMOVAL_PROTECTION_LEVELS.has(input.protectionLevel) ||
-    !REMOVAL_REASON_CATEGORIES.has(input.reasonCategory as ReasonCategory) && input.reasonCategory !== null
+    (!REMOVAL_REASON_CATEGORIES.has(input.reasonCategory as ReasonCategory) && input.reasonCategory !== null) ||
+    input.protectiveAuthorityApplies !== true
   ) {
+    throw new RemovalDecisionError('INVALID_INPUT');
+  }
+}
+
+/** Shared decision-shape validation for the non-signed (PIN/recovery) modes: decision enum + bounded TEMPORARILY_DISABLE deadline. */
+function validateDecisionShape(request: RemovalDecisionRecord, input: RemovalDecisionInput, now: Date): void {
+  if (!REMOVAL_DECISIONS.has(input.decision)) throw new RemovalDecisionError('INVALID_INPUT');
+  if (input.decision === 'TEMPORARILY_DISABLE') {
+    if (
+      !isValidDate(input.temporaryDisableUntil) ||
+      input.temporaryDisableUntil.getTime() <= now.getTime() ||
+      input.temporaryDisableUntil.getTime() > request.expiresAt.getTime()
+    ) {
+      throw new RemovalDecisionError('INVALID_INPUT');
+    }
+  } else if (input.temporaryDisableUntil !== null) {
     throw new RemovalDecisionError('INVALID_INPUT');
   }
 }
@@ -478,11 +731,11 @@ function validateAndCanonicalizeDecision(
     (decision.policyRevision !== null && (!Number.isInteger(decision.policyRevision) || decision.policyRevision < 0)) ||
     !REMOVAL_DECISIONS.has(decision.decision) ||
     !REMOVAL_PROTECTION_LEVELS.has(decision.protectionLevel) ||
-    !REMOVAL_REASON_CATEGORIES.has(decision.reasonCategory as ReasonCategory) && decision.reasonCategory !== null ||
+    (!REMOVAL_REASON_CATEGORIES.has(decision.reasonCategory as ReasonCategory) && decision.reasonCategory !== null) ||
     !isValidDate(decision.issuedAt) ||
     !isValidDate(decision.expiresAt) ||
-    !isValidDate(decision.stepUp.assertedAt) && decision.stepUp.assertedAt !== null ||
-    !isValidDate(decision.stepUp.freshUntil) && decision.stepUp.freshUntil !== null ||
+    (!isValidDate(decision.stepUp.assertedAt) && decision.stepUp.assertedAt !== null) ||
+    (!isValidDate(decision.stepUp.freshUntil) && decision.stepUp.freshUntil !== null) ||
     decision.familyId !== request.familyId ||
     decision.requestId !== request.requestId ||
     decision.childId !== request.childId ||
@@ -496,12 +749,12 @@ function validateAndCanonicalizeDecision(
     now.getTime() < decision.issuedAt.getTime() ||
     now.getTime() >= request.expiresAt.getTime() ||
     now.getTime() >= decision.expiresAt.getTime() ||
-    decision.decision === 'TEMPORARILY_DISABLE' &&
+    (decision.decision === 'TEMPORARILY_DISABLE' &&
       (decision.temporaryDisableUntil === null ||
         !isValidDate(decision.temporaryDisableUntil) ||
         decision.temporaryDisableUntil.getTime() <= now.getTime() ||
-        decision.temporaryDisableUntil.getTime() > decision.expiresAt.getTime()) ||
-    decision.decision !== 'TEMPORARILY_DISABLE' && decision.temporaryDisableUntil !== null
+        decision.temporaryDisableUntil.getTime() > decision.expiresAt.getTime())) ||
+    (decision.decision !== 'TEMPORARILY_DISABLE' && decision.temporaryDisableUntil !== null)
   ) {
     const expired = isValidDate(decision.expiresAt) && now.getTime() >= decision.expiresAt.getTime();
     throw new RemovalDecisionError(expired ? 'ACTION_EXPIRED' : 'INVALID_INPUT');
@@ -531,4 +784,41 @@ function isSignedRemovalDecisionObject(value: unknown): value is SignedRemovalDe
 
 function fingerprint(canonical: string): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+/** Superset equality check used by every repository's ALREADY_DECIDED comparison, covering both the signed-fingerprint shape and the PIN/recovery shape. */
+function sameDecisionOutcome(a: RemovalDecisionRecord, b: RemovalDecisionRecord): boolean {
+  return (
+    a.state === b.state &&
+    a.decisionMethod === b.decisionMethod &&
+    (a.temporaryDisableUntil?.getTime() ?? null) === (b.temporaryDisableUntil?.getTime() ?? null) &&
+    a.decisionActionId === b.decisionActionId &&
+    a.idempotencyKey === b.idempotencyKey &&
+    a.decisionFingerprint === b.decisionFingerprint
+  );
+}
+
+function sameRequest(a: RemovalDecisionRecord, b: RemovalDecisionRecord): boolean {
+  return (
+    a.requestId === b.requestId &&
+    a.familyId === b.familyId &&
+    a.childId === b.childId &&
+    a.deviceId === b.deviceId &&
+    a.operation === b.operation &&
+    a.protectionLevel === b.protectionLevel &&
+    a.requestedAt.getTime() === b.requestedAt.getTime() &&
+    a.expiresAt.getTime() === b.expiresAt.getTime() &&
+    a.reasonCategory === b.reasonCategory &&
+    a.protectiveAuthorityApplies === b.protectiveAuthorityApplies
+  );
+}
+
+function cloneRecord(record: RemovalDecisionRecord): RemovalDecisionRecord {
+  return {
+    ...record,
+    requestedAt: new Date(record.requestedAt),
+    expiresAt: new Date(record.expiresAt),
+    decidedAt: record.decidedAt === null ? null : new Date(record.decidedAt),
+    temporaryDisableUntil: record.temporaryDisableUntil === null ? null : new Date(record.temporaryDisableUntil),
+  };
 }
