@@ -111,6 +111,40 @@ class CameraProximitySourceTest {
         assertEquals(false, estimator.lastForegroundEligible)
     }
 
+    @Test
+    fun `richer permission lifecycle keeps not-requested distinct from denied`() {
+        val source = CameraProximitySource(
+            estimator = estimator,
+            hasCameraPermission = { false },
+            monotonicTimeSource = FakeMonotonicTimeSource(),
+            permissionStateSource = CameraPermissionStateSource { CameraPermissionStatus.NOT_REQUESTED },
+        )
+        source.setForegroundEligible(true)
+
+        val observation = source.currentObservation()
+
+        assertEquals(0, estimateCallCount)
+        assertEquals(ProximitySourceAvailability.PERMISSION_REQUIRED, observation.availability)
+        assertEquals(ProximityReading.UNKNOWN, observation.reading)
+    }
+
+    @Test
+    fun `permission lifecycle query failure fails closed as unavailable`() {
+        val source = CameraProximitySource(
+            estimator = estimator,
+            hasCameraPermission = { true },
+            monotonicTimeSource = FakeMonotonicTimeSource(),
+            permissionStateSource = CameraPermissionStateSource { error("permission query failed") },
+        )
+        source.setForegroundEligible(true)
+
+        val observation = source.currentObservation()
+
+        assertEquals(0, estimateCallCount)
+        assertEquals(ProximitySourceAvailability.UNAVAILABLE, observation.availability)
+        assertEquals(ProximityReading.UNKNOWN, observation.reading)
+    }
+
     private class RecordingForegroundAwareEstimator : ForegroundAwareFaceProximityEstimator {
         var lastForegroundEligible = false
 
