@@ -1154,11 +1154,18 @@
       "phase": [
         "PCA-6"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/youtube/types.ts",
+        "backend/src/youtube/policy.ts",
+        "backend/src/youtube/ModeBFeatureFlagStore.ts"
+      ],
+      "testEvidence": [
+        "backend/test/youtube/policy.test.mjs",
+        "backend/test/youtube/SafeContentCapability.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no YouTube Restricted Mode / safe-search-equivalent signal integration under feature/youtube/."
+      "notes": "The source does not claim YouTube enforcement or access to watch history, and no scraping/interception path was added."
     },
     {
       "requirementId": "PCA-FR-054",
@@ -1247,6 +1254,7 @@
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/real/realSafeZoneClient.ts",
         "parent-web/src/api/safeZonePolicyAuthoring.ts",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt",
         "parent-web/tests/unit/realSafeZoneClient.test.ts",
         "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
@@ -1255,6 +1263,7 @@
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt",
         "backend/test/location/safeZoneRepository.test.mjs",
         "backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs",
         "backend/test/parentaccount/preferencesSafeZonesSchema.test.mjs",
@@ -1402,16 +1411,22 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt",
+        "android/app/src/main/java/org/pca/app/platform/StandardVpnCapabilitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/VpnCapabilityStateTracker.kt",
+        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt",
         "android/app/src/main/java/org/pca/app/platform/CameraPermissionStateTracker.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/platform/UsageAccessStateTrackerTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/VpnCapabilityStateTrackerTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/CapabilityDegradationMonitorTest.kt",
         "android/app/src/test/java/org/pca/app/platform/CameraPermissionStateTrackerTest.kt",
         "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt"
       ],
       "externalGate": [],
-      "notes": "This increment closes the locally realizable camera-permission state distinction without fabricating an Accessibility Service or iOS authorization signal."
+      "notes": "Capability degradation is explicit and never inferred from a failed live query; this remains partial because platform authorization and runtime/device gates are external or unimplemented."
     },
     {
       "requirementId": "PCA-FR-081",
@@ -1992,6 +2007,7 @@
         "backend/src/location/safeZone.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt",
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/real/realSafeZoneClient.ts"
       ],
@@ -1999,7 +2015,8 @@
         "backend/test/location/safeZone.test.mjs",
         "backend/test/location/safeZoneRepository.test.mjs",
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
-        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt"
       ],
       "externalGate": [],
       "notes": "This writer slice hardens local malformed-sample handling, key-epoch binding, and opaque authoring/storage validation; it does not claim end-to-end authoring or device delivery."
@@ -2071,11 +2088,15 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt (client-side states cover a subset of the doc-08 state machine)"
+        "ios/PCA/Recovery/EnrollmentLifecycle.swift",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "ios/PCATests/RecoveryLifecycleTests.swift",
+        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "The source does not claim Apple runtime readiness or central readable family-data auditing."
     },
     {
       "requirementId": "PCA-FR-141",
@@ -2141,15 +2162,17 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "backend/src/familytrustset/FamilyTrustSetRecoveryEngine.ts (no-second-parent-and-no-RS is unsupported by design)",
-        "backend/test/familytrustset/recoveryRedTeam.test.mjs"
+        "ios/PCA/Recovery/RecoverySecretDisclosure.swift",
+        "parent-web/src/pages/security/RecoverySecretDisclosure.tsx",
+        "backend/src/familytrustset/FamilyTrustSetRecoveryEngine.ts"
       ],
       "testEvidence": [
-        "backend/test/familytrustset/recoveryEngine.test.mjs",
-        "backend/test/familytrustset/recoveryRedTeam.test.mjs"
+        "ios/PCATests/RecoverySecretDisclosureTests.swift",
+        "backend/test/familytrustset/recoveryRedTeam.test.mjs",
+        "backend/test/familytrustset/recoveryEngine.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Disclosure UI is AUDIT-C territory; backend correctly refuses recovery in the unsupported case. Runtime reachability: Backend recovery-blocked-by-design logic is tested; the disclosure-at-generation-time UX is frontend."
+      "notes": "The disclosure is documentation/source progress only; it does not claim that a secret is generated, stored, or recoverable through PCA infrastructure."
     },
     {
       "requirementId": "PCA-FR-145",
@@ -2453,11 +2476,18 @@
       "phase": [
         "PCA-17"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "PARTIAL",
+      "sourceEvidence": [
+        "backend/src/telemetry/consent.ts",
+        "backend/src/main.ts"
+      ],
+      "testEvidence": [
+        "backend/test/telemetry/consent.test.mjs",
+        "backend/test/mutation/privacyBoundaries.test.mjs",
+        "backend/test/security/noTelemetryEndpoint.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "No hidden telemetry route or durable ingestion path was added; source remains partial pending an authorized product decision and end-to-end privacy review."
     },
     {
       "requirementId": "PCA-NFR-015",
@@ -3437,15 +3467,21 @@
       "phase": [
         "PCA-2"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt (UnresolvedProtectedModeProvisioningGate unconditionally returns PENDING_OWNER_DECISION)"
+        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/StandardDevicePolicyCapabilitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/ProtectedModeProvisioningGateTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt"
+      ],
       "externalGate": [
         "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No DeviceAdminReceiver exists anywhere in the codebase; Android Protected/managed enrollment is unreachable by design pending unresolved product decisions. Correctly self-gated, not a silent gap. Runtime reachability: Not reachable — no implementation."
+      "notes": "No hidden provisioning, Accessibility abuse, or normal-install uninstall-prevention claim was introduced."
     },
     {
       "requirementId": "PCA-ADD-ENR-010",
@@ -3642,13 +3678,21 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [
-        "backend familyenvelope protocol (TAMPER_ALERT exists only as one of 15 generic wire message types, no addendum-specific event-list generator wired)"
+        "backend/src/alerts/types.ts",
+        "backend/src/alerts/policy.ts",
+        "backend/src/alerts/ProtectionAlertGenerator.ts",
+        "backend/src/alerts/ProtectionAlertLedger.ts",
+        "ios/PCA/Alerts/ProtectionAlert.swift",
+        "parent-web/src/pages/security/ProtectionAlertPanel.tsx"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/alerts/ProtectionAlert.test.mjs",
+        "ios/PCATests/AlertProtectionTests.swift"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No E2EE alert-generation module matching the addendum's specific event list (repeated invalid PIN, reinstallation, invitation redemption, authority change, etc.) found. No E2EE alert-display component found in parent-web either. Runtime reachability: Not reachable — no implementation."
+      "notes": "The relay boundary stores only typed metadata and opaque bytes; Parent Web does not substitute demo or infrastructure plaintext for trusted decryption."
     },
     {
       "requirementId": "PCA-ADD-ENR-021",
@@ -3657,13 +3701,18 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/screentime (EMERGENCY_EXCEPTION mode is a manual child-initiated toggle, not comprehensive coverage across all flows)"
+        "android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/AndroidCommunicationSurfaceResolver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Emergency floor exists narrowly within Screen Time/Break Shield as a manual toggle; not evidenced across invitation, enrollment, protection, and removal flows generally as the requirement demands. Runtime reachability: Not reachable — no implementation."
+      "notes": "Hardcoded OEM/AOSP package assumptions were removed; absent documented resolver evidence remains unavailable rather than silently protected."
     },
     {
       "requirementId": "PCA-ADD-ENR-022",

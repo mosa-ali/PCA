@@ -8,8 +8,8 @@ Generated from the completion matrix and repository evidence on 2026-08-19.
 |---|---:|
 | Total matrix requirements | 375 |
 | SOURCE_COMPLETE | 279 |
-| PARTIAL | 67 |
-| NOT_STARTED | 10 |
+| PARTIAL | 72 |
+| NOT_STARTED | 5 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
 | Partial plus not-started | 77 |
@@ -35,13 +35,13 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build and full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); focused Safe Zone tests: PASS (28/28); Writer84 enrollment tests: PASS (11/11); Writer87 Android focused tests: PASS (32/32); disposable MySQL validation remains PASS from unchanged DB-affecting candidate (394/394, 0 fail, 0 skipped, 0 todo). Parent Web full test: PASS (61 files, 452 tests); Parent Web production build: PASS; Parent Web Safe Zone tests: PASS (12/12); Android full testDebugUnitTest: PASS; Writer85/Writer88 focused Android tests: PASS; iOS XCTest is unavailable on Windows.
+- Backend build: PASS; elevated focused backend suite: PASS (24/24) including stale trust-set authority, default-off telemetry, no-ingestion, YouTube privacy, relay privacy, and opaque alert tests; previous full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); disposable MySQL validation remains PASS (394/394, 0 fail, 0 skipped, 0 todo; 19 migrations). Parent Web full test: PASS (61 files, 452 tests); Parent Web production build: PASS; Parent Web focused security/protection tests: PASS (11/11); Android focused capability/emergency suite: PASS (BUILD SUCCESSFUL); Android Safe Zone focused suite: PASS; iOS XCTest is unavailable on Windows.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
-- Source backlog reconciliation: 77 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (67 + 10).
+- Source backlog reconciliation: 77 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (72 + 5).
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
 
 ## Additive owner-controlled Wave 7: night lock and communication safety
@@ -155,9 +155,11 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Writers84-89 were re-leased against the remaining runtime-composition portions of their partially closed requirement clusters; Writers90-93 retain their exact ready assignments and are queued behind the current agent-pool capacity.
 - Lease scope remains source-only and sequentially reviewable: coordinator ledgers, matrix, and external-gate claims are not writer-owned.
 - The Parent Web current-head evidence is authoritative at 61 files and 452 tests; the former 449-count line was corrected.
+- Accepted continuous-wave source commits: `12173db` (Android live capability/degradation and resolver-driven emergency floor), `b815de3` (removal trust-set epoch binding and default-off aggregate telemetry), `d326b69` (opaque protection-alert generator/ledger boundary), and `931b836` (local iOS recovery/alert models plus reachable Parent Web disclosure surfaces).
+- The desktop agent pool exposed six active slots, so ten assignments were retained as exact leases but were processed in bounded batches; no ten-process activity claim is made. Remaining owner, authority, crypto, Apple/Xcode, runtime-graph, and device gates remain open.
 
 ### Current-head mutation validation
 
-- MUTATION = PASS (head 33ef143; total 28; KILLED 22; EQUIVALENT 3; INVALID 3; SURVIVED 0)
+- MUTATION = PASS (22 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry 931b836e5c667b241a6e5e7ccd30fb049ba7829a)
 - VALID_MUTATION_SURVIVORS = 0
 - Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.
