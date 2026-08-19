@@ -35,7 +35,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 449 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build and full unit/security suite: PASS (npm test completed successfully; elevated local worker permissions were required).
+- Backend build and full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); disposable MySQL validation remains PASS from the unchanged DB-affecting candidate (394/394, 0 fail, 0 skipped, 0 todo).
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -139,7 +139,7 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Current-head mutation validation
 
-- CURRENT_HEAD_MUTATION = NOT_EXECUTED (the runner is pinned to the R3 entry SHA; the current-head coordinator fix is outside the bounded mutation scope).
-- ENTRY_SHA_MUTATION = PASS (14 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry SHA 45ff6166979ffafc4265661bffe65534221285e3).
-- VALID_ENTRY_SHA_MUTATION_SURVIVORS = 0
-- Scope: bounded Safe Zone privacy and recipient-authorization mutants; temporary compiled modules are restored/deleted after each case.
+- MUTATION_HEAD = b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1
+- MUTATION_TOTAL = 20; KILLED = 14; EQUIVALENT = 3; INVALID = 3; SURVIVED = 0
+- VALID_MUTATION_SURVIVORS = 0
+- Scope: current-head bounded mutation run before the evidence-only publication commit; the runner now follows the declared mutation SHA instead of a hard-coded entry SHA.
