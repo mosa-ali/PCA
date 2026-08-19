@@ -1,7 +1,7 @@
 package org.pca.app.feature.youtube.policy
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFailsWith
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class YouTubeSafeContentCapabilityTest {
@@ -37,13 +37,13 @@ class YouTubeSafeContentCapabilityTest {
 
     @Test
     fun `unavailable source cannot make an enabled or disabled claim`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows(IllegalArgumentException::class.java) {
             YouTubeSafeContentCapability(
                 YouTubeSafeContentStatus.ENABLED,
                 YouTubeSafeContentSource.UNAVAILABLE,
             )
         }
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows(IllegalArgumentException::class.java) {
             YouTubeSafeContentCapability(
                 YouTubeSafeContentStatus.DISABLED,
                 YouTubeSafeContentSource.UNAVAILABLE,
