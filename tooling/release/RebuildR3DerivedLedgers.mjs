@@ -345,33 +345,33 @@ const SOURCE_UPDATES = {
   },
   'PCA-ADD-ENR-012': {
     status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/AdministrationPinService.ts', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/AdministrationPinService.test.mjs'],
+    sourceEvidence: ['backend/src/enrollment/AdministrationPinService.ts', 'backend/src/enrollment/MySqlAdministrationPinRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
+    testEvidence: ['backend/test/enrollment/AdministrationPinService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'PIN validation, lockout, and parent-facing setup scaffolding now exist, but durable repository/database persistence, HTTP route wiring, and the device-side mutation path are not complete.',
+    currentGap: 'PIN validation, lockout, verifier-only durable MySQL persistence, and parent-facing setup scaffolding now exist, but authenticated HTTP route wiring, verified family authority, and the device-side mutation path are not complete.',
     validationGap: 'Focused service and Parent Web typecheck evidence passes; database, HTTP, family-authority, and device validation remain pending.',
     nextAction: 'Wire durable persistence, authenticated routes, verified family authority, and the device-side removal/disable mutation without introducing a PIN fallback or plaintext logging.',
-    notes: 'Writer84 added a fail-closed PIN service and UI boundary; this is source progress, not a completion claim.',
+    notes: 'The durable repository stores salted verifier material and bounded failure state only; no raw PIN is persisted. This remains source progress, not a completion claim.',
   },
   'PCA-ADD-ENR-016': {
     status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs'],
+    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'backend/src/enrollment/MySqlProtectionApprovalRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
+    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs', 'backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Parent approval decision validation and UI state handling now exist, but durable persistence, HTTP wiring, signed remote family-authority verification, and device application are not complete.',
+    currentGap: 'Parent approval decision validation, durable SQL state, compare-and-set transitions, and UI state handling now exist, but authenticated HTTP wiring, signed remote family-authority verification, and device application are not complete.',
     validationGap: 'Focused service and Parent Web typecheck evidence passes; database, route, authority, and device validation remain pending.',
     nextAction: 'Complete durable approval storage, authenticated routes, verified signed authority, and device-side application with replay/idempotency evidence.',
-    notes: 'Writer84 added the approval state boundary and fail-closed UI; unresolved composition remains explicit.',
+    notes: 'The approval repository uses a closed SQL vocabulary and pending/unexpired compare-and-set; unresolved route, authority, and device composition remains explicit.',
   },
   'PCA-ADD-ENR-017': {
     status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs'],
+    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'backend/src/enrollment/MySqlProtectionApprovalRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
+    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs', 'backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Keep-active, temporarily-disable, and allow-removal decisions are modeled and validated in the service/UI boundary, but durable persistence, authenticated route composition, verified authority, and device-side enforcement are not complete.',
+    currentGap: 'Keep-active, temporarily-disable, and allow-removal decisions are modeled, durably persisted, and validated in the service/repository/UI boundary, but authenticated route composition, verified authority, and device-side enforcement are not complete.',
     validationGap: 'Focused service and Parent Web typecheck evidence passes; database, route, authority, and device validation remain pending.',
     nextAction: 'Wire the decision state machine through durable storage, authenticated family-authority routes, replay protection, and the device enforcement consumer.',
-    notes: 'No silent weakening or plaintext PIN path was introduced; the remaining gap is end-to-end reachability and persistence.',
+    notes: 'No silent weakening or plaintext PIN path was introduced; the remaining gap is authenticated end-to-end reachability, authority, and enforcement.',
   },
   'PCA-NFR-044': {
     status: 'PARTIAL',
@@ -385,30 +385,30 @@ const SOURCE_UPDATES = {
   },
   'PCA-FR-021': {
     status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
+    sourceEvidence: ['android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
+    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'A coarse on-device detector and explicit enforcement capability gate now exist, but camera-session/permission/lifecycle wiring and end-to-end shared-shield composition remain incomplete.',
+    currentGap: 'A coarse on-device detector and explicit enforcement capability gate now exist, and the source now distinguishes initial denial from post-grant revocation at the camera boundary; foreground camera-session wiring and end-to-end shared-shield composition remain incomplete.',
     validationGap: 'Android unit/Robolectric coverage passes; camera hardware, permission Activity-result wiring, and physical-device validation remain pending.',
     nextAction: 'Bind a foreground permission-gated camera adapter and the shared enforcement surface without persisting frames or making distance/medical claims.',
     notes: 'The detector reports only coarse near/far/unknown geometry and the hardware sensor remains the active production source until the camera adapter is verified.',
   },
   'PCA-FR-023': {
     status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt'],
+    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt'],
+    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The concrete Android face-geometry detector and coarse classifier now exist, but a foreground camera-session adapter, permission/lifecycle composition, and supported-device validation are still absent.',
+    currentGap: 'The concrete Android face-geometry detector and coarse classifier now exist, with explicit permission/lifecycle state handling at the source boundary; a foreground camera-session adapter and supported-device validation are still absent.',
     validationGap: 'Synthetic/Robolectric detector coverage passes; no physical camera/device or production runtime-graph evidence is claimed.',
     nextAction: 'Add only the permission-gated foreground camera adapter and verify frame disposal/device behavior; retain UNKNOWN for no-face or ambiguous samples.',
     notes: 'No centimeter estimate, recognition, biometric template, persistence, or network path is introduced.',
   },
   'PCA-PRIV-001': {
     status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
+    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
+    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Ephemeral frame ownership, recycling, coarse-only geometry, and enforcement gating are source-backed; camera permission/lifecycle/session wiring and production graph reachability remain incomplete.',
+    currentGap: 'Ephemeral frame ownership, recycling, coarse-only geometry, enforcement gating, and fail-closed permission/revocation handling are source-backed; foreground camera-session wiring and production graph reachability remain incomplete.',
     validationGap: 'Focused Android coverage passes; permission denial/return journeys and physical-device validation remain pending.',
     nextAction: 'Finish the permission/lifecycle adapter and verify that every frame is disposed at the boundary, with no persistence, recognition, or covert capture.',
     notes: 'This preserves the camera capability as unavailable until the explicit platform boundary is integrated and verified.',
@@ -462,6 +462,7 @@ const SOURCE_UPDATES = {
       'parent-web/src/api/real/realSafeZoneClient.ts',
       'parent-web/src/api/safeZonePolicyAuthoring.ts',
       'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt',
+      'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt',
       'parent-web/tests/unit/realSafeZoneClient.test.ts',
       'parent-web/tests/unit/safeZonePolicyAuthoring.test.ts',
       'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt',
@@ -469,7 +470,7 @@ const SOURCE_UPDATES = {
     ],
     testEvidence: ['android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt', 'backend/test/location/safeZoneRepository.test.mjs', 'backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs', 'backend/test/parentaccount/preferencesSafeZonesSchema.test.mjs', 'backend/test/familyrbac/ParentActionAuthorizationService.test.mjs', 'parent-web/tests/unit/realSafeZoneClient.test.ts', 'parent-web/tests/unit/safeZonePolicyAuthoring.test.ts', 'tooling/release/ValidateSafeZoneMutationBoundary.mjs'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The corrected source now composes parent opaque-envelope publishing with the local recipient receiver and Safe Zone runtime seam while storing only encrypted envelopes; verified family-role authority, reviewed crypto, and end-to-end delivery remain open.',
+    currentGap: 'The corrected source now composes parent opaque-envelope publishing with the local recipient receiver and Safe Zone runtime seam, resetting local membership state when a policy revision is applied while storing only encrypted envelopes; verified family-role authority, reviewed crypto, and end-to-end delivery remain open.',
     validationGap: 'Focused route behavior passes in-process; Node worker mode is blocked by environment spawn EPERM, and disposable MySQL plus Android device delivery validation remain unexecuted.',
     nextAction: 'Wire the verified family trust-set role authority, then validate encrypted delivery and device application.',
     notes: 'Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced.',
@@ -486,10 +487,10 @@ const SOURCE_UPDATES = {
   },
   'PCA-FR-135': {
     status: 'PARTIAL',
-    sourceEvidence: ['backend/src/location/safeZone.ts', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt', 'parent-web/src/pages/children/LocationPage.tsx', 'parent-web/src/api/real/realSafeZoneClient.ts'],
+    sourceEvidence: ['backend/src/location/safeZone.ts', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt', 'parent-web/src/pages/children/LocationPage.tsx', 'parent-web/src/api/real/realSafeZoneClient.ts'],
     testEvidence: ['backend/test/location/safeZone.test.mjs', 'backend/test/location/safeZoneRepository.test.mjs', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt'],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Local geofence evaluation, opaque Safe Zone boundaries, and a local runtime seam are present, but verified family-authority, reviewed crypto, and real browser-to-device delivery composition are not complete.',
+    currentGap: 'Local geofence evaluation, opaque Safe Zone boundaries, policy-revision baseline reset, and a local runtime seam are present, but verified family-authority, reviewed crypto, and real browser-to-device delivery composition are not complete.',
     validationGap: 'Android device delivery, browser E2E, disposable MySQL, and approved crypto/trust-set validation remain unexecuted or unavailable.',
     nextAction: 'Complete the verified family-authority and encrypted delivery composition without introducing central readable location policy or movement history.',
     notes: 'This writer slice hardens local malformed-sample handling, key-epoch binding, and opaque authoring/storage validation; it does not claim end-to-end authoring or device delivery.',
@@ -840,6 +841,9 @@ const SOURCE_UPDATES = {
     sourceEvidence: [
       'ios/PCA/Recovery/RecoverySecretDisclosure.swift',
       'parent-web/src/pages/security/RecoverySecretDisclosure.tsx',
+      'parent-web/src/pages/security/Recovery.tsx',
+      'parent-web/src/i18n/locales/en.json',
+      'parent-web/src/i18n/locales/ar.json',
       'backend/src/familytrustset/FamilyTrustSetRecoveryEngine.ts',
     ],
     testEvidence: [
@@ -848,7 +852,7 @@ const SOURCE_UPDATES = {
       'backend/test/familytrustset/recoveryEngine.test.mjs',
     ],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Reachable iOS and Parent Web disclosure gates now explain permanent loss semantics without accepting or transmitting the Recovery Secret, while the backend remains correctly unable to recover the unsupported no-parent/no-secret case; Apple project wiring, browser a11y/RTL coverage, and real crypto/runtime validation remain open.',
+    currentGap: 'Reachable iOS and Parent Web disclosure gates now explain permanent loss semantics without accepting or transmitting the Recovery Secret, with localized English/Arabic Parent Web acknowledgement copy; the backend remains correctly unable to recover the unsupported no-parent/no-secret case, while Apple project wiring, browser a11y/RTL coverage, and real crypto/runtime validation remain open.',
     nextAction: 'Wire the disclosure into the approved local secret-generation flow and validate the trusted-device recovery boundary on macOS/Xcode and supported devices.',
     notes: 'The disclosure is documentation/source progress only; it does not claim that a secret is generated, stored, or recoverable through PCA infrastructure.',
   },
@@ -859,17 +863,53 @@ const SOURCE_UPDATES = {
       'backend/src/alerts/policy.ts',
       'backend/src/alerts/ProtectionAlertGenerator.ts',
       'backend/src/alerts/ProtectionAlertLedger.ts',
+      'backend/src/alerts/ProtectionAlertProducer.ts',
       'ios/PCA/Alerts/ProtectionAlert.swift',
       'parent-web/src/pages/security/ProtectionAlertPanel.tsx',
     ],
     testEvidence: [
       'backend/test/alerts/ProtectionAlert.test.mjs',
+      'backend/test/alerts/ProtectionAlertProducer.test.mjs',
       'ios/PCATests/AlertProtectionTests.swift',
     ],
     sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The closed alert vocabulary, opaque encrypted-payload generator, idempotent relay-side ledger, iOS model, and Parent Web pending-trusted-decryption display now exist; event producers, authenticated transport, trusted parent decryption, Apple project wiring, and approved crypto validation remain open.',
+    currentGap: 'The closed alert vocabulary, opaque encrypted-payload generator, producer-to-ledger composition, idempotent relay-side ledger, iOS model, and Parent Web pending-trusted-decryption display now exist; device event producers, authenticated transport, trusted parent decryption, Apple project wiring, and approved crypto validation remain open.',
     nextAction: 'Bind real device event producers to the approved E2EE alert envelope path and trusted-parent inbox, then validate iOS/runtime reachability without adding plaintext family data.',
     notes: 'The relay boundary stores only typed metadata and opaque bytes; Parent Web does not substitute demo or infrastructure plaintext for trusted decryption.',
+  },
+  'PCA-FR-113': {
+    status: 'PARTIAL',
+    sourceEvidence: [
+      'parent-web/src/pages/privacy/Transparency.tsx',
+      'parent-web/src/i18n/locales/en.json',
+      'parent-web/src/i18n/locales/ar.json',
+    ],
+    testEvidence: [
+      'parent-web/tests/i18n/fr113LocaleContent.test.ts',
+      'parent-web/tests/mutation/privacyBoundaries.test.ts',
+    ],
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'The Parent Web transparency inventory now includes localized YouTube, wellbeing, and child-request visibility copy with English/Arabic parity tests; backend-generated notices, reports, and deletion confirmations are not yet fully routed through the same localization contract.',
+    validationGap: 'Parent Web typecheck and focused English/Arabic/mutation tests pass; full notification/report/deletion runtime coverage remains pending.',
+    nextAction: 'Route every system-generated notice, report, and deletion confirmation through the localized message catalog and add provider-backed parity coverage before closure.',
+    notes: 'This is source-backed transparency progress only; it does not claim that all backend-generated notification paths are localized.',
+  },
+  'PCA-NFR-060': {
+    status: 'PARTIAL',
+    sourceEvidence: [
+      'parent-web/src/pages/privacy/Transparency.tsx',
+      'parent-web/src/i18n/locales/en.json',
+      'parent-web/src/i18n/locales/ar.json',
+    ],
+    testEvidence: [
+      'parent-web/tests/i18n/fr113LocaleContent.test.ts',
+      'parent-web/tests/mutation/privacyBoundaries.test.ts',
+    ],
+    sourceSolvableClass: 'REAL_SOURCE_GAP',
+    currentGap: 'The visible/not-visible transparency inventory now exposes the added YouTube, wellbeing, and child-request categories in English and Arabic with focused parity and privacy-boundary tests; a complete runtime inventory and hidden-monitoring audit across all shipped producers remain open.',
+    validationGap: 'Parent Web typecheck and focused tests pass; a complete cross-platform producer inventory and runtime audit remain pending.',
+    nextAction: 'Reconcile every shipped producer against the canonical transparency inventory and prove that undisclosed collection paths are absent before closure.',
+    notes: 'The added transparency categories do not imply that every platform producer or backend notice is already catalogued.',
   },
 };
 
@@ -1117,24 +1157,25 @@ progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNo
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
 const currentHeadValidationEvidence = process.env.PCA_R3_BACKEND_UNIT_SECURITY_EVIDENCE
   ?? '- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.';
-progress = progress.replace(/- Backend build and full unit\/security suite:[^\n]*/, currentHeadValidationEvidence);
-progress = progress.replace(/- Parent Web typecheck, lint, test, and build:[^\n]*/, '- Parent Web typecheck: PASS; lint: PASS from the prior focused validation; test/build: RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM).');
-const previousDbStatus = progress.match(/CURRENT_HEAD_0020_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
+progress = progress.replace(/- Backend build[^\n]*/, currentHeadValidationEvidence);
+progress = progress.replace(/- Parent Web typecheck[^\n]*/, '- Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).');
+const currentMigration = process.env.PCA_R3_DB_MIGRATION ?? '0020';
+const previousDbStatus = progress.match(/CURRENT_HEAD_\d+_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
 const dbStatus = process.env.PCA_R3_DB_VALIDATION ?? previousDbStatus;
 const dbPass = dbStatus === 'PASS';
 const dbSection = [
-  '### Wave 11 database validation',
+  '### Current-head database validation',
   '',
   '- PRE_WAVE11_DB_BASELINE = PASS',
-  `- CURRENT_HEAD_0020_DB_VALIDATION = ${dbStatus}`,
-  `- MIGRATION_0020_APPLIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
-  `- MIGRATION_0020_SCHEMA_VERIFIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
+  `- CURRENT_HEAD_${currentMigration}_DB_VALIDATION = ${dbStatus}`,
+  `- MIGRATION_${currentMigration}_APPLIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
+  `- MIGRATION_${currentMigration}_SCHEMA_VERIFIED = ${dbPass ? 'YES' : 'NOT_EXECUTED'}`,
   `- MYSQL_STANDARD = ${process.env.PCA_R3_MYSQL_STANDARD ?? (dbPass ? 'PASS' : 'NOT_EXECUTED')}`,
   `- MYSQL_PRIVILEGE = ${process.env.PCA_R3_MYSQL_PRIVILEGE ?? (dbPass ? 'PASS' : 'NOT_EXECUTED')}`,
   `- DB_CRITICAL_SKIPPED = ${process.env.PCA_R3_DB_CRITICAL_SKIPPED ?? (dbPass ? '0' : 'NOT_EXECUTED')}`,
   '- Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.',
 ].join('\n');
-const dbSectionPattern = /\n### Wave 11 database validation[\s\S]*?(?=\n### |\n## |$)/;
+const dbSectionPattern = /\n### (?:Wave 11 database validation|Current-head database validation)[\s\S]*?(?=\n### |\n## |$)/;
 progress = dbSectionPattern.test(progress)
   ? progress.replace(dbSectionPattern, `\n${dbSection}`)
   : `${progress.trimEnd()}\n\n${dbSection}\n`;

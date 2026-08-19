@@ -1,0 +1,11 @@
+WRITER,LEASE_STATE,EXECUTION_STATE,PROCESS_SLOT,CURRENT_SHA,QA_STATE,BLOCKED_BY,NEXT_ACTION
+Writer84,ACTIVE_LEASE,COMPLETED,,31ea51e,PASS,,Durable verifier/approval persistence and exact-request replay idempotency integrated; authenticated routes, verified authority, and device enforcement remain open.
+Writer85,ACTIVE_LEASE,QUEUED,,c5a444f,NOT_STARTED,,Start after a slot opens; finish iOS/age-profile source composition without fabricating Apple validation.
+Writer86,ACTIVE_LEASE,COMPLETED,,31ea51e,PASS,,Safe Zone policy-revision baseline reset integrated with focused Android tests; verified authority, reviewed crypto, and parent-to-device delivery remain open.
+Writer87,ACTIVE_LEASE,QUEUED,,c5a444f,NOT_STARTED,UNAVAILABLE_HANDLE,Start when a reusable process handle is available; finish authorized retention/export runtime composition and offline/idempotent boundaries.
+Writer88,ACTIVE_LEASE,COMPLETED,,edf074f,PASS,,Camera permission lifecycle boundary integrated and focused Android tests passed.
+Writer89,ACTIVE_LEASE,QUEUED,,c5a444f,NOT_STARTED,UNAVAILABLE_HANDLE,Start when a reusable process handle is available; finish metadata-only platform dashboard read-model and route gaps.
+Writer90,ACTIVE_LEASE,QUEUED,,c5a444f,NOT_STARTED,NO_SOURCE_CHANGE_IN_LEASE,Re-lease when a reusable process handle is available; finish capability lifecycle and emergency/protected-mode composition.
+Writer91,ACTIVE_LEASE,COMPLETED,,c5a444f,PASS,,EN/AR transparency and no-hidden-monitoring evidence integrated with focused tests.
+Writer92,ACTIVE_LEASE,COMPLETED,,c5a444f,PASS,,Opaque alert producer and localized recovery acknowledgement integrated with focused tests; source spans c2c17ab and c5a444f.
+Writer93,ACTIVE_LEASE,QUEUED,,c5a444f,NOT_STARTED,NO_SOURCE_CHANGE_IN_LEASE,Re-lease when a reusable process handle is available; finish YouTube/relay/removal/telemetry source wiring and mutation coverage.

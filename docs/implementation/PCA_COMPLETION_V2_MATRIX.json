@@ -799,10 +799,14 @@
         "android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt",
         "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt",
         "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt"
       ],
       "externalGate": [],
@@ -846,10 +850,14 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
-        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt"
+        "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt"
+        "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt"
       ],
       "externalGate": [],
       "notes": "No centimeter estimate, recognition, biometric template, persistence, or network path is introduced."
@@ -1255,6 +1263,7 @@
         "parent-web/src/api/real/realSafeZoneClient.ts",
         "parent-web/src/api/safeZonePolicyAuthoring.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt",
         "parent-web/tests/unit/realSafeZoneClient.test.ts",
         "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
@@ -1769,15 +1778,16 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "parent-web/src/pages/Notifications.tsx and platform-admin-web notification-adjacent surfaces use t() translation calls throughout (spot-checked, no raw hardcoded English string literals found rendered directly to users in either app's page-level JSX)"
+        "parent-web/src/pages/privacy/Transparency.tsx",
+        "parent-web/src/i18n/locales/en.json",
+        "parent-web/src/i18n/locales/ar.json"
       ],
       "testEvidence": [
-        "parent-web/tests/i18n/notificationsRtl.test.tsx (real Notifications page under Arabic/RTL asserts document direction and Arabic heading)",
-        "parent-web/tests/i18n/rtl.test.tsx (real Dashboard Arabic/English direction and label coverage)",
-        "platform-admin-web/tests/i18n/rtl.test.tsx (real platform-admin Dashboard Arabic/RTL direction and label coverage)"
+        "parent-web/tests/i18n/fr113LocaleContent.test.ts",
+        "parent-web/tests/mutation/privacyBoundaries.test.ts"
       ],
       "externalGate": [],
-      "notes": "The web display layer now has real Arabic/RTL page coverage for parent notifications and both dashboard surfaces, while the page components continue to use production translation keys rather than hardcoded labels. This remains PARTIAL because the normative scope also includes backend-generated notice/report/deletion-confirmation text bodies, which are not fully localized end-to-end in this repository. Runtime reachability: Notifications.tsx is routed at parent-web/src/App.tsx path=\"\"notifications\"\" -- real reachable page."
+      "notes": "This is source-backed transparency progress only; it does not claim that all backend-generated notification paths are localized."
     },
     {
       "requirementId": "PCA-FR-114",
@@ -2007,6 +2017,7 @@
         "backend/src/location/safeZone.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
+        "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt",
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/real/realSafeZoneClient.ts"
@@ -2164,6 +2175,9 @@
       "sourceEvidence": [
         "ios/PCA/Recovery/RecoverySecretDisclosure.swift",
         "parent-web/src/pages/security/RecoverySecretDisclosure.tsx",
+        "parent-web/src/pages/security/Recovery.tsx",
+        "parent-web/src/i18n/locales/en.json",
+        "parent-web/src/i18n/locales/ar.json",
         "backend/src/familytrustset/FamilyTrustSetRecoveryEngine.ts"
       ],
       "testEvidence": [
@@ -2902,10 +2916,17 @@
         "PCA-10"
       ],
       "status": "PARTIAL",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "parent-web/src/pages/privacy/Transparency.tsx",
+        "parent-web/src/i18n/locales/en.json",
+        "parent-web/src/i18n/locales/ar.json"
+      ],
+      "testEvidence": [
+        "parent-web/tests/i18n/fr113LocaleContent.test.ts",
+        "parent-web/tests/mutation/privacyBoundaries.test.ts"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Follows structurally from PCA-FR-121's disclosure page (parent-web scope) plus no covert-collection code found in this Android module during this audit"
+      "notes": "The added transparency categories do not imply that every platform producer or backend notice is already catalogued."
     },
     {
       "requirementId": "PCA-NFR-061",
@@ -2981,10 +3002,14 @@
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt",
         "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt",
         "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt"
       ],
       "externalGate": [
@@ -3535,14 +3560,17 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "backend/src/enrollment/AdministrationPinService.ts",
+        "backend/src/enrollment/MySqlAdministrationPinRepository.ts",
+        "backend/migrations/0022_enrollment_administration_persistence.sql",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
         "parent-web/src/pages/family/Devices.tsx"
       ],
       "testEvidence": [
-        "backend/test/enrollment/AdministrationPinService.test.mjs"
+        "backend/test/enrollment/AdministrationPinService.test.mjs",
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Writer84 added a fail-closed PIN service and UI boundary; this is source progress, not a completion claim."
+      "notes": "The durable repository stores salted verifier material and bounded failure state only; no raw PIN is persisted. This remains source progress, not a completion claim."
     },
     {
       "requirementId": "PCA-ADD-ENR-013",
@@ -3609,14 +3637,18 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "backend/src/enrollment/ProtectionApprovalService.ts",
+        "backend/src/enrollment/MySqlProtectionApprovalRepository.ts",
+        "backend/migrations/0022_enrollment_administration_persistence.sql",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
         "parent-web/src/pages/family/Devices.tsx"
       ],
       "testEvidence": [
-        "backend/test/enrollment/ProtectionApprovalService.test.mjs"
+        "backend/test/enrollment/ProtectionApprovalService.test.mjs",
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs",
+        "backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs"
       ],
       "externalGate": [],
-      "notes": "Writer84 added the approval state boundary and fail-closed UI; unresolved composition remains explicit."
+      "notes": "The approval repository uses a closed SQL vocabulary and pending/unexpired compare-and-set; unresolved route, authority, and device composition remains explicit."
     },
     {
       "requirementId": "PCA-ADD-ENR-017",
@@ -3627,14 +3659,18 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "backend/src/enrollment/ProtectionApprovalService.ts",
+        "backend/src/enrollment/MySqlProtectionApprovalRepository.ts",
+        "backend/migrations/0022_enrollment_administration_persistence.sql",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
         "parent-web/src/pages/family/Devices.tsx"
       ],
       "testEvidence": [
-        "backend/test/enrollment/ProtectionApprovalService.test.mjs"
+        "backend/test/enrollment/ProtectionApprovalService.test.mjs",
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs",
+        "backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs"
       ],
       "externalGate": [],
-      "notes": "No silent weakening or plaintext PIN path was introduced; the remaining gap is end-to-end reachability and persistence."
+      "notes": "No silent weakening or plaintext PIN path was introduced; the remaining gap is authenticated end-to-end reachability, authority, and enforcement."
     },
     {
       "requirementId": "PCA-ADD-ENR-018",
@@ -3684,11 +3720,13 @@
         "backend/src/alerts/policy.ts",
         "backend/src/alerts/ProtectionAlertGenerator.ts",
         "backend/src/alerts/ProtectionAlertLedger.ts",
+        "backend/src/alerts/ProtectionAlertProducer.ts",
         "ios/PCA/Alerts/ProtectionAlert.swift",
         "parent-web/src/pages/security/ProtectionAlertPanel.tsx"
       ],
       "testEvidence": [
         "backend/test/alerts/ProtectionAlert.test.mjs",
+        "backend/test/alerts/ProtectionAlertProducer.test.mjs",
         "ios/PCATests/AlertProtectionTests.swift"
       ],
       "externalGate": [],

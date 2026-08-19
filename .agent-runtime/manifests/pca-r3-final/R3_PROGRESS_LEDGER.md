@@ -35,7 +35,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build: PASS; elevated focused backend suite: PASS (24/24) including stale trust-set authority, default-off telemetry, no-ingestion, YouTube privacy, relay privacy, and opaque alert tests; previous full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); disposable MySQL validation remains PASS (394/394, 0 fail, 0 skipped, 0 todo; 19 migrations). Parent Web full test: PASS (61 files, 452 tests); Parent Web production build: PASS; Parent Web focused security/protection tests: PASS (11/11); Android focused capability/emergency suite: PASS (BUILD SUCCESSFUL); Android Safe Zone focused suite: PASS; iOS XCTest is unavailable on Windows.
+- Backend build: PASS; focused backend alert suite: PASS (6/6); focused enrollment persistence/approval suite: PASS (17/17); previous full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); current-head migration 0022 MySQL validation: BLOCKED because Docker Desktop is unavailable.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -127,15 +127,15 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Normalized PCA-FR-043B, PCA-FR-043C, PCA-FR-015A, and PCA-AND-003A to `SOURCE_COMPLETE` with explicit device-owner, telephony/SMS, iOS, and physical-device external gates. Their validation rows remain open and do not imply real-device proof.
 - SMS remains delivery-preserved but not an unrestricted Messages UI exemption; this is a documented public-Android capability limit.
 
-### Wave 11 database validation
+### Current-head database validation
 
 - PRE_WAVE11_DB_BASELINE = PASS
-- CURRENT_HEAD_0020_DB_VALIDATION = PASS
-- MIGRATION_0020_APPLIED = YES
-- MIGRATION_0020_SCHEMA_VERIFIED = YES
-- MYSQL_STANDARD = PASS (394/394, 0 fail, 0 skipped, 0 todo; 19 migrations)
-- MYSQL_PRIVILEGE = PASS (4/4)
-- DB_CRITICAL_SKIPPED = 0
+- CURRENT_HEAD_0022_DB_VALIDATION = BLOCKED
+- MIGRATION_0022_APPLIED = NOT_EXECUTED
+- MIGRATION_0022_SCHEMA_VERIFIED = NOT_EXECUTED
+- MYSQL_STANDARD = NOT_EXECUTED (Docker Desktop daemon unavailable; migration 0022 not live-validated)
+- MYSQL_PRIVILEGE = NOT_EXECUTED (current-head database validation blocked before privilege run)
+- DB_CRITICAL_SKIPPED = NOT_EXECUTED
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Wave 12 source-boundary hardening
 
@@ -158,8 +158,21 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - Accepted continuous-wave source commits: `12173db` (Android live capability/degradation and resolver-driven emergency floor), `b815de3` (removal trust-set epoch binding and default-off aggregate telemetry), `d326b69` (opaque protection-alert generator/ledger boundary), and `931b836` (local iOS recovery/alert models plus reachable Parent Web disclosure surfaces).
 - The desktop agent pool exposed six active slots, so ten assignments were retained as exact leases but were processed in bounded batches; no ten-process activity claim is made. Remaining owner, authority, crypto, Apple/Xcode, runtime-graph, and device gates remain open.
 
+### Wave 14 rolling source execution (2026-08-19)
+
+- Ten logical leases remain registered in `R3_EXECUTION_SCHEDULE.csv`; the coordinator used a maximum of five worker slots and makes no claim that ten processes ran simultaneously.
+- Writer88 completed `edf074f` (`feat(r3): compose camera permission lifecycle boundary`): Android permission state now distinguishes initial denial from post-grant revocation and fails closed on query failure; focused camera lifecycle tests passed with `BUILD SUCCESSFUL`. Foreground camera-session/runtime-graph and physical-device gates remain open.
+- Writer84 completed the enrollment persistence portion of `31ea51e`: verifier-only PIN storage, durable approval state, and exact-request replay idempotency are source-backed; authenticated routes, verified authority, and device enforcement remain open.
+- Writer86 completed the Safe Zone portion of `31ea51e`: accepted policy revisions clear the local membership/debounce baseline before monitoring resumes; verified authority, reviewed crypto, and parent-to-device delivery remain open.
+- Writer91 completed `c5a444f` (`feat(r3): localize privacy and recovery disclosures`): Parent Web English/Arabic transparency categories and recovery acknowledgement copy were integrated; Parent Web typecheck, focused EN/AR/mutation tests (`14/14`), and production build passed.
+- Writer92 completed the opaque alert producer at `c2c17ab` and the localized recovery integration at `c5a444f`; backend build and focused alert tests passed (`6/6`). Authenticated transport, trusted-parent decryption, Apple project/runtime, and approved crypto gates remain open.
+- The shared source commit `31ea51e` also integrated durable enrollment-administration persistence: verifier-only PIN storage, SQL approval state, compare-and-set decision transitions, and policy-revision geofence baseline reset. Backend build plus focused enrollment persistence/approval tests passed (`17/17`), and the Android Safe Zone wildcard suite passed after a clean rerun (`BUILD SUCCESSFUL`). Authenticated routes, verified family authority, device enforcement, MySQL live migration validation, and real-device delivery remain open.
+- Writers90 and 93 produced no source changes in their leases. Writers85, 87, and 89 remain queued or blocked on unavailable reusable handles. No queued lease is represented as completed.
+- This wave adds source evidence but closes no remaining `REAL_SOURCE_GAP`; the authoritative source backlog remains 77 rows, including 29 exact `REAL_SOURCE_GAP` rows with exact assignment coverage.
+- Current-head mutation evidence was rerun after the wave: 22 KILLED, 3 EQUIVALENT, 3 INVALID, and 0 SURVIVED at source entry `c5a444f96f51c8bb15ddee5f3dd809f39066a63b`.
+
 ### Current-head mutation validation
 
-- MUTATION = PASS (22 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry 931b836e5c667b241a6e5e7ccd30fb049ba7829a)
+- MUTATION = PASS (22 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry 31ea51e4abf6c831da86d6289795090cfebd5b2f)
 - VALID_MUTATION_SURVIVORS = 0
 - Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.

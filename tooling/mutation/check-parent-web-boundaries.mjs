@@ -4,7 +4,7 @@ import path from 'node:path';
 const root = path.resolve(process.argv[2] ?? '.');
 const failures = [];
 const read = (relative) => readFile(path.join(root, relative), 'utf8');
-const visible = ['appUsage', 'webBrowsing', 'contentBlocks', 'location', 'screenTime', 'eyeProtection', 'prayerReminders', 'deviceStatus', 'policyChanges'];
+const visible = ['appUsage', 'webBrowsing', 'contentBlocks', 'location', 'screenTime', 'eyeProtection', 'prayerReminders', 'deviceStatus', 'policyChanges', 'youtube', 'wellbeing', 'childRequests'];
 const notVisible = ['messages', 'screenshots', 'biometrics', 'preciseWithoutConsent', 'fullBrowsing', 'thirdParty'];
 
 function requireText(source, value, label) {
