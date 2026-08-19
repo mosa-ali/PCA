@@ -1,6 +1,6 @@
 {
   "mission": "CURRENT_HEAD_MUTATION",
-  "entrySha": "45ff6166979ffafc4265661bffe65534221285e3",
+  "entrySha": "b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1",
   "requirements": {
     "PCA-NFR-014": {
       "boundedClaim": "Default-off telemetry and no hidden ingestion surface; separate consent implementation remains out of scope because the entry tree has no shipped opt-in feature.",

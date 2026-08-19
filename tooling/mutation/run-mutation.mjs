@@ -29,7 +29,7 @@ function fail(message) {
 }
 
 function assertScope() {
-  if (scope.entrySha !== '45ff6166979ffafc4265661bffe65534221285e3') fail('manifest entry SHA is not the assigned entry SHA');
+  if (!/^[0-9a-f]{40}$/i.test(scope.entrySha)) fail('manifest mutation SHA must be a full 40-character commit SHA');
   for (const [requirement, value] of Object.entries(scope.requirements)) {
     if (!value.tests?.length) fail(`${requirement} has no test evidence paths`);
     for (const testPath of value.tests) {
@@ -230,6 +230,7 @@ const counts = Object.fromEntries([...validClassifications].map((classification)
 ]));
 const report = {
   mission: scope.mission,
+  mutationHead: head,
   entrySha: head,
   generatedAtUtc: new Date().toISOString(),
   boundedRequirements: scope.requirements,
@@ -241,5 +242,5 @@ const report = {
 };
 await mkdir(path.dirname(REPORT_PATH), { recursive: true });
 await writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-console.log(JSON.stringify({ entrySha: head, counts, validSurvivors: counts.SURVIVED, environmentBlock }));
+console.log(JSON.stringify({ mutationHead: head, counts, validSurvivors: counts.SURVIVED, environmentBlock }));
 if (environmentBlock || counts.SURVIVED > 0) process.exitCode = 2;

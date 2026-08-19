@@ -1,7 +1,8 @@
 {
   "mission": "CURRENT_HEAD_MUTATION",
-  "entrySha": "45ff6166979ffafc4265661bffe65534221285e3",
-  "generatedAtUtc": "2026-08-18T11:40:51.135Z",
+  "mutationHead": "b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1",
+  "entrySha": "b8731045cf11bcda3f4e7f7034f1cb1d2ff0d6f1",
+  "generatedAtUtc": "2026-08-19T17:45:28.249Z",
   "boundedRequirements": {
     "PCA-NFR-014": {
       "boundedClaim": "Default-off telemetry and no hidden ingestion surface; separate consent implementation remains out of scope because the entry tree has no shipped opt-in feature.",
@@ -51,7 +52,7 @@
       "source": "src/relay/diagnostics.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"small ciphertext boundary is not preserved\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"small ciphertext boundary is not preserved\"]}"
     },
     {
       "id": "B-FR137-002",
@@ -60,7 +61,7 @@
       "source": "src/relay/diagnostics.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"missing opaque message id projection: messageId: record.messageId,\",\"forbidden ciphertext in message id: messageId: record.ciphertext\",\"forbidden ciphertext materialization in diagnostics: record.ciphertext.toString('utf8')\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"missing opaque message id projection: messageId: record.messageId,\",\"forbidden ciphertext in message id: messageId: record.ciphertext\",\"forbidden ciphertext materialization in diagnostics: record.ciphertext.toString('utf8')\"]}"
     },
     {
       "id": "B-FR137-003",
@@ -69,7 +70,7 @@
       "source": "src/relay/diagnostics.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"missing ciphertext size class projection: ciphertextSizeClass: classifyCiphertextSize(record.ciphertext.length),\",\"forbidden ciphertext materialization in diagnostics: record.ciphertext.toString('utf8')\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"missing ciphertext size class projection: ciphertextSizeClass: classifyCiphertextSize(record.ciphertext.length),\",\"forbidden ciphertext materialization in diagnostics: record.ciphertext.toString('utf8')\"]}"
     },
     {
       "id": "B-FR137-004",
@@ -78,7 +79,7 @@
       "source": "src/http/buildServer.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"missing disabled Fastify logger: Fastify({ logger: false })\",\"forbidden enabled Fastify logger: logger: true\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"missing disabled Fastify logger: Fastify({ logger: false })\",\"forbidden enabled Fastify logger: logger: true\"]}"
     },
     {
       "id": "B-FR137-005",
@@ -87,7 +88,7 @@
       "source": "src/relay/RelayService.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"missing diagnostic failure catch: catch {\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"missing diagnostic failure catch: catch {\"]}"
     },
     {
       "id": "B-NFR014-001",
@@ -96,7 +97,7 @@
       "source": "src/http/buildServer.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\\\\src\\\\http\\\\buildServer.ts: route contains telemetry\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\\\\src\\\\http\\\\buildServer.ts: route contains telemetry\"]}"
     },
     {
       "id": "B-FR137-EQUIV-001",
@@ -107,7 +108,7 @@
       "equivalenceReason": "Buffer.length is an integer, so < 1025 is identical to <= 1024 over the valid input domain.",
       "classification": "EQUIVALENT",
       "checks": 0,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"status\":\"PASS\"}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"status\":\"PASS\"}"
     },
     {
       "id": "B-FR137-INVALID-001",
@@ -118,7 +119,7 @@
       "invalidReason": "TypeScript compilation must reject the undefined identifier.",
       "classification": "INVALID",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\backend\",\"failures\":[\"missing opaque message id projection: messageId: record.messageId,\"]}",
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\backend\",\"failures\":[\"missing opaque message id projection: messageId: record.messageId,\"]}",
       "method": "source-shape invalidity check"
     },
     {
@@ -128,7 +129,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"visible disclosure key set changed\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"visible disclosure key set changed\"]}"
     },
     {
       "id": "W-NFR060-002",
@@ -137,7 +138,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"not-visible disclosure key set changed\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"not-visible disclosure key set changed\"]}"
     },
     {
       "id": "W-NFR060-003",
@@ -146,7 +147,7 @@
       "source": "src/App.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"missing transparency route: path=\\\"privacy/transparency\\\" element={<Transparency />}\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"missing transparency route: path=\\\"privacy/transparency\\\" element={<Transparency />}\"]}"
     },
     {
       "id": "W-NFR014-001",
@@ -155,7 +156,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"hidden browser collection marker: sendBeacon\",\"hidden browser collection marker: navigator.sendBeacon\",\"hidden browser collection marker: telemetry\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"hidden browser collection marker: sendBeacon\",\"hidden browser collection marker: navigator.sendBeacon\",\"hidden browser collection marker: telemetry\"]}"
     },
     {
       "id": "W-NFR060-004",
@@ -164,7 +165,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"missing E2EE disclosure: t('transparency.encryptionNote')\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"missing E2EE disclosure: t('transparency.encryptionNote')\"]}"
     },
     {
       "id": "W-NFR060-EQUIV-001",
@@ -175,7 +176,7 @@
       "equivalenceReason": "Whitespace-only destructuring change preserves the compiled behavior.",
       "classification": "EQUIVALENT",
       "checks": 0,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"status\":\"PASS\"}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"status\":\"PASS\"}"
     },
     {
       "id": "W-NFR060-INVALID-001",
@@ -186,7 +187,7 @@
       "invalidReason": "The malformed function declaration is rejected by the source-shape validator.",
       "classification": "INVALID",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\parent-web\",\"failures\":[\"missing valid Transparency function declaration: export default function Transparency()\"]}",
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\parent-web\",\"failures\":[\"missing valid Transparency function declaration: export default function Transparency()\"]}",
       "method": "source-shape invalidity check"
     },
     {
@@ -196,7 +197,7 @@
       "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\android\",\"failures\":[\"missing non-dismissable monitoring notification: .setOngoing(true)\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\android\",\"failures\":[\"missing non-dismissable monitoring notification: .setOngoing(true)\"]}"
     },
     {
       "id": "A-NFR060-002",
@@ -205,7 +206,7 @@
       "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\android\",\"failures\":[\"missing DNS-only route: .addRoute(TUNNEL_DNS_ADDRESS, 32)\",\"forbidden general packet route: .addRoute(\\\"0.0.0.0\\\", 0)\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\android\",\"failures\":[\"missing DNS-only route: .addRoute(TUNNEL_DNS_ADDRESS, 32)\",\"forbidden general packet route: .addRoute(\\\"0.0.0.0\\\", 0)\"]}"
     },
     {
       "id": "A-NFR014-001",
@@ -214,7 +215,7 @@
       "source": "app/src/main/java/org/pca/app/feature/wellbeing/ports/WellbeingFeedbackSyncPort.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\android\",\"failures\":[\"forbidden wellbeing hidden transport/logging marker: println(\",\"forbidden wellbeing hidden transport/logging marker: telemetry\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\android\",\"failures\":[\"forbidden wellbeing hidden transport/logging marker: println(\",\"forbidden wellbeing hidden transport/logging marker: telemetry\"]}"
     },
     {
       "id": "A-NFR060-EQUIV-001",
@@ -225,7 +226,7 @@
       "equivalenceReason": "Both Kotlin constant expressions evaluate to the same notification id and do not change disclosure or privacy behavior.",
       "classification": "EQUIVALENT",
       "checks": 0,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\android\",\"status\":\"PASS\"}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\android\",\"status\":\"PASS\"}"
     },
     {
       "id": "A-NFR060-INVALID-001",
@@ -236,7 +237,7 @@
       "invalidReason": "The malformed Kotlin superclass declaration is rejected by the source-shape validator.",
       "classification": "INVALID",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-WJGztw\\\\android\",\"failures\":[\"missing valid VPN service declaration: class WebProtectionVpnService : VpnService()\"]}",
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-XLZkRu\\\\android\",\"failures\":[\"missing valid VPN service declaration: class WebProtectionVpnService : VpnService()\"]}",
       "method": "source-shape invalidity check"
     }
   ]
