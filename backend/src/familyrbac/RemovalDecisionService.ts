@@ -266,6 +266,7 @@ export class RemovalDecisionService {
   }
 
   async decide(signedDecision: SignedRemovalDecision): Promise<RemovalDecisionRecord> {
+    if (!isSignedRemovalDecisionObject(signedDecision)) throw new RemovalDecisionError('INVALID_INPUT');
     const request = await this.repository.get(signedDecision.requestId);
     if (request === null) throw new RemovalDecisionError('NOT_FOUND');
 
@@ -300,7 +301,7 @@ export class RemovalDecisionService {
     // from the same verified trust-set authority; a signed request containing
     // a foreign or revoked device identifier is never enough to authorize it.
     const targetDevice = this.targetDeviceRoleResolver.resolveActor(request.familyId, request.deviceId);
-    if (isActorResolutionFailure(targetDevice)) {
+    if (isActorResolutionFailure(targetDevice) || targetDevice.trustSetEpoch !== signedDecision.trustSetEpoch) {
       await this.recordDenied(request, signedDecision, 'NOT_AUTHORIZED');
       throw new RemovalDecisionError('NOT_AUTHORIZED');
     }
@@ -520,6 +521,12 @@ function isStepUpAssertion(value: unknown): value is StepUpAssertion {
   if (!isValidDate(candidate.assertedAt ?? null) && candidate.assertedAt !== null) return false;
   if (!isValidDate(candidate.freshUntil ?? null) && candidate.freshUntil !== null) return false;
   return true;
+}
+
+function isSignedRemovalDecisionObject(value: unknown): value is SignedRemovalDecision {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<SignedRemovalDecision>;
+  return isPlausibleOpaqueId(candidate.requestId) && typeof candidate.signature === 'string' && candidate.signature.length > 0;
 }
 
 function fingerprint(canonical: string): string {

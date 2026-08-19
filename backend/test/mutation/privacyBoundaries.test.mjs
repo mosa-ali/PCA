@@ -9,6 +9,14 @@ import test from 'node:test';
 
 import { buildRelayDiagnosticEvent, classifyCiphertextSize } from '../../dist/relay/diagnostics.js';
 import { RelayService } from '../../dist/relay/RelayService.js';
+import {
+  canEmitAggregateTelemetry,
+  defaultAggregateTelemetryConsent,
+  emitAggregateTelemetryIfConsented,
+  grantAggregateTelemetry,
+  isAllowedAggregateTelemetryEvent,
+  revokeAggregateTelemetry,
+} from '../../dist/telemetry/consent.js';
 import { createInMemoryRelayRepository } from '../support/inMemoryRelayRepository.mjs';
 
 const TEST_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -92,4 +100,21 @@ test('NFR-014 default-off backend has no telemetry or analytics ingestion route'
     }
   }
   assert.deepEqual(violations, []);
+});
+
+test('NFR-014 bounded mutation guard preserves default-deny and separate revocation at the sink boundary', () => {
+  const delivered = [];
+  const event = { metric: 'CRASH_COUNT', bucket: 'GENERAL', count: 1 };
+  const defaultConsent = defaultAggregateTelemetryConsent();
+  assert.equal(canEmitAggregateTelemetry(defaultConsent), false);
+  assert.equal(emitAggregateTelemetryIfConsented(defaultConsent, event, (value) => delivered.push(value)), false);
+
+  const granted = grantAggregateTelemetry(defaultConsent, new Date('2026-08-19T12:00:00.000Z'));
+  assert.equal(isAllowedAggregateTelemetryEvent(event), true);
+  assert.equal(emitAggregateTelemetryIfConsented(granted, event, (value) => delivered.push(value)), true);
+
+  const revoked = revokeAggregateTelemetry(granted, new Date('2026-08-19T12:01:00.000Z'));
+  assert.equal(canEmitAggregateTelemetry(revoked), false);
+  assert.equal(emitAggregateTelemetryIfConsented(revoked, event, (value) => delivered.push(value)), false);
+  assert.deepEqual(delivered, [event]);
 });

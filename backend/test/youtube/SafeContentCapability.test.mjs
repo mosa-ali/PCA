@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import test from 'node:test';
 import {
   defaultYouTubeSafeContentCapability,
@@ -24,4 +27,12 @@ test('PCA-FR-053 preserves unknown/unavailable without turning it into a safety 
   assert.equal(isPlausibleYouTubeSafeContentCapability({ status: 'UNSUPPORTED', source: 'UNAVAILABLE' }), true);
   assert.equal(isPlausibleYouTubeSafeContentCapability({ status: 'UNKNOWN', source: 'YOUTUBE_RESTRICTED_MODE' }), false);
   assert.equal(isPlausibleYouTubeSafeContentCapability({ status: 'ENABLED', source: 'OTHER' }), false);
+});
+
+test('PCA-FR-053 native path has no scraping, TLS interception, or watch-history field', () => {
+  const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'youtube');
+  const source = `${readFileSync(path.join(sourceRoot, 'types.ts'), 'utf8')}\n${readFileSync(path.join(sourceRoot, 'policy.ts'), 'utf8')}`;
+  assert.doesNotMatch(source, /\b(scrape|scraping|watchHistory|watch_history|tlsIntercept|tls_interception)\b/i);
+  assert.match(source, /YouTubeSafeContentStatus/);
+  assert.match(source, /source: 'UNAVAILABLE'/);
 });

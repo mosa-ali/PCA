@@ -221,6 +221,32 @@ test('signature binding rejects child/device/request substitution and invalid si
   assert.equal(completed.state, 'KEEP_ACTIVE');
 });
 
+test('a signed decision from a stale trust-set epoch is rejected before mutation', async () => {
+  const { service } = makeService();
+  const request = await createPending(service, { requestId: 'request-stale-epoch' });
+  const stale = sign({ ...unsignedDecision(request, { actionId: 'action-stale-epoch' }), trustSetEpoch: 6 });
+
+  await assert.rejects(
+    service.decide(stale),
+    (error) => error instanceof RemovalDecisionError && error.code === 'NOT_AUTHORIZED',
+  );
+  assert.equal((await service.getRequest(request.requestId)).state, 'PARENT_APPROVAL_REQUIRED');
+});
+
+test('malformed signed-decision input returns a controlled invalid-input error', async () => {
+  const { service } = makeService();
+  const request = await createPending(service, { requestId: 'request-malformed-decision' });
+
+  await assert.rejects(
+    service.decide({ ...unsignedDecision(request), signature: '' }),
+    (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_INPUT',
+  );
+  await assert.rejects(
+    service.decide(null),
+    (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_INPUT',
+  );
+});
+
 test('malformed runtime step-up input fails closed with a controlled error', async () => {
   const { service } = makeService();
   const request = await createPending(service, { requestId: 'request-malformed-step-up' });
