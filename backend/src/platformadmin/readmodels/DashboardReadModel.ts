@@ -167,18 +167,23 @@ function toNumber(value: number | string | null): number {
   return typeof value === 'number' ? value : Number(value);
 }
 
+function firstDayOfUtcMonth(now: Date, monthsBack: number): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1));
+}
+
 export class DashboardReadModel {
   async build(now: Date = new Date()): Promise<PlatformDashboardSnapshot> {
     return runInTransaction(async (conn) => {
+      const growthStart = firstDayOfUtcMonth(now, 11);
       const { rows: accountsRows } = await execute<CountRow>(conn, `SELECT COUNT(*) AS count FROM families WHERE deleted_at IS NULL`);
       const { rows: accountGrowthRows } = await execute<GrowthRow>(
         conn,
         `SELECT DATE_FORMAT(created_at, '%Y-%m-01') AS month_utc, COUNT(*) AS count
            FROM families
-          WHERE deleted_at IS NULL AND created_at >= DATE_SUB(?, INTERVAL 11 MONTH)
+          WHERE deleted_at IS NULL AND created_at >= ? AND created_at <= ?
           GROUP BY DATE_FORMAT(created_at, '%Y-%m-01')
           ORDER BY month_utc`,
-        [now],
+        [growthStart, now],
       );
       const { rows: accountStatusRows } = await execute<{ account_status: 'ACTIVE' | 'SUSPENDED'; count: number | string }>(
         conn,
@@ -275,14 +280,14 @@ export class DashboardReadModel {
         conn,
         `SELECT COUNT(*) AS count
            FROM billing_payment_attempts
-          WHERE status IN ('CREATED', 'PENDING') AND created_at < DATE_SUB(?, INTERVAL 24 HOUR)`,
+          WHERE status IN ('CREATED', 'PENDING') AND updated_at < DATE_SUB(?, INTERVAL 24 HOUR)`,
         [now],
       );
       const { rows: expiredInvitationRows } = await execute<CountOnlyRow>(
         conn,
         `SELECT COUNT(*) AS count
            FROM enrollment_invitations
-           WHERE status IN ('CREATED', 'OPENED', 'INSTALL_REQUIRED', 'APP_INSTALLED', 'AUTHORIZATION_REQUIRED')
+          WHERE status IN ('CREATED', 'OPENED')
              AND expires_at <= ?`,
         [now],
       );

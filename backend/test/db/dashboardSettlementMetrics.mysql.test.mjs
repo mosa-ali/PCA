@@ -145,13 +145,23 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   const before = await new DashboardReadModel().build(now);
   const familyRecent = randomUUID();
   const familyOlder = randomUUID();
+  const familyWindowBoundary = randomUUID();
+  const familyFuture = randomUUID();
   const planRef = `PLAN_${randomUUID().slice(0, 8)}`;
   const createdRecent = new Date('2026-08-17T12:00:00.000Z');
   const createdOlder = new Date('2026-08-01T12:00:00.000Z');
+  const createdWindowBoundary = new Date('2025-09-01T00:00:00.000Z');
+  const createdFuture = new Date('2026-08-19T00:00:00.000Z');
 
   await getPool().query(
-    `INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, ?), (?, ?, ?)`,
-    [familyRecent, Buffer.from(randomUUID()), createdRecent, familyOlder, Buffer.from(randomUUID()), createdOlder],
+    `INSERT INTO families (family_id, family_reference_hash, created_at)
+     VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)`,
+    [
+      familyRecent, Buffer.from(randomUUID()), createdRecent,
+      familyOlder, Buffer.from(randomUUID()), createdOlder,
+      familyWindowBoundary, Buffer.from(randomUUID()), createdWindowBoundary,
+      familyFuture, Buffer.from(randomUUID()), createdFuture,
+    ],
   );
   await getPool().query(
     `INSERT INTO account_entitlements
@@ -162,17 +172,29 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   await getPool().query(
     `INSERT INTO entitlement_change_requests
        (request_id, family_id, limit_type, current_limit_at_request, target_limit, state, created_at, updated_at)
-     VALUES (?, ?, 'MANAGED_DEVICE_LIMIT', 3, 4, 'PENDING', ?, ?)`,
-    [randomUUID(), familyRecent, new Date('2026-08-08T12:00:00.000Z'), new Date('2026-08-08T12:00:00.000Z')],
+     VALUES
+       (?, ?, 'MANAGED_DEVICE_LIMIT', 3, 4, 'PENDING', ?, ?),
+       (?, ?, 'MANAGED_DEVICE_LIMIT', 3, 5, 'QUOTED', ?, ?),
+       (?, ?, 'MANAGED_DEVICE_LIMIT', 3, 6, 'PAYMENT_PENDING', ?, ?)`,
+    [
+      randomUUID(), familyRecent, new Date('2026-08-08T12:00:00.000Z'), new Date('2026-08-08T12:00:00.000Z'),
+      randomUUID(), familyRecent, new Date('2026-08-16T12:00:00.000Z'), new Date('2026-08-16T12:00:00.000Z'),
+      randomUUID(), familyRecent, new Date('2026-08-18T06:00:00.000Z'), new Date('2026-08-18T06:00:00.000Z'),
+    ],
   );
   await getPool().query(
     `INSERT INTO billing_payment_attempts
        (payment_attempt_id, account_ref, amount_minor, currency_code, status, created_at, updated_at)
-     VALUES (?, ?, 1000, 'USD', 'CONFIRMED', ?, ?), (?, ?, 1000, 'USD', 'FAILED', ?, ?), (?, ?, 1000, 'USD', 'PENDING', ?, ?)`,
+     VALUES
+       (?, ?, 1000, 'USD', 'CONFIRMED', ?, ?),
+       (?, ?, 1000, 'USD', 'FAILED', ?, ?),
+       (?, ?, 1000, 'USD', 'PENDING', ?, ?),
+       (?, ?, 1000, 'USD', 'PENDING', ?, ?)`,
     [
       randomUUID(), familyRecent, createdRecent, createdRecent,
       randomUUID(), familyRecent, createdRecent, createdRecent,
       randomUUID(), familyRecent, new Date('2026-08-16T12:00:00.000Z'), new Date('2026-08-16T12:00:00.000Z'),
+      randomUUID(), familyRecent, new Date('2026-08-16T12:00:00.000Z'), new Date('2026-08-18T11:30:00.000Z'),
     ],
   );
   await getPool().query(
@@ -181,14 +203,21 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
      VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'OPENED', ?, ?)`,
     [randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z')],
   );
-  for (const status of ['INSTALL_REQUIRED', 'APP_INSTALLED', 'AUTHORIZATION_REQUIRED']) {
-    await getPool().query(
-      `INSERT INTO enrollment_invitations
-         (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at)
-       VALUES (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', ?, ?, ?)`,
-      [randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), status, new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z')],
-    );
-  }
+  await getPool().query(
+    `INSERT INTO enrollment_invitations
+       (invitation_id, family_id, token_hash, platform, requested_protection_mode, status, created_at, expires_at)
+     VALUES
+       (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'CREATED', ?, ?),
+       (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'REDEEMED', ?, ?),
+       (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'REVOKED', ?, ?),
+       (?, ?, ?, 'ANDROID', 'ANDROID_STANDARD', 'OPENED', ?, ?)`,
+    [
+      randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z'),
+      randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z'),
+      randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-10T12:00:00.000Z'),
+      randomUUID(), familyRecent, randomUUID().replaceAll('-', '').padEnd(64, '0'), new Date('2026-08-01T12:00:00.000Z'), new Date('2026-08-19T12:00:00.000Z'),
+    ],
+  );
 
   const snapshot = await new DashboardReadModel().build(now);
   const plan = snapshot.managedDeviceEntitlementByPlan.rows.find((row) => row.planRef === planRef);
@@ -197,7 +226,12 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   const beforeAugust = before.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2026-08-01');
   const afterAugust = snapshot.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2026-08-01');
   assert.equal(afterAugust.created, (beforeAugust?.created ?? 0) + 2);
-  assert.equal(snapshot.entitlementRequestAging.open, (before.entitlementRequestAging.open ?? 0) + 1);
+  const beforeSeptember = before.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2025-09-01');
+  const afterSeptember = snapshot.accountGrowthByMonth.rows.find((row) => row.monthUtc === '2025-09-01');
+  assert.equal(afterSeptember.created, (beforeSeptember?.created ?? 0) + 1, 'the 12-month window starts at the first day of the month');
+  assert.equal(snapshot.entitlementRequestAging.open, (before.entitlementRequestAging.open ?? 0) + 3);
+  assert.equal(snapshot.entitlementRequestAging.buckets.lessThanOneDay, (before.entitlementRequestAging.buckets?.lessThanOneDay ?? 0) + 1);
+  assert.equal(snapshot.entitlementRequestAging.buckets.oneToSevenDays, (before.entitlementRequestAging.buckets?.oneToSevenDays ?? 0) + 1);
   assert.equal(snapshot.entitlementRequestAging.buckets.sevenDaysOrMore, (before.entitlementRequestAging.buckets?.sevenDaysOrMore ?? 0) + 1);
 
   const usd = snapshot.paymentSummaryByCurrency.rows.find((row) => row.currencyCode === 'USD');
@@ -207,8 +241,8 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   assert.equal(usd.failed, (beforeUsd?.failed ?? 0) + 1);
   const beforeTerminal = (beforeUsd?.succeeded ?? 0) + (beforeUsd?.failed ?? 0);
   assert.equal(usd.successRate, ((beforeUsd?.succeeded ?? 0) + 1) / (beforeTerminal + 2));
-  assert.equal(snapshot.exceptionQueues.stuckPaymentAttempts, (before.exceptionQueues.stuckPaymentAttempts ?? 0) + 1);
-  assert.equal(snapshot.exceptionQueues.expiredUnredeemedInvitations, (before.exceptionQueues.expiredUnredeemedInvitations ?? 0) + 4);
+  assert.equal(snapshot.exceptionQueues.stuckPaymentAttempts, (before.exceptionQueues.stuckPaymentAttempts ?? 0) + 1, 'recently updated PENDING attempts are not stuck');
+  assert.equal(snapshot.exceptionQueues.expiredUnredeemedInvitations, (before.exceptionQueues.expiredUnredeemedInvitations ?? 0) + 2, 'redeemed and revoked invitations are not unredeemed exceptions');
   assert.equal(snapshot.operationalSignals.capability, 'UNAVAILABLE');
   assert.equal(snapshot.operationalSignals.crashRate, null);
 });
@@ -235,6 +269,9 @@ test('HTTP: GET /platform-admin/dashboard applies billing and settlement redacti
       assert.ok(body.accountGrowthByMonth, `${expected.role} receives the growth trend`);
       assert.ok(body.entitlementRequestAging, `${expected.role} receives request aging`);
       assert.ok(body.exceptionQueues, `${expected.role} receives the permitted exception queue container`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'familyId'), false, `${expected.role} never receives family identifiers`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'childActivity'), false, `${expected.role} never receives child activity`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'location'), false, `${expected.role} never receives location data`);
       assert.equal(Object.prototype.hasOwnProperty.call(body, 'invoicesByStatusAndCurrency'), expected.canViewBilling, `${expected.role} invoice redaction`);
       assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentAttemptsByStatusAndCurrency'), expected.canViewBilling, `${expected.role} payment-attempt redaction`);
       assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentSummaryByCurrency'), expected.canViewBilling, `${expected.role} payment-summary redaction`);
