@@ -5,11 +5,13 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/common/St
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import DeviceEnrollmentPanel from './DeviceEnrollmentPanel';
+import ProtectionAdministrationPanel from './ProtectionAdministrationPanel';
 
 export default function Devices() {
   const { t } = useTranslation();
   const clients = getApiClients();
   const { data, loading, error, reload } = useAsync(() => clients.deviceStatus.listDeviceStatuses(), []);
+  const { data: dashboard } = useAsync(() => clients.parentFamilyData.getDashboard(), []);
 
   return (
     <section aria-labelledby="devices-title">
@@ -17,6 +19,15 @@ export default function Devices() {
 
       <PermissionGate action="VIEW_DEVICE_ENROLLMENT">
         <DeviceEnrollmentPanel />
+        <ProtectionAdministrationPanel
+          targets={(data ?? []).map((device) => ({
+            childId: device.childId,
+            childLabel: dashboard?.children.find((child) => child.childId === device.childId)?.displayName ?? device.childId,
+            deviceId: device.deviceId,
+            deviceLabel: device.deviceLabel,
+            protectionLevel: device.protectionState,
+          }))}
+        />
       </PermissionGate>
 
       {loading && <LoadingState />}
