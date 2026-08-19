@@ -1,4 +1,4 @@
-import type { NewSafeZoneInput, SafeZonePatch } from './interfaces';
+import type { NewSafeZoneInput, SafeZone, SafeZoneClient, SafeZonePatch } from './interfaces';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -113,6 +113,37 @@ export interface SafeZonePolicyAuthoring {
     recipientEndpointId: string,
     definition: SafeZonePlaintextDefinition,
   ): Promise<NewSafeZoneInput>;
+}
+
+/**
+ * The parent-side composition seam. Plaintext is handed only to the local
+ * authoring boundary; the transport receives the validated opaque envelope
+ * and nothing else. This keeps route/session wiring replaceable without
+ * creating a plaintext fallback in the UI or HTTP client.
+ */
+export interface SafeZonePolicyPublisher {
+  publish(
+    familyId: string,
+    recipientEndpointId: string,
+    definition: SafeZonePlaintextDefinition,
+  ): Promise<SafeZone>;
+}
+
+export class VerifiedFamilySafeZonePolicyPublisher implements SafeZonePolicyPublisher {
+  constructor(
+    private readonly authoring: SafeZonePolicyAuthoring,
+    private readonly transport: Pick<SafeZoneClient, 'create'>,
+  ) {}
+
+  async publish(
+    familyId: string,
+    recipientEndpointId: string,
+    definition: SafeZonePlaintextDefinition,
+  ): Promise<SafeZone> {
+    const envelope = await this.authoring.encrypt(familyId, recipientEndpointId, definition);
+    validateOpaqueSafeZoneInput(envelope, recipientEndpointId);
+    return this.transport.create(familyId, envelope);
+  }
 }
 
 /**

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   SafeZonePolicyAuthoringError,
   VerifiedFamilySafeZonePolicyAuthoring,
+  VerifiedFamilySafeZonePolicyPublisher,
   UnavailableSafeZonePolicyAuthoring,
   validateOpaqueSafeZoneInput,
   validateOpaqueSafeZonePatch,
@@ -104,5 +105,64 @@ describe('safe-zone policy authoring boundary', () => {
       SafeZonePolicyAuthoringError,
     );
     expect(() => validateOpaqueSafeZonePatch({ ciphertextB64: 'AQID' })).not.toThrow();
+  });
+
+  it('publishes only the locally authored opaque envelope to transport', async () => {
+    const transportInputs: unknown[] = [];
+    const publisher = new VerifiedFamilySafeZonePolicyPublisher(
+      {
+        encrypt: async (familyId, recipientEndpointId, readable) => {
+          expect(familyId).toBe('family-1');
+          expect(recipientEndpointId).toBe('child-endpoint');
+          expect(readable).toEqual(definition);
+          return {
+            recipientEndpointId,
+            ciphertextB64: 'AQID',
+            nonceB64: 'AAECAwQFBgcICQoL',
+            keyEpoch: 3,
+          };
+        },
+      },
+      {
+        create: async (familyId, input) => {
+          transportInputs.push({ familyId, input });
+          return {
+            zoneId: 'zone-1',
+            familyId,
+            ...input,
+            revision: 1,
+            deliveryState: 'PENDING_OFFLINE' as const,
+            createdAtUtc: '2026-08-19T00:00:00.000Z',
+            updatedAtUtc: '2026-08-19T00:00:00.000Z',
+          };
+        },
+      },
+    );
+
+    const result = await publisher.publish('family-1', 'child-endpoint', definition);
+
+    expect(result.zoneId).toBe('zone-1');
+    expect(transportInputs).toEqual([{
+      familyId: 'family-1',
+      input: {
+        recipientEndpointId: 'child-endpoint',
+        ciphertextB64: 'AQID',
+        nonceB64: 'AAECAwQFBgcICQoL',
+        keyEpoch: 3,
+      },
+    }]);
+    expect(JSON.stringify(transportInputs)).not.toContain('Home');
+  });
+
+  it('does not call transport when local authoring is unavailable', async () => {
+    const create = vi.fn();
+    const publisher = new VerifiedFamilySafeZonePolicyPublisher(
+      new UnavailableSafeZonePolicyAuthoring(),
+      { create },
+    );
+
+    await expect(publisher.publish('family-1', 'child-endpoint', definition))
+      .rejects.toMatchObject({ code: 'CRYPTO_REVIEW_REQUIRED' });
+    expect(create).not.toHaveBeenCalled();
   });
 });
