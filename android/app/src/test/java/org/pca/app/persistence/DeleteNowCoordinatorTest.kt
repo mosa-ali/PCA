@@ -94,7 +94,7 @@ class DeleteNowCoordinatorTest {
     private suspend fun seedFamily() = seedFullFamily("family-1", "member-1", "device-1", seq = 1L)
 
     @Test
-    fun `deleteDevice removes device and all its activity data, keeps other devices`() = runTest {
+    fun `deleteDevice removes activity data but preserves device configuration and other devices`() = runTest {
         seedFamily()
         db.deviceDao().upsert(
             DeviceEntity(
@@ -106,23 +106,23 @@ class DeleteNowCoordinatorTest {
 
         val receipt = coordinator.deleteDevice("family-1", "device-1", Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertNull(db.deviceDao().getById("device-1"))
+        assertTrue(db.deviceDao().getById("device-1") != null)
         assertEquals(0, webVisitRepo.getForDevice("device-1").size)
         assertEquals(1, webVisitRepo.getForDevice("device-2").size)
         assertEquals("device-1", receipt.deviceId)
         assertEquals(1, db.retentionDeletionReceiptDao().getForFamily("family-1").size)
     }
 
-    // ---- F1: PolicySnapshot must be erased by deleteDevice/deleteChild ----
+    // ---- F1: Delete Now must preserve current policy snapshots ----
 
     @Test
-    fun `F1 deleteDevice erases policy snapshots for that device`() = runTest {
+    fun `F1 deleteDevice preserves the current policy snapshot for that device`() = runTest {
         seedFamily()
         assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
 
         coordinator.deleteDevice("family-1", "device-1", Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertEquals(0, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
     }
 
     @Test
@@ -142,12 +142,12 @@ class DeleteNowCoordinatorTest {
 
         coordinator.deleteDevice("family-1", "device-1", Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertEquals(0, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
         assertEquals(1, db.policySnapshotDao().getHistory("device-2").size)
     }
 
     @Test
-    fun `F1 deleteChild erases policy snapshots across every device the child owns`() = runTest {
+    fun `F1 deleteChild preserves policy snapshots across every device the child owns`() = runTest {
         seedFamily() // device-1, member-1
         db.deviceDao().upsert(
             DeviceEntity(
@@ -176,8 +176,8 @@ class DeleteNowCoordinatorTest {
 
         coordinator.deleteChild("family-1", "member-1", listOf("device-1", "device-2"), Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertEquals(0, db.policySnapshotDao().getHistory("device-1").size)
-        assertEquals(0, db.policySnapshotDao().getHistory("device-2").size)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-2").size)
         assertEquals(1, db.policySnapshotDao().getHistory("device-3").size) // sibling's device untouched
     }
 
@@ -203,16 +203,16 @@ class DeleteNowCoordinatorTest {
     )
 
     private val fullFamilySnapshot = FamilySnapshot(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
-    private val erasedFamilySnapshot = FamilySnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    private val activityDeletedFamilySnapshot = FamilySnapshot(1, 1, 0, 1, 1, 1, 1, 1, 0, 0)
 
     @Test
-    fun `F2 deleteFamily removes every covered row for the target family`() = runTest {
+    fun `F2 deleteFamily removes activity rows while preserving protected family state`() = runTest {
         seedFullFamily("family-A", "member-A", "device-A", seq = 1L)
 
         val receipt = coordinator.deleteFamily("family-A", Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertEquals(erasedFamilySnapshot, snapshotFor("device-A", "member-A"))
-        assertTrue("expected the receipt to cover every seeded row category", receipt.deletedCount >= 9)
+        assertEquals(activityDeletedFamilySnapshot, snapshotFor("device-A", "member-A"))
+        assertTrue("expected the receipt to cover activity and queued replica rows", receipt.deletedCount >= 3)
     }
 
     @Test
@@ -225,8 +225,8 @@ class DeleteNowCoordinatorTest {
 
         val receipt = coordinator.deleteFamily("family-A", Instant.parse("2026-08-12T00:00:00Z"))
 
-        // family-A is fully gone.
-        assertEquals(erasedFamilySnapshot, snapshotFor("device-A", "member-A"))
+        // family-A activity is gone, but protected family state remains.
+        assertEquals(activityDeletedFamilySnapshot, snapshotFor("device-A", "member-A"))
         // family-B is untouched -- same row-for-row snapshot as before the call.
         val afterB = snapshotFor("device-B", "member-B")
         assertEquals(beforeB, afterB)
@@ -287,14 +287,14 @@ class DeleteNowCoordinatorTest {
     }
 
     @Test
-    fun `deleteFamily wipes every family-scoped table`() = runTest {
+    fun `deleteFamily wipes family activity while retaining the family relationship`() = runTest {
         seedFamily()
 
         coordinator.deleteFamily("family-1", Instant.parse("2026-08-12T00:00:00Z"))
 
-        assertEquals(0, db.familyMemberDao().count())
+        assertEquals(1, db.familyMemberDao().count())
         assertEquals(0, db.webVisitDao().count())
-        assertEquals(0, db.deviceDao().getAll().size)
+        assertEquals(1, db.deviceDao().getAll().size)
     }
 
     @Test

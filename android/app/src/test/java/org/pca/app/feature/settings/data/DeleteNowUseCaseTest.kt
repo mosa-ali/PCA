@@ -12,10 +12,16 @@ import org.pca.app.persistence.PcaLocalDatabase
 import org.pca.app.persistence.PersistenceTestSupport
 import org.pca.app.persistence.entity.DeviceEnrollmentState
 import org.pca.app.persistence.entity.DeviceEntity
+import org.pca.app.persistence.entity.DeviceKeyMetadataEntity
+import org.pca.app.persistence.entity.DeviceKeyState
 import org.pca.app.persistence.entity.DevicePlatform
 import org.pca.app.persistence.entity.DeviceTrustState
 import org.pca.app.persistence.entity.FamilyMemberRole
 import org.pca.app.persistence.entity.FamilyMemberStatus
+import org.pca.app.persistence.entity.ParentActionAuditEntity
+import org.pca.app.persistence.entity.ParentActionType
+import org.pca.app.persistence.entity.PolicySnapshotEntity
+import org.pca.app.persistence.entity.TamperEventEntity
 import org.pca.app.persistence.repository.FamilyMember
 import org.pca.app.persistence.repository.FamilyMemberRepository
 import org.pca.app.persistence.retention.DeleteNowCoordinator
@@ -54,6 +60,32 @@ class DeleteNowUseCaseTest {
                 1L, 1L, DeviceTrustState.ACTIVE, DeviceEnrollmentState.ACTIVE, 1000L, "{}",
             ),
         )
+        seedProtectedRows(deviceId, memberId)
+    }
+
+    private suspend fun seedProtectedRows(deviceId: String, memberId: String) {
+        db.policySnapshotDao().insert(
+            PolicySnapshotEntity(
+                policyId = "policy-$deviceId", childDeviceId = deviceId, version = 1L,
+                effectiveFromEpochMillis = 1000L, expiresAtEpochMillis = null,
+                encryptedPayloadEnc = "enc", encryptedPayloadIv = "iv",
+                trustSetEpoch = 1L, keyEpoch = 1L, signedByKeyId = "sk",
+                receivedAtEpochMillis = 1000L, appliedAtEpochMillis = 1000L,
+                applicationResult = "APPLIED", isLatestValid = true,
+            ),
+        )
+        db.deviceKeyMetadataDao().upsert(
+            DeviceKeyMetadataEntity("key-$deviceId", deviceId, DeviceKeyState.ACTIVE, 1000L),
+        )
+        db.tamperEventDao().upsert(
+            TamperEventEntity("tamper-$deviceId", deviceId, "ROOT_DETECTED", 1000L, null),
+        )
+        db.parentActionAuditDao().upsert(
+            ParentActionAuditEntity(
+                "audit-$deviceId", memberId, ParentActionType.POLICY_EDIT,
+                "Policy:policy-$deviceId", 1000L, null, null,
+            ),
+        )
     }
 
     @Test
@@ -64,7 +96,11 @@ class DeleteNowUseCaseTest {
 
         assertTrue(result is DeleteNowResult.Success)
         assertEquals("device_all_categories", (result as DeleteNowResult.Success).receipt.entityCategory)
-        assertEquals(null, db.deviceDao().getById("device-1"))
+        assertTrue(db.deviceDao().getById("device-1") != null)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.deviceKeyMetadataDao().getForDevice("device-1").size)
+        assertEquals(1, db.tamperEventDao().getForDevice("device-1").size)
+        assertEquals(1, db.parentActionAuditDao().getForActor("member-1").size)
     }
 
     @Test
@@ -74,7 +110,12 @@ class DeleteNowUseCaseTest {
         val result = useCase.execute(DeleteNowScope.Family("family-1"))
 
         assertTrue(result is DeleteNowResult.Success)
-        assertEquals(0, db.familyMemberDao().count())
+        assertEquals(1, db.familyMemberDao().count())
+        assertTrue(db.deviceDao().getById("device-1") != null)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.deviceKeyMetadataDao().getForDevice("device-1").size)
+        assertEquals(1, db.tamperEventDao().getForDevice("device-1").size)
+        assertEquals(1, db.parentActionAuditDao().getForActor("member-1").size)
     }
 
     @Test
@@ -97,12 +138,20 @@ class DeleteNowUseCaseTest {
                 1L, 1L, org.pca.app.persistence.entity.DeviceTrustState.ACTIVE, org.pca.app.persistence.entity.DeviceEnrollmentState.ACTIVE, 1000L, "{}",
             ),
         )
+        seedProtectedRows("device-2", "member-1")
 
         val result = useCase.execute(DeleteNowScope.Child("family-1", "member-1", listOf("device-1", "device-2")))
 
         assertTrue(result is DeleteNowResult.Success)
-        assertEquals(null, db.familyMemberDao().getById("member-1"))
-        assertEquals(null, db.deviceDao().getById("device-1"))
-        assertEquals(null, db.deviceDao().getById("device-2"))
+        assertTrue(db.familyMemberDao().getById("member-1") != null)
+        assertTrue(db.deviceDao().getById("device-1") != null)
+        assertTrue(db.deviceDao().getById("device-2") != null)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-1").size)
+        assertEquals(1, db.policySnapshotDao().getHistory("device-2").size)
+        assertEquals(1, db.deviceKeyMetadataDao().getForDevice("device-1").size)
+        assertEquals(1, db.deviceKeyMetadataDao().getForDevice("device-2").size)
+        assertEquals(1, db.tamperEventDao().getForDevice("device-1").size)
+        assertEquals(1, db.tamperEventDao().getForDevice("device-2").size)
+        assertEquals(2, db.parentActionAuditDao().getForActor("member-1").size)
     }
 }

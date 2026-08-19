@@ -4,7 +4,6 @@ import androidx.room.withTransaction
 import java.time.Instant
 import java.util.UUID
 import org.pca.app.persistence.PcaLocalDatabase
-import org.pca.app.persistence.entity.PolicySnapshotEntity
 import org.pca.app.persistence.entity.RetentionDeletionReceiptEntity
 import org.pca.app.persistence.entity.TombstoneRecordEntity
 
@@ -27,7 +26,7 @@ import org.pca.app.persistence.entity.TombstoneRecordEntity
  */
 class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
 
-    /** Deletes every local row scoped to [deviceId] across all activity/security tables owned by that device. */
+    /** Deletes every local activity row scoped to [deviceId], preserving family configuration and audit rows. */
     suspend fun deleteDevice(familyId: String, deviceId: String, nowUtc: Instant): RetentionDeletionReceiptEntity {
         require(familyId.isNotBlank() && deviceId.isNotBlank()) { "delete scope is not available" }
         return database.withTransaction {
@@ -43,7 +42,7 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
         }
     }
 
-    /** Deletes every local row belonging to one family member (a child, across all their devices) plus the member record itself. */
+    /** Deletes activity rows belonging to one family member (a child, across all their devices), preserving the member record. */
     suspend fun deleteChild(familyId: String, memberId: String, childDeviceIds: List<String>, nowUtc: Instant): RetentionDeletionReceiptEntity {
         require(familyId.isNotBlank() && memberId.isNotBlank()) { "delete scope is not available" }
         return database.withTransaction {
@@ -61,14 +60,12 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
             for (deviceId in actualDeviceIds) {
                 total += deleteDeviceScopedRows(deviceId)
             }
-            total += database.parentActionAuditDao().deleteAllForActor(memberId)
-            total += database.familyMemberDao().deleteById(memberId)
             insertTombstone(familyId, memberId, "FamilyMember", nowUtc)
             insertReceipt(familyId, null, "child_all_categories", total, nowUtc, "delete_now_child:$memberId")
         }
     }
 
-    /** Every table keyed by `deviceId` (or `childDeviceId`), including [PolicySnapshotEntity] (F1 fix: previously left behind). */
+    /** Every general activity table keyed by `deviceId`; protected policy, key, membership, and audit rows are not Delete Now targets. */
     private suspend fun deleteDeviceScopedRows(deviceId: String): Int {
         var total = 0
         total += database.usageSessionDao().deleteAllForDevice(deviceId)
@@ -79,29 +76,21 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
         total += database.proximityEventDao().deleteAllForDevice(deviceId)
         total += database.prayerReminderEventDao().deleteAllForDevice(deviceId)
         total += database.installedAppEventDao().deleteAllForDevice(deviceId)
-        total += database.tamperEventDao().deleteAllForDevice(deviceId)
-        total += database.policyReceiptDao().deleteAllForDevice(deviceId)
-        total += database.deviceKeyMetadataDao().deleteAllForDevice(deviceId)
-        total += database.policySnapshotDao().deleteAllForDevice(deviceId)
-        total += database.deviceDao().deleteById(deviceId)
         return total
     }
 
     /**
-     * Full family local deletion (doc 11 Section 6) -- wipes every row that
-     * belongs to [familyId], scoped via SQL joins through
-     * `family_members`/`devices` (F2 fix: the prior implementation used
-     * unscoped global deletes, which would erase every OTHER family sharing
-     * this local database too -- see [org.pca.app.persistence.dao.FamilyScopeSql]).
-     * Table order matters: every table whose scoping query joins through
-     * `devices`/`family_members` MUST run before those two tables are
-     * themselves deleted, or the join would already find nothing.
+     * Family-wide Delete Now (doc 11 Section 6) -- wipes activity rows that
+     * belong to [familyId], scoped via SQL joins through
+     * `family_members`/`devices`. Protected family configuration, current
+     * policies/keys, roles, and audit rows remain intact; family/device
+     * removal is a separate lifecycle flow.
      */
     suspend fun deleteFamily(familyId: String, nowUtc: Instant): RetentionDeletionReceiptEntity {
         require(familyId.isNotBlank()) { "delete scope is not available" }
         return database.withTransaction {
             var total = 0
-            // 1. Tables scoped via devices -> family_members (devices/family_members must still exist).
+            // Tables scoped via devices -> family_members.
             total += database.usageSessionDao().deleteAllForFamily(familyId)
             total += database.webVisitDao().deleteAllForFamily(familyId)
             total += database.contentBlockEventDao().deleteAllForFamily(familyId)
@@ -110,19 +99,10 @@ class DeleteNowCoordinator(private val database: PcaLocalDatabase) {
             total += database.proximityEventDao().deleteAllForFamily(familyId)
             total += database.prayerReminderEventDao().deleteAllForFamily(familyId)
             total += database.installedAppEventDao().deleteAllForFamily(familyId)
-            total += database.tamperEventDao().deleteAllForFamily(familyId)
-            total += database.policyReceiptDao().deleteAllForFamily(familyId)
-            total += database.deviceKeyMetadataDao().deleteAllForFamily(familyId)
-            total += database.policySnapshotDao().deleteAllForFamily(familyId)
-            // 2. Tables scoped via family_members directly.
-            total += database.parentActionAuditDao().deleteAllForFamily(familyId)
-            // 3. devices (scoped via family_members -- must run before family_members is deleted).
-            total += database.deviceDao().deleteAllForFamily(familyId)
-            // 4. Already-family-scoped by their own familyScope column.
+            // Queued family ciphertext is an activity replica; remove it for
+            // a family-wide purge while keeping current policy/status rows.
             total += database.syncOutboxDao().deleteAllForFamily(familyId)
             total += database.syncReceiptDao().deleteAllForFamily(familyId)
-            // 5. family_members last -- every subquery above depends on it still existing.
-            total += database.familyMemberDao().deleteAllForFamily(familyId)
             insertTombstone(familyId, familyId, "Family", nowUtc)
             insertReceipt(familyId, null, "family_all_categories", total, nowUtc, "delete_now_family")
         }
