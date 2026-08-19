@@ -11,6 +11,7 @@ function SafeZoneAuthoring() {
     <article className="card">
       <h2>{t('location.safeZones')}</h2>
       <p>{t('location.safeZonePrivacy')}</p>
+      <p>{t('location.safeZoneBoundaryNotice')}</p>
       <p role="status">{t('location.safeZoneEncryptionUnavailable')}</p>
     </article>
   );

@@ -151,7 +151,7 @@ object SafeZonePolicyPayloadCodec {
         val radiusMeters = json.opt("radiusMeters") as? Number ?: return null
         val enabled = json.opt("enabled") as? Boolean ?: return null
         if (
-            label.isBlank() || label.length > 256 ||
+            label.isBlank() || label.length > 256 || label.contains('|') || label.contains('\n') ||
             !latitude.toDouble().isFinite() || latitude.toDouble() !in -90.0..90.0 ||
             !longitude.toDouble().isFinite() || longitude.toDouble() !in -180.0..180.0 ||
             !radiusMeters.toDouble().isFinite() || radiusMeters.toDouble() <= 0.0
@@ -201,13 +201,14 @@ data class SafeZoneAuthorizedSender(
  * identities and must enforce the current trust/key epoch.
  */
 interface SafeZoneFamilyAuthority {
-    suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long): Boolean
+    suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long, keyEpoch: Long): Boolean
 
     suspend fun resolveAuthorizedSender(
         familyId: String,
         senderDeviceId: String,
         senderKeyId: String,
         trustSetEpoch: Long,
+        keyEpoch: Long,
     ): SafeZoneAuthorizedSender?
 }
 
@@ -266,7 +267,7 @@ class SafeZonePolicyReceiver(
         }
 
         val recipientAuthorized = runCatching {
-            authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch)
+            authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)
         }.getOrDefault(false)
         if (!recipientAuthorized) return SafeZonePolicyReceiveResult.REJECTED
 
@@ -276,6 +277,7 @@ class SafeZonePolicyReceiver(
                 envelope.senderDeviceId,
                 envelope.senderKeyId,
                 envelope.trustSetEpoch,
+                envelope.keyEpoch,
             )
         }.getOrNull() ?: return SafeZonePolicyReceiveResult.REJECTED
         if (sender.role != SafeZoneFamilyRole.OWNER && sender.role != SafeZoneFamilyRole.ADMINISTRATOR) {

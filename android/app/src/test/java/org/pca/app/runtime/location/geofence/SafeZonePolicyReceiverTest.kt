@@ -44,16 +44,17 @@ class SafeZonePolicyReceiverTest {
     )
 
     private fun authority(role: SafeZoneFamilyRole = SafeZoneFamilyRole.OWNER) = object : SafeZoneFamilyAuthority {
-        override suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long): Boolean =
-            familyId == "family-a" && recipientEndpointId == "child-a" && trustSetEpoch == 2L
+        override suspend fun isRecipientAuthorized(familyId: String, recipientEndpointId: String, trustSetEpoch: Long, keyEpoch: Long): Boolean =
+            familyId == "family-a" && recipientEndpointId == "child-a" && trustSetEpoch == 2L && keyEpoch == 3L
 
         override suspend fun resolveAuthorizedSender(
             familyId: String,
             senderDeviceId: String,
             senderKeyId: String,
             trustSetEpoch: Long,
+            keyEpoch: Long,
         ): SafeZoneAuthorizedSender? =
-            if (familyId == "family-a" && senderDeviceId == "parent-a" && senderKeyId == "parent-signing-key" && trustSetEpoch == 2L) {
+            if (familyId == "family-a" && senderDeviceId == "parent-a" && senderKeyId == "parent-signing-key" && trustSetEpoch == 2L && keyEpoch == 3L) {
                 SafeZoneAuthorizedSender(role, "parent-public-key")
             } else {
                 null
@@ -124,6 +125,51 @@ class SafeZonePolicyReceiverTest {
         )
 
         assertEquals(SafeZonePolicyReceiveResult.BLOCKED_CRYPTO_REVIEW, receiver.receive(envelope(), nowEpochMillis = 2_000L))
+        assertTrue(zoneStore.loadZones().isEmpty())
+    }
+
+    @Test
+    fun `current key epoch is required before signature or decrypt`() = runTest {
+        var verifierCalls = 0
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = object : SafeZoneEnvelopeSignatureVerifier {
+                override suspend fun verify(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): Boolean {
+                    verifierCalls += 1
+                    return true
+                }
+            },
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray? =
+                    error("stale key epoch must never reach decrypt")
+            },
+            zoneStore = zoneStore,
+        )
+
+        assertEquals(
+            SafeZonePolicyReceiveResult.REJECTED,
+            receiver.receive(envelope().copy(keyEpoch = 4L), nowEpochMillis = 2_000L),
+        )
+        assertEquals(0, verifierCalls)
+    }
+
+    @Test
+    fun `malformed location payload cannot be normalized into a stored policy`() = runTest {
+        val receiver = SafeZonePolicyReceiver(
+            localFamilyId = "family-a",
+            localEndpointId = "child-a",
+            authority = authority(),
+            signatureVerifier = approvingVerifier,
+            decryptor = object : SafeZonePayloadDecryptor {
+                override suspend fun decrypt(envelope: SafeZonePolicyEnvelope, senderPublicSigningKey: String): ByteArray =
+                    SafeZonePolicyPayloadCodec.encode(SafeZonePolicyPayload("family-a", "child-a", "zone-home", 1L, 3L, zone.copy(label = "Home|secret")))
+            },
+            zoneStore = zoneStore,
+        )
+
+        assertEquals(SafeZonePolicyReceiveResult.REJECTED, receiver.receive(envelope(), nowEpochMillis = 2_000L))
         assertTrue(zoneStore.loadZones().isEmpty())
     }
 

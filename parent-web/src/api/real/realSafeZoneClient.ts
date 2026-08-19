@@ -1,5 +1,6 @@
 import type { NewSafeZoneInput, SafeZone, SafeZoneClient, SafeZonePatch } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
+import { validateOpaqueSafeZoneInput, validateOpaqueSafeZonePatch } from '../safeZonePolicyAuthoring';
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
 const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
@@ -18,6 +19,10 @@ const SAFE_ZONE_KEYS = new Set([
 ]);
 const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 const OPAQUE_BASE64 = /^[A-Za-z0-9_-]{2,87380}$/;
+
+function assertSafeZoneIdentifier(value: string): void {
+  if (!OPAQUE_TOKEN.test(value)) throw new Error('SAFE_ZONE_REQUEST_INVALID');
+}
 
 function readCsrfCookie(): string | null {
   if (typeof document === 'undefined') return null;
@@ -86,6 +91,7 @@ export class RealSafeZoneClient implements SafeZoneClient {
   }
 
   async list(familyId: string): Promise<SafeZone[]> {
+    assertSafeZoneIdentifier(familyId);
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones`), { credentials: 'include', headers: { Accept: 'application/json', ...(await this.actorHeaders()) } });
     if (!response.ok) throw new Error(`Safe-zone request failed (${response.status})`);
     const body = await json(response);
@@ -94,14 +100,24 @@ export class RealSafeZoneClient implements SafeZoneClient {
   }
 
   async create(familyId: string, input: NewSafeZoneInput): Promise<SafeZone> {
+    assertSafeZoneIdentifier(familyId);
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) throw new Error('SAFE_ZONE_REQUEST_INVALID');
+    const recipientEndpointId = (input as { recipientEndpointId?: unknown }).recipientEndpointId;
+    if (typeof recipientEndpointId !== 'string') throw new Error('SAFE_ZONE_REQUEST_INVALID');
+    validateOpaqueSafeZoneInput(input, recipientEndpointId);
     return this.mutate(familyId, '', 'POST', input) as Promise<SafeZone>;
   }
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
+    assertSafeZoneIdentifier(familyId);
+    assertSafeZoneIdentifier(zoneId);
+    validateOpaqueSafeZonePatch(patch);
     return this.mutate(familyId, zoneId, 'PATCH', patch) as Promise<SafeZone>;
   }
 
   async remove(familyId: string, zoneId: string): Promise<void> {
+    assertSafeZoneIdentifier(familyId);
+    assertSafeZoneIdentifier(zoneId);
     const csrf = readCsrfCookie();
     const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/safe-zones/${encodeURIComponent(zoneId)}`), { method: 'DELETE', credentials: 'include', headers: { ...(await this.actorHeaders()), ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}) } });
     if (!response.ok) throw new Error(`Safe-zone deletion failed (${response.status})`);

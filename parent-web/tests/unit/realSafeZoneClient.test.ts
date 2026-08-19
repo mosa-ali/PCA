@@ -62,4 +62,29 @@ describe('RealSafeZoneClient opaque response boundary', () => {
       .rejects.toThrow('TRUSTED_BROWSER_REQUIRED');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('rejects a plaintext-shaped create before it can reach fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new RealSafeZoneClient('https://pca.example', trustedBrowser).create('family-1', {
+      label: 'Home',
+      latitude: 24.7,
+      longitude: 46.6,
+      radiusMeters: 200,
+      enabled: true,
+    } as never)).rejects.toThrow('SAFE_ZONE_REQUEST_INVALID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects extra fields and malformed identifiers before update/delete fetches', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new RealSafeZoneClient('https://pca.example', trustedBrowser);
+
+    await expect(client.update('family-1', 'zone-1', { ciphertextB64: 'AQID', label: 'Home' } as never))
+      .rejects.toMatchObject({ code: 'ENCRYPTION_UNAVAILABLE' });
+    await expect(client.remove('family with spaces', 'zone-1')).rejects.toThrow('SAFE_ZONE_REQUEST_INVALID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

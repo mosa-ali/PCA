@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
-import { SafeZoneError, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRepository } from './SafeZoneRepository.js';
+import { SafeZoneError, validateNewSafeZone, validateSafeZonePatch, type NewSafeZone, type SafeZone, type SafeZonePatch, type SafeZoneRepository } from './SafeZoneRepository.js';
 
 interface SafeZoneRow {
   zone_id: string;
@@ -39,6 +39,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
   }
 
   async create(input: NewSafeZone): Promise<SafeZone> {
+    validateNewSafeZone(input);
     const zoneId = randomUUID();
     const now = new Date();
     await runInTransaction((conn) => execute(conn, `INSERT INTO safe_zones (zone_id, family_id, recipient_endpoint_id, ciphertext, nonce, key_epoch, revision, delivery_state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, 'PENDING_OFFLINE', ?, ?)`, [zoneId, input.familyId, input.recipientEndpointId, Buffer.from(input.ciphertextB64, 'base64url'), Buffer.from(input.nonceB64, 'base64url'), input.keyEpoch, now, now]));
@@ -48,6 +49,7 @@ export class MySqlSafeZoneRepository implements SafeZoneRepository {
   }
 
   async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {
+    validateSafeZonePatch(patch);
     const now = new Date();
     const { rowCount } = await runInTransaction((conn) => execute(conn, `UPDATE safe_zones SET ciphertext = COALESCE(?, ciphertext), nonce = COALESCE(?, nonce), key_epoch = COALESCE(?, key_epoch), revision = revision + 1, delivery_state = 'PENDING_OFFLINE', updated_at = ? WHERE zone_id = ? AND family_id = ?`, [patch.ciphertextB64 === undefined ? null : Buffer.from(patch.ciphertextB64, 'base64url'), patch.nonceB64 === undefined ? null : Buffer.from(patch.nonceB64, 'base64url'), patch.keyEpoch ?? null, now, zoneId, familyId]));
     if (rowCount === 0) throw new SafeZoneError('NOT_FOUND');

@@ -4,6 +4,7 @@ import {
   VerifiedFamilySafeZonePolicyAuthoring,
   UnavailableSafeZonePolicyAuthoring,
   validateOpaqueSafeZoneInput,
+  validateOpaqueSafeZonePatch,
   validateSafeZonePlaintextDefinition,
 } from '../../src/api/safeZonePolicyAuthoring';
 
@@ -93,5 +94,15 @@ describe('safe-zone policy authoring boundary', () => {
     expect(() => validateOpaqueSafeZoneInput({ recipientEndpointId: 'child-endpoint', ciphertextB64: 'AQID', nonceB64: 'AAECAwQFBgcICQoL', keyEpoch: 1, label: 'Home' }, 'child-endpoint')).toThrow(
       SafeZonePolicyAuthoringError,
     );
+  });
+
+  it('rejects unsafe partial updates, including a short nonce', () => {
+    expect(() => validateOpaqueSafeZonePatch({ label: 'Home' })).toThrow(
+      SafeZonePolicyAuthoringError,
+    );
+    expect(() => validateOpaqueSafeZonePatch({ nonceB64: 'AQID' })).toThrow(
+      SafeZonePolicyAuthoringError,
+    );
+    expect(() => validateOpaqueSafeZonePatch({ ciphertextB64: 'AQID' })).not.toThrow();
   });
 });

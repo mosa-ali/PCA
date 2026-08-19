@@ -194,6 +194,26 @@ class GeofenceEngineTest {
         assertNull(replay.transition)
     }
 
+    @Test
+    fun `invalid platform fix is ignored instead of becoming an exit`() {
+        val state = GeofenceZoneState(
+            zoneId = zone.zoneId,
+            confirmedMembership = GeofenceMembership.INSIDE,
+        )
+        val invalid = sampleAtDistance(500.0).copy(latitude = Double.NaN, accuracyMeters = Float.NaN)
+
+        val evaluation = GeofenceEngine.evaluate(
+            zone,
+            state,
+            invalid,
+            nowMonotonicNanos = 1L,
+            config = GeofenceConfig(requiredConsecutiveSamplesToConfirm = 1),
+        )
+
+        assertEquals(state, evaluation.newState)
+        assertNull(evaluation.transition)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `mismatched zone and state ids fail fast`() {
         GeofenceEngine.evaluate(zone, GeofenceZoneState(zoneId = "other-zone"), sampleAtDistance(0.0), 1L)

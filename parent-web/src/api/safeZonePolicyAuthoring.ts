@@ -1,4 +1,4 @@
-import type { NewSafeZoneInput } from './interfaces';
+import type { NewSafeZoneInput, SafeZonePatch } from './interfaces';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,11 +75,29 @@ export function validateOpaqueSafeZoneInput(
     typeof value.ciphertextB64 !== 'string' ||
     !OPAQUE_BASE64.test(value.ciphertextB64) ||
     typeof value.nonceB64 !== 'string' ||
-    !OPAQUE_BASE64.test(value.nonceB64) ||
+    !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64) ||
     typeof value.keyEpoch !== 'number' ||
     !Number.isInteger(value.keyEpoch) ||
     value.keyEpoch <= 0
   ) {
+    throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
+  }
+}
+
+/** Runtime guard for PATCH calls: only opaque envelope fields may cross HTTP. */
+export function validateOpaqueSafeZonePatch(value: unknown): asserts value is SafeZonePatch {
+  if (!isRecord(value)) throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
+  const keys = Object.keys(value);
+  if (keys.length === 0 || keys.some((key) => !['ciphertextB64', 'nonceB64', 'keyEpoch'].includes(key))) {
+    throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
+  }
+  if (value.ciphertextB64 !== undefined && (typeof value.ciphertextB64 !== 'string' || !OPAQUE_BASE64.test(value.ciphertextB64))) {
+    throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
+  }
+  if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64))) {
+    throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
+  }
+  if (value.keyEpoch !== undefined && (typeof value.keyEpoch !== 'number' || !Number.isSafeInteger(value.keyEpoch) || value.keyEpoch <= 0)) {
     throw new SafeZonePolicyAuthoringError('ENCRYPTION_UNAVAILABLE');
   }
 }

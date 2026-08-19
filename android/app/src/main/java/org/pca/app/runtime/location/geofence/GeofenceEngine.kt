@@ -39,6 +39,12 @@ object GeofenceEngine {
         }
         require(nowMonotonicNanos >= 0L) { "nowMonotonicNanos must not be negative" }
 
+        // A malformed platform fix must never become an OUTSIDE result just
+        // because NaN compares false. Preserve the last trusted membership.
+        if (!isValidSample(sample)) {
+            return GeofenceEvaluation(state, transition = null, distanceMeters = Double.NaN)
+        }
+
         val distanceMeters = GeofenceMath.haversineMeters(
             zone.centerLatitude, zone.centerLongitude, sample.latitude, sample.longitude,
         )
@@ -160,6 +166,11 @@ object GeofenceEngine {
         GeofenceMembership.OUTSIDE, GeofenceMembership.UNKNOWN ->
             if (distanceMeters <= zone.radiusMeters) GeofenceMembership.INSIDE else GeofenceMembership.OUTSIDE
     }
+
+    private fun isValidSample(sample: LocationSample): Boolean =
+        sample.latitude.isFinite() && sample.latitude in -90.0..90.0 &&
+            sample.longitude.isFinite() && sample.longitude in -180.0..180.0 &&
+            sample.accuracyMeters.isFinite() && sample.accuracyMeters >= 0.0f
 
     private const val NANOS_PER_MILLISECOND = 1_000_000L
 }
