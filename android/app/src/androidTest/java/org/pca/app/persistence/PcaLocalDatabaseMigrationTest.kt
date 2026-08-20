@@ -99,6 +99,28 @@ class PcaLocalDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate4To5CreatesEnrollmentLifecycleAuditsTable() {
+        helper.createDatabase(TEST_DB_NAME, 4).close()
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB_NAME, 5, true, Migrations.MIGRATION_4_5)
+        migrated.execSQL(
+            "INSERT INTO enrollment_lifecycle_audits (id, familyId, deviceId, actorId, fromState, toState, reason, occurredAtEpochMillis) " +
+                "VALUES ('e1', NULL, 'device-1', 'actor-1', NULL, 'PAIRING_PENDING', 'first enrollment', 1000)",
+        )
+        val cursor = migrated.query("SELECT deviceId, fromState, toState, reason FROM enrollment_lifecycle_audits WHERE id = 'e1'")
+        try {
+            org.junit.Assert.assertTrue(cursor.moveToFirst())
+            org.junit.Assert.assertEquals("device-1", cursor.getString(cursor.getColumnIndexOrThrow("deviceId")))
+            org.junit.Assert.assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("fromState")))
+            org.junit.Assert.assertEquals("PAIRING_PENDING", cursor.getString(cursor.getColumnIndexOrThrow("toState")))
+            org.junit.Assert.assertEquals("first enrollment", cursor.getString(cursor.getColumnIndexOrThrow("reason")))
+        } finally {
+            cursor.close()
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DB_NAME = "pca_local_migration_test.db"
     }

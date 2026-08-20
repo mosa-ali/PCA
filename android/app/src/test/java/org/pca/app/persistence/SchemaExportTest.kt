@@ -37,7 +37,7 @@ class SchemaExportTest {
             "content_block_events", "location_points", "break_sessions", "proximity_events",
             "prayer_reminder_events", "device_key_metadata", "policy_receipts", "tamper_events",
             "parent_action_audits", "retention_deletion_receipts", "sync_outbox_records", "sync_receipt_records",
-            "tombstone_records", "installed_app_events",
+            "tombstone_records", "installed_app_events", "enrollment_lifecycle_audits",
         )
 
         assertEquals(expected, tableNames)

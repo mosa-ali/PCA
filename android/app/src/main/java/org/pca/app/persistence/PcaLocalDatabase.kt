@@ -9,6 +9,7 @@ import org.pca.app.persistence.dao.BreakSessionDao
 import org.pca.app.persistence.dao.ContentBlockEventDao
 import org.pca.app.persistence.dao.DeviceDao
 import org.pca.app.persistence.dao.DeviceKeyMetadataDao
+import org.pca.app.persistence.dao.EnrollmentLifecycleAuditDao
 import org.pca.app.persistence.dao.FamilyMemberDao
 import org.pca.app.persistence.dao.InstalledAppEventDao
 import org.pca.app.persistence.dao.LocationPointDao
@@ -28,6 +29,7 @@ import org.pca.app.persistence.entity.BreakSessionEntity
 import org.pca.app.persistence.entity.ContentBlockEventEntity
 import org.pca.app.persistence.entity.DeviceEntity
 import org.pca.app.persistence.entity.DeviceKeyMetadataEntity
+import org.pca.app.persistence.entity.EnrollmentLifecycleAuditEntity
 import org.pca.app.persistence.entity.FamilyMemberEntity
 import org.pca.app.persistence.entity.InstalledAppEventEntity
 import org.pca.app.persistence.entity.LocationPointEntity
@@ -85,6 +87,7 @@ import org.pca.app.persistence.entity.WebVisitEntity
         SyncReceiptRecordEntity::class,
         TombstoneRecordEntity::class,
         InstalledAppEventEntity::class,
+        EnrollmentLifecycleAuditEntity::class,
     ],
 )
 @TypeConverters(Converters::class)
@@ -108,9 +111,10 @@ abstract class PcaLocalDatabase : RoomDatabase() {
     abstract fun syncReceiptDao(): SyncReceiptDao
     abstract fun tombstoneRecordDao(): TombstoneRecordDao
     abstract fun installedAppEventDao(): InstalledAppEventDao
+    abstract fun enrollmentLifecycleAuditDao(): EnrollmentLifecycleAuditDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 5
         const val DATABASE_NAME = "pca_local.db"
 
         /**

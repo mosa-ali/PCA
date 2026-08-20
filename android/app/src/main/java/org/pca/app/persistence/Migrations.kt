@@ -75,5 +75,27 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    /**
+     * PCA-FR-140: adds `enrollment_lifecycle_audits` -- durable, device-local storage for
+     * [org.pca.app.enrollment.EnrollmentLifecycleAuditor]'s transition records, replacing the
+     * previous in-memory-only default sink. A brand new table, so this migration is purely
+     * additive -- no existing row's meaning changes.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `enrollment_lifecycle_audits` (" +
+                    "`id` TEXT NOT NULL, `familyId` TEXT, `deviceId` TEXT NOT NULL, `actorId` TEXT NOT NULL, " +
+                    "`fromState` TEXT, `toState` TEXT NOT NULL, `reason` TEXT NOT NULL, " +
+                    "`occurredAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_enrollment_lifecycle_audits_deviceId` ON `enrollment_lifecycle_audits` (`deviceId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_enrollment_lifecycle_audits_occurredAtEpochMillis` " +
+                    "ON `enrollment_lifecycle_audits` (`occurredAtEpochMillis`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 }

@@ -49,6 +49,7 @@ import org.pca.app.enrollment.screenTimeConfigForEnrollmentProfile
 import org.pca.app.enrollment.EnrollmentDeepLinkConfig
 import org.pca.app.enrollment.EnrollmentLinkParser
 import org.pca.app.enrollment.HttpDeviceBootstrapApiClient
+import org.pca.app.enrollment.PersistentEnrollmentLifecycleAuditSink
 import org.pca.app.enrollment.UriEnrollmentLinkParser
 import org.pca.app.feature.wellbeing.persistence.WellbeingPolicyStore
 import org.pca.app.feature.wellbeing.persistence.WellbeingRateStateStore
@@ -296,6 +297,11 @@ class PcaAppGraph private constructor(
         keyPairGenerator = deviceKeyPairGenerator,
         familyStateStore = familyStateStore,
         pendingAttemptStore = pendingEnrollmentAttemptStore,
+        // PCA-FR-140: durable audit sink -- replaces the previous silent
+        // in-memory-only default, so lifecycle transitions survive process
+        // death/app restart. See PersistentEnrollmentLifecycleAuditSink's
+        // own doc comment.
+        lifecycleAuditSink = PersistentEnrollmentLifecycleAuditSink(persistence.enrollmentLifecycleAuditRepository),
     )
 
     /** Resolves the current enrolled device id, or null if [deviceIdentityProvider] reports
