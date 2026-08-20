@@ -75,6 +75,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    // Forces transitive androidx.fragment >=1.3.0; see comment on androidx-fragment-ktx in
+    // libs.versions.toml (InvalidFragmentVersionForActivityResult lint fix).
+    implementation(libs.androidx.fragment.ktx)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
