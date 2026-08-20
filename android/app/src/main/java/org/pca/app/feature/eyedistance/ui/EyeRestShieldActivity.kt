@@ -29,19 +29,14 @@ import org.pca.app.feature.eyedistance.shield.EyeDistanceShieldController
  * anything about `PlatformProtectionCapabilities.currentMode()` (that is an unrelated, DevicePolicy
  * device-owner concept; see that type's own doc comment).
  *
- * HONEST INTEGRATION GAP (do not remove this note without actually closing the gap): this Activity
- * is NOT registered in `AndroidManifest.xml`, and nothing in production ever calls
- * `startActivity(Intent(context, EyeRestShieldActivity::class.java))`. Both of those are out of this
- * change's allowed scope (everything under `feature/eyedistance` plus `res/values{,-ar}/strings.xml`
- * only) --
- * `AndroidManifest.xml` is not a path this change may touch, and the natural launch site
- * (constructing [org.pca.app.feature.eyedistance.shield.EyeRestShieldTrigger] with the real
- * `PcaRuntime.eyeDistanceState` and an actual `startActivity` call) belongs in
- * `PcaAppGraph.start()`/`PcaApplication.onCreate()`, also out of scope here. Until a follow-up change
- * makes both of those edits, this Activity renders the real state correctly if launched (by a test,
- * or manually via adb `am start`), but does not yet fire on its own from a genuine REST_ACTIVE
- * transition -- see [org.pca.app.feature.eyedistance.shield.EyeRestShieldTrigger]'s own doc comment
- * for the exact remaining wiring.
+ * INTEGRATION CLOSURE: this Activity is now registered in `AndroidManifest.xml` (not exported, no
+ * intent-filter, same pattern as [EyeDistanceCameraPermissionActivity]), and
+ * `org.pca.app.runtime.graph.PcaAppGraph.eyeRestShieldTrigger` -- constructed from the real
+ * `PcaRuntime.eyeDistanceState` -- calls `PcaAppGraph.launchEyeRestShieldActivity()` on every
+ * false-to-true `isShieldVisible` edge, which fires the actual
+ * `startActivity(Intent(context, EyeRestShieldActivity::class.java).addFlags(FLAG_ACTIVITY_NEW_TASK))`
+ * call. See [org.pca.app.feature.eyedistance.shield.EyeRestShieldTrigger]'s own doc comment for the
+ * trigger side of this wiring.
  */
 class EyeRestShieldActivity : ComponentActivity() {
 

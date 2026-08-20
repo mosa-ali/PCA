@@ -1,17 +1,31 @@
 package org.pca.app.runtime.graph
 
+import android.app.Application
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.WorkManagerTestInitHelper
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pca.app.feature.eyedistance.engine.EyeDistancePhase
+import org.pca.app.feature.eyedistance.engine.EyeDistanceState
+import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshot
+import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
+import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
+import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.runtime.identity.DeviceIdentityState
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.security.KeyStore
 
 /**
@@ -59,6 +73,11 @@ class PcaAppGraphTest {
         // production trigger coordinator are now part of the composed graph.
         assertNotNull(graph.screenStateObserver)
         assertNotNull(graph.wellbeingCoordinator)
+        // PCA-FR-021 closure: the real eye-rest-shield trigger is now part of the composed graph
+        // (previously constructed nowhere in production -- see EyeRestShieldTrigger's own doc
+        // comment history).
+        assertNotNull(graph.eyeRestShieldTrigger)
+        assertNotNull(graph.eyeDistanceConfig)
         // Conservative placeholders (Section 8/9) until Agent 10/16 bind real implementations.
         assertEquals(ScheduleRuntimeStatus.NOT_READY, graph.scheduleRuntimePort.currentStatus())
         assertEquals(FamilySyncConnectionState.OFFLINE, graph.familySyncRuntimePort.currentConnectionState())
@@ -108,5 +127,107 @@ class PcaAppGraphTest {
         true
     } catch (_: Exception) {
         false
+    }
+
+    // --- PCA-FR-021 closure: EyeRestShieldActivity launch wiring -----------------------------
+    //
+    // These tests prove the real launch path FR-021's own follow-up demanded (see
+    // EyeRestShieldActivity's and EyeRestShieldTrigger's own doc comments): the production
+    // eyeRestShieldTrigger, built from PcaRuntime's real eyeDistanceState, must actually call
+    // context.startActivity(...) for EyeRestShieldActivity on a genuine REST_ACTIVE transition.
+    //
+    // `launchEyeRestShieldActivity` (the exact callback eyeRestShieldTrigger.onShieldShouldAppear
+    // invokes) is tested directly and synchronously below -- this proves the launch call's shape
+    // (correct target Activity, FLAG_ACTIVITY_NEW_TASK) with no coroutine timing involved.
+    //
+    // The end-to-end test below additionally proves the trigger really is wired to the real state
+    // flow and really does fire the real callback: it pre-seeds the durable eye-distance snapshot
+    // store (via the same PersistentEyeDistanceSnapshotStore/EyeDistanceRestorer production code
+    // path PcaAppGraph itself uses) so the graph's PcaRuntime restores directly into REST_ACTIVE,
+    // then calls the real graph.start(). Because eyeRestShieldTrigger.start() launches its
+    // collector on Dispatchers.Default (PcaAppGraph.coroutineScope carries no dispatcher of its
+    // own), the resulting startActivity call lands on a background thread asynchronously relative
+    // to this test thread -- so this test polls briefly rather than asserting instantly. That is
+    // an honest, deliberate choice given this module's Robolectric/JVM unit-test environment has
+    // no way to force Dispatchers.Default to run synchronously without changing PcaAppGraph's
+    // dispatcher choice (out of this change's scope); it is not a substitute for an
+    // instrumented/emulator run, which remains the only way to see the real Activity actually
+    // come on screen.
+
+    @Test
+    fun `launchEyeRestShieldActivity starts the real EyeRestShieldActivity with FLAG_ACTIVITY_NEW_TASK`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+
+        graph.launchEyeRestShieldActivity()
+
+        val started = shadowOf(context as Application).nextStartedActivity
+        assertNotNull("expected a startActivity(...) call", started)
+        assertEquals(EyeRestShieldActivity::class.java.name, started!!.component?.className)
+        assertTrue(
+            "application-context launches must set FLAG_ACTIVITY_NEW_TASK",
+            (started.flags and Intent.FLAG_ACTIVITY_NEW_TASK) != 0,
+        )
+    }
+
+    @Test
+    fun `a graph restored directly into REST_ACTIVE really launches EyeRestShieldActivity once graph start() runs`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val stateStore = InMemoryPersistentStateStore()
+
+        // Same production restoration path PcaAppGraph itself relies on (EyeDistanceRestorer):
+        // a null snapshot bootId means "not confirmed same-boot", so restoreAfterReboot is taken,
+        // which preserves a REST_ACTIVE phase across the (simulated) gap rather than resetting to
+        // MONITORING -- see EyeDistanceRestorer.restoreAfterReboot's own doc comment.
+        PersistentEyeDistanceSnapshotStore(stateStore).save(
+            EyeDistanceSnapshot(
+                state = EyeDistanceState(phase = EyeDistancePhase.REST_ACTIVE),
+                snapshotWallClockMillis = 0L,
+                bootId = null,
+            ),
+        )
+
+        // graph.start() also enqueues backgroundExecutionScheduler.scheduleUsageIngestion(),
+        // which requires a real WorkManager instance -- production gets one from the manifest's
+        // WorkManagerInitializer content provider, but this JVM/Robolectric unit-test environment
+        // does not auto-initialize it, so this test provides one the same way
+        // WorkManagerBackgroundExecutionSchedulerTest already does (androidx `work-testing`,
+        // SynchronousExecutor). This is test-environment plumbing unrelated to the eye-rest-shield
+        // wiring itself; it exists only so the real, unmodified graph.start() can run end-to-end.
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
+        )
+
+        val graph = PcaAppGraph.createForTest(context, stateStore = stateStore)
+        assertEquals(
+            "sanity: the graph's own runtime must really have restored into REST_ACTIVE",
+            EyeDistancePhase.REST_ACTIVE,
+            graph.runtime.eyeDistanceState.value.phase,
+        )
+
+        graph.start()
+
+        val deadlineNanos = System.nanoTime() + POLL_TIMEOUT_MILLIS * 1_000_000L
+        var started: Intent? = null
+        while (System.nanoTime() < deadlineNanos) {
+            started = shadowOf(context as Application).peekNextStartedActivity()
+            if (started != null) break
+            Thread.sleep(POLL_INTERVAL_MILLIS)
+        }
+
+        if (started == null) {
+            fail(
+                "eyeRestShieldTrigger never called startActivity() for EyeRestShieldActivity " +
+                    "within ${POLL_TIMEOUT_MILLIS}ms of graph.start() on a graph restored into " +
+                    "REST_ACTIVE",
+            )
+        }
+        assertEquals(EyeRestShieldActivity::class.java.name, started!!.component?.className)
+    }
+
+    private companion object {
+        const val POLL_TIMEOUT_MILLIS = 5_000L
+        const val POLL_INTERVAL_MILLIS = 20L
     }
 }

@@ -10,8 +10,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.pca.app.feature.eyedistance.engine.EyeDistanceConfig
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
+import org.pca.app.feature.eyedistance.shield.EyeRestShieldTrigger
+import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
 import org.pca.app.feature.prayer.model.PrayerName
 import org.pca.app.feature.prayer.location.PrayerLocationStalenessDetector
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
@@ -167,6 +170,11 @@ class PcaAppGraph private constructor(
 
     val screenTimeSnapshotStore: ScreenTimeSnapshotStore = PersistentScreenTimeSnapshotStore(runtimeStateStore)
     val eyeDistanceSnapshotStore: EyeDistanceSnapshotStore = PersistentEyeDistanceSnapshotStore(runtimeStateStore)
+    /** PCA-FR-021: the single [EyeDistanceConfig] instance shared by [runtime] (which restores/
+     * ticks the real engine state) and [eyeRestShieldTrigger] below (which derives isShieldVisible
+     * from that same state) -- passed explicitly to [runtime]'s constructor rather than relying on
+     * its own default parameter, so the two can never silently drift onto two different configs. */
+    val eyeDistanceConfig = EyeDistanceConfig()
     val childRequestQueue = ChildRequestOfflineQueue(childRequestStateStore)
 
     val connectivityObserver: NetworkConnectivityObserver = AndroidNetworkConnectivityObserver(context)
@@ -529,8 +537,44 @@ class PcaAppGraph private constructor(
         screenStateObserver = screenStateObserver,
         childRequestQueue = childRequestQueue,
         externalScope = coroutineScope,
+        eyeDistanceConfig = eyeDistanceConfig,
         foregroundAppPackageSource = foregroundAppPackageSource,
     )
+
+    /**
+     * PCA-FR-021 closure: the real trigger that decides WHEN to launch [EyeRestShieldActivity],
+     * built from [runtime]'s real, already-running `eyeDistanceState` -- previously this trigger
+     * was never constructed in production at all (see [EyeRestShieldTrigger]'s own "KNOWN
+     * INTEGRATION GAP" doc comment, now closed by this wiring). `platformEnforcementPermitted`
+     * intentionally always returns `true` here, deliberately matching
+     * [EyeRestShieldActivity]'s own hardcoded claim of the same name -- both assert only that the
+     * shield-rendering surface itself is available, never `protectionCapabilities.currentMode()`
+     * (an unrelated DevicePolicy device-owner concept). The two must never disagree about
+     * `isShieldVisible`, or the Activity could self-finish immediately after being launched (see
+     * [EyeRestShieldActivity.onCreate]'s `LaunchedEffect` that finishes on `!isShieldVisible`).
+     */
+    val eyeRestShieldTrigger = EyeRestShieldTrigger(
+        eyeDistanceStateFlow = runtime.eyeDistanceState,
+        config = eyeDistanceConfig,
+        platformEnforcementPermitted = { true },
+        externalScope = coroutineScope,
+        onShieldShouldAppear = ::launchEyeRestShieldActivity,
+    )
+
+    /**
+     * The real launch call [eyeRestShieldTrigger] fires on a false-to-true `isShieldVisible` edge.
+     * [FLAG_ACTIVITY_NEW_TASK][Intent.FLAG_ACTIVITY_NEW_TASK] is required because [context] here is
+     * the application Context this graph holds, not an Activity context. `internal` (not
+     * `private`) so [PcaAppGraphTest][org.pca.app.runtime.graph.PcaAppGraphTest] can invoke it
+     * directly to prove the real launch Intent's shape without having to drive the full
+     * proximity/engine tick loop through a genuine REST_ACTIVE transition (see that test's own doc
+     * comment for why the wiring is exercised this way).
+     */
+    internal fun launchEyeRestShieldActivity() {
+        context.startActivity(
+            Intent(context, EyeRestShieldActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
 
     private fun buildWellbeingDispatcher(): WellbeingTriggerDispatcher = WellbeingTriggerDispatcher(
         monotonicTimeSource = monotonicTimeSource,
@@ -568,6 +612,7 @@ class PcaAppGraph private constructor(
         hardwareProximitySource.start()
         startCameraForegroundEligibilityTracking()
         runtime.start()
+        eyeRestShieldTrigger.start()
         startUsageLocationPolling()
         backgroundExecutionScheduler.scheduleUsageIngestion()
     }
@@ -658,6 +703,7 @@ class PcaAppGraph private constructor(
         runtime.stop()
         hardwareProximitySource.stop()
         cameraProximitySource.setForegroundEligible(false)
+        eyeRestShieldTrigger.stop()
         coroutineScope.cancel()
     }
 

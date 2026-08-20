@@ -19,20 +19,16 @@ import org.pca.app.feature.eyedistance.engine.EyeDistanceState
  * plus mapping to the boolean first means a duplicate/near-duplicate tick from
  * [org.pca.app.runtime.PcaRuntime.tick] can never re-fire this.
  *
- * KNOWN INTEGRATION GAP (documented rather than fabricated -- see this feature's task notes):
- * nothing in production actually constructs an [EyeRestShieldTrigger] today. The natural real
- * inputs already exist and are exactly what this class needs --
- * `org.pca.app.runtime.PcaRuntime.eyeDistanceState` (a public `StateFlow<EyeDistanceState>`) and
- * `org.pca.app.runtime.graph.PcaAppGraph.protectionCapabilities` -- but constructing this trigger
- * with those real values and supplying an [onShieldShouldAppear] callback that actually calls
- * `context.startActivity(Intent(context, EyeRestShieldActivity::class.java).addFlags(FLAG_ACTIVITY_NEW_TASK))`
- * (or posts a full-screen-intent notification, for the case where the app is backgrounded) has to
- * happen from `PcaAppGraph.start()` or `PcaApplication.onCreate()` -- both outside this change's
- * allowed file scope (everything under `feature/eyedistance` plus `res/values{,-ar}/strings.xml`
- * only). A second,
- * separately-scoped change must add that composition-root call; without it, [EyeRestShieldActivity]
- * is reachable only if launched directly (e.g. from a test or a future manual entry point), never
- * automatically from a real REST_ACTIVE transition.
+ * INTEGRATION CLOSURE: `org.pca.app.runtime.graph.PcaAppGraph` now constructs the real, single
+ * production `eyeRestShieldTrigger` -- fed `org.pca.app.runtime.PcaRuntime.eyeDistanceState`
+ * (the same instance the whole app runs against) and a `platformEnforcementPermitted` lambda that
+ * always returns `true`, deliberately matching [EyeRestShieldActivity]'s own hardcoded claim of the
+ * same name so the two can never disagree about `isShieldVisible`. Its
+ * [onShieldShouldAppear] callback is `PcaAppGraph.launchEyeRestShieldActivity()`, which calls
+ * `context.startActivity(Intent(context, EyeRestShieldActivity::class.java).addFlags(FLAG_ACTIVITY_NEW_TASK))`.
+ * `PcaAppGraph.start()` calls `eyeRestShieldTrigger.start()` exactly once per process (idempotent,
+ * same discipline as every other observer that method starts), so a real REST_ACTIVE transition now
+ * launches [EyeRestShieldActivity] on its own, with no double-observation of the state flow.
  */
 class EyeRestShieldTrigger(
     private val eyeDistanceStateFlow: Flow<EyeDistanceState>,
