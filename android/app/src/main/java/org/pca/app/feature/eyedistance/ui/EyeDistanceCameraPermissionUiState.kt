@@ -42,12 +42,15 @@ object EyeDistanceCameraPermissionUiStateResolver {
 
 /**
  * Single source of truth for whether the camera-based eye-distance tier has a real estimator
- * behind it. `false` today -- see [org.pca.app.platform.proximity.FaceProximityEstimator]'s doc:
- * no concrete, safely-verified camera-session-owning implementation exists yet. A future writer
- * completing that work flips this constant (and wires real capability detection in its place if
- * the availability ever becomes device/build-dependent) as the single switch that turns this
- * disclosure screen from "not available in this build" into a real permission request.
+ * behind it. PCA-FR-024 (REAL_SOURCE_GAP) closure: now `true` -- [org.pca.app.platform.proximity.CameraProximitySource]
+ * is composed in production (`PcaAppGraph.cameraProximitySource`), backed by the real
+ * [org.pca.app.platform.proximity.CameraXFrameSource] adapter, [org.pca.app.platform.proximity.AndroidFaceGeometryDetector],
+ * and [org.pca.app.platform.proximity.FaceProximityClassifier]. This constant is not itself
+ * device/build-dependent (every device either has front-camera hardware, reflected honestly via
+ * [org.pca.app.platform.proximity.ProximitySourceAvailability.UNAVAILABLE], or does not); it is
+ * the single switch that turns this disclosure screen from "not available in this build" into a
+ * real permission request.
  */
 object EyeDistanceCameraFeatureAvailability {
-    const val CAMERA_PROXIMITY_ESTIMATION_AVAILABLE: Boolean = false
+    const val CAMERA_PROXIMITY_ESTIMATION_AVAILABLE: Boolean = true
 }

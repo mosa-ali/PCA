@@ -1,17 +1,26 @@
 package org.pca.app.security.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.pca.app.PcaApplication
 import org.pca.app.accessibility.PcaAccessibilityContent
+import org.pca.app.feature.eyedistance.ui.EyeDistanceCameraPermissionActivity
 import org.pca.app.feature.removaldecision.PersistentRemovalDecisionRepository
 import org.pca.app.feature.removaldecision.RemovalDecisionAuditRecorder
 import org.pca.app.feature.removaldecision.RemovalDecisionCoordinator
@@ -121,20 +130,32 @@ class AdminSecurityActivity : FragmentActivity() {
                             } else null,
                         )
                     } else {
-                        RemovalDecisionScreen(
-                            record = record,
-                            onKeepActive = {
-                                applyOutcome(coordinator.decideKeepActive(isAuthenticated = true)) { record = it }
-                            },
-                            onTemporarilyDisable = { until ->
-                                applyOutcome(coordinator.decideTemporarilyDisable(isAuthenticated = true, untilEpochMillis = until)) { record = it }
-                            },
-                            onAllowRemoval = {
-                                lifecycleScope.launch {
-                                    applyOutcome(coordinator.decideAllowRemoval(isAuthenticated = true)) { record = it }
-                                }
-                            },
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(16.dp)) {
+                            // PCA-PRIV-001 / PCA-FR-023/024 closure: the reachable entry point into
+                            // EyeDistanceCameraPermissionActivity's disclosure + real CAMERA
+                            // permission-request flow -- this app has no shared NavHost (see that
+                            // Activity's own doc comment), so this PIN/biometric-authenticated
+                            // parent settings surface is the chosen, real launch site.
+                            OutlinedButton(onClick = {
+                                startActivity(Intent(this@AdminSecurityActivity, EyeDistanceCameraPermissionActivity::class.java))
+                            }) {
+                                Text("Eye-distance camera permission")
+                            }
+                            RemovalDecisionScreen(
+                                record = record,
+                                onKeepActive = {
+                                    applyOutcome(coordinator.decideKeepActive(isAuthenticated = true)) { record = it }
+                                },
+                                onTemporarilyDisable = { until ->
+                                    applyOutcome(coordinator.decideTemporarilyDisable(isAuthenticated = true, untilEpochMillis = until)) { record = it }
+                                },
+                                onAllowRemoval = {
+                                    lifecycleScope.launch {
+                                        applyOutcome(coordinator.decideAllowRemoval(isAuthenticated = true)) { record = it }
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -91,6 +91,12 @@ dependencies {
     // Jetpack wrapper over BiometricManager/BiometricPrompt, not a custom
     // biometric implementation.
     implementation(libs.androidx.biometric)
+    // PCA-FR-024 (CameraXFrameSource): Tier-2 foreground-only, single-frame ImageAnalysis source
+    // for CameraProximitySource -- no camera-view/video-capture/extensions artifacts, since this
+    // feature never previews, records, or uploads camera output.
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

@@ -46,6 +46,12 @@ class PcaAppGraphTest {
         assertNotNull(graph.eligibleAppSignalSource)
         assertNotNull(graph.prayerAlarmScheduler)
         assertNotNull(graph.proximitySource)
+        // PCA-FR-024 (REAL_SOURCE_GAP) closure: the camera tier is now actually composed, not just
+        // the hardware-only tier -- see PrioritizedProximitySource's "hardware first, camera
+        // second" ordering doc comment for why proximitySource itself does not expose the list.
+        assertNotNull(graph.cameraProximitySource)
+        assertNotNull(graph.cameraPermissionStateTracker)
+        assertNotNull(graph.cameraDegradationMonitor)
         assertNotNull(graph.usageObservationSource)
         assertNotNull(graph.locationCapabilitySource)
         assertNotNull(graph.connectivityObserver)

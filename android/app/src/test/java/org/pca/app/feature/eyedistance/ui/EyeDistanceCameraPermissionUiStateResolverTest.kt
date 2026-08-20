@@ -62,7 +62,7 @@ class EyeDistanceCameraPermissionUiStateResolverTest {
     }
 
     @Test
-    fun `today's real availability constant is false, matching the honest not-yet-implemented state`() {
-        assertEquals(false, EyeDistanceCameraFeatureAvailability.CAMERA_PROXIMITY_ESTIMATION_AVAILABLE)
+    fun `today's real availability constant is true -- PCA-FR-024 closure wired a real CameraProximitySource`() {
+        assertEquals(true, EyeDistanceCameraFeatureAvailability.CAMERA_PROXIMITY_ESTIMATION_AVAILABLE)
     }
 }

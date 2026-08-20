@@ -1,7 +1,10 @@
 package org.pca.app.runtime.graph
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -58,6 +61,7 @@ import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
 import org.pca.app.platform.DevicePolicyAuthorityTracker
 import org.pca.app.platform.DeviceOwnerAuthorityGate
+import org.pca.app.platform.CameraPermissionStateTracker
 import org.pca.app.platform.CapabilityTamperAlertNotificationDelivery
 import org.pca.app.platform.StandardDevicePolicyCapabilitySource
 import org.pca.app.platform.UsageForegroundAppPackageSource
@@ -66,11 +70,16 @@ import org.pca.app.platform.StandardUsageObservationSource
 import org.pca.app.platform.UsageAccessAlertNotificationDelivery
 import org.pca.app.platform.UsageAccessStateTracker
 import org.pca.app.platform.VpnCapabilityStateTracker
+import org.pca.app.platform.proximity.AndroidFaceGeometryDetector
+import org.pca.app.platform.proximity.CameraProximitySource
+import org.pca.app.platform.proximity.CameraXFrameSource
 import org.pca.app.platform.proximity.HardwareProximitySource
+import org.pca.app.platform.proximity.OnDeviceApproximateFaceProximityEstimator
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
 import org.pca.app.runtime.background.BackgroundExecutionScheduler
 import org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler
+import org.pca.app.runtime.tamper.CameraDegradationMonitor
 import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
 import org.pca.app.runtime.tamper.DevicePolicyDegradationMonitor
 import org.pca.app.runtime.tamper.VpnDegradationMonitor
@@ -288,6 +297,14 @@ class PcaAppGraph private constructor(
     private fun enrolledDeviceIdOrNull(): String? =
         (deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId
 
+    /** Shared, live (never cached) CAMERA runtime-permission check -- both [cameraProximitySource]
+     * (gates every estimation call) and [cameraPermissionStateTracker] (PCA-FR-080 loss detection)
+     * read this SAME accessor, so the two can never disagree about the current grant state. */
+    private fun hasCameraPermission(): Boolean = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA,
+    ) == PackageManager.PERMISSION_GRANTED
+
     /** PCA-ANDROID-USAGE-LOCATION-1 (Agent 18) real production bindings: local-only, offline-safe
      * app-usage and location capture, feeding the same encrypted Room repositories every other
      * local record in this app uses. Neither is wired to a periodic caller by Agent 18 itself
@@ -383,6 +400,25 @@ class PcaAppGraph private constructor(
         tamperEventRepository = persistence.tamperEventRepository,
         notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
     )
+    /** PCA-FR-080 closure for the camera-permission capability (previously constructed nowhere in
+     * production, same gap [usageAccessStateTracker]'s doc comment above described for usage
+     * access): [cameraPermissionStateTracker] is the real evidence-backed GRANTED/DENIED/REVOKED/
+     * UNAVAILABLE history, and [cameraDegradationMonitor] is the same tracker-state-to-tamper-event
+     * decision layer as [vpnDegradationMonitor]/[devicePolicyDegradationMonitor] above. This is
+     * intentionally distinct from [CameraProximitySource]'s own permission gating below -- that
+     * class only ever asks "may I estimate right now," this pair only ever watches for and reports
+     * a loss of a previously-granted capability; neither reads or references a camera frame. */
+    val cameraPermissionStateTracker = CameraPermissionStateTracker(
+        hasCameraPermission = ::hasCameraPermission,
+        cameraAvailable = { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) },
+    )
+    val cameraDegradationMonitor = CameraDegradationMonitor(
+        tracker = cameraPermissionStateTracker,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
+        wallClockTimeSource = wallClockTimeSource,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
+    )
     /** Doc 14 layer-2 real enforcement (PCA-5 closure): [vpnDnsDecisionChannel] is the in-process bridge [org.pca.app.feature.webprotection.vpn.WebProtectionVpnService] populates while actually running -- [vpnMetadataDecisionAdapter] now reports a real ALLOWED/BLOCKED verdict whenever that service is connected and has itself decided a domain, and honestly UNAVAILABLE otherwise (see both classes' own doc comments). [vpnSafeSearchPolicyStore] defaults to OFF until explicitly set -- SafeSearch is never fabricated at the DNS layer either. [vpnEnforcementController] is the real, reachable consent/start/stop orchestration seam a future parent settings screen wires a button to (no such screen exists in this pass -- see traceability doc). */
     val vpnDnsDecisionChannel = VpnDnsDecisionChannel()
     val vpnSafeSearchPolicyStore = VpnSafeSearchPolicyStore(runtimeStateStore)
@@ -409,7 +445,26 @@ class PcaAppGraph private constructor(
     } ?: ScreenTimePolicyApplier.SAFE_DEFAULT_CONFIG
 
     private val hardwareProximitySource = HardwareProximitySource(context, monotonicTimeSource)
-    val proximitySource: ProximitySource = PrioritizedProximitySource(listOf(hardwareProximitySource))
+    /** Tier 2 (doc 13 Section 4, PCA-FR-024): CameraX-backed foreground face-geometry fallback,
+     * consulted by [PrioritizedProximitySource] only when [hardwareProximitySource] itself is
+     * unavailable -- see that class's own doc comment for the "typical construction order:
+     * hardware first, camera second" ordering semantics this list now follows. [cameraFrameSource]
+     * never retains a frame past one classification cycle (see [CameraXFrameSource]'s own doc
+     * comment); [cameraProximitySource] owns the safety lifecycle that gates every single
+     * estimation call on BOTH live foreground eligibility (wired in [start], driven by
+     * [screenStateObserver]) and live [hasCameraPermission] -- no code path here can invoke camera
+     * estimation while either is false. */
+    private val cameraFrameSource = CameraXFrameSource(context)
+    private val cameraFaceProximityEstimator = OnDeviceApproximateFaceProximityEstimator(
+        frameSource = cameraFrameSource,
+        detector = AndroidFaceGeometryDetector(),
+    )
+    val cameraProximitySource = CameraProximitySource(
+        estimator = cameraFaceProximityEstimator,
+        hasCameraPermission = ::hasCameraPermission,
+        monotonicTimeSource = monotonicTimeSource,
+    )
+    val proximitySource: ProximitySource = PrioritizedProximitySource(listOf(hardwareProximitySource, cameraProximitySource))
 
     val prayerAlarmScheduler = AlarmManagerPrayerScheduler(context) { prayer -> prayerReminderIntent(prayer) }
 
@@ -511,9 +566,22 @@ class PcaAppGraph private constructor(
      * repeated `start()` calls, same discipline as the rest of this method. */
     fun start() {
         hardwareProximitySource.start()
+        startCameraForegroundEligibilityTracking()
         runtime.start()
         startUsageLocationPolling()
         backgroundExecutionScheduler.scheduleUsageIngestion()
+    }
+
+    /** PCA-FR-024 safety-lifecycle wiring: [cameraProximitySource] must never estimate while the
+     * screen is off or locked, exactly as strict as (in fact stricter than) the "foreground" bar
+     * [screenStateObserver] already enforces for screen-time qualifying-use -- reusing that same
+     * real, already-composed signal rather than inventing a second app-foreground detector. Each
+     * qualifying-use transition is propagated immediately (no polling, no grace period), matching
+     * [CameraProximitySource.setForegroundEligible]'s own documented contract. */
+    private fun startCameraForegroundEligibilityTracking() {
+        coroutineScope.launch {
+            screenStateObserver.observe().collect { active -> cameraProximitySource.setForegroundEligible(active) }
+        }
     }
 
     /** PCA-ANDROID-USAGE-LOCATION-1 Coordinator glue: drives [runUsageLocationIngestionCycle] on a
@@ -580,6 +648,7 @@ class PcaAppGraph private constructor(
         runCatching { usageAccessDegradationMonitor.checkAndHandle() }
         runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
         runCatching { vpnDegradationMonitor.checkAndHandle() }
+        runCatching { cameraDegradationMonitor.checkAndHandle() }
     }
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the
@@ -588,6 +657,7 @@ class PcaAppGraph private constructor(
     fun shutdownForTest() {
         runtime.stop()
         hardwareProximitySource.stop()
+        cameraProximitySource.setForegroundEligible(false)
         coroutineScope.cancel()
     }
 

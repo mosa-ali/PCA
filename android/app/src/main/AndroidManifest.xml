@@ -48,6 +48,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- PCA-FR-020/024, PCA-PRIV-001 (org.pca.app.platform.proximity.CameraProximitySource /
+         CameraXFrameSource): foreground-only, single-frame use for on-device NEAR/FAR geometry
+         classification, never face recognition/identity, never a saved image, never uploaded.
+         Requested at runtime from EyeDistanceCameraPermissionActivity, never assumed from this
+         manifest entry (same discipline as ACCESS_FINE_LOCATION above); android:required="false"
+         so the app still installs and functions (Tier 1 hardware proximity sensor, no camera
+         tier) on camera-less devices. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <application
         android:name=".PcaApplication"
         android:allowBackup="false"
@@ -120,6 +130,16 @@
              launched only from within this app. -->
         <activity
             android:name=".feature.youtube.ui.YouTubeModeActivity"
+            android:exported="false" />
+
+        <!-- PCA-PRIV-001/FR-023/024 closure: the real host Activity for
+             EyeDistanceCameraPermissionScreen's disclosure + Allow/Not-now flow and the actual
+             CAMERA runtime-permission request. Not exported and declares no intent-filter, same
+             pattern as SafeBrowserActivity/YouTubeModeActivity above; launched only from within
+             this app (currently from the parent-authenticated AdminSecurityActivity surface,
+             see that Activity's own doc comment for why, given this app has no shared NavHost). -->
+        <activity
+            android:name=".feature.eyedistance.ui.EyeDistanceCameraPermissionActivity"
             android:exported="false" />
 
         <!-- PCA-5 (doc 14 layer 2): real, user-consented device-wide DNS-only web-filtering VPN.

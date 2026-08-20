@@ -14,6 +14,7 @@ import org.pca.app.persistence.repository.TamperEventRepository
 import org.pca.app.platform.DevicePolicyAuthorityTracker
 import org.pca.app.platform.DevicePolicyCapabilitySource
 import org.pca.app.platform.ManagedDeviceAuthority
+import org.pca.app.platform.CameraPermissionStateTracker
 import org.pca.app.platform.VpnCapabilitySource
 import org.pca.app.platform.VpnCapabilityStateTracker
 import org.pca.app.platform.VpnConnectionState
@@ -121,6 +122,72 @@ class CapabilityDegradationMonitorTest {
         monitor.checkAndHandle()
 
         assertEquals(listOf(VpnDegradationMonitor.CONDITION_VPN_CONNECTION_DEGRADED), notified)
+        assertEquals(1, db.tamperEventDao().count())
+    }
+
+    @Test
+    fun `camera permission loss after a granted observation creates one local tamper event and debounces repeats`() = runTest {
+        var granted = true
+        val tracker = CameraPermissionStateTracker(hasCameraPermission = { granted })
+        val notified = mutableListOf<String>()
+        val monitor = CameraDegradationMonitor(
+            tracker = tracker,
+            deviceIdProvider = { "device-1" },
+            wallClockTimeSource = wallClock,
+            tamperEventRepository = repository,
+            notifyParent = { notified += it; true },
+        )
+
+        monitor.checkAndHandle()
+        granted = false
+        monitor.checkAndHandle()
+        monitor.checkAndHandle()
+
+        assertEquals(listOf(CameraDegradationMonitor.CONDITION_CAMERA_PERMISSION_REVOKED), notified)
+        assertEquals(1, db.tamperEventDao().count())
+        assertEquals(
+            CameraDegradationMonitor.CONDITION_CAMERA_PERMISSION_REVOKED,
+            db.tamperEventDao().getForDevice("device-1").single().conditionType,
+        )
+    }
+
+    @Test
+    fun `camera never-granted permission is setup state, not a tamper event`() = runTest {
+        val tracker = CameraPermissionStateTracker(hasCameraPermission = { false })
+        val notified = mutableListOf<String>()
+        val monitor = CameraDegradationMonitor(
+            tracker = tracker,
+            deviceIdProvider = { "device-1" },
+            wallClockTimeSource = wallClock,
+            tamperEventRepository = repository,
+            notifyParent = { notified += it; true },
+        )
+
+        monitor.checkAndHandle()
+        monitor.checkAndHandle()
+
+        assertEquals(emptyList<String>(), notified)
+        assertEquals(0, db.tamperEventDao().count())
+    }
+
+    @Test
+    fun `camera hardware becoming unavailable after being granted is reported`() = runTest {
+        var available = true
+        val tracker = CameraPermissionStateTracker(hasCameraPermission = { true }, cameraAvailable = { available })
+        val notified = mutableListOf<String>()
+        val monitor = CameraDegradationMonitor(
+            tracker = tracker,
+            deviceIdProvider = { "device-1" },
+            wallClockTimeSource = wallClock,
+            tamperEventRepository = repository,
+            notifyParent = { notified += it; true },
+        )
+
+        monitor.checkAndHandle()
+        available = false
+        monitor.checkAndHandle()
+
+        assertEquals(listOf(CameraDegradationMonitor.CONDITION_CAMERA_UNAVAILABLE), notified)
         assertEquals(1, db.tamperEventDao().count())
     }
 }
