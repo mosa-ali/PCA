@@ -83,6 +83,21 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
         "category": "Android Jetpack (first-party Google platform library)"
       },
       {
+        "name": "androidx.camera:camera-camera2",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
+        "name": "androidx.camera:camera-core",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
+        "name": "androidx.camera:camera-lifecycle",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
         "name": "androidx.compose:compose-bom",
         "version": "see android/gradle/libs.versions.toml",
         "category": "Android Jetpack (first-party Google platform library)"
@@ -109,6 +124,11 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
       },
       {
         "name": "androidx.core:core-ktx",
+        "version": "see android/gradle/libs.versions.toml",
+        "category": "Android Jetpack (first-party Google platform library)"
+      },
+      {
+        "name": "androidx.fragment:fragment-ktx",
         "version": "see android/gradle/libs.versions.toml",
         "category": "Android Jetpack (first-party Google platform library)"
       },
