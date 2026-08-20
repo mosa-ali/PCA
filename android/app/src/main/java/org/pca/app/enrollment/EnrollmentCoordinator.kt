@@ -53,6 +53,15 @@ class EnrollmentCoordinator(
     private val familyStateStore: FamilyStateStore,
     private val pendingAttemptStore: PendingEnrollmentAttemptStore,
     private val platform: String = "ANDROID",
+    /**
+     * PCA-FR-140 Android parity: where every [PairingState] transition this
+     * coordinator commits (see [persistSuccess]) is recorded before the
+     * commit -- actor/from/to/reason/timestamp, mirroring iOS's
+     * `EnrollmentLifecycleMachine`. Defaults to a private in-memory sink so
+     * every coordinator instance is self-auditing even if the composition
+     * root has not yet been updated to inject a durable one.
+     */
+    private val lifecycleAuditSink: EnrollmentLifecycleAuditSink = InMemoryEnrollmentLifecycleAuditSink(),
 ) {
     private val _state = MutableStateFlow(restoreInitialState())
     val state: StateFlow<EnrollmentState> = _state.asStateFlow()
@@ -307,7 +316,15 @@ class EnrollmentCoordinator(
             _state.value = EnrollmentState.FailedInvitationInvalid
             return
         }
-        persistSuccess(result)
+        // PCA-FR-140: fail-closed -- if the lifecycle auditor rejects this transition (see
+        // EnrollmentLifecycleAuditor.isAllowed), local state is NEVER committed and this
+        // coordinator reports the same generic failure it uses for any other caller-sequencing
+        // problem, mirroring iOS's EnrollmentLifecycleMachine (invalid transitions never mutate
+        // state or append a record).
+        if (!persistSuccess(result)) {
+            _state.value = EnrollmentState.FailedInvitationInvalid
+            return
+        }
         pendingAttemptStore.clear()
         pendingProfileConfirmation = null
         _state.value = EnrollmentState.PairingPending(result.deviceId)
@@ -324,10 +341,31 @@ class EnrollmentCoordinator(
      * material that was not actually stored, nor can key material be stored without this call
      * eventually reflecting the device as enrolled -- there is exactly one write here, not
      * several that could partially apply.
+     *
+     * PCA-FR-140: before that one write, [lifecycleAuditSink] receives an
+     * [EnrollmentLifecycleAuditRecord] (actor/from/to/reason/timestamp) for this device's own
+     * [PairingState] transition -- see [EnrollmentLifecycleAuditor]. Returns false (and performs
+     * NO save) if the auditor's fail-closed guard rejects the transition.
      */
-    private fun persistSuccess(result: DeviceBootstrapResult) {
+    private fun persistSuccess(result: DeviceBootstrapResult): Boolean {
         val serverPairingState = runCatching { PairingState.valueOf(result.status) }
             .getOrDefault(PairingState.PAIRING_PENDING)
+        val previousPairingState = familyStateStore.currentState()?.pairingState
+        val auditor = EnrollmentLifecycleAuditor(
+            familyId = "",
+            deviceId = result.deviceId,
+            auditSink = lifecycleAuditSink,
+        )
+        try {
+            auditor.recordTransition(
+                from = previousPairingState,
+                to = serverPairingState,
+                actorId = "device:${result.deviceId}",
+                reason = "server-authorized bootstrap/pairing result committed",
+            )
+        } catch (e: EnrollmentLifecycleTransitionError) {
+            return false
+        }
         familyStateStore.save(
             LocalFamilyState(
                 // KNOWN_GAP: the bootstrap response is {deviceId, status} only
@@ -347,5 +385,6 @@ class EnrollmentCoordinator(
                 initialPolicyProfile = result.initialPolicyProfile,
             ),
         )
+        return true
     }
 }
