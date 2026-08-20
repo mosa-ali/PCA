@@ -291,3 +291,61 @@ test('empty daysOfWeek is rejected as invalid configuration', () => {
   const result = evaluateSchedule(baseInput({ windows: [malformed] }));
   assert.equal(result.decision, 'INVALID_CONFIG');
 });
+
+// ---- doc 20 PCA-FR-113: schedule/parental-control explanations must be genuinely localized, never a raw English/enum fallback ----
+
+test('evaluateSchedule defaults reasonMessage to English when no locale is supplied, and reason stays the untranslated machine string', () => {
+  const bedtime = window({ id: 'bedtime', kind: 'BEDTIME' });
+  const result = evaluateSchedule(baseInput({ windows: [bedtime] }));
+  assert.equal(result.decision, 'BLOCKED_BEDTIME');
+  assert.equal(result.reason, 'Active bedtime window bedtime.');
+  assert.equal(result.reasonMessage, 'Blocked by an active bedtime window.');
+});
+
+test('evaluateSchedule produces a genuine Arabic reasonMessage when locale=ar is requested, with no English fallback leaking in', () => {
+  const bedtime = window({ id: 'bedtime', kind: 'BEDTIME' });
+  const result = evaluateSchedule(baseInput({ windows: [bedtime] }), 'ar');
+  assert.equal(result.decision, 'BLOCKED_BEDTIME');
+  assert.equal(result.reasonMessage, 'محظور بواسطة فترة نوم نشطة.');
+  assert.equal(/[A-Za-z]/.test(result.reasonMessage), false);
+  // `reason` (the stable machine-diagnostic string) is untouched by locale.
+  assert.equal(result.reason, 'Active bedtime window bedtime.');
+});
+
+test('evaluateSchedule localizes BLOCKED_LIMIT_REACHED with the real numeric placeholders substituted, in both locales', () => {
+  const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
+  const enResult = evaluateSchedule(baseInput({ dailyLimit }), 'en');
+  const arResult = evaluateSchedule(baseInput({ dailyLimit }), 'ar');
+  assert.equal(enResult.decision, 'BLOCKED_LIMIT_REACHED');
+  assert.equal(enResult.reasonMessage, 'Blocked: used 30 of 30 minutes today.');
+  assert.equal(arResult.reasonMessage, 'محظور: تم استخدام 30 من أصل 30 دقيقة اليوم.');
+  assert.equal(/[A-Za-z]/.test(arResult.reasonMessage), false);
+});
+
+test('evaluateSchedule localizes ENFORCEMENT_UNAVAILABLE with the intended decision preserved and the capability placeholder substituted', () => {
+  const bedtime = window({ id: 'bedtime', kind: 'BEDTIME' });
+  const result = evaluateSchedule(baseInput({ windows: [bedtime], enforcementCapability: 'DEGRADED' }), 'ar');
+  assert.equal(result.decision, 'ENFORCEMENT_UNAVAILABLE');
+  assert.equal(result.intendedDecision, 'BLOCKED_BEDTIME');
+  assert.equal(result.reasonMessage, 'لا يمكن تأكيد تطبيق هذا القرار حاليًا (الإمكانية: DEGRADED).');
+  assert.equal(/[A-Za-z]/.test(result.reasonMessage.replace('DEGRADED', '')), false);
+});
+
+test('evaluateSchedule localizes ALLOWED_BONUS with the bonus-minutes placeholder substituted, in both locales', () => {
+  const bonusGrants = [
+    {
+      id: 'bonus-1',
+      appScope: 'ALL',
+      extraMinutes: 15,
+      grantedAtUtc: new Date('2026-01-07T00:00:00.000Z'),
+      expiresAtUtc: new Date('2026-01-08T00:00:00.000Z'),
+    },
+  ];
+  const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 5, anchorLocalDate: '2026-01-07' };
+  const enResult = evaluateSchedule(baseInput({ dailyLimit, bonusGrants }), 'en');
+  const arResult = evaluateSchedule(baseInput({ dailyLimit, bonusGrants }), 'ar');
+  assert.equal(enResult.decision, 'ALLOWED_BONUS');
+  assert.equal(enResult.reasonMessage, 'Allowed with 15 active bonus minutes.');
+  assert.equal(arResult.reasonMessage, 'مسموح مع 15 دقيقة إضافية نشطة.');
+  assert.equal(/[A-Za-z]/.test(arResult.reasonMessage), false);
+});

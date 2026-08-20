@@ -71,6 +71,16 @@ export type ScheduleDecisionKind =
 export interface ScheduleDecision {
   decision: ScheduleDecisionKind;
   reason: string;
+  /**
+   * doc 20 PCA-FR-113 "parental-control explanations must be localized": the
+   * genuine, presentation-ready explanation text for `decision`, resolved via
+   * i18n's translate() against the locale evaluateSchedule() was called with
+   * (default 'en'). `reason` itself remains the stable, English,
+   * machine-oriented diagnostic string (window ids, raw minute counts) that
+   * existing callers/tests key off -- this field is the ADDITIONAL localized
+   * text, never a replacement for it.
+   */
+  reasonMessage: string;
   /** The window that produced a BLOCKED_ or ALLOWED_EXCEPTION verdict, when applicable. For SCHOOL_MODE, this is the lexicographically-first id in matchedWindowIds -- a stable pick, never insertion order. */
   matchedWindowId?: string;
   /** All windows that jointly produced the verdict, when more than one contributed (currently only BLOCKED_SCHOOL_MODE with multiple simultaneously-active school-mode windows). Sorted by id, never by array/insertion order. */

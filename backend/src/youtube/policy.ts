@@ -8,6 +8,8 @@ import type {
   YouTubeSafeContentSource,
   YouTubeSafeContentStatus,
 } from './types.js';
+import { translate } from '../i18n/translate.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
 export const MAX_VIDEO_ID_LENGTH = 64;
 export const MAX_CHANNEL_ID_LENGTH = 64;
@@ -134,16 +136,23 @@ export function isPlausibleTitle(candidate: unknown): candidate is string {
  * such evidence rule, so `watched` never appears in any label this
  * function returns -- COMPLETED_SIGNAL is deliberately worded as an
  * observed signal, not a completion claim.
+ *
+ * doc 20 PCA-FR-113 "reports must be localized": `locale` (default 'en',
+ * preserving every existing caller's behavior unchanged -- the English text
+ * below was copied verbatim into `youtube.modeBEvent.*` in i18n's catalogue)
+ * resolves the label through translate() rather than a hardcoded switch, so
+ * an Arabic-locale parent report renders genuinely Arabic labels instead of
+ * silently falling back to English.
  */
-export function labelForModeBEvent(event: Pick<ModeBPlaybackEvent, 'eventType'>): string {
+export function labelForModeBEvent(event: Pick<ModeBPlaybackEvent, 'eventType'>, locale: SupportedLocale = 'en'): string {
   switch (event.eventType) {
     case 'PLAYBACK_STARTED':
-      return 'Mode B—PCA-controlled: started';
+      return translate('youtube.modeBEvent.PLAYBACK_STARTED', locale);
     case 'PLAYBACK_STATE_OBSERVED':
-      return 'Mode B—PCA-controlled: played state observed';
+      return translate('youtube.modeBEvent.PLAYBACK_STATE_OBSERVED', locale);
     case 'PLAYBACK_COMPLETED_SIGNAL_OBSERVED':
-      return 'Mode B—PCA-controlled: completed signal observed';
+      return translate('youtube.modeBEvent.PLAYBACK_COMPLETED_SIGNAL_OBSERVED', locale);
     case 'PLAYBACK_ERROR':
-      return 'Mode B—PCA-controlled: playback error';
+      return translate('youtube.modeBEvent.PLAYBACK_ERROR', locale);
   }
 }

@@ -56,3 +56,27 @@ test('every Mode B label is prefixed "Mode B—PCA-controlled" and never says "w
     assert.doesNotMatch(label.toLowerCase(), /watched/);
   }
 });
+
+// ---- doc 20 PCA-FR-113: Mode B parent-report labels must be genuinely localized, never a raw English fallback ----
+
+test('labelForModeBEvent defaults to the exact pre-existing English label when no locale is supplied', () => {
+  assert.equal(labelForModeBEvent({ eventType: 'PLAYBACK_STARTED' }), 'Mode B—PCA-controlled: started');
+  assert.equal(labelForModeBEvent({ eventType: 'PLAYBACK_STARTED' }, 'en'), 'Mode B—PCA-controlled: started');
+});
+
+test('labelForModeBEvent produces a genuine Arabic label for every event type when locale=ar is requested, with no English fallback leaking in', () => {
+  const expected = {
+    PLAYBACK_STARTED: 'الوضع B — بإشراف PCA: بدأ التشغيل',
+    PLAYBACK_STATE_OBSERVED: 'الوضع B — بإشراف PCA: تم رصد حالة التشغيل',
+    PLAYBACK_COMPLETED_SIGNAL_OBSERVED: 'الوضع B — بإشراف PCA: تم رصد إشارة الانتهاء',
+    PLAYBACK_ERROR: 'الوضع B — بإشراف PCA: خطأ في التشغيل',
+  };
+  for (const [eventType, expectedLabel] of Object.entries(expected)) {
+    const label = labelForModeBEvent({ eventType }, 'ar');
+    assert.equal(label, expectedLabel);
+    // "B" (the mode letter) and "PCA" (the product name) are deliberate LTR
+    // tokens inside the Arabic label -- strip those before checking that no
+    // OTHER English text (a mixed-language fallback) leaked in.
+    assert.equal(/[A-Za-z]/.test(label.replaceAll('PCA', '').replaceAll('B', '')), false);
+  }
+});

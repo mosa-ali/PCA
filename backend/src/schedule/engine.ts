@@ -1,6 +1,8 @@
 import { appScopeIncludes, isWindowActive, validateScheduleWindow } from './policy.js';
 import { toZonedWallClock } from './timezone.js';
 import type { ScheduleDecision, ScheduleDecisionKind, ScheduleEvaluationInput } from './types.js';
+import { translate } from '../i18n/translate.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
 /**
  * Deterministic precedence, highest first (PCA-4 "policy precedence"):
@@ -33,18 +35,31 @@ import type { ScheduleDecision, ScheduleDecisionKind, ScheduleEvaluationInput } 
  * the device is online or offline (PCA-4 "offline behavior": control is
  * never silently relaxed just because connectivity is lost).
  */
-export function evaluateSchedule(input: ScheduleEvaluationInput): ScheduleDecision {
+/**
+ * `locale` (default 'en', preserving every existing caller's behavior
+ * unchanged) governs only `ScheduleDecision.reasonMessage` -- the localized,
+ * presentation-ready explanation added for doc 20 PCA-FR-113. `reason`
+ * itself is untouched: still the stable, English, machine-oriented
+ * diagnostic string existing callers/tests key off.
+ */
+export function evaluateSchedule(input: ScheduleEvaluationInput, locale: SupportedLocale = 'en'): ScheduleDecision {
   const configErrors = input.windows.flatMap(validateScheduleWindow);
   if (configErrors.length > 0) {
-    return { decision: 'INVALID_CONFIG', reason: 'One or more schedule windows failed validation.', configErrors };
+    return {
+      decision: 'INVALID_CONFIG',
+      reason: 'One or more schedule windows failed validation.',
+      reasonMessage: translate('schedule.INVALID_CONFIG', locale),
+      configErrors,
+    };
   }
 
-  const intended = evaluateIntendedDecision(input);
+  const intended = evaluateIntendedDecision(input, locale);
 
   if (input.enforcementCapability !== 'ENFORCED' && isRestrictive(intended.decision)) {
     return {
       decision: 'ENFORCEMENT_UNAVAILABLE',
       reason: `Intended decision ${intended.decision} cannot be confirmed enforced (capability: ${input.enforcementCapability}).`,
+      reasonMessage: translate('schedule.ENFORCEMENT_UNAVAILABLE', locale, { enforcementCapability: input.enforcementCapability }),
       intendedDecision: intended.decision,
       matchedWindowId: intended.matchedWindowId,
       matchedWindowIds: intended.matchedWindowIds,
@@ -64,7 +79,7 @@ function isRestrictive(decision: ScheduleDecisionKind): boolean {
   );
 }
 
-function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecision {
+function evaluateIntendedDecision(input: ScheduleEvaluationInput, locale: SupportedLocale): ScheduleDecision {
   const { nowUtc, appToken, windows, bonusGrants, exceptions, dailyLimit } = input;
 
   const activeException = exceptions.find(
@@ -74,14 +89,23 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
       nowUtc.getTime() < exception.endAtUtc.getTime(),
   );
   if (activeException) {
-    return { decision: 'ALLOWED_EXCEPTION', reason: `Active parent exception ${activeException.id}.` };
+    return {
+      decision: 'ALLOWED_EXCEPTION',
+      reason: `Active parent exception ${activeException.id}.`,
+      reasonMessage: translate('schedule.ALLOWED_EXCEPTION', locale),
+    };
   }
 
   const activeWindows = windows.filter((window) => isWindowActive(window, nowUtc));
 
   const bedtime = activeWindows.find((window) => window.kind === 'BEDTIME' && appScopeIncludes(window.appScope, appToken));
   if (bedtime) {
-    return { decision: 'BLOCKED_BEDTIME', reason: `Active bedtime window ${bedtime.id}.`, matchedWindowId: bedtime.id };
+    return {
+      decision: 'BLOCKED_BEDTIME',
+      reason: `Active bedtime window ${bedtime.id}.`,
+      reasonMessage: translate('schedule.BLOCKED_BEDTIME', locale),
+      matchedWindowId: bedtime.id,
+    };
   }
 
   const activeSchoolModeWindows = activeWindows.filter((window) => window.kind === 'SCHOOL_MODE');
@@ -94,6 +118,10 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
       return {
         decision: 'BLOCKED_SCHOOL_MODE',
         reason: `App is outside the allow-scope of ${excludingWindows.length} of ${activeSchoolModeWindows.length} active school-mode window(s) (intersection semantics): ${excludingWindows.join(', ')}.`,
+        reasonMessage: translate('schedule.BLOCKED_SCHOOL_MODE', locale, {
+          windowCount: excludingWindows.length,
+          totalWindowCount: activeSchoolModeWindows.length,
+        }),
         matchedWindowId: excludingWindows[0],
         matchedWindowIds: excludingWindows,
       };
@@ -104,7 +132,12 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
     (window) => window.kind === 'BLOCK_PERIOD' && appScopeIncludes(window.appScope, appToken),
   );
   if (blockPeriod) {
-    return { decision: 'BLOCKED_PERIOD', reason: `Active block period ${blockPeriod.id}.`, matchedWindowId: blockPeriod.id };
+    return {
+      decision: 'BLOCKED_PERIOD',
+      reason: `Active block period ${blockPeriod.id}.`,
+      reasonMessage: translate('schedule.BLOCKED_PERIOD', locale),
+      matchedWindowId: blockPeriod.id,
+    };
   }
 
   const allowPeriodsForApp = windows.filter(
@@ -115,12 +148,16 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
       (window) => window.kind === 'ALLOW_PERIOD' && appScopeIncludes(window.appScope, appToken),
     );
     if (!activeAllowPeriod) {
-      return { decision: 'BLOCKED_OUTSIDE_ALLOW_PERIOD', reason: 'No allow period currently covers this app.' };
+      return {
+        decision: 'BLOCKED_OUTSIDE_ALLOW_PERIOD',
+        reason: 'No allow period currently covers this app.',
+        reasonMessage: translate('schedule.BLOCKED_OUTSIDE_ALLOW_PERIOD', locale),
+      };
     }
   }
 
   if (!dailyLimit) {
-    return { decision: 'ALLOWED', reason: 'No daily limit configured.' };
+    return { decision: 'ALLOWED', reason: 'No daily limit configured.', reasonMessage: translate('schedule.ALLOWED', locale) };
   }
 
   const zoned = toZonedWallClock(nowUtc, input.timezone);
@@ -142,6 +179,7 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
     return {
       decision: 'BLOCKED_LIMIT_REACHED',
       reason: `Used ${usedMinutesToday} of ${effectiveLimit} effective minutes today.`,
+      reasonMessage: translate('schedule.BLOCKED_LIMIT_REACHED', locale, { usedMinutes: usedMinutesToday, limitMinutes: effectiveLimit }),
       remainingMinutesToday: 0,
     };
   }
@@ -149,6 +187,10 @@ function evaluateIntendedDecision(input: ScheduleEvaluationInput): ScheduleDecis
   return {
     decision: activeBonusMinutes > 0 ? 'ALLOWED_BONUS' : 'ALLOWED',
     reason: activeBonusMinutes > 0 ? `Allowed with ${activeBonusMinutes} active bonus minutes.` : 'Within daily limit.',
+    reasonMessage:
+      activeBonusMinutes > 0
+        ? translate('schedule.ALLOWED_BONUS', locale, { bonusMinutes: activeBonusMinutes })
+        : translate('schedule.ALLOWED', locale),
     remainingMinutesToday,
   };
 }
