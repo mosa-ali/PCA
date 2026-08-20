@@ -13,7 +13,7 @@ class ScheduleEnforcementConsumerTest {
         val executor = RecordingExecutor()
         val consumer = consumer(ManagedDeviceAuthority.NONE, executor)
 
-        val outcome = consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens())
+        val outcome = consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens())
 
         assertEquals(ScheduleEnforcementOutcome.UNAVAILABLE, outcome)
         assertTrue(executor.calls.isEmpty())
@@ -26,11 +26,11 @@ class ScheduleEnforcementConsumerTest {
 
         assertEquals(
             ScheduleEnforcementOutcome.APPLIED,
-            consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens()),
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens()),
         )
         assertEquals(
             ScheduleEnforcementOutcome.RELEASED,
-            consumer.apply("com.example.game", "game-token", ScheduleDecision(ScheduleDecisionKind.ALLOWED, "outside window"), CommunicationSafetySurfaceTokens()),
+            consumer.apply("com.example.game", gameToken, ScheduleDecision(ScheduleDecisionKind.ALLOWED, "outside window"), CommunicationSafetySurfaceTokens()),
         )
         assertEquals(listOf("com.example.game" to true, "com.example.game" to false), executor.calls)
     }
@@ -48,12 +48,12 @@ class ScheduleEnforcementConsumerTest {
 
         assertEquals(
             ScheduleEnforcementOutcome.APPLIED,
-            consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens()),
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens()),
         )
         authority = ManagedDeviceAuthority.NONE
         assertEquals(
             ScheduleEnforcementOutcome.UNAVAILABLE,
-            consumer.apply("com.example.game", "game-token", blocked(), CommunicationSafetySurfaceTokens()),
+            consumer.apply("com.example.game", gameToken, blocked(), CommunicationSafetySurfaceTokens()),
         )
         assertEquals(listOf("com.example.game" to true), executor.calls)
     }
@@ -62,20 +62,38 @@ class ScheduleEnforcementConsumerTest {
     fun communicationSurfacesArePreservedWithoutGenericAllowlist() {
         val executor = RecordingExecutor()
         val consumer = consumer(ManagedDeviceAuthority.DEVICE_OWNER, executor)
+        // Production always derives appToken from packageName via
+        // EmergencyAccessFloor.opaqueTokenForPackage (see
+        // ProductionScheduleRuntimePort.kt) -- a caller can never present an
+        // arbitrary literal token for an arbitrary package, so each surface
+        // here uses its own real package/token pair rather than one shared
+        // package with three unrelated literal tokens.
+        val emergencyPackage = "com.android.dialer"
+        val callPackage = "com.example.callapp"
+        val smsPackage = "com.example.smsapp"
+        val emergencyToken = EmergencyAccessFloor.opaqueTokenForPackage(emergencyPackage)
+        val callToken = EmergencyAccessFloor.opaqueTokenForPackage(callPackage)
+        val smsToken = EmergencyAccessFloor.opaqueTokenForPackage(smsPackage)
         val surfaces = CommunicationSafetySurfaceTokens(
-            emergencySurfaceTokens = setOf("emergency-token"),
-            callSurfaceTokens = setOf("call-token"),
-            smsTransportTokens = setOf("sms-token"),
+            emergencySurfaceTokens = setOf(emergencyToken),
+            callSurfaceTokens = setOf(callToken),
+            smsTransportTokens = setOf(smsToken),
         )
 
-        for (token in listOf("emergency-token", "call-token", "sms-token")) {
+        for ((packageName, token) in listOf(emergencyPackage to emergencyToken, callPackage to callToken, smsPackage to smsToken)) {
             assertEquals(
                 ScheduleEnforcementOutcome.PRESERVED_SAFETY_SURFACE,
-                consumer.apply("com.example.surface", token, blocked(), surfaces),
+                consumer.apply(packageName, token, blocked(), surfaces),
             )
         }
         assertTrue(executor.calls.isEmpty())
     }
+
+    // Real production callers always compute appToken this way (see
+    // ProductionScheduleRuntimePort.kt) -- a fixed literal like "game-token"
+    // can never satisfy DevicePolicyScheduleEnforcementConsumer's
+    // package/token correspondence check (PCA-AND-003A anti-spoofing).
+    private val gameToken = EmergencyAccessFloor.opaqueTokenForPackage("com.example.game")
 
     private fun consumer(authority: ManagedDeviceAuthority, executor: RecordingExecutor) =
         DevicePolicyScheduleEnforcementConsumer(

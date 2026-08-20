@@ -3,6 +3,7 @@ package org.pca.app.enrollment
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -26,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 class PersistentEnrollmentLifecycleAuditSinkTest {
     private lateinit var db: PcaLocalDatabase
     private lateinit var repository: EnrollmentLifecycleAuditRepository
+    private lateinit var scope: CoroutineScope
     private lateinit var sink: PersistentEnrollmentLifecycleAuditSink
 
     @Before
@@ -34,11 +36,17 @@ class PersistentEnrollmentLifecycleAuditSinkTest {
         repository = EnrollmentLifecycleAuditRepository(db.enrollmentLifecycleAuditDao())
         // Unconfined so append()'s fire-and-forget launch{} completes before the
         // assertion below runs, without needing a real async wait in the test.
-        sink = PersistentEnrollmentLifecycleAuditSink(repository, CoroutineScope(UnconfinedTestDispatcher()))
+        // Cancelled in tearDown so this scope's job never outlives the test
+        // (an uncancelled CoroutineScope here could otherwise leak an
+        // uncaught-exception report into a later, unrelated test in the same
+        // JVM run).
+        scope = CoroutineScope(UnconfinedTestDispatcher())
+        sink = PersistentEnrollmentLifecycleAuditSink(repository, scope)
     }
 
     @After
     fun tearDown() {
+        scope.cancel()
         db.close()
     }
 
