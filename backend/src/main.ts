@@ -35,6 +35,22 @@ import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyL
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { defaultFamilyRbacPolicyConfig } from './familyrbac/types.js';
 import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
+// PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
+// authority -- see RemovalDecisionAuthority.ts's own header for the full
+// design note. Three of its dependencies genuinely have no production
+// implementation yet (signed-remote-parent signing-key resolution,
+// authorized-recovery verification, and the device-authority binding that
+// gates request creation); each gets an honestly-named fail-closed stub
+// below, exactly like UnavailableTrustSetRoleResolver above, rather than an
+// invented "always allow".
+import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.js';
+import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
+import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
+import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
+import { UnavailableProtectiveAuthorityResolver } from './familyrbac/UnavailableProtectiveAuthorityResolver.js';
+import { registerRemovalDecisionRoutes } from './http/routes/removalDecisionRoutes.js';
+import { AdministrationPinService } from './enrollment/AdministrationPinService.js';
+import { MySqlAdministrationPinRepository } from './enrollment/MySqlAdministrationPinRepository.js';
 import { PlatformAdminAuthService } from './platformadmin/auth/PlatformAdminAuthService.js';
 import { MySqlPlatformAdminAuthRepository } from './platformadmin/auth/MySqlAuthRepository.js';
 import { MySqlPlatformAdminAlertAdapter } from './platformadmin/auth/MySqlPlatformAdminAlertAdapter.js';
@@ -377,8 +393,14 @@ async function start(): Promise<void> {
   // while the reviewed crypto suite remains fail-closed, so this explicit
   // resolver returns NO_TRUST_SET rather than silently treating a session as
   // Owner. The wiring is complete and the unavailable authority is visible.
+  // Shared across every consumer of the family-action authorization matrix
+  // (Safe Zone below, and RemovalDecisionAuthority further down) -- one
+  // resolver instance, not a second independently-constructed one, per
+  // UnavailableTrustSetRoleResolver's own "one production composition
+  // boundary" doc comment.
+  const trustSetRoleResolver = new UnavailableTrustSetRoleResolver();
   const safeZoneParentActionAuthorization = new ParentActionAuthorizationService(
-    new UnavailableTrustSetRoleResolver(),
+    trustSetRoleResolver,
     defaultFamilyRbacPolicyConfig,
     new InMemoryActionIdempotencyLedger(),
     () => new Date(),
@@ -386,6 +408,44 @@ async function start(): Promise<void> {
     familyAuditService,
   );
   const safeZonePolicyAuthorizer = new ParentActionSafeZonePolicyAuthorizer(safeZoneParentActionAuthorization);
+
+  // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
+  // authority. Reuses the SAME trustSetRoleResolver, safeZoneParentActionAuthorization
+  // (a ParentActionAuthorizationService is generic across every ParentOperation,
+  // not scoped to Safe Zone), and familyAuditService instances constructed
+  // above -- never a second, independently-constructed copy of any of them.
+  // signatureVerifier reuses the SAME RejectingDeviceSignatureVerifier posture
+  // used everywhere else in this file (CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW):
+  // signed remote-parent decisions are wired but fail every signature check
+  // closed today, exactly like device-session issuance and envelope
+  // acceptance above. signingKeyResolver and recoveryAuthority have no real
+  // production implementation anywhere in this codebase yet -- each is an
+  // honestly-named fail-closed stub (see their own files) rather than an
+  // invented "always allow"; local-Administration-PIN decisions are the one
+  // decision mode with a genuine, durable production implementation
+  // (AdministrationPinService + MySqlAdministrationPinRepository) and are
+  // therefore the only mode actually reachable end-to-end today.
+  const administrationPinService = new AdministrationPinService({ repository: new MySqlAdministrationPinRepository() });
+  const removalDecisionAuthority = new RemovalDecisionAuthority({
+    repository: new MySqlRemovalDecisionRepository(),
+    authorization: safeZoneParentActionAuthorization,
+    signingKeyResolver: new UnavailableRemovalDecisionSigningKeyResolver(),
+    signatureVerifier: new RejectingDeviceSignatureVerifier(),
+    targetDeviceRoleResolver: trustSetRoleResolver,
+    pinService: administrationPinService,
+    recoveryAuthority: new UnavailableAuthorizedRecoveryAuthority(),
+    auditService: familyAuditService,
+    // PCA-ADD-ENR-020 alerting is deliberately NOT composed here: it needs
+    // both a real opaque payload composer (blocked on the same
+    // CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as every signature
+    // verifier in this file) and a real family-trust-set-backed
+    // resolveParentDevices source, neither of which exists in this
+    // codebase yet. Alerting is entirely optional/best-effort by design
+    // (RemovalDecisionAuthority.emitAlert never blocks or reverses a
+    // decision either way), so omitting it here is an honest gap, not a
+    // silent one -- decisions still commit and audit correctly with no
+    // alert emitted.
+  });
 
   // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
   // entitlement grants. Reuses the SAME platformAdminAuthService instance
@@ -410,6 +470,15 @@ async function start(): Promise<void> {
   const settlementService = new SettlementService(new MySqlSettlementRepository(), paymentRepository);
   const platformAdminSettlementService = new PlatformAdminSettlementService(platformAdminAuthService, settlementService);
 
+  // Single shared instance -- reused below both as buildServer's own
+  // `deviceSessionService` dependency AND (via that same dependency)
+  // threaded into registerParentAccountRoutes' Safe Zone actor-identity
+  // binding (see runtime-sync/DeviceSessionService.ts's
+  // requireActorDeviceInFamily doc comment / buildServer.ts's
+  // registerParentAccountRoutes call) -- never a second, independently-
+  // constructed copy.
+  const deviceSessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService);
+
   const app = buildServer({
     authService,
     authzService: new AuthzService(authzRepository),
@@ -417,7 +486,7 @@ async function start(): Promise<void> {
     invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService),
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
-    deviceSessionService: new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService),
+    deviceSessionService,
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
     inboundReconnectService: new InboundReconnectService(relayService, syncCoordinator),
     statusTracker: new DeviceSyncStatusTracker(),
@@ -481,6 +550,13 @@ async function start(): Promise<void> {
     freeAccessAdminService,
     // PCA-BILL-3: Settlement / Reconciliation.
     platformAdminSettlementService,
+    // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
+    // authority -- see the wiring block above for exactly which decision
+    // modes are genuinely production-ready today (local Administration PIN)
+    // vs. honestly fail-closed pending a real implementation (signed
+    // remote-parent, authorized recovery).
+    removalDecisionAuthority,
+    protectiveAuthorityResolver: new UnavailableProtectiveAuthorityResolver(),
   });
   await app.listen({ host, port });
 

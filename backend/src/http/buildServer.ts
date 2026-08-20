@@ -79,6 +79,12 @@ import type { ComplimentaryEntitlementService } from '../entitlements/compliment
 // the existing Bearer-header requireServiceSession (fastifyAuthPlugin.ts).
 import { registerParentAccountRoutes } from './routes/parentAccountRoutes.js';
 import type { ParentAccountService } from '../parentaccount/ParentAccountService.js';
+// PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
+// authority HTTP surface -- a seventh structurally independent surface,
+// registered exactly like every other domain's registerXRoutes call. See
+// removalDecisionRoutes.ts's own header for why it was not previously wired.
+import { registerRemovalDecisionRoutes, type ProtectiveAuthorityResolver } from './routes/removalDecisionRoutes.js';
+import type { RemovalDecisionAuthority } from '../familyrbac/RemovalDecisionAuthority.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
 // entitlement grants (Round5 Owner decision, Addendum 004). Registered
 // here exactly like every other domain's registerXRoutes call; never
@@ -152,6 +158,9 @@ export interface ServerDependencies {
   freeAccessAdminService: FreeAccessAdminService;
   /** PCA-BILL-3: Settlement / Reconciliation -- see registerSettlementRoutes below. */
   platformAdminSettlementService: PlatformAdminSettlementService;
+  /** PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision authority -- see registerRemovalDecisionRoutes below. */
+  removalDecisionAuthority: RemovalDecisionAuthority;
+  protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
 }
 
 /**
@@ -299,7 +308,19 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
+    // PCA-234C026: without this, Safe Zone routes' actor-identity binding
+    // (authorizeSafeZoneRequest) fails closed with 503
+    // family_authority_unavailable rather than trusting the spoofable
+    // x-pca-actor-device-id header -- see DeviceSessionService.
+    // requireActorDeviceInFamily's doc comment and this dependency's own
+    // doc comment in parentAccountRoutes.ts.
+    deviceSessionService: deps.deviceSessionService,
     freeAccessAccountRepository: deps.freeAccessAccountRepository,
+  });
+  registerRemovalDecisionRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    removalDecisionAuthority: deps.removalDecisionAuthority,
+    protectiveAuthorityResolver: deps.protectiveAuthorityResolver,
   });
   registerComplimentaryGrantRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
