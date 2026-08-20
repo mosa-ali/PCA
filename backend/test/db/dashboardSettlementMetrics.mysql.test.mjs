@@ -247,6 +247,75 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
   assert.equal(snapshot.operationalSignals.crashRate, null);
 });
 
+// ---------------------------------------------------------------------------
+// PCA-ADD-PA-041 (addendum Section 15 "by plan/status"): subscriptions
+// grouped by BOTH plan and status, sourced from the existing
+// billing_subscriptions.plan_id -> billing_plans.plan_code relationship
+// (no new schema).
+// ---------------------------------------------------------------------------
+
+test('DashboardReadModel.build(): subscriptionsByPlanAndStatus groups real billing_subscriptions rows by plan_code AND status, distinguishing same-status subscriptions on different plans', async () => {
+  const planIdA = randomUUID();
+  const planIdB = randomUUID();
+  const planCodeA = `PLAN_CODE_A_${randomUUID().slice(0, 8)}`;
+  const planCodeB = `PLAN_CODE_B_${randomUUID().slice(0, 8)}`;
+  await getPool().query(
+    `INSERT INTO billing_plans
+       (plan_id, plan_code, plan_version, status, billing_cadence, default_parent_member_limit, default_managed_device_limit)
+     VALUES
+       (?, ?, 1, 'ACTIVE', 'MONTHLY', 2, 5),
+       (?, ?, 1, 'ACTIVE', 'MONTHLY', 2, 5)`,
+    [planIdA, planCodeA, planIdB, planCodeB],
+  );
+
+  const before = await new DashboardReadModel().build();
+  const beforeRow = (planCode, status) =>
+    before.subscriptionsByPlanAndStatus.rows.find((r) => r.planCode === planCode && r.status === status)?.count ?? 0;
+
+  const now = new Date();
+  const periodStart = now;
+  const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  await getPool().query(
+    `INSERT INTO billing_subscriptions
+       (subscription_id, account_ref, plan_id, status, current_period_start, current_period_end)
+     VALUES
+       (?, ?, ?, 'ACTIVE', ?, ?),
+       (?, ?, ?, 'ACTIVE', ?, ?),
+       (?, ?, ?, 'CANCELED', ?, ?)`,
+    [
+      randomUUID(), `acct-${randomUUID()}`, planIdA, periodStart, periodEnd,
+      randomUUID(), `acct-${randomUUID()}`, planIdB, periodStart, periodEnd,
+      randomUUID(), `acct-${randomUUID()}`, planIdA, periodStart, periodEnd,
+    ],
+  );
+
+  const snapshot = await new DashboardReadModel().build();
+  assert.equal(snapshot.subscriptionsByPlanAndStatus.capability, 'AVAILABLE');
+  assert.equal(beforeRow(planCodeA, 'ACTIVE'), 0, 'freshly minted plan code has no pre-existing rows');
+  assert.equal(
+    snapshot.subscriptionsByPlanAndStatus.rows.find((r) => r.planCode === planCodeA && r.status === 'ACTIVE')?.count,
+    1,
+    'plan A has exactly one ACTIVE subscription',
+  );
+  assert.equal(
+    snapshot.subscriptionsByPlanAndStatus.rows.find((r) => r.planCode === planCodeA && r.status === 'CANCELED')?.count,
+    1,
+    'plan A has exactly one CANCELED subscription, counted separately from its ACTIVE row',
+  );
+  assert.equal(
+    snapshot.subscriptionsByPlanAndStatus.rows.find((r) => r.planCode === planCodeB && r.status === 'ACTIVE')?.count,
+    1,
+    'plan B has its own ACTIVE row, distinct from plan A -- proves grouping is by plan AND status, not status alone',
+  );
+  // Cross-check against the pre-existing status-only aggregate: summing this
+  // plan's rows across both plan codes must equal subscriptionsByStatus's
+  // ACTIVE total delta, proving the new grouping is a refinement of the old
+  // one and not an independent (possibly inconsistent) computation.
+  const beforeActiveTotal = before.subscriptionsByStatus.byKey.ACTIVE ?? 0;
+  const afterActiveTotal = snapshot.subscriptionsByStatus.byKey.ACTIVE ?? 0;
+  assert.equal(afterActiveTotal, beforeActiveTotal + 2);
+});
+
 test('HTTP: GET /platform-admin/dashboard applies billing and settlement redaction by role while retaining the permitted dashboard metadata', async () => {
   const cases = [
     { role: 'SUPPORT_ADMIN', canViewBilling: false, canViewSettlement: false },

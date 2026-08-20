@@ -63,6 +63,16 @@ export interface PlatformDashboardSnapshot {
   };
   readonly entitlementRequestsByState: GroupedCountMetric;
   readonly subscriptionsByStatus: GroupedCountMetric;
+  /**
+   * PCA-ADD-PA-041 (addendum Section 15 "by plan/status"): the same
+   * `billing_subscriptions` rows as `subscriptionsByStatus`, additionally
+   * broken out by `billing_plans.plan_code` (existing schema -- no new
+   * table/column). One row per (plan_code, status) pair actually present.
+   */
+  readonly subscriptionsByPlanAndStatus: {
+    readonly capability: MetricCapability;
+    readonly rows: Array<{ planCode: string; status: string; count: number }> | null;
+  };
   readonly quotesByStatus: GroupedCountMetric;
   readonly invoicesByStatusAndCurrency: { capability: MetricCapability; rows: Array<{ status: string; currencyCode: string; count: number }> | null };
   readonly paymentAttemptsByStatusAndCurrency: { capability: MetricCapability; rows: Array<{ status: string; currencyCode: string; count: number }> | null };
@@ -125,6 +135,11 @@ interface GroupedRow {
 interface StatusCurrencyRow {
   status_value: string;
   currency_code_value: string;
+  count: number | string;
+}
+interface PlanStatusRow {
+  plan_code_value: string;
+  status_value: string;
   count: number | string;
 }
 interface CurrencyRow {
@@ -240,6 +255,14 @@ export class DashboardReadModel {
         conn,
         `SELECT status AS group_key, COUNT(*) AS count FROM billing_subscriptions GROUP BY status`,
       );
+      const { rows: subsByPlanAndStatusRows } = await execute<PlanStatusRow>(
+        conn,
+        `SELECT bp.plan_code AS plan_code_value, bs.status AS status_value, COUNT(*) AS count
+           FROM billing_subscriptions bs
+           JOIN billing_plans bp ON bp.plan_id = bs.plan_id
+          GROUP BY bp.plan_code, bs.status
+          ORDER BY bp.plan_code, bs.status`,
+      );
       const { rows: quotesByStatusRows } = await execute<GroupedRow>(
         conn,
         `SELECT status AS group_key, COUNT(*) AS count FROM billing_quotes GROUP BY status`,
@@ -343,6 +366,10 @@ export class DashboardReadModel {
         },
         entitlementRequestsByState: { capability: 'AVAILABLE', byKey: groupedToRecord(requestsByStateRows) },
         subscriptionsByStatus: { capability: 'AVAILABLE', byKey: groupedToRecord(subsByStatusRows) },
+        subscriptionsByPlanAndStatus: {
+          capability: 'AVAILABLE',
+          rows: subsByPlanAndStatusRows.map((r) => ({ planCode: r.plan_code_value, status: r.status_value, count: toNumber(r.count) })),
+        },
         quotesByStatus: { capability: 'AVAILABLE', byKey: groupedToRecord(quotesByStatusRows) },
         invoicesByStatusAndCurrency: {
           capability: 'AVAILABLE',
