@@ -794,23 +794,31 @@
       "phase": [
         "PCA-8"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_VALIDATION_PENDING",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt",
-        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt"
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldScreen.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldTrigger.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/ui/EyeRestShieldActivity.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
+        "android/app/src/main/AndroidManifest.xml"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt",
         "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt",
         "android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt",
-        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt"
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldTriggerTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldReadingLevelTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/graph/PcaAppGraphTest.kt"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): commit e8349bb wired the camera proximity *input* pipeline (FR-024/023/PRIV-001/FR-080) but did not touch the eye-rest *shield presentation* UI this row concerns -- confirmed by grep: EyeDistanceShieldViewState is still not referenced from EyeDistanceCameraPermissionActivity.kt or AdminSecurityActivity.kt, and no Compose NavHost exists anywhere in android/app/src/main. EyeDistanceEngine's state machine and the hardware-tier proximity trigger remain genuinely wired and reachable via PcaRuntime.applyEyeDistanceEvent. Missing piece is still on-screen delivery UI, an app-wide UI-assembly gap, not camera-specific -- unaffected by this wave's camera-wiring commit."
+      "notes": "R3 update (2026-08-21, base 473d05f/d844987): the on-screen shield presentation UI gap this row previously tracked is closed. Commit a502fa8 built EyeRestShieldScreen/EyeRestShieldTrigger/EyeRestShieldActivity; commit 473d05f wired the trigger into the real production PcaAppGraph.start() -> real PcaRuntime.eyeDistanceState -> real startActivity() launch path, registered in AndroidManifest.xml, verified under Robolectric including a genuine REST_ACTIVE snapshot-restore test (not just mocked). Commit d844987 added real AgeUxTier-driven SIMPLE/CLEAR copy selection. Remaining gap is real-device/emulator visual proof only (JVM/Robolectric-level wiring is proven, on-screen rendering on a physical device/emulator is not) -- external validation gate, not source."
     },
     {
       "requirementId": "PCA-FR-021A",
@@ -1797,7 +1805,7 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/retention/engine.ts",
         "backend/src/retention/deletionStateMachine.ts",
@@ -1812,7 +1820,10 @@
         "backend/src/i18n/translate.ts",
         "parent-web/src/pages/privacy/Transparency.tsx",
         "parent-web/src/i18n/locales/en.json",
-        "parent-web/src/i18n/locales/ar.json"
+        "parent-web/src/i18n/locales/ar.json",
+        "backend/src/schedule/engine.ts",
+        "backend/src/schedule/types.ts",
+        "backend/src/youtube/policy.ts"
       ],
       "testEvidence": [
         "backend/test/retention/engine.test.mjs",
@@ -1821,10 +1832,12 @@
         "backend/test/commercialnotifications/service.test.mjs",
         "backend/test/i18n/translate.test.mjs",
         "parent-web/tests/i18n/fr113LocaleContent.test.ts",
-        "parent-web/tests/mutation/privacyBoundaries.test.ts"
+        "parent-web/tests/mutation/privacyBoundaries.test.ts",
+        "backend/test/schedule/engine.test.mjs",
+        "backend/test/youtube/policy.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): commit f18398f wired backend/src/i18n's translate() into four previously-dead call sites that had raw, unlocalized enum values: retention/engine.ts (PurgePlanEntry.reasonMessage), retention/deletionStateMachine.ts (TransitionResult.message), export/types.ts + pipeline.ts (ExportOutcome.outcomeMessage), and commercialnotifications/CommercialNotificationService.ts (renderLocalizedBody/listWithLocalizedBody, additive to the existing messageKey/params contract). New EN/AR message tables and locale-distinctness tests back each site. Do NOT classify this SOURCE_COMPLETE: the requirement's scope is 'all system-generated notices, reports, parental-control explanations, deletion confirmations' -- broader than retention + export + commercial-notification defaults, which are the only sites wired so far. A full repository-wide inventory of every notice-generating code path (alerts/ProtectionAlertGenerator, device-status surfaces, any other parent-web/backend producer of parent- or child-facing text) has not been performed and is still needed before a SOURCE_COMPLETE claim would be honest. Remains PARTIAL."
+      "notes": "R3 update (2026-08-21, base 18dc921): repository-wide inventory of backend/src generator sites completed. Closed two genuinely unlocalized user-facing generators beyond the already-wired retention/export/commercialnotifications: schedule.ScheduleDecision.reason (additive reasonMessage field) and youtube.policy.labelForModeBEvent. Every other domain (alerts/, childrequests/, enrollment/, invitation/, pairing/, deviceauth/, device/, recovery/, model/, billing/, entitlements/, parentaccount/, parentpanel/) was independently audited and confirmed to either already be localized or to only emit internal/API-contract Error.message text never sent to a client. 1543/1543 backend tests pass. UNLOCALIZED_USER_FACING_GENERATORS = 0 at this head."
     },
     {
       "requirementId": "PCA-FR-114",
@@ -2142,14 +2155,20 @@
       "status": "PARTIAL",
       "sourceEvidence": [
         "ios/PCA/Recovery/EnrollmentLifecycle.swift",
-        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt"
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentLifecycleAudit.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/EnrollmentCoordinator.kt"
       ],
       "testEvidence": [
         "ios/PCATests/RecoveryLifecycleTests.swift",
-        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt"
+        "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentLifecycleAuditTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt"
       ],
-      "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): unaffected by this wave. Genuinely mixed: audit record shape/machine is real and tested on iOS (EnrollmentLifecycle.swift), but the file has zero references anywhere in ios/PCA.xcodeproj/project.pbxproj (orphaned/unwired), Android has no actor/reason audit-record emission parity with iOS, and there is no family-visible audit surface for these local records. Recommend a future split into a SOURCE_COMPLETE_EXTERNAL_GATE sub-item (iOS, pending Xcode wiring + verification) and a REAL_SOURCE_GAP sub-item (Android parity + cross-device visibility) rather than one PARTIAL label; not done here to avoid changing the row-per-requirement-ID schema."
+      "externalGate": [
+        "IOS_MAC_XCODE"
+      ],
+      "notes": "R3 update (2026-08-21, base f67913e): iOS EnrollmentLifecycle.swift wired into project.pbxproj (commit 104551d) -- unverified without an Xcode toolchain, remains an external gate. Android now has a real EnrollmentLifecycleAuditor wired into EnrollmentCoordinator.persistSuccess() (commit 3b21a9e), and the fabricated familyId=\"\" placeholder flagged in review was fixed (commit f67913e): traced every path into persistSuccess() and confirmed a real family id is genuinely not yet known at that point in the flow (not merely unthreaded), so the field was made nullable with fail-closed rejection of blank-but-non-null, and confirmed via grep that no downstream consumer (RealWebProtectionIdentityContextProvider already guards on isBlank()) trusts an empty string as valid. Still open: production audit sink is in-memory only (no durable persistence), and no family-visible/cross-device audit surface exists yet."
     },
     {
       "requirementId": "PCA-FR-141",
@@ -2837,20 +2856,28 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_VALIDATION_PENDING",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt",
         "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt",
         "android/app/src/main/res/values/strings.xml",
         "android/app/src/main/res/values-ar/strings.xml",
-        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "android/app/src/main/java/org/pca/app/feature/breakshield/BreakShieldScreen.kt",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserScreen.kt",
+        "android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldScreen.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentReadingLevelTest.kt",
-        "ios/PCATests/EnrollmentProfileTests.swift"
+        "ios/PCATests/EnrollmentProfileTests.swift",
+        "android/app/src/test/java/org/pca/app/runtime/ui/ChildHomeReadingLevelTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/breakshield/BreakShieldReadingLevelTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/webprotection/ui/SafeBrowserReadingLevelTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldReadingLevelTest.kt"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): CORRECTED CITATION -- the matrix previously cited AndroidFaceGeometryDetector.kt/FaceProximityClassifier.kt, an unrelated FR-023/024 camera-proximity feature, as evidence for this reading-level requirement; replaced with the actual reading-level files. Commit f18398f adds a real ReadingLevel enum (EnrollmentProfile.kt: YOUNG_CHILD -> SIMPLE, TEEN -> CLEAR), disclosureCopyForTier() in EnrollmentScreen.kt, EN/AR '_simple' string variants, and a unit/static-scan test, mirroring iOS's existing PCAChildReadingLevel model (ChildEnrollmentCoordinator.swift, tested in EnrollmentProfileTests.swift lines 61-62). Per the commit's own 'known gap' note: only the enrollment-disclosure surface got reading-level treatment this pass -- ChildHomeScreen, BreakShieldScreen, and the Safe Browser block screen are still untreated. Remains PARTIAL / a real source gap, not SOURCE_COMPLETE: coverage is one surface, not app-wide."
+      "notes": "R3 update (2026-08-21, base d844987): reading-level (AgeUxTier SIMPLE/CLEAR) copy now covers Enrollment disclosure, ChildHomeScreen, BreakShieldScreen, the Safe Browser block screen, and EyeRestShieldScreen, each reading the real persisted AgeUxTier at render time (not a hardcoded default), with EN/AR parity and safety/privacy/emergency substance preserved identically across tiers, verified by ArabicResourceParityTest/StringResourceCompletenessTest plus per-surface unit tests. iOS remains narrower (enrollment disclosure only). Known residual gap: AdminSecurityActivity PIN-entry surface is child-visible in some flows and has not received this treatment; not yet audited whether other surfaces exist beyond the ones explicitly checked this pass."
     },
     {
       "requirementId": "PCA-NFR-045",
