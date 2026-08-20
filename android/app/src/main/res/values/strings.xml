@@ -386,13 +386,22 @@
     <string name="eye_distance_camera_permission_denied_notice">Camera permission was not granted, so the screen-distance check is off. No images are ever accessed without this permission.</string>
     <string name="eye_distance_camera_unavailable_notice">The on-device distance-detection feature isn\'t available on this build yet.</string>
 
-    <!-- PCA-FR-021: the one-minute eye-rest action shown when the eye-distance engine reaches
-         REST_ACTIVE. SIMPLE-tier copy by default (short sentences, no medical/measurement claims
-         per PCA-FR-023); this screen may be seen by young children, and reading-level
-         differentiation is not yet wired to this surface (see EyeRestShieldScreen.kt doc comment). -->
+    <!-- PCA-NFR-044: the one-minute eye-rest action shown when the eye-distance engine reaches
+         REST_ACTIVE. No medical/measurement claims per PCA-FR-023, in either tier. Base keys are
+         the CLEAR/TEEN-tier copy (slightly more complete sentence structure), matching the
+         base-key-means-CLEAR convention already established by break_shield_*/child_home_*/
+         enrollment's disclosureCopyForTier(); the "_simple" suffix holds the YOUNG_CHILD-tier
+         copy (short sentences), which is the same text this screen shipped as its single
+         hardcoded default before EyeRestShieldScreen.kt gained real AgeUxTier differentiation.
+         eye_rest_shield_title has no "_simple" variant: it already reads simply enough for both
+         tiers, mirroring break_shield_title's own shared-title precedent. -->
     <string name="eye_rest_shield_title">Time for an eye rest</string>
-    <string name="eye_rest_shield_body">Your eyes were close to the screen. Let\'s look away for a minute.</string>
-    <string name="eye_rest_shield_remaining_time">Time left: %1$s</string>
-    <string name="eye_rest_shield_remaining_time_a11y">%1$s left in this eye rest</string>
-    <string name="eye_rest_shield_completed_notice">Great job! Your eye rest is done.</string>
+    <string name="eye_rest_shield_body">You were sitting very close to the screen, so it\'s time to look away and rest your eyes for about a minute before you continue.</string>
+    <string name="eye_rest_shield_body_simple">Your eyes were close to the screen. Let\'s look away for a minute.</string>
+    <string name="eye_rest_shield_remaining_time">Time remaining in this eye rest: %1$s</string>
+    <string name="eye_rest_shield_remaining_time_simple">Time left: %1$s</string>
+    <string name="eye_rest_shield_remaining_time_a11y">%1$s remaining until this eye rest is complete</string>
+    <string name="eye_rest_shield_remaining_time_a11y_simple">%1$s left in this eye rest</string>
+    <string name="eye_rest_shield_completed_notice">Nice work — your eye rest is complete, and you can continue.</string>
+    <string name="eye_rest_shield_completed_notice_simple">Great job! Your eye rest is done.</string>
 </resources>

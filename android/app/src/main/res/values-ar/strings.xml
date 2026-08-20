@@ -377,10 +377,18 @@
     <string name="eye_distance_camera_permission_denied_notice">لم يُمنح إذن الكاميرا، لذا فإن فحص مسافة الشاشة متوقف. لا يتم الوصول إلى أي صور دون هذا الإذن أبدًا.</string>
     <string name="eye_distance_camera_unavailable_notice">ميزة اكتشاف المسافة على الجهاز غير متاحة بعد في هذا الإصدار.</string>
 
-    <!-- PCA-FR-021: استراحة العين لمدة دقيقة واحدة، بلغة بسيطة مناسبة للأطفال. -->
+    <!-- PCA-NFR-044: استراحة العين لمدة دقيقة واحدة. المفاتيح الأساسية هي نسخة المستوى
+         الواضح/الفئة الأكبر سنًا (جمل أكثر اكتمالًا)، ولاحقة "_simple" هي نسخة الطفل الصغير
+         (جمل قصيرة)، وهي نفس النص الذي كانت هذه الشاشة تعرضه كخيار وحيد قبل ربطها بـ
+         AgeUxTier الفعلي. لا يوجد متغير "_simple" لـ eye_rest_shield_title لأنه واضح بما يكفي
+         لكلا المستويين، على غرار عنوان break_shield_title المشترك. -->
     <string name="eye_rest_shield_title">حان وقت راحة العين</string>
-    <string name="eye_rest_shield_body">كانت عيناك قريبة جدًا من الشاشة. لننظر بعيدًا لمدة دقيقة.</string>
-    <string name="eye_rest_shield_remaining_time">الوقت المتبقي: %1$s</string>
-    <string name="eye_rest_shield_remaining_time_a11y">تبقّى %1$s في راحة العين هذه</string>
-    <string name="eye_rest_shield_completed_notice">أحسنت! انتهت راحة العين.</string>
+    <string name="eye_rest_shield_body">كنتَ تجلس قريبًا جدًا من الشاشة، لذا حان الوقت لإبعاد نظرك وإراحة عينيك لمدة دقيقة تقريبًا قبل أن تكمل.</string>
+    <string name="eye_rest_shield_body_simple">كانت عيناك قريبة جدًا من الشاشة. لننظر بعيدًا لمدة دقيقة.</string>
+    <string name="eye_rest_shield_remaining_time">الوقت المتبقي لراحة العين: %1$s</string>
+    <string name="eye_rest_shield_remaining_time_simple">الوقت المتبقي: %1$s</string>
+    <string name="eye_rest_shield_remaining_time_a11y">تبقّى %1$s حتى تكتمل راحة العين هذه</string>
+    <string name="eye_rest_shield_remaining_time_a11y_simple">تبقّى %1$s في راحة العين هذه</string>
+    <string name="eye_rest_shield_completed_notice">أحسنت — اكتملت راحة عينيك، ويمكنك الآن المتابعة.</string>
+    <string name="eye_rest_shield_completed_notice_simple">أحسنت! انتهت راحة العين.</string>
 </resources>
