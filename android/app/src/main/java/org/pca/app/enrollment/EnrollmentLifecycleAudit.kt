@@ -15,9 +15,19 @@ import java.time.Instant
  * only the backend's PAIRING_PENDING/PAIRED/ACTIVE/REVOKED device-status
  * vocabulary), so null stands in for the absent prior state here, exactly as
  * [org.pca.app.enrollment.EnrollmentState.NotEnrolled] does one layer up.
+ *
+ * [familyId] is nullable for the same honesty reason: the unauthenticated
+ * bootstrap step ([EnrollmentCoordinator.persistSuccess]) never learns a real
+ * family id (backend/src/http/dto.ts's BootstrapResultDto is
+ * `{deviceId, status, ...}` only -- family membership stays server-side
+ * authority at this step). `null` means "not yet known," recorded honestly;
+ * it is NEVER represented as `""`, which would be indistinguishable from a
+ * real-but-empty value. See [EnrollmentLifecycleAuditor]'s own doc comment
+ * for the fail-closed rule that enforces this (blank-but-non-null is
+ * rejected; only genuinely absent (null) or a real non-blank id is allowed).
  */
 data class EnrollmentLifecycleAuditRecord(
-    val familyId: String,
+    val familyId: String?,
     val deviceId: String,
     val actorId: String,
     val fromState: PairingState?,
@@ -68,15 +78,25 @@ sealed class EnrollmentLifecycleTransitionError(message: String) : Exception(mes
  * edge and same-state replays (the bootstrap protocol's idempotent-retry
  * design -- PCA-ENROLLMENT-RUNTIME-2 -- can legitimately re-observe the same
  * server-reported status more than once for the same attempt).
+ *
+ * [familyId] is nullable, honestly modeling "not yet known" (see
+ * [EnrollmentLifecycleAuditRecord]'s own doc comment) rather than a fabricated
+ * placeholder. A blank-but-non-null value (`""`, or all-whitespace) is
+ * REJECTED fail-closed here -- exactly like a blank [deviceId] -- because it
+ * would be indistinguishable downstream from a real-but-empty id; only an
+ * actual non-blank id or a genuine `null` is ever accepted.
  */
 class EnrollmentLifecycleAuditor(
-    private val familyId: String,
+    private val familyId: String?,
     private val deviceId: String,
     private val auditSink: EnrollmentLifecycleAuditSink,
     private val now: () -> Instant = Instant::now,
 ) {
     init {
         if (deviceId.isBlank()) throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
+        if (familyId != null && familyId.isBlank()) {
+            throw EnrollmentLifecycleTransitionError.MissingOpaqueIdentifier
+        }
     }
 
     @Suppress("ThrowsCount")

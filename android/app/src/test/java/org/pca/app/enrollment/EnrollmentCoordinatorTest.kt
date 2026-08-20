@@ -223,6 +223,38 @@ class EnrollmentCoordinatorTest {
         assertNull(pendingAttemptStore.current())
     }
 
+    /**
+     * The bootstrap response never carries a real familyId (DeviceBootstrapResult is
+     * {deviceId, status, ...} only -- see EnrollmentCoordinator.persistSuccess's own doc
+     * comment). Proves end-to-end, through the real coordinator flow (not a hand-constructed
+     * auditor), that the committed lifecycle-audit record honestly carries `null` for familyId
+     * -- never the fabricated "" placeholder that LocalFamilyState.familyId is stuck with as a
+     * non-nullable storage-layer type.
+     */
+    @Test
+    fun `persisted lifecycle audit record carries null familyId, never a fabricated empty string`() = runTest {
+        val sink = InMemoryEnrollmentLifecycleAuditSink()
+        val c = EnrollmentCoordinator(
+            parser(),
+            FakeBootstrapApiClient { DeviceBootstrapResult(deviceId = "server-issued-device-id", status = "PAIRING_PENDING") },
+            TestConformanceDeviceKeyPairGenerator(),
+            PersistentFamilyStateStore(InMemoryPersistentStateStore()),
+            InMemoryPendingEnrollmentAttemptStore(),
+            lifecycleAuditSink = sink,
+        )
+        c.submitInvitationLink(LINK)
+        c.beginBootstrap()
+
+        c.confirmProfile()
+
+        assertEquals(EnrollmentState.PairingPending("server-issued-device-id"), c.state.value)
+        assertEquals(1, sink.records.size)
+        val record = sink.records.single()
+        assertNull(record.familyId)
+        assertEquals("server-issued-device-id", record.deviceId)
+        assertEquals(PairingState.PAIRING_PENDING, record.toState)
+    }
+
     @Test
     fun `pending attempt is durably persisted BEFORE the network call, with attemptId+recoveryToken+key material`() = runTest {
         val pendingAttemptStore = InMemoryPendingEnrollmentAttemptStore()

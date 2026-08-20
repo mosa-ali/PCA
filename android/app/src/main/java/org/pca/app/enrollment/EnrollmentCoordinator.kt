@@ -352,7 +352,14 @@ class EnrollmentCoordinator(
             .getOrDefault(PairingState.PAIRING_PENDING)
         val previousPairingState = familyStateStore.currentState()?.pairingState
         val auditor = EnrollmentLifecycleAuditor(
-            familyId = "",
+            // KNOWN_GAP (same one documented on LocalFamilyState.familyId below): the bootstrap
+            // response is {deviceId, status} only -- the server deliberately never discloses
+            // familyId to the device at this step. Recorded as an honest `null` ("not yet
+            // known"), never as "", which EnrollmentLifecycleAuditor's own init block now
+            // rejects fail-closed as indistinguishable from a real-but-empty id. A future
+            // authenticated identity/"whoami" surface is the correct place to learn a real
+            // value and backfill this audit trail / LocalFamilyState -- not this coordinator.
+            familyId = null,
             deviceId = result.deviceId,
             auditSink = lifecycleAuditSink,
         )
@@ -371,10 +378,19 @@ class EnrollmentCoordinator(
                 // KNOWN_GAP: the bootstrap response is {deviceId, status} only
                 // (backend/src/http/dto.ts toBootstrapResultDto) -- the server deliberately never
                 // discloses familyId to the device at this step (family membership stays
-                // server-side authority per the EnrollmentCoordinator backend contract). Left as
-                // an explicit empty placeholder, never fabricated; nothing here or downstream
-                // treats "" as a real familyId. A future authenticated identity/"whoami" surface
-                // would be the correct place to obtain a real value, not this coordinator.
+                // server-side authority per the EnrollmentCoordinator backend contract).
+                // LocalFamilyState.familyId (org.pca.app.storage) is a non-nullable String, so this
+                // "" is left as an explicit, never-fabricated placeholder -- NOT because "" is
+                // treated as valid, but because no genuinely-unknown real family id exists to put
+                // here instead, and widening that field to nullable is a storage-layer type change
+                // out of this file's scope. The one in-scope, actually-audited record of this same
+                // fact is the lifecycleAuditSink entry just above, whose familyId is honestly `null`
+                // (EnrollmentLifecycleAuditor rejects "" fail-closed -- see its own doc comment).
+                // The one confirmed consumer of this field,
+                // org.pca.app.feature.webprotection.identity.RealWebProtectionIdentityContextProvider,
+                // already treats a blank familyId as WebProtectionIdentity.TrustedFamilyContextUnavailable
+                // rather than as real family authority. A future authenticated identity/"whoami"
+                // surface is the correct place to obtain and backfill a real value here.
                 familyId = "",
                 deviceId = result.deviceId,
                 pairingState = serverPairingState,
