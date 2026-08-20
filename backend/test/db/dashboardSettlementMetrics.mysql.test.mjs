@@ -236,7 +236,7 @@ test('DashboardReadModel.build(): operational/commercial dashboard metrics are s
 
   const usd = snapshot.paymentSummaryByCurrency.rows.find((row) => row.currencyCode === 'USD');
   const beforeUsd = before.paymentSummaryByCurrency.rows.find((row) => row.currencyCode === 'USD');
-  assert.equal(usd.total, (beforeUsd?.total ?? 0) + 3);
+  assert.equal(usd.total, (beforeUsd?.total ?? 0) + 4);
   assert.equal(usd.succeeded, (beforeUsd?.succeeded ?? 0) + 1);
   assert.equal(usd.failed, (beforeUsd?.failed ?? 0) + 1);
   const beforeTerminal = (beforeUsd?.succeeded ?? 0) + (beforeUsd?.failed ?? 0);

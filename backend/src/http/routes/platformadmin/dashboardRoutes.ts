@@ -47,7 +47,14 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
         ...dashboardWithoutRestrictedFields
       } = snapshot;
       const dashboardSubset = canViewBilling
-        ? dashboardWithoutRestrictedFields
+        ? {
+            ...dashboardWithoutRestrictedFields,
+            invoicesByStatusAndCurrency: snapshot.invoicesByStatusAndCurrency,
+            paymentAttemptsByStatusAndCurrency: snapshot.paymentAttemptsByStatusAndCurrency,
+            refundsByCurrency: snapshot.refundsByCurrency,
+            paymentSummaryByCurrency: snapshot.paymentSummaryByCurrency,
+            openDisputes: snapshot.openDisputes,
+          }
         : (() => {
             const { stuckPaymentAttempts: _stuckPaymentAttempts, ...supportExceptionQueues } = snapshot.exceptionQueues;
             const { exceptionQueues: _exceptionQueues, ...nonFinancialDashboard } = dashboardWithoutRestrictedFields;
