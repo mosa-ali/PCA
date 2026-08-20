@@ -185,3 +185,51 @@ test('retention-expired records are excluded from export inclusion', () => {
   const included = filterNonExpiredForExport(records, p, now);
   assert.deepEqual(included.map((r) => r.id), ['fresh']);
 });
+
+// ---- doc 20 PCA-FR-113: deletion-confirmation reasons must be genuinely localized, never a raw English/enum fallback ----
+
+test('planPurge EXPIRED entries default to an English reasonMessage, never a raw enum value', () => {
+  const p = policy({ generalWindow: '14_DAYS' });
+  const now = new Date('2026-02-01T00:00:00.000Z');
+  const plan = planPurge([record({ eventTimestampUtc: new Date('2026-01-01T00:00:00.000Z') })], p, now);
+  assert.equal(plan.toDelete.length, 1);
+  assert.equal(plan.toDelete[0].reason, 'EXPIRED');
+  assert.equal(plan.toDelete[0].reasonMessage, 'Removed because it reached the end of your family’s retention period.');
+});
+
+test('planPurge produces a genuine Arabic reasonMessage when locale=ar is requested, with no English fallback leaking in', () => {
+  const p = policy({ generalWindow: '14_DAYS' });
+  const now = new Date('2026-02-01T00:00:00.000Z');
+  const plan = planPurge([record({ eventTimestampUtc: new Date('2026-01-01T00:00:00.000Z') })], p, now, 'ar');
+  assert.equal(plan.toDelete[0].reasonMessage, 'تمت إزالته لبلوغه نهاية فترة الاحتفاظ الخاصة بعائلتك.');
+  // No mixed-language notice: the Arabic message must not contain any Latin letters.
+  assert.equal(/[A-Za-z]/.test(plan.toDelete[0].reasonMessage), false);
+});
+
+test('planPurge ROLLING_RETENTION_SUPERSEDED entries are localized in both locales', () => {
+  const p = policy({ locationMode: 'CURRENT_LAST_ONLY' });
+  const records = [
+    record({ entityClass: 'LOCATION_POINT', id: 'a', eventTimestampUtc: new Date('2026-01-01T00:00:00.000Z') }),
+    record({ entityClass: 'LOCATION_POINT', id: 'b', eventTimestampUtc: new Date('2026-01-02T00:00:00.000Z') }),
+  ];
+  const now = new Date('2026-01-02T00:00:00.000Z');
+  const enPlan = planPurge(records, p, now, 'en');
+  const arPlan = planPurge(records, p, now, 'ar');
+  assert.equal(enPlan.toDelete[0].reasonMessage, 'Removed because a newer location point replaced it.');
+  assert.equal(arPlan.toDelete[0].reasonMessage, 'تمت إزالته لأن نقطة موقع أحدث حلّت محله.');
+});
+
+test('planDeleteNow entries carry a genuinely localized reasonMessage in the requested locale', () => {
+  const records = [record({ id: 'brand-new', eventTimestampUtc: new Date('2026-01-31T23:59:00.000Z') })];
+  const enPlan = planDeleteNow(records, 'en');
+  const arPlan = planDeleteNow(records, 'ar');
+  assert.equal(enPlan.toDelete[0].reasonMessage, 'Removed by a parent’s Delete Now request.');
+  assert.equal(arPlan.toDelete[0].reasonMessage, 'تمت إزالته بناءً على طلب "الحذف الآن" من أحد الوالدين.');
+  assert.equal(/[A-Za-z]/.test(arPlan.toDelete[0].reasonMessage), false);
+});
+
+test('planDeleteNow defaults to English when no locale is supplied', () => {
+  const records = [record({ id: 'brand-new', eventTimestampUtc: new Date('2026-01-31T23:59:00.000Z') })];
+  const plan = planDeleteNow(records);
+  assert.equal(plan.toDelete[0].reasonMessage, 'Removed by a parent’s Delete Now request.');
+});

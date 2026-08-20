@@ -115,5 +115,20 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'export.CANCELLED': 'تم إلغاء التصدير قبل اكتماله.',
   'export.FAILED': 'تعذر إكمال عملية التصدير.',
 
+  'retention.state.ACTIVE': 'هذا السجل نشط حاليًا.',
+  'retention.state.EXPIRY_DUE': 'بلغ هذا السجل نهاية فترة الاحتفاظ الخاصة بعائلتك وهو مستحق الحذف.',
+  'retention.state.DELETE_REQUESTED': 'تم تقديم طلب حذف لهذا السجل.',
+  'retention.state.DELETED_LOCAL': 'تم حذف هذا السجل على هذا الجهاز.',
+  'retention.state.DELETION_CONFIRMED': 'تم تأكيد الحذف على جميع أجهزة عائلتك.',
+  'retention.state.DELETE_PENDING_REMOTE_DEVICE': 'اكتمل الحذف على هذا الجهاز وهو في انتظار تأكيد جهاز آخر.',
+  'retention.INVALID_TRANSITION': 'تعذر تطبيق تحديث حالة الحذف هذا.',
+
+  'commercial_notification.QUOTE_READY': 'عرض سعر جديد جاهز لمراجعتك.',
+  'commercial_notification.PAYMENT_CONFIRMED': 'تم تأكيد دفعتك.',
+  'commercial_notification.ENTITLEMENT_INCREASED': 'تمت زيادة استحقاق حسابك.',
+  'commercial_notification.PAYMENT_FAILED': 'تعذر إتمام عملية الدفع.',
+  'commercial_notification.REQUEST_DENIED': 'لم تتم الموافقة على طلبك.',
+  'commercial_notification.QUOTE_EXPIRED': 'انتهت صلاحية عرض السعر الخاص بك.',
+
   DOMAIN_BLOCKED_NOTICE: `تم حظر ${isolateLtr('{domain}')} بموجب قاعدة عائلتك`,
 };

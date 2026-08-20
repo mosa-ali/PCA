@@ -23,14 +23,22 @@ export interface CommercialNotificationPublisher {
   publish(input: PublishCommercialNotificationInput, now?: Date): Promise<PublishOutcome>;
 }
 
-/** Default message keys a caller may use verbatim, or override per call (e.g. to add a market/currency-specific variant) via PublishCommercialNotificationInput.messageKey. */
+/**
+ * Default message keys a caller may use verbatim, or override per call (e.g. to add a
+ * market/currency-specific variant) via PublishCommercialNotificationInput.messageKey. These are
+ * deliberately identical in shape to i18n's `CommercialNotificationMessageId`
+ * (`commercial_notification.<EVENT_TYPE>`, see i18n/types.ts) -- doc 20 PCA-FR-113 --
+ * so the DEFAULT (non-overridden) path a row takes is always resolvable by
+ * CommercialNotificationService.renderLocalizedBody without any translation between naming
+ * schemes.
+ */
 export const DEFAULT_MESSAGE_KEYS: Readonly<Record<PublishCommercialNotificationInput['eventType'], string>> = {
-  QUOTE_READY: 'commercial_notification.quote_ready',
-  PAYMENT_CONFIRMED: 'commercial_notification.payment_confirmed',
-  ENTITLEMENT_INCREASED: 'commercial_notification.entitlement_increased',
-  PAYMENT_FAILED: 'commercial_notification.payment_failed',
-  REQUEST_DENIED: 'commercial_notification.request_denied',
-  QUOTE_EXPIRED: 'commercial_notification.quote_expired',
+  QUOTE_READY: 'commercial_notification.QUOTE_READY',
+  PAYMENT_CONFIRMED: 'commercial_notification.PAYMENT_CONFIRMED',
+  ENTITLEMENT_INCREASED: 'commercial_notification.ENTITLEMENT_INCREASED',
+  PAYMENT_FAILED: 'commercial_notification.PAYMENT_FAILED',
+  REQUEST_DENIED: 'commercial_notification.REQUEST_DENIED',
+  QUOTE_EXPIRED: 'commercial_notification.QUOTE_EXPIRED',
 };
 
 export class MySqlCommercialNotificationPublisher implements CommercialNotificationPublisher {

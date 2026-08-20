@@ -12,16 +12,45 @@
 
 import { runInTransaction } from '../db/pool.js';
 import { CommercialNotificationRepository } from './CommercialNotificationRepository.js';
-import type { CommercialNotificationRow, CommercialNotificationSupportRow } from './types.js';
+import type { CommercialNotificationEventType, CommercialNotificationRow, CommercialNotificationSupportRow } from './types.js';
+import { translate } from '../i18n/translate.js';
+import type { CommercialNotificationMessageId, SupportedLocale } from '../i18n/types.js';
 
 export type MarkReadOutcome = 'MARKED' | 'NOT_FOUND';
 export type AcknowledgeOutcome = 'ACKNOWLEDGED' | 'NOT_FOUND';
+
+/** `CommercialNotificationMessageId` is always `commercial_notification.<EVENT_TYPE>` (i18n/types.ts) -- resolved purely from the row's own `eventType`, never from an arbitrary caller-supplied `messageKey` override, so this is a total, type-safe function, not a lookup that can miss. */
+function defaultMessageId(eventType: CommercialNotificationEventType): CommercialNotificationMessageId {
+  return `commercial_notification.${eventType}`;
+}
 
 export class CommercialNotificationService {
   constructor(private readonly repository: CommercialNotificationRepository) {}
 
   async list(accountRef: string, limit?: number): Promise<CommercialNotificationRow[]> {
     return this.repository.listByAccount(accountRef, limit);
+  }
+
+  /**
+   * doc 20 PCA-FR-113 "no mixed-language notification": renders a genuine, plain-text
+   * localized body for a single notification row, for channels (e.g. email/push) that cannot
+   * do the client-side EN/AR rendering the structured messageKey/params contract otherwise
+   * assumes. This is additive -- `list()`/`unreadCount()` above are unchanged and remain the
+   * structured, client-rendered contract (mission Section 4: "never a pre-rendered sentence")
+   * for callers that still want it.
+   */
+  renderLocalizedBody(row: CommercialNotificationRow, locale: SupportedLocale): string {
+    return translate(defaultMessageId(row.eventType), locale);
+  }
+
+  /** `list()` plus each row's genuinely localized body (see renderLocalizedBody), for a caller that wants both the structured row and ready-to-send text in one call. */
+  async listWithLocalizedBody(
+    accountRef: string,
+    locale: SupportedLocale,
+    limit?: number,
+  ): Promise<Array<CommercialNotificationRow & { localizedBody: string }>> {
+    const rows = await this.list(accountRef, limit);
+    return rows.map((row) => ({ ...row, localizedBody: this.renderLocalizedBody(row, locale) }));
   }
 
   async unreadCount(accountRef: string): Promise<number> {

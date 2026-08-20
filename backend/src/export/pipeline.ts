@@ -1,8 +1,11 @@
-import type { EncryptedExportArtifact, ExportEncryptor, ExportManifest, ExportOutcome, ExportSink } from './types.js';
+import { exportOutcomeMessage, type EncryptedExportArtifact, type ExportEncryptor, type ExportManifest, type ExportOutcome, type ExportSink } from './types.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
 export interface RunExportOptions {
   /** Checked before encryption starts and again after encryption completes (before the write) -- a cooperative cancellation point, not a mid-operation interrupt. */
   isCancelled?: () => boolean;
+  /** doc 20 PCA-FR-113: locale for ExportOutcome.outcomeMessage. Defaults to 'en'. */
+  locale?: SupportedLocale;
 }
 
 function errorMessage(error: unknown): string {
@@ -34,15 +37,17 @@ export async function runExport(
   sink: ExportSink,
   options: RunExportOptions = {},
 ): Promise<ExportOutcome> {
+  const locale: SupportedLocale = options.locale ?? 'en';
+
   if (options.isCancelled?.()) {
-    return { kind: 'CANCELLED', manifest };
+    return { kind: 'CANCELLED', manifest, outcomeMessage: exportOutcomeMessage('CANCELLED', locale) };
   }
 
   let artifact: EncryptedExportArtifact;
   try {
     artifact = await encryptor.encrypt(serializeManifest(manifest), dataBytes);
   } catch (error) {
-    return { kind: 'FAILED', manifest, failureReason: `ENCRYPTION_FAILED: ${errorMessage(error)}` };
+    return { kind: 'FAILED', manifest, failureReason: `ENCRYPTION_FAILED: ${errorMessage(error)}`, outcomeMessage: exportOutcomeMessage('FAILED', locale) };
   }
 
   // A provider that returns an empty ciphertext has not produced an export
@@ -50,18 +55,18 @@ export async function runExport(
   // otherwise a caller could incorrectly record COMPLETED for an empty or
   // plaintext-substitute file.
   if (!artifact || !artifact.ciphertext || artifact.ciphertext.length === 0) {
-    return { kind: 'FAILED', manifest, failureReason: 'ENCRYPTION_FAILED: EMPTY_CIPHERTEXT' };
+    return { kind: 'FAILED', manifest, failureReason: 'ENCRYPTION_FAILED: EMPTY_CIPHERTEXT', outcomeMessage: exportOutcomeMessage('FAILED', locale) };
   }
 
   if (options.isCancelled?.()) {
-    return { kind: 'CANCELLED', manifest };
+    return { kind: 'CANCELLED', manifest, outcomeMessage: exportOutcomeMessage('CANCELLED', locale) };
   }
 
   try {
     await sink.write(artifact);
   } catch (error) {
-    return { kind: 'FAILED', manifest, failureReason: `WRITE_FAILED: ${errorMessage(error)}` };
+    return { kind: 'FAILED', manifest, failureReason: `WRITE_FAILED: ${errorMessage(error)}`, outcomeMessage: exportOutcomeMessage('FAILED', locale) };
   }
 
-  return { kind: 'COMPLETED', manifest };
+  return { kind: 'COMPLETED', manifest, outcomeMessage: exportOutcomeMessage('COMPLETED', locale) };
 }

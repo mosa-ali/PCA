@@ -1,5 +1,6 @@
 import type { SafeExplanationKind } from '../ai/types.js';
 import type { ChildRequestErrorCode } from '../childrequests/ChildRequestService.js';
+import type { CommercialNotificationEventType } from '../commercialnotifications/types.js';
 import type { DeviceAuthErrorCode } from '../deviceauth/DeviceAuthService.js';
 import type { DeviceDirectoryErrorCode } from '../device/DeviceDirectoryService.js';
 import type { EnrollmentErrorCode } from '../enrollment/EnrollmentCoordinator.js';
@@ -10,6 +11,7 @@ import type { RecoveryErrorCode } from '../recovery/RecoveryService.js';
 import type { ScheduleDecisionKind } from '../schedule/types.js';
 import type { ExportOutcomeKind } from '../export/types.js';
 import type { PurgePlanEntry } from '../retention/engine.js';
+import type { DeletionState } from '../retention/types.js';
 import type { ModeBEventErrorCode } from '../youtube/ModeBPlaybackEventService.js';
 import type { ModeBEventType } from '../youtube/types.js';
 import type { WebReasonId } from '../web/types.js';
@@ -49,6 +51,29 @@ export type ScheduleMessageId = `schedule.${ScheduleDecisionKind}`;
 export type RetentionMessageId = `retention.${PurgePlanEntry['reason']}`;
 export type ExportMessageId = `export.${ExportOutcomeKind}`;
 
+/**
+ * retention/deletionStateMachine.ts PCA-16A wiring: one message per
+ * DeletionState (doc 11 Section 5.1), used to present the current
+ * deletion-lifecycle state, plus a single bare id for the
+ * "not a valid transition" outcome (mirrors DOMAIN_BLOCKED_NOTICE's bare-id
+ * exception -- there is no per-domain reason code to namespace this one by,
+ * `applyDeletionEvent` never distinguishes WHY a transition was invalid).
+ */
+export type RetentionStateMessageId = `retention.state.${DeletionState}`;
+export type RetentionInvalidTransitionMessageId = 'retention.INVALID_TRANSITION';
+
+/**
+ * commercialnotifications/CommercialNotificationService.ts PCA-16A wiring:
+ * one default message per CommercialNotificationEventType, used by
+ * `renderLocalizedBody`/`listWithLocalizedBody` to render a plain-text
+ * localized notification body (e.g. for an email/push channel that cannot
+ * do the client-side EN/AR rendering the structured messageKey/params
+ * contract otherwise assumes). Only ever resolved from the row's own
+ * `eventType`, never from an arbitrary caller-supplied `messageKey`
+ * override, so this stays a closed, type-safe id space.
+ */
+export type CommercialNotificationMessageId = `commercial_notification.${CommercialNotificationEventType}`;
+
 /** One additional message demonstrating the typed-placeholder + bidi-isolation pattern (doc 20 Section 3) for a domain-bearing notice. */
 export type DomainNoticeMessageId = 'DOMAIN_BLOCKED_NOTICE';
 
@@ -68,6 +93,9 @@ export type MessageId =
   | ScheduleMessageId
   | RetentionMessageId
   | ExportMessageId
+  | RetentionStateMessageId
+  | RetentionInvalidTransitionMessageId
+  | CommercialNotificationMessageId
   | DomainNoticeMessageId;
 
 /**

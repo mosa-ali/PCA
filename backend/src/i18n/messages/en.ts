@@ -138,5 +138,22 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'export.CANCELLED': 'The export was cancelled before it completed.',
   'export.FAILED': 'The export could not be completed.',
 
+  // retention/deletionStateMachine.ts DeletionState -- doc 20 FR-113, PCA-16A wiring.
+  'retention.state.ACTIVE': 'This record is currently active.',
+  'retention.state.EXPIRY_DUE': 'This record has reached the end of your family’s retention period and is due for deletion.',
+  'retention.state.DELETE_REQUESTED': 'Deletion has been requested for this record.',
+  'retention.state.DELETED_LOCAL': 'This record has been deleted on this device.',
+  'retention.state.DELETION_CONFIRMED': 'Deletion has been confirmed across your family’s devices.',
+  'retention.state.DELETE_PENDING_REMOTE_DEVICE': 'Deletion is complete on this device and pending confirmation from another device.',
+  'retention.INVALID_TRANSITION': 'This deletion status update could not be applied.',
+
+  // commercialnotifications/CommercialNotificationService.ts default localized bodies -- doc 20 FR-113, PCA-16A wiring.
+  'commercial_notification.QUOTE_READY': 'A new quote is ready for your review.',
+  'commercial_notification.PAYMENT_CONFIRMED': 'Your payment has been confirmed.',
+  'commercial_notification.ENTITLEMENT_INCREASED': 'Your account entitlement has been increased.',
+  'commercial_notification.PAYMENT_FAILED': 'Your payment could not be completed.',
+  'commercial_notification.REQUEST_DENIED': 'Your request was not approved.',
+  'commercial_notification.QUOTE_EXPIRED': 'Your quote has expired.',
+
   DOMAIN_BLOCKED_NOTICE: '{domain} was blocked under your family’s rule',
 };

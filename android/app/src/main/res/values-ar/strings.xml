@@ -244,6 +244,10 @@
     <string name="enrollment_profile_policy_balanced">متوازن</string>
     <string name="enrollment_profile_policy_strict">صارم</string>
     <string name="enrollment_profile_confirmation_button">تأكيد هذا الملف</string>
+    <!-- PCA-NFR-044: النسخة المبسّطة (مستوى قراءة الطفل الصغير) من نصوص تأكيد الملف أعلاه: جمل قصيرة وبسيطة بنفس المعنى، دون أي تغيير في نطاق الخصوصية أو الطوارئ. -->
+    <string name="enrollment_profile_confirmation_title_simple">تحقّق من إعدادات أمانك</string>
+    <string name="enrollment_profile_confirmation_body_simple">اختار والدك أو والدتك هذه الإعدادات لك. انظر إليها، ثم اضغط على تأكيد.</string>
+    <string name="enrollment_profile_confirmation_button_simple">تأكيد الإعدادات</string>
     <string name="enrollment_invitation_unavailable">لم تعد الدعوة متاحة. اطلب من أحد الوالدين إنشاء دعوة جديدة.</string>
     <string name="enrollment_retryable_failure">حدث خطأ ما. يرجى المحاولة مرة أخرى.</string>
     <string name="enrollment_result_unknown">لم نتمكن من التأكد مما إذا كان الإعداد قد اكتمل. اضغط أدناه للتحقق، أو اسأل والديك قبل تجربة هذا الرابط مرة أخرى.</string>

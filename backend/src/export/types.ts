@@ -1,4 +1,6 @@
 import type { RetentionEntityClass, RetentionPolicySettings } from '../retention/types.js';
+import { translate } from '../i18n/translate.js';
+import type { SupportedLocale } from '../i18n/types.js';
 
 export const EXPORT_MANIFEST_FORMAT_VERSION = 1;
 
@@ -52,4 +54,17 @@ export interface ExportOutcome {
   kind: ExportOutcomeKind;
   manifest: ExportManifest;
   failureReason?: string;
+  /**
+   * doc 20 PCA-FR-113 "export outcome notices must be localized": the
+   * genuine, presentation-ready outcome text for `kind`, resolved via
+   * i18n's translate() against the locale the caller supplied to
+   * runExport (default 'en'). `kind` remains the stable machine-readable
+   * discriminator -- this field is additive, never a replacement.
+   */
+  outcomeMessage: string;
+}
+
+/** Single source of truth for ExportOutcome.outcomeMessage, used by export/pipeline.ts's runExport at every return site so a locale is never forgotten on one branch. */
+export function exportOutcomeMessage(kind: ExportOutcomeKind, locale: SupportedLocale): string {
+  return translate(`export.${kind}`, locale);
 }

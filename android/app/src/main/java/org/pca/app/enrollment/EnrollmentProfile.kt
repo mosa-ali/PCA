@@ -12,6 +12,25 @@ enum class InitialPolicyProfile { BALANCED, STRICT }
 enum class ContentFilterDefault { MODERATE, STRICT }
 
 /**
+ * PCA-NFR-044: child-facing UI reading-level bar for the enrollment disclosure surface, mirroring
+ * iOS's `PCAChildReadingLevel` (ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift). This is a
+ * source-level accessibility contract only -- the actual wording lives in string resources, and
+ * final English/Arabic language review remains a release gate owned by the localization lane.
+ */
+enum class ReadingLevel { SIMPLE, CLEAR }
+
+/**
+ * PCA-NFR-044: the age tier is the only input that selects reading level -- never a
+ * child-editable control -- mirroring `PCAEnrollmentDisclosure.forProfile()`'s
+ * `youngChild ? .simple : .clear` selection on iOS.
+ */
+val AgeUxTier.readingLevel: ReadingLevel
+    get() = when (this) {
+        AgeUxTier.YOUNG_CHILD -> ReadingLevel.SIMPLE
+        AgeUxTier.TEEN -> ReadingLevel.CLEAR
+    }
+
+/**
  * Owner-configurable enrollment defaults. The baseline keeps the existing
  * 60/30 safety floor; stricter age/profile values may be supplied without
  * changing the enrollment protocol or weakening a child device.

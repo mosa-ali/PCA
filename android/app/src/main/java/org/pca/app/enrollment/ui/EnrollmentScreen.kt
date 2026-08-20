@@ -234,18 +234,52 @@ private fun ChildProfileConfirmationStep(
         org.pca.app.enrollment.InitialPolicyProfile.BALANCED -> stringResource(R.string.enrollment_profile_policy_balanced)
         org.pca.app.enrollment.InitialPolicyProfile.STRICT -> stringResource(R.string.enrollment_profile_policy_strict)
     }
+    // PCA-NFR-044: the age tier genuinely selects a different-complexity string set at render
+    // time -- simple/short copy for a young child, more complete copy for a teen -- mirroring
+    // iOS's PCAChildReadingLevel selection in PCAEnrollmentDisclosure.forProfile(). Privacy and
+    // emergency content (InformedConsentStep) is intentionally identical for every age tier.
+    val disclosureCopy = disclosureCopyForTier(state.ageUxTier)
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            stringResource(R.string.enrollment_profile_confirmation_title),
+            stringResource(disclosureCopy.titleRes),
             style = MaterialTheme.typography.headlineSmall,
             modifier = headingModifier,
         )
-        Text(stringResource(R.string.enrollment_profile_confirmation_body))
+        Text(stringResource(disclosureCopy.bodyRes))
         Text(stringResource(R.string.enrollment_profile_confirmation_age, ageLabel))
         Text(stringResource(R.string.enrollment_profile_confirmation_policy, policyLabel))
         Button(onClick = onConfirm) {
-            Text(stringResource(R.string.enrollment_profile_confirmation_button))
+            Text(stringResource(disclosureCopy.confirmButtonRes))
         }
     }
 }
+
+/**
+ * PCA-NFR-044: maps [org.pca.app.enrollment.AgeUxTier] (via [org.pca.app.enrollment.readingLevel])
+ * to the age-appropriate reading-level string set for this disclosure/profile-confirmation
+ * surface, mirroring iOS's `PCAEnrollmentDisclosure.forProfile()` two-variant approach (simple
+ * copy for young children, more complete copy for teens).
+ */
+private data class EnrollmentDisclosureCopy(
+    val readingLevel: org.pca.app.enrollment.ReadingLevel,
+    @androidx.annotation.StringRes val titleRes: Int,
+    @androidx.annotation.StringRes val bodyRes: Int,
+    @androidx.annotation.StringRes val confirmButtonRes: Int,
+)
+
+private fun disclosureCopyForTier(ageUxTier: org.pca.app.enrollment.AgeUxTier): EnrollmentDisclosureCopy =
+    when (ageUxTier) {
+        org.pca.app.enrollment.AgeUxTier.YOUNG_CHILD -> EnrollmentDisclosureCopy(
+            readingLevel = org.pca.app.enrollment.ReadingLevel.SIMPLE,
+            titleRes = R.string.enrollment_profile_confirmation_title_simple,
+            bodyRes = R.string.enrollment_profile_confirmation_body_simple,
+            confirmButtonRes = R.string.enrollment_profile_confirmation_button_simple,
+        )
+        org.pca.app.enrollment.AgeUxTier.TEEN -> EnrollmentDisclosureCopy(
+            readingLevel = org.pca.app.enrollment.ReadingLevel.CLEAR,
+            titleRes = R.string.enrollment_profile_confirmation_title,
+            bodyRes = R.string.enrollment_profile_confirmation_body,
+            confirmButtonRes = R.string.enrollment_profile_confirmation_button,
+        )
+    }

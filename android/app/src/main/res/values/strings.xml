@@ -238,6 +238,12 @@
     <string name="enrollment_profile_policy_balanced">Balanced</string>
     <string name="enrollment_profile_policy_strict">Strict</string>
     <string name="enrollment_profile_confirmation_button">Confirm this profile</string>
+    <!-- PCA-NFR-044: young-child reading-level variant of the profile-confirmation copy above:
+         short, simple sentences carrying the same meaning, never a different privacy/emergency
+         scope. Selected at runtime by AgeUxTier.YOUNG_CHILD; see EnrollmentScreen.kt. -->
+    <string name="enrollment_profile_confirmation_title_simple">Check your safety settings</string>
+    <string name="enrollment_profile_confirmation_body_simple">Your parent chose these settings for you. Look at them, then tap confirm.</string>
+    <string name="enrollment_profile_confirmation_button_simple">Confirm settings</string>
     <!-- Deliberately generic: the server never distinguishes not-found/expired/revoked/already-redeemed to this client, and this text must not either. -->
     <string name="enrollment_invitation_unavailable">Invitation is no longer available. Ask the parent to create a new one.</string>
     <string name="enrollment_retryable_failure">Something went wrong. Please try again.</string>

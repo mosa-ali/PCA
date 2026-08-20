@@ -196,3 +196,44 @@ test('no server-readable plaintext: the only bytes ever passed to the sink are c
   const writtenText = sink.writes[0].ciphertext.toString('utf8');
   assert.ok(writtenText.startsWith('TEST-ONLY-CIPHERTEXT:'), 'sink only ever receives the encryptor output, never a raw plaintext branch');
 });
+
+// ---- doc 20 PCA-FR-113: export outcome notices are genuinely localized, never a raw enum value ----
+
+test('a successful export defaults to an English outcomeMessage when no locale is supplied', async () => {
+  const manifest = buildManifest();
+  const outcome = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink());
+  assert.equal(outcome.kind, 'COMPLETED');
+  assert.equal(outcome.outcomeMessage, 'Your family data export completed successfully.');
+});
+
+test('a successful export produces a genuine Arabic outcomeMessage when locale=ar is requested, with no English fallback leaking in', async () => {
+  const manifest = buildManifest();
+  const outcome = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink(), { locale: 'ar' });
+  assert.equal(outcome.kind, 'COMPLETED');
+  assert.equal(outcome.outcomeMessage, 'اكتمل تصدير بيانات عائلتك بنجاح.');
+  assert.equal(/[A-Za-z]/.test(outcome.outcomeMessage), false);
+});
+
+test('a cancelled export carries a genuinely localized outcomeMessage in both locales', async () => {
+  const manifest = buildManifest();
+  const en = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink(), { isCancelled: () => true });
+  const ar = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink(), {
+    isCancelled: () => true,
+    locale: 'ar',
+  });
+  assert.equal(en.kind, 'CANCELLED');
+  assert.equal(en.outcomeMessage, 'The export was cancelled before it completed.');
+  assert.equal(ar.kind, 'CANCELLED');
+  assert.equal(ar.outcomeMessage, 'تم إلغاء التصدير قبل اكتماله.');
+});
+
+test('a failed export carries a genuinely localized outcomeMessage in both locales, distinct from the raw failureReason', async () => {
+  const manifest = buildManifest();
+  const en = await runExport(manifest, Buffer.from('plaintext-payload'), createFailingExportEncryptor('disk full'), inMemorySink());
+  const ar = await runExport(manifest, Buffer.from('plaintext-payload'), createFailingExportEncryptor('disk full'), inMemorySink(), { locale: 'ar' });
+  assert.equal(en.kind, 'FAILED');
+  assert.equal(en.outcomeMessage, 'The export could not be completed.');
+  assert.equal(ar.kind, 'FAILED');
+  assert.equal(ar.outcomeMessage, 'تعذر إكمال عملية التصدير.');
+  assert.ok(ar.failureReason.includes('ENCRYPTION_FAILED'), 'failureReason stays the raw diagnostic code, distinct from the localized outcomeMessage');
+});

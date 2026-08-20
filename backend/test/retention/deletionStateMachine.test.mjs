@@ -58,3 +58,42 @@ test('EXPORT_CREATED is an additive tag, independent of and never overwriting th
   assert.equal(result.state.state, 'DELETION_CONFIRMED');
   assert.equal(result.state.exportExistsExternally, true);
 });
+
+// ---- doc 20 PCA-FR-113: every transition result carries a genuinely localized message, never a raw state code ----
+
+test('a successful transition defaults to an English message when no locale is supplied', () => {
+  const result = applyDeletionEvent(state({ state: 'EXPIRY_DUE' }), { kind: 'DELETION_REQUESTED' });
+  assert.equal(result.applied, true);
+  assert.equal(result.message, 'Deletion has been requested for this record.');
+});
+
+test('a successful transition carries a genuine Arabic message when locale=ar is requested, with no English leaking in', () => {
+  const result = applyDeletionEvent(state({ state: 'EXPIRY_DUE' }), { kind: 'DELETION_REQUESTED' }, 'ar');
+  assert.equal(result.applied, true);
+  assert.equal(result.message, 'تم تقديم طلب حذف لهذا السجل.');
+  assert.equal(/[A-Za-z]/.test(result.message), false);
+});
+
+test('an invalid transition still carries a localized message in both locales', () => {
+  const enResult = applyDeletionEvent(state({ state: 'ACTIVE' }), { kind: 'LOCAL_DELETE_COMPLETED' }, 'en');
+  const arResult = applyDeletionEvent(state({ state: 'ACTIVE' }), { kind: 'LOCAL_DELETE_COMPLETED' }, 'ar');
+  assert.equal(enResult.applied, false);
+  assert.equal(enResult.message, 'This deletion status update could not be applied.');
+  assert.equal(arResult.applied, false);
+  assert.equal(arResult.message, 'تعذر تطبيق تحديث حالة الحذف هذا.');
+});
+
+test('the full happy path carries a distinct, correctly-localized message at each step in Arabic', () => {
+  let current = state();
+  let result = applyDeletionEvent(current, { kind: 'EXPIRY_DETECTED' }, 'ar');
+  assert.equal(result.message, 'بلغ هذا السجل نهاية فترة الاحتفاظ الخاصة بعائلتك وهو مستحق الحذف.');
+  current = result.state;
+  result = applyDeletionEvent(current, { kind: 'DELETION_REQUESTED' }, 'ar');
+  assert.equal(result.message, 'تم تقديم طلب حذف لهذا السجل.');
+  current = result.state;
+  result = applyDeletionEvent(current, { kind: 'LOCAL_DELETE_COMPLETED' }, 'ar');
+  assert.equal(result.message, 'تم حذف هذا السجل على هذا الجهاز.');
+  current = result.state;
+  result = applyDeletionEvent(current, { kind: 'REMOTE_ACKNOWLEDGED' }, 'ar');
+  assert.equal(result.message, 'تم تأكيد الحذف على جميع أجهزة عائلتك.');
+});
