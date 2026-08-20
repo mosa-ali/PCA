@@ -557,6 +557,7 @@ async function start(): Promise<void> {
     // remote-parent, authorized recovery).
     removalDecisionAuthority,
     protectiveAuthorityResolver: new UnavailableProtectiveAuthorityResolver(),
+    administrationPinService,
   });
   await app.listen({ host, port });
 

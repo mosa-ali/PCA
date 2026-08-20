@@ -85,6 +85,7 @@ import type { ParentAccountService } from '../parentaccount/ParentAccountService
 // removalDecisionRoutes.ts's own header for why it was not previously wired.
 import { registerRemovalDecisionRoutes, type ProtectiveAuthorityResolver } from './routes/removalDecisionRoutes.js';
 import type { RemovalDecisionAuthority } from '../familyrbac/RemovalDecisionAuthority.js';
+import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
 // entitlement grants (Round5 Owner decision, Addendum 004). Registered
 // here exactly like every other domain's registerXRoutes call; never
@@ -161,6 +162,8 @@ export interface ServerDependencies {
   /** PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision authority -- see registerRemovalDecisionRoutes below. */
   removalDecisionAuthority: RemovalDecisionAuthority;
   protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
+  /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration -- see registerRemovalDecisionRoutes below. */
+  administrationPinService?: AdministrationPinService;
 }
 
 /**
@@ -321,6 +324,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     removalDecisionAuthority: deps.removalDecisionAuthority,
     protectiveAuthorityResolver: deps.protectiveAuthorityResolver,
+    administrationPinService: deps.administrationPinService,
   });
   registerComplimentaryGrantRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,

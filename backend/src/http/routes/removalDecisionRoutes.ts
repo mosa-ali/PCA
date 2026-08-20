@@ -32,6 +32,7 @@ import {
   type SignedRemovalDecision,
 } from '../../familyrbac/RemovalDecisionAuthority.js';
 import type { ReasonCategory, StepUpAssertion } from '../../familyrbac/types.js';
+import { AdministrationPinError, type AdministrationPinService } from '../../enrollment/AdministrationPinService.js';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -51,6 +52,8 @@ export interface RemovalDecisionRoutesDeps {
   parentAccountService: ParentAccountService;
   removalDecisionAuthority: RemovalDecisionAuthority;
   protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
+  /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration. */
+  administrationPinService?: AdministrationPinService;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -378,6 +381,43 @@ export function registerRemovalDecisionRoutes(app: FastifyInstance, deps: Remova
         return reply.code(200).send({ removalDecision: toRecordDto(record) });
       } catch (error) {
         return handleError(reply, error);
+      }
+    },
+  );
+
+  const PIN_PATTERN = /^\d{6,64}$/;
+
+  app.get('/api/parent/families/:familyId/administration-pin', async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = await familySession(request, reply);
+    if (!session) return;
+    if (!deps.administrationPinService) return reply.code(503).send({ error: 'not_configured' });
+    try {
+      const status = await deps.administrationPinService.getStatus(session.familyId);
+      return reply.code(200).send({ pinStatus: status });
+    } catch (error) {
+      if (error instanceof AdministrationPinError) return reply.code(400).send({ error: error.code.toLowerCase() });
+      throw error;
+    }
+  });
+
+  app.post(
+    '/api/parent/families/:familyId/administration-pin',
+    { bodyLimit: MAX_BODY_BYTES },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const session = await familySession(request, reply);
+      if (!session) return;
+      if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      if (!deps.administrationPinService) return reply.code(503).send({ error: 'not_configured' });
+      const body = request.body;
+      if (!isPlainObject(body) || typeof body.pin !== 'string' || !PIN_PATTERN.test(body.pin)) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      try {
+        const status = await deps.administrationPinService.configurePin(session.familyId, body.pin);
+        return reply.code(200).send({ pinStatus: status });
+      } catch (error) {
+        if (error instanceof AdministrationPinError) return reply.code(400).send({ error: error.code.toLowerCase() });
+        throw error;
       }
     },
   );

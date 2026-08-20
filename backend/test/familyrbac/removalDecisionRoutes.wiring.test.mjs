@@ -58,6 +58,7 @@ function buildApp() {
     parentAccountService,
     removalDecisionAuthority,
     protectiveAuthorityResolver: new UnavailableProtectiveAuthorityResolver(),
+    administrationPinService: pinService,
   });
   app.__removalDecisionAuthority = removalDecisionAuthority;
   app.__pinService = pinService;
@@ -180,4 +181,59 @@ test('authorized-recovery decisions fail closed NOT_AUTHORIZED (no real recovery
   });
   assert.equal(response.statusCode, 403);
   assert.deepEqual(response.json(), { error: 'not_authorized' });
+});
+
+test('administration-pin status route is registered and reflects unconfigured state', async () => {
+  const app = buildApp();
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().pinStatus.configured, false);
+});
+
+test('administration-pin configure route rejects a malformed PIN', async () => {
+  const app = buildApp();
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+    payload: { pin: '123' },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'invalid_request' });
+});
+
+test('administration-pin configure route persists a valid PIN and status reflects it', async () => {
+  const app = buildApp();
+  const configure = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+    payload: { pin: '246810' },
+  });
+  assert.equal(configure.statusCode, 200);
+  assert.equal(configure.json().pinStatus.configured, true);
+
+  const status = await app.inject({
+    method: 'GET',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: authHeaders,
+  });
+  assert.equal(status.statusCode, 200);
+  assert.equal(status.json().pinStatus.configured, true);
+});
+
+test('administration-pin configure route requires CSRF like other mutations', async () => {
+  const app = buildApp();
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/families/family-a/administration-pin',
+    headers: { cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a' },
+    payload: { pin: '246810' },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'csrf_mismatch' });
 });
