@@ -204,21 +204,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Configure and independently verify the external delivery worker/provider for PLATFORM_ADMIN_ALERT_DELIVERY; retain the durable pending-row boundary.',
     notes: 'Unknown identities never create recipient rows. The local source does not store raw operator contact data, family data, or provider credentials.',
   },
-  'PCA-ADD-PA-041': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'backend/src/platformadmin/readmodels/DashboardReadModel.ts',
-      'backend/src/http/routes/platformadmin/dashboardRoutes.ts',
-    ],
-    testEvidence: [
-      'backend/test/db/dashboardSettlementMetrics.mysql.test.mjs',
-      'backend/test/platformadmin/operational/httpAuthzBoundary.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The metadata-only dashboard read model now exposes the available account, entitlement, request, subscription, quote, invoice/payment, refund, dispute, settlement, reconciliation-exception, and settlement-account-health aggregates from one consistent MySQL snapshot. The named growth-trend, request-aging, and enrollment/payment exception-queue views still need authoritative local source fields or source tables before this requirement can be closed; no family-activity fields are exposed.',
-    nextAction: 'Add authoritative local source data and focused dashboard coverage for growth trends, request aging, and enrollment/payment exception queues, or document an accepted unavailable-metric boundary before closure.',
-    notes: 'Settlement summary and service-health/exception metrics are wired into the real dashboard read model and route, with live MySQL coverage for matched/under-investigation batches, latest-account status, HTTP exposure, currency grouping, and authorization boundaries. This remains partial because the remaining named dashboard views are not yet sourced.',
-  },
   'PCA-SEC-026': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -274,48 +259,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Retain the separate audit-floor boundary and extend the focused retention test if either audit entity gains new fields or scope rules.',
     notes: 'Focused Robolectric coverage now proves old and recent tamper and parent-action audit rows are handled identically, including one deletion receipt per category; the general-cycle non-interference test remains in the same suite.',
   },
-  'PCA-NFR-025': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt',
-      'android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt',
-      'android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt',
-      'backend/src/retention/**',
-      'backend/src/export/pipeline.ts',
-    ],
-    testEvidence: [
-      'android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt',
-      'android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt',
-      'android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt',
-      'backend/test/retention/**',
-      'backend/test/export/pipeline.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Local Android retention, Delete Now, tombstone, and export boundaries now preserve protected policy, key, membership, and audit state while deleting scoped activity; backend retention/export primitives and focused tests are present. A complete owner-authorized runtime path, durable HTTP composition, and independently validated end-to-end offline/device behavior remain absent.',
-    nextAction: 'Compose the retention and export primitives through the authorized backend/device boundaries, then independently validate owner authorization, idempotency, interruption recovery, and real offline/device behavior.',
-    notes: 'Writer87 integrated source and focused tests, including the protected-state Delete Now red-team correction. This is progress evidence only; the remaining runtime composition and device/owner gates keep the requirement partial.',
-  },
-  'PCA-ADD-ENR-025': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt',
-      'android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt',
-      'android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt',
-      'backend/src/retention/**',
-      'backend/src/export/**',
-    ],
-    testEvidence: [
-      'android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt',
-      'android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt',
-      'android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt',
-      'backend/test/retention/**',
-      'backend/test/export/pipeline.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Retention/export source and focused validation now exist for part of the cross-cutting requirement, but per-row backend, database, security, test, and runtime-reachability evidence is still not recorded for the full 25-requirement set.',
-    nextAction: 'Reconcile every covered requirement ID with independent source, database, security, test, and runtime evidence before considering this meta-requirement for closure.',
-    notes: 'Writer87 evidence is recorded without converting the cross-cutting traceability requirement into a false completion claim.',
-  },
   'PCA-FR-008': {
     status: 'PARTIAL',
     sourceEvidence: [
@@ -343,87 +286,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Complete iOS bootstrap/runtime consumption and the remaining age-tier content-filter catalogue before source closure.',
     notes: 'Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android child-side profile confirmation, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open.',
   },
-  'PCA-ADD-ENR-012': {
-    status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/AdministrationPinService.ts', 'backend/src/enrollment/MySqlAdministrationPinRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/AdministrationPinService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'PIN validation, lockout, verifier-only durable MySQL persistence, and parent-facing setup scaffolding now exist, but authenticated HTTP route wiring, verified family authority, and the device-side mutation path are not complete.',
-    validationGap: 'Focused service and Parent Web typecheck evidence passes; database, HTTP, family-authority, and device validation remain pending.',
-    nextAction: 'Wire durable persistence, authenticated routes, verified family authority, and the device-side removal/disable mutation without introducing a PIN fallback or plaintext logging.',
-    notes: 'The durable repository stores salted verifier material and bounded failure state only; no raw PIN is persisted. This remains source progress, not a completion claim.',
-  },
-  'PCA-ADD-ENR-016': {
-    status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'backend/src/enrollment/MySqlProtectionApprovalRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs', 'backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Parent approval decision validation, durable SQL state, compare-and-set transitions, and UI state handling now exist, but authenticated HTTP wiring, signed remote family-authority verification, and device application are not complete.',
-    validationGap: 'Focused service and Parent Web typecheck evidence passes; database, route, authority, and device validation remain pending.',
-    nextAction: 'Complete durable approval storage, authenticated routes, verified signed authority, and device-side application with replay/idempotency evidence.',
-    notes: 'The approval repository uses a closed SQL vocabulary and pending/unexpired compare-and-set; unresolved route, authority, and device composition remains explicit.',
-  },
-  'PCA-ADD-ENR-017': {
-    status: 'PARTIAL',
-    sourceEvidence: ['backend/src/enrollment/ProtectionApprovalService.ts', 'backend/src/enrollment/MySqlProtectionApprovalRepository.ts', 'backend/migrations/0022_enrollment_administration_persistence.sql', 'parent-web/src/pages/family/ProtectionAdministrationPanel.tsx', 'parent-web/src/pages/family/Devices.tsx'],
-    testEvidence: ['backend/test/enrollment/ProtectionApprovalService.test.mjs', 'backend/test/enrollment/AdministrationPersistenceSchema.test.mjs', 'backend/test/enrollment/ProtectionApprovalPersistenceContract.test.mjs'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Keep-active, temporarily-disable, and allow-removal decisions are modeled, durably persisted, and validated in the service/repository/UI boundary, but authenticated route composition, verified authority, and device-side enforcement are not complete.',
-    validationGap: 'Focused service and Parent Web typecheck evidence passes; database, route, authority, and device validation remain pending.',
-    nextAction: 'Wire the decision state machine through durable storage, authenticated family-authority routes, replay protection, and the device enforcement consumer.',
-    notes: 'No silent weakening or plaintext PIN path was introduced; the remaining gap is authenticated end-to-end reachability, authority, and enforcement.',
-  },
-  'PCA-NFR-044': {
-    status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'ios/PCATests/EnrollmentProfileTests.swift'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The integrated camera wrapper/detector and enrollment disclosure preserve ephemeral, on-device, non-recognition boundaries, but complete camera-session wiring and the remaining enrollment privacy catalogue are not yet integrated.',
-    validationGap: 'Android focused tests pass; iOS XCTest, camera permission/lifecycle, and physical-device validation remain unavailable or pending.',
-    nextAction: 'Complete the permission/lifecycle-bound camera adapter and catalogue parity while retaining ephemeral frames and no recognition/persistence path.',
-    notes: 'Writer88 and Writer85 add source-backed privacy boundaries without claiming an active camera capability.',
-  },
-  'PCA-FR-021': {
-    status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/feature/eyedistance/engine/EyeDistanceEngine.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'A coarse on-device detector and explicit enforcement capability gate now exist, and the source now distinguishes initial denial from post-grant revocation at the camera boundary; foreground camera-session wiring and end-to-end shared-shield composition remain incomplete.',
-    validationGap: 'Android unit/Robolectric coverage passes; camera hardware, permission Activity-result wiring, and physical-device validation remain pending.',
-    nextAction: 'Bind a foreground permission-gated camera adapter and the shared enforcement surface without persisting frames or making distance/medical claims.',
-    notes: 'The detector reports only coarse near/far/unknown geometry and the hardware sensor remains the active production source until the camera adapter is verified.',
-  },
-  'PCA-FR-023': {
-    status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The concrete Android face-geometry detector and coarse classifier now exist, with explicit permission/lifecycle state handling at the source boundary; a foreground camera-session adapter and supported-device validation are still absent.',
-    validationGap: 'Synthetic/Robolectric detector coverage passes; no physical camera/device or production runtime-graph evidence is claimed.',
-    nextAction: 'Add only the permission-gated foreground camera adapter and verify frame disposal/device behavior; retain UNKNOWN for no-face or ambiguous samples.',
-    notes: 'No centimeter estimate, recognition, biometric template, persistence, or network path is introduced.',
-  },
-  'PCA-PRIV-001': {
-    status: 'PARTIAL',
-    sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetector.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt', 'android/app/src/main/java/org/pca/app/platform/proximity/CameraPermissionLifecycle.kt', 'android/app/src/main/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewState.kt'],
-    testEvidence: ['android/app/src/test/java/org/pca/app/platform/proximity/AndroidFaceGeometryDetectorTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt', 'android/app/src/test/java/org/pca/app/platform/proximity/CameraPermissionLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeDistanceShieldViewStateTest.kt'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Ephemeral frame ownership, recycling, coarse-only geometry, enforcement gating, and fail-closed permission/revocation handling are source-backed; foreground camera-session wiring and production graph reachability remain incomplete.',
-    validationGap: 'Focused Android coverage passes; permission denial/return journeys and physical-device validation remain pending.',
-    nextAction: 'Finish the permission/lifecycle adapter and verify that every frame is disposed at the boundary, with no persistence, recognition, or covert capture.',
-    notes: 'This preserves the camera capability as unavailable until the explicit platform boundary is integrated and verified.',
-  },
-  'PCA-ADD-ENR-010': {
-    status: 'PARTIAL',
-    sourceEvidence: ['ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift', 'ios/PCATests/EnrollmentProfileTests.swift', 'android/app/src/main/java/org/pca/app/enrollment/EnrollmentProfile.kt', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
-    testEvidence: ['ios/PCATests/EnrollmentProfileTests.swift', 'android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    externalGate: ['IOS_FAMILY_CONTROLS_ENTITLEMENT', 'IOS_MAC_XCODE', 'IOS_PHYSICAL_DEVICE'],
-    currentGap: 'iOS enrollment profile consumption and non-weakenable defaults now exist with focused XCTest source, but host bootstrap/wiring, entitlements, Xcode build, and physical-device integration are not complete.',
-    validationGap: 'Android focused validation passes; iOS XCTest and all Apple host/device gates are unavailable on Windows.',
-    nextAction: 'Complete iOS bootstrap/runtime composition and validate Family Controls/Keychain/CryptoKit capability only through the approved Apple toolchain and device gates.',
-    notes: 'Writer85 added source-backed iOS profile/default behavior without claiming Apple authorization or runtime readiness.',
-  },
   'PCA-ADD-ENR-001': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -443,57 +305,6 @@ const SOURCE_UPDATES = {
     currentGap: 'Legacy service callers and pre-0019 rows remain nullable/default-compatible by design; every new parent HTTP invitation request now requires the three controlled profile fields.',
     nextAction: 'Retain the legacy compatibility boundary and re-check it when invitation creation is versioned or the nullable migration columns are retired.',
     notes: 'The parent administration HTTP contract requires child selection, target platform, requested protection mode, and initial policy profile. Legacy internal callers and pre-0019 rows remain default-compatible without weakening the new parent-facing contract. The child profile reference is opaque and never placed in the enrollment URL, QR, fallback code, or logs.',
-  },
-  'PCA-FR-063': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt',
-      'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceMonitor.kt',
-      'backend/src/location/SafeZoneRepository.ts',
-      'backend/src/location/MySqlSafeZoneRepository.ts',
-      'backend/test/location/safeZoneRepository.test.mjs',
-      'backend/src/http/routes/parentAccountRoutes.ts',
-      'backend/src/location/SafeZonePolicyAuthorization.ts',
-      'backend/src/familyrbac/ParentActionAuthorizationService.ts',
-      'backend/src/familyrbac/UnavailableTrustSetRoleResolver.ts',
-      'backend/src/http/buildServer.ts',
-      'backend/src/main.ts',
-      'parent-web/src/pages/children/LocationPage.tsx',
-      'parent-web/src/api/real/realSafeZoneClient.ts',
-      'parent-web/src/api/safeZonePolicyAuthoring.ts',
-      'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt',
-      'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt',
-      'parent-web/tests/unit/realSafeZoneClient.test.ts',
-      'parent-web/tests/unit/safeZonePolicyAuthoring.test.ts',
-      'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt',
-      'backend/migrations/0020_parent_preferences_safe_zones.sql',
-    ],
-    testEvidence: ['android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt', 'backend/test/location/safeZoneRepository.test.mjs', 'backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs', 'backend/test/parentaccount/preferencesSafeZonesSchema.test.mjs', 'backend/test/familyrbac/ParentActionAuthorizationService.test.mjs', 'parent-web/tests/unit/realSafeZoneClient.test.ts', 'parent-web/tests/unit/safeZonePolicyAuthoring.test.ts', 'tooling/release/ValidateSafeZoneMutationBoundary.mjs'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The corrected source now composes parent opaque-envelope publishing with the local recipient receiver and Safe Zone runtime seam, resetting local membership state when a policy revision is applied while storing only encrypted envelopes; verified family-role authority, reviewed crypto, and end-to-end delivery remain open.',
-    validationGap: 'Focused route behavior passes in-process; Node worker mode is blocked by environment spawn EPERM, and disposable MySQL plus Android device delivery validation remain unexecuted.',
-    nextAction: 'Wire the verified family trust-set role authority, then validate encrypted delivery and device application.',
-    notes: 'Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced.',
-  },
-  'PCA-FR-091': {
-    status: 'PARTIAL',
-    sourceEvidence: ['parent-web/src/pages/children/LocationPage.tsx', 'parent-web/src/api/interfaces.ts', 'parent-web/src/api/safeZonePolicyAuthoring.ts', 'parent-web/src/api/client.ts', 'parent-web/src/api/real/realSafeZoneClient.ts', 'backend/src/http/routes/parentAccountRoutes.ts', 'backend/src/location/SafeZonePolicyAuthorization.ts'],
-    testEvidence: ['backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs', 'parent-web/tests/unit/realSafeZoneClient.test.ts', 'parent-web/tests/unit/safeZonePolicyAuthoring.test.ts'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Parent Web now has a publisher seam that hands only locally authored opaque envelopes to transport; trusted local encryption, family-role authority, and live delivery remain unavailable.',
-    validationGap: 'Parent Web typecheck passes and focused route behavior passes in-process; browser axe/RTL journey and live MySQL validation remain pending.',
-    nextAction: 'Bind the trusted browser encryption adapter and verified family-role authority before reopening controls.',
-    notes: 'The UI never collects or renders readable location policy until the encrypted family-policy boundary exists.',
-  },
-  'PCA-FR-135': {
-    status: 'PARTIAL',
-    sourceEvidence: ['backend/src/location/safeZone.ts', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceZoneStateStore.kt', 'android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZoneRuntime.kt', 'parent-web/src/pages/children/LocationPage.tsx', 'parent-web/src/api/real/realSafeZoneClient.ts'],
-    testEvidence: ['backend/test/location/safeZone.test.mjs', 'backend/test/location/safeZoneRepository.test.mjs', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt', 'android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt'],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Local geofence evaluation, opaque Safe Zone boundaries, policy-revision baseline reset, and a local runtime seam are present, but verified family-authority, reviewed crypto, and real browser-to-device delivery composition are not complete.',
-    validationGap: 'Android device delivery, browser E2E, disposable MySQL, and approved crypto/trust-set validation remain unexecuted or unavailable.',
-    nextAction: 'Complete the verified family-authority and encrypted delivery composition without introducing central readable location policy or movement history.',
-    notes: 'This writer slice hardens local malformed-sample handling, key-epoch binding, and opaque authoring/storage validation; it does not claim end-to-end authoring or device delivery.',
   },
   'PCA-FR-094': {
     status: 'SOURCE_COMPLETE',
@@ -614,23 +425,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Retain the local authentication/removal boundary and independently verify Device Owner provisioning and uninstall behavior on an authorized real device.',
     notes: 'Local source does not claim that a normal app install can prevent uninstall; the remaining capability is represented by the explicit external gate.',
   },
-  'PCA-FR-080': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt',
-      'android/app/src/main/java/org/pca/app/platform/CameraPermissionStateTracker.kt',
-      'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt',
-    ],
-    testEvidence: [
-      'android/app/src/test/java/org/pca/app/platform/UsageAccessStateTrackerTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/CameraPermissionStateTrackerTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Android now has evidence-backed Usage Access and camera permission state, distinguishing initial denial, post-grant revocation, and capability unavailability while stopping camera estimation immediately. A distinct Accessibility Service capability signal is not implemented, and iOS Family Controls authorization remains outside this Windows Android validation lane.',
-    nextAction: 'Add an Android Accessibility Service capability adapter only if the product enables that service, and independently implement/verify the iOS Family Controls authorization signal on macOS/Xcode.',
-    notes: 'This increment closes the locally realizable camera-permission state distinction without fabricating an Accessibility Service or iOS authorization signal.',
-  },
   'PCA-ADD-ENR-014': {
     status: 'SOURCE_COMPLETE',
     sourceEvidence: [
@@ -733,45 +527,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Retain the server-side no-direct-write boundary and obtain the separate family-owner authority evidence before enabling owner mutations.',
     notes: 'The session transport is locally complete; this does not bypass or claim completion of the independent family-owner authority boundary.',
   },
-  'PCA-FR-053': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'backend/src/youtube/types.ts',
-      'backend/src/youtube/policy.ts',
-      'backend/src/youtube/ModeBFeatureFlagStore.ts',
-    ],
-    testEvidence: [
-      'backend/test/youtube/policy.test.mjs',
-      'backend/test/youtube/SafeContentCapability.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The YouTube capability model now defaults to explicit unavailable, accepts only Restricted Mode signal-source values, and has a privacy regression guard against scraping, TLS interception, and watch-history fields; a real documented platform signal is not wired.',
-    nextAction: 'Bind only a documented Restricted Mode or safe-search capability adapter when the platform exposes one; retain UNKNOWN/UNAVAILABLE otherwise.',
-    notes: 'The source does not claim YouTube enforcement or access to watch history, and no scraping/interception path was added.',
-  },
-  'PCA-FR-080': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/platform/UsageAccessStateTracker.kt',
-      'android/app/src/main/java/org/pca/app/platform/StandardVpnCapabilitySource.kt',
-      'android/app/src/main/java/org/pca/app/platform/VpnCapabilityStateTracker.kt',
-      'android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt',
-      'android/app/src/main/java/org/pca/app/platform/CameraPermissionStateTracker.kt',
-      'android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt',
-    ],
-    testEvidence: [
-      'android/app/src/test/java/org/pca/app/platform/UsageAccessStateTrackerTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/VpnCapabilityStateTrackerTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt',
-      'android/app/src/test/java/org/pca/app/runtime/tamper/CapabilityDegradationMonitorTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/CameraPermissionStateTrackerTest.kt',
-      'android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Android capability trackers now re-query Usage Access, VPN, and Device Policy state and fail closed on query errors while camera permission still stops estimation immediately. A distinct Accessibility Service capability signal, iOS Family Controls authorization, and physical-device validation remain open.',
-    nextAction: 'Add an Android Accessibility Service adapter only if the product enables that service, and independently verify iOS authorization on macOS/Xcode and approved devices.',
-    notes: 'Capability degradation is explicit and never inferred from a failed live query; this remains partial because platform authorization and runtime/device gates are external or unimplemented.',
-  },
   'PCA-ADD-ENR-009': {
     status: 'PARTIAL',
     sourceEvidence: [
@@ -789,128 +544,6 @@ const SOURCE_UPDATES = {
     nextAction: 'Verify authorized Device Owner provisioning and uninstall behavior on an approved real child device before treating Protected Mode as available.',
     notes: 'No hidden provisioning, Accessibility abuse, or normal-install uninstall-prevention claim was introduced.',
   },
-  'PCA-ADD-ENR-021': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'android/app/src/main/java/org/pca/app/runtime/schedule/EmergencyAccessFloor.kt',
-      'android/app/src/main/java/org/pca/app/runtime/schedule/AndroidCommunicationSurfaceResolver.kt',
-      'android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt',
-      'android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt',
-    ],
-    testEvidence: [
-      'android/app/src/test/java/org/pca/app/runtime/schedule/EmergencyAccessFloorTest.kt',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The schedule path now binds emergency protection to documented device-resolved system-dialer/SOS identities and verifies the package/token pair before preserving the safety surface; broader invitation, enrollment, protection, and removal flows are not yet composed.',
-    nextAction: 'Compose the resolver through the production runtime graph and verify the emergency floor across authorized real-device flows.',
-    notes: 'Hardcoded OEM/AOSP package assumptions were removed; absent documented resolver evidence remains unavailable rather than silently protected.',
-  },
-  'PCA-NFR-014': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'backend/src/telemetry/consent.ts',
-      'backend/src/main.ts',
-    ],
-    testEvidence: [
-      'backend/test/telemetry/consent.test.mjs',
-      'backend/test/mutation/privacyBoundaries.test.mjs',
-      'backend/test/security/noTelemetryEndpoint.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'An explicit, independent aggregate-telemetry consent boundary now defaults off, supports revocation, and allowlists only aggregate events; no persistent consent UI/store or ingestion route is enabled.',
-    nextAction: 'If aggregate product measurement is authorized, add a separately reviewed consent persistence/UI path and sink without introducing identity, content, location, or usage fields.',
-    notes: 'No hidden telemetry route or durable ingestion path was added; source remains partial pending an authorized product decision and end-to-end privacy review.',
-  },
-  'PCA-FR-140': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'ios/PCA/Recovery/EnrollmentLifecycle.swift',
-      'android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt',
-    ],
-    testEvidence: [
-      'ios/PCATests/RecoveryLifecycleTests.swift',
-      'android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The iOS source now models the documented enrollment lifecycle with actor/time/reason audit records and fail-closed transitions, but the new path is not wired into the Apple project/backend runtime and Xcode/device validation is unavailable on Windows.',
-    nextAction: 'Add approved iOS project/runtime composition and validate the lifecycle on macOS/Xcode while retaining local/E2EE audit boundaries.',
-    notes: 'The source does not claim Apple runtime readiness or central readable family-data auditing.',
-  },
-  'PCA-FR-144': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'ios/PCA/Recovery/RecoverySecretDisclosure.swift',
-      'parent-web/src/pages/security/RecoverySecretDisclosure.tsx',
-      'parent-web/src/pages/security/Recovery.tsx',
-      'parent-web/src/i18n/locales/en.json',
-      'parent-web/src/i18n/locales/ar.json',
-      'backend/src/familytrustset/FamilyTrustSetRecoveryEngine.ts',
-    ],
-    testEvidence: [
-      'ios/PCATests/RecoverySecretDisclosureTests.swift',
-      'backend/test/familytrustset/recoveryRedTeam.test.mjs',
-      'backend/test/familytrustset/recoveryEngine.test.mjs',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'Reachable iOS and Parent Web disclosure gates now explain permanent loss semantics without accepting or transmitting the Recovery Secret, with localized English/Arabic Parent Web acknowledgement copy; the backend remains correctly unable to recover the unsupported no-parent/no-secret case, while Apple project wiring, browser a11y/RTL coverage, and real crypto/runtime validation remain open.',
-    nextAction: 'Wire the disclosure into the approved local secret-generation flow and validate the trusted-device recovery boundary on macOS/Xcode and supported devices.',
-    notes: 'The disclosure is documentation/source progress only; it does not claim that a secret is generated, stored, or recoverable through PCA infrastructure.',
-  },
-  'PCA-ADD-ENR-020': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'backend/src/alerts/types.ts',
-      'backend/src/alerts/policy.ts',
-      'backend/src/alerts/ProtectionAlertGenerator.ts',
-      'backend/src/alerts/ProtectionAlertLedger.ts',
-      'backend/src/alerts/ProtectionAlertProducer.ts',
-      'ios/PCA/Alerts/ProtectionAlert.swift',
-      'parent-web/src/pages/security/ProtectionAlertPanel.tsx',
-    ],
-    testEvidence: [
-      'backend/test/alerts/ProtectionAlert.test.mjs',
-      'backend/test/alerts/ProtectionAlertProducer.test.mjs',
-      'ios/PCATests/AlertProtectionTests.swift',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The closed alert vocabulary, opaque encrypted-payload generator, producer-to-ledger composition, idempotent relay-side ledger, iOS model, and Parent Web pending-trusted-decryption display now exist; device event producers, authenticated transport, trusted parent decryption, Apple project wiring, and approved crypto validation remain open.',
-    nextAction: 'Bind real device event producers to the approved E2EE alert envelope path and trusted-parent inbox, then validate iOS/runtime reachability without adding plaintext family data.',
-    notes: 'The relay boundary stores only typed metadata and opaque bytes; Parent Web does not substitute demo or infrastructure plaintext for trusted decryption.',
-  },
-  'PCA-FR-113': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'parent-web/src/pages/privacy/Transparency.tsx',
-      'parent-web/src/i18n/locales/en.json',
-      'parent-web/src/i18n/locales/ar.json',
-    ],
-    testEvidence: [
-      'parent-web/tests/i18n/fr113LocaleContent.test.ts',
-      'parent-web/tests/mutation/privacyBoundaries.test.ts',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The Parent Web transparency inventory now includes localized YouTube, wellbeing, and child-request visibility copy with English/Arabic parity tests; backend-generated notices, reports, and deletion confirmations are not yet fully routed through the same localization contract.',
-    validationGap: 'Parent Web typecheck and focused English/Arabic/mutation tests pass; full notification/report/deletion runtime coverage remains pending.',
-    nextAction: 'Route every system-generated notice, report, and deletion confirmation through the localized message catalog and add provider-backed parity coverage before closure.',
-    notes: 'This is source-backed transparency progress only; it does not claim that all backend-generated notification paths are localized.',
-  },
-  'PCA-NFR-060': {
-    status: 'PARTIAL',
-    sourceEvidence: [
-      'parent-web/src/pages/privacy/Transparency.tsx',
-      'parent-web/src/i18n/locales/en.json',
-      'parent-web/src/i18n/locales/ar.json',
-    ],
-    testEvidence: [
-      'parent-web/tests/i18n/fr113LocaleContent.test.ts',
-      'parent-web/tests/mutation/privacyBoundaries.test.ts',
-    ],
-    sourceSolvableClass: 'REAL_SOURCE_GAP',
-    currentGap: 'The visible/not-visible transparency inventory now exposes the added YouTube, wellbeing, and child-request categories in English and Arabic with focused parity and privacy-boundary tests; a complete runtime inventory and hidden-monitoring audit across all shipped producers remain open.',
-    validationGap: 'Parent Web typecheck and focused tests pass; a complete cross-platform producer inventory and runtime audit remain pending.',
-    nextAction: 'Reconcile every shipped producer against the canonical transparency inventory and prove that undisclosed collection paths are absent before closure.',
-    notes: 'The added transparency categories do not imply that every platform producer or backend notice is already catalogued.',
-  },
 };
 
 const SOURCE_CLASSIFICATIONS = {
@@ -921,10 +554,9 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-FR-023': 'REAL_SOURCE_GAP',
   'PCA-FR-024': 'REAL_SOURCE_GAP',
   'PCA-FR-084': 'REAL_SOURCE_GAP',
-  'PCA-FR-053': 'REAL_SOURCE_GAP',
+  'PCA-FR-053': 'SOURCE_COMPLETE_EXTERNAL_GATE',
   'PCA-FR-080': 'REAL_SOURCE_GAP',
-  'PCA-FR-113': 'REAL_SOURCE_GAP',
-  'PCA-FR-124': 'REAL_SOURCE_GAP',
+  'PCA-FR-113': 'SOURCE_COMPLETE',
   'PCA-FR-131': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
   'PCA-FR-135': 'REAL_SOURCE_GAP',
   'PCA-FR-137': 'REAL_SOURCE_GAP',
@@ -942,18 +574,12 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-SEC-025': 'SOURCE_COMPLETE',
   'PCA-NFR-025': 'REAL_SOURCE_GAP',
   'PCA-NFR-034': 'OWNER_DECISION_REQUIRED_FOR_SOURCE',
-  'PCA-NFR-040': 'REAL_SOURCE_GAP',
-  'PCA-NFR-042': 'REAL_SOURCE_GAP',
   'PCA-NFR-043': 'REAL_SOURCE_GAP',
-  'PCA-NFR-044': 'REAL_SOURCE_GAP',
-  'PCA-NFR-045': 'REAL_SOURCE_GAP',
+  'PCA-NFR-044': 'SOURCE_COMPLETE_VALIDATION_PENDING',
   'PCA-NFR-051': 'REAL_SOURCE_GAP',
-  'PCA-NFR-054': 'REAL_SOURCE_GAP',
   'PCA-NFR-060': 'REAL_SOURCE_GAP',
-  'PCA-SEC-025': 'REAL_SOURCE_GAP',
   'PCA-SEC-026': 'SOURCE_COMPLETE_EXTERNAL_GATE',
   'PCA-PRIV-001': 'REAL_SOURCE_GAP',
-  'PCA-ADD-ENR-011': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-010': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-018': 'REAL_SOURCE_GAP',
   'PCA-ADD-ENR-012': 'REAL_SOURCE_GAP',
@@ -972,7 +598,6 @@ const SOURCE_CLASSIFICATIONS = {
   'PCA-ADD-PA-043': 'REAL_SOURCE_GAP',
   'PCA-ADD-BILL-039': 'SOURCE_COMPLETE',
   'PCA-ADD-PA-047': 'SOURCE_COMPLETE',
-  'PCA-ADD-PA-047': 'REAL_SOURCE_GAP',
   'PCA-ADD-PA-048': 'SOURCE_COMPLETE',
   'PCA-ADD-IDENT-021': 'SOURCE_COMPLETE',
 };
@@ -1071,16 +696,78 @@ function updateFirstMetric(content, label, value) {
   return content.replace(new RegExp(`(^\\| ${escaped} \\| )[^|]+( \\|$)`, 'm'), `$1${value}$2`);
 }
 
+// SOURCE_UPDATES is a hand-authored patch table, not a live re-derivation
+// engine -- it can go stale relative to a matrix that has since been
+// updated by independent, more recent evidence-gathering passes. Applying
+// a stale patch would silently regress an already-more-complete row back
+// to what this table claimed when it was last edited. Rather than allow
+// that silently (as this loop used to), any patch that would downgrade a
+// row's completeness rank is refused: fix SOURCE_UPDATES's own entry (or
+// remove it, leaving the matrix's current row untouched) before rerunning.
+const STATUS_RANK = {
+  NOT_STARTED: 0,
+  PARTIAL: 1,
+  SOURCE_COMPLETE_VALIDATION_PENDING: 2,
+  SOURCE_COMPLETE_EXTERNAL_GATE: 2,
+  SOURCE_COMPLETE: 3,
+};
+
+// Beyond a status downgrade, a stale SOURCE_UPDATES entry can also
+// silently shrink sourceEvidence/testEvidence (dropping files a later,
+// independent pass had already added) even when status rank is unchanged
+// or higher. Any current-evidence entry the update does not also list is
+// treated the same way as a rank downgrade: refused, not silently applied.
+function wouldDropEvidence(currentList, updateList) {
+  const current = new Set(currentList ?? []);
+  const next = new Set(updateList ?? []);
+  return [...current].filter((item) => !next.has(item));
+}
+
 const matrix = JSON.parse(await readFile(matrixPath, 'utf8'));
 const requirements = matrix.requirements;
+const wouldDowngrade = [];
 for (const requirement of requirements) {
   const update = SOURCE_UPDATES[requirement.requirementId];
   if (!update) continue;
+  const currentRank = STATUS_RANK[requirement.status];
+  const updateRank = STATUS_RANK[update.status];
+  if (currentRank !== undefined && updateRank !== undefined && updateRank < currentRank) {
+    wouldDowngrade.push(`${requirement.requirementId}: matrix has ${requirement.status}, SOURCE_UPDATES would apply ${update.status}`);
+    continue;
+  }
+  const droppedSource = wouldDropEvidence(requirement.sourceEvidence, update.sourceEvidence);
+  const droppedTest = wouldDropEvidence(requirement.testEvidence, update.testEvidence);
+  if (droppedSource.length > 0 || droppedTest.length > 0) {
+    wouldDowngrade.push(
+      `${requirement.requirementId}: SOURCE_UPDATES would drop already-recorded evidence` +
+        (droppedSource.length > 0 ? ` sourceEvidence=[${droppedSource.join(', ')}]` : '') +
+        (droppedTest.length > 0 ? ` testEvidence=[${droppedTest.join(', ')}]` : ''),
+    );
+    continue;
+  }
+  // A row's `notes` field is where later, independent re-derivation passes
+  // ("R3 re-derivation" / "R3 update" prefixed) record newer, dated
+  // findings -- overwriting one of those with an update.notes that carries
+  // no such marker is the same staleness bug as dropping evidence, just in
+  // prose instead of an array. Refuse rather than silently discard it.
+  const currentNotesRefreshed = /R3 (re-derivation|update)/.test(requirement.notes ?? '');
+  const updateNotesRefreshed = /R3 (re-derivation|update)/.test(update.notes ?? '');
+  if (currentNotesRefreshed && !updateNotesRefreshed) {
+    wouldDowngrade.push(`${requirement.requirementId}: SOURCE_UPDATES's notes would overwrite a newer, dated R3 re-derivation/update note with an unmarked, older one`);
+    continue;
+  }
   requirement.status = update.status;
   requirement.sourceEvidence = update.sourceEvidence;
   requirement.testEvidence = update.testEvidence;
   if (update.externalGate) requirement.externalGate = update.externalGate;
   requirement.notes = update.notes;
+}
+if (wouldDowngrade.length > 0) {
+  throw new Error(
+    `Refusing to run: SOURCE_UPDATES would silently regress ${wouldDowngrade.length} row(s) below the matrix's current, more-recent state:\n` +
+      wouldDowngrade.map((line) => `  - ${line}`).join('\n') +
+      '\nEither the matrix has newer evidence SOURCE_UPDATES has not caught up to (remove/refresh that entry so it is a superset of current evidence), or SOURCE_UPDATES is correcting a genuine over-claim (confirm against real source/tests, then adjust deliberately). Never resolve this by re-running unchanged.',
+  );
 }
 const sourceCompleteExternalWithoutGate = requirements
   .filter((requirement) => (SOURCE_UPDATES[requirement.requirementId]?.sourceSolvableClass ?? SOURCE_CLASSIFICATIONS[requirement.requirementId]) === 'SOURCE_COMPLETE_EXTERNAL_GATE')
@@ -1140,9 +827,16 @@ for (const requirement of requirements) {
 }
 await writeFile(paths.external, csvText(['GATE_ID', 'REQUIREMENT_ID', 'STATUS', 'EVIDENCE_REQUIRED', 'OWNER', 'BLOCKING_SCOPE'], externalRows), 'utf8');
 
-const counts = Object.fromEntries(['SOURCE_COMPLETE', 'PARTIAL', 'NOT_STARTED', 'NOT_APPLICABLE'].map((status) => [status, requirements.filter((r) => r.status === status).length]));
+// Every status value a row can actually carry today -- SOURCE_COMPLETE
+// itself now has two finer-grained siblings (SOURCE_COMPLETE_VALIDATION_PENDING,
+// SOURCE_COMPLETE_EXTERNAL_GATE) that more recent evidence-gathering passes
+// introduced; this check must recognize all of them or it wrongly treats a
+// legitimately-refined matrix as corrupt.
+const ALL_STATUSES = ['SOURCE_COMPLETE', 'SOURCE_COMPLETE_VALIDATION_PENDING', 'SOURCE_COMPLETE_EXTERNAL_GATE', 'PARTIAL', 'NOT_STARTED', 'NOT_APPLICABLE'];
+const counts = Object.fromEntries(ALL_STATUSES.map((status) => [status, requirements.filter((r) => r.status === status).length]));
 const total = requirements.length;
-if (total !== 375 || counts.SOURCE_COMPLETE + counts.PARTIAL + counts.NOT_STARTED + counts.NOT_APPLICABLE !== total) {
+const accountedFor = ALL_STATUSES.reduce((sum, status) => sum + counts[status], 0);
+if (total !== 375 || accountedFor !== total) {
   throw new Error(`Unexpected R3 matrix counts: ${JSON.stringify({ total, counts })}`);
 }
 const partialPlusNotStarted = counts.PARTIAL + counts.NOT_STARTED;
