@@ -202,6 +202,11 @@
     <!-- %1$s = a pre-formatted mm:ss duration string (already locale/digit-aware; see formatDuration). -->
     <string name="break_shield_remaining_time">Remaining: %1$s</string>
     <string name="break_shield_remaining_time_a11y">%1$s remaining in this break</string>
+    <!-- PCA-NFR-044: reading-level explanation of what Break Shield is and why it's showing. Both
+         variants carry the same substance: screen access pauses, resumes automatically, and
+         emergency access always remains available; only wording complexity differs. -->
+    <string name="break_shield_explanation">This is a scheduled break, so screen access is paused. It will resume automatically when the break ends. You can ask a parent to end the break early, and emergency access is always available.</string>
+    <string name="break_shield_explanation_simple">It\'s break time. The screen will turn back on by itself when the break is over. You can ask a parent for more time. You can always get emergency help.</string>
 
     <!-- Arabic has six grammatical plural categories (zero/one/two/few/many/other); English uses
          only one/other. Both files declare all six so the key set matches exactly. -->
@@ -219,6 +224,12 @@
     <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
     <string name="emergency_call_button_label">Call for help</string>
     <string name="emergency_call_button_hint">Open your phone\'s dialer to call for help. You choose who to call.</string>
+    <!-- PCA-NFR-044: young-child reading-level variants of the Break Shield button labels above.
+         Same actions/meaning as the "clear" (teen) labels; never a different safety scope. -->
+    <string name="dhikr_button_label_simple">Say a Dhikr</string>
+    <string name="ask_parent_button_label_simple">Ask a parent</string>
+    <string name="emergency_button_label_simple">Emergency help</string>
+    <string name="emergency_call_button_label_simple">Call for help</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. -->
     <string name="enrollment_entry_title">Set up this device</string>
@@ -290,6 +301,8 @@
 
     <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
     <string name="child_home_safe_browser">Safe Browser</string>
+    <!-- PCA-NFR-044: young-child reading-level variant; same action (open Safe Browser), simpler wording. -->
+    <string name="child_home_safe_browser_simple">Safe Browser</string>
     <string name="safe_browser_address_bar_hint">Website address</string>
     <string name="safe_browser_go_button">Go</string>
     <string name="safe_browser_safe_limited_mode_banner">Limited protection: this device isn\'t connected to your parent\'s settings right now, so only basic safety rules are active.</string>
@@ -300,6 +313,16 @@
     <string name="safe_browser_ask_parent_submitted">Sent to a parent — waiting for a decision</string>
     <string name="safe_browser_ask_parent_already_pending">A request for this site is already waiting for a parent</string>
     <string name="safe_browser_ask_parent_not_requestable">This is a safety rule that can\'t be requested</string>
+    <!-- PCA-NFR-044: young-child reading-level variants of the block/review surface above. Same
+         substance as the "clear" (teen) variants: why the page is held, and that a parent can be
+         asked; only sentence structure/vocabulary is simplified; never a different safety scope. -->
+    <string name="safe_browser_held_block_title_simple">This website is blocked</string>
+    <string name="safe_browser_held_review_title_simple">Ask a parent about this website</string>
+    <string name="safe_browser_held_explanation_block">This website isn\'t allowed by this device\'s safety settings. If you think this is a mistake, you can ask a parent to review it below.</string>
+    <string name="safe_browser_held_explanation_block_simple">This website is not allowed on this device. If you think that\'s wrong, you can ask a parent to check it.</string>
+    <string name="safe_browser_held_explanation_review">This website needs a parent to check it before you can visit it. You can send a request to a parent below.</string>
+    <string name="safe_browser_held_explanation_review_simple">A parent needs to look at this website first. You can ask them now.</string>
+    <string name="safe_browser_ask_parent_button_simple">Ask a parent</string>
 
     <!-- PCA-ADD-ENR-014 gap item 3: Admin PIN configuration UI (set/change/verify). -->
     <string name="admin_pin_setup_title">Set an admin PIN</string>

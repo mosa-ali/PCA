@@ -39,7 +39,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import org.pca.app.PcaApplication
 import org.pca.app.R
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.ReadingLevel
+import org.pca.app.enrollment.readingLevel
 import org.pca.app.feature.webprotection.policy.WebDecisionOutcome
 import org.pca.app.feature.webprotection.policy.WebLocale
 
@@ -52,11 +56,22 @@ import org.pca.app.feature.webprotection.policy.WebLocale
  * allowed to actually load it (doc 6/7's "no bypass path").
  */
 @Composable
-fun SafeBrowserScreen(controller: SafeBrowserController, locale: WebLocale, modifier: Modifier = Modifier) {
+fun SafeBrowserScreen(
+    controller: SafeBrowserController,
+    locale: WebLocale,
+    modifier: Modifier = Modifier,
+    ageUxTier: AgeUxTier? = null,
+) {
     val state by controller.screenState.collectAsState()
     var addressBarText by remember { mutableStateOf("") }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     val currentController = rememberUpdatedState(controller)
+    // PCA-NFR-044: the real, currently-enrolled age tier is read from the same persisted
+    // FamilyStateStore the rest of the runtime graph already uses -- never a hardcoded default --
+    // mirroring ChildHomeScreen.kt's resolveDeviceAgeUxTier(). A caller may still pass
+    // [ageUxTier] explicitly (previews/tests); when omitted the real device state is resolved
+    // here.
+    val resolvedAgeUxTier = ageUxTier ?: resolveDeviceAgeUxTier()
 
     Surface(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -85,7 +100,7 @@ fun SafeBrowserScreen(controller: SafeBrowserController, locale: WebLocale, modi
                     )
                 }
                 is SafeBrowserScreenState.Held -> {
-                    HeldPage(current, locale, onAskParent = { currentController.value.submitAskParent() })
+                    HeldPage(current, locale, resolvedAgeUxTier, onAskParent = { currentController.value.submitAskParent() })
                 }
             }
         }
@@ -209,35 +224,81 @@ private fun normalizeTypedInput(raw: String): String? {
 }
 
 @Composable
-private fun HeldPage(held: SafeBrowserScreenState.Held, locale: WebLocale, onAskParent: () -> Unit) {
+private fun HeldPage(held: SafeBrowserScreenState.Held, locale: WebLocale, ageUxTier: AgeUxTier, onAskParent: () -> Unit) {
     val decision = held.decision
+    val copy = safeBrowserHeldCopyForTier(ageUxTier, isReview = decision.outcome == WebDecisionOutcome.REVIEW)
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = stringResource(
-                if (decision.outcome == WebDecisionOutcome.REVIEW) R.string.safe_browser_held_review_title else R.string.safe_browser_held_block_title,
-            ),
+            text = stringResource(copy.titleRes),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
         Text(text = decision.domain, style = MaterialTheme.typography.titleMedium)
         Text(text = decision.reasonCode, style = MaterialTheme.typography.bodyLarge)
+        Text(text = stringResource(copy.explanationRes), style = MaterialTheme.typography.bodyMedium)
 
         if (decision.requestable) {
-            AskParentSection(held.askParentState, onAskParent)
+            AskParentSection(held.askParentState, copy, onAskParent)
         }
     }
 }
 
 @Composable
-private fun AskParentSection(state: AskParentState, onAskParent: () -> Unit) {
+private fun AskParentSection(state: AskParentState, copy: SafeBrowserHeldCopy, onAskParent: () -> Unit) {
     when (state) {
-        AskParentState.NONE -> Button(onClick = onAskParent) { Text(stringResource(R.string.safe_browser_ask_parent_button)) }
+        AskParentState.NONE -> Button(onClick = onAskParent) { Text(stringResource(copy.askParentButtonRes)) }
         AskParentState.PENDING_SYNC_LOCAL -> Text(stringResource(R.string.safe_browser_ask_parent_pending_offline))
         AskParentState.SUBMITTED_TO_PARENT -> Text(stringResource(R.string.safe_browser_ask_parent_submitted))
         AskParentState.ALREADY_PENDING -> Text(stringResource(R.string.safe_browser_ask_parent_already_pending))
         AskParentState.NOT_REQUESTABLE -> Text(stringResource(R.string.safe_browser_ask_parent_not_requestable))
     }
+}
+
+/**
+ * PCA-NFR-044: resolves the real, persisted [AgeUxTier] for this device from the same composition
+ * root ([PcaApplication.graph]) the rest of the runtime already uses, mirroring
+ * [org.pca.app.runtime.ui.ChildHomeScreen]'s `resolveDeviceAgeUxTier()`. Falls back to
+ * [AgeUxTier.YOUNG_CHILD] (the stricter tier) only when no enrolled family state exists yet or
+ * the hosting context isn't [PcaApplication] (e.g. a Preview/test harness).
+ */
+@Composable
+private fun resolveDeviceAgeUxTier(): AgeUxTier {
+    val context = LocalContext.current
+    return (context.applicationContext as? PcaApplication)
+        ?.graph
+        ?.familyStateStore
+        ?.currentState()
+        ?.ageUxTier
+        ?: AgeUxTier.YOUNG_CHILD
+}
+
+/**
+ * PCA-NFR-044: reading-level string set for the Safe Browser "held" (blocked/needs-review) child
+ * block screen, mirroring [org.pca.app.enrollment.ui.EnrollmentScreen]'s `EnrollmentDisclosureCopy`/
+ * `disclosureCopyForTier` pattern. Only wording complexity changes between tiers -- why the page
+ * was held and that a parent can be asked to review it is identical substance in both variants.
+ */
+private data class SafeBrowserHeldCopy(
+    val readingLevel: ReadingLevel,
+    @androidx.annotation.StringRes val titleRes: Int,
+    @androidx.annotation.StringRes val explanationRes: Int,
+    @androidx.annotation.StringRes val askParentButtonRes: Int,
+)
+
+private fun safeBrowserHeldCopyForTier(ageUxTier: AgeUxTier, isReview: Boolean): SafeBrowserHeldCopy = when (ageUxTier) {
+    AgeUxTier.YOUNG_CHILD -> SafeBrowserHeldCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = if (isReview) R.string.safe_browser_held_review_title_simple else R.string.safe_browser_held_block_title_simple,
+        explanationRes = if (isReview) R.string.safe_browser_held_explanation_review_simple else R.string.safe_browser_held_explanation_block_simple,
+        askParentButtonRes = R.string.safe_browser_ask_parent_button_simple,
+    )
+    AgeUxTier.TEEN -> SafeBrowserHeldCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = if (isReview) R.string.safe_browser_held_review_title else R.string.safe_browser_held_block_title,
+        explanationRes = if (isReview) R.string.safe_browser_held_explanation_review else R.string.safe_browser_held_explanation_block,
+        askParentButtonRes = R.string.safe_browser_ask_parent_button,
+    )
 }

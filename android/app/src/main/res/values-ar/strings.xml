@@ -203,6 +203,9 @@
     <!-- %1$s = a pre-formatted mm:ss duration string. -->
     <string name="break_shield_remaining_time">الوقت المتبقي: %1$s</string>
     <string name="break_shield_remaining_time_a11y">الوقت المتبقي في هذه الاستراحة: %1$s</string>
+    <!-- PCA-NFR-044: نفس المعنى بمستويي القراءة؛ الشاشة متوقفة مؤقتًا وستعود تلقائيًا، ووصول الطوارئ متاح دائمًا. -->
+    <string name="break_shield_explanation">هذه استراحة مجدولة، لذا تم إيقاف الشاشة مؤقتًا. ستعود تلقائيًا عند انتهاء الاستراحة. يمكنك أن تطلب من أحد الوالدين إنهاء الاستراحة مبكرًا، ووصول الطوارئ متاح دائمًا.</string>
+    <string name="break_shield_explanation_simple">حان وقت الاستراحة. ستعود الشاشة بنفسها عند انتهاء الاستراحة. يمكنك أن تطلب من أحد الوالدين وقتًا إضافيًا. يمكنك دائمًا الحصول على مساعدة طارئة.</string>
 
     <!-- Arabic CLDR plural categories: zero/one/two/few(3-10)/many(11-99)/other. Flagged for
          native-speaker review: grammatical gender/number agreement for "تفاعل" (interaction)
@@ -225,6 +228,11 @@
     <!-- PCA-FR-132: real "call for help" action; opens the phone's own dialer (never places a call automatically). -->
     <string name="emergency_call_button_label">اتصل للحصول على المساعدة</string>
     <string name="emergency_call_button_hint">افتح لوحة الاتصال في هاتفك للاتصال طلبًا للمساعدة. أنت من يختار من تتصل به.</string>
+    <!-- PCA-NFR-044: النسخة المبسّطة لتسميات أزرار شاشة الاستراحة أعلاه؛ نفس الإجراء والمعنى. -->
+    <string name="dhikr_button_label_simple">قل ذكرًا</string>
+    <string name="ask_parent_button_label_simple">اسأل أحد الوالدين</string>
+    <string name="emergency_button_label_simple">مساعدة طارئة</string>
+    <string name="emergency_call_button_label_simple">اتصل للحصول على المساعدة</string>
 
     <!-- PCA-ANDROID-ENROLLMENT-1: child-device setup UI. PENDING NATIVE REVIEWER SIGN-OFF, same posture as the rest of this file. -->
     <string name="enrollment_entry_title">إعداد هذا الجهاز</string>
@@ -287,6 +295,8 @@
 
     <!-- PCA-WEB-RUNTIME-1: real child-facing Safe Browser surface. -->
     <string name="child_home_safe_browser">المتصفح الآمن</string>
+    <!-- PCA-NFR-044: نسخة مبسّطة لمستوى قراءة الطفل الصغير؛ نفس الإجراء. -->
+    <string name="child_home_safe_browser_simple">المتصفح الآمن</string>
     <string name="safe_browser_address_bar_hint">عنوان الموقع</string>
     <string name="safe_browser_go_button">اذهب</string>
     <string name="safe_browser_safe_limited_mode_banner">حماية محدودة: هذا الجهاز غير متصل حاليًا بإعدادات والديك، لذا لا تعمل الآن إلا قواعد السلامة الأساسية.</string>
@@ -297,6 +307,15 @@
     <string name="safe_browser_ask_parent_submitted">تم الإرسال إلى أحد الوالدين — بانتظار القرار</string>
     <string name="safe_browser_ask_parent_already_pending">هناك طلب سابق لهذا الموقع بانتظار أحد الوالدين</string>
     <string name="safe_browser_ask_parent_not_requestable">هذه قاعدة أمان لا يمكن طلب مراجعتها</string>
+    <!-- PCA-NFR-044: نسخ مبسّطة لمستوى قراءة الطفل الصغير من شاشة الحظر/المراجعة أعلاه؛ نفس
+         المعنى (سبب الحظر وإمكانية سؤال أحد الوالدين)، فقط الصياغة أبسط. -->
+    <string name="safe_browser_held_block_title_simple">هذا الموقع غير مسموح به</string>
+    <string name="safe_browser_held_review_title_simple">اسأل أحد الوالدين عن هذا الموقع</string>
+    <string name="safe_browser_held_explanation_block">هذا الموقع غير مسموح به وفق إعدادات الأمان في هذا الجهاز. إذا كنت تعتقد أن هذا خطأ، يمكنك أن تطلب من أحد الوالدين مراجعته أدناه.</string>
+    <string name="safe_browser_held_explanation_block_simple">هذا الموقع غير مسموح به على هذا الجهاز. إذا كنت تعتقد أن هذا خطأ، يمكنك أن تسأل أحد الوالدين ليتحقق منه.</string>
+    <string name="safe_browser_held_explanation_review">يحتاج هذا الموقع إلى مراجعة أحد الوالدين قبل أن تتمكن من زيارته. يمكنك إرسال طلب إلى أحد الوالدين أدناه.</string>
+    <string name="safe_browser_held_explanation_review_simple">يحتاج أحد الوالدين إلى النظر في هذا الموقع أولًا. يمكنك أن تسأله الآن.</string>
+    <string name="safe_browser_ask_parent_button_simple">اسأل أحد الوالدين</string>
 
     <!-- PCA-ADD-ENR-014 gap item 3: Admin PIN configuration UI (set/change/verify). -->
     <string name="admin_pin_setup_title">تعيين رمز PIN للمشرف</string>

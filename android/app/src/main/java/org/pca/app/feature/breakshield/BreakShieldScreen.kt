@@ -34,9 +34,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import org.pca.app.PcaApplication
 import org.pca.app.R
 import org.pca.app.accessibility.rememberClampedFontScale
 import org.pca.app.accessibility.rememberReducedMotionEnabled
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.ReadingLevel
+import org.pca.app.enrollment.readingLevel
 import java.util.Locale
 import kotlin.time.Duration
 
@@ -69,6 +73,7 @@ fun BreakShieldScreen(
     onDhikrInteraction: () -> Unit,
     onRequestParentOverride: () -> Unit,
     onRequestEmergencyException: () -> Unit,
+    ageUxTier: AgeUxTier? = null,
     onCallEmergencyServices: () -> Unit = run {
         val context = LocalContext.current
         { launchEmergencyDialer(context) }
@@ -78,6 +83,14 @@ fun BreakShieldScreen(
 
     val locale = LocalConfiguration.current.locales[0]
     val remainingBreakText = formatDuration(state.remainingBreak, locale)
+
+    // PCA-NFR-044: the real, currently-enrolled age tier is read from the same persisted
+    // FamilyStateStore the rest of the runtime graph already uses -- never a hardcoded default --
+    // mirroring ChildHomeScreen.kt's resolveDeviceAgeUxTier(). A caller may still pass
+    // [ageUxTier] explicitly (previews/tests); when omitted the real device state is resolved
+    // here.
+    val resolvedAgeUxTier = ageUxTier ?: resolveDeviceAgeUxTier()
+    val copy = breakShieldCopyForTier(resolvedAgeUxTier)
 
     // Resolved here, inside the @Composable scope, since Modifier.semantics {} below is a plain
     // (non-composable) lambda and cannot itself call stringResource().
@@ -108,9 +121,13 @@ fun BreakShieldScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = stringResource(R.string.break_shield_title),
+                        text = stringResource(copy.titleRes),
                         style = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        text = stringResource(copy.explanationRes),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
                         text = stringResource(R.string.break_shield_remaining_time, remainingBreakText),
@@ -133,14 +150,14 @@ fun BreakShieldScreen(
                         Button(
                             onClick = onDhikrInteraction,
                             modifier = Modifier.semantics { contentDescription = dhikrButtonHint },
-                        ) { Text(stringResource(R.string.dhikr_button_label)) }
+                        ) { Text(stringResource(copy.dhikrButtonRes)) }
                     }
                     Row {
                         if (state.canRequestParentOverride) {
                             Button(
                                 onClick = onRequestParentOverride,
                                 modifier = Modifier.semantics { contentDescription = askParentButtonHint },
-                            ) { Text(stringResource(R.string.ask_parent_button_label)) }
+                            ) { Text(stringResource(copy.askParentButtonRes)) }
                         }
                         if (state.canRequestEmergencyException) {
                             // Emergency remains visible/reachable regardless of RTL layout, large text,
@@ -154,7 +171,7 @@ fun BreakShieldScreen(
                             Button(
                                 onClick = onRequestEmergencyException,
                                 modifier = Modifier.semantics { contentDescription = emergencyButtonHint },
-                            ) { Text(stringResource(R.string.emergency_button_label)) }
+                            ) { Text(stringResource(copy.emergencyButtonRes)) }
                         }
                         // PCA-FR-132: a real "call for help" action, always present -- unlike the
                         // emergency-EXCEPTION button above (which only bypasses PCA's own screen-time
@@ -165,7 +182,7 @@ fun BreakShieldScreen(
                         Button(
                             onClick = onCallEmergencyServices,
                             modifier = Modifier.semantics { contentDescription = emergencyCallButtonHint },
-                        ) { Text(stringResource(R.string.emergency_call_button_label)) }
+                        ) { Text(stringResource(copy.emergencyCallButtonRes)) }
                     }
                 }
             }
@@ -175,6 +192,62 @@ fun BreakShieldScreen(
 
 /** doc 26 Section 3: "Animation honors reduced-motion settings." Pure and JVM-testable, mirroring this file's existing formatDuration pattern -- the real screen builds its `tween` directly from this function's result, so testing it IS testing the real presentation behavior, not a parallel/unused helper. */
 internal fun breakShieldFadeInDurationMillis(reducedMotion: Boolean): Int = if (reducedMotion) 0 else 300
+
+/**
+ * PCA-NFR-044: resolves the real, persisted [AgeUxTier] for this device from the same composition
+ * root ([PcaApplication.graph]) the rest of the runtime already uses, mirroring
+ * [org.pca.app.runtime.ui.ChildHomeScreen]'s `resolveDeviceAgeUxTier()`. Falls back to
+ * [AgeUxTier.YOUNG_CHILD] (the stricter tier) only when no enrolled family state exists yet or
+ * the hosting context isn't [PcaApplication] (e.g. a Preview/test harness).
+ */
+@Composable
+private fun resolveDeviceAgeUxTier(): AgeUxTier {
+    val context = LocalContext.current
+    return (context.applicationContext as? PcaApplication)
+        ?.graph
+        ?.familyStateStore
+        ?.currentState()
+        ?.ageUxTier
+        ?: AgeUxTier.YOUNG_CHILD
+}
+
+/**
+ * PCA-NFR-044: reading-level string set for the Break Shield surface, mirroring
+ * [org.pca.app.enrollment.ui.EnrollmentScreen]'s `EnrollmentDisclosureCopy`/`disclosureCopyForTier`
+ * pattern. Only wording complexity changes between tiers -- the underlying safety substance (the
+ * break pauses/resumes automatically, a parent can be asked, emergency access always remains
+ * available) is identical in both variants.
+ */
+private data class BreakShieldCopy(
+    val readingLevel: ReadingLevel,
+    @androidx.annotation.StringRes val titleRes: Int,
+    @androidx.annotation.StringRes val explanationRes: Int,
+    @androidx.annotation.StringRes val dhikrButtonRes: Int,
+    @androidx.annotation.StringRes val askParentButtonRes: Int,
+    @androidx.annotation.StringRes val emergencyButtonRes: Int,
+    @androidx.annotation.StringRes val emergencyCallButtonRes: Int,
+)
+
+private fun breakShieldCopyForTier(ageUxTier: AgeUxTier): BreakShieldCopy = when (ageUxTier) {
+    AgeUxTier.YOUNG_CHILD -> BreakShieldCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = R.string.break_shield_title,
+        explanationRes = R.string.break_shield_explanation_simple,
+        dhikrButtonRes = R.string.dhikr_button_label_simple,
+        askParentButtonRes = R.string.ask_parent_button_label_simple,
+        emergencyButtonRes = R.string.emergency_button_label_simple,
+        emergencyCallButtonRes = R.string.emergency_call_button_label_simple,
+    )
+    AgeUxTier.TEEN -> BreakShieldCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = R.string.break_shield_title,
+        explanationRes = R.string.break_shield_explanation,
+        dhikrButtonRes = R.string.dhikr_button_label,
+        askParentButtonRes = R.string.ask_parent_button_label,
+        emergencyButtonRes = R.string.emergency_button_label,
+        emergencyCallButtonRes = R.string.emergency_call_button_label,
+    )
+}
 
 /**
  * doc 20 Section 4: "Present ... Arabic-Indic versus Latin digits ... using the device locale/

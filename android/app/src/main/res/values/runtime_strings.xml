@@ -7,6 +7,9 @@
 -->
 <resources>
     <string name="child_home_title">Protection status</string>
+    <!-- PCA-NFR-044: young-child reading-level variant, selected at runtime by AgeUxTier.YOUNG_CHILD
+         via childHomeCopyForTier() in ChildHomeScreen.kt; same meaning, simpler wording. -->
+    <string name="child_home_title_simple">Protection status</string>
     <string name="child_home_management_notice_title">PCA parental-control status</string>
     <string name="child_home_management_active">Parental controls are active on this device. Current restrictions and capability limits are shown below.</string>
     <string name="child_home_management_standard">PCA is present on this device in standard mode. Current restrictions and capability limits are shown below.</string>
@@ -15,6 +18,11 @@
     <string name="child_home_management_not_supported">PCA protection is not supported by this device capability. The current state is shown below.</string>
     <string name="child_home_parent_visibility_title">What your parent can see</string>
     <string name="child_home_parent_visibility_body">Your parent can see protection status, screen-time and policy events, and activity categories enabled for your device. PCA does not store camera frames or facial identity as a children\'s monitoring history.</string>
+    <!-- PCA-NFR-044: young-child reading-level variants of the two strings above. Same privacy
+         substance (what a parent can and cannot see); never a shortened/hidden version; only
+         sentence structure/vocabulary is simplified. -->
+    <string name="child_home_parent_visibility_title_simple">What your parent can see</string>
+    <string name="child_home_parent_visibility_body_simple">Your parent can see if protection is on, how much screen time you\'ve used, and what kind of apps or websites you use. Your parent cannot see your camera or your face.</string>
 
     <string name="child_home_local_protection_active">Protection is active on this device</string>
     <string name="child_home_remote_updates_pending">Remote updates are pending until this device reconnects</string>
@@ -89,6 +97,12 @@
     <string name="child_home_emergency_access_active">Emergency access is on</string>
     <string name="child_home_emergency_access_exit">Tap to end emergency access</string>
     <string name="child_home_emergency_access_active_description">%1$s. %2$s</string>
+    <!-- PCA-NFR-044: young-child reading-level variants of the three emergency-access strings
+         above. Same action (turn emergency access on/off) and same safety substance; never a
+         reduced or hidden emergency path; only wording is simplified. -->
+    <string name="child_home_emergency_access_simple">Emergency help</string>
+    <string name="child_home_emergency_access_active_simple">Emergency help is on</string>
+    <string name="child_home_emergency_access_exit_simple">Tap to turn off emergency help</string>
     <string name="child_home_parent_contact">Contact parent</string>
     <string name="child_home_parent_contact_explanation">Ask your parent for more time, a policy change, or help with a removal request. Requests may wait until this device reconnects.</string>
     <string name="child_home_parent_contact_pending">%1$s request(s) pending until this device syncs</string>

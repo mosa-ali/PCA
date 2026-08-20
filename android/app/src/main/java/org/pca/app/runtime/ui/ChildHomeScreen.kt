@@ -25,8 +25,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import org.pca.app.PcaApplication
 import org.pca.app.R
+import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.enrollment.ReadingLevel
+import org.pca.app.enrollment.readingLevel
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.platform.LocationCapabilityLevel
 import org.pca.app.platform.ProtectionMode
@@ -47,6 +52,7 @@ import java.util.concurrent.TimeUnit
 fun ChildHomeScreen(
     status: PcaRuntimeStatus,
     modifier: Modifier = Modifier,
+    ageUxTier: AgeUxTier? = null,
     onRequestParentContact: () -> Unit = {},
     onEmergencyAccess: () -> Unit = {},
     onOpenSafeBrowser: () -> Unit = {},
@@ -55,15 +61,23 @@ fun ChildHomeScreen(
     onRequestCallStatePermission: () -> Unit = {},
 ) {
     val rows = statusRows(status)
+    // PCA-NFR-044: the real, currently-enrolled age tier is read from the same persisted
+    // FamilyStateStore the rest of the runtime graph already uses (see
+    // org.pca.app.storage.PersistentFamilyStateStore, PcaAppGraph.familyStateStore) -- never a
+    // hardcoded default -- so this screen genuinely branches per device, not per caller. A caller
+    // may still pass [ageUxTier] explicitly (previews/tests); when omitted the real device state
+    // is resolved here.
+    val resolvedAgeUxTier = ageUxTier ?: resolveDeviceAgeUxTier()
+    val copy = childHomeCopyForTier(resolvedAgeUxTier)
     Surface(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ScreenHeading() }
+            item { ScreenHeading(copy) }
             item { ManagementDisclosureCard(status.protectionMode) }
-            item { ParentVisibilityCard() }
+            item { ParentVisibilityCard(copy) }
             item { OfflineBanner(status) }
 
             items(rows) { row -> StatusRow(row) }
@@ -74,18 +88,77 @@ fun ChildHomeScreen(
                     onClick = onRequestCallStatePermission,
                 )
             }
-            item { SafeBrowserEntryCard(onClick = onOpenSafeBrowser) }
+            item { SafeBrowserEntryCard(copy = copy, onClick = onOpenSafeBrowser) }
             item { YouTubeModeEntryCard(onClick = onOpenYouTubeMode) }
-            item { EmergencyAccessCard(isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
+            item { EmergencyAccessCard(copy = copy, isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
             item { AdminSecurityEntryCard(onClick = onOpenAdminSecurity) }
         }
     }
 }
 
+/**
+ * PCA-NFR-044: resolves the real, persisted [AgeUxTier] for this device from the same composition
+ * root ([PcaApplication.graph]) [MainActivity] already runs on -- a plain composable read, not a
+ * new store/duplicate source of truth. Falls back to [AgeUxTier.YOUNG_CHILD] (the stricter tier)
+ * only when no enrolled family state exists yet or the hosting context isn't [PcaApplication]
+ * (e.g. a Preview/test harness), matching [org.pca.app.storage.LocalFamilyState]'s own default.
+ */
+@Composable
+private fun resolveDeviceAgeUxTier(): AgeUxTier {
+    val context = LocalContext.current
+    return (context.applicationContext as? PcaApplication)
+        ?.graph
+        ?.familyStateStore
+        ?.currentState()
+        ?.ageUxTier
+        ?: AgeUxTier.YOUNG_CHILD
+}
+
+/**
+ * PCA-NFR-044: reading-level string set for the Child Home surface, mirroring
+ * [org.pca.app.enrollment.ui.EnrollmentScreen]'s `EnrollmentDisclosureCopy`/`disclosureCopyForTier`
+ * pattern. Only wording complexity changes between tiers -- the underlying safety/privacy/
+ * emergency-access substance (what a parent can see, that emergency access exists and how to
+ * reach it) is identical in both variants.
+ */
+private data class ChildHomeCopy(
+    val readingLevel: ReadingLevel,
+    @androidx.annotation.StringRes val titleRes: Int,
+    @androidx.annotation.StringRes val parentVisibilityTitleRes: Int,
+    @androidx.annotation.StringRes val parentVisibilityBodyRes: Int,
+    @androidx.annotation.StringRes val safeBrowserEntryRes: Int,
+    @androidx.annotation.StringRes val emergencyAccessStartRes: Int,
+    @androidx.annotation.StringRes val emergencyAccessActiveRes: Int,
+    @androidx.annotation.StringRes val emergencyAccessExitRes: Int,
+)
+
+private fun childHomeCopyForTier(ageUxTier: AgeUxTier): ChildHomeCopy = when (ageUxTier) {
+    AgeUxTier.YOUNG_CHILD -> ChildHomeCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = R.string.child_home_title_simple,
+        parentVisibilityTitleRes = R.string.child_home_parent_visibility_title_simple,
+        parentVisibilityBodyRes = R.string.child_home_parent_visibility_body_simple,
+        safeBrowserEntryRes = R.string.child_home_safe_browser_simple,
+        emergencyAccessStartRes = R.string.child_home_emergency_access_simple,
+        emergencyAccessActiveRes = R.string.child_home_emergency_access_active_simple,
+        emergencyAccessExitRes = R.string.child_home_emergency_access_exit_simple,
+    )
+    AgeUxTier.TEEN -> ChildHomeCopy(
+        readingLevel = ageUxTier.readingLevel,
+        titleRes = R.string.child_home_title,
+        parentVisibilityTitleRes = R.string.child_home_parent_visibility_title,
+        parentVisibilityBodyRes = R.string.child_home_parent_visibility_body,
+        safeBrowserEntryRes = R.string.child_home_safe_browser,
+        emergencyAccessStartRes = R.string.child_home_emergency_access,
+        emergencyAccessActiveRes = R.string.child_home_emergency_access_active,
+        emergencyAccessExitRes = R.string.child_home_emergency_access_exit,
+    )
+}
+
 /** PCA-WEB-RUNTIME-1: the real, reachable child entry point into [org.pca.app.feature.webprotection.ui.SafeBrowserActivity] -- without this, that Activity would be declared but unlaunchable, which doc 48 explicitly forbids counting as a closed navigation surface. */
 @Composable
-private fun SafeBrowserEntryCard(onClick: () -> Unit) {
+private fun SafeBrowserEntryCard(copy: ChildHomeCopy, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -93,7 +166,7 @@ private fun SafeBrowserEntryCard(onClick: () -> Unit) {
             .semantics { role = Role.Button },
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = stringResource(R.string.child_home_safe_browser), style = MaterialTheme.typography.titleMedium)
+            Text(text = stringResource(copy.safeBrowserEntryRes), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -138,9 +211,9 @@ private fun YouTubeModeEntryCard(onClick: () -> Unit) {
 }
 
 @Composable
-private fun ScreenHeading() {
+private fun ScreenHeading(copy: ChildHomeCopy) {
     Text(
-        text = stringResource(R.string.child_home_title),
+        text = stringResource(copy.titleRes),
         style = MaterialTheme.typography.headlineSmall,
         modifier = Modifier.semantics { heading() },
     )
@@ -172,18 +245,18 @@ private fun ManagementDisclosureCard(mode: ProtectionMode) {
 }
 
 @Composable
-private fun ParentVisibilityCard() {
+private fun ParentVisibilityCard(copy: ChildHomeCopy) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = stringResource(R.string.child_home_parent_visibility_title),
+                text = stringResource(copy.parentVisibilityTitleRes),
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = stringResource(R.string.child_home_parent_visibility_body),
+                text = stringResource(copy.parentVisibilityBodyRes),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -278,10 +351,10 @@ private fun StatusRow(row: StatusRowContent) {
  * reverse the state from this same control.
  */
 @Composable
-private fun EmergencyAccessCard(isActive: Boolean, onClick: () -> Unit) {
-    val activeLabel = stringResource(R.string.child_home_emergency_access_active)
-    val exitLabel = stringResource(R.string.child_home_emergency_access_exit)
-    val startLabel = stringResource(R.string.child_home_emergency_access)
+private fun EmergencyAccessCard(copy: ChildHomeCopy, isActive: Boolean, onClick: () -> Unit) {
+    val activeLabel = stringResource(copy.emergencyAccessActiveRes)
+    val exitLabel = stringResource(copy.emergencyAccessExitRes)
+    val startLabel = stringResource(copy.emergencyAccessStartRes)
     // PCA-16B: the active-state description is a locale-owned format string (not a
     // code-level concatenation of two independently-translated fragments), so a translator
     // can adjust punctuation/order per locale.
