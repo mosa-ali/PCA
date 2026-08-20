@@ -28,6 +28,22 @@ export interface TrustedBrowserSnapshot {
   acceptedMinEpoch: number | null;
   pairingRequestedAtUtc: string | null;
   lastFingerprint: string | null;
+  /**
+   * SECURITY (actor-identity binding): a raw `DeviceSessionService` device
+   * session token (backend/src/runtime-sync/DeviceSessionService.ts),
+   * minted only after real DeviceAuthService challenge-response proof of
+   * possession over this browser endpoint's own DSK -- see
+   * `TrustedBrowserProvider`'s doc comment below. Callers that need to
+   * assert this endpoint's identity to the backend (e.g.
+   * `realSafeZoneClient.ts`'s Safe Zone routes) send this as
+   * `Authorization: Bearer <token>`; the backend verifies it server-side
+   * and derives the actor's real deviceId from it -- it never trusts a
+   * self-reported opaque string. `null` whenever the browser has not (yet)
+   * completed that ceremony, including while `state === 'TRUSTED'` for
+   * `RealTrustedBrowserProvider` today -- see that class's doc comment for
+   * exactly what remains unbuilt.
+   */
+  actorDeviceSessionToken: string | null;
 }
 
 const ALLOWED_TRANSITIONS: Record<TrustedBrowserState, TrustedBrowserState[]> = {

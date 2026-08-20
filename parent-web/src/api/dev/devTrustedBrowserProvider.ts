@@ -11,6 +11,7 @@ let snapshot: TrustedBrowserSnapshot = {
   acceptedMinEpoch: null,
   pairingRequestedAtUtc: null,
   lastFingerprint: null,
+  actorDeviceSessionToken: null,
 };
 
 function move(to: TrustedBrowserState, patch: Partial<TrustedBrowserSnapshot> = {}): TrustedBrowserSnapshot {
@@ -49,7 +50,11 @@ export class DevTrustedBrowserProvider implements TrustedBrowserProvider {
 
   async simulateParentApproval(): Promise<TrustedBrowserSnapshot> {
     await delay(300);
-    return move('TRUSTED', { trustSetEpoch: 4, acceptedMinEpoch: 4 });
+    // DEVELOPMENT_ONLY: fabricates a plausible-shaped actor device session
+    // token so dev-mode Safe Zone flows are exercisable end-to-end without
+    // a real backend DeviceSessionService round trip. A real provider must
+    // never do this -- see RealTrustedBrowserProvider's doc comment.
+    return move('TRUSTED', { trustSetEpoch: 4, acceptedMinEpoch: 4, actorDeviceSessionToken: 'dev-actor-device-session-token' });
   }
 
   async simulateEpochGoneStale(): Promise<TrustedBrowserSnapshot> {
@@ -59,7 +64,7 @@ export class DevTrustedBrowserProvider implements TrustedBrowserProvider {
 
   async simulateRevoke(): Promise<TrustedBrowserSnapshot> {
     await delay();
-    return move('REVOKED');
+    return move('REVOKED', { actorDeviceSessionToken: null });
   }
 
   async reset(): Promise<TrustedBrowserSnapshot> {
@@ -72,6 +77,7 @@ export class DevTrustedBrowserProvider implements TrustedBrowserProvider {
       acceptedMinEpoch: null,
       pairingRequestedAtUtc: null,
       lastFingerprint: null,
+      actorDeviceSessionToken: null,
     };
     return snapshot;
   }

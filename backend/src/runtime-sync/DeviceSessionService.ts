@@ -117,6 +117,34 @@ export class DeviceSessionService {
   }
 
   /**
+   * Composition helper for HTTP layers that already know which family
+   * they're operating in from a SEPARATE, already-authenticated context
+   * (e.g. parentAccountRoutes.ts's `pca_family_session` cookie) and need to
+   * bind a caller-asserted "acting device" claim to a REAL, verified
+   * device identity before trusting it for anything (see
+   * parentAccountRoutes.ts's `authorizeSafeZoneRequest` doc comment for the
+   * vulnerability this closes -- a client-supplied
+   * `x-pca-actor-device-id` header, alone, is never sufficient because it
+   * has no cryptographic or session binding to the actual caller).
+   *
+   * This does not introduce a new trust boundary: it is `validateSession`
+   * (proof-of-possession-derived identity, unchanged) plus one additional
+   * check that the verified device's OWN familyId -- not any
+   * caller-supplied value -- matches the caller's already-established
+   * family scope. A validly-authenticated device session from a DIFFERENT
+   * family must never satisfy a binding for THIS family, so that mismatch
+   * collapses into the exact same generic UNAUTHORIZED as every other
+   * failure mode here (invalid/expired/unknown token) -- never a distinct
+   * error -- to avoid leaking cross-family session-validity information to
+   * the caller.
+   */
+  async requireActorDeviceInFamily(rawToken: string, expectedFamilyId: string): Promise<DeviceSessionIdentity> {
+    const identity = await this.validateSession(rawToken);
+    if (identity.familyId !== expectedFamilyId) throw new RuntimeSyncAuthError('UNAUTHORIZED');
+    return identity;
+  }
+
+  /**
    * Idempotent: revoking an unknown/already-revoked/expired token is never
    * an error. Best-effort audits the transition when the session was still
    * identifiable just before revocation -- an unknown/already-revoked

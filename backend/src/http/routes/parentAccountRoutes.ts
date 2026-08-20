@@ -48,10 +48,26 @@ import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess
 import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage } from '../../parentaccount/ParentPreferenceRepository.js';
 import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
+import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
 const CSRF_TOKEN_BYTES = 32;
+/**
+ * SECURITY (actor-identity binding -- see `authorizeSafeZoneRequest` below):
+ * this header is legacy/defense-in-depth ONLY. It is never, by itself, a
+ * source of actor identity -- a client-supplied header has no
+ * cryptographic or session binding to the actual caller, so an
+ * authenticated parent-web session could otherwise claim ANY deviceId
+ * string (e.g. another family member's, or the Owner's) and have it
+ * trusted verbatim. The real actor identity is derived exclusively from a
+ * verified `DeviceSessionService` session token (`Authorization: Bearer
+ * <token>`, minted only after DeviceAuthService challenge-response proof
+ * of possession -- see DeviceSessionService.ts). If this header is present
+ * at all it is cross-checked against that verified identity and the
+ * request is REJECTED on any mismatch; it is never trusted over the
+ * session-derived value.
+ */
 const ACTOR_DEVICE_HEADER = 'x-pca-actor-device-id';
 
 export interface ParentAccountRoutesDeps {
@@ -59,6 +75,20 @@ export interface ParentAccountRoutesDeps {
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
+  /**
+   * SECURITY (actor-identity binding): backs `authorizeSafeZoneRequest`'s
+   * derivation of `actorDeviceId` from a verified, session-bound identity
+   * instead of the raw, spoofable `x-pca-actor-device-id` header -- see
+   * that header constant's own doc comment above and
+   * `authorizeSafeZoneRequest`'s doc comment below. Optional (rather than
+   * required) for the same reason `freeAccessAccountRepository` is: an
+   * additive dependency the Coordinator wires in via buildServer.ts/
+   * main.ts without touching this lane's call signature. Until wired, the
+   * Safe Zone routes fail closed with 503 (`family_authority_unavailable`)
+   * -- never a crash, and never a silent fall-back to trusting the raw
+   * header.
+   */
+  deviceSessionService?: DeviceSessionService;
   /**
    * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): backs the new
    * GET /api/parent/free-access-status route below. A distinct,
@@ -380,6 +410,27 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       && typeof value.keyEpoch === 'number' && Number.isInteger(value.keyEpoch) && value.keyEpoch > 0;
   }
 
+  /**
+   * SECURITY (actor-identity binding): `actorDeviceId` is derived
+   * EXCLUSIVELY from a verified `DeviceSessionService` session token
+   * presented as `Authorization: Bearer <token>` -- never from the raw
+   * `x-pca-actor-device-id` header alone. That header was previously
+   * regex-validated only (`/^[A-Za-z0-9_-]{1,128}$/`), with no
+   * cryptographic or session binding to the actual caller: any
+   * authenticated parent-web session could claim ANY deviceId string,
+   * including another family member's or the Owner's, and have it
+   * forwarded verbatim to `safeZonePolicyAuthorizer.authorize`. This is
+   * safe ONLY as long as production wires `UnavailableTrustSetRoleResolver`
+   * (which denies unconditionally); a real `FamilyTrustSetRoleResolver`
+   * would turn the spoofed header into a genuine privilege-escalation/
+   * impersonation path. See DeviceSessionService.requireActorDeviceInFamily
+   * for the verification (proof-of-possession session token, scoped to the
+   * caller's own already-authenticated family).
+   *
+   * The legacy header, if present, is cross-checked against the verified
+   * identity and the request is REJECTED on any mismatch -- it is never
+   * trusted over the session-derived value.
+   */
   async function authorizeSafeZoneRequest(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -387,11 +438,31 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     operation: 'VIEW_DASHBOARD' | 'EDIT_CHILD_POLICY',
     targetScope: { kind: 'FAMILY' | 'DEVICE'; id: string } = { kind: 'FAMILY', id: session.familyId },
   ): Promise<boolean> {
-    const actorDeviceId = request.headers[ACTOR_DEVICE_HEADER];
-    if (!deps.safeZonePolicyAuthorizer || typeof actorDeviceId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(actorDeviceId)) {
+    if (!deps.safeZonePolicyAuthorizer || !deps.deviceSessionService) {
       await reply.code(503).send({ error: 'family_authority_unavailable' });
       return false;
     }
+    const authorizationHeader = request.headers.authorization;
+    if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
+      await reply.code(401).send({ error: 'actor_device_session_required' });
+      return false;
+    }
+    let actorIdentity: { deviceId: string; familyId: string };
+    try {
+      actorIdentity = await deps.deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), session.familyId);
+    } catch (error) {
+      if (error instanceof RuntimeSyncAuthError) {
+        await reply.code(401).send({ error: 'actor_device_session_invalid' });
+        return false;
+      }
+      throw error;
+    }
+    const legacyHeader = request.headers[ACTOR_DEVICE_HEADER];
+    if (typeof legacyHeader === 'string' && legacyHeader.length > 0 && legacyHeader !== actorIdentity.deviceId) {
+      await reply.code(403).send({ error: 'actor_device_mismatch' });
+      return false;
+    }
+    const actorDeviceId = actorIdentity.deviceId;
     const issuedAt = new Date();
     const decision = await deps.safeZonePolicyAuthorizer.authorize({
       familyId: session.familyId,

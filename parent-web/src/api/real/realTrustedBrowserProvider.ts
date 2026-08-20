@@ -24,6 +24,7 @@ function initialSnapshot(): TrustedBrowserSnapshot {
     acceptedMinEpoch: null,
     pairingRequestedAtUtc: null,
     lastFingerprint: null,
+    actorDeviceSessionToken: null,
   };
 }
 
@@ -32,6 +33,35 @@ function initialSnapshot(): TrustedBrowserSnapshot {
  * per instance (module-scope singleton is constructed once by
  * ../client.ts), consistent with never persisting endpoint trust state in
  * Web Storage across reloads -- see ../../security/trustedEndpointKeyStore.ts.
+ *
+ * SECURITY (actor-identity binding, KNOWN_BACKEND_INTEGRATION_ACTION):
+ * `snapshot.actorDeviceSessionToken` stays `null` forever in this class
+ * today, even once/if `state` reaches `TRUSTED` in a future revision of
+ * `simulateParentApproval`'s real counterpart. Populating it honestly
+ * requires a browser-side ceremony that does not exist yet in this
+ * repository slice:
+ *
+ *   1. This endpoint's real DSK keypair (already generated in
+ *      `requestPairing` via `generateEndpointSigningKey`, non-extractable
+ *      ECDSA P-256) must be REGISTERED server-side against a real
+ *      `DeviceRepository` record for `browserEndpointId` -- i.e. this
+ *      browser endpoint must go through actual device enrollment
+ *      (backend/src/enrollment/), out of scope for this change.
+ *   2. Once registered, this class must call
+ *      `POST /v1/runtime-sync/devices/:deviceId/challenge` to obtain a
+ *      nonce, sign that nonce with the local non-extractable private key
+ *      (WebCrypto `sign`, never exporting the key), and
+ *      `POST /v1/runtime-sync/devices/:deviceId/session` with that
+ *      signature to receive a real `DeviceSessionService` session token
+ *      (see backend/src/runtime-sync/DeviceSessionService.ts /
+ *      runtimeSyncRoutes.ts -- both routes already exist and are wired).
+ *   3. That token becomes `actorDeviceSessionToken`, refreshed before its
+ *      TTL (`DEVICE_SESSION_TTL_MS`) expires.
+ *
+ * Until all three steps exist, `RealSafeZoneClient.actorHeaders()` throws
+ * `ACTOR_DEVICE_SESSION_UNAVAILABLE` for a real (non-dev) browser rather
+ * than sending any self-reported identity -- fail closed, not
+ * fail-open-with-a-forgeable-header.
  */
 export class RealTrustedBrowserProvider implements TrustedBrowserProvider {
   private snapshot: TrustedBrowserSnapshot = initialSnapshot();

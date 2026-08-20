@@ -14,6 +14,7 @@ function snapshotWith(state: TrustedBrowserSnapshot['state']): TrustedBrowserSna
     acceptedMinEpoch: state === 'TRUSTED' ? 5 : null,
     pairingRequestedAtUtc: null,
     lastFingerprint: null,
+    actorDeviceSessionToken: state === 'TRUSTED' ? 'actor-device-session-token' : null,
   };
 }
 

@@ -8,10 +8,11 @@ const routePath = `${root}/backend/dist/http/routes/parentAccountRoutes.js`;
 const migrationPath = `${root}/backend/migrations/0020_parent_preferences_safe_zones.sql`;
 const requireFromBackend = createRequire(`${root}/backend/package.json`);
 const Fastify = requireFromBackend('fastify');
+const { RuntimeSyncAuthError } = await import(pathToFileURL(`${root}/backend/dist/runtime-sync/DeviceSessionService.js`).href);
 
 const authHeaders = {
   cookie: 'pca_family_session=session-a; pca_family_csrf=csrf-a',
-  'x-pca-actor-device-id': 'device-a',
+  authorization: 'Bearer devtoken-a',
   'x-pca-csrf-token': 'csrf-a',
 };
 const opaquePayload = {
@@ -58,6 +59,19 @@ function dependencies() {
         return request.targetScope.id === 'device-a'
           ? { verdict: 'ALLOW' }
           : { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' };
+      },
+    },
+    // SECURITY (actor-identity binding): mirrors
+    // backend/test/parentaccount/preferencesSafeZonesRoute.test.mjs's stub
+    // -- the mutation-boundary route file under test now requires a
+    // verified DeviceSessionService session (Authorization: Bearer
+    // <token>), not the legacy x-pca-actor-device-id header alone.
+    deviceSessionService: {
+      async requireActorDeviceInFamily(rawToken, expectedFamilyId) {
+        if (rawToken !== 'devtoken-a' || expectedFamilyId !== 'family-a') {
+          throw new RuntimeSyncAuthError('UNAUTHORIZED');
+        }
+        return { deviceId: 'device-a', familyId: 'family-a' };
       },
     },
   };

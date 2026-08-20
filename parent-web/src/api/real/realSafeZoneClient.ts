@@ -4,7 +4,6 @@ import { validateOpaqueSafeZoneInput, validateOpaqueSafeZonePatch } from '../saf
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
 const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
-const ACTOR_DEVICE_HEADER = 'x-pca-actor-device-id';
 const SAFE_ZONE_KEYS = new Set([
   'zoneId',
   'familyId',
@@ -133,10 +132,33 @@ export class RealSafeZoneClient implements SafeZoneClient {
     return parseSafeZone(responseBody.safeZone, familyId);
   }
 
+  /**
+   * SECURITY (actor-identity binding): sends the backend a verified,
+   * session-bound actor identity -- never a self-reported opaque string.
+   * Earlier this sent `snapshot.browserEndpointId` (a browser-local,
+   * self-asserted value from `TrustedBrowserProvider.getSnapshot()`) as the
+   * `x-pca-actor-device-id` header, which the server only regex-validated
+   * with no cryptographic binding to the caller; that header is now
+   * DEPRECATED server-side (see parentAccountRoutes.ts's
+   * `authorizeSafeZoneRequest` doc comment) and this client no longer sends
+   * it at all, to avoid a spurious mismatch against the real,
+   * session-derived deviceId.
+   *
+   * Instead this sends `snapshot.actorDeviceSessionToken` as
+   * `Authorization: Bearer <token>` -- a `DeviceSessionService` device
+   * session token the server verifies server-side via
+   * `DeviceSessionService.requireActorDeviceInFamily` (see
+   * backend/src/runtime-sync/DeviceSessionService.ts). See
+   * `TrustedBrowserSnapshot.actorDeviceSessionToken`'s own doc comment for
+   * why this is `null` (and this therefore throws) for
+   * `RealTrustedBrowserProvider` today: the browser-side challenge-response
+   * ceremony that would populate it is not yet built.
+   */
   private async actorHeaders(): Promise<Record<string, string>> {
     const snapshot = await this.trustedBrowser.getSnapshot();
     if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
     if (!snapshot.browserEndpointId) throw new Error('DEVICE_IDENTITY_UNAVAILABLE');
-    return { [ACTOR_DEVICE_HEADER]: snapshot.browserEndpointId };
+    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+    return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 }

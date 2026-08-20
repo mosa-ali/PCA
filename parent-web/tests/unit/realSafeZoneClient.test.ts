@@ -11,6 +11,7 @@ const trustedBrowser = {
     acceptedMinEpoch: 4,
     pairingRequestedAtUtc: null,
     lastFingerprint: null,
+    actorDeviceSessionToken: 'actor-device-session-token-1',
   })),
 } as unknown as TrustedBrowserProvider;
 
@@ -85,6 +86,32 @@ describe('RealSafeZoneClient opaque response boundary', () => {
     await expect(client.update('family-1', 'zone-1', { ciphertextB64: 'AQID', label: 'Home' } as never))
       .rejects.toMatchObject({ code: 'ENCRYPTION_UNAVAILABLE' });
     await expect(client.remove('family with spaces', 'zone-1')).rejects.toThrow('SAFE_ZONE_REQUEST_INVALID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('asserts identity to the server via a verified device session token, never a self-reported header', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ safeZones: [safeZone] }) }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new RealSafeZoneClient('https://pca.example', trustedBrowser).list('family-1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer actor-device-session-token-1');
+    expect(headers['x-pca-actor-device-id']).toBeUndefined();
+  });
+
+  it('refuses to call the safe-zone endpoint when no verified actor device session token is available', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const noSessionToken = {
+      ...trustedBrowser,
+      getSnapshot: vi.fn(async () => ({ ...(await trustedBrowser.getSnapshot()), actorDeviceSessionToken: null })),
+    } as unknown as TrustedBrowserProvider;
+
+    await expect(new RealSafeZoneClient('https://pca.example', noSessionToken).list('family-1'))
+      .rejects.toThrow('ACTOR_DEVICE_SESSION_UNAVAILABLE');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
