@@ -1496,6 +1496,34 @@ if (total !== expectedTotal || accountedFor !== total) {
   throw new Error(`Unexpected R3 matrix counts: ${JSON.stringify({ total, counts })}`);
 }
 const partialPlusNotStarted = counts.PARTIAL + counts.NOT_STARTED;
+
+// R3 correction (2026-08-21): these five counts are the whole point of
+// R3_SOURCE_BACKLOG.csv's SOURCE_SOLVABLE_CLASS column -- they are NOT
+// caller-supplied evidence, they are directly, mechanically derivable from
+// data this script already computed above (sourceBacklogRows). Computing
+// them here, from the real current backlog, is what makes the current-head
+// section below trustworthy rather than another hand-maintained claim that
+// can drift from reality the way the old hardcoded/no-carry-forward fields
+// did (see the two fixes immediately below this block for that exact bug
+// class).
+const sourceSolvableClassCounts = sourceBacklogRows.reduce((acc, row) => {
+  const cls = row.SOURCE_SOLVABLE_CLASS || 'UNCLASSIFIED';
+  acc[cls] = (acc[cls] ?? 0) + 1;
+  return acc;
+}, {});
+const realSourceGapCount = sourceSolvableClassCounts.REAL_SOURCE_GAP ?? 0;
+const sourceTriageRequiredCount = sourceSolvableClassCounts.SOURCE_TRIAGE_REQUIRED ?? 0;
+// SOURCE_SOLVABLE_OPEN = still-open rows that are repository-solvable by
+// more source work alone (REAL_SOURCE_GAP + SOURCE_TRIAGE_REQUIRED) --
+// distinct from rows that are open but blocked on an external/owner gate
+// (SOURCE_COMPLETE_EXTERNAL_GATE, SOURCE_COMPLETE_OWNER_DECISION_GATE,
+// OWNER_DECISION_REQUIRED_FOR_SOURCE), which no amount of repository source
+// work can close.
+const sourceSolvableOpenCount = realSourceGapCount + sourceTriageRequiredCount;
+const externalGateClassCount = sourceSolvableClassCounts.SOURCE_COMPLETE_EXTERNAL_GATE ?? 0;
+const ownerGateClassCount = sourceSolvableClassCounts.SOURCE_COMPLETE_OWNER_DECISION_GATE ?? 0;
+const ownerDecisionRequiredClassCount = sourceSolvableClassCounts.OWNER_DECISION_REQUIRED_FOR_SOURCE ?? 0;
+
 let progress = await readFile(paths.progress, 'utf8');
 progress = progress.replace(/Generated from the completion matrix and repository evidence on [^\.]+\./, `Generated from the completion matrix and repository evidence on ${new Date().toISOString().slice(0, 10)}.`);
 progress = updateFirstMetric(progress, 'Total matrix requirements', total);
@@ -1505,10 +1533,28 @@ progress = updateFirstMetric(progress, 'NOT_STARTED', counts.NOT_STARTED);
 progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
 progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
+// R3 correction (2026-08-21): "Source backlog reconciliation: N rows" was
+// static prose this script never had any mechanism to regenerate at all --
+// it stayed exactly as first written no matter how many times this script
+// ran, which is exactly how it went stale (77 rows) long after the real
+// backlog shrank. Now derived live from sourceBacklogRows on every run.
+progress = progress.replace(/- Source backlog reconciliation:[^\n]*/, `- Source backlog reconciliation: ${sourceBacklogRows.length} rows (live-derived from R3_SOURCE_BACKLOG.csv on every regeneration, never hand-maintained prose).`);
 const currentHeadValidationEvidence = process.env.PCA_R3_BACKEND_UNIT_SECURITY_EVIDENCE
   ?? '- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.';
 progress = progress.replace(/- Backend build[^\n]*/, currentHeadValidationEvidence);
-progress = progress.replace(/- Parent Web typecheck[^\n]*/, '- Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).');
+// R3 correction (2026-08-21): this line used to be a hardcoded literal
+// ("PASS ... 61 files, 452 tests ...") that this script rewrote to the
+// exact SAME fixed text every single run, regardless of how stale it
+// became -- the same staleness bug class as the mutation section below,
+// just baked into source instead of defaulting at runtime. Now carries
+// forward whatever real evidence is already recorded and only changes when
+// the caller explicitly supplies fresh evidence, matching every other
+// current-head evidence field in this file: never fabricated, never
+// silently reset.
+const previousParentWebEvidence = progress.match(/- Parent Web typecheck[^\n]*/)?.[0]
+  ?? '- Parent Web typecheck: NOT_EXECUTED; test: NOT_EXECUTED; production build: NOT_EXECUTED.';
+const parentWebEvidence = process.env.PCA_R3_PARENT_WEB_VALIDATION_EVIDENCE ?? previousParentWebEvidence;
+progress = progress.replace(/- Parent Web typecheck[^\n]*/, parentWebEvidence);
 const currentMigration = process.env.PCA_R3_DB_MIGRATION ?? '0020';
 const previousDbStatus = progress.match(/CURRENT_HEAD_\d+_DB_VALIDATION = (PASS|NOT_EXECUTED|BLOCKED)/)?.[1] ?? 'NOT_EXECUTED';
 const dbStatus = process.env.PCA_R3_DB_VALIDATION ?? previousDbStatus;
@@ -1529,19 +1575,75 @@ const dbSectionPattern = /\n### (?:Wave 11 database validation|Current-head data
 progress = dbSectionPattern.test(progress)
   ? progress.replace(dbSectionPattern, `\n${dbSection}`)
   : `${progress.trimEnd()}\n\n${dbSection}\n`;
-const mutationStatus = process.env.PCA_R3_MUTATION ?? 'NOT_EXECUTED';
-const mutationSurvivors = process.env.PCA_R3_VALID_MUTATION_SURVIVORS ?? 'NOT_EXECUTED';
+// R3 correction (2026-08-21): PCA_R3_MUTATION/PCA_R3_VALID_MUTATION_SURVIVORS
+// previously had NO carry-forward at all (unlike dbStatus just above, which
+// already read back its own prior value) -- every regeneration that did not
+// explicitly re-supply these two env vars silently overwrote real, already-
+// recorded mutation evidence back to the bootstrap default "NOT_EXECUTED",
+// even on a HEAD where mutation testing genuinely ran with zero survivors.
+// This is the literal defect the correction (2026-08-21) was opened for.
+// Fixed the same way dbSection already handled it: read back whatever this
+// file currently says before deciding what to write.
+const previousMutationStatus = progress.match(/- MUTATION = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousMutationSurvivors = progress.match(/- VALID_MUTATION_SURVIVORS = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousMutationScope = progress.match(/(### Current-head mutation validation[\s\S]*?\n- Scope: )([^\n]*)/)?.[2]
+  ?? 'bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.';
+const mutationStatus = process.env.PCA_R3_MUTATION ?? previousMutationStatus;
+const mutationSurvivors = process.env.PCA_R3_VALID_MUTATION_SURVIVORS ?? previousMutationSurvivors;
+const mutationScope = process.env.PCA_R3_MUTATION_SCOPE ?? previousMutationScope;
 const mutationSection = [
   '### Current-head mutation validation',
   '',
   `- MUTATION = ${mutationStatus}`,
   `- VALID_MUTATION_SURVIVORS = ${mutationSurvivors}`,
-  '- Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.',
+  `- Scope: ${mutationScope}`,
 ].join('\n');
 const mutationSectionPattern = /\n### Current-head mutation validation[\s\S]*?(?=\n### |\n## |$)/;
 progress = mutationSectionPattern.test(progress)
   ? progress.replace(mutationSectionPattern, `\n${mutationSection}`)
   : `${progress.trimEnd()}\n\n${mutationSection}\n`;
+
+// R3 correction (2026-08-21): the single, explicit "what is CURRENT, right
+// now, at this exact HEAD" section the correction requires -- distinct from
+// every numbered "Wave N"/dated historical section elsewhere in this file,
+// which describe PAST states and must never be read as current. The five
+// counts derived above (realSourceGapCount/sourceSolvableOpenCount/the three
+// classification counts) are computed fresh from R3_SOURCE_BACKLOG.csv on
+// every single run -- never caller-supplied, never able to go stale the way
+// hand-maintained prose could. The five evidence fields below are things
+// this script cannot independently know (whether an E2E/mutation/audit pass
+// actually happened) -- same "supply real evidence via env var, carry
+// forward otherwise, never fabricate" discipline as every other current-head
+// field in this file.
+const previousParentRealE2e = progress.match(/- PARENT_REAL_E2E = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousPlatformAdminRealE2e = progress.match(/- PLATFORM_ADMIN_REAL_E2E = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousFinalSourceAuditFindings = progress.match(/- FINAL_SOURCE_AUDIT_FINDINGS = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousKnownLocalDefects = progress.match(/- KNOWN_LOCAL_DEFECTS = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const parentRealE2e = process.env.PCA_R3_PARENT_REAL_E2E ?? previousParentRealE2e;
+const platformAdminRealE2e = process.env.PCA_R3_PLATFORM_ADMIN_REAL_E2E ?? previousPlatformAdminRealE2e;
+const finalSourceAuditFindings = process.env.PCA_R3_FINAL_SOURCE_AUDIT_FINDINGS ?? previousFinalSourceAuditFindings;
+const knownLocalDefects = process.env.PCA_R3_KNOWN_LOCAL_DEFECTS ?? previousKnownLocalDefects;
+const currentHeadSection = [
+  '### Current-head final state',
+  '',
+  `- TOTAL_REQUIREMENTS = ${total}`,
+  `- REAL_SOURCE_GAP = ${realSourceGapCount}`,
+  `- SOURCE_SOLVABLE_OPEN = ${sourceSolvableOpenCount}`,
+  `- SOURCE_COMPLETE_EXTERNAL_GATE = ${externalGateClassCount}`,
+  `- SOURCE_COMPLETE_OWNER_DECISION_GATE = ${ownerGateClassCount}`,
+  `- OWNER_DECISION_REQUIRED_FOR_SOURCE = ${ownerDecisionRequiredClassCount}`,
+  `- PARENT_REAL_E2E = ${parentRealE2e}`,
+  `- PLATFORM_ADMIN_REAL_E2E = ${platformAdminRealE2e}`,
+  `- VALID_MUTATION_SURVIVORS = ${mutationSurvivors}`,
+  `- FINAL_SOURCE_AUDIT_FINDINGS = ${finalSourceAuditFindings}`,
+  `- KNOWN_LOCAL_DEFECTS = ${knownLocalDefects}`,
+  '- TOTAL_REQUIREMENTS/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from R3_SOURCE_BACKLOG.csv on every regeneration. The five evidence fields are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.',
+].join('\n');
+const currentHeadSectionPattern = /\n### Current-head final state[\s\S]*?(?=\n### |\n## |$)/;
+progress = currentHeadSectionPattern.test(progress)
+  ? progress.replace(currentHeadSectionPattern, `\n${currentHeadSection}`)
+  : `${progress.trimEnd()}\n\n${currentHeadSection}\n`;
+
 await writeFile(paths.progress, progress, 'utf8');
 
 const triageRequired = sourceBacklogRows.filter((row) => row.SOURCE_SOLVABLE_CLASS === 'SOURCE_TRIAGE_REQUIRED').length;

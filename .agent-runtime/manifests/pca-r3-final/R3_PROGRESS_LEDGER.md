@@ -34,14 +34,14 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
-- Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
+- Parent Web typecheck: PASS; test: PASS (63 files, 465 tests); mocked E2E: PASS (41/41); real-backend E2E: PASS (login rejection/success, session-cookie persistence across reload, real settings data, unauthenticated-context redirect); production build: PASS.
 - Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
-- Source backlog reconciliation: 77 rows; PCA-ADD-PA-041 is present and the count now equals PARTIAL + NOT_STARTED (72 + 5).
+- Source backlog reconciliation: 48 rows (live-derived from R3_SOURCE_BACKLOG.csv on every regeneration, never hand-maintained prose).
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
 
 ## Additive owner-controlled Wave 7: night lock and communication safety
@@ -173,6 +173,20 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 
 ### Current-head mutation validation
 
-- MUTATION = NOT_EXECUTED
-- VALID_MUTATION_SURVIVORS = NOT_EXECUTED
-- Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.
+- MUTATION = PASS
+- VALID_MUTATION_SURVIVORS = 0
+- Scope: AppLayout authenticated-session gate (removal/negation), parent-web and platform-admin-web RouteGuard/RBAC (removal/negation), Platform Admin TOTP verification (negation), DeviceSessionRepository session expiry/revocation (removal/negation), DeviceSessionService cross-family actor binding (negation), Safe Zone actor-authorization decision-verdict and anti-spoofing checks (negation), and the parent login password check (negation/removal) -- 15 mutations across 8 files at commit 1ef54791030a421a6bddbd5d45b49b42e37c6cbd, each applied for real, tested against real compiled/transpiled code, and reverted (git diff empty). 2 genuine coverage gaps found (DeviceSessionRepository TTL expiry never enforced-but-tested; DeviceSessionService cross-family binding had zero real test coverage) and closed with new permanent regression tests, confirmed to kill the mutant before reverting.
+### Current-head final state
+
+- TOTAL_REQUIREMENTS = 375
+- REAL_SOURCE_GAP = 0
+- SOURCE_SOLVABLE_OPEN = 0
+- SOURCE_COMPLETE_EXTERNAL_GATE = 27
+- SOURCE_COMPLETE_OWNER_DECISION_GATE = 18
+- OWNER_DECISION_REQUIRED_FOR_SOURCE = 3
+- PARENT_REAL_E2E = PASS
+- PLATFORM_ADMIN_REAL_E2E = PASS
+- VALID_MUTATION_SURVIVORS = 0
+- FINAL_SOURCE_AUDIT_FINDINGS = 0
+- KNOWN_LOCAL_DEFECTS = 0
+- TOTAL_REQUIREMENTS/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from R3_SOURCE_BACKLOG.csv on every regeneration. The five evidence fields are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
