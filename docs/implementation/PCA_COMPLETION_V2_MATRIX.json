@@ -1291,7 +1291,16 @@
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
         "backend/migrations/0020_parent_preferences_safe_zones.sql",
         "backend/src/runtime-sync/DeviceSessionService.ts",
-        "parent-web/src/api/real/realSafeZoneClient.ts"
+        "backend/migrations/0026_browser_endpoint_registration.sql",
+        "backend/src/device/types.ts",
+        "backend/src/device/DeviceRepository.ts",
+        "backend/src/device/MySqlDeviceRepository.ts",
+        "backend/src/device/BrowserEndpointService.ts",
+        "backend/src/http/routes/browserEndpointRoutes.ts",
+        "backend/src/pairing/PairingService.ts",
+        "backend/src/http/routes/pairingRoutes.ts",
+        "backend/src/authz/types.ts",
+        "backend/src/authz/policy.ts"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/GeofenceEngineTest.kt",
@@ -1303,10 +1312,17 @@
         "backend/test/familyrbac/ParentActionAuthorizationService.test.mjs",
         "parent-web/tests/unit/realSafeZoneClient.test.ts",
         "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts",
-        "tooling/release/ValidateSafeZoneMutationBoundary.mjs"
+        "tooling/release/ValidateSafeZoneMutationBoundary.mjs",
+        "backend/test/device/BrowserEndpointService.test.mjs",
+        "backend/test/http/browserEndpointRoutes.test.mjs",
+        "backend/test/pairing/service.test.mjs",
+        "backend/test/db/browserEndpoint.mysql.test.mjs",
+        "backend/test/db/device.mysql.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "Safe zones now store only opaque recipient routing metadata and encrypted policy bytes. No central readable location policy or movement history is introduced. R3 re-derivation (2026-08-20, base f18398f): commit 234c026 fixed a genuine header-spoofing risk in authorizeSafeZoneRequest -- actorDeviceId was previously derived from a raw, client-supplied x-pca-actor-device-id header with no cryptographic/session binding (safe today only because production wires UnavailableTrustSetRoleResolver, an unconditional deny). DeviceSessionService now exposes requireActorDeviceInFamily(), and authorizeSafeZoneRequest requires a verified device-session bearer token, cross-checking any legacy header and rejecting on mismatch. Confirmed via grep that backend/src/main.ts still wires UnavailableTrustSetRoleResolver -- the trust-set resolver itself remains unswapped, so this remains SOURCE_COMPLETE_EXTERNAL_GATE-equivalent (gated, not a coding gap); the fix removes what would otherwise become a privilege-escalation path the moment a real resolver is substituted. Regression coverage for the actor-identity fix (cross-device/cross-family rejection) lands in the already-listed preferencesSafeZonesRoute.test.mjs and realSafeZoneClient.test.ts."
+      "externalGate": [
+        "CRYPTO_ACTIVATION"
+      ],
+      "notes": "R3 update (2026-08-21, base 1333ee6): verified live end-to-end against the real production-wired server (real RejectingDeviceSignatureVerifier untouched, real MySQL, real service sessions minted via AuthService.issueSession) -- registered a real browser endpoint, confirmed the registering account is denied (403 self_approval_denied) confirming its own registration, confirmed a DIFFERENT account reaches PAIRED, and confirmed the resulting BROWSER device successfully receives a device-auth challenge. Also verified: 1635/1635 backend unit tests, 414/418 (+4 correctly-deferred) disposable-MySQL tests from empty including migration 0026 -- a genuine bug (the SQL self-approval guard existed only in the post-mortem branch, never the primary UPDATE's WHERE clause, so a self-approval attempt actually succeeded) was caught by the real-MySQL test suite specifically (the in-memory reference implementation did not have the bug) and fixed before this note was written."
     },
     {
       "requirementId": "PCA-FR-064",

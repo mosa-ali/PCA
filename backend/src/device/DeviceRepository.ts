@@ -22,7 +22,9 @@ export type RevokeKeyResult =
 export type ConfirmPairingResult =
   | { outcome: 'CONFIRMED'; device: DeviceRecord }
   | { outcome: 'DEVICE_NOT_FOUND' }
-  | { outcome: 'INVALID_STATE' };
+  | { outcome: 'INVALID_STATE' }
+  /** The confirming account is the SAME account that registered this device (devices.registered_by_account_id) -- see DeviceRecord's own doc comment. */
+  | { outcome: 'SELF_APPROVAL_DENIED' };
 
 /**
  * Persistence port for the device identity/key directory. A deterministic
@@ -91,6 +93,10 @@ export interface DeviceRepository {
    * already-PAIRED device returns success with the original pairedAt
    * unchanged. Any other status (REVOKED, or already ACTIVE) is
    * INVALID_STATE -- confirmation is not a general-purpose status setter.
+   * SELF_APPROVAL_DENIED when confirmedByAccountId equals this device's
+   * registeredByAccountId (see DeviceRecord's own doc comment) -- checked
+   * BEFORE INVALID_STATE, so a self-approval attempt is never miscategorized
+   * as a generic state conflict.
    */
   confirmPairing(
     familyId: OpaqueFamilyId,

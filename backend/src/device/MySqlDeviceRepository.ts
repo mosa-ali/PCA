@@ -18,6 +18,7 @@ interface DeviceRow {
   revoked_at: Date | null;
   paired_at: Date | null;
   paired_by_account_id: string | null;
+  registered_by_account_id: string | null;
 }
 
 interface DeviceKeyRow {
@@ -40,6 +41,7 @@ function mapDevice(row: DeviceRow): DeviceRecord {
     revokedAt: row.revoked_at,
     pairedAt: row.paired_at,
     pairedByAccountId: row.paired_by_account_id,
+    registeredByAccountId: row.registered_by_account_id,
   };
 }
 
@@ -55,7 +57,7 @@ function mapKey(row: DeviceKeyRow): DeviceKeyRecord {
   };
 }
 
-type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND' | 'INVALID_STATE';
+type DeviceSoftCode = 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DUPLICATE_KEY' | 'KEY_NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED';
 
 export class MySqlDeviceRepository implements DeviceRepository {
   async createDeviceWithKey(device: DeviceRecord, key: DeviceKeyRecord): Promise<CreateDeviceResult> {
@@ -63,8 +65,8 @@ export class MySqlDeviceRepository implements DeviceRepository {
       return await runInTransaction(async (conn) => {
         await execute(
           conn,
-          `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at, paired_at, paired_by_account_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO devices (device_id, family_id, platform, status, created_at, revoked_at, paired_at, paired_by_account_id, registered_by_account_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             device.deviceId,
             device.familyId,
@@ -74,6 +76,11 @@ export class MySqlDeviceRepository implements DeviceRepository {
             device.revokedAt,
             device.pairedAt,
             device.pairedByAccountId,
+            // `?? null`, not a bare pass-through: mysql2 throws on an
+            // `undefined` bind parameter, and every caller that predates
+            // this field (registeredByAccountId only matters for BROWSER
+            // registration) constructs a DeviceRecord literal without it.
+            device.registeredByAccountId ?? null,
           ],
         );
         try {
@@ -266,8 +273,9 @@ export class MySqlDeviceRepository implements DeviceRepository {
         const updated = await execute(
           conn,
           `UPDATE devices SET status = 'PAIRED', paired_at = ?, paired_by_account_id = ?
-           WHERE device_id = ? AND family_id = ? AND status = 'PAIRING_PENDING'`,
-          [confirmedAt, confirmedByAccountId, deviceId, familyId],
+           WHERE device_id = ? AND family_id = ? AND status = 'PAIRING_PENDING'
+             AND (registered_by_account_id IS NULL OR registered_by_account_id != ?)`,
+          [confirmedAt, confirmedByAccountId, deviceId, familyId, confirmedByAccountId],
         );
         if (updated.rowCount > 0) {
           const reread = await execute<DeviceRow>(conn, `SELECT * FROM devices WHERE device_id = ? AND family_id = ?`, [
@@ -285,6 +293,12 @@ export class MySqlDeviceRepository implements DeviceRepository {
         if (!row) throw new SoftFailure<DeviceSoftCode>('DEVICE_NOT_FOUND');
         // Already PAIRED -- idempotent success, original pairedAt untouched.
         if (row.status === 'PAIRED') return { outcome: 'CONFIRMED', device: mapDevice(row) } as const;
+        // Checked before the generic INVALID_STATE fallback so a
+        // self-approval attempt is never miscategorized as a plain state
+        // conflict -- see DeviceRecord/confirmPairing's own doc comments.
+        if (row.status === 'PAIRING_PENDING' && row.registered_by_account_id === confirmedByAccountId) {
+          throw new SoftFailure<DeviceSoftCode>('SELF_APPROVAL_DENIED');
+        }
         throw new SoftFailure<DeviceSoftCode>('INVALID_STATE');
       });
     } catch (error) {

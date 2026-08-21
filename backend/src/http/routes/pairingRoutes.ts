@@ -69,6 +69,7 @@ export function registerPairingRoutes(app: FastifyInstance, deps: PairingRoutesD
       } catch (error) {
         if (error instanceof PairingError) {
           if (error.code === 'NOT_FOUND') return reply.code(404).send({ error: 'not_found' });
+          if (error.code === 'SELF_APPROVAL_DENIED') return reply.code(403).send({ error: 'self_approval_denied' });
           return reply.code(409).send({ error: 'conflict' });
         }
         throw error;

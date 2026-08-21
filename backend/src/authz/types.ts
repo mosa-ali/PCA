@@ -23,6 +23,8 @@ export type ServiceOperation =
   | 'LIST_OWN_INVITATIONS'
   | 'VIEW_PAIRING_REQUEST'
   | 'CONFIRM_PAIRING_REQUEST'
+  /** PCA-FR-063/doc 08 Section 8-style ceremony: registers a service-authenticated browser's non-extractable DSK as a new BROWSER-platform device. Confirmation still goes through the existing CONFIRM_PAIRING_REQUEST/pairing-requests flow -- registration is a distinct, narrower operation. */
+  | 'REGISTER_BROWSER_ENDPOINT'
   | 'LICENSE_LOOKUP'
   | 'RELEASE_METADATA_LOOKUP'
   // PCA-BILL-2A: family-facing billing checkout/status operations, added

@@ -4,7 +4,7 @@ import type { DeviceId, OpaqueFamilyId } from '../device/types.js';
 import type { PairingRequestView } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 
-export type PairingErrorCode = 'NOT_FOUND' | 'INVALID_STATE';
+export type PairingErrorCode = 'NOT_FOUND' | 'INVALID_STATE' | 'SELF_APPROVAL_DENIED';
 
 /** Fixed, generic messages -- identical for "no such device" and "device belongs to a different family" (IDOR defense, matching the device domain's own pattern). */
 export class PairingError extends Error {
@@ -19,6 +19,7 @@ export class PairingError extends Error {
 const PAIRING_ERROR_MESSAGES: Record<PairingErrorCode, string> = {
   NOT_FOUND: 'Pairing request was not found.',
   INVALID_STATE: 'Pairing request is not in a state that permits this operation.',
+  SELF_APPROVAL_DENIED: 'This account registered this endpoint and cannot also confirm it.',
 };
 
 /**
@@ -68,6 +69,7 @@ export class PairingService {
   ): Promise<PairingRequestView> {
     const result = await this.deviceRepository.confirmPairing(authorizedFamilyId, deviceId, confirmedByAccountId, this.now());
     if (result.outcome === 'DEVICE_NOT_FOUND') throw new PairingError('NOT_FOUND');
+    if (result.outcome === 'SELF_APPROVAL_DENIED') throw new PairingError('SELF_APPROVAL_DENIED');
     if (result.outcome === 'INVALID_STATE') throw new PairingError('INVALID_STATE');
     await this.auditService.record({
       familyId: authorizedFamilyId,

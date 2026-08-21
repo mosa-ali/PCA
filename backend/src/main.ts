@@ -49,6 +49,7 @@ import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/Unava
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
 import { RealProtectiveAuthorityResolver } from './familyrbac/RealProtectiveAuthorityResolver.js';
 import { MySqlDeviceProtectionStatusRepository } from './device/DeviceProtectionStatusRepository.js';
+import { BrowserEndpointService } from './device/BrowserEndpointService.js';
 import { ProtectionAlertProducer } from './alerts/ProtectionAlertProducer.js';
 import { MySqlProtectionAlertLedger } from './alerts/MySqlProtectionAlertLedger.js';
 import { createRejectingOpaqueProtectionAlertComposer } from './alerts/RejectingOpaqueProtectionAlertComposer.js';
@@ -541,6 +542,7 @@ async function start(): Promise<void> {
     invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService, protectionAlerting),
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
+    browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
     inboundReconnectService: new InboundReconnectService(relayService, syncCoordinator),

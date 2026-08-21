@@ -20,6 +20,7 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   LIST_OWN_INVITATIONS: { requiresFamilyScope: true, requiresLicense: false },
   VIEW_PAIRING_REQUEST: { requiresFamilyScope: true, requiresLicense: false },
   CONFIRM_PAIRING_REQUEST: { requiresFamilyScope: true, requiresLicense: false },
+  REGISTER_BROWSER_ENDPOINT: { requiresFamilyScope: true, requiresLicense: false },
   LICENSE_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   RELEASE_METADATA_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   // PCA-BILL-2A: a paid device-limit-increase checkout requires an active

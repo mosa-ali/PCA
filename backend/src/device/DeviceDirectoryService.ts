@@ -18,7 +18,8 @@ export type DeviceDirectoryErrorCode =
   | 'DEVICE_NOT_FOUND'
   | 'DEVICE_REVOKED'
   | 'KEY_NOT_FOUND'
-  | 'INVALID_STATE';
+  | 'INVALID_STATE'
+  | 'SELF_APPROVAL_DENIED';
 
 /** Fixed, generic messages per code -- never interpolates key material or family data. */
 export class DeviceDirectoryError extends Error {
@@ -39,6 +40,7 @@ const DEVICE_ERROR_MESSAGES: Record<DeviceDirectoryErrorCode, string> = {
   DEVICE_REVOKED: 'Device has been revoked.',
   KEY_NOT_FOUND: 'Device key was not found.',
   INVALID_STATE: 'Device is not in a state that permits this operation.',
+  SELF_APPROVAL_DENIED: 'This account registered this endpoint and cannot also confirm it.',
 };
 
 export interface RegisterDeviceInput {
@@ -86,6 +88,7 @@ export class DeviceDirectoryService {
       revokedAt: null,
       pairedAt: null,
       pairedByAccountId: null,
+      registeredByAccountId: null,
     };
     const key: DeviceKeyRecord = {
       deviceId: device.deviceId,
@@ -181,6 +184,8 @@ export class DeviceDirectoryService {
         return result.device;
       case 'DEVICE_NOT_FOUND':
         throw new DeviceDirectoryError('DEVICE_NOT_FOUND');
+      case 'SELF_APPROVAL_DENIED':
+        throw new DeviceDirectoryError('SELF_APPROVAL_DENIED');
       case 'INVALID_STATE':
         throw new DeviceDirectoryError('INVALID_STATE');
     }

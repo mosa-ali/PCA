@@ -56,6 +56,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   // pairing/PairingService.ts PAIRING_ERROR_MESSAGES
   'pairing.NOT_FOUND': 'Pairing request was not found.',
   'pairing.INVALID_STATE': 'Pairing request is not in a state that permits this operation.',
+  'pairing.SELF_APPROVAL_DENIED': 'This account registered this endpoint and cannot also confirm it.',
 
   // deviceauth/DeviceAuthService.ts DEVICE_AUTH_ERROR_MESSAGES
   'deviceAuth.DEVICE_NOT_FOUND': 'Device was not found.',
@@ -72,6 +73,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'device.DEVICE_REVOKED': 'Device has been revoked.',
   'device.KEY_NOT_FOUND': 'Device key was not found.',
   'device.INVALID_STATE': 'Device is not in a state that permits this operation.',
+  'device.SELF_APPROVAL_DENIED': 'This account registered this endpoint and cannot also confirm it.',
 
   // recovery/RecoveryService.ts RECOVERY_ERROR_MESSAGES
   'recovery.INVALID_INPUT': 'Recovery envelope input is malformed.',

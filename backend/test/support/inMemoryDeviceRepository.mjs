@@ -104,6 +104,9 @@ export function createInMemoryDeviceRepository() {
       if (!device) return { outcome: 'DEVICE_NOT_FOUND' };
       if (device.status === 'PAIRED') return { outcome: 'CONFIRMED', device: { ...device } }; // idempotent
       if (device.status !== 'PAIRING_PENDING') return { outcome: 'INVALID_STATE' };
+      if (device.registeredByAccountId && device.registeredByAccountId === confirmedByAccountId) {
+        return { outcome: 'SELF_APPROVAL_DENIED' };
+      }
       device.status = 'PAIRED';
       device.pairedAt = confirmedAt;
       device.pairedByAccountId = confirmedByAccountId;

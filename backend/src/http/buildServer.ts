@@ -14,6 +14,8 @@ import { registerParentWebCors } from './parentWebCors.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
+import { registerBrowserEndpointRoutes } from './routes/browserEndpointRoutes.js';
+import type { BrowserEndpointService } from '../device/BrowserEndpointService.js';
 import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext, type ProtectionStatusAlerting } from './routes/runtimeSyncRoutes.js';
 import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
@@ -169,6 +171,8 @@ export interface ServerDependencies {
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: see registerRuntimeSyncRoutes' own ProtectionStatusAlerting doc comment. */
   protectionStatusAlerting?: ProtectionStatusAlerting;
+  /** PCA-FR-063: optional -- when supplied, POST /v1/families/:familyId/browser-endpoints is registered. See browserEndpointRoutes.ts's own doc comment. */
+  browserEndpointService?: BrowserEndpointService;
 }
 
 /**
@@ -236,6 +240,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerPairingRoutes(app, {
     pairingService: deps.pairingService,
+    authService: deps.authService,
+    authzService: deps.authzService,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerBrowserEndpointRoutes(app, {
+    browserEndpointService: deps.browserEndpointService,
     authService: deps.authService,
     authzService: deps.authzService,
     rateLimiter,

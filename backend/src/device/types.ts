@@ -1,7 +1,16 @@
 export type DeviceId = string;
 export type DeviceKeyId = string;
 export type OpaqueFamilyId = string;
-export type Platform = 'ANDROID' | 'IOS';
+/**
+ * BROWSER is a service-authenticated parent-web trusted-browser endpoint
+ * (doc 08 Section 8-style ceremony), registered via
+ * BrowserEndpointService/browserEndpointRoutes.ts -- NOT reachable through
+ * EnrollmentCoordinator's invitation-claim flow, which remains
+ * ANDROID/IOS-only child-device enrollment. A BROWSER device never has a
+ * DEK: it registers exactly one DSK (the browser's non-extractable WebCrypto
+ * signing key) and is never a family E2EE encryption recipient by itself.
+ */
+export type Platform = 'ANDROID' | 'IOS' | 'BROWSER';
 
 /**
  * Device lifecycle per accepted architecture (doc 08 Section 3):
@@ -36,6 +45,14 @@ export type DeviceKeyPurpose = 'DSK' | 'DEK';
  * bookkeeping only ("this account confirmed the fingerprint shown") -- this
  * is never family E2EE trust authority, which remains entirely device-side
  * in the Family Trust Set (doc 09 Section 3.2).
+ *
+ * registeredByAccountId records which service-session account requested a
+ * BROWSER endpoint's registration -- null for every invitation-enrolled
+ * (ANDROID/IOS) device, which has no service session at creation time.
+ * confirmPairing rejects a confirmation from this SAME account
+ * (SELF_APPROVAL_DENIED) -- the mechanical enforcement of "no self-approval"
+ * for a ceremony where, unlike mobile enrollment, the registering and
+ * confirming parties could otherwise trivially be the same session.
  */
 export interface DeviceRecord {
   deviceId: DeviceId;
@@ -46,6 +63,7 @@ export interface DeviceRecord {
   revokedAt: Date | null;
   pairedAt: Date | null;
   pairedByAccountId: string | null;
+  registeredByAccountId: string | null;
 }
 
 export interface DeviceKeyRecord {

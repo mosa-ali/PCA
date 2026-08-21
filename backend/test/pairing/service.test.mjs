@@ -95,3 +95,46 @@ test('viewer/service authority alone does not create family cryptographic trust:
   assert.notEqual(view.status, 'ACTIVE');
   assert.equal(view.status, 'PAIRED');
 });
+
+// --- PCA-FR-063: no-self-approval for a BROWSER endpoint's registeredByAccountId ---
+
+async function pendingBrowserDevice(repository, registeredByAccountId) {
+  const deviceId = randomUUID();
+  const createdAt = new Date('2026-01-01T00:00:00.000Z');
+  const { device } = await repository.createDeviceWithKey(
+    { deviceId, familyId: FAMILY_A, platform: 'BROWSER', status: 'PAIRING_PENDING', createdAt, revokedAt: null, pairedAt: null, pairedByAccountId: null, registeredByAccountId },
+    { deviceId, keyId: randomUUID(), keyPurpose: 'DSK', publicKey: key(), status: 'ACTIVE', createdAt, revokedAt: null },
+  );
+  return device;
+}
+
+test('the SAME account that registered a browser endpoint cannot confirm its own pairing', async () => {
+  const { repository, pairingService } = buildServices();
+  const registeredBy = randomUUID();
+  const device = await pendingBrowserDevice(repository, registeredBy);
+  await assert.rejects(
+    () => pairingService.confirmPairing(FAMILY_A, device.deviceId, registeredBy),
+    { code: 'SELF_APPROVAL_DENIED' },
+  );
+  const stillPending = await pairingService.getPairingRequest(FAMILY_A, device.deviceId);
+  assert.equal(stillPending.status, 'PAIRING_PENDING', 'a denied self-approval attempt must never advance the device state');
+});
+
+test('a DIFFERENT account confirming a browser endpoint succeeds normally', async () => {
+  const { repository, pairingService } = buildServices();
+  const registeredBy = randomUUID();
+  const confirmedBy = randomUUID();
+  const device = await pendingBrowserDevice(repository, registeredBy);
+  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, confirmedBy);
+  assert.equal(view.status, 'PAIRED');
+});
+
+test('a device with no registeredByAccountId (ordinary invitation-enrolled mobile device) has no self-approval restriction', async () => {
+  const { deviceService, pairingService } = buildServices();
+  const { device } = await pairedCandidateDevice(deviceService);
+  // Confirming with an arbitrary account (which never "registered" this
+  // device, since mobile enrollment has no service session at all) must
+  // succeed exactly as before this change.
+  const view = await pairingService.confirmPairing(FAMILY_A, device.deviceId, randomUUID());
+  assert.equal(view.status, 'PAIRED');
+});
