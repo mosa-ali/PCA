@@ -47,7 +47,8 @@ import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.
 import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
-import { UnavailableProtectiveAuthorityResolver } from './familyrbac/UnavailableProtectiveAuthorityResolver.js';
+import { RealProtectiveAuthorityResolver } from './familyrbac/RealProtectiveAuthorityResolver.js';
+import { MySqlDeviceProtectionStatusRepository } from './device/DeviceProtectionStatusRepository.js';
 import { DeviceDirectoryService } from './device/DeviceDirectoryService.js';
 import { registerRemovalDecisionRoutes } from './http/routes/removalDecisionRoutes.js';
 import { AdministrationPinService } from './enrollment/AdministrationPinService.js';
@@ -436,6 +437,11 @@ async function start(): Promise<void> {
   // decided-on device -- confirmed by direct source inspection this
   // session, now closed.
   const deviceDirectoryService = new DeviceDirectoryService(deviceRepository, () => new Date(), familyAuditService);
+  // PCA-ADD-ENR-016/PCA-FR-145: single shared instance -- both
+  // registerRuntimeSyncRoutes' protection-status write endpoint and
+  // RealProtectiveAuthorityResolver's read below share this SAME
+  // repository instance, never a second independently-constructed copy.
+  const deviceProtectionStatusRepository = new MySqlDeviceProtectionStatusRepository();
   const removalDecisionAuthority = new RemovalDecisionAuthority({
     repository: new MySqlRemovalDecisionRepository(),
     authorization: safeZoneParentActionAuthorization,
@@ -567,8 +573,13 @@ async function start(): Promise<void> {
     // vs. honestly fail-closed pending a real implementation (signed
     // remote-parent, authorized recovery).
     removalDecisionAuthority,
-    protectiveAuthorityResolver: new UnavailableProtectiveAuthorityResolver(),
+    // PCA-ADD-ENR-016/PCA-FR-145: real source, fail-closed only on the
+    // SAME PCA-DEC-020 crypto-review gate as every other signed-device
+    // channel in this file -- see RealProtectiveAuthorityResolver.ts's
+    // own doc comment for the full chain.
+    protectiveAuthorityResolver: new RealProtectiveAuthorityResolver(deviceProtectionStatusRepository),
     administrationPinService,
+    deviceProtectionStatusRepository,
   });
   await app.listen({ host, port });
 

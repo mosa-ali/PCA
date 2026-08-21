@@ -7,6 +7,7 @@ import { RelayError } from '../../relay/RelayService.js';
 import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.js';
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
+import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -35,7 +36,19 @@ export interface RuntimeSyncRoutesDeps {
   resolveEnvelopeContext: ResolveEnvelopeContext;
   rateLimiter: ReturnType<typeof createRateLimiter>;
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
+  /**
+   * PCA-ADD-ENR-016/PCA-FR-145: optional so every existing composition
+   * that doesn't yet care about protective-authority status keeps working
+   * unchanged. When supplied, POST /v1/runtime-sync/protection-status is
+   * registered -- the one real, device-session-authenticated way a
+   * device's self-reported protection level ever reaches the durable
+   * store RealProtectiveAuthorityResolver reads (see that class's own
+   * doc comment for the full chain).
+   */
+  deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
 }
+
+const PROTECTION_LEVELS: ReadonlySet<string> = new Set(['STANDARD', 'PROTECTED', 'DEGRADED', 'AUTHORIZATION_REQUIRED', 'NOT_SUPPORTED']);
 
 const MAX_CIPHERTEXT_BASE64_LENGTH = 90_000; // headroom over relay's 64 KiB ciphertext cap once base64-inflated
 
@@ -231,4 +244,30 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
       return reply.send({ connectionState: state });
     },
   );
+
+  // PCA-ADD-ENR-016/PCA-FR-145: the one real way a device's protection
+  // level ever reaches RealProtectiveAuthorityResolver -- see that
+  // class's own doc comment. familyId/deviceId are ALWAYS taken from the
+  // verified session (never the request body) -- a device can only ever
+  // report its own status, never another device's.
+  if (deps.deviceProtectionStatusRepository) {
+    const protectionStatusRepository = deps.deviceProtectionStatusRepository;
+    app.post(
+      '/v1/runtime-sync/protection-status',
+      { preHandler: [deps.authAttemptLimiter, requireDeviceSession, inboundLimiter] },
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = request.body as { protectionLevel?: unknown };
+        if (typeof body.protectionLevel !== 'string' || !PROTECTION_LEVELS.has(body.protectionLevel)) {
+          return reply.code(400).send({ error: 'invalid_request' });
+        }
+        await protectionStatusRepository.upsert({
+          deviceId: request.runtimeSyncDeviceId as string,
+          familyId: request.runtimeSyncFamilyId as string,
+          protectionLevel: body.protectionLevel as ProtectionLevel,
+          updatedAt: new Date(),
+        });
+        return reply.code(204).send();
+      },
+    );
+  }
 }

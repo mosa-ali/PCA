@@ -85,6 +85,7 @@ import type { ParentAccountService } from '../parentaccount/ParentAccountService
 // removalDecisionRoutes.ts's own header for why it was not previously wired.
 import { registerRemovalDecisionRoutes, type ProtectiveAuthorityResolver } from './routes/removalDecisionRoutes.js';
 import type { RemovalDecisionAuthority } from '../familyrbac/RemovalDecisionAuthority.js';
+import type { DeviceProtectionStatusRepository } from '../device/DeviceProtectionStatusRepository.js';
 import type { AdministrationPinService } from '../enrollment/AdministrationPinService.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
 // entitlement grants (Round5 Owner decision, Addendum 004). Registered
@@ -164,6 +165,8 @@ export interface ServerDependencies {
   protectiveAuthorityResolver?: ProtectiveAuthorityResolver;
   /** PCA-ADD-ENR-012: family-scoped offline Administration PIN status/configuration -- see registerRemovalDecisionRoutes below. */
   administrationPinService?: AdministrationPinService;
+  /** PCA-ADD-ENR-016/PCA-FR-145: see registerRuntimeSyncRoutes' own doc comment and RealProtectiveAuthorityResolver.ts. */
+  deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
 }
 
 /**
@@ -244,6 +247,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     resolveEnvelopeContext: deps.resolveEnvelopeContext,
     rateLimiter,
     authAttemptLimiter,
+    deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
   });
   registerRetentionRoutes(app, {
     authService: deps.authService,

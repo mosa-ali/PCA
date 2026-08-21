@@ -31,8 +31,10 @@ import { createInMemoryRelayRepository } from '../../support/inMemoryRelayReposi
 import { createInMemoryDeviceChallengeRepository } from '../../support/inMemoryDeviceChallengeRepository.mjs';
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../../support/testOnlyDeviceSignatureVerifier.mjs';
 import { createTestOnlyEnvelopeSignatureVerifier } from '../../support/testOnlyEnvelopeSignatureVerifier.mjs';
+import { InMemoryDeviceProtectionStatusRepository } from '../../../dist/device/DeviceProtectionStatusRepository.js';
+import { RealProtectiveAuthorityResolver } from '../../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
 
-function buildApp() {
+function buildApp({ deviceProtectionStatusRepository } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
@@ -71,6 +73,7 @@ function buildApp() {
       familyId,
       now: nowUtc,
     }),
+    deviceProtectionStatusRepository,
   });
   return { app, deviceRepository };
 }
@@ -291,6 +294,105 @@ test('GET /v1/runtime-sync/status reports LIVE only after a successful sync, nev
     await app.inject({ method: 'GET', url: '/v1/runtime-sync/inbound', headers: { authorization: `Bearer ${token}` } });
     const afterSync = await app.inject({ method: 'GET', url: '/v1/runtime-sync/status', headers: { authorization: `Bearer ${token}` } });
     assert.equal(afterSync.json().connectionState, 'LIVE');
+  } finally {
+    await app.close();
+  }
+});
+
+// --- PCA-ADD-ENR-016/PCA-FR-145: device-reported protection status ---
+
+test('protection-status route is not registered at all when no repository is configured (404, not merely 401)', async () => {
+  const { app } = buildApp();
+  try {
+    const response = await app.inject({ method: 'POST', url: '/v1/runtime-sync/protection-status', payload: { protectionLevel: 'PROTECTED' } });
+    assert.equal(response.statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('reporting protection status without a session token is rejected with 401, never recorded', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { app } = buildApp({ deviceProtectionStatusRepository });
+  try {
+    const response = await app.inject({ method: 'POST', url: '/v1/runtime-sync/protection-status', payload: { protectionLevel: 'PROTECTED' } });
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an invalid protectionLevel value is rejected with 400', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { protectionLevel: 'SOMETHING_MADE_UP' },
+    });
+    assert.equal(response.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a real device-session-authenticated report is recorded under the SESSION identity, and RealProtectiveAuthorityResolver then resolves true for that exact family/device', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { protectionLevel: 'PROTECTED' },
+    });
+    assert.equal(response.statusCode, 204);
+
+    const record = await deviceProtectionStatusRepository.findForDevice(familyId, deviceId);
+    assert.ok(record, 'the report must be durably recorded');
+    assert.equal(record.protectionLevel, 'PROTECTED');
+
+    const resolver = new RealProtectiveAuthorityResolver(deviceProtectionStatusRepository);
+    assert.equal(await resolver.resolve(familyId, deviceId), true);
+    // A different device/family must never see this report.
+    assert.equal(await resolver.resolve(familyId, `device-${randomUUID()}`), false);
+    assert.equal(await resolver.resolve(`family-${randomUUID()}`, deviceId), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a device can never report status for a different device -- the id always comes from the verified session, never the request body', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId: reportingDeviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const { deviceId: otherDeviceId } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, reportingDeviceId, publicKey);
+
+    // Even if the request body tried to claim a different deviceId, the
+    // route never reads deviceId from the body at all -- there is no field
+    // for it. Confirm the record lands under the AUTHENTICATED device only.
+    await app.inject({
+      method: 'POST',
+      url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { protectionLevel: 'PROTECTED', deviceId: otherDeviceId },
+    });
+
+    assert.equal((await deviceProtectionStatusRepository.findForDevice(familyId, reportingDeviceId))?.protectionLevel, 'PROTECTED');
+    assert.equal(await deviceProtectionStatusRepository.findForDevice(familyId, otherDeviceId), null);
   } finally {
     await app.close();
   }
