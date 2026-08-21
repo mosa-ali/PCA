@@ -54,6 +54,7 @@ fun ChildHomeScreen(
     modifier: Modifier = Modifier,
     ageUxTier: AgeUxTier? = null,
     onRequestParentContact: () -> Unit = {},
+    onRequestBonusTime: () -> Unit = {},
     onEmergencyAccess: () -> Unit = {},
     onOpenSafeBrowser: () -> Unit = {},
     onOpenAdminSecurity: () -> Unit = {},
@@ -92,6 +93,7 @@ fun ChildHomeScreen(
             item { YouTubeModeEntryCard(onClick = onOpenYouTubeMode) }
             item { EmergencyAccessCard(copy = copy, isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
+            item { BonusTimeRequestCard(onClick = onRequestBonusTime) }
             item { AdminSecurityEntryCard(onClick = onOpenAdminSecurity) }
         }
     }
@@ -405,6 +407,33 @@ private fun ParentContactCard(pendingCount: Int, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+        }
+    }
+}
+
+/**
+ * PCA-FR-130 ("Bonus Time"): a structured "ask for extra time" entry point,
+ * distinct from [ParentContactCard]'s free-text contact flow -- wired
+ * (MainActivity.kt) to the SAME real, locally-queued
+ * [org.pca.app.runtime.PcaRuntime.createChildRequest] path
+ * [ParentContactCard] already uses, just with `kind = "BONUS_TIME"`, so it
+ * inherits the identical offline-safe, honestly-PENDING_SYNC_LOCAL-until-
+ * synced behavior rather than a second, parallel mechanism.
+ */
+@Composable
+private fun BonusTimeRequestCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_bonus_time), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.child_home_bonus_time_explanation),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }

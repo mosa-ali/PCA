@@ -203,6 +203,8 @@ export const DEV_REQUESTS: FamilyRequest[] = [
     createdAtUtc: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
     status: 'PENDING',
     correlationId: 'corr-1',
+    requestedExtraMinutes: 30,
+    grantedExtraMinutes: null,
   },
   {
     requestId: 'req-2',

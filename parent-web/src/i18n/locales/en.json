@@ -343,9 +343,36 @@
     "status": "Status",
     "decisionApproved": "Approved",
     "decisionDenied": "Denied",
+    "decisionCountered": "Countered (shorter amount granted)",
     "decisionPending": "Pending parent decision",
     "decisionExpired": "Expired",
-    "decisionNotice": "Each decision is made by an authorized parent role and recorded for this child. A pending child request is not an approval."
+    "decisionNotice": "Each decision is made by an authorized parent role and recorded for this child. A pending child request is not an approval.",
+    "bonusTime": {
+      "grantTitle": "Grant bonus time",
+      "grantExplanation": "Grant extra screen time to a child directly, up to {{max}} minutes per grant. This goes through the same approval, bound, and audit checks as responding to a child's own request.",
+      "selectChild": "Select a child",
+      "minutes": "Minutes",
+      "minutesColumn": "Bonus minutes",
+      "requestedMinutes": "{{minutes}} min requested",
+      "grantedMinutes": "{{minutes}} min granted",
+      "grantAction": "Grant",
+      "grantErrorNoChild": "Choose a child first.",
+      "grantError": {
+        "NOT_A_NUMBER": "Enter a number of minutes.",
+        "NOT_AN_INTEGER": "Minutes must be a whole number.",
+        "TOO_LOW": "Enter at least 1 minute.",
+        "TOO_HIGH": "A single bonus grant cannot exceed 120 minutes."
+      },
+      "counterOfferLabel": "Counter-offer (min)",
+      "counterOfferAction": "Counter-offer",
+      "counterOfferError": {
+        "NOT_A_NUMBER": "Enter a number of minutes.",
+        "NOT_AN_INTEGER": "Minutes must be a whole number.",
+        "TOO_LOW": "Enter at least 1 minute.",
+        "TOO_HIGH": "A single bonus grant cannot exceed 120 minutes.",
+        "NOT_SHORTER": "A counter-offer must be shorter than what the child asked for."
+      }
+    }
   },
   "policyStatus": {
     "label": "Policy status:",

@@ -145,6 +145,24 @@ test('precedence: parent exception overrides an active bedtime window', () => {
   assert.equal(result.decision, 'ALLOWED_EXCEPTION');
 });
 
+// PCA-FR-130 principle "grant cannot silently disable parental bedtime/night-lock rules": an
+// active bonus-time grant only ever extends the DAILY MINUTE LIMIT (precedence step 6) -- it must
+// never reach past an active bedtime window (precedence step 2), which blocks its app scope
+// unconditionally regardless of any bonus minutes still available.
+test('an active bonus grant does not override an active bedtime window', () => {
+  const bedtime = window({ id: 'bedtime', kind: 'BEDTIME', daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
+  const grant = {
+    id: 'bonus-1',
+    appScope: 'ALL',
+    extraMinutes: 60,
+    grantedAtUtc: new Date('2026-01-07T00:00:00.000Z'),
+    expiresAtUtc: new Date('2026-01-08T00:00:00.000Z'),
+  };
+  const dailyLimit = { appScope: 'ALL', limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: '2026-01-07' };
+  const result = evaluateSchedule(baseInput({ windows: [bedtime], bonusGrants: [grant], dailyLimit }));
+  assert.equal(result.decision, 'BLOCKED_BEDTIME');
+});
+
 test('precedence: school mode blocks an app not on its allow scope even without any block period', () => {
   const schoolMode = window({ id: 'school', kind: 'SCHOOL_MODE', appScope: { apps: ['homework-app'] } });
   const result = evaluateSchedule(baseInput({ windows: [schoolMode], appToken: 'game-app' }));

@@ -102,6 +102,8 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'childRequest.REQUEST_EXPIRED': 'This child request has expired.',
   'childRequest.NOT_AUTHORIZED_TO_DECIDE': 'The deciding device is not authorized to approve/deny this request type.',
   'childRequest.NOT_THE_REQUESTER': 'Only the requesting child device may perform this action.',
+  'childRequest.BONUS_MINUTES_OUT_OF_BOUND': 'Requested/granted extra minutes is outside the permitted bound.',
+  'childRequest.COUNTER_OFFER_NOT_SHORTER': 'A counter-offer must grant strictly fewer minutes than the child requested.',
 
   // model/ModelLifecycleService.ts MODEL_LIFECYCLE_ERROR_MESSAGES
   'model.NOT_FOUND': 'Model lifecycle record does not exist.',

@@ -142,7 +142,8 @@ export type RequestType =
   | 'EXCEPTION'
   | 'DEVICE_PAIRING';
 
-export type RequestStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED' | 'CANCELLED';
+/** `COUNTERED` (PCA-FR-130): the deciding parent granted a SHORTER duration than a BONUS_TIME request asked for -- terminal, exactly like APPROVED/DENIED (see `requestsPage.decisionCountered`). */
+export type RequestStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'COUNTERED' | 'EXPIRED' | 'CANCELLED';
 
 export interface FamilyRequest {
   requestId: string;
@@ -153,6 +154,10 @@ export interface FamilyRequest {
   createdAtUtc: string;
   status: RequestStatus;
   correlationId: string;
+  /** PCA-FR-130: only ever set for `type === 'BONUS_TIME'`. The child's ASK. */
+  requestedExtraMinutes?: number | null;
+  /** PCA-FR-130: only ever set once decided APPROVED or COUNTERED -- the actual granted amount (equal to `requestedExtraMinutes` for APPROVED, the parent's own shorter figure for COUNTERED). */
+  grantedExtraMinutes?: number | null;
 }
 
 export interface FamilyMember {

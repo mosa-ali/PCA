@@ -106,4 +106,10 @@
     <string name="child_home_parent_contact">Contact parent</string>
     <string name="child_home_parent_contact_explanation">Ask your parent for more time, a policy change, or help with a removal request. Requests may wait until this device reconnects.</string>
     <string name="child_home_parent_contact_pending">%1$s request(s) pending until this device syncs</string>
+    <!-- PCA-FR-130 (Bonus Time): a structured request distinct from the free-text "Contact parent"
+         card above; names a specific duration so a parent can approve, deny, or counter-offer a
+         shorter amount, rather than a plain free-text message. -->
+    <string name="child_home_bonus_time">Ask for bonus time</string>
+    <string name="child_home_bonus_time_explanation">Ask your parent for extra screen time. They can approve it, offer a shorter amount, or say no. Bonus time never unlocks bedtime.</string>
+    <string name="child_home_bonus_time_pending">%1$s request(s) pending until this device syncs</string>
 </resources>

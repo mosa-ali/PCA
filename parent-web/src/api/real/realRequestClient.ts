@@ -26,4 +26,10 @@ export class RealRequestClient implements RequestClient {
     await requireTrustedAndCryptoReady(this.trustedBrowser, 'RequestClient.decide');
     throw new Error('RequestClient.decide: mutation path not implemented yet even post-crypto-approval.');
   }
+
+  /** PCA-FR-130 "grant directly" -- same not-implemented-yet posture as decide() above; see this file's header comment. */
+  async grantBonusTime(): Promise<{ auditEventId: string; requestId: string }> {
+    await requireTrustedAndCryptoReady(this.trustedBrowser, 'RequestClient.grantBonusTime');
+    throw new Error('RequestClient.grantBonusTime: mutation path not implemented yet even post-crypto-approval.');
+  }
 }

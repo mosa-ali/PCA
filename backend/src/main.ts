@@ -44,6 +44,12 @@ import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSe
 // below, exactly like UnavailableTrustSetRoleResolver above, rather than an
 // invented "always allow".
 import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.js';
+// PCA-FR-130 (Bonus Time): see the wiring block below (near
+// deviceDirectoryService) for the full rationale on why the repository/
+// ledger are in-memory reference implementations.
+import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepository.js';
+import { ChildRequestService } from './childrequests/ChildRequestService.js';
+import { BonusGrantLedger } from './childrequests/BonusGrantLedger.js';
 import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
@@ -445,6 +451,21 @@ async function start(): Promise<void> {
   // decided-on device -- confirmed by direct source inspection this
   // session, now closed.
   const deviceDirectoryService = new DeviceDirectoryService(deviceRepository, () => new Date(), familyAuditService);
+  // PCA-FR-130 (Bonus Time): reuses the SAME safeZoneParentActionAuthorization
+  // instance (a ParentActionAuthorizationService is generic across every
+  // ParentOperation, including APPROVE_BONUS_TIME) -- never a second,
+  // independently-constructed copy. Repository/ledger are in-memory
+  // reference implementations by deliberate design (see
+  // childrequests/ChildRequestRepository.ts's and BonusGrantLedger.ts's own
+  // doc comments): request/grant CONTENT is exactly the kind of
+  // family-policy content contracts/schedule-runtime/SchedulePolicyV1.md
+  // treats as E2EE-only, so this lane does not introduce a new central
+  // plaintext MySQL table for it -- the same posture as familyrbac's own
+  // FamilyAuditRepository/ActionIdempotencyLedger reference implementations
+  // above.
+  const childRequestRepository = new InMemoryChildRequestRepository();
+  const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
+  const bonusGrantLedger = new BonusGrantLedger();
   // PCA-ADD-ENR-016/PCA-FR-145: single shared instance -- both
   // registerRuntimeSyncRoutes' protection-status write endpoint and
   // RealProtectiveAuthorityResolver's read below share this SAME
@@ -621,6 +642,10 @@ async function start(): Promise<void> {
     administrationPinService,
     deviceProtectionStatusRepository,
     protectionStatusAlerting: protectionAlerting,
+    // PCA-FR-130 (Bonus Time): see the wiring block above (near
+    // deviceDirectoryService) for construction/rationale.
+    childRequestService,
+    bonusGrantLedger,
   });
   await app.listen({ host, port });
 

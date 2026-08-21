@@ -196,7 +196,25 @@ export interface DeviceStatusClient {
 
 export interface RequestClient {
   listRequests(status?: RequestStatus): Promise<FamilyRequest[]>;
-  decide(requestId: string, decision: 'APPROVED' | 'DENIED'): Promise<{ auditEventId: string }>;
+  /**
+   * PCA-FR-130: `decision === 'COUNTERED'` requires `counterOfferExtraMinutes`
+   * (a shorter duration than the request's own `requestedExtraMinutes` --
+   * see ../domain/bonusTime.ts's validateCounterOffer, which every real
+   * caller must run before submitting); omitted/ignored for every other
+   * decision. The real bound/shorter-than check is re-enforced server-side
+   * regardless (backend/src/childrequests/ChildRequestService.ts) -- this
+   * is UI-side validation for a good error message, never the authority.
+   */
+  decide(requestId: string, decision: 'APPROVED' | 'DENIED' | 'COUNTERED', counterOfferExtraMinutes?: number): Promise<{ auditEventId: string }>;
+  /**
+   * PCA-FR-130 "grant directly": an authorized parent granting bonus time
+   * PROACTIVELY, with no pending child request -- role-gated identically to
+   * `decide` (the SAME APPROVE_REQUEST family action; a Viewer/Child sees
+   * `PermissionGate` hide/disable this the same way it already does for
+   * `decide`). Returns the new (already-decided) request's id so the UI can
+   * refresh the list without a full reload if desired.
+   */
+  grantBonusTime(childId: string, extraMinutes: number, reasonText?: string | null): Promise<{ auditEventId: string; requestId: string }>;
 }
 
 /**

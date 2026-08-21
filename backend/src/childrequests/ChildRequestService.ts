@@ -3,11 +3,13 @@ import type { ChildRequestRepository } from './ChildRequestRepository.js';
 import {
   DEFAULT_REQUEST_LIFETIME_MS,
   isLegalChildRequestTransition,
+  isPlausibleExtraMinutes,
   isPlausibleOpaqueId,
   operationForRequestType,
   sanitizeReasonNote,
 } from './policy.js';
 import type { ChildRequest, ChildRequestId, ChildRequestType, ParentDecisionOutcome, TargetScope } from './types.js';
+import type { AppScope, BonusGrant } from '../schedule/types.js';
 import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 
 export type ChildRequestErrorCode =
@@ -16,7 +18,9 @@ export type ChildRequestErrorCode =
   | 'ILLEGAL_TRANSITION'
   | 'REQUEST_EXPIRED'
   | 'NOT_AUTHORIZED_TO_DECIDE'
-  | 'NOT_THE_REQUESTER';
+  | 'NOT_THE_REQUESTER'
+  | 'BONUS_MINUTES_OUT_OF_BOUND'
+  | 'COUNTER_OFFER_NOT_SHORTER';
 
 export class ChildRequestError extends Error {
   readonly code: ChildRequestErrorCode;
@@ -34,6 +38,8 @@ const CHILD_REQUEST_ERROR_MESSAGES: Record<ChildRequestErrorCode, string> = {
   REQUEST_EXPIRED: 'This child request has expired.',
   NOT_AUTHORIZED_TO_DECIDE: 'The deciding device is not authorized to approve/deny this request type.',
   NOT_THE_REQUESTER: 'Only the requesting child device may perform this action.',
+  BONUS_MINUTES_OUT_OF_BOUND: 'Requested/granted extra minutes is outside the permitted bound.',
+  COUNTER_OFFER_NOT_SHORTER: 'A counter-offer must grant strictly fewer minutes than the child requested.',
 };
 
 /**
@@ -57,7 +63,17 @@ export class ChildRequestService {
     this.now = now;
   }
 
-  /** Local-only draft, never persisted -- submit() is what makes it a real, transported request. */
+  /**
+   * Local-only draft, never persisted -- submit() is what makes it a real,
+   * transported request.
+   *
+   * PCA-FR-130: `requestedExtraMinutes`/`requestedAppScope` are REQUIRED
+   * (and bound-checked against MAX_BONUS_GRANT_MINUTES) when
+   * `requestType === 'BONUS_TIME'`, and must be omitted for every other
+   * request type -- a caller cannot smuggle an amount onto an UNBLOCK/
+   * SCHEDULE_EXCEPTION/POLICY_EXCEPTION request, and cannot submit a
+   * BONUS_TIME request with no amount at all.
+   */
   createDraft(
     familyId: string,
     childDeviceId: string,
@@ -65,7 +81,16 @@ export class ChildRequestService {
     requestType: ChildRequestType,
     targetScope: TargetScope,
     reasonNote?: string | null,
+    requestedExtraMinutes?: number | null,
+    requestedAppScope?: AppScope | null,
   ): ChildRequest {
+    if (requestType === 'BONUS_TIME') {
+      if (!isPlausibleExtraMinutes(requestedExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
+      if (requestedAppScope == null) throw new ChildRequestError('INVALID_INPUT');
+    } else if (requestedExtraMinutes != null || requestedAppScope != null) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
+
     const now = this.now();
     return {
       requestId: randomUUID(),
@@ -82,6 +107,10 @@ export class ChildRequestService {
       decisionActionId: null,
       correlationId: null,
       reasonNote: sanitizeReasonNote(reasonNote ?? null),
+      requestedExtraMinutes: requestType === 'BONUS_TIME' ? (requestedExtraMinutes as number) : null,
+      requestedAppScope: requestType === 'BONUS_TIME' ? (requestedAppScope as AppScope) : null,
+      grantedExtraMinutes: null,
+      grantExpiresAtUtc: null,
     };
   }
 
@@ -92,12 +121,22 @@ export class ChildRequestService {
     return pending;
   }
 
+  /**
+   * `counterOfferExtraMinutes` is REQUIRED (and must be strictly less than
+   * `request.requestedExtraMinutes`, and itself within the same
+   * MAX_BONUS_GRANT_MINUTES bound) when `outcome === 'COUNTERED'`; it must
+   * be omitted for every other outcome/request type. PCA-FR-130's "counter-
+   * offer a SHORTER duration" is enforced structurally here, not left to
+   * caller discipline -- a counter-offer that is not shorter than the ask
+   * is rejected outright, never silently clamped to look shorter.
+   */
   async decide(
     requestId: ChildRequestId,
     decidingActorDeviceId: string,
     outcome: ParentDecisionOutcome,
     decisionActionId: string,
     idempotencyKey: string,
+    counterOfferExtraMinutes?: number | null,
   ): Promise<ChildRequest> {
     if (!isPlausibleOpaqueId(decidingActorDeviceId) || !isPlausibleOpaqueId(decisionActionId)) {
       throw new ChildRequestError('INVALID_INPUT');
@@ -112,11 +151,43 @@ export class ChildRequestService {
       throw new ChildRequestError('REQUEST_EXPIRED');
     }
 
-    // Idempotency: a repeated decide() call with the SAME outcome by the SAME actor on an already-decided
-    // request returns the existing record rather than erroring or re-deciding.
-    if ((request.state === 'APPROVED' || request.state === 'DENIED') && request.decidedByDeviceId === decidingActorDeviceId) {
-      const matches = (outcome === 'APPROVED' && request.state === 'APPROVED') || (outcome === 'DENIED' && request.state === 'DENIED');
-      if (matches) return request;
+    // PCA-FR-130 bound/shape checks run BEFORE the idempotency short-circuit
+    // and BEFORE authorization, so a malformed counter-offer is rejected on
+    // its own terms regardless of who's asking.
+    let grantedExtraMinutes: number | null = null;
+    let grantExpiresAtUtc: Date | null = null;
+    if (outcome === 'COUNTERED') {
+      if (request.requestType !== 'BONUS_TIME' || request.requestedExtraMinutes === null) {
+        throw new ChildRequestError('INVALID_INPUT');
+      }
+      if (!isPlausibleExtraMinutes(counterOfferExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
+      if ((counterOfferExtraMinutes as number) >= request.requestedExtraMinutes) {
+        throw new ChildRequestError('COUNTER_OFFER_NOT_SHORTER');
+      }
+      grantedExtraMinutes = counterOfferExtraMinutes as number;
+      grantExpiresAtUtc = new Date(now.getTime() + grantedExtraMinutes * 60_000);
+    } else if (counterOfferExtraMinutes != null) {
+      throw new ChildRequestError('INVALID_INPUT');
+    } else if (outcome === 'APPROVED' && request.requestType === 'BONUS_TIME') {
+      // requestedExtraMinutes was already bound-checked at createDraft() time -- re-validated here
+      // as defense in depth (a repository/transport layer must never be trusted to preserve it).
+      if (!isPlausibleExtraMinutes(request.requestedExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
+      grantedExtraMinutes = request.requestedExtraMinutes;
+      grantExpiresAtUtc = new Date(now.getTime() + grantedExtraMinutes * 60_000);
+    }
+
+    // Idempotency: a repeated decide() call with the SAME outcome (and, for BONUS_TIME, the SAME
+    // granted amount) by the SAME actor on an already-decided request returns the existing record
+    // rather than erroring or re-deciding. A replay that tries to change the granted amount is
+    // deliberately NOT treated as idempotent -- it falls through to the illegal-transition check
+    // below, since APPROVED/DENIED/COUNTERED are all terminal states.
+    if (
+      (request.state === 'APPROVED' || request.state === 'DENIED' || request.state === 'COUNTERED') &&
+      request.decidedByDeviceId === decidingActorDeviceId &&
+      request.state === outcome &&
+      request.grantedExtraMinutes === grantedExtraMinutes
+    ) {
+      return request;
     }
 
     if (!isLegalChildRequestTransition(request.state, outcome)) throw new ChildRequestError('ILLEGAL_TRANSITION');
@@ -140,9 +211,78 @@ export class ChildRequestService {
       decidedAt: now,
       decidedByDeviceId: decidingActorDeviceId,
       decisionActionId,
+      grantedExtraMinutes,
+      grantExpiresAtUtc,
     };
     await this.repository.put(decided);
     return decided;
+  }
+
+  /**
+   * PCA-FR-130: turns a decided (APPROVED or COUNTERED) BONUS_TIME request
+   * into the same `BonusGrant` shape `schedule/engine.ts`'s `evaluateSchedule`
+   * already knows how to apply (see that module's `bonusGrants` handling) --
+   * this is a pure projection, never a second source of truth: `id` reuses
+   * the request's own `requestId` (so a grant is always traceable back to
+   * the decision that authorized it), and `grantedAtUtc`/`expiresAtUtc` are
+   * copied verbatim from the fields decide() already computed and persisted.
+   * Returns null for anything that isn't a decided BONUS_TIME grant (DENIED,
+   * still-PENDING, wrong request type, etc.) -- callers must not guess.
+   */
+  toBonusGrant(decided: ChildRequest): BonusGrant | null {
+    if (decided.requestType !== 'BONUS_TIME') return null;
+    if (decided.state !== 'APPROVED' && decided.state !== 'COUNTERED') return null;
+    if (
+      decided.grantedExtraMinutes === null ||
+      decided.grantExpiresAtUtc === null ||
+      decided.decidedAt === null ||
+      decided.requestedAppScope === null
+    ) {
+      return null;
+    }
+    return {
+      id: decided.requestId,
+      appScope: decided.requestedAppScope,
+      extraMinutes: decided.grantedExtraMinutes,
+      grantedAtUtc: decided.decidedAt,
+      expiresAtUtc: decided.grantExpiresAtUtc,
+    };
+  }
+
+  /**
+   * PCA-FR-130 "grant directly": an authorized parent granting bonus time
+   * PROACTIVELY, with no pending child request to respond to (the standing
+   * decision's principle "only an existing authorized parent role may
+   * grant" covers this path too, not just the request/approve flow FR-130's
+   * normative text describes). Deliberately NOT a separate authority system:
+   * this is exactly createDraft() + submit() + decide('APPROVED') composed
+   * in one call, so it goes through the IDENTICAL bound check, RBAC check
+   * (APPROVE_BONUS_TIME, same as responding to a child's own request), audit
+   * write, and idempotency ledger as every other bonus-time decision -- a
+   * child's own draft() would be indistinguishable from this one once
+   * PENDING, other than `childDeviceId`/`childMemberId` being caller-supplied
+   * here rather than derived from a submitting child device.
+   */
+  async grantDirectly(
+    familyId: string,
+    childDeviceId: string,
+    childMemberId: string | null,
+    targetScope: TargetScope,
+    extraMinutes: number,
+    appScope: AppScope,
+    grantingActorDeviceId: string,
+    decisionActionId: string,
+    idempotencyKey: string,
+    reasonNote?: string | null,
+  ): Promise<ChildRequest> {
+    const draft = this.createDraft(familyId, childDeviceId, childMemberId, 'BONUS_TIME', targetScope, reasonNote, extraMinutes, appScope);
+    const pending = await this.submit(draft);
+    return this.decide(pending.requestId, grantingActorDeviceId, 'APPROVED', decisionActionId, idempotencyKey);
+  }
+
+  /** Thin passthrough -- the HTTP layer (parent-facing list view) has no business reaching into the repository port directly. */
+  async listForFamily(familyId: string): Promise<ChildRequest[]> {
+    return this.repository.listForFamily(familyId);
   }
 
   async cancel(requestId: ChildRequestId, requestingDeviceId: string): Promise<ChildRequest> {

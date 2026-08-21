@@ -98,4 +98,8 @@
     <string name="child_home_parent_contact">التواصل مع ولي الأمر</string>
     <string name="child_home_parent_contact_explanation">اطلب من ولي أمرك وقتًا إضافيًا أو تغييرًا في السياسة أو المساعدة في طلب إزالة الحماية. قد تنتظر الطلبات حتى يعاود هذا الجهاز الاتصال.</string>
     <string name="child_home_parent_contact_pending">%1$s طلب معلّق حتى تتم مزامنة الجهاز</string>
+    <!-- PCA-FR-130 (وقت إضافي): طلب منظّم يختلف عن بطاقة "التواصل مع ولي الأمر" النصية الحرة أعلاه. -->
+    <string name="child_home_bonus_time">طلب وقت إضافي</string>
+    <string name="child_home_bonus_time_explanation">اطلب من ولي أمرك وقت شاشة إضافي. يمكنه الموافقة، أو منح مدة أقصر، أو الرفض. الوقت الإضافي لا يلغي موعد النوم أبدًا.</string>
+    <string name="child_home_bonus_time_pending">%1$s طلب معلّق حتى تتم مزامنة الجهاز</string>
 </resources>

@@ -56,6 +56,20 @@ class MainActivity : ComponentActivity() {
                             detail = "Child requested to contact parent",
                         )
                     },
+                    onRequestBonusTime = {
+                        // PCA-FR-130: reuses the SAME real, offline-safe createChildRequest path
+                        // as onRequestParentContact above -- never a second, parallel mechanism.
+                        // `detail` carries the machine-readable ask (parsed by whichever channel
+                        // eventually delivers this request to a parent device); the actual amount
+                        // is NOT decided here -- only an authorized parent's decide() call
+                        // (backend/src/childrequests/ChildRequestService.ts) ever produces a real,
+                        // bounded, audited grant.
+                        runtime.createChildRequest(
+                            requestId = newLocalRequestId(),
+                            kind = "BONUS_TIME",
+                            detail = "requestedExtraMinutes=30;appScope=ALL",
+                        )
+                    },
                     onOpenSafeBrowser = {
                         startActivity(Intent(this@MainActivity, SafeBrowserActivity::class.java))
                     },

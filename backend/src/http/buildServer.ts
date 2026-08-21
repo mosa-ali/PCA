@@ -110,6 +110,13 @@ import type { PlatformAdminSettlementService } from '../platformadmin/settlement
 import type { ParentPreferenceRepository } from '../parentaccount/ParentPreferenceRepository.js';
 import type { SafeZoneRepository } from '../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../location/SafeZonePolicyAuthorization.js';
+// PCA-FR-130 (Bonus Time): an eighth structurally independent surface,
+// registered exactly like every other domain's registerXRoutes call --
+// reuses the SAME deviceSessionService instance already wired above (never
+// a second, independently-constructed copy) for its actor-device binding.
+import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
+import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
+import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -173,6 +180,9 @@ export interface ServerDependencies {
   protectionStatusAlerting?: ProtectionStatusAlerting;
   /** PCA-FR-063: optional -- when supplied, POST /v1/families/:familyId/browser-endpoints is registered. See browserEndpointRoutes.ts's own doc comment. */
   browserEndpointService?: BrowserEndpointService;
+  /** PCA-FR-130 (Bonus Time): see registerChildRequestRoutes below. */
+  childRequestService: ChildRequestService;
+  bonusGrantLedger: BonusGrantLedger;
 }
 
 /**
@@ -360,6 +370,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     rateLimiter,
   });
   registerSdkDisclosureRoutes(app, { rateLimiter });
+  registerChildRequestRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    childRequestService: deps.childRequestService,
+    bonusGrantLedger: deps.bonusGrantLedger,
+    deviceSessionService: deps.deviceSessionService,
+  });
 
   return app;
 }
