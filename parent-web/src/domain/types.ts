@@ -25,6 +25,17 @@ export type CapabilityState =
 
 export type ProtectionDisplayState = 'STANDARD' | 'PROTECTED' | 'AUTHORIZATION_REQUIRED' | 'NOT_SUPPORTED';
 
+/**
+ * PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): mirrors
+ * `backend/src/childrequests/types.ts`'s `InstallApprovalCapabilityState` and Android/iOS's own
+ * copies of the same vocabulary verbatim -- never a boolean. `AUTHORIZATION_REQUIRED` and
+ * `NOT_SUPPORTED` intentionally reuse the exact same string values `ProtectionDisplayState`
+ * already uses (and the same `state.*` i18n/CSS keys -- see `StatusBadge.tsx`), since they mean
+ * the identical thing in both places: a parent should never learn two different words for "this
+ * device cannot currently enforce."
+ */
+export type InstallApprovalCapabilityState = 'ENFORCED' | 'REQUEST_ONLY' | 'AUTHORIZATION_REQUIRED' | 'NOT_SUPPORTED' | 'PLATFORM_LIMITED';
+
 export interface FamilyEpochInfo {
   trustSetEpoch: number;
   keyEpoch: number;
@@ -140,7 +151,8 @@ export type RequestType =
   | 'UNBLOCK_APP'
   | 'UNBLOCK_SITE'
   | 'EXCEPTION'
-  | 'DEVICE_PAIRING';
+  | 'DEVICE_PAIRING'
+  | 'INSTALL_APPROVAL';
 
 /** `COUNTERED` (PCA-FR-130): the deciding parent granted a SHORTER duration than a BONUS_TIME request asked for -- terminal, exactly like APPROVED/DENIED (see `requestsPage.decisionCountered`). */
 export type RequestStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'COUNTERED' | 'EXPIRED' | 'CANCELLED';
@@ -158,6 +170,27 @@ export interface FamilyRequest {
   requestedExtraMinutes?: number | null;
   /** PCA-FR-130: only ever set once decided APPROVED or COUNTERED -- the actual granted amount (equal to `requestedExtraMinutes` for APPROVED, the parent's own shorter figure for COUNTERED). */
   grantedExtraMinutes?: number | null;
+  /** PCA-FR-131: only ever set for `type === 'INSTALL_APPROVAL'` -- the device package/app identifier the request is about. */
+  installTargetPackageName?: string | null;
+  /** PCA-FR-131: best-effort human-readable app name for the same target; may be null even for an INSTALL_APPROVAL request (device could not resolve one). */
+  installTargetAppLabel?: string | null;
+  /**
+   * PCA-FR-131: the reporting device's own honest capability snapshot AT REQUEST-CREATION TIME --
+   * shown to the parent BEFORE they decide, so "approve" never silently implies "and this will
+   * definitely be blocked." See `installEnforcementOutcome` below for the separate, later,
+   * post-decision field -- the two are deliberately never merged into one.
+   */
+  installCapabilityState?: InstallApprovalCapabilityState | null;
+  /**
+   * PCA-FR-131: the device's own honest, SEPARATE report of what it actually did once it applied
+   * the parent's decision (populated only once `status === 'APPLIED_ACKNOWLEDGED'`-equivalent
+   * reporting has occurred) -- null until then. May legitimately differ from
+   * `installCapabilityState` above (e.g. authority lost between request and decision); that
+   * divergence is the honesty mechanism working, not an inconsistency to reconcile. This UI must
+   * never substitute `status === 'APPROVED'` for this field, nor treat a null value as "enforced
+   * by default."
+   */
+  installEnforcementOutcome?: InstallApprovalCapabilityState | null;
 }
 
 export interface FamilyMember {

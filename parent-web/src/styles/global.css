@@ -331,6 +331,14 @@ textarea {
 .status-PROTECTED .dot { background: var(--color-success); }
 .status-AUTHORIZATION_REQUIRED .dot { background: var(--color-warning); }
 .status-NOT_SUPPORTED .dot { background: var(--color-offline); }
+/* PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): ENFORCED/REQUEST_ONLY/PLATFORM_LIMITED are the
+   three install-approval-specific capability states not already covered by the rows above (which
+   AUTHORIZATION_REQUIRED/NOT_SUPPORTED already reuse verbatim). REQUEST_ONLY is deliberately the
+   SAME warning color as AUTHORIZATION_REQUIRED, never the success green ENFORCED uses -- it is an
+   honest "cannot actually block this," not a lesser-but-still-good outcome. */
+.status-ENFORCED .dot { background: var(--color-success); }
+.status-REQUEST_ONLY .dot { background: var(--color-warning); }
+.status-PLATFORM_LIMITED .dot { background: var(--color-offline); }
 
 .policy-status-LOCAL_DRAFT .dot { background: var(--color-offline); }
 .policy-status-PENDING_SYNC .dot { background: var(--color-warning); }

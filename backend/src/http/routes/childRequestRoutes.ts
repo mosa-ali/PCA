@@ -66,7 +66,8 @@ function csrfOk(request: FastifyRequest): boolean {
   return cookieToken === headerToken;
 }
 
-const REQUEST_TYPES: ReadonlySet<string> = new Set(['BONUS_TIME', 'UNBLOCK', 'SCHEDULE_EXCEPTION', 'POLICY_EXCEPTION']);
+const REQUEST_TYPES: ReadonlySet<string> = new Set(['BONUS_TIME', 'UNBLOCK', 'SCHEDULE_EXCEPTION', 'POLICY_EXCEPTION', 'INSTALL_APPROVAL']);
+const INSTALL_CAPABILITY_STATES: ReadonlySet<string> = new Set(['ENFORCED', 'REQUEST_ONLY', 'AUTHORIZATION_REQUIRED', 'NOT_SUPPORTED', 'PLATFORM_LIMITED']);
 const DECISIONS: ReadonlySet<string> = new Set(['APPROVED', 'DENIED', 'COUNTERED']);
 
 function parseAppScope(value: unknown): AppScope | null | undefined {
@@ -97,6 +98,10 @@ function toRequestDto(request: ChildRequest): Record<string, unknown> {
     requestedAppScope: request.requestedAppScope,
     grantedExtraMinutes: request.grantedExtraMinutes,
     grantExpiresAtUtc: request.grantExpiresAtUtc?.toISOString() ?? null,
+    installTargetPackageName: request.installTargetPackageName,
+    installTargetAppLabel: request.installTargetAppLabel,
+    installCapabilityState: request.installCapabilityState,
+    installEnforcementOutcome: request.installEnforcementOutcome,
   };
 }
 
@@ -217,6 +222,23 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
         return reply.code(400).send({ error: 'invalid_request' });
       }
 
+      // PCA-FR-131: an INSTALL_APPROVAL submission carries the target package/app label plus the
+      // reporting device's OWN honest capability snapshot -- shape-checked here (all three
+      // required except the label, per createDraft's own doc comment); the actual bound/enum
+      // validation still happens inside createDraft, never trusted from this HTTP layer alone.
+      const installTargetPackageName = requestType === 'INSTALL_APPROVAL' ? body.installTargetPackageName : undefined;
+      const installTargetAppLabel = requestType === 'INSTALL_APPROVAL' ? body.installTargetAppLabel : undefined;
+      const installCapabilityState = requestType === 'INSTALL_APPROVAL' ? body.installCapabilityState : undefined;
+      if (
+        requestType === 'INSTALL_APPROVAL' &&
+        (typeof installTargetPackageName !== 'string' ||
+          (installTargetAppLabel !== undefined && installTargetAppLabel !== null && typeof installTargetAppLabel !== 'string') ||
+          typeof installCapabilityState !== 'string' ||
+          !INSTALL_CAPABILITY_STATES.has(installCapabilityState))
+      ) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+
       try {
         const draft = childRequestService.createDraft(
           familyId,
@@ -227,9 +249,54 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
           typeof reasonNote === 'string' ? reasonNote : null,
           requestType === 'BONUS_TIME' ? (requestedExtraMinutes as number) : null,
           requestType === 'BONUS_TIME' ? (requestedAppScope as AppScope) : null,
+          requestType === 'INSTALL_APPROVAL' ? (installTargetPackageName as string) : null,
+          requestType === 'INSTALL_APPROVAL' ? ((installTargetAppLabel as string | null | undefined) ?? null) : null,
+          requestType === 'INSTALL_APPROVAL' ? (installCapabilityState as ChildRequest['installCapabilityState']) : null,
         );
         const pending = await childRequestService.submit(draft);
         return reply.code(201).send({ request: toRequestDto(pending) });
+      } catch (error) {
+        return handleError(reply, error);
+      }
+    },
+  );
+
+  // ---- Child device: honestly report what happened when it applied a decided request (PCA-FR-131:
+  // the ONLY route that ever writes `installEnforcementOutcome` -- distinct from, and always AFTER,
+  // the parent's own /decide call above, so "approved" and "enforced" are never the same write).
+  // Same actor-device-bound-by-bearer-token authentication as the submit route above; a request can
+  // only ever be acknowledged by the SAME child device that originally submitted it
+  // (ChildRequestService.acknowledgeApplied's own NOT_THE_REQUESTER check).
+  app.post(
+    '/api/families/:familyId/child-requests/:requestId/applied',
+    { bodyLimit: MAX_BODY_BYTES },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { familyId, requestId } = request.params as { familyId: string; requestId: string };
+      const authorizationHeader = request.headers.authorization;
+      if (typeof authorizationHeader !== 'string' || !authorizationHeader.startsWith('Bearer ') || authorizationHeader.length > 4096) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+      let childIdentity: { deviceId: string; familyId: string };
+      try {
+        childIdentity = await deviceSessionService.requireActorDeviceInFamily(authorizationHeader.slice('Bearer '.length), familyId);
+      } catch (error) {
+        if (error instanceof RuntimeSyncAuthError) return reply.code(401).send({ error: 'unauthorized' });
+        throw error;
+      }
+
+      const body = request.body;
+      const capabilityOutcome = isPlainObject(body) ? body.capabilityOutcome : undefined;
+      if (capabilityOutcome !== undefined && capabilityOutcome !== null && typeof capabilityOutcome !== 'string') {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+
+      try {
+        const acknowledged = await childRequestService.acknowledgeApplied(
+          requestId,
+          childIdentity.deviceId,
+          (capabilityOutcome as ChildRequest['installEnforcementOutcome'] | undefined) ?? null,
+        );
+        return reply.code(200).send({ request: toRequestDto(acknowledged) });
       } catch (error) {
         return handleError(reply, error);
       }

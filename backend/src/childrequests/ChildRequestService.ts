@@ -2,13 +2,23 @@ import { randomUUID } from 'node:crypto';
 import type { ChildRequestRepository } from './ChildRequestRepository.js';
 import {
   DEFAULT_REQUEST_LIFETIME_MS,
+  isInstallApprovalCapabilityState,
   isLegalChildRequestTransition,
+  isPlausibleAppIdentifier,
+  isPlausibleAppLabel,
   isPlausibleExtraMinutes,
   isPlausibleOpaqueId,
   operationForRequestType,
   sanitizeReasonNote,
 } from './policy.js';
-import type { ChildRequest, ChildRequestId, ChildRequestType, ParentDecisionOutcome, TargetScope } from './types.js';
+import type {
+  ChildRequest,
+  ChildRequestId,
+  ChildRequestType,
+  InstallApprovalCapabilityState,
+  ParentDecisionOutcome,
+  TargetScope,
+} from './types.js';
 import type { AppScope, BonusGrant } from '../schedule/types.js';
 import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 
@@ -73,6 +83,12 @@ export class ChildRequestService {
    * request type -- a caller cannot smuggle an amount onto an UNBLOCK/
    * SCHEDULE_EXCEPTION/POLICY_EXCEPTION request, and cannot submit a
    * BONUS_TIME request with no amount at all.
+   *
+   * PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): `installTargetPackageName`/`installCapabilityState`
+   * are REQUIRED when `requestType === 'INSTALL_APPROVAL'` (the SAME required/forbidden-elsewhere
+   * shape the bonus-time fields already use above) -- `installTargetAppLabel` is the one optional
+   * field of the three (best-effort, may be unresolved on-device). All three must be omitted for
+   * every other request type.
    */
   createDraft(
     familyId: string,
@@ -83,11 +99,22 @@ export class ChildRequestService {
     reasonNote?: string | null,
     requestedExtraMinutes?: number | null,
     requestedAppScope?: AppScope | null,
+    installTargetPackageName?: string | null,
+    installTargetAppLabel?: string | null,
+    installCapabilityState?: InstallApprovalCapabilityState | null,
   ): ChildRequest {
     if (requestType === 'BONUS_TIME') {
       if (!isPlausibleExtraMinutes(requestedExtraMinutes)) throw new ChildRequestError('BONUS_MINUTES_OUT_OF_BOUND');
       if (requestedAppScope == null) throw new ChildRequestError('INVALID_INPUT');
     } else if (requestedExtraMinutes != null || requestedAppScope != null) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
+
+    if (requestType === 'INSTALL_APPROVAL') {
+      if (!isPlausibleAppIdentifier(installTargetPackageName)) throw new ChildRequestError('INVALID_INPUT');
+      if (installTargetAppLabel != null && !isPlausibleAppLabel(installTargetAppLabel)) throw new ChildRequestError('INVALID_INPUT');
+      if (!isInstallApprovalCapabilityState(installCapabilityState)) throw new ChildRequestError('INVALID_INPUT');
+    } else if (installTargetPackageName != null || installTargetAppLabel != null || installCapabilityState != null) {
       throw new ChildRequestError('INVALID_INPUT');
     }
 
@@ -111,6 +138,10 @@ export class ChildRequestService {
       requestedAppScope: requestType === 'BONUS_TIME' ? (requestedAppScope as AppScope) : null,
       grantedExtraMinutes: null,
       grantExpiresAtUtc: null,
+      installTargetPackageName: requestType === 'INSTALL_APPROVAL' ? (installTargetPackageName as string) : null,
+      installTargetAppLabel: requestType === 'INSTALL_APPROVAL' ? (installTargetAppLabel ?? null) : null,
+      installCapabilityState: requestType === 'INSTALL_APPROVAL' ? (installCapabilityState as InstallApprovalCapabilityState) : null,
+      installEnforcementOutcome: null,
     };
   }
 
@@ -296,13 +327,40 @@ export class ChildRequestService {
     return cancelled;
   }
 
-  async acknowledgeApplied(requestId: ChildRequestId, childDeviceId: string): Promise<ChildRequest> {
+  /**
+   * PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): `capabilityOutcome` is the device's own
+   * honest, independently-timed report of what actually happened when it tried to apply the
+   * parent's decision -- REQUIRED (and validated against the same five-value vocabulary as
+   * `installCapabilityState`) when `request.requestType === 'INSTALL_APPROVAL'`, and must be
+   * omitted for every other request type. This is deliberately the ONLY place
+   * `installEnforcementOutcome` is ever written: `decide()` above never touches it, because the
+   * deciding parent's device has no way to know what a remote child device will actually be able
+   * to do -- "approved" (decide()'s job) and "enforced" (this method's job) must never be the same
+   * write. A value here may legitimately differ from the request's own `installCapabilityState`
+   * (see types.ts's doc comment on that field) -- that is the honesty mechanism working, not an
+   * inconsistency to reconcile.
+   */
+  async acknowledgeApplied(
+    requestId: ChildRequestId,
+    childDeviceId: string,
+    capabilityOutcome?: InstallApprovalCapabilityState | null,
+  ): Promise<ChildRequest> {
     const request = await this.repository.get(requestId);
     if (request === null) throw new ChildRequestError('NOT_FOUND');
     if (request.childDeviceId !== childDeviceId) throw new ChildRequestError('NOT_THE_REQUESTER');
     if (!isLegalChildRequestTransition(request.state, 'APPLIED_ACKNOWLEDGED')) throw new ChildRequestError('ILLEGAL_TRANSITION');
 
-    const acknowledged: ChildRequest = { ...request, state: 'APPLIED_ACKNOWLEDGED' };
+    if (request.requestType === 'INSTALL_APPROVAL') {
+      if (!isInstallApprovalCapabilityState(capabilityOutcome)) throw new ChildRequestError('INVALID_INPUT');
+    } else if (capabilityOutcome != null) {
+      throw new ChildRequestError('INVALID_INPUT');
+    }
+
+    const acknowledged: ChildRequest = {
+      ...request,
+      state: 'APPLIED_ACKNOWLEDGED',
+      installEnforcementOutcome: request.requestType === 'INSTALL_APPROVAL' ? (capabilityOutcome as InstallApprovalCapabilityState) : null,
+    };
     await this.repository.put(acknowledged);
     return acknowledged;
   }

@@ -19,7 +19,7 @@ test('doc 18 table row: VIEW_DASHBOARD', () => {
 });
 
 test('doc 18 table row: EDIT_CHILD_POLICY / approvals -- Owner+Admin allow, Viewer deny, Child request-only', () => {
-  for (const op of ['EDIT_CHILD_POLICY', 'APPROVE_BONUS_TIME', 'APPROVE_UNBLOCK', 'APPROVE_EXCEPTION']) {
+  for (const op of ['EDIT_CHILD_POLICY', 'APPROVE_BONUS_TIME', 'APPROVE_UNBLOCK', 'APPROVE_EXCEPTION', 'APPROVE_INSTALL']) {
     assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW');
     assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'ALLOW');
     assert.equal(resolveOperationAuthorization('VIEWER', op, defaultFamilyRbacPolicyConfig()), 'DENY');

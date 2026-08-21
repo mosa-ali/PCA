@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import type { CapabilityState, ProtectionDisplayState } from '../../domain/types';
+import type { CapabilityState, InstallApprovalCapabilityState, ProtectionDisplayState } from '../../domain/types';
 
-type StatusState = CapabilityState | ProtectionDisplayState;
+type StatusState = CapabilityState | ProtectionDisplayState | InstallApprovalCapabilityState;
 
 /**
  * Renders capability state with BOTH a colored dot AND a text label, so

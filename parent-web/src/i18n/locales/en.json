@@ -86,7 +86,10 @@
     "STANDARD": "Standard",
     "PROTECTED": "Protected",
     "AUTHORIZATION_REQUIRED": "Authorization required",
-    "NOT_SUPPORTED": "Not supported"
+    "NOT_SUPPORTED": "Not supported",
+    "ENFORCED": "Enforced on device",
+    "REQUEST_ONLY": "Request only (cannot be blocked)",
+    "PLATFORM_LIMITED": "Platform limited"
   },
   "common": {
     "loading": "Loading...",
@@ -372,6 +375,14 @@
         "TOO_HIGH": "A single bonus grant cannot exceed 120 minutes.",
         "NOT_SHORTER": "A counter-offer must be shorter than what the child asked for."
       }
+    },
+    "installApproval": {
+      "columnLabel": "App / capability",
+      "unlabeledApp": "Unlabeled app",
+      "capabilityAtRequest": "At request: {{state}}",
+      "enforcementOutcomeLabel": "On device:",
+      "enforcementPending": "On device: not yet reported",
+      "requestOnlyNotice": "This device cannot block installs -- approving or denying only records the family's decision; it does not change what is installed on the device."
     }
   },
   "policyStatus": {

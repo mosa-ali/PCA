@@ -5,6 +5,7 @@ import { useAsync } from '../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../components/common/States';
 import { PermissionGate } from '../rbac/PermissionGate';
 import { useFamilyAction } from '../rbac/useFamilyAction';
+import { StatusBadge } from '../components/common/StatusBadge';
 import { MAX_BONUS_GRANT_MINUTES, MIN_BONUS_GRANT_MINUTES, validateBonusMinutes, validateCounterOffer } from '../domain/bonusTime';
 
 export default function Requests() {
@@ -126,6 +127,7 @@ export default function Requests() {
                 <th scope="col">{t('requestsPage.type')}</th>
                 <th scope="col">{t('requestsPage.reason')}</th>
                 <th scope="col">{t('requestsPage.bonusTime.minutesColumn')}</th>
+                <th scope="col">{t('requestsPage.installApproval.columnLabel')}</th>
                 <th scope="col">{t('requestsPage.created')}</th>
                 <th scope="col">{t('requestsPage.status')}</th>
                 <th scope="col" aria-label={t('common.actions')} />
@@ -147,6 +149,31 @@ export default function Requests() {
                           ? t('requestsPage.bonusTime.requestedMinutes', { minutes: req.requestedExtraMinutes })
                           : '--'
                       : '--'}
+                  </td>
+                  <td data-label={t('requestsPage.installApproval.columnLabel')}>
+                    {req.type === 'INSTALL_APPROVAL' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <bdi className="iso">{req.installTargetAppLabel ?? req.installTargetPackageName ?? t('requestsPage.installApproval.unlabeledApp')}</bdi>
+                        {req.installCapabilityState && (
+                          <span>
+                            {t('requestsPage.installApproval.capabilityAtRequest', { state: t(`state.${req.installCapabilityState}`) })}
+                          </span>
+                        )}
+                        {req.installEnforcementOutcome ? (
+                          <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                            {t('requestsPage.installApproval.enforcementOutcomeLabel')}
+                            <StatusBadge state={req.installEnforcementOutcome} />
+                          </span>
+                        ) : (
+                          <span>{t('requestsPage.installApproval.enforcementPending')}</span>
+                        )}
+                        {req.installCapabilityState && req.installCapabilityState !== 'ENFORCED' && (
+                          <span style={{ fontSize: '0.85em', opacity: 0.8 }}>{t('requestsPage.installApproval.requestOnlyNotice')}</span>
+                        )}
+                      </div>
+                    ) : (
+                      '--'
+                    )}
                   </td>
                   <td data-label={t('requestsPage.created')}>
                     {new Intl.DateTimeFormat(i18n.language, { dateStyle: 'short', timeStyle: 'short' }).format(

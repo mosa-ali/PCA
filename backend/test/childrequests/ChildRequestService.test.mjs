@@ -367,3 +367,175 @@ test('a VIEWER cannot decide (approve/deny/counter) a BONUS_TIME request', async
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
+
+// PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): INSTALL_APPROVAL reuses the exact same
+// request/decide/RBAC/audit machinery as BONUS_TIME/UNBLOCK above -- these tests focus on what's
+// specific to it: the required install-target/capability fields, and that "approved" (decide()) and
+// "enforced" (acknowledgeApplied()'s capabilityOutcome) are two separate writes that can honestly
+// diverge, never one field standing in for both.
+
+function installDraft(service, overrides = {}) {
+  return service.createDraft(
+    overrides.familyId ?? 'fam-1',
+    overrides.childDeviceId ?? 'dev-child',
+    overrides.childMemberId ?? 'child-1',
+    'INSTALL_APPROVAL',
+    overrides.targetScope ?? { kind: 'CHILD_PROFILE', id: 'child-1' },
+    overrides.reasonNote ?? null,
+    null,
+    null,
+    overrides.installTargetPackageName ?? 'com.example.newgame',
+    'installTargetAppLabel' in overrides ? overrides.installTargetAppLabel : 'New Game (DEV)',
+    overrides.installCapabilityState ?? 'ENFORCED',
+  );
+}
+
+test('createDraft requires installTargetPackageName and a valid installCapabilityState for INSTALL_APPROVAL, and rejects them for every other type', () => {
+  const { service } = makeHarness();
+  assert.throws(
+    () => service.createDraft('fam-1', 'dev-child', 'child-1', 'INSTALL_APPROVAL', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, null, null, null, null, 'ENFORCED'),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => service.createDraft('fam-1', 'dev-child', 'child-1', 'INSTALL_APPROVAL', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, null, null, 'com.example.app', null, 'NOT_A_REAL_STATE'),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+  assert.throws(
+    () => service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, null, null, 'com.example.app', null, 'ENFORCED'),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+  // installTargetAppLabel is the one optional field: omitting it is legal.
+  const draft = installDraft(service, { installTargetAppLabel: null });
+  assert.equal(draft.installTargetAppLabel, null);
+  assert.equal(draft.installTargetPackageName, 'com.example.newgame');
+  assert.equal(draft.installCapabilityState, 'ENFORCED');
+});
+
+test('an Owner deciding an INSTALL_APPROVAL request never sets installEnforcementOutcome -- decide() records the authorization only, never the on-device outcome', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(installDraft(service));
+  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-install-approve', 'idem-install-approve');
+  assert.equal(decided.state, 'APPROVED');
+  assert.equal(decided.installEnforcementOutcome, null, 'decide() must never write the enforcement outcome');
+  assert.equal(decided.installCapabilityState, 'ENFORCED', 'the request-time snapshot is untouched by decide()');
+});
+
+test('a COUNTER-offer is illegal for INSTALL_APPROVAL (there is no "shorter install")', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(installDraft(service));
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-install-counter', 'idem-install-counter', 5),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+});
+
+test('acknowledgeApplied requires a valid capabilityOutcome for INSTALL_APPROVAL, and forbids one for every other type', async () => {
+  const { service } = makeHarness();
+  const installPending = await service.submit(installDraft(service));
+  await service.decide(installPending.requestId, 'dev-owner', 'APPROVED', 'act-1', 'idem-1');
+  await assert.rejects(
+    () => service.acknowledgeApplied(installPending.requestId, 'dev-child', null),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+  await assert.rejects(
+    () => service.acknowledgeApplied(installPending.requestId, 'dev-child', 'NOT_A_REAL_STATE'),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+
+  const unblockDraft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
+  const unblockPending = await service.submit(unblockDraft);
+  await service.decide(unblockPending.requestId, 'dev-owner', 'APPROVED', 'act-2', 'idem-2');
+  await assert.rejects(
+    () => service.acknowledgeApplied(unblockPending.requestId, 'dev-child', 'ENFORCED'),
+    (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
+  );
+});
+
+test('capability available -> acknowledgeApplied honestly reports ENFORCED', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(installDraft(service, { installCapabilityState: 'ENFORCED' }));
+  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-enf', 'idem-enf');
+  const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'ENFORCED');
+  assert.equal(acknowledged.state, 'APPLIED_ACKNOWLEDGED');
+  assert.equal(acknowledged.installEnforcementOutcome, 'ENFORCED');
+});
+
+test('capability unavailable -> acknowledgeApplied honestly reports REQUEST_ONLY, never silently ENFORCED, even though the request was APPROVED', async () => {
+  const { service } = makeHarness();
+  // The device itself reported REQUEST_ONLY at request-creation time (e.g. Standard Mode, no
+  // Device Owner authority) -- an Owner can still APPROVE the install (the decision is honest
+  // regardless of enforceability), but the device's own applied-report must never claim ENFORCED.
+  const pending = await service.submit(installDraft(service, { installCapabilityState: 'REQUEST_ONLY' }));
+  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-req-only', 'idem-req-only');
+  assert.equal(decided.state, 'APPROVED', 'approved is a real, distinct state from enforced');
+  const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'REQUEST_ONLY');
+  assert.equal(acknowledged.installEnforcementOutcome, 'REQUEST_ONLY');
+  assert.notEqual(acknowledged.installEnforcementOutcome, 'ENFORCED');
+});
+
+test('authority lost between request and decision -> acknowledgeApplied reports AUTHORIZATION_REQUIRED, not the stale ENFORCED recorded at request time', async () => {
+  const { service } = makeHarness();
+  // At request time the device WAS Device Owner (ENFORCED) -- but by the time it applies the
+  // parent's decision, Protected Mode authority has been lost. The device's own honest re-check
+  // at apply time is what acknowledgeApplied's capabilityOutcome carries; it must never be
+  // silently overwritten to match the stale request-time snapshot.
+  const pending = await service.submit(installDraft(service, { installCapabilityState: 'ENFORCED' }));
+  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-degrade', 'idem-degrade');
+  const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'AUTHORIZATION_REQUIRED');
+  assert.equal(pending.installCapabilityState, 'ENFORCED', 'the original request-time snapshot is preserved, not rewritten');
+  assert.equal(acknowledged.installEnforcementOutcome, 'AUTHORIZATION_REQUIRED', 'the real-time outcome degrades honestly instead');
+});
+
+test('a VIEWER cannot decide an INSTALL_APPROVAL request, and a CHILD cannot self-approve one', async () => {
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch({
+    familyId: 'fam-1',
+    trustSetEpoch: 5,
+    keyEpoch: 3,
+    entries: [
+      { deviceId: 'dev-owner', role: 'OWNER', dskKeyId: 'k1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' },
+      { deviceId: 'dev-viewer', role: 'VIEWER', dskKeyId: 'k5', dskPublicKey: 'pk5', dekKeyId: 'k6', dekPublicKey: 'pk6', status: 'ACTIVE' },
+      { deviceId: 'dev-child', role: 'CHILD', dskKeyId: 'k3', dskPublicKey: 'pk3', dekKeyId: 'k4', dekPublicKey: 'pk4', status: 'ACTIVE' },
+    ],
+    issuedAt: T0,
+    supersedesEpoch: null,
+    signature: 'sig',
+  });
+  const resolver = new FamilyTrustSetRoleResolver(store);
+  const childProfileResolver = new StaticChildProfileMembershipResolver(CHILD_PROFILE_FAMILY_MAP);
+  const authz = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, new InMemoryActionIdempotencyLedger(), () => T0, childProfileResolver);
+  const repo = new InMemoryChildRequestRepository();
+  const service = new ChildRequestService(repo, authz, () => T0);
+
+  const pending = await service.submit(installDraft(service));
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-viewer', 'APPROVED', 'act-viewer', 'idem-viewer'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-child', 'APPROVED', 'act-self', 'idem-self'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+});
+
+test('deciding an INSTALL_APPROVAL request targeting a CHILD_PROFILE from a DIFFERENT family is denied (cross-family)', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(installDraft(service, { targetScope: { kind: 'CHILD_PROFILE', id: 'child-in-other-family' } }));
+  await assert.rejects(
+    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-cross', 'idem-cross'),
+    (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
+  );
+});
+
+test('NOT_SUPPORTED is an honest, distinct capability state (e.g. iOS: no OS mechanism observes installs at all) -- never coerced into REQUEST_ONLY or any other state', async () => {
+  const { service } = makeHarness();
+  const pending = await service.submit(installDraft(service, { installCapabilityState: 'NOT_SUPPORTED' }));
+  assert.equal(pending.installCapabilityState, 'NOT_SUPPORTED');
+  // A parent can still record an honest APPROVED/DENIED decision even though the platform can
+  // never enforce it (the decision and the enforceability of that decision are independent) --
+  // acknowledgeApplied is only reachable from APPROVED, matching every other request type's own
+  // state machine (see the "DENIED ... terminal" test above).
+  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-unsupported', 'idem-unsupported');
+  const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'NOT_SUPPORTED');
+  assert.equal(acknowledged.installEnforcementOutcome, 'NOT_SUPPORTED');
+});

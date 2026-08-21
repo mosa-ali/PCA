@@ -249,6 +249,175 @@ test('a request targeting a CHILD_PROFILE from a different family is denied at d
   }
 });
 
+// PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): the HTTP surface over INSTALL_APPROVAL --
+// submission with the required target/capability fields, the honest applied-report route, and the
+// same VIEWER/cross-family denial shape every other request type already has HTTP coverage for.
+
+test('a device can submit an INSTALL_APPROVAL request, an Owner can approve it, and the device can then honestly report the applied outcome (distinct from the decision itself)', async () => {
+  const { app } = buildApp();
+  try {
+    const submit = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: {
+        requestType: 'INSTALL_APPROVAL',
+        childProfileId: 'child-1',
+        installTargetPackageName: 'com.example.newgame',
+        installTargetAppLabel: 'New Game',
+        installCapabilityState: 'ENFORCED',
+      },
+    });
+    assert.equal(submit.statusCode, 201);
+    const requestId = submit.json().request.requestId;
+    assert.equal(submit.json().request.state, 'PENDING');
+    assert.equal(submit.json().request.installCapabilityState, 'ENFORCED');
+    assert.equal(submit.json().request.installEnforcementOutcome, null);
+
+    const decide = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { decision: 'APPROVED' },
+    });
+    assert.equal(decide.statusCode, 200);
+    assert.equal(decide.json().request.state, 'APPROVED');
+    // decide() never sets the enforcement outcome -- "approved" and "enforced" are different writes.
+    assert.equal(decide.json().request.installEnforcementOutcome, null);
+
+    const applied = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(applied.statusCode, 200);
+    assert.equal(applied.json().request.state, 'APPLIED_ACKNOWLEDGED');
+    assert.equal(applied.json().request.installEnforcementOutcome, 'ENFORCED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('submitting an INSTALL_APPROVAL request with a missing package name, or an unrecognized capability state, is rejected with 400', async () => {
+  const { app } = buildApp();
+  try {
+    const missingPackage = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { requestType: 'INSTALL_APPROVAL', childProfileId: 'child-1', installCapabilityState: 'ENFORCED' },
+    });
+    assert.equal(missingPackage.statusCode, 400);
+
+    const badCapability = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { requestType: 'INSTALL_APPROVAL', childProfileId: 'child-1', installTargetPackageName: 'com.example.app', installCapabilityState: 'DEFINITELY_BLOCKED' },
+    });
+    assert.equal(badCapability.statusCode, 400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('the /applied route only accepts the report from the SAME child device that submitted the request, and honest capability-unavailable outcomes are recorded verbatim, not upgraded', async () => {
+  const { app } = buildApp();
+  try {
+    const submit = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: {
+        requestType: 'INSTALL_APPROVAL',
+        childProfileId: 'child-1',
+        installTargetPackageName: 'com.example.standardmodeapp',
+        installCapabilityState: 'REQUEST_ONLY',
+      },
+    });
+    const requestId = submit.json().request.requestId;
+    await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/child-requests/${requestId}/decide`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { decision: 'APPROVED' },
+    });
+
+    // The OWNER device (not the requesting child device) cannot acknowledge it.
+    const wrongDevice = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-owner' },
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(wrongDevice.statusCode, 403);
+
+    const applied = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/${requestId}/applied`,
+      headers: { authorization: 'Bearer dev-token-child' },
+      payload: { capabilityOutcome: 'REQUEST_ONLY' },
+    });
+    assert.equal(applied.statusCode, 200);
+    assert.equal(applied.json().request.installEnforcementOutcome, 'REQUEST_ONLY');
+    assert.notEqual(applied.json().request.installEnforcementOutcome, 'ENFORCED');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a VIEWER cannot decide an INSTALL_APPROVAL request (403), and a cross-family target is denied (403)', async () => {
+  const { app, childRequestService } = buildApp();
+  try {
+    const draft = childRequestService.createDraft(
+      FAMILY,
+      'dev-child',
+      'child-1',
+      'INSTALL_APPROVAL',
+      { kind: 'CHILD_PROFILE', id: 'child-1' },
+      null,
+      null,
+      null,
+      'com.example.app',
+      null,
+      'ENFORCED',
+    );
+    const pending = await childRequestService.submit(draft);
+    const viewerDecide = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/child-requests/${pending.requestId}/decide`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-viewer' },
+      payload: { decision: 'APPROVED' },
+    });
+    assert.equal(viewerDecide.statusCode, 403);
+
+    const crossFamilyDraft = childRequestService.createDraft(
+      FAMILY,
+      'dev-child',
+      'child-1',
+      'INSTALL_APPROVAL',
+      { kind: 'CHILD_PROFILE', id: 'child-in-other-family' },
+      null,
+      null,
+      null,
+      'com.example.app',
+      null,
+      'ENFORCED',
+    );
+    const crossPending = await childRequestService.submit(crossFamilyDraft);
+    const crossDecide = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/child-requests/${crossPending.requestId}/decide`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { decision: 'APPROVED' },
+    });
+    assert.equal(crossDecide.statusCode, 403);
+  } finally {
+    await app.close();
+  }
+});
+
 test('a repeated decide POST (same actor, same outcome) is idempotent -- same 200 result, not a duplicate grant', async () => {
   const { app, bonusGrantLedger } = buildApp();
   try {

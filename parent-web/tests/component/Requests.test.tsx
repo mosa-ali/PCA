@@ -87,3 +87,42 @@ describe('Requests page -- PCA-FR-130 Bonus Time', () => {
     expect(await screen.findByText(/cannot exceed 120 minutes/i)).toBeInTheDocument();
   });
 });
+
+describe('Requests page -- PCA-FR-131 Install Approval (CAPABILITY_HONEST_INSTALL_APPROVAL)', () => {
+  beforeEach(() => {
+    __resetDevRequestsForTests();
+  });
+  afterEach(() => {
+    __resetDevRequestsForTests();
+  });
+
+  it('shows the target app and the device-reported capability for a still-PENDING install-approval request, without ever implying it is already enforced', async () => {
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('Puzzle Quest 2 (DEV)');
+    expect(screen.getByText('At request: Enforced on device')).toBeInTheDocument();
+    // Not yet acknowledged by the device -- the UI must say so, never default to claiming enforced.
+    expect(screen.getByText('On device: not yet reported')).toBeInTheDocument();
+  });
+
+  it('an already-APPROVED install-approval request whose device cannot enforce it still honestly shows REQUEST_ONLY, never a fabricated ENFORCED', async () => {
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('ChatterBox (DEV)');
+    // "APPROVED" (the decision) and "REQUEST_ONLY" (the device's real capability) coexist in the
+    // same row without one being silently upgraded into the other.
+    expect(screen.getAllByText('APPROVED').length).toBeGreaterThan(0);
+    expect(screen.getByText('Request only (cannot be blocked)')).toBeInTheDocument();
+    // No enforcement-outcome badge on the page claims ENFORCED -- req-4 is still PENDING (no
+    // outcome reported yet) and req-5's own outcome is REQUEST_ONLY, never upgraded.
+    expect(document.querySelector('.status-ENFORCED')).toBeNull();
+    expect(
+      screen.getByText('This device cannot block installs -- approving or denying only records the family\'s decision; it does not change what is installed on the device.'),
+    ).toBeInTheDocument();
+  });
+
+  it('a VIEWER can see the install-approval capability state but no approve/deny controls for it', async () => {
+    renderWithProviders(<Requests />, { role: 'VIEWER' });
+    await screen.findByText('Puzzle Quest 2 (DEV)');
+    expect(screen.getByText('At request: Enforced on device')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  });
+});

@@ -226,6 +226,40 @@ export const DEV_REQUESTS: FamilyRequest[] = [
     status: 'APPROVED',
     correlationId: 'corr-3',
   },
+  // PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): two fixtures deliberately showing BOTH
+  // honest outcomes -- a device with real Device Owner authority (req-4, still pending a parent
+  // decision, so installEnforcementOutcome is null: "enforced" is never claimed before it has
+  // actually happened) and a device with none (req-5, already decided APPROVED but
+  // installEnforcementOutcome stays REQUEST_ONLY -- "approved" is never silently shown as
+  // "enforced").
+  {
+    requestId: 'req-4',
+    childId: 'child-amir',
+    childDisplayName: 'Amir (DEV)',
+    type: 'INSTALL_APPROVAL',
+    reasonText: null,
+    createdAtUtc: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+    status: 'PENDING',
+    correlationId: 'corr-4',
+    installTargetPackageName: 'com.example.newgame',
+    installTargetAppLabel: 'Puzzle Quest 2 (DEV)',
+    installCapabilityState: 'ENFORCED',
+    installEnforcementOutcome: null,
+  },
+  {
+    requestId: 'req-5',
+    childId: 'child-yousef',
+    childDisplayName: 'Yousef (DEV)',
+    type: 'INSTALL_APPROVAL',
+    reasonText: null,
+    createdAtUtc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    status: 'APPROVED',
+    correlationId: 'corr-5',
+    installTargetPackageName: 'com.example.chatapp',
+    installTargetAppLabel: 'ChatterBox (DEV)',
+    installCapabilityState: 'REQUEST_ONLY',
+    installEnforcementOutcome: 'REQUEST_ONLY',
+  },
 ];
 
 export const DEV_MEMBERS: FamilyMember[] = [

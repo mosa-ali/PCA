@@ -1,4 +1,5 @@
-import type { ChildRequestState, ChildRequestType } from './types.js';
+import type { ChildRequestState, ChildRequestType, InstallApprovalCapabilityState } from './types.js';
+import { INSTALL_APPROVAL_CAPABILITY_STATES } from './types.js';
 import type { ParentOperation } from '../familyrbac/types.js';
 
 export const MAX_REASON_NOTE_LENGTH = 280;
@@ -22,12 +23,19 @@ export const DEFAULT_REQUEST_LIFETIME_MS = 4 * 60 * 60 * 1000; // 4 hours
 export const MAX_BONUS_GRANT_MINUTES = 120;
 export const MIN_BONUS_GRANT_MINUTES = 1;
 
+/** PCA-FR-131: bounds on the two install-target text fields -- generous enough for a real Android
+ * package name (reverse-DNS, no realistic ceiling near this) or iOS bundle id, and for a
+ * PackageManager-resolved app label, while still rejecting an obviously-abusive payload. */
+export const MAX_APP_IDENTIFIER_LENGTH = 255;
+export const MAX_APP_LABEL_LENGTH = 200;
+
 /** Every ChildRequestType maps to exactly the familyrbac ParentOperation doc 18's matrix requires for its decision -- childrequests never invents a separate authorization path. */
 const REQUEST_TYPE_TO_OPERATION: Record<ChildRequestType, ParentOperation> = {
   BONUS_TIME: 'APPROVE_BONUS_TIME',
   UNBLOCK: 'APPROVE_UNBLOCK',
   SCHEDULE_EXCEPTION: 'APPROVE_EXCEPTION',
   POLICY_EXCEPTION: 'APPROVE_EXCEPTION',
+  INSTALL_APPROVAL: 'APPROVE_INSTALL',
 };
 
 export function operationForRequestType(requestType: ChildRequestType): ParentOperation {
@@ -80,4 +88,25 @@ export function isPlausibleExtraMinutes(candidate: unknown): candidate is number
     candidate >= MIN_BONUS_GRANT_MINUTES &&
     candidate <= MAX_BONUS_GRANT_MINUTES
   );
+}
+
+/**
+ * PCA-FR-131: bounded, non-empty app-identifier shape. Deliberately permissive across BOTH
+ * supported platforms rather than an Android-only reverse-DNS regex -- an iOS bundle id has the
+ * same reverse-DNS-like shape but this module has no reason to reject a future platform's
+ * differently-shaped identifier as long as it is a plausible, bounded opaque string; the actual
+ * platform-side receivers (Android's `InstalledAppEventReceiver`) are what constrain what a REAL
+ * package name looks like before this ever gets called.
+ */
+export function isPlausibleAppIdentifier(candidate: unknown): candidate is string {
+  return typeof candidate === 'string' && candidate.trim().length > 0 && candidate.length <= MAX_APP_IDENTIFIER_LENGTH;
+}
+
+/** PCA-FR-131: an app label is best-effort and MAY be absent (see types.ts's `installTargetAppLabel` doc comment) -- null/undefined is valid input, but a present value must still be bounded and non-blank. */
+export function isPlausibleAppLabel(candidate: unknown): candidate is string {
+  return typeof candidate === 'string' && candidate.trim().length > 0 && candidate.length <= MAX_APP_LABEL_LENGTH;
+}
+
+export function isInstallApprovalCapabilityState(candidate: unknown): candidate is InstallApprovalCapabilityState {
+  return typeof candidate === 'string' && INSTALL_APPROVAL_CAPABILITY_STATES.has(candidate as InstallApprovalCapabilityState);
 }

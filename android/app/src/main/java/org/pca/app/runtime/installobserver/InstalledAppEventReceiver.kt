@@ -17,25 +17,44 @@ import org.pca.app.runtime.identity.DeviceIdentityState
  * install at all -- there was no `BroadcastReceiver` for `PACKAGE_ADDED`/`PACKAGE_INSTALL`
  * anywhere in the codebase.
  *
- * Deliberately scoped conservatively, per this lane's own mission brief: doc 03 marks the full
- * install-APPROVAL workflow (a parent gate that can block/require sign-off on a new install) as
- * "PROPOSED, not committed." Building a real approval gate would additionally require (a) a
- * documented Android mechanism to actually BLOCK an install before it completes, which does not
- * exist for an ordinary (non device-owner) app -- see doc 06 Section 4's "Suspend selected
- * packages: UNSUPPORTED (no ordinary-app authority)" row, and even under Device Owner authority
- * `setPackagesSuspended` only suspends an ALREADY-installed package, it does not gate the install
- * itself -- and (b) a decided, backend-agreed approval-request/response protocol, neither of which
- * exists yet. So this class builds exactly the "clearly real value" half the brief calls out:
- * OBSERVE the install (via the documented `PACKAGE_ADDED` broadcast only -- no scraping, no
- * reverse-engineering, no polling `PackageManager` for a diff) and make it VISIBLE by recording it
- * through the app's normal, disclosed local-persistence path
- * ([org.pca.app.persistence.repository.InstalledAppEventRepository]), the same path every other
- * locally-observed event in this app (prayer reminders, tamper events, usage sessions) already
- * uses. It never silently collects anything beyond what a parent-facing "recently installed apps"
- * list would show (package name, best-effort label, install time) -- no permissions list, no APK
- * contents, no covert reporting channel. Cross-device delivery to the parent app is a separate,
- * already-existing crypto-gated sync pipeline (see [org.pca.app.runtime.graph.PcaAppGraph]'s
- * `familySyncRuntimePort` doc comment) this receiver does not attempt to bypass.
+ * ORIGINAL SCOPE (superseded below): this class was first built deliberately conservatively,
+ * because doc 03 then marked the full install-APPROVAL workflow "PROPOSED, not committed" -- it
+ * only observed and locally recorded installs, with no approval request and no enforcement
+ * attempt. The owner has since made the standing architectural decision
+ * CAPABILITY_HONEST_INSTALL_APPROVAL (doc 03's PCA-FR-131 entry is now committed under that
+ * decision), so this class now ALSO drives the real approval-request/enforcement flow below --
+ * the observation half (OBSERVE via the documented `PACKAGE_ADDED` broadcast only -- no scraping,
+ * no reverse-engineering, no polling `PackageManager` for a diff -- and record locally through
+ * [org.pca.app.persistence.repository.InstalledAppEventRepository], the same path every other
+ * locally-observed event in this app already uses) is UNCHANGED from the original scope.
+ *
+ * What's new (via [org.pca.app.feature.installapproval.InstallApprovalController]):
+ *  - The device's CURRENT, honestly-resolved [org.pca.app.feature.installapproval.InstallApprovalCapabilityState]
+ *    is computed live (never cached) from the SAME Device Owner authority gate every other real
+ *    enforcement path in this app already uses (doc 06 Section 4/7) -- never a fabricated
+ *    capability.
+ *  - ONLY when that capability is genuinely ENFORCED (real, proven Device Owner authority) is the
+ *    newly-installed package immediately quarantined (suspended, via the SAME
+ *    `PackageSuspensionExecutor`/`setPackagesSuspended` doc 06 already documents for schedule
+ *    enforcement) pending the parent's decision -- this is the closest genuinely real analog to
+ *    "install approval enforcement" Android's documented API surface allows, since Android
+ *    provides NO mechanism (even under Device Owner) to gate the install action itself, only to
+ *    suspend an already-installed package (see [InstallApprovalController]'s own doc comment).
+ *    This class never claims the install itself was blocked.
+ *  - A real INSTALL_APPROVAL child request is always created (via
+ *    [org.pca.app.runtime.PcaRuntime.createChildRequest], the SAME offline-safe, PENDING_SYNC_LOCAL
+ *    path `BONUS_TIME` already uses -- see `ChildHomeScreen.kt`'s own doc comment on that reuse),
+ *    REGARDLESS of capability: a REQUEST_ONLY/AUTHORIZATION_REQUIRED/NOT_SUPPORTED device still
+ *    honestly reports the install and still lets a parent decide, it just cannot itself enforce
+ *    that decision. Cross-device delivery of the request/decision is the SAME pre-existing,
+ *    separate, crypto-gated sync pipeline this receiver still does not attempt to bypass (see
+ *    [org.pca.app.runtime.graph.PcaAppGraph]'s `familySyncRuntimePort` doc comment;
+ *    [org.pca.app.feature.installapproval.InstallApprovalDecisionApplier] is the on-device
+ *    application step for once a decision arrives, mirroring `BonusGrantSync`'s identical scoping).
+ *
+ * Still never silently collects anything beyond what a parent-facing "recently installed apps"
+ * list/approval request would show (package name, best-effort label, install time, capability
+ * state) -- no permissions list, no APK contents, no covert reporting channel.
  *
  * Registered `android:exported="true"` in the manifest with a matching `<intent-filter>` for
  * `android.intent.action.PACKAGE_ADDED` plus `<data android:scheme="package"/>` -- required
@@ -53,9 +72,26 @@ class InstalledAppEventReceiver : BroadcastReceiver() {
         val app = context.applicationContext as? PcaApplication ?: return
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            runCatching { recordInstall(context, app, packageName) }
+            // Resolved once and shared by both independent steps below -- avoids a second
+            // PackageManager round-trip for the exact same package within the same broadcast.
+            val (appLabel, firstInstallTimeMillis) = resolveAppMetadata(context, packageName)
+            runCatching { recordInstall(app, packageName, appLabel, firstInstallTimeMillis) }
+            runCatching { handleInstallApproval(app, packageName, appLabel) }
             pendingResult.finish()
         }
+    }
+
+    /**
+     * PCA-FR-131: the capability-honest approval half (see this class's own doc comment). Runs
+     * independently of [recordInstall] (each wrapped in its own `runCatching` in [onReceive]) so a
+     * failure in one never silently suppresses the other -- local visibility and the parent-facing
+     * approval request are two separately-valuable outcomes of the same broadcast.
+     */
+    private fun handleInstallApproval(app: PcaApplication, packageName: String, appLabel: String?) {
+        val graph = app.graph
+        val nowMillis = graph.wallClockTimeSource.currentTimeMillis()
+        val detection = graph.installApprovalController.handleNewInstall(packageName, appLabel, nowMillis)
+        graph.runtime.createChildRequest(detection.requestId, detection.kind, detection.detail)
     }
 
     /**
@@ -76,11 +112,10 @@ class InstalledAppEventReceiver : BroadcastReceiver() {
      * receiver/recorder in this app's "never fabricate an id" discipline
      * ([org.pca.app.runtime.prayer.PrayerReminderReceiver.recordDelivery] is the direct precedent).
      */
-    private suspend fun recordInstall(context: Context, app: PcaApplication, packageName: String) {
+    private suspend fun recordInstall(app: PcaApplication, packageName: String, appLabel: String?, firstInstallTimeMillis: Long?) {
         val graph = app.graph
         val deviceId = (graph.deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled)?.deviceId ?: return
 
-        val (appLabel, firstInstallTimeMillis) = resolveAppMetadata(context, packageName)
         val nowMillis = graph.wallClockTimeSource.currentTimeMillis()
 
         graph.persistence.installedAppEventRepository.record(

@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.pca.app.feature.installapproval.InstallApprovalController
 import org.pca.app.feature.eyedistance.engine.EyeDistanceConfig
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
@@ -216,9 +217,24 @@ class PcaAppGraph private constructor(
     /** Read-only gate; no provisioning action is exposed from the composition root. */
     val protectedModeAuthorityGate = DeviceOwnerAuthorityGate(devicePolicyCapabilitySource)
     val protectionCapabilities = DevicePolicyProtectionCapabilities(devicePolicyCapabilitySource)
+    /** Stateless platform adapter (no internal cache -- see its own doc comment), shared by every
+     * consumer that needs to suspend/unsuspend a package under proven Device Owner authority:
+     * schedule enforcement below AND [installApprovalController]/install-approval decision
+     * application (PCA-FR-131) -- one real suspend mechanism, never a second one. */
+    val packageSuspensionExecutor = AndroidDevicePolicyPackageSuspensionExecutor(context)
     private val scheduleEnforcementConsumer = DevicePolicyScheduleEnforcementConsumer(
         authoritySource = devicePolicyCapabilitySource,
-        packageSuspensionExecutor = AndroidDevicePolicyPackageSuspensionExecutor(context),
+        packageSuspensionExecutor = packageSuspensionExecutor,
+    )
+
+    /** PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): the detect-time decision step
+     * [org.pca.app.runtime.installobserver.InstalledAppEventReceiver] calls -- reuses
+     * [protectionCapabilities] (the SAME live Device Owner authority query
+     * [scheduleEnforcementConsumer] above already uses) and [packageSuspensionExecutor]; no new
+     * authority path or suspension mechanism is created for this feature. */
+    val installApprovalController = InstallApprovalController(
+        protectionCapabilities = protectionCapabilities,
+        packageSuspensionExecutor = packageSuspensionExecutor,
     )
     val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
         ?: ProductionScheduleRuntimePort(

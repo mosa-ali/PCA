@@ -86,7 +86,10 @@
     "STANDARD": "قياسي",
     "PROTECTED": "محمي",
     "AUTHORIZATION_REQUIRED": "يتطلب تفويضاً",
-    "NOT_SUPPORTED": "غير مدعوم"
+    "NOT_SUPPORTED": "غير مدعوم",
+    "ENFORCED": "مُفعَّل على الجهاز",
+    "REQUEST_ONLY": "طلب فقط (لا يمكن حظره)",
+    "PLATFORM_LIMITED": "محدود حسب النظام"
   },
   "common": {
     "loading": "جارٍ التحميل...",
@@ -372,6 +375,14 @@
         "TOO_HIGH": "لا يمكن أن تتجاوز منحة الوقت الإضافي الواحدة 120 دقيقة.",
         "NOT_SHORTER": "يجب أن يكون العرض المقابل أقصر مما طلبه الطفل."
       }
+    },
+    "installApproval": {
+      "columnLabel": "التطبيق / القدرة",
+      "unlabeledApp": "تطبيق بلا اسم",
+      "capabilityAtRequest": "عند الطلب: {{state}}",
+      "enforcementOutcomeLabel": "على الجهاز:",
+      "enforcementPending": "على الجهاز: لم يُبلَّغ بعد",
+      "requestOnlyNotice": "لا يمكن لهذا الجهاز حظر عمليات التثبيت -- الموافقة أو الرفض يسجّلان قرار العائلة فقط، ولا يغيّران ما هو مثبَّت فعليًا على الجهاز."
     }
   },
   "policyStatus": {

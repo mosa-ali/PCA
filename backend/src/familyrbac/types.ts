@@ -14,6 +14,13 @@ export type CorrelationId = string;
  * material" -- deliberately its own operation, never folded into
  * OWNERSHIP_TRANSFER_INITIATION, since doc 18 Section 4 treats recovery
  * material exposure as its own no-ordinary-role-bypass case.
+ *
+ * `APPROVE_INSTALL` (PCA-FR-131, CAPABILITY_HONEST_INSTALL_APPROVAL): not one of doc 18's
+ * original rows -- added so an install-approval decision has its own auditable operation identity
+ * rather than being folded into `APPROVE_EXCEPTION`'s unrelated semantics. Same authority shape as
+ * `APPROVE_BONUS_TIME`/`APPROVE_UNBLOCK`/`APPROVE_EXCEPTION` (see policy.ts's OPERATION_MATRIX):
+ * Owner/Administrator ALLOW, Viewer DENY, Child REQUEST_ONLY -- "any parent role with policy-edit
+ * permission," matching doc 03's PCA-FR-131 text verbatim.
  */
 export type ParentOperation =
   | 'VIEW_DASHBOARD'
@@ -21,6 +28,7 @@ export type ParentOperation =
   | 'APPROVE_BONUS_TIME'
   | 'APPROVE_UNBLOCK'
   | 'APPROVE_EXCEPTION'
+  | 'APPROVE_INSTALL'
   | 'ADD_VIEWER'
   | 'REMOVE_NON_OWNER_PARENT'
   | 'ADD_ADMINISTRATOR'
