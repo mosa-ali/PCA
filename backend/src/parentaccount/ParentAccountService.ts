@@ -184,6 +184,11 @@ export class ParentAccountService {
       // service_account_family_scopes row before anything else runs -- see
       // ParentAccountRepository.grantFamilyScopeIfAbsent's own doc comment.
       await this.repository.grantFamilyScopeIfAbsent(issued.session.accountId, familyId, now);
+      // Without this, Platform Administration's dashboards/account list/
+      // suspend flow (platformadmin/accounts/**) can never see or act on a
+      // family that only ever exists via self-service registration -- see
+      // ParentAccountRepository.createFamilyIfAbsent's own doc comment.
+      await this.repository.createFamilyIfAbsent(familyId, now);
     }
     return { accountId: account.accountId, familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
   }
@@ -200,9 +205,17 @@ export class ParentAccountService {
   private async attemptFamilyGenesis(accountId: ParentAccountId, now: Date): Promise<OpaqueFamilyId | null> {
     if (!this.familyGenesisEngine) return null;
     const familyId: OpaqueFamilyId = randomUUID();
-    const genesisDeviceId: OpaqueDeviceId = `web-registration:${accountId}`;
+    // Plain UUIDs, matching every other genesis_device_id/genesis_dsk_key_id
+    // value's real schema column (migration 0011: CHAR(36) CHARACTER SET
+    // ascii) exactly, like every other device id in this codebase -- a
+    // prefixed "web-registration:<accountId>" string (54+ chars) does not
+    // fit that column and previously made this path fail with a genuine
+    // MySQL ER_DATA_TOO_LONG error the first time it ever ran against real
+    // MySQL (caught running the disposable-database seed for this session's
+    // local validation, not previously exercised against a real database).
+    const genesisDeviceId: OpaqueDeviceId = randomUUID();
     const { publicKeyBase64, privateKey } = generateEphemeralGenesisDeviceKeyPair();
-    const genesisDskKeyId = `web-reg-key:${accountId}`;
+    const genesisDskKeyId = randomUUID();
 
     const anchorWithoutSignature: Omit<FamilyAuthorityGenesisAnchor, 'signature'> = {
       familyId,

@@ -3,6 +3,7 @@
 // entirely under backend/test/ -- not part of the TypeScript build.
 export function createInMemoryParentAccountRepository({ revokeAllSessionsForAccount, grantFamilyScope, familyStatusById } = {}) {
   const grantedScopes = new Set(); // `${serviceAccountId}:${familyId}`
+  const createdFamilies = new Set(); // familyId
   // familyId -> 'ACTIVE' | 'SUSPENDED'. Defaults to ACTIVE for any familyId
   // never explicitly set, mirroring migration 0017's DEFAULT 'ACTIVE'.
   const familyStatuses = familyStatusById instanceof Map ? familyStatusById : new Map();
@@ -124,6 +125,10 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       return familyStatuses.get(familyId);
     },
 
+    async createFamilyIfAbsent(familyId) {
+      createdFamilies.add(familyId);
+    },
+
     // Test-only accessor, not part of the ParentAccountRepository interface.
     _hasGrantedScopeForTest(serviceAccountId, familyId) {
       return grantedScopes.has(`${serviceAccountId}:${familyId}`);
@@ -132,6 +137,11 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
     // Test-only mutator, not part of the ParentAccountRepository interface.
     _setFamilyStatusForTest(familyId, status) {
       familyStatuses.set(familyId, status);
+    },
+
+    // Test-only accessor, not part of the ParentAccountRepository interface.
+    _hasCreatedFamilyForTest(familyId) {
+      return createdFamilies.has(familyId);
     },
   };
 }

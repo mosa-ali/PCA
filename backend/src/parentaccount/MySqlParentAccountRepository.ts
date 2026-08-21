@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import type {
   ActiveVerificationCode,
@@ -216,6 +217,29 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
          VALUES (?, ?, 'ACTIVE', ?)
          ON DUPLICATE KEY UPDATE status = 'ACTIVE'`,
         [serviceAccountId, familyId, now],
+      ),
+    );
+  }
+
+  /**
+   * See ParentAccountRepository.ts's own doc comment for why this direct,
+   * narrowly-scoped write against the SHARED `families` table exists here.
+   * `family_reference_hash` only needs to be a stable, unique-per-family
+   * value (the column's sole constraint, migration 0001) -- this domain
+   * has no separate external family reference to hash, so it deterministically
+   * derives one from familyId itself, exactly as `emailHash.ts` derives
+   * `email_hash` from an email rather than storing a second independent
+   * identifier.
+   */
+  async createFamilyIfAbsent(familyId: string, now: Date): Promise<void> {
+    const familyReferenceHash = createHash('sha256').update(familyId, 'utf8').digest();
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `INSERT INTO families (family_id, family_reference_hash, created_at)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE family_id = family_id`,
+        [familyId, familyReferenceHash, now],
       ),
     );
   }

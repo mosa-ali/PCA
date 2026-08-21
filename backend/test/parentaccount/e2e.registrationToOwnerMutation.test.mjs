@@ -157,7 +157,14 @@ test('E2E: register -> verify-email (genesis) -> family-commercial GET succeeds 
   assert.equal(entitlementResponse.json().tier, 'FREE_STARTER');
 
   // --- Step 4: Owner-authorized commercial mutation (entitlement increase-request create) reaches the backend and succeeds -- Option-A resolves OWNER_AUTHORIZED via the SAME attestation chain genesis just wrote, using the genesis device as actorDeviceId (the only device this brand-new family has). ---
-  const genesisDeviceId = `web-registration:${verifyBody.accountId}`;
+  // The genesis device id is a real UUID (matching every other device id's
+  // real CHAR(36) schema column -- migration 0011), generated fresh at
+  // registration and never returned to the caller, so it's read back from
+  // the SAME genesisStore instance this test constructed above rather than
+  // reconstructed from any string convention.
+  const genesisAnchor = await genesisStore.findByFamilyId(verifyBody.familyId);
+  assert.ok(genesisAnchor, 'the genesis anchor this registration just wrote must be readable back');
+  const genesisDeviceId = genesisAnchor.genesisDeviceId;
   const mutationResponse = await app.inject({
     method: 'POST',
     url: `/v1/families/${verifyBody.familyId}/commercial/requests`,

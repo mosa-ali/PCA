@@ -5,7 +5,7 @@
 // CHECK constraint, and cross-domain compatibility with the SHARED
 // service_sessions table (revoke-all).
 import assert from 'node:assert/strict';
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
@@ -213,15 +213,12 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const verifyOutcome = await parentServiceWithGenesis.verifyEmail(email, code);
   assert.equal(typeof verifyOutcome.familyId, 'string');
 
-  // The `families` row this admin flow operates on: created directly here
-  // (mirrors test/db/familyAccountStatus.mysql.test.mjs's own createFamily
-  // helper -- no production code path currently populates this table from
-  // the self-service parent-web registration flow; see this repository's
-  // FamilyAccountStatusService.ts header for that documented boundary).
-  await getPool().query(`INSERT INTO families (family_id, family_reference_hash, created_at) VALUES (?, ?, NOW(3))`, [
-    verifyOutcome.familyId,
-    randomBytes(32),
-  ]);
+  // ParentAccountService.verifyEmail now calls
+  // ParentAccountRepository.createFamilyIfAbsent itself on a successful
+  // genesis -- no manual INSERT needed here any more (this used to be a
+  // documented workaround; confirm the real row actually exists instead).
+  const [familyRows] = await getPool().query(`SELECT family_id FROM families WHERE family_id = ?`, [verifyOutcome.familyId]);
+  assert.equal(familyRows.length, 1, 'registration must create the families row itself');
 
   // Sanity: login works before any suspend action.
   await parentServiceWithGenesis.login(email, password);

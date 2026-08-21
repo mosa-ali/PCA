@@ -102,4 +102,21 @@ export interface ParentAccountRepository {
    * any authz/** source file.
    */
   grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: OpaqueFamilyId, now: Date): Promise<void>;
+
+  /**
+   * Idempotent INSERT of a `families` row (migration 0001, `status`/
+   * suspend columns added by migration 0017) for a freshly genesis-anchored
+   * family -- same "narrowly-scoped direct write against a shared table
+   * this domain does not own" precedent as `grantFamilyScopeIfAbsent`
+   * above. Without this, self-service registration produced a real,
+   * working family (attemptFamilyGenesis/service session/family-commercial
+   * access all succeed) that Platform Administration's dashboards, account
+   * list/detail, and suspend/reactivate flow (platformadmin/accounts/**)
+   * could never see or act on -- confirmed by running real registration
+   * against a real database for the first time in this session's local
+   * validation (previously only ever exercised via tests that manually
+   * INSERTed this row themselves as a documented workaround; see
+   * FamilyAccountStatusService.ts's own former header note on this gap).
+   */
+  createFamilyIfAbsent(familyId: OpaqueFamilyId, now: Date): Promise<void>;
 }
