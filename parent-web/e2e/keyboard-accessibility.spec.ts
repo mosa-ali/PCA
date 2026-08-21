@@ -11,8 +11,13 @@ import { test, expect } from '@playwright/test';
 test.describe('keyboard navigation and modal focus management', () => {
   test('skip link is the first Tab stop and jumps focus to main content', async ({ page }) => {
     await page.goto('/dashboard');
-    await page.keyboard.press('Tab');
+    // AppLayout gates its content behind an async session check (even in
+    // demo mode, getSession() resolves via a Promise) -- wait for the real
+    // app shell to attach before driving keyboard input, or Tab can land
+    // nowhere useful during that brief loading window.
     const skipLink = page.locator('.skip-link');
+    await skipLink.waitFor();
+    await page.keyboard.press('Tab');
     await expect(skipLink).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('#main-content')).toBeFocused();
