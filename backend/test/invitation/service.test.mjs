@@ -4,6 +4,8 @@ import { InvitationService, InvitationError } from '../../dist/invitation/Invita
 import { hashInvitationToken } from '../../dist/invitation/token.js';
 import { DEFAULT_INVITATION_TTL_MS, MAX_INVITATION_TTL_MS } from '../../dist/invitation/policy.js';
 import { createInMemoryInvitationRepository } from '../support/inMemoryInvitationRepository.mjs';
+import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
+import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
 const BASE_TIME = new Date('2026-01-01T00:00:00.000Z').getTime();
 const TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -16,8 +18,27 @@ function buildService(overrides = {}) {
     advance: (ms) => { currentTime += ms; },
     set: (ms) => { currentTime = ms; },
   };
-  const service = new InvitationService(repository, clock.now);
+  const service = new InvitationService(repository, clock.now, undefined, undefined, overrides.alerting ?? null);
   return { service, repository, clock };
+}
+
+function makeAlerting({ enabled = true } = {}) {
+  const ledger = new InMemoryProtectionAlertLedger();
+  const producer = new ProtectionAlertProducer(
+    ledger,
+    async () => ({ encryptedPayloadB64: 'AQID', nonceB64: 'BAUG' }),
+    () => new Date(BASE_TIME),
+  );
+  return {
+    alerting: {
+      producer,
+      alertsEnabled: enabled,
+      async resolveParentDevices() {
+        return [{ deviceId: 'parent-device-1', keyEpoch: 3 }];
+      },
+    },
+    ledger,
+  };
 }
 
 const baseInput = {
@@ -408,4 +429,54 @@ test('8-state lifecycle: malformed/unknown token rejected identically for the ne
   const { service } = buildService();
   await assert.rejects(() => service.markInstallRequired('not a valid token'), { code: 'INVALID_TOKEN' });
   await assert.rejects(() => service.markAppInstalled('A'.repeat(43)), { code: 'NOT_FOUND' });
+});
+
+// --- PCA-ADD-ENR-020 alert wiring ---
+
+test('a successful redemption emits INVITATION_REDEEMED to every resolved parent device, with a null deviceId', async () => {
+  const { alerting, ledger } = makeAlerting();
+  const { service } = buildService({ alerting });
+  const { rawToken, record } = await service.createInvitation(baseInput);
+  await service.redeemInvitation(rawToken);
+  const events = await ledger.listForFamily(record.familyId);
+  assert.deepEqual(events.map((e) => e.trigger), ['INVITATION_REDEEMED']);
+  assert.equal(events[0].deviceId, null);
+  assert.equal(events[0].parentDeviceId, 'parent-device-1');
+});
+
+test('a failed redemption (already redeemed) never emits INVITATION_REDEEMED a second time', async () => {
+  const { alerting, ledger } = makeAlerting();
+  const { service } = buildService({ alerting });
+  const { rawToken, record } = await service.createInvitation(baseInput);
+  await service.redeemInvitation(rawToken);
+  await assert.rejects(() => service.redeemInvitation(rawToken), { code: 'ALREADY_REDEEMED' });
+  const events = await ledger.listForFamily(record.familyId);
+  assert.equal(events.length, 1);
+});
+
+test('disabled alerting never invokes the composer and never blocks redemption', async () => {
+  const { alerting, ledger } = makeAlerting({ enabled: false });
+  const { service } = buildService({ alerting });
+  const { rawToken, record } = await service.createInvitation(baseInput);
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
+  assert.deepEqual(await ledger.listForFamily(record.familyId), []);
+});
+
+test('an alert composer failure never blocks or reverses redemption', async () => {
+  const ledger = new InMemoryProtectionAlertLedger();
+  const producer = new ProtectionAlertProducer(ledger, async () => {
+    throw new Error('composer unavailable');
+  }, () => new Date(BASE_TIME));
+  const alerting = {
+    producer,
+    alertsEnabled: true,
+    async resolveParentDevices() {
+      return [{ deviceId: 'parent-device-1', keyEpoch: 3 }];
+    },
+  };
+  const { service } = buildService({ alerting });
+  const { rawToken } = await service.createInvitation(baseInput);
+  const redeemed = await service.redeemInvitation(rawToken);
+  assert.equal(redeemed.status, 'REDEEMED');
 });

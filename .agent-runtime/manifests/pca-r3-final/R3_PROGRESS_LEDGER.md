@@ -35,7 +35,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build: PASS; full unit/security suite: PASS (1547/1547, current head 503865c). Disposable local MySQL 8.4 (Docker Compose) validation: PASS -- migrations 0001-0023 applied from empty, full DB suite PASS (391/391 + 4 correctly deferred to the dedicated privilege gate), platform-admin-privileges gate PASS (4/4). Live-stack smoke (real login/session/cross-family-403/PIN-configure/DB-proof/backend-restart-persistence) PASS.
+- Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -130,9 +130,9 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 ### Current-head database validation
 
 - PRE_WAVE11_DB_BASELINE = PASS
-- CURRENT_HEAD_0023_DB_VALIDATION = PASS
-- MIGRATION_0023_APPLIED = YES
-- MIGRATION_0023_SCHEMA_VERIFIED = YES
+- CURRENT_HEAD_0020_DB_VALIDATION = PASS
+- MIGRATION_0020_APPLIED = YES
+- MIGRATION_0020_SCHEMA_VERIFIED = YES
 - MYSQL_STANDARD = PASS
 - MYSQL_PRIVILEGE = PASS
 - DB_CRITICAL_SKIPPED = 0

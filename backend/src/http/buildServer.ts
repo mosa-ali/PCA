@@ -14,7 +14,7 @@ import { registerParentWebCors } from './parentWebCors.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
-import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext } from './routes/runtimeSyncRoutes.js';
+import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext, type ProtectionStatusAlerting } from './routes/runtimeSyncRoutes.js';
 import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
 import type { DeleteNowLedger } from '../retention/DeleteNowLedger.js';
@@ -167,6 +167,8 @@ export interface ServerDependencies {
   administrationPinService?: AdministrationPinService;
   /** PCA-ADD-ENR-016/PCA-FR-145: see registerRuntimeSyncRoutes' own doc comment and RealProtectiveAuthorityResolver.ts. */
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
+  /** PCA-ADD-ENR-020: see registerRuntimeSyncRoutes' own ProtectionStatusAlerting doc comment. */
+  protectionStatusAlerting?: ProtectionStatusAlerting;
 }
 
 /**
@@ -248,6 +250,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     rateLimiter,
     authAttemptLimiter,
     deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
+    protectionStatusAlerting: deps.protectionStatusAlerting,
   });
   registerRetentionRoutes(app, {
     authService: deps.authService,

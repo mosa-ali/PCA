@@ -33,8 +33,10 @@ import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '..
 import { createTestOnlyEnvelopeSignatureVerifier } from '../../support/testOnlyEnvelopeSignatureVerifier.mjs';
 import { InMemoryDeviceProtectionStatusRepository } from '../../../dist/device/DeviceProtectionStatusRepository.js';
 import { RealProtectiveAuthorityResolver } from '../../../dist/familyrbac/RealProtectiveAuthorityResolver.js';
+import { ProtectionAlertProducer } from '../../../dist/alerts/ProtectionAlertProducer.js';
+import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAlertLedger.js';
 
-function buildApp({ deviceProtectionStatusRepository } = {}) {
+function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
@@ -74,8 +76,28 @@ function buildApp({ deviceProtectionStatusRepository } = {}) {
       now: nowUtc,
     }),
     deviceProtectionStatusRepository,
+    protectionStatusAlerting,
   });
   return { app, deviceRepository };
+}
+
+function makeAlerting({ enabled = true } = {}) {
+  const ledger = new InMemoryProtectionAlertLedger();
+  const producer = new ProtectionAlertProducer(
+    ledger,
+    async () => ({ encryptedPayloadB64: 'AQID', nonceB64: 'BAUG' }),
+    () => new Date('2026-08-21T00:00:00.000Z'),
+  );
+  return {
+    alerting: {
+      producer,
+      alertsEnabled: enabled,
+      async resolveParentDevices() {
+        return [{ deviceId: 'parent-device-1', keyEpoch: 3 }];
+      },
+    },
+    ledger,
+  };
 }
 
 async function registerDevice(deviceRepository, familyId) {
@@ -393,6 +415,99 @@ test('a device can never report status for a different device -- the id always c
 
     assert.equal((await deviceProtectionStatusRepository.findForDevice(familyId, reportingDeviceId))?.protectionLevel, 'PROTECTED');
     assert.equal(await deviceProtectionStatusRepository.findForDevice(familyId, otherDeviceId), null);
+  } finally {
+    await app.close();
+  }
+});
+
+// --- PCA-ADD-ENR-020: PROTECTION_DEGRADED alert on transition ---
+
+test('a report that transitions a device INTO DEGRADED emits PROTECTION_DEGRADED', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { alerting, ledger } = makeAlerting();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'PROTECTED' },
+    });
+    let events = await ledger.listForFamily(familyId);
+    assert.deepEqual(events, [], 'the FIRST report is never itself a degradation transition');
+
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'DEGRADED' },
+    });
+    assert.equal(response.statusCode, 204);
+    events = await ledger.listForFamily(familyId);
+    assert.deepEqual(events.map((e) => e.trigger), ['PROTECTION_DEGRADED']);
+    assert.equal(events[0].deviceId, deviceId);
+  } finally {
+    await app.close();
+  }
+});
+
+test('repeated DEGRADED reports emit PROTECTION_DEGRADED only once -- no alert on an already-degraded device', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { alerting, ledger } = makeAlerting();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    for (let i = 0; i < 3; i += 1) {
+      await app.inject({
+        method: 'POST', url: '/v1/runtime-sync/protection-status',
+        headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'DEGRADED' },
+      });
+    }
+    const events = await ledger.listForFamily(familyId);
+    assert.equal(events.length, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a non-DEGRADED report never emits PROTECTION_DEGRADED', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { alerting, ledger } = makeAlerting();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+    await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'PROTECTED' },
+    });
+    assert.deepEqual(await ledger.listForFamily(familyId), []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('recovering FROM DEGRADED back to DEGRADED again re-emits PROTECTION_DEGRADED (a real re-transition, not a stale dedup)', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const { alerting, ledger } = makeAlerting();
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+    const report = (level) => app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: level },
+    });
+    await report('DEGRADED');
+    await report('PROTECTED');
+    await report('DEGRADED');
+    const events = await ledger.listForFamily(familyId);
+    assert.deepEqual(events.map((e) => e.trigger), ['PROTECTION_DEGRADED', 'PROTECTION_DEGRADED']);
   } finally {
     await app.close();
   }

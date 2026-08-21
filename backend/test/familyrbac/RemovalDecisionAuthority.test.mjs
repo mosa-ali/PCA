@@ -428,14 +428,66 @@ test('a removal/disable request emits DISABLE_OR_REMOVAL_REQUESTED to every reso
   assert.equal(events[0].parentDeviceId, 'parent-device-1');
 });
 
-test('a committed decision emits AUTHORITY_CHANGE regardless of which decision mode was used', async () => {
+test('a KEEP_ACTIVE/TEMPORARILY_DISABLE decision emits AUTHORITY_CHANGE regardless of which decision mode was used', async () => {
   const { alerting, ledger } = makeAlerting();
   const { authority, pinService } = buildAuthority({ alerting, recoveryAllowed: true });
   await pinService.configurePin(FAMILY, '123456');
   const created = await createPending(authority, { requestId: 'request-alert-decided' });
+  await authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'KEEP_ACTIVE', temporaryDisableUntil: null, pin: '123456' });
+  const events = await ledger.listForFamily(created.familyId);
+  assert.deepEqual(events.map((event) => event.trigger), ['DISABLE_OR_REMOVAL_REQUESTED', 'AUTHORITY_CHANGE']);
+});
+
+// PCA-ADD-ENR-020: ALLOW_REMOVAL on a REMOVE_REVOKE_DEVICE request is this
+// codebase's actual "device leaves protection" event -- the same exact
+// condition applyDeviceRevocationIfNeeded gates real device revocation on
+// -- so it reports as UNENROLLMENT, not the generic AUTHORITY_CHANGE.
+test('an ALLOW_REMOVAL decision on a REMOVE_REVOKE_DEVICE request emits UNENROLLMENT, not AUTHORITY_CHANGE', async () => {
+  const { alerting, ledger } = makeAlerting();
+  const { authority, pinService } = buildAuthority({ alerting });
+  await pinService.configurePin(FAMILY, '123456');
+  const created = await createPending(authority, { requestId: 'request-alert-unenrollment', operation: 'REMOVE_REVOKE_DEVICE' });
+  await authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'ALLOW_REMOVAL', temporaryDisableUntil: null, pin: '123456' });
+  const events = await ledger.listForFamily(created.familyId);
+  assert.deepEqual(events.map((event) => event.trigger), ['DISABLE_OR_REMOVAL_REQUESTED', 'UNENROLLMENT']);
+});
+
+// A DISABLE_PROTECTION_POLICY request's ALLOW_REMOVAL outcome means
+// approval to disable the protection policy, never device revocation (see
+// applyDeviceRevocationIfNeeded's own doc comment) -- so it must keep
+// reporting as AUTHORITY_CHANGE, never UNENROLLMENT.
+test('an ALLOW_REMOVAL decision on a DISABLE_PROTECTION_POLICY request still emits AUTHORITY_CHANGE, never UNENROLLMENT', async () => {
+  const { alerting, ledger } = makeAlerting();
+  const { authority, pinService } = buildAuthority({ alerting });
+  await pinService.configurePin(FAMILY, '123456');
+  const created = await createPending(authority, { requestId: 'request-alert-policy-disable', operation: 'DISABLE_PROTECTION_POLICY' });
   await authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'ALLOW_REMOVAL', temporaryDisableUntil: null, pin: '123456' });
   const events = await ledger.listForFamily(created.familyId);
   assert.deepEqual(events.map((event) => event.trigger), ['DISABLE_OR_REMOVAL_REQUESTED', 'AUTHORITY_CHANGE']);
+});
+
+test('a rate-limited local-PIN attempt emits REPEATED_INVALID_PIN exactly once, at the moment the lockout threshold is crossed', async () => {
+  const { alerting, ledger } = makeAlerting();
+  const { authority, pinService } = buildAuthority({ alerting });
+  await pinService.configurePin(FAMILY, '123456');
+  const created = await createPending(authority, { requestId: 'request-alert-rate-limited' });
+  // AdministrationPinService's lockout threshold is a fixed 5 attempts
+  // (FAILURE_LOCKOUT_THRESHOLD) -- the first 4 wrong attempts reject
+  // PIN_INVALID with no alert; only the 5th crosses the threshold into
+  // RATE_LIMITED and emits REPEATED_INVALID_PIN.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await assert.rejects(
+      () => authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'KEEP_ACTIVE', temporaryDisableUntil: null, pin: 'wrong-pin' }),
+      (error) => error instanceof RemovalDecisionError && error.code === 'PIN_INVALID',
+    );
+  }
+  assert.deepEqual((await ledger.listForFamily(created.familyId)).map((event) => event.trigger), ['DISABLE_OR_REMOVAL_REQUESTED']);
+  await assert.rejects(
+    () => authority.decideWithLocalPin(created.requestId, created.familyId, { decision: 'KEEP_ACTIVE', temporaryDisableUntil: null, pin: 'wrong-pin' }),
+    (error) => error instanceof RemovalDecisionError && error.code === 'RATE_LIMITED',
+  );
+  const events = await ledger.listForFamily(created.familyId);
+  assert.deepEqual(events.map((event) => event.trigger), ['DISABLE_OR_REMOVAL_REQUESTED', 'REPEATED_INVALID_PIN']);
 });
 
 test('disabled alerting never invokes the composer and never blocks the decision', async () => {

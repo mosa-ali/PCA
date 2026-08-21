@@ -439,7 +439,14 @@ export class RemovalDecisionAuthority {
     // into a request, proof, audit field, or error message.
     if (!result.ok) {
       if (result.code === 'NOT_CONFIGURED') throw new RemovalDecisionError('PIN_NOT_CONFIGURED');
-      if (result.code === 'RATE_LIMITED') throw new RemovalDecisionError('RATE_LIMITED');
+      if (result.code === 'RATE_LIMITED') {
+        // Fired at the exact moment the lockout threshold is crossed (this
+        // call is what crossed it) -- not on every prior failed attempt,
+        // which would multiply alerts per PIN-guessing burst rather than
+        // signal the one moment that matters to a parent.
+        await this.emitAlert(request, 'REPEATED_INVALID_PIN');
+        throw new RemovalDecisionError('RATE_LIMITED');
+      }
       throw new RemovalDecisionError('PIN_INVALID');
     }
     return this.commitSimpleDecision(
@@ -589,7 +596,7 @@ export class RemovalDecisionAuthority {
       freeTextNote: signedDecision.decision,
     });
     await this.applyDeviceRevocationIfNeeded(decided);
-    await this.emitAlert(decided, 'AUTHORITY_CHANGE');
+    await this.emitAlert(decided, isUnenrollment(decided) ? 'UNENROLLMENT' : 'AUTHORITY_CHANGE');
     return decided;
   }
 
@@ -645,7 +652,7 @@ export class RemovalDecisionAuthority {
       freeTextNote: `${method}:${input.decision}`,
     });
     await this.applyDeviceRevocationIfNeeded(next);
-    await this.emitAlert(next, 'AUTHORITY_CHANGE');
+    await this.emitAlert(next, isUnenrollment(next) ? 'UNENROLLMENT' : 'AUTHORITY_CHANGE');
     return next;
   }
 
@@ -707,7 +714,10 @@ export class RemovalDecisionAuthority {
   }
 
   /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses a decision. */
-  private async emitAlert(record: RemovalDecisionRecord, trigger: 'DISABLE_OR_REMOVAL_REQUESTED' | 'AUTHORITY_CHANGE'): Promise<void> {
+  private async emitAlert(
+    record: RemovalDecisionRecord,
+    trigger: 'DISABLE_OR_REMOVAL_REQUESTED' | 'AUTHORITY_CHANGE' | 'REPEATED_INVALID_PIN' | 'UNENROLLMENT',
+  ): Promise<void> {
     if (this.alerting === null) return;
     const alertsEnabled = typeof this.alerting.alertsEnabled === 'function' ? this.alerting.alertsEnabled() : this.alerting.alertsEnabled;
     if (!alertsEnabled) return;
@@ -862,6 +872,19 @@ function validateAndCanonicalizeDecision(
   }
 
   return canonicalizeRemovalDecision(decision);
+}
+
+/**
+ * PCA-ADD-ENR-020's UNENROLLMENT trigger: an ALLOW_REMOVAL decision on a
+ * REMOVE_REVOKE_DEVICE request is this codebase's actual "device leaves
+ * protection" event -- the same exact condition applyDeviceRevocationIfNeeded
+ * already gates on. A DISABLE_PROTECTION_POLICY request's ALLOW_REMOVAL
+ * outcome means something else entirely (approval to disable the policy,
+ * never device revocation, per applyDeviceRevocationIfNeeded's own doc
+ * comment) and must keep reporting as AUTHORITY_CHANGE, not UNENROLLMENT.
+ */
+function isUnenrollment(record: RemovalDecisionRecord): boolean {
+  return record.state === 'ALLOW_REMOVAL' && record.operation === 'REMOVE_REVOKE_DEVICE';
 }
 
 function isValidDate(value: Date | null): value is Date {

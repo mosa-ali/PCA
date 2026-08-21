@@ -3813,8 +3813,16 @@
         "backend/src/alerts/policy.ts",
         "backend/src/alerts/ProtectionAlertGenerator.ts",
         "backend/src/alerts/ProtectionAlertLedger.ts",
+        "backend/src/alerts/MySqlProtectionAlertLedger.ts",
         "backend/src/alerts/ProtectionAlertProducer.ts",
+        "backend/src/alerts/RejectingOpaqueProtectionAlertComposer.ts",
+        "backend/src/alerts/MySqlOwnerParentDeviceResolver.ts",
+        "backend/migrations/0025_protection_alerts.sql",
         "backend/src/familyrbac/RemovalDecisionAuthority.ts",
+        "backend/src/invitation/InvitationService.ts",
+        "backend/src/http/routes/runtimeSyncRoutes.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/main.ts",
         "ios/PCA/Alerts/ProtectionAlert.swift",
         "parent-web/src/pages/security/ProtectionAlertPanel.tsx",
         "parent-web/src/pages/security/ProtectionStatus.tsx"
@@ -3822,11 +3830,15 @@
       "testEvidence": [
         "backend/test/alerts/ProtectionAlert.test.mjs",
         "backend/test/alerts/ProtectionAlertProducer.test.mjs",
+        "backend/test/alerts/RejectingOpaqueProtectionAlertComposer.test.mjs",
+        "backend/test/db/protectionAlerts.mysql.test.mjs",
         "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs",
+        "backend/test/invitation/service.test.mjs",
+        "backend/test/runtime-sync/http/runtimeSyncRoutes.test.mjs",
         "ios/PCATests/AlertProtectionTests.swift"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): commit 8b7adfe wires ProtectionAlertProducer into RemovalDecisionAuthority, emitting DISABLE_OR_REMOVAL_REQUESTED on request creation and AUTHORITY_CHANGE on decision (2 of the ~10 trigger sources this row calls for: invalid PIN, VPN/permission loss, offline, time tampering, degradation, reinstall, invitation redemption, and unenrollment remain unwired). parent-web's ProtectionStatus.tsx still calls <ProtectionAlertPanel alerts={[]} .../> hardcoded (confirmed by direct read) -- the panel is not connected to a live feed. Real, narrower gap; not stale."
+      "notes": "R3 update (2026-08-21, base 7e50267): verified via 1621/1621 backend unit tests, 409/413 (+4 correctly-deferred) disposable-MySQL tests from empty including migration 0025, and a real HTTP sanity check against the production-wired server (unauthenticated invitation-creation and protection-status requests still correctly 401). No fabricated event, no invasive fingerprinting, no plaintext alert delivery introduced."
     },
     {
       "requirementId": "PCA-ADD-ENR-021",

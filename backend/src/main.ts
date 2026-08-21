@@ -49,6 +49,10 @@ import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/Unava
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
 import { RealProtectiveAuthorityResolver } from './familyrbac/RealProtectiveAuthorityResolver.js';
 import { MySqlDeviceProtectionStatusRepository } from './device/DeviceProtectionStatusRepository.js';
+import { ProtectionAlertProducer } from './alerts/ProtectionAlertProducer.js';
+import { MySqlProtectionAlertLedger } from './alerts/MySqlProtectionAlertLedger.js';
+import { createRejectingOpaqueProtectionAlertComposer } from './alerts/RejectingOpaqueProtectionAlertComposer.js';
+import { MySqlOwnerParentDeviceResolver } from './alerts/MySqlOwnerParentDeviceResolver.js';
 import { DeviceDirectoryService } from './device/DeviceDirectoryService.js';
 import { registerRemovalDecisionRoutes } from './http/routes/removalDecisionRoutes.js';
 import { AdministrationPinService } from './enrollment/AdministrationPinService.js';
@@ -285,9 +289,12 @@ async function start(): Promise<void> {
   // still functionally fail-closed today (RejectingDeviceSignatureVerifier,
   // pending CRYPTO_SUITE human security review), exactly like device-session
   // issuance and envelope acceptance elsewhere in this file.
+  // Shared instance -- also reused below by protectionAlertParentDeviceResolver
+  // (PCA-ADD-ENR-020), never a second independently-constructed copy.
+  const familyAuthorityAttestationChainStore = new MySqlFamilyAuthorityAttestationChainStore();
   const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
     new MySqlFamilyAuthorityGenesisStore(),
-    new MySqlFamilyAuthorityAttestationChainStore(),
+    familyAuthorityAttestationChainStore,
     new RejectingDeviceSignatureVerifier(),
     () => new Date(),
   );
@@ -442,6 +449,37 @@ async function start(): Promise<void> {
   // RealProtectiveAuthorityResolver's read below share this SAME
   // repository instance, never a second independently-constructed copy.
   const deviceProtectionStatusRepository = new MySqlDeviceProtectionStatusRepository();
+  // PCA-ADD-ENR-020: durable ledger + producer + parent-device resolver,
+  // shared by every alert call site below (RemovalDecisionAuthority,
+  // InvitationService, the protection-status route) -- one instance each,
+  // never independently re-constructed per caller.
+  //
+  // composeOpaquePayload is RejectingOpaqueProtectionAlertComposer: the
+  // SAME CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as every
+  // signature verifier in this file. Every produce() call therefore fails
+  // closed (rejects, recording nothing) until a reviewed composer replaces
+  // it -- alert emission is best-effort everywhere it's called, so this
+  // never blocks or reverses the event it's attached to. See
+  // RejectingOpaqueProtectionAlertComposer.ts's own doc comment.
+  //
+  // resolveParentDevices is MySqlOwnerParentDeviceResolver: resolves the
+  // family's current Owner device only (a real, signature-chain-verified
+  // record) via the SAME familyAuthorityAttestationChainStore instance
+  // constructed above. Administrator-role parent devices are NOT resolved
+  // -- no table in this codebase registers per-device keys for non-Owner
+  // parent roles today (see that resolver's own doc comment for the full
+  // investigation). A family with no verified Owner resolves to zero
+  // recipients, never a fabricated or guessed one.
+  const protectionAlertProducer = new ProtectionAlertProducer(
+    new MySqlProtectionAlertLedger(),
+    createRejectingOpaqueProtectionAlertComposer(),
+  );
+  const protectionAlertParentDeviceResolver = new MySqlOwnerParentDeviceResolver(familyAuthorityAttestationChainStore);
+  const protectionAlerting = {
+    producer: protectionAlertProducer,
+    alertsEnabled: true,
+    resolveParentDevices: (familyId: string) => protectionAlertParentDeviceResolver.resolveParentDevices(familyId),
+  };
   const removalDecisionAuthority = new RemovalDecisionAuthority({
     repository: new MySqlRemovalDecisionRepository(),
     authorization: safeZoneParentActionAuthorization,
@@ -452,16 +490,16 @@ async function start(): Promise<void> {
     recoveryAuthority: new UnavailableAuthorizedRecoveryAuthority(),
     auditService: familyAuditService,
     deviceRevocation: deviceDirectoryService,
-    // PCA-ADD-ENR-020 alerting is deliberately NOT composed here: it needs
-    // both a real opaque payload composer (blocked on the same
-    // CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as every signature
-    // verifier in this file) and a real family-trust-set-backed
-    // resolveParentDevices source, neither of which exists in this
-    // codebase yet. Alerting is entirely optional/best-effort by design
-    // (RemovalDecisionAuthority.emitAlert never blocks or reverses a
-    // decision either way), so omitting it here is an honest gap, not a
-    // silent one -- decisions still commit and audit correctly with no
-    // alert emitted.
+    alerting: {
+      producer: protectionAlertProducer,
+      // Unused by RemovalDecisionAuthority.emitAlert today (the producer
+      // already owns its own composer internally) but required by this
+      // interface's shape -- supplying the same rejecting composer keeps
+      // this field honest rather than a placeholder value.
+      composeOpaquePayload: createRejectingOpaqueProtectionAlertComposer(),
+      alertsEnabled: true,
+      resolveParentDevices: protectionAlerting.resolveParentDevices,
+    },
   });
 
   // PCA-COMPLIMENTARY-ENTITLEMENTS-1: durable, audited complimentary
@@ -500,7 +538,7 @@ async function start(): Promise<void> {
     authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,
-    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService),
+    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService, protectionAlerting),
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
@@ -580,6 +618,7 @@ async function start(): Promise<void> {
     protectiveAuthorityResolver: new RealProtectiveAuthorityResolver(deviceProtectionStatusRepository),
     administrationPinService,
     deviceProtectionStatusRepository,
+    protectionStatusAlerting: protectionAlerting,
   });
   await app.listen({ host, port });
 

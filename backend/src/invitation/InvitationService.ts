@@ -14,6 +14,21 @@ import type {
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
+import type { ProtectionAlertProducer } from '../alerts/ProtectionAlertProducer.js';
+
+/**
+ * PCA-ADD-ENR-020 alerting composition, scoped narrowly to this service
+ * (mirrors familyrbac/RemovalDecisionAuthority.ts's RemovalDecisionAlerting
+ * precedent -- a per-class interface rather than one shared "alerting"
+ * blob, so each class depends on exactly the alert triggers it can
+ * actually fire). Best-effort/optional: alert delivery failure never blocks
+ * or reverses invitation redemption.
+ */
+export interface InvitationAlerting {
+  producer: ProtectionAlertProducer;
+  alertsEnabled: boolean | (() => boolean);
+  resolveParentDevices(familyId: string): Promise<Array<{ deviceId: string; keyEpoch: number }>>;
+}
 
 export type InvitationErrorCode =
   | 'INVALID_TOKEN'
@@ -70,6 +85,7 @@ export class InvitationService {
   private readonly now: () => Date;
   private readonly auditService: FamilyAuditService;
   private readonly slotReservationService: SlotReservationService | null;
+  private readonly alerting: InvitationAlerting | null;
 
   /**
    * `auditService` defaults to a private, per-instance in-memory reference
@@ -92,11 +108,13 @@ export class InvitationService {
     now: () => Date = () => new Date(),
     auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
     slotReservationService: SlotReservationService | null = null,
+    alerting: InvitationAlerting | null = null,
   ) {
     this.repository = repository;
     this.now = now;
     this.auditService = auditService;
     this.slotReservationService = slotReservationService;
+    this.alerting = alerting;
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
@@ -211,6 +229,10 @@ export class InvitationService {
     const result: RedemptionResult = await this.repository.redeemAtomically(record.invitationId, this.now());
     switch (result.outcome) {
       case 'REDEEMED':
+        // A device may not be bound yet at this exact moment (see
+        // alerts/types.ts's ProtectionAlertEvent.deviceId doc comment) --
+        // the invitation's familyId is the only identity this event needs.
+        await this.emitAlert(result.record.familyId, null, 'INVITATION_REDEEMED');
         return result.record;
       case 'ALREADY_REDEEMED':
         throw new InvitationError('ALREADY_REDEEMED');
@@ -340,6 +362,28 @@ export class InvitationService {
   private async persistExpiryIfDue(record: InvitationRecord): Promise<InvitationRecord> {
     if (TERMINAL_STATUSES.has(record.status) || !this.isExpired(record)) return record;
     return this.repository.expireIfDue(record.invitationId, this.now());
+  }
+
+  /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses redemption. */
+  private async emitAlert(familyId: OpaqueFamilyId, deviceId: string | null, trigger: 'INVITATION_REDEEMED'): Promise<void> {
+    if (this.alerting === null) return;
+    const alertsEnabled = typeof this.alerting.alertsEnabled === 'function' ? this.alerting.alertsEnabled() : this.alerting.alertsEnabled;
+    if (!alertsEnabled) return;
+    try {
+      const parentDevices = await this.alerting.resolveParentDevices(familyId);
+      for (const parentDevice of parentDevices) {
+        await this.alerting.producer.produce({
+          familyId,
+          deviceId,
+          parentDeviceId: parentDevice.deviceId,
+          trigger,
+          keyEpoch: parentDevice.keyEpoch,
+          alertsEnabled: true,
+        });
+      }
+    } catch {
+      // Alerting is deliberately non-blocking -- see this method's own doc comment.
+    }
   }
 }
 

@@ -8,6 +8,20 @@ import type { DeviceSyncStatusTracker } from '../../runtime-sync/StatusService.j
 import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
+import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
+
+/**
+ * PCA-ADD-ENR-020 alerting composition, scoped to the protection-status
+ * route (mirrors familyrbac/RemovalDecisionAuthority.ts's
+ * RemovalDecisionAlerting / invitation/InvitationService.ts's
+ * InvitationAlerting precedent). Best-effort/optional: alert delivery
+ * failure never blocks or reverses a device's status report.
+ */
+export interface ProtectionStatusAlerting {
+  producer: ProtectionAlertProducer;
+  alertsEnabled: boolean | (() => boolean);
+  resolveParentDevices(familyId: string): Promise<Array<{ deviceId: string; keyEpoch: number }>>;
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -46,11 +60,39 @@ export interface RuntimeSyncRoutesDeps {
    * doc comment for the full chain).
    */
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
+  /** PCA-ADD-ENR-020: optional. When supplied alongside deviceProtectionStatusRepository, a report that transitions a device INTO DEGRADED emits a PROTECTION_DEGRADED alert. */
+  protectionStatusAlerting?: ProtectionStatusAlerting;
 }
 
 const PROTECTION_LEVELS: ReadonlySet<string> = new Set(['STANDARD', 'PROTECTED', 'DEGRADED', 'AUTHORIZATION_REQUIRED', 'NOT_SUPPORTED']);
 
 const MAX_CIPHERTEXT_BASE64_LENGTH = 90_000; // headroom over relay's 64 KiB ciphertext cap once base64-inflated
+
+/** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses the status write. */
+async function emitProtectionDegradedAlert(
+  alerting: ProtectionStatusAlerting | undefined,
+  familyId: string,
+  deviceId: string,
+): Promise<void> {
+  if (!alerting) return;
+  const alertsEnabled = typeof alerting.alertsEnabled === 'function' ? alerting.alertsEnabled() : alerting.alertsEnabled;
+  if (!alertsEnabled) return;
+  try {
+    const parentDevices = await alerting.resolveParentDevices(familyId);
+    for (const parentDevice of parentDevices) {
+      await alerting.producer.produce({
+        familyId,
+        deviceId,
+        parentDeviceId: parentDevice.deviceId,
+        trigger: 'PROTECTION_DEGRADED',
+        keyEpoch: parentDevice.keyEpoch,
+        alertsEnabled: true,
+      });
+    }
+  } catch {
+    // Alerting is deliberately non-blocking -- see this function's own doc comment.
+  }
+}
 
 function isNonEmptyString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
@@ -260,12 +302,19 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         if (typeof body.protectionLevel !== 'string' || !PROTECTION_LEVELS.has(body.protectionLevel)) {
           return reply.code(400).send({ error: 'invalid_request' });
         }
-        await protectionStatusRepository.upsert({
-          deviceId: request.runtimeSyncDeviceId as string,
-          familyId: request.runtimeSyncFamilyId as string,
-          protectionLevel: body.protectionLevel as ProtectionLevel,
-          updatedAt: new Date(),
-        });
+        const deviceId = request.runtimeSyncDeviceId as string;
+        const familyId = request.runtimeSyncFamilyId as string;
+        const nextLevel = body.protectionLevel as ProtectionLevel;
+        // Read before write: a transition INTO DEGRADED is only detectable
+        // by diffing against the prior single-row-per-device value (the
+        // table is an upsert, never a history log -- see this repository's
+        // own doc comment) -- so the previous level must be captured before
+        // it's overwritten below, not after.
+        const previous = deps.protectionStatusAlerting ? await protectionStatusRepository.findForDevice(familyId, deviceId) : null;
+        await protectionStatusRepository.upsert({ deviceId, familyId, protectionLevel: nextLevel, updatedAt: new Date() });
+        if (nextLevel === 'DEGRADED' && previous?.protectionLevel !== 'DEGRADED') {
+          await emitProtectionDegradedAlert(deps.protectionStatusAlerting, familyId, deviceId);
+        }
         return reply.code(204).send();
       },
     );
