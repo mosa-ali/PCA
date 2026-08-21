@@ -1,19 +1,19 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-19.
+Generated from the completion matrix and repository evidence on 2026-08-21.
 
 ## Exact requirement counts
 
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 279 |
-| PARTIAL | 72 |
-| NOT_STARTED | 5 |
+| SOURCE_COMPLETE | 289 |
+| PARTIAL | 62 |
+| NOT_STARTED | 3 |
 | NOT_APPLICABLE | 19 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 77 |
-| External-gate rows | 47 |
+| Partial plus not-started | 65 |
+| External-gate rows | 58 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -35,7 +35,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
 - Parent Web typecheck: PASS; test: PASS (61 files, 452 tests); production build: PASS; lint was not rerun on this head (prior focused lint evidence remains separate).
-- Backend build: PASS; focused backend alert suite: PASS (6/6); focused enrollment persistence/approval suite: PASS (17/17); previous full unit/security suite: PASS (1,510/1,510; elevated local worker permissions were required); current-head migration 0022 MySQL validation: BLOCKED because Docker Desktop is unavailable.
+- Backend build: PASS; full unit/security suite: PASS (1547/1547, current head 503865c). Disposable local MySQL 8.4 (Docker Compose) validation: PASS -- migrations 0001-0023 applied from empty, full DB suite PASS (391/391 + 4 correctly deferred to the dedicated privilege gate), platform-admin-privileges gate PASS (4/4). Live-stack smoke (real login/session/cross-family-403/PIN-configure/DB-proof/backend-restart-persistence) PASS.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
 ## Open work
@@ -130,12 +130,12 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 ### Current-head database validation
 
 - PRE_WAVE11_DB_BASELINE = PASS
-- CURRENT_HEAD_0022_DB_VALIDATION = BLOCKED
-- MIGRATION_0022_APPLIED = NOT_EXECUTED
-- MIGRATION_0022_SCHEMA_VERIFIED = NOT_EXECUTED
-- MYSQL_STANDARD = NOT_EXECUTED (Docker Desktop daemon unavailable; migration 0022 not live-validated)
-- MYSQL_PRIVILEGE = NOT_EXECUTED (current-head database validation blocked before privilege run)
-- DB_CRITICAL_SKIPPED = NOT_EXECUTED
+- CURRENT_HEAD_0023_DB_VALIDATION = PASS
+- MIGRATION_0023_APPLIED = YES
+- MIGRATION_0023_SCHEMA_VERIFIED = YES
+- MYSQL_STANDARD = PASS
+- MYSQL_PRIVILEGE = PASS
+- DB_CRITICAL_SKIPPED = 0
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Wave 12 source-boundary hardening
 
@@ -173,6 +173,6 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 
 ### Current-head mutation validation
 
-- MUTATION = PASS (22 KILLED, 3 EQUIVALENT, 3 INVALID, 0 SURVIVED; entry 31ea51e4abf6c831da86d6289795090cfebd5b2f)
-- VALID_MUTATION_SURVIVORS = 0
+- MUTATION = NOT_EXECUTED
+- VALID_MUTATION_SURVIVORS = NOT_EXECUTED
 - Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.

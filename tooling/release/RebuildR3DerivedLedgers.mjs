@@ -2,8 +2,14 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const manifestRoot = `${root}/.agent-runtime/manifests/pca-r3-final`;
-const matrixPath = `${root}/docs/implementation/PCA_COMPLETION_V2_MATRIX.json`;
+// Test-only override: PCA_R3_TEST_ROOT lets the regression test suite
+// point this script at a disposable fixture directory (a copy of the real
+// matrix/manifest files) instead of the controlled repository files,
+// without needing any other code path change. Unset in every normal
+// invocation, so default behavior is unchanged.
+const effectiveRoot = process.env.PCA_R3_TEST_ROOT ?? root;
+const manifestRoot = `${effectiveRoot}/.agent-runtime/manifests/pca-r3-final`;
+const matrixPath = `${effectiveRoot}/docs/implementation/PCA_COMPLETION_V2_MATRIX.json`;
 
 const paths = {
   audit: `${manifestRoot}/R3_REQUIREMENT_AUDIT.csv`,
@@ -754,6 +760,16 @@ for (const requirement of requirements) {
   const updateNotesRefreshed = /R3 (re-derivation|update)/.test(update.notes ?? '');
   if (currentNotesRefreshed && !updateNotesRefreshed) {
     wouldDowngrade.push(`${requirement.requirementId}: SOURCE_UPDATES's notes would overwrite a newer, dated R3 re-derivation/update note with an unmarked, older one`);
+    continue;
+  }
+  // An update that omits externalGate entirely already leaves the current
+  // value untouched (the `if (update.externalGate)` write below), but an
+  // update that supplies a PRESENT-but-narrower gate list (including an
+  // explicit empty array) would otherwise silently clear a gate the matrix
+  // already recorded -- same staleness class as dropping evidence.
+  const droppedGates = wouldDropEvidence(splitGates(requirement.externalGate), update.externalGate ? splitGates(update.externalGate) : splitGates(requirement.externalGate));
+  if (update.externalGate && droppedGates.length > 0) {
+    wouldDowngrade.push(`${requirement.requirementId}: SOURCE_UPDATES would drop already-recorded externalGate=[${droppedGates.join(', ')}]`);
     continue;
   }
   requirement.status = update.status;
