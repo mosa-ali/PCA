@@ -14,7 +14,10 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:real": "playwright test --config=playwright.real.config.ts",
-    "generate:icons": "node scripts/generate-icons.mjs"
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "gate:demo-mode": "node scripts/productionDemoModeGate.mjs check",
+    "gate:demo-mode:negative-control": "node scripts/productionDemoModeGate.mjs negative-control",
+    "gate:demo-mode:both": "node scripts/productionDemoModeGate.mjs both"
   },
   "dependencies": {
     "@pca/parent-sdk-browser-runtime": "file:../parent-sdk/browser-runtime",

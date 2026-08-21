@@ -186,3 +186,46 @@ jobs:
             if (!Array.isArray(sbom.components) || sbom.components.length === 0) throw new Error('sbom.cdx.json has no components');
             console.log(\`platform-admin-web SBOM: \${sbom.components.length} components, CycloneDX \${sbom.specVersion}\`);
           "
+
+  web-production-demo-mode-gate:
+    # Prompt-1 audit follow-up: proves the ACTUAL resolved production build
+    # artifact of parent-web and platform-admin-web never wires a demo/
+    # fixture data client in as the active client -- never a mere grep of a
+    # .env file. See parent-web/scripts/productionDemoModeGate.mjs and
+    # platform-admin-web/scripts/productionDemoModeGate.mjs for the full
+    # investigation this gate's reasoning is based on. Each script's `both`
+    # mode runs the real `npm run build` pipeline (tsc --noEmit -p
+    # tsconfig.json && vite build) twice against a fresh OS-temp output
+    # directory -- once with the real/production toggle value forced
+    # (PRODUCTION_DEMO_MODE_GATE) and once with demo mode deliberately
+    # forced ON (parent-web: VITE_PCA_DEMO_MODE=true; platform-admin-web,
+    # which has no real demo toggle to flip, via a temporary reachable
+    # canary marker injected into and then restored from
+    # src/api/platformAdminApiClient.ts) to prove the gate actually rejects
+    # a demo-wired build (DEMO_MODE_NEGATIVE_CONTROL) rather than rubber-
+    # stamping -- and inspects the emitted JS artifact itself, never the
+    # source or an env file alone. Neither script leaves build output or
+    # modified source files behind (both clean up via try/finally, and the
+    # negative-control script byte-for-byte-verifies its own restoration).
+    name: Web production demo-mode gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Install parent-web dependencies
+        working-directory: parent-web
+        run: npm ci
+      - name: parent-web production demo-mode gate + negative control
+        working-directory: parent-web
+        run: npm run gate:demo-mode:both
+      - name: Install platform-admin-web dependencies
+        working-directory: platform-admin-web
+        run: npm ci
+      - name: platform-admin-web production demo-mode gate + negative control
+        working-directory: platform-admin-web
+        run: npm run gate:demo-mode:both

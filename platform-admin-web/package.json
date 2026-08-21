@@ -13,7 +13,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:real": "playwright test --config=playwright.real.config.ts"
+    "test:e2e:real": "playwright test --config=playwright.real.config.ts",
+    "gate:demo-mode": "node scripts/productionDemoModeGate.mjs check",
+    "gate:demo-mode:negative-control": "node scripts/productionDemoModeGate.mjs negative-control",
+    "gate:demo-mode:both": "node scripts/productionDemoModeGate.mjs both"
   },
   "dependencies": {
     "i18next": "23.15.1",
