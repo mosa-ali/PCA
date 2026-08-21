@@ -36,7 +36,9 @@ import { createEd25519DeviceSignatureVerifier } from '../dist/parentaccount/gene
 import { PlatformAdminAccountService } from '../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
-import { encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../dist/platformadmin/auth/totp.js';
+import { base32Encode, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../dist/platformadmin/auth/totp.js';
+import { InvitationService } from '../dist/invitation/InvitationService.js';
+import { MySqlInvitationRepository } from '../dist/invitation/MySqlInvitationRepository.js';
 
 const connectionString = process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL is required.');
@@ -86,6 +88,33 @@ await getPool().query(
   [familyA.accountId],
 );
 
+// Device enrollment (PCA-ADD-ENR-014/142 family): the invitation layer is
+// real, server-side-only state -- createInvitation is exactly what
+// backend/src/http/routes/invitationRoutes.ts calls -- and gives the
+// Devices page genuine "pending invitation" rows to render without
+// fabricating a device's own Ed25519 key material or pairing state, which
+// can only legitimately be generated ON a real device (the invitation
+// token itself is the one-time secret a real Android/iOS client would
+// redeem; seeding a fake redemption would mean seeding a fake device
+// identity, which this script deliberately does not do).
+const invitationService = new InvitationService(new MySqlInvitationRepository());
+
+async function seedInvitation(familyId, childProfileId, ageUxTier, platform, requestedProtectionMode) {
+  const { record } = await invitationService.createInvitation({
+    familyId,
+    platform,
+    requestedProtectionMode,
+    childProfileId,
+    ageUxTier,
+  });
+  console.log('Seeded invitation:', { familyId, childProfileId, ageUxTier, platform, invitationId: record.invitationId, status: record.status });
+  return record;
+}
+
+await seedInvitation(familyA.familyId, 'seed-child-teen', 'TEEN', 'ANDROID', 'ANDROID_STANDARD');
+await seedInvitation(familyA.familyId, 'seed-child-young', 'YOUNG_CHILD', 'ANDROID', 'ANDROID_PROTECTED');
+await seedInvitation(familyB.familyId, 'seed-child-b', 'YOUNG_CHILD', 'ANDROID', 'ANDROID_STANDARD');
+
 const authRepository = new MySqlPlatformAdminAuthRepository();
 const platformAdminAccountService = new PlatformAdminAccountService(authRepository);
 
@@ -109,7 +138,7 @@ async function seedPlatformAdmin(role) {
     `UPDATE platform_admin_mfa_state SET status = 'ACTIVE', totp_secret_ciphertext = ?, totp_secret_nonce = ?, activated_at = NOW(3) WHERE admin_id = ?`,
     [ciphertext, nonce, account.adminId],
   );
-  console.log(`Seeded platform admin (${role}):`, { adminId: account.adminId, email, totpSecretBase32: secret });
+  console.log(`Seeded platform admin (${role}):`, { adminId: account.adminId, email, totpSecretBase32: base32Encode(secret) });
   return { ...account, email, totpSecret: secret };
 }
 
@@ -120,6 +149,7 @@ for (const role of ['APP_OWNER', 'FINANCE_ADMIN', 'SUPPORT_ADMIN']) {
 const [[{ familyCount }]] = await getPool().query('SELECT COUNT(*) AS familyCount FROM families');
 const [[{ accountCount }]] = await getPool().query('SELECT COUNT(*) AS accountCount FROM parent_accounts');
 const [[{ adminCount }]] = await getPool().query('SELECT COUNT(*) AS adminCount FROM platform_admin_accounts');
-console.log('Seed complete.', { familyCount, accountCount, adminCount });
+const [[{ invitationCount }]] = await getPool().query('SELECT COUNT(*) AS invitationCount FROM enrollment_invitations');
+console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount });
 
 await closePool();
