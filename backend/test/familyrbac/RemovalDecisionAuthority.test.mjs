@@ -71,6 +71,7 @@ function buildAuthority({
   now = () => NOW,
   recoveryAllowed = false,
   alerting,
+  deviceRevocation,
 } = {}) {
   const auditRepository = new InMemoryFamilyAuditRepository();
   const audit = new FamilyAuditService(auditRepository, now);
@@ -120,6 +121,7 @@ function buildAuthority({
     replayLedger: new InMemoryRemovalDecisionReplayLedger(),
     auditService: audit,
     alerting,
+    deviceRevocation,
     now,
   });
   return { authority, repository, auditRepository, pinService, recoveryCalls };
@@ -199,6 +201,16 @@ function sign(unsigned) {
 }
 
 // --- Signed remote-parent mode (folded in from RemovalDecisionService) ---
+
+test('PCA-ADD-ENR-016/017: a signed remote-parent ALLOW_REMOVAL on a REMOVE_REVOKE_DEVICE request calls the injected deviceRevocation executor', async () => {
+  const calls = [];
+  const deviceRevocation = { async revokeDevice(familyId, deviceId) { calls.push({ familyId, deviceId }); } };
+  const { authority } = buildAuthority({ deviceRevocation });
+  const request = await createPending(authority, { requestId: 'request-signed-revoke' });
+  const result = await authority.decideWithSignedRemoteParent(sign(unsignedDecision(request, { decision: 'ALLOW_REMOVAL' })));
+  assert.equal(result.state, 'ALLOW_REMOVAL');
+  assert.deepEqual(calls, [{ familyId: FAMILY, deviceId: DEVICE }]);
+});
 
 test('Owner can apply KEEP_ACTIVE via signed remote decision and the exact decision is audited', async () => {
   const { authority, auditRepository } = buildAuthority();

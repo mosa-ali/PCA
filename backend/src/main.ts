@@ -48,6 +48,7 @@ import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisio
 import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
 import { UnavailableAuthorizedRecoveryAuthority } from './familyrbac/UnavailableAuthorizedRecoveryAuthority.js';
 import { UnavailableProtectiveAuthorityResolver } from './familyrbac/UnavailableProtectiveAuthorityResolver.js';
+import { DeviceDirectoryService } from './device/DeviceDirectoryService.js';
 import { registerRemovalDecisionRoutes } from './http/routes/removalDecisionRoutes.js';
 import { AdministrationPinService } from './enrollment/AdministrationPinService.js';
 import { MySqlAdministrationPinRepository } from './enrollment/MySqlAdministrationPinRepository.js';
@@ -426,6 +427,15 @@ async function start(): Promise<void> {
   // (AdministrationPinService + MySqlAdministrationPinRepository) and are
   // therefore the only mode actually reachable end-to-end today.
   const administrationPinService = new AdministrationPinService({ repository: new MySqlAdministrationPinRepository() });
+  // PCA-ADD-ENR-016/017: the real device-identity-layer effect of an
+  // ALLOW_REMOVAL/REMOVE_REVOKE_DEVICE decision -- reuses the SAME
+  // deviceRepository and familyAuditService instances every other
+  // consumer in this file shares, never a second independently-
+  // constructed copy. Previously never instantiated anywhere in this
+  // file, so an ALLOW_REMOVAL decision never actually revoked the
+  // decided-on device -- confirmed by direct source inspection this
+  // session, now closed.
+  const deviceDirectoryService = new DeviceDirectoryService(deviceRepository, () => new Date(), familyAuditService);
   const removalDecisionAuthority = new RemovalDecisionAuthority({
     repository: new MySqlRemovalDecisionRepository(),
     authorization: safeZoneParentActionAuthorization,
@@ -435,6 +445,7 @@ async function start(): Promise<void> {
     pinService: administrationPinService,
     recoveryAuthority: new UnavailableAuthorizedRecoveryAuthority(),
     auditService: familyAuditService,
+    deviceRevocation: deviceDirectoryService,
     // PCA-ADD-ENR-020 alerting is deliberately NOT composed here: it needs
     // both a real opaque payload composer (blocked on the same
     // CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as every signature

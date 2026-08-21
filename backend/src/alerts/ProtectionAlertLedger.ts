@@ -32,9 +32,18 @@ export class InMemoryProtectionAlertLedger implements ProtectionAlertLedger {
   }
 
   async listForFamily(familyId: string): Promise<ProtectionAlertEvent[]> {
+    // Sort by timestamp only, relying on Array.prototype.sort's ES2019
+    // stability guarantee to preserve `this.events`' own Map-insertion
+    // (i.e. real record()-call) order for any tie -- alertId is a random
+    // UUID (ProtectionAlertProducer's default nextAlertId), so breaking
+    // ties with it previously made same-millisecond ordering effectively
+    // random rather than chronological. Same-millisecond ties are the
+    // common case in tests with a fixed clock, and a real possibility in
+    // production under rapid alerts, so this was a genuine ordering bug,
+    // not just a test-only concern.
     return [...this.events.values()]
       .filter((event) => event.familyId === familyId)
-      .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime() || a.alertId.localeCompare(b.alertId));
+      .sort((a, b) => a.generatedAtUtc.getTime() - b.generatedAtUtc.getTime());
   }
 
   async listForParentDevice(familyId: string, parentDeviceId: string): Promise<ProtectionAlertEvent[]> {

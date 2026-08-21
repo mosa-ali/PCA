@@ -181,4 +181,18 @@ export class MySqlRemovalDecisionRepository implements RemovalDecisionRepository
       return 'CONFLICT';
     });
   }
+
+  async listAllowRemovalPendingDeviceRevocation(): Promise<RemovalDecisionRecord[]> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<RemovalDecisionRow>(
+        conn,
+        `SELECT ${SELECT_COLUMNS.split(',').map((c) => `r.${c.trim()}`).join(', ')}
+         FROM enrollment_protection_approval_requests r
+         JOIN devices d ON d.device_id = r.device_id AND d.family_id = r.family_id
+         WHERE r.state = 'ALLOW_REMOVAL' AND r.operation = 'REMOVE_REVOKE_DEVICE' AND d.status != 'REVOKED'
+         ORDER BY r.decided_at ASC`,
+      ),
+    );
+    return rows.map(toRecord);
+  }
 }

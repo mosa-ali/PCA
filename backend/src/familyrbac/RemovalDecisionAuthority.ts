@@ -190,11 +190,29 @@ export interface RemovalDecisionRepository {
   listForFamily(familyId: string): Promise<RemovalDecisionRecord[]>;
   create(record: RemovalDecisionRecord): Promise<void>;
   commitDecision(requestId: string, next: RemovalDecisionRecord): Promise<CommitRemovalDecisionResult>;
+  /**
+   * PCA-ADD-ENR-016/017/023 crash-safety: an ALLOW_REMOVAL decision on a
+   * REMOVE_REVOKE_DEVICE request must eventually result in the target
+   * device actually being revoked (DeviceDirectoryService.revokeDevice),
+   * not merely a decision-request row saying so. RemovalDecisionAuthority
+   * already attempts that revocation inline, best-effort, right after the
+   * decision commits -- but a process crash between those two steps must
+   * be recoverable without a human manually re-deciding anything. This is
+   * the recovery query: every ALLOW_REMOVAL/REMOVE_REVOKE_DEVICE decision
+   * whose target device is not (yet) `devices.status = 'REVOKED'` -- a
+   * narrowly-scoped read across the shared `devices` table this domain
+   * does not own, identical in spirit to
+   * ParentAccountRepository.findFamilyStatus's own precedent. Safe to call
+   * repeatedly: DeviceDirectoryService.revokeDevice is itself idempotent.
+   */
+  listAllowRemovalPendingDeviceRevocation(): Promise<RemovalDecisionRecord[]>;
 }
 
 /** Reference repository used by focused tests and local compositions. */
 export class InMemoryRemovalDecisionRepository implements RemovalDecisionRepository {
   private readonly records = new Map<string, RemovalDecisionRecord>();
+  /** Test-only device-status view: a deviceId present here is treated as already revoked. Mutate directly in tests to simulate DeviceDirectoryService state. */
+  readonly revokedDeviceIdsForTest = new Set<string>();
 
   async get(requestId: string): Promise<RemovalDecisionRecord | null> {
     const record = this.records.get(requestId);
@@ -221,6 +239,12 @@ export class InMemoryRemovalDecisionRepository implements RemovalDecisionReposit
     }
     this.records.set(requestId, cloneRecord(next));
     return 'APPLIED';
+  }
+
+  async listAllowRemovalPendingDeviceRevocation(): Promise<RemovalDecisionRecord[]> {
+    return [...this.records.values()]
+      .filter((record) => record.state === 'ALLOW_REMOVAL' && record.operation === 'REMOVE_REVOKE_DEVICE' && !this.revokedDeviceIdsForTest.has(record.deviceId))
+      .map(cloneRecord);
   }
 }
 
@@ -263,6 +287,21 @@ export class RemovalDecisionError extends Error {
   }
 }
 
+/**
+ * PCA-ADD-ENR-016/017/023: the actual device-identity-layer effect of an
+ * ALLOW_REMOVAL decision on a REMOVE_REVOKE_DEVICE request. A narrow
+ * interface (not the whole DeviceDirectoryService) so this domain depends
+ * on exactly the one operation it needs, matching this file's existing
+ * TrustSetRoleResolver/AuthorizedRecoveryAuthority precedent. The real
+ * implementation (DeviceDirectoryService.revokeDevice) is idempotent --
+ * safe to call more than once for the same device, which is what makes
+ * best-effort-then-reconcile a sound crash-recovery strategy here rather
+ * than requiring a transactional/outbox rewrite of decision commit itself.
+ */
+export interface DeviceRevocationExecutor {
+  revokeDevice(familyId: string, deviceId: string): Promise<unknown>;
+}
+
 /** PCA-ADD-ENR-020 alerting composition. Best-effort/optional: alert delivery failure never blocks or reverses a decision. */
 export interface RemovalDecisionAlerting {
   producer: ProtectionAlertProducer;
@@ -302,6 +341,7 @@ export class RemovalDecisionAuthority {
   private readonly recoveryAuthority: AuthorizedRecoveryAuthority;
   private readonly auditService: FamilyAuditService;
   private readonly alerting: RemovalDecisionAlerting | null;
+  private readonly deviceRevocation: DeviceRevocationExecutor | null;
   private readonly now: () => Date;
 
   constructor(options: {
@@ -315,8 +355,10 @@ export class RemovalDecisionAuthority {
     replayLedger?: RemovalDecisionReplayLedger;
     auditService: FamilyAuditService;
     alerting?: RemovalDecisionAlerting;
+    deviceRevocation?: DeviceRevocationExecutor;
     now?: () => Date;
   }) {
+    this.deviceRevocation = options.deviceRevocation ?? null;
     this.repository = options.repository;
     this.authorization = options.authorization;
     this.signingKeyResolver = options.signingKeyResolver;
@@ -546,6 +588,7 @@ export class RemovalDecisionAuthority {
       actionId: signedDecision.actionId,
       freeTextNote: signedDecision.decision,
     });
+    await this.applyDeviceRevocationIfNeeded(decided);
     await this.emitAlert(decided, 'AUTHORITY_CHANGE');
     return decided;
   }
@@ -601,8 +644,66 @@ export class RemovalDecisionAuthority {
       actionId: null,
       freeTextNote: `${method}:${input.decision}`,
     });
+    await this.applyDeviceRevocationIfNeeded(next);
     await this.emitAlert(next, 'AUTHORITY_CHANGE');
     return next;
+  }
+
+  /**
+   * PCA-ADD-ENR-016/017: the decision record itself has already committed
+   * (durably, via compare-and-set) by the time this runs -- ALLOW_REMOVAL
+   * is the authorization for the device to actually be revoked, and this
+   * is where that authorization is acted on. Scoped to REMOVE_REVOKE_DEVICE
+   * only: a DISABLE_PROTECTION_POLICY request's ALLOW_REMOVAL outcome
+   * means something else entirely (approval to disable the protection
+   * policy) and must never revoke a device's identity.
+   *
+   * Best-effort and non-blocking, exactly like emitAlert below: a
+   * revocation failure here (e.g. a transient DB error, or a crash before
+   * this line runs at all) never reverses or blocks the already-committed
+   * decision -- the decision is the parent's authoritative intent and must
+   * stand regardless. What makes this safe rather than merely "best
+   * effort and hope": DeviceDirectoryService.revokeDevice is idempotent,
+   * and reconcilePendingRevocations (below) is the durable, retryable
+   * recovery path for exactly the case where this inline attempt is lost
+   * to a crash -- run it as a periodic reconciliation job (see
+   * scripts/reconcile-pending-removals.mjs) so no ALLOW_REMOVAL decision
+   * can silently leave its device un-revoked forever.
+   */
+  private async applyDeviceRevocationIfNeeded(record: RemovalDecisionRecord): Promise<void> {
+    if (record.state !== 'ALLOW_REMOVAL' || record.operation !== 'REMOVE_REVOKE_DEVICE') return;
+    if (this.deviceRevocation === null) return;
+    try {
+      await this.deviceRevocation.revokeDevice(record.familyId, record.deviceId);
+    } catch {
+      // Deliberately non-blocking -- see this method's own doc comment.
+      // reconcilePendingRevocations is the durable retry path.
+    }
+  }
+
+  /**
+   * Crash-safety recovery: finds every ALLOW_REMOVAL/REMOVE_REVOKE_DEVICE
+   * decision whose target device the repository can see is not yet
+   * revoked (see RemovalDecisionRepository.listAllowRemovalPendingDeviceRevocation's
+   * own doc comment), and retries the revocation for each. Safe to call
+   * repeatedly/on a schedule: DeviceDirectoryService.revokeDevice is
+   * idempotent, so a device that was already revoked between the query and
+   * this retry is simply a no-op, never a duplicate/harmful action.
+   */
+  async reconcilePendingRevocations(): Promise<{ attempted: number; succeeded: number; failedRequestIds: string[] }> {
+    if (this.deviceRevocation === null) return { attempted: 0, succeeded: 0, failedRequestIds: [] };
+    const pending = await this.repository.listAllowRemovalPendingDeviceRevocation();
+    const failedRequestIds: string[] = [];
+    let succeeded = 0;
+    for (const record of pending) {
+      try {
+        await this.deviceRevocation.revokeDevice(record.familyId, record.deviceId);
+        succeeded += 1;
+      } catch {
+        failedRequestIds.push(record.requestId);
+      }
+    }
+    return { attempted: pending.length, succeeded, failedRequestIds };
   }
 
   /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses a decision. */
