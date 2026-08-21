@@ -2,19 +2,24 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { DeviceAuthService } from '../../dist/deviceauth/DeviceAuthService.js';
-import { DeviceSessionService, InMemoryDeviceSessionRepository, RuntimeSyncAuthError } from '../../dist/runtime-sync/index.js';
+import {
+  DEVICE_SESSION_TTL_MS,
+  DeviceSessionService,
+  InMemoryDeviceSessionRepository,
+  RuntimeSyncAuthError,
+} from '../../dist/runtime-sync/index.js';
 import { createInMemoryDeviceChallengeRepository } from '../support/inMemoryDeviceChallengeRepository.mjs';
 import { createInMemoryDeviceRepository } from '../support/inMemoryDeviceRepository.mjs';
 import { createTestOnlyDeviceSignatureVerifier, signTestOnlyChallenge } from '../support/testOnlyDeviceSignatureVerifier.mjs';
 
-function buildHarness() {
+function buildHarness(now = () => new Date()) {
   const deviceRepository = createInMemoryDeviceRepository();
   const deviceAuthService = new DeviceAuthService(
     createInMemoryDeviceChallengeRepository(),
     deviceRepository,
     createTestOnlyDeviceSignatureVerifier(),
   );
-  const sessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository());
+  const sessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), now);
   return { deviceRepository, deviceAuthService, sessionService };
 }
 
@@ -122,4 +127,41 @@ test('revokeSession makes a previously valid token unusable, and is idempotent',
   await sessionService.revokeSession(session.rawToken);
   await sessionService.revokeSession(session.rawToken); // idempotent, no throw
   await assert.rejects(() => sessionService.validateSession(session.rawToken));
+});
+
+test('validateSession rejects a session once its TTL has elapsed, even though the token was never revoked', async () => {
+  let currentTime = new Date();
+  const { deviceRepository, sessionService } = buildHarness(() => currentTime);
+  const { deviceId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+
+  // Sanity check: immediately after issuance, well within the TTL, the session is still valid.
+  await sessionService.validateSession(session.rawToken);
+
+  // Advance the injected clock strictly past the session's TTL and confirm expiry is actually enforced.
+  currentTime = new Date(currentTime.getTime() + DEVICE_SESSION_TTL_MS + 1);
+  await assert.rejects(
+    () => sessionService.validateSession(session.rawToken),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
+});
+
+test('requireActorDeviceInFamily binds the caller to the verified device\'s OWN family, and rejects every other family', async () => {
+  const { deviceRepository, sessionService } = buildHarness();
+  const { deviceId, familyId, publicKey } = await registerDevice(deviceRepository);
+  const challenge = await sessionService.issueChallengeSafely(deviceId);
+  const session = await sessionService.completeChallenge(challenge.challengeId, signTestOnlyChallenge(publicKey, challenge.nonce));
+
+  // The device's own, correct family is satisfied and returns the verified identity.
+  const identity = await sessionService.requireActorDeviceInFamily(session.rawToken, familyId);
+  assert.deepEqual(identity, { deviceId, familyId });
+
+  // A valid device session from THIS family must never satisfy a binding for a DIFFERENT
+  // family -- this is the cross-tenant check that stops a device session from one family
+  // being used to act on another family's data (see requireActorDeviceInFamily's doc comment).
+  await assert.rejects(
+    () => sessionService.requireActorDeviceInFamily(session.rawToken, 'a-different-family-id'),
+    (error) => error instanceof RuntimeSyncAuthError && error.code === 'UNAUTHORIZED',
+  );
 });
