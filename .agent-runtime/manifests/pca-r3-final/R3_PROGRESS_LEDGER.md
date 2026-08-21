@@ -9,11 +9,11 @@ Generated from the completion matrix and repository evidence on 2026-08-21.
 | Total matrix requirements | 375 |
 | SOURCE_COMPLETE | 306 |
 | PARTIAL | 44 |
-| NOT_STARTED | 4 |
+| NOT_STARTED | 1 |
 | NOT_APPLICABLE | 6 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
-| Partial plus not-started | 48 |
-| External-gate rows | 69 |
+| Partial plus not-started | 45 |
+| External-gate rows | 72 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -41,7 +41,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 ## Open work
 
 - Source candidates: R3_SOURCE_BACKLOG.csv.
-- Source backlog reconciliation: 48 rows (live-derived from R3_SOURCE_BACKLOG.csv on every regeneration, never hand-maintained prose).
+- Source backlog reconciliation: 45 rows (live-derived from R3_SOURCE_BACKLOG.csv on every regeneration, never hand-maintained prose).
 - Validation gaps: R3_VALIDATION_BACKLOG.csv.
 
 ## Additive owner-controlled Wave 7: night lock and communication safety
@@ -183,7 +183,7 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - SOURCE_SOLVABLE_OPEN = 0
 - SOURCE_COMPLETE_EXTERNAL_GATE = 27
 - SOURCE_COMPLETE_OWNER_DECISION_GATE = 18
-- OWNER_DECISION_REQUIRED_FOR_SOURCE = 3
+- OWNER_DECISION_REQUIRED_FOR_SOURCE = 0
 - PARENT_REAL_E2E = PASS
 - PLATFORM_ADMIN_REAL_E2E = PASS
 - VALID_MUTATION_SURVIVORS = 0

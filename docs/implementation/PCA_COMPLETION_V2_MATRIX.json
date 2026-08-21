@@ -2055,11 +2055,35 @@
         "PCA-3",
         "PCA-10"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; correctly owner-decision-gated, not source-solvable without that decision."
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceEvidence": [
+        "backend/src/childrequests/ChildRequestService.ts",
+        "backend/src/childrequests/BonusGrantLedger.ts",
+        "backend/src/childrequests/policy.ts",
+        "backend/src/childrequests/types.ts",
+        "backend/src/childrequests/ChildRequestRepository.ts",
+        "backend/src/http/routes/childRequestRoutes.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/familyrbac/policy.ts",
+        "android/app/src/main/java/org/pca/app/runtime/schedule/BonusGrantSync.kt",
+        "android/app/src/main/java/org/pca/app/runtime/ui/ChildHomeScreen.kt",
+        "parent-web/src/pages/Requests.tsx",
+        "parent-web/src/domain/bonusTime.ts",
+        "parent-web/src/api/real/realRequestClient.ts",
+        "parent-web/src/api/dev/devRequestClient.ts"
+      ],
+      "testEvidence": [
+        "backend/test/childrequests/ChildRequestService.test.mjs",
+        "backend/test/childrequests/BonusGrantLedger.test.mjs",
+        "backend/test/http/childRequestRoutes.test.mjs",
+        "backend/test/schedule/engine.test.mjs",
+        "android/app/src/test/java/org/pca/app/runtime/schedule/BonusGrantSyncTest.kt",
+        "parent-web/tests/component/Requests.test.tsx"
+      ],
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23 combined Prompt-2/3 programme (2026-08-22): closed under standing decision D1 (PARENT_AUTHORIZED_BOUNDED_BONUS_TIME); reclassified from OWNER_DECISION_REQUIRED_FOR_SOURCE to SOURCE_COMPLETE_EXTERNAL_GATE."
     },
     {
       "requirementId": "PCA-FR-131",
@@ -2067,11 +2091,37 @@
         "PCA-2",
         "PCA-10"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). No install-approval/package-install-broadcast handling exists; doc 03 itself marks this PROPOSED, not committed. Runtime reachability: Not reachable"
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceEvidence": [
+        "backend/src/childrequests/types.ts",
+        "backend/src/childrequests/ChildRequestService.ts",
+        "backend/src/childrequests/policy.ts",
+        "backend/src/familyrbac/policy.ts",
+        "backend/src/familyrbac/types.ts",
+        "backend/src/http/routes/childRequestRoutes.ts",
+        "android/app/src/main/java/org/pca/app/feature/installapproval/InstallApprovalCapabilityState.kt",
+        "android/app/src/main/java/org/pca/app/feature/installapproval/InstallApprovalController.kt",
+        "android/app/src/main/java/org/pca/app/feature/installapproval/InstallApprovalDecisionApplier.kt",
+        "android/app/src/main/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiver.kt",
+        "ios/PCA/InstallApproval/InstallApprovalCapability.swift",
+        "parent-web/src/pages/Requests.tsx",
+        "parent-web/src/domain/types.ts"
+      ],
+      "testEvidence": [
+        "backend/test/childrequests/ChildRequestService.test.mjs",
+        "backend/test/http/childRequestRoutes.test.mjs",
+        "backend/test/familyrbac/policy.test.mjs",
+        "android/app/src/test/java/org/pca/app/feature/installapproval/InstallApprovalCapabilityResolverTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/installapproval/InstallApprovalControllerTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/installapproval/InstallApprovalDecisionApplierTest.kt",
+        "ios/PCATests/InstallApprovalCapabilityTests.swift",
+        "parent-web/tests/component/Requests.test.tsx"
+      ],
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE",
+        "IOS_MAC_XCODE"
+      ],
+      "notes": "P23 combined Prompt-2/3 programme (2026-08-22): closed under standing decision D2 (CAPABILITY_HONEST_INSTALL_APPROVAL); reclassified from OWNER_DECISION_REQUIRED_FOR_SOURCE to SOURCE_COMPLETE_EXTERNAL_GATE."
     },
     {
       "requirementId": "PCA-FR-132",
@@ -2867,11 +2917,26 @@
         "PCA-2",
         "PCA-15"
       ],
-      "status": "NOT_STARTED",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no disclosed battery-impact budget or measurement found."
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/background/PcaBatteryBudgetPolicy.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/BatteryBudgetedCycleRunner.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/BackgroundExecutionScheduler.kt",
+        "android/app/src/main/java/org/pca/app/platform/PowerSaveModeSource.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/background/PcaBatteryBudgetPolicyTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/BatteryBudgetedCycleRunnerTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/StandardPowerSaveModeSourceTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/graph/PcaAppGraphTest.kt"
+      ],
+      "externalGate": [
+        "ANDROID_REAL_DEVICE_UAT",
+        "IOS_PHYSICAL_DEVICE",
+        "PCA_DEC_009_DISCLOSURE_TEXT"
+      ],
+      "notes": "P23 combined Prompt-2/3 programme (2026-08-22): closed under standing decision D3 (EVENT_DRIVEN_BATTERY_BUDGET); reclassified from OWNER_DECISION_REQUIRED_FOR_SOURCE to SOURCE_COMPLETE_EXTERNAL_GATE, with a distinct small pending-owner-decision sub-item (PCA-DEC-009) honestly retained in externalGate rather than hidden."
     },
     {
       "requirementId": "PCA-NFR-040",
