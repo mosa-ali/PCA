@@ -66,6 +66,8 @@ import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.retention.RetentionEngine
 import org.pca.app.persistence.retention.executeRetentionMaintenanceCycle
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
+import org.pca.app.platform.PowerSaveModeSource
+import org.pca.app.platform.StandardPowerSaveModeSource
 import org.pca.app.platform.DevicePolicyAuthorityTracker
 import org.pca.app.platform.DeviceOwnerAuthorityGate
 import org.pca.app.platform.CameraPermissionStateTracker
@@ -85,6 +87,8 @@ import org.pca.app.platform.proximity.OnDeviceApproximateFaceProximityEstimator
 import org.pca.app.platform.proximity.PrioritizedProximitySource
 import org.pca.app.platform.proximity.ProximitySource
 import org.pca.app.runtime.background.BackgroundExecutionScheduler
+import org.pca.app.runtime.background.BatteryBudgetedCycleRunner
+import org.pca.app.runtime.background.PcaBatteryBudgetPolicy
 import org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler
 import org.pca.app.runtime.tamper.CameraDegradationMonitor
 import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
@@ -282,6 +286,13 @@ class PcaAppGraph private constructor(
      * (`WorkManager`) -- see [UsageIngestionWorker]'s own doc comment. Started (idempotently) from
      * [start]. */
     val backgroundExecutionScheduler: BackgroundExecutionScheduler = WorkManagerBackgroundExecutionScheduler(context)
+
+    /** PCA-NFR-034: the one live `PowerManager.isPowerSaveMode` read this graph exposes -- consulted
+     * ONLY by [runUsageLocationIngestionCycle]'s non-safety-critical steps (via
+     * [PcaBatteryBudgetPolicy.shouldRunNonCriticalWork]/[BatteryBudgetedCycleRunner]), never by
+     * [runtime]'s tick loop or the protection/tamper-degradation monitors below -- see
+     * [PowerSaveModeSource]'s own doc comment for that unconditional/gated split. */
+    val powerSaveModeSource: PowerSaveModeSource = StandardPowerSaveModeSource(context)
 
     /** PCA-RUNTIME-2R1: this device's PCA-enrolled identity authority -- separate from
      * [bootInstanceSource] and never derived from `ANDROID_ID`. Backed by the same durable,
@@ -704,41 +715,57 @@ class PcaAppGraph private constructor(
      * racing on it). [locationSampleRecorder] holds no mutable instance state, so it needs no lock
      * of its own. Each step here is independently `runCatching`-guarded so a failure in one never
      * skips the others, matching this app's "never crash the caller" tick discipline.
+     *
+     * PCA-NFR-034 (EVENT_DRIVEN_BATTERY_BUDGET): split via [BatteryBudgetedCycleRunner] into a
+     * NON-critical half (usage-session/location collection, prayer-location staleness
+     * notification, geofence evaluation -- informational parent-visibility features, none of them
+     * active restriction enforcement) that backs off entirely while
+     * [PcaBatteryBudgetPolicy.shouldRunNonCriticalWork] reports the OS is in Battery Saver / power-
+     * save mode, and a critical half (the four protection/tamper-degradation monitors) that always
+     * runs regardless -- detecting a loss of protection capability must never be delayed to save
+     * battery. See [PowerSaveModeSource]'s own doc comment for why this split exists at all.
      */
     suspend fun runUsageLocationIngestionCycle() {
-        runCatching { usageSessionRecorder.poll() }
-        val deviceId = enrolledDeviceIdOrNull()
-        if (deviceId != null) {
-            val captureResult = runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
-            // PCA-FR-063: evaluate the SAME fresh fix this cycle just captured against any
-            // parent-defined geofence zones. Deliberately a second, independent
-            // `lastKnownLocation()` read (never re-derived from the just-persisted, possibly
-            // approximate-rounded record) -- geofence membership should reflect the real platform
-            // fix, not the defense-in-depth-rounded value [locationSampleRecorder] chose to persist
-            // for a COARSE-permission device. Cheap and side-effect-free: the same read-only
-            // platform accessor [locationSampleRecorder] itself calls.
-            if (captureResult.getOrNull()?.recorded == true) {
-                runCatching {
-                    val sample = locationCapabilitySource.lastKnownLocation()
-                    if (sample != null) {
-                        if (prayerLocationStalenessDetector.shouldNotify(
-                                deviceId = deviceId,
-                                latitude = sample.latitude,
-                                longitude = sample.longitude,
-                                isOnline = connectivityObserver.isCurrentlyOnline(),
-                            ) && prayerLocationStalenessNotificationDelivery.deliver()
-                        ) {
-                            prayerLocationStalenessDetector.markDelivered(deviceId)
+        BatteryBudgetedCycleRunner.run(
+            shouldRunNonCritical = { PcaBatteryBudgetPolicy.shouldRunNonCriticalWork(powerSaveModeSource) },
+            nonCriticalWork = {
+                runCatching { usageSessionRecorder.poll() }
+                val deviceId = enrolledDeviceIdOrNull()
+                if (deviceId != null) {
+                    val captureResult = runCatching { locationSampleRecorder.captureSample(deviceId, RetentionPolicy.FOURTEEN_DAYS) }
+                    // PCA-FR-063: evaluate the SAME fresh fix this cycle just captured against any
+                    // parent-defined geofence zones. Deliberately a second, independent
+                    // `lastKnownLocation()` read (never re-derived from the just-persisted, possibly
+                    // approximate-rounded record) -- geofence membership should reflect the real platform
+                    // fix, not the defense-in-depth-rounded value [locationSampleRecorder] chose to persist
+                    // for a COARSE-permission device. Cheap and side-effect-free: the same read-only
+                    // platform accessor [locationSampleRecorder] itself calls.
+                    if (captureResult.getOrNull()?.recorded == true) {
+                        runCatching {
+                            val sample = locationCapabilitySource.lastKnownLocation()
+                            if (sample != null) {
+                                if (prayerLocationStalenessDetector.shouldNotify(
+                                        deviceId = deviceId,
+                                        latitude = sample.latitude,
+                                        longitude = sample.longitude,
+                                        isOnline = connectivityObserver.isCurrentlyOnline(),
+                                    ) && prayerLocationStalenessNotificationDelivery.deliver()
+                                ) {
+                                    prayerLocationStalenessDetector.markDelivered(deviceId)
+                                }
+                                geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
+                            }
                         }
-                        geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
                     }
                 }
-            }
-        }
-        runCatching { usageAccessDegradationMonitor.checkAndHandle() }
-        runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
-        runCatching { vpnDegradationMonitor.checkAndHandle() }
-        runCatching { cameraDegradationMonitor.checkAndHandle() }
+            },
+            criticalWork = {
+                runCatching { usageAccessDegradationMonitor.checkAndHandle() }
+                runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
+                runCatching { vpnDegradationMonitor.checkAndHandle() }
+                runCatching { cameraDegradationMonitor.checkAndHandle() }
+            },
+        )
     }
 
     /**

@@ -22,6 +22,7 @@ import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshot
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
 import org.pca.app.foundation.InMemoryPersistentStateStore
+import org.pca.app.platform.StandardPowerSaveModeSource
 import org.pca.app.runtime.identity.DeviceIdentityState
 import org.pca.app.runtime.port.FamilySyncConnectionState
 import org.pca.app.runtime.port.ScheduleRuntimeStatus
@@ -259,6 +260,41 @@ class PcaAppGraphTest {
         // Reaching this line without an uncaught exception, on a graph with no enrolled
         // family/device, is the assertion: PCA-DATA-024/PCA-FR-105 forbids fabricating a
         // retention scope for a device that has not enrolled yet.
+    }
+
+    // --- PCA-NFR-034 closure: real powerSaveModeSource wiring + end-to-end smoke coverage ----
+
+    /**
+     * [BatteryBudgetedCycleRunnerTest][org.pca.app.runtime.background.BatteryBudgetedCycleRunnerTest]
+     * already proves the exact gating contract in isolation (critical work always runs, non-critical
+     * work backs off under Battery Saver) -- this test proves the REAL production graph is actually
+     * wired to a real, live `PowerManager.isPowerSaveMode` source, not a stub the cycle never reads.
+     */
+    @Test
+    fun `powerSaveModeSource is the real, live StandardPowerSaveModeSource binding`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+
+        assertTrue(graph.powerSaveModeSource is StandardPowerSaveModeSource)
+    }
+
+    /**
+     * End-to-end smoke coverage for the real, unmodified [PcaAppGraph.runUsageLocationIngestionCycle]
+     * with Battery Saver genuinely active (via Robolectric's real `PowerManager` shadow, the same
+     * mechanism [org.pca.app.platform.StandardPowerSaveModeSourceTest] uses) -- proves the real
+     * production wiring never throws back to a caller regardless of power state, complementing
+     * (not duplicating) `BatteryBudgetedCycleRunnerTest`'s precise, isolated gating proof.
+     */
+    @Test
+    fun `runUsageLocationIngestionCycle completes without throwing while the OS reports Battery Saver active`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        shadowOf(powerManager).setIsPowerSaveMode(true)
+        val graph = PcaAppGraph.createForTest(context)
+
+        graph.runUsageLocationIngestionCycle()
+        // Reaching this line without an uncaught exception, with Battery Saver active, is the
+        // assertion -- see this test's own doc comment.
     }
 
     private companion object {

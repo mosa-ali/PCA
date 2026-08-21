@@ -96,7 +96,12 @@ class WorkManagerBackgroundExecutionScheduler(private val context: Context) : Ba
     companion object {
         const val UNIQUE_WORK_NAME_USAGE_INGESTION = "pca_usage_ingestion_periodic"
         const val WORK_TAG_USAGE_INGESTION = "pca_usage_ingestion"
-        const val PERIOD_MINUTES = 15L
+
+        /** PCA-NFR-034: defined IN TERMS OF [PcaBatteryBudgetPolicy.MIN_PERIODIC_INTERVAL_MINUTES]
+         * (rather than repeating the literal `15`) so this scheduler's real interval and the
+         * canonical platform-floor policy can never silently drift apart -- see
+         * [PcaBatteryBudgetPolicy]'s own doc comment. */
+        const val PERIOD_MINUTES = PcaBatteryBudgetPolicy.MIN_PERIODIC_INTERVAL_MINUTES
         const val UNIQUE_WORK_NAME_RETENTION_MAINTENANCE = "pca_retention_maintenance_periodic"
         const val WORK_TAG_RETENTION_MAINTENANCE = "pca_retention_maintenance"
         const val RETENTION_PERIOD_DAYS = 1L
