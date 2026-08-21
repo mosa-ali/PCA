@@ -13,9 +13,10 @@ import java.util.concurrent.TimeUnit
  * feature code, and so tests can substitute a fake without touching real `WorkManager` state --
  * see [org.pca.app.runtime.background] package doc / the mission report for how to extend this.
  *
- * Only [scheduleUsageIngestion] is implemented today (this lane's own concrete need); a future
- * writer needing a second periodic job should add a sibling method here (or, if their scheduling
- * needs genuinely differ, a new `CoroutineWorker` + a call to
+ * [scheduleUsageIngestion] was the first implementation of this pattern; [scheduleRetentionMaintenance]
+ * (PCA-DATA-024/PCA-FR-105) is the second, added as the sibling method this interface's own doc
+ * comment invited -- a future writer needing a third periodic job should add another sibling
+ * method here (or, if their scheduling needs genuinely differ, a new `CoroutineWorker` + a call to
  * [WorkManager.enqueueUniquePeriodicWork] built the same way, reusing
  * [PcaBackgroundWorkConstraints.standardConstraints] for consistency) rather than inventing a
  * second, differently-configured background-execution mechanism.
@@ -24,6 +25,10 @@ interface BackgroundExecutionScheduler {
     /** Idempotent: safe to call on every [org.pca.app.runtime.graph.PcaAppGraph.start] (process
      * restart, configuration change) without creating duplicate periodic work. */
     fun scheduleUsageIngestion()
+
+    /** Idempotent, same discipline as [scheduleUsageIngestion]: safe to call on every
+     * [org.pca.app.runtime.graph.PcaAppGraph.start] without creating duplicate periodic work. */
+    fun scheduleRetentionMaintenance()
 }
 
 /**
@@ -58,9 +63,42 @@ class WorkManagerBackgroundExecutionScheduler(private val context: Context) : Ba
         )
     }
 
+    /**
+     * PCA-DATA-024/PCA-FR-105: retention/deletion maintenance does not need `WorkManager`'s
+     * 15-minute [PERIOD_MINUTES] floor the way live usage/location ingestion does -- there is no
+     * freshness requirement for "how quickly must an expired record actually be deleted" anywhere
+     * near as tight as ingestion's own near-real-time collection need, and a device's retention
+     * windows are measured in days/months (see [RetentionPolicy][org.pca.app.persistence.entity.RetentionPolicy]),
+     * not minutes. [RETENTION_PERIOD_DAYS] (one day) is therefore the right cadence: frequent
+     * enough that an expired record is never retained for materially longer than its policy
+     * window, without the extra `WorkManager` execution overhead a 15-minute cadence would add for
+     * work that only ever has something to do once actual cutoffs have passed.
+     */
+    override fun scheduleRetentionMaintenance() {
+        val request = PeriodicWorkRequestBuilder<RetentionMaintenanceWorker>(RETENTION_PERIOD_DAYS, TimeUnit.DAYS)
+            .setConstraints(PcaBackgroundWorkConstraints.standardConstraints())
+            .setBackoffCriteria(
+                PcaBackgroundWorkConstraints.BACKOFF_POLICY,
+                PcaBackgroundWorkConstraints.BACKOFF_DELAY_MILLIS,
+                PcaBackgroundWorkConstraints.BACKOFF_DELAY_TIME_UNIT,
+            )
+            .addTag(WORK_TAG_RETENTION_MAINTENANCE)
+            .build()
+
+        // KEEP, same idempotency discipline as scheduleUsageIngestion above.
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            UNIQUE_WORK_NAME_RETENTION_MAINTENANCE,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
+    }
+
     companion object {
         const val UNIQUE_WORK_NAME_USAGE_INGESTION = "pca_usage_ingestion_periodic"
         const val WORK_TAG_USAGE_INGESTION = "pca_usage_ingestion"
         const val PERIOD_MINUTES = 15L
+        const val UNIQUE_WORK_NAME_RETENTION_MAINTENANCE = "pca_retention_maintenance_periodic"
+        const val WORK_TAG_RETENTION_MAINTENANCE = "pca_retention_maintenance"
+        const val RETENTION_PERIOD_DAYS = 1L
     }
 }

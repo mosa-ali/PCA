@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -57,6 +58,14 @@ class PcaAppGraphTest {
 
         assertNotNull(graph.runtime)
         assertNotNull(graph.persistence)
+        // PCA-DATA-024/PCA-FR-105 closure: retentionEngine is real, composed, and reuses the
+        // SAME instance PcaLocalPersistence already builds -- never a second RetentionEngine
+        // wrapping the same database (this graph's own "exactly one production instance of each
+        // dependency" discipline).
+        assertNotNull(graph.retentionEngine)
+        assert(graph.retentionEngine === graph.persistence.retentionEngine) {
+            "expected PcaAppGraph.retentionEngine to be the SAME instance as PcaLocalPersistence.retentionEngine, not a second wrapper"
+        }
         assertNotNull(graph.eligibleAppSignalSource)
         assertNotNull(graph.prayerAlarmScheduler)
         assertNotNull(graph.proximitySource)
@@ -224,6 +233,32 @@ class PcaAppGraphTest {
             )
         }
         assertEquals(EyeRestShieldActivity::class.java.name, started!!.component?.className)
+    }
+
+    // --- PCA-DATA-024/PCA-FR-105 closure: runRetentionMaintenanceCycle wiring ----------------
+
+    /**
+     * A freshly composed graph over an empty store has no enrollment yet (same sanity condition
+     * the "graph construction" test above asserts via `DeviceIdentityState.NotEnrolled`). Proves
+     * the real, production `runRetentionMaintenanceCycle()` skips the cycle entirely rather than
+     * fabricating a retention scope -- matching this graph's established "not enrolled yet ->
+     * skip" discipline -- and, just as importantly, never throws back to a caller (the same
+     * contract `RetentionMaintenanceWorker.doWork()` depends on). The real, in-memory-Room-backed
+     * "does it actually delete rows" behavior is covered separately by
+     * `RetentionMaintenanceCycleTest` (see that class's own doc comment for why it targets the
+     * shared `executeRetentionMaintenanceCycle` function directly instead of this graph, which is
+     * backed by `AndroidKeyStore`-gated production stores unavailable in this test environment).
+     */
+    @Test
+    fun `runRetentionMaintenanceCycle on an unenrolled graph completes without throwing and skips the cycle`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+        assertEquals(DeviceIdentityState.NotEnrolled, graph.deviceIdentityProvider.currentIdentity())
+
+        graph.runRetentionMaintenanceCycle()
+        // Reaching this line without an uncaught exception, on a graph with no enrolled
+        // family/device, is the assertion: PCA-DATA-024/PCA-FR-105 forbids fabricating a
+        // retention scope for a device that has not enrolled yet.
     }
 
     private companion object {

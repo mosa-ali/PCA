@@ -62,6 +62,8 @@ import org.pca.app.foundation.SystemMonotonicTimeSource
 import org.pca.app.foundation.SystemWallClockTimeSource
 import org.pca.app.persistence.PcaLocalPersistence
 import org.pca.app.persistence.entity.RetentionPolicy
+import org.pca.app.persistence.retention.RetentionEngine
+import org.pca.app.persistence.retention.executeRetentionMaintenanceCycle
 import org.pca.app.platform.DevicePolicyProtectionCapabilities
 import org.pca.app.platform.DevicePolicyAuthorityTracker
 import org.pca.app.platform.DeviceOwnerAuthorityGate
@@ -130,6 +132,7 @@ import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
 import org.pca.app.runtime.wellbeing.RuntimeWellbeingScheduleContextSource
 import org.pca.app.runtime.wellbeing.WellbeingRuntimeCoordinator
+import java.time.ZoneId
 import java.util.UUID
 
 /**
@@ -168,6 +171,18 @@ class PcaAppGraph private constructor(
     val bootId: String? = currentBootInstance.asNullableId()
 
     val persistence: PcaLocalPersistence = PcaLocalPersistence.getInstance(context)
+
+    /** PCA-DATA-024/PCA-FR-105 (WRITER68): [RetentionEngine] itself is a real, fully-implemented,
+     * unit-tested class (see `RetentionEngineTest`) that a repo-wide audit found constructed
+     * exactly once in production -- [PcaLocalPersistence.retentionEngine] -- but called by
+     * NOTHING: on-device data was never actually deleted per retention policy. Reuses that SAME
+     * instance rather than wrapping [PcaLocalDatabase][org.pca.app.persistence.PcaLocalDatabase]
+     * in a second [RetentionEngine], matching this graph's own "exactly one production instance
+     * of each dependency" discipline stated in its top doc comment. [runRetentionMaintenanceCycle]
+     * below, driven by [start] (in-process) and
+     * [org.pca.app.runtime.background.RetentionMaintenanceWorker] (process-death-resilient), is
+     * the first real production caller. */
+    val retentionEngine: RetentionEngine = persistence.retentionEngine
 
     val screenTimeSnapshotStore: ScreenTimeSnapshotStore = PersistentScreenTimeSnapshotStore(runtimeStateStore)
     val eyeDistanceSnapshotStore: EyeDistanceSnapshotStore = PersistentEyeDistanceSnapshotStore(runtimeStateStore)
@@ -613,7 +628,14 @@ class PcaAppGraph private constructor(
      * death, not only while this in-process loop happens to be alive -- see
      * [org.pca.app.runtime.background.UsageIngestionWorker]'s own doc comment. `enqueueUniquePeriodicWork`
      * with [androidx.work.ExistingPeriodicWorkPolicy.KEEP] makes this call idempotent across
-     * repeated `start()` calls, same discipline as the rest of this method. */
+     * repeated `start()` calls, same discipline as the rest of this method.
+     *
+     * PCA-DATA-024/PCA-FR-105 (WRITER68): also enqueues
+     * [backgroundExecutionScheduler]'s daily retention-maintenance job -- see
+     * [org.pca.app.runtime.background.RetentionMaintenanceWorker]'s own doc comment. Deliberately
+     * WorkManager-only (no in-process poll loop counterpart the way usage/location ingestion has):
+     * retention deletion has no freshness requirement that would justify a second, faster
+     * in-process caller -- see [runRetentionMaintenanceCycle]'s own doc comment. */
     fun start() {
         hardwareProximitySource.start()
         startCameraForegroundEligibilityTracking()
@@ -621,6 +643,7 @@ class PcaAppGraph private constructor(
         eyeRestShieldTrigger.start()
         startUsageLocationPolling()
         backgroundExecutionScheduler.scheduleUsageIngestion()
+        backgroundExecutionScheduler.scheduleRetentionMaintenance()
     }
 
     /** PCA-FR-024 safety-lifecycle wiring: [cameraProximitySource] must never estimate while the
@@ -700,6 +723,40 @@ class PcaAppGraph private constructor(
         runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
         runCatching { vpnDegradationMonitor.checkAndHandle() }
         runCatching { cameraDegradationMonitor.checkAndHandle() }
+    }
+
+    /**
+     * PCA-DATA-024/PCA-FR-105: one retention-maintenance cycle -- the real production caller that
+     * closes the gap [retentionEngine]'s own doc comment above describes ("correct, unit-tested,
+     * and never invoked"). Resolves the SAME live enrollment signals
+     * [runUsageLocationIngestionCycle] uses (`familyStateStore.currentState()?.familyId` and
+     * [enrolledDeviceIdOrNull]) and does nothing if either is absent -- an unenrolled device has
+     * no retention scope to run a cycle against, matching this graph's established
+     * "not enrolled yet -> skip" discipline.
+     *
+     * The actual cycle logic (build one [org.pca.app.persistence.retention.DeviceRetentionContext],
+     * call [RetentionEngine.runGeneralCycle]/[RetentionEngine.runAuditFloorCycle]/
+     * [RetentionEngine.pruneTombstones], each independently `runCatching`-guarded) lives in the
+     * standalone [executeRetentionMaintenanceCycle] function so it can be unit-tested directly
+     * against a real, in-memory-Room-backed [RetentionEngine] (see `RetentionMaintenanceCycleTest`)
+     * without needing this graph's `AndroidKeyStore`-backed production wiring -- see that
+     * function's own doc comment for the full rationale, including why [RetentionPolicy.FOURTEEN_DAYS]
+     * is the correct conservative default for both the general and location retention policy here
+     * and why [ZoneId.systemDefault] is used (this graph has no other per-family timezone source
+     * today).
+     *
+     * Not private -- [org.pca.app.runtime.background.RetentionMaintenanceWorker] calls this exact
+     * function from a `WorkManager` job, the same visibility contract
+     * [runUsageLocationIngestionCycle] already establishes for
+     * [org.pca.app.runtime.background.UsageIngestionWorker].
+     */
+    suspend fun runRetentionMaintenanceCycle() {
+        executeRetentionMaintenanceCycle(
+            engine = retentionEngine,
+            familyId = familyStateStore.currentState()?.familyId,
+            deviceId = enrolledDeviceIdOrNull(),
+            zoneId = ZoneId.systemDefault(),
+        )
     }
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the

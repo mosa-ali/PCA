@@ -42,6 +42,10 @@ export const NAV_SECTIONS: NavSection[] = [
       // filed for the matching App.tsx <Route path="privacy/transparency">
       // registration (App.tsx is coordinator-owned).
       { path: '/privacy/transparency', labelKey: 'nav.transparency' },
+      // PCA-NFR-061: real per-permission runtime-permission disclosure,
+      // distinct from the data-category disclosure above -- see
+      // src/pages/privacy/PermissionsPolicy.tsx's own doc comment.
+      { path: '/privacy/permissions', labelKey: 'nav.permissionsPolicy' },
     ],
   },
   {

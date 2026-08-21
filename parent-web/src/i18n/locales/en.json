@@ -46,6 +46,7 @@
     "export": "Export",
     "deleteNow": "Delete Now",
     "transparency": "What Parents Can See",
+    "permissionsPolicy": "App Permissions",
     "security": "Security",
     "protectionStatus": "Protection Status",
     "recovery": "Recovery",
@@ -711,6 +712,56 @@
     },
     "encryptionNote": "Everything above is end-to-end encrypted between your children's devices. PCA's servers relay encrypted data but hold no key that can read it -- see the Retention page for how long different categories are kept, and Security & Recovery for how your children's encryption keys work.",
     "sdkNote": "Third-party services this app relies on (crash reporting, payment processing, push-notification delivery) are listed with the specific data category each can access; PCA does not use advertising or tracking SDKs."
+  },
+  "permissionsPolicy": {
+    "title": "App Permissions",
+    "intro": "This page explains every permission PCA's Android app can ask your device for, in plain language: which feature uses it, and exactly what data path it feeds. Nothing here is aspirational or a general industry disclosure -- this list is generated to match the permissions actually declared in the app's own manifest.",
+    "scopeNotice": "Declaring a permission here is a precondition for asking, not proof the app already uses it in the background: PCA still requests each dangerous permission through its own runtime consent screen at the exact moment the feature that needs it is used, and every feature keeps working (in a reduced form, never a fabricated one) if you decline.",
+    "androidHeading": "Permissions requested by the Android app",
+    "permissions": {
+      "accessFineLocation": {
+        "name": "Precise location",
+        "purpose": "Used by the Location feature for a child device you have turned on, to read a precise on-device GPS/network fix while the app is in the foreground. It is requested through its own runtime consent flow, never assumed just because it is declared here. The precise fix is encrypted on the device and only ever leaves it as an end-to-end encrypted payload your family's own devices can decrypt -- PCA's own servers cannot read it."
+      },
+      "accessCoarseLocation": {
+        "name": "Approximate location",
+        "purpose": "Requested together with precise location as the same foreground Location capability; if only this permission is granted, the app falls back to an approximate fix and additionally floors it to a roughly 1.1 km grid before it is ever saved, as a defense-in-depth step on top of whatever rounding Android itself already applies to a coarse fix."
+      },
+      "accessBackgroundLocation": {
+        "name": "Location access while the app is in the background",
+        "purpose": "Lets the already-granted Location capability keep working when the app is not in the foreground (Android 10+ only). Checked live, never cached; Android requires this to be requested in its own separate runtime prompt after foreground location is already granted, and PCA follows that same two-step flow rather than bundling the two requests."
+      },
+      "postNotifications": {
+        "name": "Post notifications",
+        "purpose": "Used on Android 13+ to show the ordinary, dismissable Wellbeing \"positive suggestion\" notification. Checked before every notification is shown; if denied, the suggestion is simply not delivered -- the app never crashes or substitutes another delivery channel."
+      },
+      "accessNetworkState": {
+        "name": "View network connections",
+        "purpose": "A normal, not user-prompted permission used only to report honest Internet-connectivity status and to know when a family-sync attempt might succeed. It never gates any local, on-device protection -- those keep working offline regardless of this signal."
+      },
+      "readPhoneState": {
+        "name": "Read phone call state",
+        "purpose": "Lets the app observe only whether a call is ringing, in progress, or idle, to support communication-exception timing features. It never reads phone numbers, contacts, call content, or audio; if this permission is unavailable, call-exception timing is simply reported as unavailable, never fabricated."
+      },
+      "scheduleExactAlarm": {
+        "name": "Schedule exact alarms",
+        "purpose": "Used only to fire a prayer-time reminder at its real wall-clock moment; an inexact alarm could drift by minutes. On Android 12+ this is special access granted through Settings, not a runtime permission dialog."
+      },
+      "foregroundService": {
+        "name": "Run a foreground service",
+        "purpose": "Required to keep the Web Protection VPN's enforcement notification visible and non-hideable while the content-filtering tunnel is active. It does not itself grant the VPN -- your consent for the VPN tunnel is obtained separately through Android's own system dialog."
+      },
+      "foregroundServiceSpecialUse": {
+        "name": "Foreground service (special use)",
+        "purpose": "The Android 14+ foreground-service subtype required for the same Web Protection VPN enforcement notification as above; declared alongside the general foreground-service permission because newer Android versions require services to declare a specific subtype."
+      },
+      "camera": {
+        "name": "Camera",
+        "purpose": "Used only in the foreground, one frame at a time, for on-device near/far proximity estimation in the Eye Protection feature. It is never used for face recognition or identity, no frame is ever saved to storage, and no image or video is ever transmitted anywhere -- processing happens entirely on the device. The permission request itself states this scope up front, and your family may decline it without losing any other PCA feature; devices without a camera still install and run PCA normally."
+      }
+    },
+    "encryptionNote": "Whenever a permission above leads to data being sent to your family's parent console (for example, a location fix), the sync payload is end-to-end encrypted to your family's own devices before it ever leaves the child's device -- PCA's own server infrastructure cannot read it, the same encryption boundary described for every other category on the What Parents Can See page.",
+    "exhaustiveNote": "This list is exhaustive, not aspirational: it is generated to match android/app/src/main/AndroidManifest.xml exactly. If a permission is not listed above, PCA's Android app does not declare it, and cannot request it."
   },
   "recovery": {
     "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",

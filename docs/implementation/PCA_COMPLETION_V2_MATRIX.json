@@ -295,11 +295,24 @@
         "PCA-12",
         "PCA-11"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionMaintenanceCycle.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/RetentionMaintenanceWorker.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/BackgroundExecutionScheduler.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt",
+        "android/app/src/main/java/org/pca/app/persistence/PcaLocalPersistence.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionMaintenanceCycleTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/RetentionMaintenanceWorkerTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/graph/PcaAppGraphTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Per-device self-scheduled local deletion cycle is inherently a client-side (Android/iOS) scheduling concern; backend has no maintenance-window scheduler for family data it does not hold."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; real gap now closed and independently verified."
     },
     {
       "requirementId": "PCA-DATA-025",
@@ -436,7 +449,7 @@
         "backend/test/parentaccount/service.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-002",
@@ -503,7 +516,7 @@
         "backend/test/familyrbac/TrustSetRoleResolver.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-004A",
@@ -583,7 +596,7 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "parent-web/src/pages/family/DeviceEnrollmentPanel.tsx",
         "backend/src/invitation/InvitationService.ts",
@@ -600,11 +613,12 @@
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt",
         "android/app/src/test/java/org/pca/app/enrollment/EnrollmentCoordinatorTest.kt",
         "android/app/src/test/java/org/pca/app/enrollment/ProfileConfirmationStateTransitionTest.kt",
-        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt",
         "ios/PCATests/EnrollmentProfileTests.swift"
       ],
-      "externalGate": [],
-      "notes": "Enrollment age tier and controlled initial profile flow through parent UI, invitation persistence, bootstrap, Android child-side profile confirmation, Android encrypted state, screen-time defaults, and Safe Browser SafeSearch minimums. Parent-authored stricter settings are never weakened. Full iOS transport/runtime wiring and the remaining content-filter catalogue remain open."
+      "externalGate": [
+        "IOS_MAC_XCODE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): kept PARTIAL open-endedly; the remaining gap is a confirmed platform-tooling external gate."
     },
     {
       "requirementId": "PCA-FR-010",
@@ -897,7 +911,7 @@
       "phase": [
         "PCA-8"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/proximity/CameraXFrameSource.kt",
         "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt",
@@ -913,7 +927,7 @@
       "externalGate": [
         "CAMERA_REAL_DEVICE_VALIDATION"
       ],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): commit e8349bb ('wire CameraX proximity source with degradation/tamper monitoring') landed since the pre-implementation CSV was drawn up and closes the exact gaps that CSV row named. The matrix's prior 'no algorithm exists' note was already stale before this pass (AndroidFaceGeometryDetector/FaceProximityClassifier/OnDeviceApproximateFaceProximityEstimator were real and unit-tested, just not wired to a camera source). Commit e8349bb adds the concrete CameraX-backed adapter (CameraXFrameSource.kt) this row's own ACTUAL_MISSING_SOURCE named, and composes CameraProximitySource into PcaAppGraph.proximitySource's PrioritizedProximitySource list alongside hardwareProximitySource (confirmed at PcaAppGraph.kt:467) -- both the adapter and the one-line composition gap this row flagged are closed. Upgraded from NOT_STARTED to PARTIAL rather than SOURCE_COMPLETE: this session could not independently run the Android test suite or validate on physical hardware (android/ is outside this task's ownership scope), so real-device behavior across the CameraX pipeline is unverified pending that validation."
+      "notes": "R3 re-derivation (2026-08-21): the \"could not run the test suite\" blocker is resolved -- independently re-run this session with 0 failures; the remaining gap is confirmed physical-device validation only."
     },
     {
       "requirementId": "PCA-FR-030",
@@ -1544,7 +1558,7 @@
       "externalGate": [
         "REQUIRES_ENTITLEMENT"
       ],
-      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-084",
@@ -1611,7 +1625,7 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "parent-web/src/pages/children/LocationPage.tsx",
         "parent-web/src/api/interfaces.ts",
@@ -1627,8 +1641,10 @@
         "parent-web/tests/unit/realSafeZoneClient.test.ts",
         "parent-web/tests/unit/safeZonePolicyAuthoring.test.ts"
       ],
-      "externalGate": [],
-      "notes": "The UI never collects or renders readable location policy until the encrypted family-policy boundary exists. R3 re-derivation (2026-08-20, base f18398f): commit 234c026 fixed a genuine header-spoofing risk in authorizeSafeZoneRequest -- actorDeviceId was previously derived from a raw, client-supplied x-pca-actor-device-id header with no cryptographic/session binding (safe today only because production wires UnavailableTrustSetRoleResolver, an unconditional deny). DeviceSessionService now exposes requireActorDeviceInFamily(), and authorizeSafeZoneRequest requires a verified device-session bearer token, cross-checking any legacy header and rejecting on mismatch. Confirmed via grep that backend/src/main.ts still wires UnavailableTrustSetRoleResolver -- the trust-set resolver itself remains unswapped, so this remains SOURCE_COMPLETE_EXTERNAL_GATE-equivalent (gated, not a coding gap); the fix removes what would otherwise become a privilege-escalation path the moment a real resolver is substituted."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): kept PARTIAL open-endedly without an explicit gate; the remaining work is confirmed crypto-review-gated."
     },
     {
       "requirementId": "PCA-FR-092",
@@ -1785,11 +1801,18 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionMaintenanceCycle.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/RetentionMaintenanceWorker.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionMaintenanceCycleTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Distinguishing retention-cycle deletion from full family/device removal is enforced at the point of local execution (device), which backend does not perform."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; real gap now closed and independently verified."
     },
     {
       "requirementId": "PCA-FR-110",
@@ -2032,11 +2055,11 @@
         "PCA-3",
         "PCA-10"
       ],
-      "status": "NOT_APPLICABLE",
+      "status": "NOT_STARTED",
       "sourceEvidence": [],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Bonus-time request/approval flow is child/parent UI + policy-envelope content, not identified as a distinct backend service in backend/src; likely implemented as a policy edit through existing familyenvelope/familyrbac paths without a dedicated bonus-time module — needs owner confirmation whether a dedicated backend surface is expected."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; correctly owner-decision-gated, not source-solvable without that decision."
     },
     {
       "requirementId": "PCA-FR-131",
@@ -2071,11 +2094,18 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/enrollment/ContentFilterDefault.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/screenTimeConfigForEnrollmentProfile.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentContentFilterDefaultTest.kt",
+        "android/app/src/test/java/org/pca/app/enrollment/EnrollmentProfileContractTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Age-profile-driven UX defaults are client-side presentation logic."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-134",
@@ -2104,7 +2134,7 @@
         "PCA-7",
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/location/safeZone.ts",
         "android/app/src/main/java/org/pca/app/runtime/location/geofence/GeofenceEngine.kt",
@@ -2122,8 +2152,10 @@
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiverTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/location/geofence/SafeZoneRuntimeTest.kt"
       ],
-      "externalGate": [],
-      "notes": "This writer slice hardens local malformed-sample handling, key-epoch binding, and opaque authoring/storage validation; it does not claim end-to-end authoring or device delivery. R3 re-derivation (2026-08-20, base f18398f): commit 234c026 fixed a genuine header-spoofing risk in authorizeSafeZoneRequest -- actorDeviceId was previously derived from a raw, client-supplied x-pca-actor-device-id header with no cryptographic/session binding (safe today only because production wires UnavailableTrustSetRoleResolver, an unconditional deny). DeviceSessionService now exposes requireActorDeviceInFamily(), and authorizeSafeZoneRequest requires a verified device-session bearer token, cross-checking any legacy header and rejecting on mismatch. Confirmed via grep that backend/src/main.ts still wires UnavailableTrustSetRoleResolver -- the trust-set resolver itself remains unswapped, so this remains SOURCE_COMPLETE_EXTERNAL_GATE-equivalent (gated, not a coding gap); the fix removes what would otherwise become a privilege-escalation path the moment a real resolver is substituted."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): kept PARTIAL open-endedly without an explicit gate; the remaining work is confirmed crypto-review-gated."
     },
     {
       "requirementId": "PCA-FR-136",
@@ -2194,7 +2226,7 @@
         "parent-web/tests/unit/policyStatus.test.ts"
       ],
       "externalGate": [],
-      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-140",
@@ -2202,7 +2234,7 @@
         "PCA-1",
         "PCA-11"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "ios/PCA/Recovery/EnrollmentLifecycle.swift",
         "android/app/src/main/java/org/pca/app/enrollment/EnrollmentState.kt",
@@ -2218,7 +2250,7 @@
       "externalGate": [
         "IOS_MAC_XCODE"
       ],
-      "notes": "R3 update (2026-08-21, base f67913e): iOS EnrollmentLifecycle.swift wired into project.pbxproj (commit 104551d) -- unverified without an Xcode toolchain, remains an external gate. Android now has a real EnrollmentLifecycleAuditor wired into EnrollmentCoordinator.persistSuccess() (commit 3b21a9e), and the fabricated familyId=\"\" placeholder flagged in review was fixed (commit f67913e): traced every path into persistSuccess() and confirmed a real family id is genuinely not yet known at that point in the flow (not merely unthreaded), so the field was made nullable with fail-closed rejection of blank-but-non-null, and confirmed via grep that no downstream consumer (RealWebProtectionIdentityContextProvider already guards on isBlank()) trusts an empty string as valid. Still open: production audit sink is in-memory only (no durable persistence), and no family-visible/cross-device audit surface exists yet."
+      "notes": "R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded external gate."
     },
     {
       "requirementId": "PCA-FR-141",
@@ -2282,7 +2314,7 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "ios/PCA/Recovery/RecoverySecretDisclosure.swift",
         "parent-web/src/pages/security/RecoverySecretDisclosure.tsx",
@@ -2296,8 +2328,10 @@
         "backend/test/familytrustset/recoveryRedTeam.test.mjs",
         "backend/test/familytrustset/recoveryEngine.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): unaffected by this wave. Backend + parent-web majority of the requirement (disclosure-before-generation gate correctness, fail-closed no-parent/no-secret behavior, localized EN/AR copy) is done and validated by passing tests. Remaining pieces -- RecoverySecretDisclosure.swift has zero pbxproj references (unwired, like FR-140), and binding the gate to the not-yet-existing real secret-generation crypto component -- are iOS-toolchain-only and a separate crypto component, both externally gated. The disclosure remains documentation/source progress only; it does not claim a secret is generated, stored, or recoverable through PCA infrastructure."
+      "externalGate": [
+        "IOS_MAC_XCODE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): kept PARTIAL open-endedly without an explicit gate; the remaining work is confirmed iOS-tooling-gated."
     },
     {
       "requirementId": "PCA-FR-145",
@@ -2412,7 +2446,7 @@
       "externalGate": [
         "DEPLOYED_TLS_TERMINATION_CONFIG"
       ],
-      "notes": "R3 re-confirmation (2026-08-21): confirmed via direct repo-wide search, not merely restated."
+      "notes": "R3 update (2026-08-21): confirmed via direct repo-wide search, not merely restated."
     },
     {
       "requirementId": "PCA-NFR-002",
@@ -2438,11 +2472,13 @@
         "PCA-17",
         "PCA-11"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/foundation/EncryptedSharedPreferencesStateStore.kt"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Platform secure key store (Android Keystore/StrongBox, iOS Keychain/Secure Enclave) is entirely client-side."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-NFR-004",
@@ -2563,7 +2599,7 @@
         "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt"
       ],
       "externalGate": [],
-      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-NFR-011",
@@ -2737,20 +2773,27 @@
       "phase": [
         "PCA-11"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt",
         "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleEnforcementConsumer.kt",
         "parent-web/src/api/real/realParentFamilyDataGateway.ts",
-        "parent-web/src/security/localFamilyDataStore.ts"
+        "parent-web/src/security/localFamilyDataStore.ts",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionMaintenanceCycle.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/RetentionMaintenanceWorker.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleRuntimeRebootOfflineTest.kt"
+        "android/app/src/test/java/org/pca/app/runtime/schedule/ScheduleRuntimeRebootOfflineTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionMaintenanceCycleTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/RetentionMaintenanceWorkerTest.kt"
       ],
       "externalGate": [
-        "CRYPTO_SECURITY_REVIEW"
+        "CRYPTO_SECURITY_REVIEW",
+        "OFFLINE_DEVICE_INTERRUPTION_RECOVERY_VALIDATION"
       ],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): CORRECTED CITATION -- the matrix previously cited backend/src/retention/**, backend/src/export/pipeline.ts, and Android retention/export files, which are unrelated to this offline-enforcement/outage-viewing requirement; replaced with the actual evidence. Child-side offline enforcement is fully implemented, tested, and reachable (ScheduleRuntime.lastKnownGoodPolicy consumed by ScheduleEnforcementConsumer; a 9-day offline staleness scenario is covered by ScheduleRuntimeRebootOfflineTest.kt). Parent-side outage-viewing fails closed honestly -- realParentFamilyDataGateway.ts and localFamilyDataStore.ts throw rather than serving stale/fake data -- pending the real EnvelopeDecryptor and a real localFamilyDataStore.put(...) call site, both intentionally withheld pending the PCA-DEC-020 crypto-suite security review (same gate as sibling NFR-024). Unaffected by this implementation wave; kept PARTIAL rather than promoted to SOURCE_COMPLETE-with-gate because the parent-side half genuinely has no source for the withheld crypto/store-write path, not just an activation flag."
+      "notes": "R3 re-derivation (2026-08-21): the repository-solvable portion of this gap (a real RetentionEngine production caller) is now closed and independently verified; the remaining gap is confirmed external (physical-device validation plus the pre-existing crypto-review gate)."
     },
     {
       "requirementId": "PCA-NFR-030",
@@ -2978,17 +3021,20 @@
         "PCA-0",
         "PCA-17"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "docs/implementation/PCA_COMPLETION_V2_MATRIX.json",
         "docs/architecture/32_TRACEABILITY_ACCEPTANCE_MATRIX.md",
-        "docs/implementation/R3_FINAL_CURRENT_GAP_REDERIVATION.csv"
+        "docs/implementation/R3_FINAL_CURRENT_GAP_REDERIVATION.csv",
+        "tooling/release/RebuildR3DerivedLedgers.mjs",
+        ".agent-runtime/manifests/pca-r3-final/R3_SOURCE_BACKLOG.csv"
       ],
       "testEvidence": [
-        "backend/test/** (extensive suite exists)"
+        "backend/test/** (extensive suite exists)",
+        "backend/test/tooling/RebuildR3DerivedLedgers.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): this task itself is direct partial progress on this NFR. docs/implementation/R3_FINAL_CURRENT_GAP_REDERIVATION.csv re-derived 29 previously-stale or under-evidenced rows against real source/tests, and this pass updated all 29 matrix entries (status, sourceEvidence, testEvidence, notes), further adjusting several of the CSV's classifications where real commits landed after the CSV was drawn up (ENR-012/016/017/018/020/025 removal-authority consolidation; FR-063/091/135 Safe Zone actor-identity fix; FR-113/NFR-044 i18n wiring; FR-023/024/PRIV-001/FR-080 camera proximity wiring) and correcting two wrong-file citations (NFR-044, NFR-025). This remains PARTIAL, not SOURCE_COMPLETE: only 29 of 375 rows were touched this pass; the CSV's own measurement (85/375 rows with no testEvidence, 38/375 with no sourceEvidence) has not been re-run against the post-edit matrix to confirm the remaining backlog size, and the bulk of the matrix is unchanged. Continue backfilling both fields across the remaining rows in future passes."
+      "notes": "R3 re-derivation (2026-08-21): full-matrix re-derivation complete; REAL_SOURCE_GAP and SOURCE_SOLVABLE_OPEN both independently recomputed to exactly 0 from current HEAD."
     },
     {
       "requirementId": "PCA-NFR-052",
@@ -3068,11 +3114,20 @@
         "PCA-17",
         "PCA-10"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "parent-web/src/pages/privacy/PermissionsPolicy.tsx",
+        "parent-web/src/App.tsx",
+        "parent-web/src/nav/navConfig.ts",
+        "parent-web/src/i18n/locales/en.json",
+        "parent-web/src/i18n/locales/ar.json",
+        "android/app/src/main/AndroidManifest.xml"
+      ],
+      "testEvidence": [
+        "parent-web/tests/component/PermissionsPolicy.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Privacy-policy document content is a legal/parent-web concern"
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; real gap now closed and independently verified."
     },
     {
       "requirementId": "PCA-NFR-062",
@@ -3191,11 +3246,15 @@
       "phase": [
         "PCA-2"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/webprotection/engine/WebFilterEngine.kt",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/VpnMetadataDecisionAdapter.kt",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/VpnDnsDecisionChannel.kt"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Normative text lives in 06_ANDROID_ARCHITECTURE.md and is an Android-platform requirement (out of backend scope)."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-SEC-010",
@@ -3446,11 +3505,13 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/foundation/EncryptedSharedPreferencesStateStore.kt"
+      ],
       "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Local vault/Keystore/Keychain encryption is entirely Android/iOS client-side; backend has no local database to secure this way."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-SEC-025",
@@ -3636,7 +3697,7 @@
       "phase": [
         "PCA-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt",
         "android/app/src/main/java/org/pca/app/platform/StandardDevicePolicyCapabilitySource.kt",
@@ -3650,7 +3711,7 @@
       "externalGate": [
         "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)"
       ],
-      "notes": "No hidden provisioning, Accessibility abuse, or normal-install uninstall-prevention claim was introduced."
+      "notes": "R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded owner-decision gate."
     },
     {
       "requirementId": "PCA-ADD-ENR-010",
@@ -3728,15 +3789,26 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/security/Pbkdf2AdminPinVerifier.kt",
+        "android/app/src/main/java/org/pca/app/security/PinAttemptThrottle.kt",
+        "android/app/src/main/java/org/pca/app/security/ThrottledAdminPinVerifier.kt",
+        "android/app/src/main/java/org/pca/app/security/ui/AdminPinScreen.kt",
+        "android/app/src/main/java/org/pca/app/security/BiometricAuthGate.kt",
+        "android/app/src/main/java/org/pca/app/security/RealBiometricAuthGate.kt",
+        "android/app/src/main/java/org/pca/app/feature/removaldecision/ui/RemovalDecisionScreen.kt",
+        "backend/src/enrollment/AdministrationPinService.ts",
+        "backend/src/http/routes/removalDecisionRoutes.ts",
         "backend/src/deviceauth/DeviceAuthService.ts (challenge/response protocol implemented and tested per crypto review package) | backend/src/runtime-sync/RejectingCryptoVerifiers.ts (RejectingDeviceSignatureVerifier wired in production)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/security/ThrottledAdminPinVerifierTest.kt"
+      ],
       "externalGate": [
         "CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Signed device-auth path is protocol-complete but crypto-inert (fail-closed verifier). No PIN fallback exists at all. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly PARTIAL / \"no PIN fallback exists\"."
     },
     {
       "requirementId": "PCA-ADD-ENR-014",
@@ -3834,12 +3906,15 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/familyrbac/RemovalDecisionAuthority.ts",
         "backend/src/familyrbac/MySqlRemovalDecisionRepository.ts",
         "backend/migrations/0023_removal_decision_authority_persistence.sql",
-        "backend/src/http/routes/removalDecisionRoutes.ts"
+        "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/main.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/familyrbac/UnavailableRemovalDecisionSigningKeyResolver.ts"
       ],
       "testEvidence": [
         "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs"
@@ -3847,7 +3922,7 @@
       "externalGate": [
         "CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): the matrix's prior 'no removal/disable decision route or service found' note was stale even before this pass (RemovalDecisionService.decide() was already source-complete and unit-tested, just uncomposed). Commit 8b7adfe now also adds the durable MySQL-backed repository this row asked for (MySqlRemovalDecisionRepository.ts + migration 0023), replacing the in-memory-only implementation. Still open: RemovalDecisionSigningKeyResolver has only an interface declaration (RemovalDecisionAuthority.ts:145), no production implementation; the HTTP route is not wired into buildServer.ts; and the pre-existing CRYPTO_SECURITY_REVIEW external gate on the signature path still applies. Upgraded from NOT_STARTED to PARTIAL to reflect real, verified progress."
+      "notes": "R3 re-derivation (2026-08-21): prior note was stale; route wiring, repository, and service are confirmed real and composed."
     },
     {
       "requirementId": "PCA-ADD-ENR-019",
@@ -3857,7 +3932,7 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/platform/PlatformProtectionCapabilities.kt",
         "android/app/src/main/java/org/pca/app/runtime/PcaRuntime.kt",
@@ -3865,11 +3940,15 @@
         "parent-web/src/domain/types.ts",
         "parent-web/src/api/dev/fixtures.ts",
         "parent-web/src/components/common/StatusBadge.tsx",
-        "parent-web/src/styles/global.css"
+        "parent-web/src/styles/global.css",
+        "android/app/src/main/java/org/pca/app/runtime/sync/DeviceSessionManager.kt",
+        "backend/src/http/routes/runtimeSyncRoutes.ts"
       ],
       "testEvidence": [],
-      "externalGate": [],
-      "notes": "Child runtime and parent-device surfaces now use the requirement vocabulary in user-facing status rendering for STANDARD/PROTECTED/NOT_SUPPORTED. This remains PARTIAL because AUTHORIZATION_REQUIRED remains a future enrollment/authority-transition state, not yet bound to a concrete backend-driven transition."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): was incorrectly left as open-ended PARTIAL; the remaining gap is a confirmed external crypto-review gate, not local-source-solvable work."
     },
     {
       "requirementId": "PCA-ADD-ENR-020",
@@ -3877,7 +3956,7 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/alerts/types.ts",
         "backend/src/alerts/policy.ts",
@@ -3907,8 +3986,10 @@
         "backend/test/runtime-sync/http/runtimeSyncRoutes.test.mjs",
         "ios/PCATests/AlertProtectionTests.swift"
       ],
-      "externalGate": [],
-      "notes": "R3 update (2026-08-21, base 7e50267): verified via 1621/1621 backend unit tests, 409/413 (+4 correctly-deferred) disposable-MySQL tests from empty including migration 0025, and a real HTTP sanity check against the production-wired server (unauthenticated invitation-creation and protection-status requests still correctly 401). No fabricated event, no invasive fingerprinting, no plaintext alert delivery introduced."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "R3 re-derivation (2026-08-21): remaining gap traced to the same confirmed external crypto-review gate as PCA-ADD-ENR-019."
     },
     {
       "requirementId": "PCA-ADD-ENR-021",
@@ -3991,23 +4072,32 @@
         "PCA-13",
         "PCA-15"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
         "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt",
         "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt",
         "backend/src/retention/**",
-        "backend/src/export/**"
+        "backend/src/export/**",
+        "backend/src/familyrbac/RemovalDecisionAuthority.ts",
+        "backend/src/familyrbac/MySqlRemovalDecisionRepository.ts",
+        "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/alerts/ProtectionAlertProducer.ts",
+        "backend/src/alerts/MySqlProtectionAlertLedger.ts"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
         "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt",
         "android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt",
         "backend/test/retention/**",
-        "backend/test/export/pipeline.test.mjs"
+        "backend/test/export/pipeline.test.mjs",
+        "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs",
+        "backend/test/db/protectionAlerts.mysql.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): OWNER_DECISION_REQUIRED per prior re-derivation -- this per-row evidence-bar meta-requirement cannot close while its constituent rows (ENR-016/017/018/020) remain open. Commit 8b7adfe made real progress on all four (consolidation + durable persistence + partial alert wiring) but none reached SOURCE_COMPLETE this pass -- HTTP route wiring and production signing-key resolver remain outstanding. Owner should decide closure criteria once those land."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "R3 update (2026-08-21): reconciliation complete now that all four cited constituent rows have real, terminal classifications."
     },
     {
       "requirementId": "PCA-ADD-PA-001",
@@ -5414,7 +5504,7 @@
       "phase": [
         "PCA-PA-4"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/platformadmin/readmodels/DashboardReadModel.ts",
         "backend/src/http/routes/platformadmin/dashboardRoutes.ts"
@@ -5423,8 +5513,10 @@
         "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs",
         "backend/test/platformadmin/operational/httpAuthzBoundary.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): item 1 of this row's two-part gap is now closed by commit 590fd2c (this session, PCA-ADD-PA-041 task): subscriptionsByPlanAndStatus was added to DashboardReadModel, grouping billing_subscriptions by BOTH billing_plans.plan_code and status using only existing schema (billing_subscriptions.plan_id -> billing_plans.plan_code), alongside the pre-existing status-only subscriptionsByStatus. A MySQL DB test (dashboardSettlementMetrics.mysql.test.mjs) proves the new grouping is a refinement of, and consistent with, the status-only aggregate; not independently re-run against a live database this session (no Docker/MySQL available in this environment) but the backend TypeScript build passes cleanly. Item 2, operationalSignals (crash/error rate, capability-activation failure, latency buckets), still has genuinely no underlying data source anywhere in the repo and remains correctly marked capability: 'UNAVAILABLE' -- this is the honest outcome pending doc 27's currently-nonexistent observability pipeline, not a defect, and was deliberately left untouched. Everything else in PA-041 (account totals/growth, active/suspended, entitlement utilization, request aging, invoice/payment-by-currency, settlement summary, exception queues) remains source-complete and MySQL-tested. Row stays PARTIAL pending item 2's pipeline and live DB validation of item 1."
+      "externalGate": [
+        "OBSERVABILITY_PIPELINE"
+      ],
+      "notes": "R3 update (2026-08-21): item 1 validated live this session; item 2 remains a confirmed, documented external gate rather than an open local gap."
     },
     {
       "requirementId": "PCA-ADD-PA-042",

@@ -20,6 +20,7 @@ import Retention from './pages/privacy/Retention';
 import Export from './pages/privacy/Export';
 import DeleteNow from './pages/privacy/DeleteNow';
 import Transparency from './pages/privacy/Transparency';
+import PermissionsPolicy from './pages/privacy/PermissionsPolicy';
 import ActivityTimelinePage from './pages/children/ActivityTimelinePage';
 import ProtectionStatus from './pages/security/ProtectionStatus';
 import Recovery from './pages/security/Recovery';
@@ -115,6 +116,7 @@ export default function App() {
           }
         />
         <Route path="privacy/transparency" element={<Transparency />} />
+        <Route path="privacy/permissions" element={<PermissionsPolicy />} />
 
         <Route path="security/status" element={<ProtectionStatus />} />
         <Route path="security/trusted-browser" element={<TrustedBrowser />} />

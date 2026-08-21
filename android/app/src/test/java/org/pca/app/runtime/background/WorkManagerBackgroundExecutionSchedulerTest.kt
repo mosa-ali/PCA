@@ -60,4 +60,38 @@ class WorkManagerBackgroundExecutionSchedulerTest {
 
         assertEquals(1, workInfos.size)
     }
+
+    // --- PCA-DATA-024/PCA-FR-105: scheduleRetentionMaintenance -------------------------------
+
+    @Test
+    fun `scheduleRetentionMaintenance enqueues a real periodic WorkManager job under the documented unique name`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val scheduler = WorkManagerBackgroundExecutionScheduler(context)
+
+        scheduler.scheduleRetentionMaintenance()
+
+        val workInfos = androidx.work.WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(WorkManagerBackgroundExecutionScheduler.UNIQUE_WORK_NAME_RETENTION_MAINTENANCE)
+            .get()
+
+        assertEquals(1, workInfos.size)
+        val info = workInfos.single()
+        assertTrue(info.state == WorkInfo.State.ENQUEUED || info.state == WorkInfo.State.RUNNING)
+        assertTrue(info.tags.contains(WorkManagerBackgroundExecutionScheduler.WORK_TAG_RETENTION_MAINTENANCE))
+    }
+
+    @Test
+    fun `calling scheduleRetentionMaintenance twice keeps exactly one job -- KEEP policy, never a duplicate`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val scheduler = WorkManagerBackgroundExecutionScheduler(context)
+
+        scheduler.scheduleRetentionMaintenance()
+        scheduler.scheduleRetentionMaintenance()
+
+        val workInfos = androidx.work.WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(WorkManagerBackgroundExecutionScheduler.UNIQUE_WORK_NAME_RETENTION_MAINTENANCE)
+            .get()
+
+        assertEquals(1, workInfos.size)
+    }
 }
