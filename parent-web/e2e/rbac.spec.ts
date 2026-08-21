@@ -32,6 +32,10 @@ test.describe('RBAC route guards (real browser)', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText('Re-authenticate to continue')).toBeVisible();
     await page.getByRole('button', { name: 'Re-authenticate (dev stub)' }).click();
-    await expect(page.getByText(/Export generated locally/)).toBeVisible();
+    // PCA-FR-093: the real backend intake response is always shown here
+    // (pending crypto review, never a fabricated completed export) --
+    // see Export.tsx's own header comment for why this changed from an
+    // earlier "generated locally" placeholder message.
+    await expect(page.getByText(/Export request accepted/)).toBeVisible();
   });
 });

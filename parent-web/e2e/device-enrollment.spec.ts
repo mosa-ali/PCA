@@ -8,6 +8,7 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
     await expect(page.getByRole('heading', { name: 'Devices' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create invitation' })).toBeEnabled();
     await page.getByRole('button', { name: 'Create invitation' }).click();
+    await page.getByRole('button', { name: 'I understand, create invitation' }).click();
 
     const tokenEl = page.getByTestId('raw-invitation-token');
     await expect(tokenEl).toBeVisible();
@@ -31,6 +32,7 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
     await page.goto('/family/devices');
     await expect(page.getByRole('heading', { name: 'Add a child device' })).toBeVisible();
     await page.getByRole('button', { name: 'Create invitation' }).click();
+    await page.getByRole('button', { name: 'I understand, create invitation' }).click();
     await expect(page.getByTestId('raw-invitation-token')).toBeVisible();
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -43,6 +45,7 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
   }) => {
     await page.goto('/family/devices');
     await page.getByRole('button', { name: 'Create invitation' }).click();
+    await page.getByRole('button', { name: 'I understand, create invitation' }).click();
     await expect(page.getByTestId('raw-invitation-token')).toBeVisible();
     await page.getByRole('button', { name: 'Close' }).click();
 
