@@ -3631,20 +3631,25 @@
         "PCA-10",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/enrollment/AdministrationPinService.ts",
         "backend/src/enrollment/MySqlAdministrationPinRepository.ts",
         "backend/migrations/0022_enrollment_administration_persistence.sql",
+        "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/main.ts",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
-        "parent-web/src/pages/family/Devices.tsx"
+        "parent-web/src/pages/family/Devices.tsx",
+        "parent-web/src/api/real/realProtectionAdministrationActions.ts"
       ],
       "testEvidence": [
         "backend/test/enrollment/AdministrationPinService.test.mjs",
-        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs"
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs",
+        "backend/test/familyrbac/removalDecisionRoutes.wiring.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): unaffected by the 8b7adfe removal/disable-authority consolidation (that commit touched ProtectionApprovalService/RemovalDecisionService, not AdministrationPinService). AdministrationPinService/MySqlAdministrationPinRepository/migration 0022 remain correct but still have zero HTTP route and are not instantiated in backend/src/main.ts; ProtectionAdministrationPanel.tsx remains presentational only with no fetch calls. Real source gap, not stale."
+      "notes": "R3 update (2026-08-21, base 503865c): verified end-to-end against a real disposable MySQL database this session -- configured a PIN via the live HTTP route, confirmed only a salted verifier is persisted (never the raw PIN), and confirmed the value survives a real backend process restart."
     },
     {
       "requirementId": "PCA-ADD-ENR-013",
@@ -3708,21 +3713,25 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/familyrbac/RemovalDecisionAuthority.ts",
         "backend/src/familyrbac/MySqlRemovalDecisionRepository.ts",
         "backend/migrations/0023_removal_decision_authority_persistence.sql",
         "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/http/buildServer.ts",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
-        "parent-web/src/pages/family/Devices.tsx"
+        "parent-web/src/pages/family/Devices.tsx",
+        "parent-web/src/api/real/realProtectionAdministrationActions.ts"
       ],
       "testEvidence": [
         "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs",
-        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs"
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs",
+        "backend/test/familyrbac/removalDecisionRoutes.wiring.test.mjs",
+        "backend/test/http/buildServer.removalDecisionAndSafeZoneWiring.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): commit 8b7adfe consolidated the two independent, never-composed removal/disable decision authorities (enrollment/ProtectionApprovalService.ts and familyrbac/RemovalDecisionService.ts, both deleted) into one durable authority, familyrbac/RemovalDecisionAuthority.ts, backed by MySqlRemovalDecisionRepository.ts and migration 0023 (extends the 0022 table). One request/state record, one audit trail, all three decision modes (signed remote-parent, local PIN, authorized recovery) covered by a consolidated test suite. An authenticated HTTP route file was added (http/routes/removalDecisionRoutes.ts) but per the commit's own note is 'not yet wired into buildServer.ts' -- confirmed by grep: no reference to removalDecisionRoutes anywhere outside the file itself. Duplication defect resolved; end-to-end reachability gap remains."
+      "notes": "R3 update (2026-08-21, base 503865c): verified live -- created a removal-decision request and decided it with a local PIN through the real HTTP route against a real database this session."
     },
     {
       "requirementId": "PCA-ADD-ENR-017",
@@ -3730,21 +3739,24 @@
         "PCA-10",
         "PCA-11"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/familyrbac/RemovalDecisionAuthority.ts",
         "backend/src/familyrbac/MySqlRemovalDecisionRepository.ts",
         "backend/migrations/0023_removal_decision_authority_persistence.sql",
         "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/http/buildServer.ts",
         "parent-web/src/pages/family/ProtectionAdministrationPanel.tsx",
-        "parent-web/src/pages/family/Devices.tsx"
+        "parent-web/src/pages/family/Devices.tsx",
+        "parent-web/src/api/real/realProtectionAdministrationActions.ts"
       ],
       "testEvidence": [
         "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs",
-        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs"
+        "backend/test/enrollment/AdministrationPersistenceSchema.test.mjs",
+        "backend/test/familyrbac/removalDecisionRoutes.wiring.test.mjs"
       ],
       "externalGate": [],
-      "notes": "R3 re-derivation (2026-08-20, base f18398f): same consolidation as ENR-016 (commit 8b7adfe). The KEEP_ACTIVE/TEMPORARILY_DISABLE/ALLOW_REMOVAL state machine is complete and now lives in one authoritative service (RemovalDecisionAuthority.ts) instead of two duplicates, with a consolidated test suite covering cross-mode state transitions. Remaining gap: the new removalDecisionRoutes.ts HTTP route is not wired into buildServer.ts (confirmed via grep), so it is still unreachable at runtime. No plaintext-PIN or silent-weakening path was introduced."
+      "notes": "R3 update (2026-08-21, base 503865c): verified live this session."
     },
     {
       "requirementId": "PCA-ADD-ENR-018",
