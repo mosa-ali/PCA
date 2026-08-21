@@ -426,11 +426,17 @@
       "phase": [
         "PCA-1"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts",
+        "backend/src/parentaccount/genesisDeviceSigner.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs",
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Family/Family-Owner creation is a backend+parent-web concern; no Android-side normative surface"
+      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-002",
@@ -483,11 +489,21 @@
       "phase": [
         "PCA-10"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "backend/src/familyrbac/policy.ts",
+        "backend/src/familyrbac/ParentActionAuthorizationService.ts",
+        "backend/src/familyrbac/TrustSetRoleResolver.ts",
+        "parent-web/src/pages/family/RolesMatrix.tsx",
+        "parent-web/src/pages/family/Members.tsx"
+      ],
+      "testEvidence": [
+        "backend/test/familyrbac/policy.test.mjs",
+        "backend/test/familyrbac/ParentActionAuthorizationService.test.mjs",
+        "backend/test/familyrbac/TrustSetRoleResolver.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Multi-parent-role support is a parent-web/backend RBAC concern; no Android child-device surface"
+      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-004A",
@@ -1331,11 +1347,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/location/LocationSampleRecorder.kt",
         "android/app/src/main/java/org/pca/app/runtime/location/LocationSampleRecorder.kt + persistence/entity/LocationPointEntity.kt (no ad/analytics consumer of location data found anywhere in the module)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/location/LocationSampleRecorderTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/WebVisitAndLocationPointTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: YES (absence-of-misuse verified by code search)"
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-FR-065",
@@ -1514,11 +1534,17 @@
       "phase": [
         "PCA-13"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). iOS-only requirement (Family Controls)"
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "ios/PCA/FamilyControls/ChildAuthorizationCenter.swift"
+      ],
+      "testEvidence": [
+        "ios/PCATests/ChildAuthorizationCenterTests.swift"
+      ],
+      "externalGate": [
+        "REQUIRES_ENTITLEMENT"
+      ],
+      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-084",
@@ -2156,11 +2182,19 @@
         "PCA-10",
         "PCA-11"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "parent-web/src/pages/children/ScreenTimePage.tsx",
+        "parent-web/src/components/common/DeviceOfflineNotice.tsx"
+      ],
+      "testEvidence": [
+        "parent-web/tests/component/PolicyStatusBadge.test.tsx",
+        "parent-web/tests/component/DeviceOfflineNotice.test.tsx",
+        "parent-web/tests/component/ScreenTimePage.test.tsx",
+        "parent-web/tests/unit/policyStatus.test.ts"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). \"Pending delivery\" vs \"enforcing\" presentation is parent-web UI state, driven by signed-receipt status the backend can supply but does not itself render."
+      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-FR-140",
@@ -2375,8 +2409,10 @@
       "status": "NOT_APPLICABLE",
       "sourceEvidence": [],
       "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). TLS termination is a deployment/infrastructure concern (load balancer/reverse proxy), not application code in backend/src; no in-repo evidence to independently confirm or deny."
+      "externalGate": [
+        "DEPLOYED_TLS_TERMINATION_CONFIG"
+      ],
+      "notes": "R3 re-confirmation (2026-08-21): confirmed via direct repo-wide search, not merely restated."
     },
     {
       "requirementId": "PCA-NFR-002",
@@ -2434,11 +2470,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/runtime-sync/RejectingCryptoVerifiers.ts",
         "backend/src/runtime-sync/RejectingCryptoVerifiers.ts (explicitly refuses to ship any real/placeholder decryption capability, fails closed instead of a hardcoded bypass key)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/runtime-sync/RejectingCryptoVerifiers.test.mjs",
+        "backend/test/runtime-sync/http/productionCryptoGateFailClosed.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired as the production default in main.ts; no bulk-decryption master key exists anywhere in the codebase (spot-checked, no hardcoded key constant found)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-NFR-006",
@@ -2514,11 +2554,16 @@
       "phase": [
         "PCA-17"
       ],
-      "status": "NOT_APPLICABLE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "status": "SOURCE_COMPLETE",
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/platform/proximity/FaceProximityClassifier.kt",
+        "android/app/src/main/java/org/pca/app/persistence/entity/ProximityEventEntity.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Data-minimization example given (eye-distance proximity signals) is Android sensor-collection scope, not backend."
+      "notes": "R3 reclassification (2026-08-21): was incorrectly NOT_APPLICABLE."
     },
     {
       "requirementId": "PCA-NFR-011",
@@ -3503,11 +3548,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/invitation/token.ts",
         "backend/src/invitation/token.ts (randomBytes(32), hashInvitationToken SHA-256) | backend/src/invitation/policy.ts (resolveInvitationTtlMs, computeExpiryInstant) | backend/src/invitation/InvitationService.ts (revokeInvitation, revokeInvitationForFamily) | backend/migrations/0001_mysql_baseline.sql (enrollment_invitations.token_hash UNIQUE, hash-only storage)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/invitation/token.test.mjs",
+        "backend/test/db/invitation.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-ENR-005",
@@ -3548,11 +3597,16 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/invitation/InvitationService.ts",
+        "backend/src/http/routes/invitationRoutes.ts",
         "backend/src/invitation/InvitationService.ts (listInvitationsForFamily, getInvitationForFamily, revokeInvitationForFamily) | backend/src/http/routes/invitationRoutes.ts | parent-web/src/pages/family/DeviceEnrollmentPanel.tsx (status table + revoke button gated by PermissionGate action=REVOKE_DEVICE_INVITATION, no token shown in list view)"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/invitation/service.test.mjs",
+        "parent-web/tests/component/DeviceEnrollmentPanel.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Frontend evidence file(s) confirmed present in parent-web/platform-admin-web source tree; routing wiring spot-checked by AUDIT-C for the owning page set (see PA/BILL/COMP route confirmation notes), not individually re-traced per ID."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-ENR-008",
@@ -4007,11 +4061,16 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/platformadmin/auth/PlatformAdminAuthService.ts",
         "backend/src/platformadmin/**"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/platformadmin/authService.test.mjs",
+        "backend/test/platformadmin/accountService.test.mjs",
+        "backend/test/db/platformadmin.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-005",
@@ -4112,11 +4171,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/platformadmin/auth/rbacPolicy.ts",
         "backend/src/platformadmin/**"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/platformadmin/rbacPolicy.test.mjs",
+        "backend/test/db/platformAdminAuditPrivileges.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-012",
@@ -4124,10 +4187,25 @@
         "PCA-PA-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/platformadmin/auth/PlatformAdminAccountService.ts",
+        "backend/src/platformadmin/auth/token.ts",
+        "backend/src/platformadmin/auth/rbacPolicy.ts",
+        "backend/src/platformadmin/auth/PlatformAdminAuthService.ts",
+        "backend/src/parentaccount/ParentAccountService.ts",
+        "backend/migrations/0005_platform_admin_identity_rbac_audit.sql"
+      ],
+      "testEvidence": [
+        "backend/test/platformadmin/accountService.test.mjs",
+        "backend/test/platformadmin/token.test.mjs",
+        "backend/test/platformadmin/crossRealm.test.mjs",
+        "backend/test/platformadmin/rbacPolicy.test.mjs",
+        "backend/test/platformadmin/authService.test.mjs",
+        "backend/test/platformadmin/totp.test.mjs",
+        "backend/test/platformadmin/auditTypes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21): re-verified all 6 child files exist and are substantial (not stubs) before citing."
     },
     {
       "requirementId": "PCA-ADD-PA-013",
@@ -4403,11 +4481,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/familycommercial/FamilyCommercialService.ts",
         "backend/src/entitlements/types.ts | backend/src/familycommercial/FamilyCommercialService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/familycommercial/familyCommercialService.test.mjs",
+        "backend/test/db/familyCommercialIntegration.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-030",
@@ -4433,9 +4515,12 @@
       "sourceEvidence": [
         "backend/migrations/0006_platform_entitlements_enrollment_limits.sql"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/platformEntitlementsCore.mysql.test.mjs",
+        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-032",
@@ -4842,10 +4927,17 @@
         "PCA-BILL-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/types.ts",
+        "backend/src/billing/settlement/SettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/billing/settlement.test.mjs",
+        "backend/test/db/settlement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21): re-verified against real migration + service + real-MySQL test file before citing."
     },
     {
       "requirementId": "PCA-ADD-BILL-013",
@@ -4853,10 +4945,17 @@
         "PCA-BILL-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/types.ts",
+        "backend/src/billing/settlement/SettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/billing/settlement.test.mjs",
+        "backend/test/db/settlement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-014",
@@ -4864,10 +4963,16 @@
         "PCA-BILL-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/SettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/billing/settlement.test.mjs",
+        "backend/test/db/settlement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-043",
@@ -5000,10 +5105,17 @@
         "PCA-BILL-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/billing/market.ts",
+        "backend/src/billing/settlement/types.ts",
+        "backend/src/billing/settlement/SettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/settlement.mysql.test.mjs",
+        "backend/test/billing/settlement.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-022",
@@ -5012,15 +5124,19 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/billing/currency.ts",
         "backend/src/billing/currency.ts | backend/migrations/0007_billing_core.sql"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/billing/currency.test.mjs",
+        "backend/test/billing/schemaPrivacy.test.mjs"
+      ],
       "externalGate": [
         "SUPPORTED_CHARGE_CURRENCIES",
         "SUPPORTED_SETTLEMENT_CURRENCIES",
         "SUPPORTED_CHARGE_CURRENCIES | SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-023",
@@ -5044,11 +5160,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/billing/checkout/CheckoutService.ts",
         "backend/src/billing/checkout/CheckoutService.ts | backend/src/billing/provider/sandboxProvider.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/checkoutRetryRecovery.mysql.test.mjs",
+        "backend/test/billing/sandboxProvider.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-025",
@@ -5108,15 +5228,20 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/billing/providerContract.ts",
+        "backend/src/billing/providerRegistry.ts",
         "backend/src/billing/providerContract.ts | backend/src/billing/provider/providerRegistry.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/billing/providerContract.test.mjs",
+        "backend/test/billing/providerRegistry.test.mjs"
+      ],
       "externalGate": [
         "PAYMENT_PROVIDER_SELECTION",
         "MERCHANT_ACCOUNT_APPROVAL",
         "PAYMENT_PROVIDER_SELECTION | MERCHANT_ACCOUNT_APPROVAL"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-029",
@@ -5212,11 +5337,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "parent-web/src/pages/billing/CheckoutReturn.tsx",
         "parent-web/src/pages/billing/CheckoutReturn.tsx | backend/src/billing/webhook/WebhookService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "parent-web/tests/component/DeviceIncreaseRequest.test.tsx",
+        "parent-web/tests/accessibility/axe.test.tsx"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Frontend evidence file(s) confirmed present in parent-web/platform-admin-web source tree; routing wiring spot-checked by AUDIT-C for the owning page set (see PA/BILL/COMP route confirmation notes), not individually re-traced per ID."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-036",
@@ -5224,13 +5353,18 @@
         "PCA-BILL-3"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/types.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/settlement.mysql.test.mjs"
+      ],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21). externalGate values (SETTLEMENT_BANK_CONFIGURATION/SUPPORTED_SETTLEMENT_CURRENCIES) are about live-bank-onboarding, not code existence."
     },
     {
       "requirementId": "PCA-ADD-BILL-037",
@@ -5238,13 +5372,20 @@
         "PCA-BILL-3"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/types.ts",
+        "backend/src/billing/settlement/SettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/settlement.mysql.test.mjs",
+        "backend/test/billing/settlement.test.mjs"
+      ],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-BILL-038",
@@ -5252,13 +5393,21 @@
         "PCA-BILL-3"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0015_settlement_reconciliation.sql",
+        "backend/src/billing/settlement/types.ts",
+        "backend/src/billing/settlement/SettlementService.ts",
+        "backend/src/platformadmin/settlement/PlatformAdminSettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/settlement.mysql.test.mjs",
+        "backend/test/billing/settlement.test.mjs"
+      ],
       "externalGate": [
         "SETTLEMENT_BANK_CONFIGURATION",
         "SUPPORTED_SETTLEMENT_CURRENCIES"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-041",
@@ -5286,9 +5435,12 @@
       "sourceEvidence": [
         "backend/src/platformadmin/readmodels/DashboardReadModel.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs",
+        "backend/test/db/familyAccountStatus.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-043",
@@ -5321,10 +5473,15 @@
         "PCA-PA-3"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/http/routes/platformadmin/settlementRoutes.ts",
+        "backend/src/platformadmin/settlement/PlatformAdminSettlementService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/settlement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Second-audit finding: covered by the same migration/route as PCA-ADD-PA-043 (write-only/masked-display discipline for sensitive settings, is_sensitive DB-enforced pairing with masked_display)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-PA-045",
@@ -5456,11 +5613,16 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts",
         "backend/src/parentaccount/**"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs",
+        "backend/test/db/parentAccount.mysql.test.mjs",
+        "backend/test/parentaccount/routes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-002",
@@ -5486,9 +5648,12 @@
       "sourceEvidence": [
         "backend/src/parentaccount/emailHash.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/parentAccount.mysql.test.mjs",
+        "backend/test/parentaccount/service.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-004",
@@ -5589,9 +5754,12 @@
       "sourceEvidence": [
         "backend/src/parentaccount/genesisDeviceSigner.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs",
+        "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-011",
@@ -5673,9 +5841,12 @@
       "sourceEvidence": [
         "backend/src/parentaccount/genesisDeviceSigner.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs",
+        "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-017",
@@ -5686,9 +5857,11 @@
       "sourceEvidence": [
         "backend/src/parentaccount/policy.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/freeAccessEnforcement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-018",
@@ -5697,11 +5870,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/parentaccount/ParentAccountService.ts",
         "backend/src/parentaccount/ParentAccountService.ts | backend/src/parentaccount/types.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/parentaccount/service.test.mjs",
+        "backend/test/db/parentAccount.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-019",
@@ -5709,10 +5886,16 @@
         "PCA-AUTH-SESSION-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/parentaccount/freeaccess/FreeAccessAdminService.ts",
+        "backend/src/parentaccount/freeaccess/adjustment.ts",
+        "backend/src/http/routes/platformadmin/freeAccessAdminRoutes.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/freeaccess/FreeAccessAdminService.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-020",
@@ -5720,10 +5903,18 @@
         "PCA-AUTH-SESSION-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "parent-web/src/components/freeaccess/FreeAccessReminderBannerView.tsx",
+        "parent-web/src/components/freeaccess/FreeAccessReminderBanner.tsx",
+        "parent-web/src/components/freeaccess/freeAccessDismissal.ts"
+      ],
+      "testEvidence": [
+        "parent-web/tests/component/FreeAccessReminderBannerView.test.tsx",
+        "parent-web/tests/component/FreeAccessReminderBanner.test.tsx",
+        "parent-web/tests/unit/freeAccessDismissal.test.ts"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-021",
@@ -5753,10 +5944,16 @@
         "PCA-AUTH-SESSION-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.ts",
+        "backend/src/parentaccount/freeaccess/types.ts"
+      ],
+      "testEvidence": [
+        "backend/test/parentaccount/freeaccess/FreeAccessAcquisitionPolicy.test.mjs",
+        "backend/test/entitlements/FreeAccessAcquisitionCallSites.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-023",
@@ -5767,9 +5964,11 @@
       "sourceEvidence": [
         "backend/src/parentaccount/policy.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/freeAccessEnforcement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-IDENT-024",
@@ -5780,9 +5979,11 @@
       "sourceEvidence": [
         "backend/src/parentaccount/policy.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/freeAccessEnforcement.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-001",
@@ -5791,11 +5992,15 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
+        "backend/src/entitlements/complimentary/ComplimentaryEntitlementService.ts",
         "backend/src/entitlements/complimentary/**"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs",
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-002",
@@ -5806,9 +6011,11 @@
       "sourceEvidence": [
         "backend/migrations/0014_complimentary_entitlement_grants.sql"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-003",
@@ -5819,9 +6026,12 @@
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/types.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs",
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-004",
@@ -5832,9 +6042,12 @@
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/types.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs",
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-005",
@@ -5887,10 +6100,17 @@
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/types.ts",
+        "backend/src/platformadmin/complimentary/PlatformAdminComplimentaryGrantService.ts",
+        "backend/migrations/0014_complimentary_entitlement_grants.sql"
+      ],
+      "testEvidence": [
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs",
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-009",
@@ -5901,9 +6121,12 @@
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/ComplimentaryEntitlementService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs",
+        "backend/test/entitlements/complimentaryGrantValidation.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-010",
@@ -5911,10 +6134,15 @@
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/entitlements/complimentary/EffectiveEntitlementCapacity.ts",
+        "backend/src/entitlements/requests/ChangeRequestService.ts"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-011",
@@ -5955,9 +6183,13 @@
       "sourceEvidence": [
         "backend/src/http/routes/platformadmin/complimentaryGrantRoutes.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs",
+        "backend/test/platformadmin/complimentaryRbacPolicy.test.mjs",
+        "backend/test/platformadmin/complimentaryAuditTypes.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-014",
@@ -6054,10 +6286,15 @@
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/src/http/routes/familyCommercialRoutes.ts",
+        "backend/src/entitlements/complimentary/MyKidsComplimentaryReadModel.ts"
+      ],
+      "testEvidence": [
+        "backend/test/security/checkNoAdTrackingSdks.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21): verified by direct source inspection, not an automated regression test."
     },
     {
       "requirementId": "PCA-ADD-COMP-021",
@@ -6083,9 +6320,11 @@
       "sourceEvidence": [
         "backend/src/entitlements/complimentary/MySqlComplimentaryGrantRepository.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-023",
@@ -6096,9 +6335,11 @@
       "sourceEvidence": [
         "backend/migrations/0014_complimentary_entitlement_grants.sql"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-024",
@@ -6106,10 +6347,14 @@
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0014_complimentary_entitlement_grants.sql"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-ADD-COMP-025",
@@ -6117,10 +6362,14 @@
         "PCA-COMPLIMENTARY-ENTITLEMENTS-1"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": [],
-      "testEvidence": [],
+      "sourceEvidence": [
+        "backend/migrations/0014_complimentary_entitlement_grants.sql"
+      ],
+      "testEvidence": [
+        "backend/test/db/complimentaryGrants.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "R3 evidence-backfill (2026-08-21)."
     },
     {
       "requirementId": "PCA-FR-043B",

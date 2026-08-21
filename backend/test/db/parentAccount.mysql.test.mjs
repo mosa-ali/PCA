@@ -247,6 +247,48 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   assert.equal(typeof relogin.rawSessionToken, 'string');
 });
 
+// PCA-ADD-IDENT-011: a second/subsequent registration under a DISTINCT
+// email address never auto-joins an existing family -- family joining
+// remains governed entirely by the separate invitation/enrollment
+// architecture. attemptFamilyGenesis() has no lookup-by-email path at all
+// (confirmed by direct source read), so this is a real-DB proof of that
+// structural guarantee, not merely a restatement of the source comment.
+test('MySQL: two DISTINCT emails each verifying independently land in two DISTINCT, unjoined families', async () => {
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    createEd25519DeviceSignatureVerifier(),
+    () => new Date(),
+  );
+  const emailSenderA = new RecordingEmailSender();
+  const serviceA = new ParentAccountService({
+    repository: new MySqlParentAccountRepository(),
+    authService: new AuthService(new MySqlAuthRepository()),
+    emailSender: emailSenderA,
+    familyGenesisEngine: engine,
+  });
+  const emailSenderB = new RecordingEmailSender();
+  const serviceB = new ParentAccountService({
+    repository: new MySqlParentAccountRepository(),
+    authService: new AuthService(new MySqlAuthRepository()),
+    emailSender: emailSenderB,
+    familyGenesisEngine: engine,
+  });
+
+  const emailA = uniqueEmail();
+  const emailB = uniqueEmail();
+  await serviceA.register(emailA, 'a genuinely long password', 'a genuinely long password');
+  await serviceB.register(emailB, 'a different genuinely long password', 'a different genuinely long password');
+
+  const outcomeA = await serviceA.verifyEmail(emailA, emailSenderA.lastCodeFor(emailA));
+  const outcomeB = await serviceB.verifyEmail(emailB, emailSenderB.lastCodeFor(emailB));
+
+  assert.equal(typeof outcomeA.familyId, 'string');
+  assert.equal(typeof outcomeB.familyId, 'string');
+  assert.notEqual(outcomeA.familyId, outcomeB.familyId, 'two distinct emails must never land in the same family');
+  assert.notEqual(outcomeA.accountId, outcomeB.accountId);
+});
+
 test.after(async () => {
   await closePool();
 });

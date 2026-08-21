@@ -26,7 +26,7 @@ import type { ProviderEventRepository, ProviderEventRow, ProviderEventService } 
 import type { PaymentService } from '../payment.js';
 import { findPaymentAttemptByProviderReference } from '../shared/paymentAttemptLookup.js';
 import { buildBillingAuditEvent } from '../audit.js';
-import type { BillingAuditActor } from '../audit.js';
+import type { BillingAuditActorOrSystem } from '../audit.js';
 import type { PlatformAdminAuditService } from '../../platformadmin/audit/PlatformAdminAuditService.js';
 import type { PaymentConfirmationPort } from '../../entitlements/payment/PaymentConfirmationPort.js';
 // PCA-COMMERCIAL-NOTIFY-1 composition (Wave 3A correction R1): notification
@@ -75,8 +75,20 @@ export interface WebhookProcessResult {
  */
 const ANOMALY_EVENT_TYPE = 'PAYMENT_ROLLED_BACK' as const;
 
-/** A fixed, non-human system actor id for audit events this pipeline writes with no platform-admin operator behind them. */
-const SYSTEM_WEBHOOK_ACTOR: BillingAuditActor = { adminId: 'SYSTEM_WEBHOOK_PIPELINE', role: null };
+/**
+ * The actor for every audit event this pipeline writes with no
+ * platform-admin operator behind them. adminId is null, never a fabricated
+ * placeholder string -- platform_admin_audit_events.actor_admin_id has a
+ * real FK to platform_admin_accounts, so a non-null value here must
+ * reference a genuine account or every write fails closed with a foreign
+ * key violation (confirmed by a real-MySQL test this session: the
+ * previous 'SYSTEM_WEBHOOK_PIPELINE' placeholder made every anomaly-audit
+ * write in this file throw). Matches the SAME null-actor pattern already
+ * established for other system-triggered events (e.g.
+ * ComplimentaryEntitlementService's expiry sweep,
+ * PaymentConfirmationService's system confirmations).
+ */
+const SYSTEM_WEBHOOK_ACTOR: BillingAuditActorOrSystem = { adminId: null, role: null };
 
 function safeParseJson(rawPayload: Buffer): Record<string, unknown> | null {
   try {

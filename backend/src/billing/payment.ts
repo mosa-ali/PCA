@@ -32,7 +32,7 @@ import { requireBillingOperation } from './rbac.js';
 import type { PlatformAdminRole } from '../platformadmin/auth/types.js';
 import type { PlatformAdminAuditService } from '../platformadmin/audit/PlatformAdminAuditService.js';
 import { buildBillingAuditEvent } from './audit.js';
-import type { BillingAuditActor } from './audit.js';
+import type { BillingAuditActorOrSystem } from './audit.js';
 import type { BillingEntitlementSignal } from './entitlementContract.js';
 
 export type PaymentAttemptStatus = 'CREATED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
@@ -263,7 +263,7 @@ export class PaymentService {
    * no-op returning the existing transaction, never a second transaction
    * row (billing_payment_transactions.payment_attempt_id is UNIQUE).
    */
-  async confirmPaymentAttempt(paymentAttemptId: string, provider: string, providerTransactionRef: string, actor: BillingAuditActor, now: Date = new Date()): Promise<PaymentTransactionRow> {
+  async confirmPaymentAttempt(paymentAttemptId: string, provider: string, providerTransactionRef: string, actor: BillingAuditActorOrSystem, now: Date = new Date()): Promise<PaymentTransactionRow> {
     const { transaction, newlyConfirmed } = await runInTransaction(async (conn) => {
       const existing = await this.repository.findTransactionByAttemptId(conn, paymentAttemptId);
       if (existing) return { transaction: existing, newlyConfirmed: false };

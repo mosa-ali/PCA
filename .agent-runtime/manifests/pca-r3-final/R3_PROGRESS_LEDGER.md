@@ -7,13 +7,13 @@ Generated from the completion matrix and repository evidence on 2026-08-21.
 | Metric | Count |
 |---|---:|
 | Total matrix requirements | 375 |
-| SOURCE_COMPLETE | 292 |
+| SOURCE_COMPLETE | 297 |
 | PARTIAL | 59 |
 | NOT_STARTED | 3 |
-| NOT_APPLICABLE | 19 |
+| NOT_APPLICABLE | 14 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
 | Partial plus not-started | 62 |
-| External-gate rows | 59 |
+| External-gate rows | 61 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
