@@ -15,6 +15,14 @@ interface RouteGuardProps {
  * the guard checks role on every render of the route, not just at
  * navigation-link render time (docs/architecture/18_PARENT_CONTROL_PANEL_RBAC.md
  * Section 6: "Test every role/action pair, direct deep link").
+ *
+ * This is usability only, same posture as platform-admin-web's RouteGuard:
+ * every server request the resulting page issues is independently
+ * re-authorized against the caller's real session server-side (see e.g.
+ * parentAccountRoutes.ts's authorizeSafeZoneRequest/requireActiveFamilyScope
+ * and requireFamilyAuthorization.ts) -- this guard's only job is to avoid
+ * rendering an edit UI for a role that could never actually use it, never
+ * the actual security boundary.
  */
 export function RouteGuard({ action, children }: RouteGuardProps) {
   const role = useCurrentRole();
