@@ -920,7 +920,12 @@ const ALL_STATUSES = ['SOURCE_COMPLETE', 'SOURCE_COMPLETE_VALIDATION_PENDING', '
 const counts = Object.fromEntries(ALL_STATUSES.map((status) => [status, requirements.filter((r) => r.status === status).length]));
 const total = requirements.length;
 const accountedFor = ALL_STATUSES.reduce((sum, status) => sum + counts[status], 0);
-if (total !== 375 || accountedFor !== total) {
+// Test-only override, same rationale as PCA_R3_TEST_ROOT above -- a
+// disposable regression-test fixture legitimately has far fewer than 375
+// rows. Unset in every normal invocation, so the controlled repository's
+// real 375-row requirement is unchanged.
+const expectedTotal = process.env.PCA_R3_TEST_EXPECTED_TOTAL ? Number.parseInt(process.env.PCA_R3_TEST_EXPECTED_TOTAL, 10) : 375;
+if (total !== expectedTotal || accountedFor !== total) {
   throw new Error(`Unexpected R3 matrix counts: ${JSON.stringify({ total, counts })}`);
 }
 const partialPlusNotStarted = counts.PARTIAL + counts.NOT_STARTED;
