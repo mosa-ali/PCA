@@ -31,15 +31,39 @@ import { test, expect } from '@playwright/test';
  *   3. Exactly one real, email-verified parent account created via
  *      backend/scripts/bootstrap-e2e-parent-account.mjs (E2E_REAL_PARENT_EMAIL/
  *      E2E_REAL_PARENT_PASSWORD).
- *   4. `npm run dev -- --mode e2e-real` (this repo's playwright.real.config.ts
- *      does this itself) -- loads .env.e2e-real (VITE_PCA_DEMO_MODE=false,
- *      VITE_E2E_REAL_PROXY_TARGET pointing at that backend; see that file's
- *      own header).
+ *   4. `npm run dev -- --port 4002` (this repo's playwright.real.config.ts
+ *      does this itself as its `webServer`) -- picks up the environment
+ *      variables in step 5 from THIS Playwright run's own environment (there
+ *      is no `.env.e2e-real` file/`--mode` flag in this repository slice --
+ *      an earlier version of this comment described one that was never
+ *      added; playwright.real.config.ts's own header is the accurate source
+ *      for how the dev server is launched).
  *   5. The following environment variables set for THIS Playwright run
  *      (never hardcoded in this file -- live credentials for a throwaway,
  *      isolated test database, not secrets worth committing):
  *        E2E_REAL_PARENT_EMAIL
  *        E2E_REAL_PARENT_PASSWORD
+ *        VITE_PCA_DEMO_MODE=false
+ *        VITE_E2E_REAL_PROXY_TARGET (the backend's own origin, e.g.
+ *          http://127.0.0.1:4001)
+ *        VITE_PCA_API_BASE_URL="" (empty string, NOT omitted/unset --
+ *          RealServiceAuthClient.url() joins this directly onto each request
+ *          path; leaving it unset falls back to src/config/env.ts's/.env's
+ *          `http://localhost:4001` default, which makes the browser call the
+ *          backend's origin DIRECTLY instead of the same-origin `/api/...`
+ *          path this config's vite proxy is listening on. Confirmed by
+ *          direct reproduction: with this var unset, sign-in fails with a
+ *          generic "Something went wrong" error and the suite never leaves
+ *          /login -- the backend has no CORS layer (see vite.config.ts's own
+ *          header), so that direct cross-origin fetch is rejected by the
+ *          browser before the `pca_family_session` cookie the login response
+ *          sets is ever visible same-origin to the later getSession() call.
+ *          Empty string makes every RealServiceAuthClient URL relative
+ *          (e.g. `/api/parent/session`), which resolves against this dev
+ *          server's own origin and is proxied server-side to
+ *          VITE_E2E_REAL_PROXY_TARGET -- same-origin from the browser's
+ *          perspective, so the cookie round-trips correctly and no CORS
+ *          headers are needed.
  *
  * Run with: npm run test:e2e:real (see package.json).
  */

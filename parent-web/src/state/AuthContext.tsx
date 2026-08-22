@@ -33,11 +33,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(() => {
-    clients.serviceAuth.getSession().then((s) => {
-      if (!mountedRef.current) return;
-      setSession(s);
-      setLoading(false);
-    });
+    clients.serviceAuth
+      .getSession()
+      .then((s) => {
+        if (!mountedRef.current) return;
+        setSession(s);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        // Fail closed: a session check that REJECTS (network failure, backend
+        // outage, an unexpected non-401 status -- see
+        // RealServiceAuthClient.getSession()'s own throws) must never be
+        // treated differently from an explicit "not authenticated" (401 ->
+        // null) response by omission. Before this handler existed, a
+        // rejection here left `loading` stuck at `true` forever (nothing
+        // ever called setLoading(false)), so AppLayout's `if (loading) return
+        // null` rendered a permanently blank, unrecoverable page instead of
+        // its normal `session === null` redirect to /login -- plus an
+        // unhandled promise rejection in the console. Setting session to
+        // null and clearing loading routes this through the exact same,
+        // already-tested AppLayout gate as a real 401.
+        setSession(null);
+        setLoading(false);
+      });
   }, [clients]);
 
   useEffect(() => {
