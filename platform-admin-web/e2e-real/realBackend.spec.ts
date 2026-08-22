@@ -32,10 +32,24 @@ import { computeTotp, msUntilNextTotpWindow } from './support/totp';
  *   3. Exactly one bootstrap APP_OWNER account created via
  *      backend/scripts/bootstrap-platform-owner.mjs.
  *   4. `npm run dev` started with VITE_E2E_REAL_PROXY_TARGET pointing at
- *      that backend (see vite.config.ts's header) and
- *      VITE_PCA_PLATFORM_ADMIN_API_BASE_URL set to this app's own origin,
- *      so the browser's fetches to /platform-admin/* are same-origin (the
- *      backend intentionally has no CORS layer -- see vite.config.ts).
+ *      that backend (see vite.config.ts's header) -- this playwright.real.config.ts's
+ *      own `webServer` does this itself. VITE_PCA_PLATFORM_ADMIN_API_BASE_URL
+ *      must be left UNSET: src/config/env.ts's default is empty/same-origin,
+ *      which is what makes the browser's fetches to /platform-admin/* land
+ *      on THIS app's own origin (http://localhost:4102, per this config's
+ *      `baseURL`) and get proxied server-side to VITE_E2E_REAL_PROXY_TARGET
+ *      -- same-origin from the browser's perspective, so no CORS headers
+ *      are needed (the backend intentionally has none -- see vite.config.ts).
+ *      CONFIRMED BY DIRECT REPRODUCTION: setting
+ *      VITE_PCA_PLATFORM_ADMIN_API_BASE_URL to an absolute backend origin
+ *      (e.g. http://localhost:4001, this app's OLD default before this fix)
+ *      makes the browser call the backend cross-origin instead of through
+ *      this same-origin proxy; the backend has no CORS layer, so the
+ *      browser blocks the request outright and login fails with a generic
+ *      "Sign-in failed. Please try again." error that never leaves /login --
+ *      indistinguishable, from the UI alone, from a genuine credential
+ *      failure. See src/config/env.ts's and
+ *      src/api/platformAdminApiClient.ts's own headers for the fix.
  *   5. The following environment variables set for THIS Playwright run
  *      (never hardcoded in this file -- these are live credentials for a
  *      throwaway, isolated test database, not secrets worth committing):
@@ -116,12 +130,33 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
 
     // A real step-up dialog appears -- it must be answered with a SECOND,
     // distinct TOTP code (never the login code) before the real server will
-    // issue a stepUpId and the create-admin request can proceed. offset +1
-    // is guaranteed not to collide with the login code claimed moments ago
-    // in the same 30s-scale window, and the server's ±1 skew tolerance
-    // accepts it immediately without waiting for that step to naturally arrive.
+    // issue a stepUpId and the create-admin request can proceed.
+    //
+    // WAIT FOR A GENUINELY FRESH WINDOW HERE TOO (not merely `offset: 1`
+    // relative to whenever this line happens to execute): an earlier version
+    // of this step used `computeTotp(TOTP_SECRET!, 1)` on the theory that
+    // "+1 step from now" can never collide with the login code claimed a few
+    // seconds ago in the same run. That's true WITHIN one run, but it does
+    // NOT bound which absolute counter gets claimed -- if this line runs
+    // close enough to a 30s boundary, "+1" can land in the SAME absolute
+    // window a DIFFERENT, immediately-following invocation of this suite
+    // independently computes for ITS OWN login step (each run waits for a
+    // fresh window from ITS OWN start time, not from any other run's
+    // progress). Confirmed by direct reproduction: two `npx playwright test
+    // --config=playwright.real.config.ts` invocations run back-to-back
+    // intermittently produced a genuine server-side FAILED_MFA on the SECOND
+    // run's real login -- not a CORS/UI bug, but PlatformAdminAuthService's
+    // TOTP-REPLAY-1 guard correctly refusing to accept a counter
+    // `platform_admin_mfa_state.last_accepted_totp_counter` had already
+    // reached (the first run's step-up claim, landing in the same window the
+    // second run's login independently computed). Waiting out to a fresh
+    // window here, exactly like the login step above, makes the counter this
+    // step claims deterministic (whatever is current the moment the wait
+    // ends) instead of relative to uncontrolled prior state, eliminating
+    // that cross-run collision class entirely.
+    await page.waitForTimeout(msUntilNextTotpWindow());
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!, 1));
+    await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!));
     await page.getByRole('button', { name: /confirm/i }).click();
 
     await expect(page.getByRole('cell', { name: createdAdminName })).toBeVisible();

@@ -28,7 +28,13 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
 }
 
 function buildUrl(path: string, query?: Record<string, string | number | boolean | undefined>): string {
-  const url = new URL(`${config.apiBaseUrl}${path}`);
+  // config.apiBaseUrl is '' by default (same-origin, see config/env.ts) --
+  // unlike fetch(), the URL constructor throws on a relative string with no
+  // base, so window.location.origin is always supplied as a base. When
+  // config.apiBaseUrl is instead an explicit absolute origin (an opt-in
+  // override), the WHATWG URL spec ignores the base entirely and resolves
+  // against the absolute string as usual.
+  const url = new URL(`${config.apiBaseUrl}${path}`, window.location.origin);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined) continue;

@@ -16,9 +16,24 @@ ever happens here, against `/platform-admin/auth/*`.
 
 ```
 npm install
-cp .env.example .env   # point VITE_PCA_PLATFORM_ADMIN_API_BASE_URL at the backend
 npm run dev             # http://localhost:4100
 ```
+
+This app has no CORS layer to fall back on (see `vite.config.ts`'s header),
+so a browser session can only reach a real backend same-origin. Leave
+`VITE_PCA_PLATFORM_ADMIN_API_BASE_URL` unset (`src/config/env.ts`'s default
+is an empty, same-origin value) and instead point vite's own dev-server
+proxy at a real backend process with `VITE_E2E_REAL_PROXY_TARGET` (see
+`vite.config.ts` and `e2e-real/realBackend.spec.ts`'s header for the exact
+flow this powers), e.g.:
+
+```
+VITE_E2E_REAL_PROXY_TARGET=http://127.0.0.1:4001 npm run dev
+```
+
+`.env.example` documents `VITE_PCA_PLATFORM_ADMIN_API_BASE_URL` for the rare
+case where the backend is deliberately NOT reachable same-origin from
+wherever this app is served.
 
 ## Quality gates
 
