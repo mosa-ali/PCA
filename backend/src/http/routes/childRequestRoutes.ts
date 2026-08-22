@@ -34,6 +34,10 @@ import type { ChildRequest, ChildRequestType, ParentDecisionOutcome } from '../.
 import type { BonusGrantLedger } from '../../childrequests/BonusGrantLedger.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { AppScope } from '../../schedule/types.js';
+import {
+  UnavailableChildProfileMembershipResolver,
+  type ChildProfileMembershipResolver,
+} from '../../childprofiles/ChildProfileMembershipResolver.js';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -45,6 +49,19 @@ export interface ChildRequestRoutesDeps {
   childRequestService: ChildRequestService;
   bonusGrantLedger: BonusGrantLedger;
   deviceSessionService: DeviceSessionService;
+  /**
+   * PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: the `bonus-time/active-grants` (read) and
+   * `bonus-time/grants/:grantId/revoke` (write) routes below read/mutate `bonusGrantLedger` directly
+   * by a client-supplied `childProfileId`, WITHOUT going through ChildRequestService/
+   * ParentActionAuthorizationService's own CHILD_PROFILE membership check (decide()/grantDirectly()
+   * already get that check for free via their targetScope, so this is the ONLY place these two
+   * ledger-touching routes independently need it). Defaults to the SAME fail-closed
+   * UnavailableChildProfileMembershipResolver default ParentActionAuthorizationService itself uses --
+   * forgetting to wire a real resolver denies these routes rather than silently reopening the
+   * cross-family IDOR this closes. Production wires the SAME instance passed to the shared
+   * ParentActionAuthorizationService (see main.ts), never a second independently-constructed one.
+   */
+  childProfileMembership?: ChildProfileMembershipResolver;
   /** Same deterministic-clock convention as every other service in this codebase -- never read `Date.now()` inline, so revoke/active-grants stay as testable as decide() itself. */
   now?: () => Date;
 }
@@ -126,7 +143,20 @@ function errorStatus(code: ChildRequestError['code']): number {
 
 export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequestRoutesDeps): void {
   const { parentAccountService, childRequestService, bonusGrantLedger, deviceSessionService } = deps;
+  const childProfileMembership = deps.childProfileMembership ?? new UnavailableChildProfileMembershipResolver();
   const now = deps.now ?? (() => new Date());
+
+  /**
+   * See `childProfileMembership`'s own doc comment on ChildRequestRoutesDeps: the ledger-direct
+   * bonus-time routes (active-grants/revoke) must independently verify a client-supplied
+   * childProfileId actually belongs to the caller's OWN already-cookie-authenticated family before
+   * touching `bonusGrantLedger` -- every non-MEMBER_OF_FAMILY outcome (NOT_MEMBER, NOT_FOUND,
+   * UNAVAILABLE) collapses to the SAME public denial, matching
+   * ParentActionAuthorizationService.evaluate's own CROSS_FAMILY_TARGET oracle-avoidance posture.
+   */
+  function childProfileInFamily(familyId: string, childProfileId: string): boolean {
+    return childProfileMembership.resolveMembership(familyId, childProfileId).status === 'MEMBER_OF_FAMILY';
+  }
 
   async function familySession(request: FastifyRequest, reply: FastifyReply): Promise<{ accountId: string; familyId: string } | null> {
     const token = readSessionCookie(request);
@@ -413,6 +443,9 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       if (!isPlainObject(body) || typeof body.childProfileId !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      if (!childProfileInFamily(session.familyId, body.childProfileId)) {
+        return reply.code(403).send({ error: 'family_scope_forbidden' });
+      }
       const revoked = bonusGrantLedger.revoke(body.childProfileId, grantId, now());
       if (!revoked) return reply.code(404).send({ error: 'not_found' });
       return reply.code(200).send({ revoked: true });
@@ -426,6 +459,9 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
     const { childProfileId } = request.query as { childProfileId?: string };
     if (typeof childProfileId !== 'string' || childProfileId.length === 0) {
       return reply.code(400).send({ error: 'invalid_request' });
+    }
+    if (!childProfileInFamily(session.familyId, childProfileId)) {
+      return reply.code(403).send({ error: 'family_scope_forbidden' });
     }
     const active = bonusGrantLedger.listActive(childProfileId, now());
     return reply.code(200).send({

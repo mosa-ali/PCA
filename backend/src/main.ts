@@ -35,6 +35,7 @@ import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyL
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { defaultFamilyRbacPolicyConfig } from './familyrbac/types.js';
 import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
+import { UnavailableChildProfileMembershipResolver } from './childprofiles/ChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
 // authority -- see RemovalDecisionAuthority.ts's own header for the full
 // design note. Three of its dependencies genuinely have no production
@@ -415,12 +416,21 @@ async function start(): Promise<void> {
   // UnavailableTrustSetRoleResolver's own "one production composition
   // boundary" doc comment.
   const trustSetRoleResolver = new UnavailableTrustSetRoleResolver();
+  // PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: ONE shared instance -- both
+  // safeZoneParentActionAuthorization below (covering decide()/grantDirectly()'s own
+  // targetScope check) AND registerChildRequestRoutes' childProfileMembership dep (covering the
+  // bonus-time/active-grants and bonus-time/grants/:grantId/revoke routes, which touch
+  // BonusGrantLedger directly and therefore need this check independently) consume the SAME
+  // resolver, never two independently-constructed ones -- exactly the "one production composition
+  // boundary" posture trustSetRoleResolver above already established, so a future real resolver
+  // swapped in at ONE site is never silently missing at the other.
+  const childProfileMembershipResolver = new UnavailableChildProfileMembershipResolver();
   const safeZoneParentActionAuthorization = new ParentActionAuthorizationService(
     trustSetRoleResolver,
     defaultFamilyRbacPolicyConfig,
     new InMemoryActionIdempotencyLedger(),
     () => new Date(),
-    undefined,
+    childProfileMembershipResolver,
     familyAuditService,
   );
   const safeZonePolicyAuthorizer = new ParentActionSafeZonePolicyAuthorizer(safeZoneParentActionAuthorization);
@@ -646,6 +656,7 @@ async function start(): Promise<void> {
     // deviceDirectoryService) for construction/rationale.
     childRequestService,
     bonusGrantLedger,
+    childProfileMembership: childProfileMembershipResolver,
   });
   await app.listen({ host, port });
 

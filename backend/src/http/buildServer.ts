@@ -117,6 +117,7 @@ import type { SafeZonePolicyAuthorizer } from '../location/SafeZonePolicyAuthori
 import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
 import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
+import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -183,6 +184,14 @@ export interface ServerDependencies {
   /** PCA-FR-130 (Bonus Time): see registerChildRequestRoutes below. */
   childRequestService: ChildRequestService;
   bonusGrantLedger: BonusGrantLedger;
+  /**
+   * PCA10_CHILD_PROFILE_TARGET_MEMBERSHIP_VALIDATION: passed straight through to
+   * registerChildRequestRoutes' own `childProfileMembership` dep -- see that file's doc comment.
+   * Optional here purely so existing test callers of buildServer that don't exercise the
+   * bonus-time ledger routes need no change; registerChildRequestRoutes itself still defaults to
+   * the SAME fail-closed UnavailableChildProfileMembershipResolver when this is omitted.
+   */
+  childProfileMembership?: ChildProfileMembershipResolver;
 }
 
 /**
@@ -375,6 +384,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     childRequestService: deps.childRequestService,
     bonusGrantLedger: deps.bonusGrantLedger,
     deviceSessionService: deps.deviceSessionService,
+    childProfileMembership: deps.childProfileMembership,
   });
 
   return app;
