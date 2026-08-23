@@ -43,6 +43,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'invitation.ALREADY_REDEEMED': 'تم استخدام الدعوة مسبقًا.',
   'invitation.INVALID_STATE': 'الدعوة ليست في حالة تسمح بهذا الإجراء.',
   'invitation.FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED': 'لا تتوفر سعة أجهزة مُدارة جديدة بعد انتهاء الوصول المجاني.',
+  'invitation.MANAGED_DEVICE_LIMIT_REACHED': 'تم بلوغ الحد الأقصى لعدد الأجهزة المُدارة لهذه الأسرة.',
 
   'pairing.NOT_FOUND': 'لم يتم العثور على طلب الإقران.',
   'pairing.INVALID_STATE': 'طلب الإقران ليس في حالة تسمح بهذا الإجراء.',

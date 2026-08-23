@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InvitationService, InvitationError } from '../../dist/invitation/InvitationService.js';
+import { SlotReservationService, SlotReservationError } from '../../dist/entitlements/slots/SlotReservationService.js';
 import { hashInvitationToken } from '../../dist/invitation/token.js';
 import { DEFAULT_INVITATION_TTL_MS, MAX_INVITATION_TTL_MS } from '../../dist/invitation/policy.js';
 import { createInMemoryInvitationRepository } from '../support/inMemoryInvitationRepository.mjs';
@@ -257,6 +258,35 @@ test('security: createInvitation ignores any attempt to pass a client-forged sta
   assert.equal(record.status, 'CREATED');
   assert.notEqual(record.invitationId, 'attacker-chosen');
   assert.equal(record.expiresAt.getTime() > BASE_TIME, true);
+});
+
+test('PCA-ADD-PA-027: an over-limit managed-device slot reservation surfaces as a caller-actionable MANAGED_DEVICE_LIMIT_REACHED code, not a raw SlotReservationError, and no invitation is persisted', async () => {
+  const repository = createInMemoryInvitationRepository();
+  const slotRepository = {
+    findByInvitationId: async () => null,
+    reserve: async () => ({ outcome: 'NO_AVAILABLE_SLOT' }),
+  };
+  const slotReservationService = new SlotReservationService(slotRepository, () => new Date(BASE_TIME));
+  const service = new InvitationService(repository, () => new Date(BASE_TIME), undefined, slotReservationService);
+  await assert.rejects(
+    () => service.createInvitation(baseInput),
+    (error) => error instanceof InvitationError && error.code === 'MANAGED_DEVICE_LIMIT_REACHED',
+  );
+  assert.deepEqual(await repository.listForFamily(baseInput.familyId), []);
+});
+
+test('PCA-ADD-PA-027: an entitlement-not-found slot reservation failure is also translated to MANAGED_DEVICE_LIMIT_REACHED (never an unmapped SlotReservationError)', async () => {
+  const repository = createInMemoryInvitationRepository();
+  const slotRepository = {
+    findByInvitationId: async () => null,
+    reserve: async () => ({ outcome: 'ENTITLEMENT_NOT_FOUND' }),
+  };
+  const slotReservationService = new SlotReservationService(slotRepository, () => new Date(BASE_TIME));
+  const service = new InvitationService(repository, () => new Date(BASE_TIME), undefined, slotReservationService);
+  await assert.rejects(
+    () => service.createInvitation(baseInput),
+    (error) => error instanceof InvitationError && !(error instanceof SlotReservationError) && error.code === 'MANAGED_DEVICE_LIMIT_REACHED',
+  );
 });
 
 test('security: negative or non-finite ttlMs is rejected rather than producing an already-expired or eternal invitation', async () => {

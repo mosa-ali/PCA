@@ -52,6 +52,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'invitation.ALREADY_REDEEMED': 'Invitation was already redeemed.',
   'invitation.INVALID_STATE': 'Invitation is not in a state that allows this action.',
   'invitation.FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED': 'New managed-device capacity is unavailable after free access expires.',
+  'invitation.MANAGED_DEVICE_LIMIT_REACHED': 'The managed-device limit for this family has been reached.',
 
   // pairing/PairingService.ts PAIRING_ERROR_MESSAGES
   'pairing.NOT_FOUND': 'Pairing request was not found.',

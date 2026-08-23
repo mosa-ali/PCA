@@ -97,6 +97,13 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         if (error instanceof InvitationError && error.code === 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED') {
           return reply.code(403).send({ error: 'forbidden', code: error.code });
         }
+        // PCA-ADD-PA-027: an over-limit enrollment attempt must reach the
+        // family as an actionable "upgrade/increase-request" signal, not an
+        // unmapped 500 -- see InvitationService.createInvitation's
+        // SlotReservationError -> InvitationError translation.
+        if (error instanceof InvitationError && error.code === 'MANAGED_DEVICE_LIMIT_REACHED') {
+          return reply.code(403).send({ error: 'forbidden', code: error.code });
+        }
         throw error;
       }
     },

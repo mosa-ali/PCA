@@ -12,7 +12,7 @@ import type {
   InitialPolicyProfile,
 } from './types.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
-import type { SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
+import { SlotReservationError, type SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 import type { ProtectionAlertProducer } from '../alerts/ProtectionAlertProducer.js';
 
@@ -38,7 +38,9 @@ export type InvitationErrorCode =
   | 'ALREADY_REDEEMED'
   /** PCA-ADD-ENR-005: an INSTALL_REQUIRED/APP_INSTALLED/AUTHORIZATION_REQUIRED transition was requested out of order (e.g. requesting an earlier state than the invitation has already reached). Never leaks the current status beyond this generic code. */
   | 'INVALID_STATE'
-  | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED';
+  | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED'
+  /** PCA-ADD-PA-027: the family's managedDeviceLimit (or its backing entitlement) has no room for a new enrollment invitation. The caller must be pointed at the increase-request/plan-upgrade flow, never a raw 500. */
+  | 'MANAGED_DEVICE_LIMIT_REACHED';
 
 /** Message text is always a fixed, generic string per code — never interpolates the raw token or family data. */
 export class InvitationError extends Error {
@@ -58,6 +60,7 @@ const INVITATION_ERROR_MESSAGES: Record<InvitationErrorCode, string> = {
   ALREADY_REDEEMED: 'Invitation was already redeemed.',
   INVALID_STATE: 'Invitation is not in a state that allows this action.',
   FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED: 'New managed-device capacity is unavailable after free access expires.',
+  MANAGED_DEVICE_LIMIT_REACHED: 'The managed-device limit for this family has been reached.',
 };
 
 export interface CreateInvitationInput {
@@ -140,6 +143,10 @@ export class InvitationService {
         await this.slotReservationService.reserveForInvitation(input.familyId, invitationId, expiresAt);
       } catch (error) {
         if (error instanceof FreeAccessEnforcementError) throw new InvitationError('FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED');
+        // PCA-ADD-PA-027: over-limit enrollment must be rejected with a
+        // caller-actionable code (route to the increase-request/upgrade
+        // flow), never surfaced as an unmapped 500 -- see invitationRoutes.ts.
+        if (error instanceof SlotReservationError) throw new InvitationError('MANAGED_DEVICE_LIMIT_REACHED');
         throw error;
       }
     }

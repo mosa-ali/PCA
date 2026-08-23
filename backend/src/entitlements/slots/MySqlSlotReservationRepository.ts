@@ -144,13 +144,18 @@ export class MySqlSlotReservationRepository implements SlotReservationRepository
   }
 
   /**
-   * PCA-ADD-PA-036 stage 4 (RESERVED -> CONSUMED). Defined and correct, but
-   * intentionally unwired to any caller in this codebase today -- doc 08's
-   * PAIRED -> ACTIVE ("first policy delivered/applied" via the Family Trust
-   * Set) transition does not exist anywhere in backend/src (confirmed by
-   * repository survey), so nothing in this lane fabricates a call to this
-   * method from a state that does not represent genuine device activation.
-   * See the PCA-PA-2 final report.
+   * PCA-ADD-PA-036 stage 4 (RESERVED -> CONSUMED). Called from
+   * EnrollmentCoordinator.enrollDevice on PAIRING_REQUEST_CREATED (invitation
+   * redemption + device key submission), NOT doc 08's later PAIRED -> ACTIVE
+   * ("first policy delivered/applied" via the Family Trust Set) transition --
+   * that later transition still does not exist anywhere in backend/src
+   * (confirmed by repository survey). PCA-ADD-PA-036's own ratified entry
+   * documents this as the deliberate, decided interpretation: "a successful
+   * PAIRING_PENDING enrollment consumes the durable invitation reservation
+   * ... the parent confirmation/trust transition remains separate and is not
+   * required to consume the commercial slot." This is a commercial-capacity
+   * concept (a device now occupies a slot), independent of the separate,
+   * still-unbuilt device *trust* ACTIVE state. See the PCA-PA-2 final report.
    */
   async consumeByInvitationId(invitationId: string, now: Date): Promise<ConsumeOutcome> {
     return runInTransaction(async (conn) => {
