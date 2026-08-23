@@ -21,13 +21,15 @@ export default function Requests() {
   const [grantMinutes, setGrantMinutes] = useState('');
   const [grantError, setGrantError] = useState<string | null>(null);
   const [granting, setGranting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const decide = async (requestId: string, decision: 'APPROVED' | 'DENIED') => {
+    setActionError(null);
     try {
       await runFamilyAction('APPROVE_REQUEST', () => clients.requests.decide(requestId, decision));
       reload();
-    } catch {
-      // denied/cancelled
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('requestsPage.actionErrorFallback'));
     }
   };
 
@@ -44,8 +46,8 @@ export default function Requests() {
       await runFamilyAction('APPROVE_REQUEST', () => clients.requests.decide(requestId, 'COUNTERED', minutes));
       setCounterOfferByRequest((prev) => ({ ...prev, [requestId]: '' }));
       reload();
-    } catch {
-      // denied/cancelled
+    } catch (err) {
+      setCounterOfferError(err instanceof Error ? err.message : t('requestsPage.actionErrorFallback'));
     }
   };
 
@@ -66,8 +68,8 @@ export default function Requests() {
       await runFamilyAction('APPROVE_REQUEST', () => clients.requests.grantBonusTime(grantChildId, minutes));
       setGrantMinutes('');
       reload();
-    } catch {
-      // denied/failed -- runFamilyAction already surfaces the permission reason where applicable
+    } catch (err) {
+      setGrantError(err instanceof Error ? err.message : t('requestsPage.actionErrorFallback'));
     } finally {
       setGranting(false);
     }
@@ -117,6 +119,11 @@ export default function Requests() {
         </section>
       </PermissionGate>
 
+      {actionError && (
+        <p role="alert" className="field-error">
+          {actionError}
+        </p>
+      )}
       {(!data || data.length === 0) && <EmptyState />}
       {data && data.length > 0 && (
         <div className="table-scroll">

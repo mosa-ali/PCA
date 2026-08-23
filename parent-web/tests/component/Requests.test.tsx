@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Requests from '../../src/pages/Requests';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import { __resetDevRequestsForTests } from '../../src/api/dev/devRequestClient';
+import { getApiClients } from '../../src/api/client';
 
 describe('Requests page -- PCA-FR-130 Bonus Time', () => {
   beforeEach(() => {
@@ -76,15 +77,36 @@ describe('Requests page -- PCA-FR-130 Bonus Time', () => {
     await waitFor(() => expect(screen.getByText('20 min granted')).toBeInTheDocument());
   });
 
-  it('a direct grant over the bound is rejected with a clear error', async () => {
+
+  it('shows a visible error message when approving a request fails, instead of silently doing nothing (regression: catch block previously swallowed this with no user feedback)', async () => {
+    renderWithProviders(<Requests />, { role: 'OWNER' });
+    await screen.findByText('30 min requested');
+    const decideSpy = vi
+      .spyOn(getApiClients().requests, 'decide')
+      .mockRejectedValueOnce(new Error('RequestClient.decide: mutation path not implemented yet even post-crypto-approval.'));
+    const approveButtons = await screen.findAllByRole('button', { name: 'Approve' });
+    await userEvent.click(approveButtons[0]);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('RequestClient.decide: mutation path not implemented yet even post-crypto-approval.');
+    // A failed action must never look like it succeeded: the request stays PENDING/unchanged.
+    expect(screen.getByText('30 min requested')).toBeInTheDocument();
+    decideSpy.mockRestore();
+  });
+
+  it('shows a visible error message when a direct bonus-time grant fails, instead of silently doing nothing (regression: catch block previously swallowed this with only a stale comment claiming runFamilyAction already surfaced it)', async () => {
     renderWithProviders(<Requests />, { role: 'OWNER' });
     await screen.findByText('Grant bonus time');
     await screen.findByRole('option', { name: 'Lina (DEV)' });
+    const grantSpy = vi
+      .spyOn(getApiClients().requests, 'grantBonusTime')
+      .mockRejectedValueOnce(new Error('RequestClient.grantBonusTime: mutation path not implemented yet even post-crypto-approval.'));
     await userEvent.selectOptions(screen.getByLabelText('Child'), 'child-lina');
-    await userEvent.type(screen.getByLabelText('Minutes'), '500');
+    await userEvent.type(screen.getByLabelText('Minutes'), '20');
     await userEvent.click(screen.getByRole('button', { name: 'Grant' }));
 
-    expect(await screen.findByText(/cannot exceed 120 minutes/i)).toBeInTheDocument();
+    expect(await screen.findByText('RequestClient.grantBonusTime: mutation path not implemented yet even post-crypto-approval.')).toBeInTheDocument();
+    expect(screen.queryByText('20 min granted')).not.toBeInTheDocument();
+    grantSpy.mockRestore();
   });
 });
 

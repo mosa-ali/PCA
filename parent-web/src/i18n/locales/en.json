@@ -350,6 +350,7 @@
     "decisionPending": "Pending parent decision",
     "decisionExpired": "Expired",
     "decisionNotice": "Each decision is made by an authorized parent role and recorded for this child. A pending child request is not an approval.",
+    "actionErrorFallback": "This action could not be completed. Please try again.",
     "bonusTime": {
       "grantTitle": "Grant bonus time",
       "grantExplanation": "Grant extra screen time to a child directly, up to {{max}} minutes per grant. This goes through the same approval, bound, and audit checks as responding to a child's own request.",
