@@ -2121,7 +2121,7 @@
         "PRODUCTION_CRYPTO_SUITE",
         "IOS_MAC_XCODE"
       ],
-      "notes": "P23 combined Prompt-2/3 programme (2026-08-22): closed under standing decision D2 (CAPABILITY_HONEST_INSTALL_APPROVAL); reclassified from OWNER_DECISION_REQUIRED_FOR_SOURCE to SOURCE_COMPLETE_EXTERNAL_GATE."
+      "notes": "P23 combined Prompt-2/3 programme (2026-08-22): closed under standing decision D2 (CAPABILITY_HONEST_INSTALL_APPROVAL); reclassified from OWNER_DECISION_REQUIRED_FOR_SOURCE to SOURCE_COMPLETE_EXTERNAL_GATE. P23-Writer12 (commit d95b5d8) found and fixed a real project.pbxproj target-membership gap for InstallApprovalCapability.swift and its test (added to disk by ce32e9c but never wired into the Xcode Sources build phase); both are now correctly wired and mechanically verified without Xcode. IOS_MAC_XCODE is now narrowed to pure external validation (compile/build/device execution on a real Mac); no source defect remains."
     },
     {
       "requirementId": "PCA-FR-132",
