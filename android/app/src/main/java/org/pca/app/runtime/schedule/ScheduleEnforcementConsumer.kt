@@ -27,9 +27,7 @@ object NoOpScheduleEnforcementConsumer : ScheduleEnforcementConsumer {
         communicationSurfaces: CommunicationSafetySurfaceTokens,
     ): ScheduleEnforcementOutcome = if (
         appToken == EmergencyAccessFloor.opaqueTokenForPackage(packageName) &&
-            (EmergencyAccessFloor.isProtectedToken(appToken, communicationSurfaces.emergencySurfaceTokens) ||
-                appToken in communicationSurfaces.callSurfaceTokens ||
-                appToken in communicationSurfaces.smsTransportTokens)
+            EmergencyAccessFloor.isProtectedSurfaceToken(appToken, communicationSurfaces)
     ) {
         ScheduleEnforcementOutcome.PRESERVED_SAFETY_SURFACE
     } else {
@@ -63,11 +61,7 @@ class DevicePolicyScheduleEnforcementConsumer(
             return ScheduleEnforcementOutcome.UNAVAILABLE
         }
 
-        if (
-            EmergencyAccessFloor.isProtectedToken(appToken, communicationSurfaces.emergencySurfaceTokens) ||
-            appToken in communicationSurfaces.callSurfaceTokens ||
-            appToken in communicationSurfaces.smsTransportTokens
-        ) {
+        if (EmergencyAccessFloor.isProtectedSurfaceToken(appToken, communicationSurfaces)) {
             return ScheduleEnforcementOutcome.PRESERVED_SAFETY_SURFACE
         }
 

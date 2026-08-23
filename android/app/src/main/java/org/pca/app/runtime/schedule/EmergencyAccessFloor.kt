@@ -87,6 +87,26 @@ object EmergencyAccessFloor {
     fun opaqueTokenForPackage(packageName: String): OpaqueAppToken = opaqueToken(packageName)
 
     /**
+     * True if [appToken] is currently one of [communicationSurfaces]' protected surfaces --
+     * the OS-designated emergency surface, OR the live-resolved incoming-call/default-dialer
+     * role, OR the live-resolved SMS transport role. This is the ONE check every caller in this
+     * app that can suspend/quarantine a package (not only [ScheduleEvaluator]'s decision path)
+     * MUST consult before ever invoking [PackageSuspensionExecutor.setSuspended] with
+     * `suspended = true`, so the PCA-AND-003 floor holds regardless of which feature is driving
+     * the suspend call. [ScheduleEnforcementConsumer]'s two implementations and
+     * [org.pca.app.feature.installapproval.InstallApprovalController]/
+     * [org.pca.app.feature.installapproval.InstallApprovalDecisionApplier] (PCA-FR-131) all route
+     * through this single function rather than each re-deriving the OR-of-three-sets check, so
+     * the floor's definition can never silently drift between call sites.
+     */
+    fun isProtectedSurfaceToken(
+        appToken: OpaqueAppToken,
+        communicationSurfaces: CommunicationSafetySurfaceTokens,
+    ): Boolean = isProtectedToken(appToken, communicationSurfaces.emergencySurfaceTokens) ||
+        appToken in communicationSurfaces.callSurfaceTokens ||
+        appToken in communicationSurfaces.smsTransportTokens
+
+    /**
      * The decision unconditionally returned for a protected token. Deliberately reuses the
      * ordinary [ScheduleDecisionKind.ALLOWED] (rather than introducing a new enum case) so every
      * existing caller that already handles ALLOWED keeps behaving correctly with no further

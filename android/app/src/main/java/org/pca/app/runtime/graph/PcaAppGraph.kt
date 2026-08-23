@@ -11,6 +11,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.pca.app.feature.installapproval.InstallApprovalController
+import org.pca.app.feature.breakshield.BreakShieldTrigger
+import org.pca.app.feature.breakshield.ui.BreakShieldActivity
 import org.pca.app.feature.eyedistance.engine.EyeDistanceConfig
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
@@ -235,10 +237,14 @@ class PcaAppGraph private constructor(
      * [org.pca.app.runtime.installobserver.InstalledAppEventReceiver] calls -- reuses
      * [protectionCapabilities] (the SAME live Device Owner authority query
      * [scheduleEnforcementConsumer] above already uses) and [packageSuspensionExecutor]; no new
-     * authority path or suspension mechanism is created for this feature. */
+     * authority path or suspension mechanism is created for this feature. Also shares the SAME
+     * live [communicationSurfaceResolver] [scheduleRuntimePort] uses below, so the PCA-AND-003
+     * emergency floor [InstallApprovalController.handleNewInstall] now checks internally can never
+     * disagree with the schedule engine's own floor about which package is currently protected. */
     val installApprovalController = InstallApprovalController(
         protectionCapabilities = protectionCapabilities,
         packageSuspensionExecutor = packageSuspensionExecutor,
+        communicationSurfacesProvider = { communicationSurfaceResolver.resolveCommunicationSurfaces() },
     )
     val scheduleRuntimePort: ScheduleRuntimePort = scheduleRuntimePortOverride
         ?: ProductionScheduleRuntimePort(
@@ -624,6 +630,34 @@ class PcaAppGraph private constructor(
         )
     }
 
+    /**
+     * PCA-3/PCA-RUNTIME-1 closure: the real trigger that decides WHEN to launch
+     * [BreakShieldActivity], built from [runtime]'s real, already-running `screenTimeState` --
+     * previously this trigger did not exist at all, so a genuine `BREAK_SHIELD` transition never
+     * surfaced anything beyond a status row in [org.pca.app.runtime.ui.ChildHomeScreen] (see
+     * [BreakShieldTrigger]'s own doc comment for the full gap this closes). Mirrors
+     * [eyeRestShieldTrigger] exactly, including sharing [screenTimeConfig] with [runtime] itself so
+     * the two can never derive `isShieldVisible` from two different configs.
+     */
+    val breakShieldTrigger = BreakShieldTrigger(
+        screenTimeStateFlow = runtime.screenTimeState,
+        config = screenTimeConfig,
+        externalScope = coroutineScope,
+        onShieldShouldAppear = ::launchBreakShieldActivity,
+    )
+
+    /**
+     * The real launch call [breakShieldTrigger] fires on a false-to-true `isShieldVisible` edge.
+     * See [launchEyeRestShieldActivity]'s own doc comment for why `FLAG_ACTIVITY_NEW_TASK` is
+     * required and why this is `internal` rather than `private` (identical reasoning, identical
+     * test-access need in [PcaAppGraphTest][org.pca.app.runtime.graph.PcaAppGraphTest]).
+     */
+    internal fun launchBreakShieldActivity() {
+        context.startActivity(
+            Intent(context, BreakShieldActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
     private fun buildWellbeingDispatcher(): WellbeingTriggerDispatcher = WellbeingTriggerDispatcher(
         monotonicTimeSource = monotonicTimeSource,
         eligibleAppSignalSource = eligibleAppSignalSource,
@@ -668,6 +702,7 @@ class PcaAppGraph private constructor(
         startCameraForegroundEligibilityTracking()
         runtime.start()
         eyeRestShieldTrigger.start()
+        breakShieldTrigger.start()
         startUsageLocationPolling()
         backgroundExecutionScheduler.scheduleUsageIngestion()
         backgroundExecutionScheduler.scheduleRetentionMaintenance()
@@ -810,6 +845,7 @@ class PcaAppGraph private constructor(
         hardwareProximitySource.stop()
         cameraProximitySource.setForegroundEligible(false)
         eyeRestShieldTrigger.stop()
+        breakShieldTrigger.stop()
         coroutineScope.cancel()
     }
 

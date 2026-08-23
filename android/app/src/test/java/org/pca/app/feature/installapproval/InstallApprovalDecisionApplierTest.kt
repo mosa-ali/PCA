@@ -5,6 +5,8 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.platform.ProtectionMode
+import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
+import org.pca.app.runtime.schedule.EmergencyAccessFloor
 import org.pca.app.runtime.schedule.PackageSuspensionExecutor
 
 /**
@@ -108,6 +110,59 @@ class InstallApprovalDecisionApplierTest {
         )
         assertEquals(InstallApprovalCapabilityState.NOT_SUPPORTED, outcome)
         assertTrue(executor.calls.isEmpty())
+    }
+
+    @Test
+    fun `PCA-AND-003 emergency floor -- a DENIED decision for the device's current SMS transport is never suspended, and is honestly reported as ENFORCED`() {
+        val executor = RecordingExecutor()
+        val smsPackage = "com.example.family.messenger"
+        val outcome = InstallApprovalDecisionApplier.apply(
+            packageSuspensionExecutor = executor,
+            currentProtectionMode = ProtectionMode.PROTECTED,
+            packageName = smsPackage,
+            decision = InstallApprovalDecisionApplier.Decision.DENIED,
+            communicationSurfaces = CommunicationSafetySurfaceTokens(
+                smsTransportTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage(smsPackage)),
+            ),
+        )
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, outcome)
+        assertTrue(
+            "a parent DENIED decision must never suspend the device's current SMS transport, regardless of authority",
+            executor.calls.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `PCA-AND-003 emergency floor -- an APPROVED decision for a protected surface still unsuspends normally (the floor only blocks suspension, never unsuspension)`() {
+        val executor = RecordingExecutor()
+        val dialerPackage = "com.example.family.dialer"
+        val outcome = InstallApprovalDecisionApplier.apply(
+            packageSuspensionExecutor = executor,
+            currentProtectionMode = ProtectionMode.PROTECTED,
+            packageName = dialerPackage,
+            decision = InstallApprovalDecisionApplier.Decision.APPROVED,
+            communicationSurfaces = CommunicationSafetySurfaceTokens(
+                callSurfaceTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage(dialerPackage)),
+            ),
+        )
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, outcome)
+        assertEquals(listOf(dialerPackage to false), executor.calls)
+    }
+
+    @Test
+    fun `an ordinary package unrelated to any communication surface is still (re-)suspended normally on DENIED`() {
+        val executor = RecordingExecutor()
+        val outcome = InstallApprovalDecisionApplier.apply(
+            packageSuspensionExecutor = executor,
+            currentProtectionMode = ProtectionMode.PROTECTED,
+            packageName = "com.example.newgame",
+            decision = InstallApprovalDecisionApplier.Decision.DENIED,
+            communicationSurfaces = CommunicationSafetySurfaceTokens(
+                smsTransportTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage("com.example.family.messenger")),
+            ),
+        )
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, outcome)
+        assertEquals(listOf("com.example.newgame" to true), executor.calls)
     }
 
     @Test

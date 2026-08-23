@@ -3,6 +3,8 @@ package org.pca.app.feature.installapproval
 import java.util.UUID
 import org.json.JSONObject
 import org.pca.app.platform.PlatformProtectionCapabilities
+import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
+import org.pca.app.runtime.schedule.EmergencyAccessFloor
 import org.pca.app.runtime.schedule.PackageSuspensionExecutor
 
 /**
@@ -15,6 +17,15 @@ import org.pca.app.runtime.schedule.PackageSuspensionExecutor
  * existing schedule-enforcement path already uses (wired once in `PcaAppGraph`) -- this class
  * fabricates no new authority check and no new suspend mechanism.
  *
+ * PCA-AND-003 emergency-access floor: [handleNewInstall] MUST NOT quarantine a newly-installed
+ * package that [communicationSurfacesProvider] currently resolves as the device's emergency
+ * dialer, default phone/incoming-call app, or SMS transport (e.g. a family communication app the
+ * child just reinstalled) -- same non-overridable floor
+ * [org.pca.app.runtime.schedule.DevicePolicyScheduleEnforcementConsumer] already enforces for
+ * schedule-driven suspension, via the SAME [EmergencyAccessFloor.isProtectedSurfaceToken] check,
+ * so a "new install" quarantine action can never become a second, unguarded path to blocking a
+ * safety surface the schedule engine would never be allowed to block.
+ *
  * "Enforced" here means exactly what doc 06 Section 4 documents as real: Android provides no
  * mechanism (even under Device Owner authority) to gate the INSTALL action itself, only to
  * suspend an ALREADY-installed package. Genuine "install approval" enforcement therefore means
@@ -26,6 +37,11 @@ class InstallApprovalController(
     private val protectionCapabilities: PlatformProtectionCapabilities,
     private val packageSuspensionExecutor: PackageSuspensionExecutor,
     private val requestIdFactory: () -> String = { UUID.randomUUID().toString() },
+    /** Live-resolved (never cached) at every [handleNewInstall] call, matching
+     * [org.pca.app.runtime.schedule.ProductionScheduleRuntimePort]'s own
+     * `communicationSurfacesProvider` discipline -- defaults to an empty set (no protected
+     * surface) only for callers/tests that have no communication-surface resolver to wire. */
+    private val communicationSurfacesProvider: () -> CommunicationSafetySurfaceTokens = { CommunicationSafetySurfaceTokens() },
 ) {
     /** Everything the caller needs to submit the resulting child request -- deliberately carries
      * no dependency on [org.pca.app.runtime.PcaRuntime]/[org.pca.app.runtime.port.FamilySyncRuntimePort]
@@ -54,7 +70,11 @@ class InstallApprovalController(
      */
     fun handleNewInstall(packageName: String, appLabel: String?, nowEpochMillis: Long): DetectionResult {
         val capabilityState = InstallApprovalCapabilityResolver.resolve(protectionCapabilities.currentMode())
-        if (capabilityState == InstallApprovalCapabilityState.ENFORCED) {
+        val isProtectedSurface = EmergencyAccessFloor.isProtectedSurfaceToken(
+            EmergencyAccessFloor.opaqueTokenForPackage(packageName),
+            communicationSurfacesProvider(),
+        )
+        if (capabilityState == InstallApprovalCapabilityState.ENFORCED && !isProtectedSurface) {
             runCatching { packageSuspensionExecutor.setSuspended(packageName, true) }
         }
         return DetectionResult(

@@ -16,11 +16,16 @@ import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pca.app.feature.breakshield.ui.BreakShieldActivity
 import org.pca.app.feature.eyedistance.engine.EyeDistancePhase
 import org.pca.app.feature.eyedistance.engine.EyeDistanceState
 import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshot
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
+import org.pca.app.feature.screentime.engine.ScreenTimeMode
+import org.pca.app.feature.screentime.engine.ScreenTimeState
+import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
+import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.platform.StandardPowerSaveModeSource
 import org.pca.app.runtime.identity.DeviceIdentityState
@@ -88,6 +93,9 @@ class PcaAppGraphTest {
         // comment history).
         assertNotNull(graph.eyeRestShieldTrigger)
         assertNotNull(graph.eyeDistanceConfig)
+        // PCA-3/PCA-RUNTIME-1 closure: the real break-shield trigger is now part of the composed
+        // graph (previously did not exist at all -- see BreakShieldTrigger's own doc comment).
+        assertNotNull(graph.breakShieldTrigger)
         // Conservative placeholders (Section 8/9) until Agent 10/16 bind real implementations.
         assertEquals(ScheduleRuntimeStatus.NOT_READY, graph.scheduleRuntimePort.currentStatus())
         assertEquals(FamilySyncConnectionState.OFFLINE, graph.familySyncRuntimePort.currentConnectionState())
@@ -210,30 +218,125 @@ class PcaAppGraphTest {
         )
 
         val graph = PcaAppGraph.createForTest(context, stateStore = stateStore)
-        assertEquals(
-            "sanity: the graph's own runtime must really have restored into REST_ACTIVE",
-            EyeDistancePhase.REST_ACTIVE,
-            graph.runtime.eyeDistanceState.value.phase,
+        try {
+            assertEquals(
+                "sanity: the graph's own runtime must really have restored into REST_ACTIVE",
+                EyeDistancePhase.REST_ACTIVE,
+                graph.runtime.eyeDistanceState.value.phase,
+            )
+
+            graph.start()
+
+            val deadlineNanos = System.nanoTime() + POLL_TIMEOUT_MILLIS * 1_000_000L
+            var started: Intent? = null
+            while (System.nanoTime() < deadlineNanos) {
+                started = shadowOf(context as Application).peekNextStartedActivity()
+                if (started != null) break
+                Thread.sleep(POLL_INTERVAL_MILLIS)
+            }
+
+            if (started == null) {
+                fail(
+                    "eyeRestShieldTrigger never called startActivity() for EyeRestShieldActivity " +
+                        "within ${POLL_TIMEOUT_MILLIS}ms of graph.start() on a graph restored into " +
+                        "REST_ACTIVE",
+                )
+            }
+            assertEquals(EyeRestShieldActivity::class.java.name, started!!.component?.className)
+        } finally {
+            // This is the one test in this class that calls the real graph.start() (started
+            // OUTSIDE the process-wide singleton via createForTest, so tearDown()'s
+            // PcaAppGraph.resetForTest() does not reach it) -- without an explicit shutdown here,
+            // its tick/screen-state/eyeRestShieldTrigger coroutines keep running on
+            // graph.coroutineScope past the end of this test and can throw into whichever later
+            // test happens to be executing when Robolectric's shadow sandbox for THIS test is torn
+            // down (observed as a spurious UncaughtExceptionsBeforeTest failure in an unrelated
+            // test class). Every other test in this file constructs a graph but never calls
+            // start(), so it never spawns that background work and needs no matching shutdown.
+            graph.shutdownForTest()
+        }
+    }
+
+    // --- PCA-3/PCA-RUNTIME-1 closure: BreakShieldActivity launch wiring ---------------------
+    //
+    // Mirrors the EyeRestShieldActivity section above exactly: these tests prove the real
+    // production breakShieldTrigger, built from PcaRuntime's real screenTimeState, must actually
+    // call context.startActivity(...) for BreakShieldActivity on a genuine BREAK_SHIELD transition
+    // -- previously no such call existed anywhere in this codebase (see BreakShieldTrigger's own
+    // doc comment for the gap this closes).
+
+    @Test
+    fun `launchBreakShieldActivity starts the real BreakShieldActivity with FLAG_ACTIVITY_NEW_TASK`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+
+        graph.launchBreakShieldActivity()
+
+        val started = shadowOf(context as Application).nextStartedActivity
+        assertNotNull("expected a startActivity(...) call", started)
+        assertEquals(BreakShieldActivity::class.java.name, started!!.component?.className)
+        assertTrue(
+            "application-context launches must set FLAG_ACTIVITY_NEW_TASK",
+            (started.flags and Intent.FLAG_ACTIVITY_NEW_TASK) != 0,
+        )
+    }
+
+    @Test
+    fun `a graph restored directly into BREAK_SHIELD really launches BreakShieldActivity once graph start() runs`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val stateStore = InMemoryPersistentStateStore()
+
+        // Same production restoration path PcaAppGraph itself relies on (ScreenTimeRestorer): a
+        // null snapshot bootId means "not confirmed same-boot", so restoreAfterReboot is taken,
+        // which preserves the BREAK_SHIELD mode across the (simulated) gap rather than resetting
+        // it -- see ScreenTimeRestorer.restoreAfterReboot's own doc comment.
+        PersistentScreenTimeSnapshotStore(stateStore).save(
+            ScreenTimeSnapshot(
+                state = ScreenTimeState.initial(0L).copy(mode = ScreenTimeMode.BREAK_SHIELD),
+                snapshotWallClockMillis = 0L,
+                bootId = null,
+            ),
         )
 
-        graph.start()
+        // graph.start() also enqueues backgroundExecutionScheduler.scheduleUsageIngestion(), which
+        // requires a real WorkManager instance -- see the EyeRestShieldActivity end-to-end test
+        // above for why this is provided here.
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
+        )
 
-        val deadlineNanos = System.nanoTime() + POLL_TIMEOUT_MILLIS * 1_000_000L
-        var started: Intent? = null
-        while (System.nanoTime() < deadlineNanos) {
-            started = shadowOf(context as Application).peekNextStartedActivity()
-            if (started != null) break
-            Thread.sleep(POLL_INTERVAL_MILLIS)
-        }
-
-        if (started == null) {
-            fail(
-                "eyeRestShieldTrigger never called startActivity() for EyeRestShieldActivity " +
-                    "within ${POLL_TIMEOUT_MILLIS}ms of graph.start() on a graph restored into " +
-                    "REST_ACTIVE",
+        val graph = PcaAppGraph.createForTest(context, stateStore = stateStore)
+        try {
+            assertEquals(
+                "sanity: the graph's own runtime must really have restored into BREAK_SHIELD",
+                ScreenTimeMode.BREAK_SHIELD,
+                graph.runtime.screenTimeState.value.mode,
             )
+
+            graph.start()
+
+            val deadlineNanos = System.nanoTime() + POLL_TIMEOUT_MILLIS * 1_000_000L
+            var started: Intent? = null
+            while (System.nanoTime() < deadlineNanos) {
+                started = shadowOf(context as Application).peekNextStartedActivity()
+                if (started != null) break
+                Thread.sleep(POLL_INTERVAL_MILLIS)
+            }
+
+            if (started == null) {
+                fail(
+                    "breakShieldTrigger never called startActivity() for BreakShieldActivity within " +
+                        "${POLL_TIMEOUT_MILLIS}ms of graph.start() on a graph restored into BREAK_SHIELD",
+                )
+            }
+            assertEquals(BreakShieldActivity::class.java.name, started!!.component?.className)
+        } finally {
+            // See the matching EyeRestShieldActivity end-to-end test's own `finally` comment above
+            // for why this explicit shutdown is required: this is the other of the two tests in
+            // this class that calls the real graph.start() outside the process-wide singleton.
+            graph.shutdownForTest()
         }
-        assertEquals(EyeRestShieldActivity::class.java.name, started!!.component?.className)
     }
 
     // --- PCA-DATA-024/PCA-FR-105 closure: runRetentionMaintenanceCycle wiring ----------------

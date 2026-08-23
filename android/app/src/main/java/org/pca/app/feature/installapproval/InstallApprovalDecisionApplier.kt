@@ -1,6 +1,8 @@
 package org.pca.app.feature.installapproval
 
 import org.pca.app.platform.ProtectionMode
+import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
+import org.pca.app.runtime.schedule.EmergencyAccessFloor
 import org.pca.app.runtime.schedule.PackageSuspensionExecutor
 
 /**
@@ -38,17 +40,31 @@ object InstallApprovalDecisionApplier {
      *    authority to make one with) -- the returned state is exactly the current capability,
      *    never ENFORCED, regardless of what capability existed when the request was created or
      *    what the parent decided.
+     *
+     * PCA-AND-003 emergency-access floor: a DENIED decision must never suspend [packageName] if
+     * [communicationSurfaces] (live-resolved by the caller, same as [currentProtectionMode])
+     * currently identifies it as the device's emergency dialer, default phone/incoming-call app,
+     * or SMS transport -- the parent's decision can be recorded, but the floor still wins over it,
+     * exactly as it wins over any schedule-policy decision in
+     * [org.pca.app.runtime.schedule.ScheduleEvaluator]/
+     * [org.pca.app.runtime.schedule.DevicePolicyScheduleEnforcementConsumer]. No suspend call is
+     * even attempted in that case; the outcome is reported as ENFORCED (this device does hold
+     * capability, it is simply never going to use it to block a protected safety surface).
      */
     fun apply(
         packageSuspensionExecutor: PackageSuspensionExecutor,
         currentProtectionMode: ProtectionMode,
         packageName: String,
         decision: Decision,
+        communicationSurfaces: CommunicationSafetySurfaceTokens = CommunicationSafetySurfaceTokens(),
     ): InstallApprovalCapabilityState {
         val currentCapability = InstallApprovalCapabilityResolver.resolve(currentProtectionMode)
         if (currentCapability != InstallApprovalCapabilityState.ENFORCED) return currentCapability
 
         val shouldSuspend = decision == Decision.DENIED
+        if (shouldSuspend && EmergencyAccessFloor.isProtectedSurfaceToken(EmergencyAccessFloor.opaqueTokenForPackage(packageName), communicationSurfaces)) {
+            return InstallApprovalCapabilityState.ENFORCED
+        }
         val applied = runCatching { packageSuspensionExecutor.setSuspended(packageName, shouldSuspend) }.getOrDefault(false)
         return if (applied) InstallApprovalCapabilityState.ENFORCED else InstallApprovalCapabilityState.AUTHORIZATION_REQUIRED
     }

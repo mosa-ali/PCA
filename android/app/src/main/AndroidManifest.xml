@@ -153,6 +153,17 @@
             android:name=".feature.eyedistance.ui.EyeRestShieldActivity"
             android:exported="false" />
 
+        <!-- PCA-3/PCA-RUNTIME-1 closure: the real host Activity for BreakShieldScreen, launched by
+             org.pca.app.runtime.graph.PcaAppGraph's breakShieldTrigger on a genuine BREAK_SHIELD
+             transition from PcaRuntime.screenTimeState (see that trigger's own doc comment). Not
+             exported and declares no intent-filter, same pattern as EyeRestShieldActivity above;
+             launched only from within this app. The launch call uses FLAG_ACTIVITY_NEW_TASK since
+             it is fired from the application Context PcaAppGraph holds, not from an Activity
+             context. -->
+        <activity
+            android:name=".feature.breakshield.ui.BreakShieldActivity"
+            android:exported="false" />
+
         <!-- PCA-5 (doc 14 layer 2): real, user-consented device-wide DNS-only web-filtering VPN.
              android:permission restricts binding to the system (standard VpnService contract);
              exported="true" is required for the system to bind it, but the intent-filter's action

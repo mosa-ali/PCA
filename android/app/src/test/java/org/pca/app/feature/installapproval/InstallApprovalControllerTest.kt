@@ -6,6 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pca.app.platform.ProtectionMode
 import org.pca.app.runtime.FakeProtectionCapabilities
+import org.pca.app.runtime.schedule.CommunicationSafetySurfaceTokens
+import org.pca.app.runtime.schedule.EmergencyAccessFloor
 import org.pca.app.runtime.schedule.PackageSuspensionExecutor
 
 /**
@@ -98,6 +100,72 @@ class InstallApprovalControllerTest {
 
         assertEquals(InstallApprovalCapabilityState.NOT_SUPPORTED, result.capabilityState)
         assertTrue(executor.calls.isEmpty())
+    }
+
+    @Test
+    fun `PCA-AND-003 emergency floor -- a newly-installed package that is the current SMS transport is never quarantined, even under ENFORCED capability`() {
+        val executor = RecordingExecutor()
+        val smsPackage = "com.example.family.messenger"
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = executor,
+            requestIdFactory = { "req-sms" },
+            communicationSurfacesProvider = {
+                CommunicationSafetySurfaceTokens(
+                    smsTransportTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage(smsPackage)),
+                )
+            },
+        )
+
+        val result = controller.handleNewInstall(smsPackage, "Family Messenger", 1_000L)
+
+        assertTrue(
+            "the device's current SMS transport must never be suspended by install-approval quarantine, regardless of capability",
+            executor.calls.isEmpty(),
+        )
+        // The request is still honestly created and still reports the real capability -- only the
+        // actual suspend/quarantine action is withheld for this specific protected package.
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, result.capabilityState)
+        assertEquals("req-sms", result.requestId)
+    }
+
+    @Test
+    fun `PCA-AND-003 emergency floor -- a newly-installed package that is the current default dialer or emergency surface is never quarantined`() {
+        val executor = RecordingExecutor()
+        val dialerPackage = "com.example.family.dialer"
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = executor,
+            communicationSurfacesProvider = {
+                CommunicationSafetySurfaceTokens(
+                    callSurfaceTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage(dialerPackage)),
+                )
+            },
+        )
+
+        controller.handleNewInstall(dialerPackage, "Family Dialer", 1_000L)
+
+        assertTrue(executor.calls.isEmpty())
+    }
+
+    @Test
+    fun `an ordinary package unrelated to any communication surface is still quarantined normally under ENFORCED capability`() {
+        val executor = RecordingExecutor()
+        val smsPackage = "com.example.family.messenger"
+        val controller = InstallApprovalController(
+            protectionCapabilities = FakeProtectionCapabilities(ProtectionMode.PROTECTED),
+            packageSuspensionExecutor = executor,
+            communicationSurfacesProvider = {
+                CommunicationSafetySurfaceTokens(
+                    smsTransportTokens = setOf(EmergencyAccessFloor.opaqueTokenForPackage(smsPackage)),
+                )
+            },
+        )
+
+        val result = controller.handleNewInstall("com.example.newgame", "New Game", 1_000L)
+
+        assertEquals(listOf("com.example.newgame" to true), executor.calls)
+        assertEquals(InstallApprovalCapabilityState.ENFORCED, result.capabilityState)
     }
 
     @Test
