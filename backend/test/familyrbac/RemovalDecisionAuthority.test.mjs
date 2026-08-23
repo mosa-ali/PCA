@@ -247,6 +247,22 @@ test('Viewer and wrong-family actors are denied (RBAC denial path)', async () =>
   );
 });
 
+test('PCA-ADD-ENR-024: a signed removal decision purportedly from an owner device belonging to a different family is denied before signature verification (cross-family wrong-parent authorization)', async () => {
+  const { authority } = buildAuthority();
+  const request = await createPending(authority, { requestId: 'request-wrong-family' });
+  // OTHER_FAMILY_OWNER genuinely holds the OWNER role, just for a different
+  // family (family-other) -- this proves the denial is a real family-scope
+  // check, not just a role check. signingKeyResolver() also refuses to
+  // resolve a signing key for this actor against FAMILY, which is the exact
+  // mechanism doc 08's wrong-parent-authorization constraint depends on.
+  await assert.rejects(
+    authority.decideWithSignedRemoteParent(sign(unsignedDecision(request, { actorDeviceId: OTHER_FAMILY_OWNER, actionId: 'action-wrong-family' }))),
+    (error) => error instanceof RemovalDecisionError && error.code === 'NOT_AUTHORIZED',
+  );
+  // The request must remain untouched, exactly as if no decision was ever attempted.
+  assert.equal((await authority.getRequest(FAMILY, request.requestId)).state, 'PARENT_APPROVAL_REQUIRED');
+});
+
 test('signature binding rejects child/device substitution and invalid signatures', async () => {
   const { authority } = buildAuthority();
   const request = await createPending(authority, { requestId: 'request-binding' });
