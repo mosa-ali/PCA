@@ -1,6 +1,6 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-21.
+Generated from the completion matrix and repository evidence on 2026-08-23.
 
 ## Exact requirement counts
 
