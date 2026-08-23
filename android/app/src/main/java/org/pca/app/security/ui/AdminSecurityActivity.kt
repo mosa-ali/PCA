@@ -14,11 +14,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.pca.app.PcaApplication
+import org.pca.app.R
 import org.pca.app.accessibility.PcaAccessibilityContent
 import org.pca.app.feature.eyedistance.ui.EyeDistanceCameraPermissionActivity
 import org.pca.app.feature.removaldecision.PersistentRemovalDecisionRepository
@@ -28,10 +30,17 @@ import org.pca.app.feature.removaldecision.RemovalDecisionOutcome
 import org.pca.app.feature.removaldecision.RemovalDecisionRecord
 import org.pca.app.feature.removaldecision.RemovalDecisionStateMachine
 import org.pca.app.feature.removaldecision.ui.RemovalDecisionScreen
+import org.pca.app.feature.settings.data.DeleteNowResult
+import org.pca.app.feature.settings.data.DeleteNowScope
+import org.pca.app.feature.settings.data.DeleteNowUseCase
+import org.pca.app.feature.settings.ui.DeleteNowScopeOption
+import org.pca.app.feature.settings.ui.DeleteNowScreen
+import org.pca.app.feature.settings.ui.DeleteNowUiResult
 import org.pca.app.foundation.EncryptedSharedPreferencesStateStore
 import org.pca.app.foundation.SystemMonotonicTimeSource
 import org.pca.app.foundation.SystemWallClockTimeSource
 import org.pca.app.persistence.PcaLocalPersistence
+import org.pca.app.persistence.retention.DeleteNowCoordinator
 import org.pca.app.runtime.identity.DeviceIdentityState
 import org.pca.app.security.BiometricAuthReason
 import org.pca.app.security.BiometricAuthResult
@@ -81,6 +90,13 @@ class AdminSecurityActivity : FragmentActivity() {
         val removalDecisionRepository = PersistentRemovalDecisionRepository(removalDecisionStateStore)
         val tamperEventRepository = PcaLocalPersistence.getInstance(applicationContext).tamperEventRepository
         val auditRecorder = RemovalDecisionAuditRecorder(tamperEventRepository)
+
+        // PCA-FR-065/103/104 closure: the reachable entry point for the Delete Now screen and
+        // use case, which previously had no real production caller anywhere in the app (compiled
+        // and unit-tested, but never rendered) -- same PIN/biometric-gated admin surface as
+        // RemovalDecisionScreen below, following this Activity's own documented pattern for
+        // screens that have no shared NavHost to attach to.
+        val deleteNowUseCase = DeleteNowUseCase(DeleteNowCoordinator(PcaLocalPersistence.getInstance(applicationContext).database))
         val coordinator = RemovalDecisionCoordinator(
             repository = removalDecisionRepository,
             stateMachine = RemovalDecisionStateMachine(),
@@ -155,6 +171,30 @@ class AdminSecurityActivity : FragmentActivity() {
                                     }
                                 },
                             )
+
+                            val enrolledIdentity = (application as PcaApplication).graph.deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled
+                            val currentFamilyId = (application as PcaApplication).graph.familyStateStore.currentState()?.familyId
+                            if (enrolledIdentity != null && currentFamilyId != null) {
+                                var deleteNowResult by remember { mutableStateOf<DeleteNowUiResult?>(null) }
+                                DeleteNowScreen(
+                                    scopeOptions = listOf(
+                                        DeleteNowScopeOption(
+                                            label = stringResource(R.string.delete_now_scope_device),
+                                            scope = DeleteNowScope.Device(currentFamilyId, enrolledIdentity.deviceId),
+                                        ),
+                                    ),
+                                    onConfirmDelete = { scope ->
+                                        lifecycleScope.launch {
+                                            deleteNowResult = when (val outcome = deleteNowUseCase.execute(scope)) {
+                                                is DeleteNowResult.Success -> DeleteNowUiResult.Success(outcome.receipt.deletedCount, outcome.receipt.id)
+                                                is DeleteNowResult.Failure -> DeleteNowUiResult.Failure(outcome.reason)
+                                            }
+                                        }
+                                    },
+                                    result = deleteNowResult,
+                                    onDismissResult = { deleteNowResult = null },
+                                )
+                            }
                         }
                     }
                 }
