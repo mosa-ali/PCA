@@ -48,6 +48,34 @@ describe('platformAdminApiClient / config.apiBaseUrl: same-origin default', () =
     expect(url).not.toContain('localhost:4001');
   });
 
+  it('with VITE_PCA_PLATFORM_ADMIN_API_BASE_URL genuinely absent (undefined, not merely an empty string), requests still resolve same-origin', async () => {
+    // PCA-ADMIN-CORS-DEFAULT-1: the test above stubs the var to '' -- but
+    // config/env.ts's real default is `?? ''`, a nullish-coalescing
+    // fallback that only ever triggers for null/undefined, never for an
+    // already-empty string. A real, unconfigured deployment (no matching
+    // key in any .env file at all) presents as import.meta.env.<KEY> ===
+    // undefined, not ''. Without THIS case, a regression that changed the
+    // fallback literal (e.g. back to the old absolute 'http://localhost:4001'
+    // default) would go completely undetected: '' ?? <anything> is always
+    // '', so the '' -stubbed test above can never observe the fallback
+    // value at all -- only the genuinely-undefined case actually exercises
+    // it.
+    vi.stubEnv('VITE_PCA_PLATFORM_ADMIN_API_BASE_URL', undefined);
+    vi.resetModules();
+    const platformAdminApi = await freshClientWithSession();
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await platformAdminApi.get('/platform-admin/admin-users');
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url.startsWith(window.location.origin)).toBe(true);
+    expect(url).toContain('/platform-admin/admin-users');
+    // The old, broken default -- must never resurface silently.
+    expect(url).not.toContain('localhost:4001');
+  });
+
   it('an explicit absolute VITE_PCA_PLATFORM_ADMIN_API_BASE_URL override still resolves against that origin (opt-in split-origin deployment)', async () => {
     vi.stubEnv('VITE_PCA_PLATFORM_ADMIN_API_BASE_URL', 'https://admin-api.example.test');
     vi.resetModules();
