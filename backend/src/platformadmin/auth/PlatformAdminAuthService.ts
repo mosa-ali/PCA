@@ -53,6 +53,16 @@ export interface PlatformAdminStepUpResult {
 /** Roles whose failed-login/lockout events trigger an immediate PCA-ADD-PA-020 alert. Determined from the ACCOUNT's active roles at the time of the attempt, not from any claim in the request. */
 const ALERT_TRIGGERING_ROLES: ReadonlySet<PlatformAdminRole> = new Set(['APP_OWNER', 'FINANCE_ADMIN']);
 
+// PCA-ADMIN-TIMING-1: a fixed, never-matching scrypt-shaped credential used
+// only to keep login()'s "unknown email / non-ACTIVE account" branch's
+// timing in the same ballpark as its "known account, wrong password"
+// branch -- never a real account's hash. Same shape/cost parameters
+// passwordCredential.ts's hashPassword produces (scrypt N=32768/r=8/p=1,
+// 16-byte salt, 64-byte derived key), matching
+// backend/src/parentaccount/ParentAccountService.ts's DUMMY_PASSWORD_HASH
+// precedent exactly.
+const DUMMY_PASSWORD_CREDENTIAL = `scrypt$32768$8$1$${'00'.repeat(16)}$${'00'.repeat(64)}`;
+
 export class PlatformAdminAuthService {
   private readonly repository: PlatformAdminAuthRepository;
   private readonly alertPort: PlatformAdminAlertPort;
@@ -96,6 +106,17 @@ export class PlatformAdminAuthService {
 
     const account = await this.repository.findAccountByEmailHash(emailHash);
     if (!account || account.status !== 'ACTIVE') {
+      // PCA-ADMIN-TIMING-1: still run a real scrypt verification against a
+      // fixed, never-matching credential so this branch (unknown email /
+      // SUSPENDED / DEACTIVATED account) costs roughly the same wall-clock
+      // time as the "known ACTIVE account, wrong password" branch below --
+      // mirrors backend/src/parentaccount/ParentAccountService.ts's login()
+      // DUMMY_PASSWORD_HASH precedent exactly. Without this, an unknown-email
+      // request returns almost immediately while a known-email request pays
+      // the full scrypt cost, letting an attacker enumerate which admin
+      // emails exist purely from response latency -- a real timing oracle on
+      // exactly the highest-privilege account set in this system.
+      await verifyPassword(password, DUMMY_PASSWORD_CREDENTIAL);
       await this.recordFailureAndMaybeAlert(emailHash, 'FAILED_CREDENTIALS', now, correlationId, null);
       throw new PlatformAdminAuthError();
     }

@@ -64,6 +64,52 @@ test('login with an unknown email fails with the same generic error as a known e
   assert.equal(unknownError.message, wrongPasswordError.message);
 });
 
+// PCA-ADMIN-TIMING-1 regression: an unknown email (or a known email whose
+// account isn't ACTIVE) must pay roughly the same scrypt cost as a known
+// ACTIVE account with a wrong password, so response latency can never be
+// used to enumerate which admin emails exist. Before the fix, the unknown
+// branch returned almost immediately (no password hashing at all) while
+// the known branch paid the full ~100ms+ scrypt cost -- a clear, measurable
+// timing oracle on the platform's highest-privilege accounts. Uses the
+// median of several trials and a generous threshold to stay robust against
+// scheduler jitter while still failing hard on pre-fix code (which is
+// roughly 10-50x faster, not just modestly faster).
+test('login timing: unknown email pays the same real password-hashing cost as a known account with a wrong password', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const wrongCode = computeTotp(admin.secret, harness.now().getTime());
+
+  async function medianDurationMs(run, trials = 5) {
+    const durations = [];
+    for (let i = 0; i < trials; i++) {
+      const start = process.hrtime.bigint();
+      await run();
+      durations.push(Number(process.hrtime.bigint() - start) / 1e6);
+    }
+    durations.sort((a, b) => a - b);
+    return durations[Math.floor(durations.length / 2)];
+  }
+
+  const unknownEmailMs = await medianDurationMs(() =>
+    harness.authService.login(`nobody-${randomUUID()}@example.test`, 'anything', '123456').catch(() => {}),
+  );
+  const wrongPasswordMs = await medianDurationMs(() =>
+    harness.authService.login(admin.email, 'wrong password', wrongCode).catch(() => {}),
+  );
+
+  // Both branches must actually run a real scrypt hash (~100ms+ at this
+  // module's cost parameters in this environment) -- an absolute floor
+  // catches the fix being silently reverted even if relative timing is
+  // noisy in a particular CI environment.
+  assert.ok(unknownEmailMs > 30, `expected unknown-email login to pay real hashing cost, got ${unknownEmailMs}ms`);
+  // And the two branches must be within the same order of magnitude of
+  // each other -- the actual regression this test exists to catch.
+  assert.ok(
+    unknownEmailMs > wrongPasswordMs * 0.4,
+    `expected unknown-email (${unknownEmailMs}ms) to cost roughly as much as known-email-wrong-password (${wrongPasswordMs}ms)`,
+  );
+});
+
 test('login with MFA status PENDING_SETUP always fails, even with a technically-correct-looking code and correct password', async () => {
   const harness = buildHarness();
   const email = `pending-${randomUUID()}@example.test`;
