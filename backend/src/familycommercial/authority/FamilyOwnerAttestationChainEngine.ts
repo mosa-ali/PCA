@@ -163,6 +163,40 @@ export class FamilyOwnerAttestationChainEngine {
     await this.chainStore.markHeadRevoked(familyId, this.now());
   }
 
+  /**
+   * SECURITY GAP FLAGGED FOR THE PENDING HUMAN CRYPTO REVIEW (found during a
+   * red-team pass; not fixed here because closing it correctly requires a
+   * real device-authentication transport decision this lane does not own --
+   * see below): `actorDeviceId` is whatever the HTTP route layer
+   * (billingCheckoutRoutes.ts / familyCommercialRoutes.ts) read out of the
+   * request body, with ONLY a length/shape check -- neither this method nor
+   * either of those routes ever verifies that the ACTUAL caller of this
+   * specific HTTP request possesses that device's key. The final
+   * `attestation.ownerDeviceId === actorDeviceId` comparison below only
+   * proves "the chain's cryptographically-attested Owner ID happens to
+   * string-equal whatever the caller typed in the body" -- it is NOT proof
+   * of possession for THIS request. Today that is safe only because
+   * `this.signatureVerifier` is `RejectingDeviceSignatureVerifier` (see
+   * main.ts's own wiring comment) -- `verify()` always returns false, so
+   * every call returns INVALID_PROOF before this comparison is ever
+   * reached, regardless of what `actorDeviceId` is. The moment a real,
+   * accepting DeviceSignatureVerifier replaces it, this comparison starts
+   * actually mattering, and ANY family-scoped caller who learns or guesses
+   * the real Owner's deviceId (device IDs are not modeled as secrets
+   * anywhere in this codebase) could self-authorize a paid checkout /
+   * commercial mutation by simply asserting that ID -- no signature, no
+   * session, no proof of anything about the CURRENT request. Every other
+   * actor-device check in this codebase (childRequestRoutes.ts's
+   * `requireActorDevice`, parentAccountRoutes.ts's
+   * `authorizeSafeZoneRequest`) instead derives `actorDeviceId` EXCLUSIVELY
+   * from a verified, proof-of-possession `DeviceSessionService` bearer
+   * token, never a client-supplied body field alone -- whatever wires in
+   * the real signature verifier here must add the equivalent binding to
+   * billingCheckoutRoutes.ts/familyCommercialRoutes.ts (or to this method's
+   * own contract) BEFORE that happens, or this reopens the exact
+   * "Administrator can pay" gap PCA-BILL-2A-R1/PCA-FAMILY-AUTH-1-R1 were
+   * built to close.
+   */
   async resolveCurrentOwner(familyId: OpaqueFamilyId, actorDeviceId: OpaqueDeviceId): Promise<ResolveCurrentOwnerResult> {
     const head = await this.chainStore.findHead(familyId);
     if (head === null) return { status: 'AUTHORITY_UNAVAILABLE' };
