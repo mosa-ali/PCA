@@ -54,6 +54,8 @@
     <string name="capability_alert_vpn_revoked_body">توقفت حماية PCA للويب لأن موافقة Android على VPN لم تعد متاحة.</string>
     <string name="capability_alert_vpn_degraded_title">تحتاج تصفية VPN إلى انتباه</string>
     <string name="capability_alert_vpn_degraded_body">لم يعد لدى PCA دليل على أن VPN لتصفية الويب، الذي وافق عليه المستخدم، يفرض الحماية.</string>
+    <string name="capability_alert_clock_rollback_title">تم إرجاع ساعة الجهاز إلى الوراء</string>
+    <string name="capability_alert_clock_rollback_body">تحرّكت ساعة هذا الجهاز إلى الوراء. الحدود الزمنية لا تتأثر (فهي تعتمد على ساعة مقاومة للتلاعب)، لكن هذا سُجِّل كإشارة تلاعب.</string>
 
     <!-- تنبيه جهة الاتصال الموثوقة عند استخدام الاتصال الطارئ (PCA-FR-132, Writer73) -->
     <string name="emergency_dial_alert_notification_channel_name">تنبيهات الوصول الطارئ</string>

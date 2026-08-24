@@ -50,6 +50,8 @@
     <string name="capability_alert_vpn_revoked_body">PCA web filtering stopped because Android VPN consent is no longer available.</string>
     <string name="capability_alert_vpn_degraded_title">VPN filtering needs attention</string>
     <string name="capability_alert_vpn_degraded_body">PCA no longer has evidence that its user-consented web-filtering VPN is enforcing.</string>
+    <string name="capability_alert_clock_rollback_title">Device clock was rolled back</string>
+    <string name="capability_alert_clock_rollback_body">This device clock moved backward. Timed limits are unaffected (they use a tamper-resistant clock), but this was logged as a tamper signal.</string>
 
     <!-- Emergency-dial trusted-contact alert (PCA-FR-132, Writer73) notification strings -->
     <string name="emergency_dial_alert_notification_channel_name">Emergency access alerts</string>

@@ -95,6 +95,7 @@ import org.pca.app.runtime.background.WorkManagerBackgroundExecutionScheduler
 import org.pca.app.runtime.tamper.CameraDegradationMonitor
 import org.pca.app.runtime.tamper.UsageAccessDegradationMonitor
 import org.pca.app.runtime.tamper.DevicePolicyDegradationMonitor
+import org.pca.app.runtime.tamper.WallClockRollbackMonitor
 import org.pca.app.runtime.tamper.VpnDegradationMonitor
 import org.pca.app.security.DeviceKeyPairGenerator
 import org.pca.app.security.NotApprovedDeviceKeyPairGenerator
@@ -284,6 +285,19 @@ class PcaAppGraph private constructor(
         tracker = devicePolicyCapabilitySource,
         deviceIdProvider = { enrolledDeviceIdOrNull() },
         wallClockTimeSource = wallClockTimeSource,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
+    )
+
+    /** PCA-FR-017/PCA-FR-085: the concrete "wall-clock rollback -> local TamperEvent" writer
+     * PCA-FR-017's own doc comment flags as missing -- see [WallClockRollbackMonitor]'s own doc
+     * comment. The persisted high-water-mark lives in its own EncryptedSharedPreferences file,
+     * same discipline as every other [org.pca.app.foundation.PersistentStateStore] binding in
+     * this graph. */
+    val wallClockRollbackMonitor = WallClockRollbackMonitor(
+        wallClockTimeSource = wallClockTimeSource,
+        stateStore = EncryptedSharedPreferencesStateStore(context.applicationContext, "pca_tamper_wallclock"),
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
         tamperEventRepository = persistence.tamperEventRepository,
         notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
     )
@@ -799,6 +813,7 @@ class PcaAppGraph private constructor(
                 runCatching { devicePolicyDegradationMonitor.checkAndHandle() }
                 runCatching { vpnDegradationMonitor.checkAndHandle() }
                 runCatching { cameraDegradationMonitor.checkAndHandle() }
+                runCatching { wallClockRollbackMonitor.checkAndHandle() }
             },
         )
     }

@@ -27,6 +27,8 @@ class CapabilityTamperAlertNotificationDelivery(private val context: Context) {
                 R.string.capability_alert_vpn_revoked_title to R.string.capability_alert_vpn_revoked_body
             CONDITION_VPN_CONNECTION_DEGRADED ->
                 R.string.capability_alert_vpn_degraded_title to R.string.capability_alert_vpn_degraded_body
+            CONDITION_CLOCK_ROLLBACK ->
+                R.string.capability_alert_clock_rollback_title to R.string.capability_alert_clock_rollback_body
             else -> return false
         }
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
@@ -61,6 +63,10 @@ class CapabilityTamperAlertNotificationDelivery(private val context: Context) {
         private const val CONDITION_DEVICE_POLICY_UNAVAILABLE = "DEVICE_POLICY_UNAVAILABLE"
         private const val CONDITION_VPN_CONSENT_REVOKED = "VPN_CONSENT_REVOKED"
         private const val CONDITION_VPN_CONNECTION_DEGRADED = "VPN_CONNECTION_DEGRADED"
+        // Same literal value as WallClockRollbackMonitor.CONDITION_CLOCK_ROLLBACK -- not a
+        // direct reference, matching this class's existing pattern of not depending on the
+        // runtime.tamper package for its other conditions either.
+        private const val CONDITION_CLOCK_ROLLBACK = "WALL_CLOCK_ROLLBACK_DETECTED"
         private const val CHANNEL_ID = "capability_tamper_alerts"
         private const val NOTIFICATION_ID = 6_201
     }
