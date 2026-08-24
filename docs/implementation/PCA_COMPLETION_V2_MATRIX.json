@@ -119,18 +119,28 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/retention/deleteNow.ts",
         "backend/src/retention/DeleteNowLedger.ts, InMemoryDeleteNowLedger.ts",
-        "backend/src/http/routes/retentionRoutes.ts (idempotent delete-now intake + audit)"
+        "backend/src/http/routes/retentionRoutes.ts (idempotent delete-now intake + audit)",
+        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt",
+        "backend/src/retention/deleteNow.ts",
+        "backend/src/retention/DeleteNowLedger.ts",
+        "backend/src/retention/InMemoryDeleteNowLedger.ts",
+        "backend/src/http/routes/retentionRoutes.ts"
       ],
       "testEvidence": [
         "backend/test/retention/deleteNow.test.mjs",
+        "backend/test/retention/retentionRoutes.test.mjs",
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt",
+        "android/app/src/test/java/org/pca/app/feature/settings/data/DeleteNowUseCaseTest.kt",
         "backend/test/retention/retentionRoutes.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Backend correctly implements only the request/idempotency/audit half; execution is device-local (AUDIT-B/AUDIT-C). Runtime reachability: Delete-now intake/idempotency/audit route is registered and reachable; the actual cryptographic+storage deletion executes device-side by design (backend holds no plaintext to delete)."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): the on-device half confirmed real; the backend-cached-ciphertext half is honestly currently inapplicable rather than closed, consistent with the PRODUCTION_CRYPTO_SUITE reasoning used elsewhere in this ledger; reclassified from a stale PARTIAL note with a blank externalGate."
     },
     {
       "requirementId": "PCA-DATA-002",
@@ -224,17 +234,22 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/retention/deletionStateMachine.ts",
+        "backend/src/retention/engine.ts",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "backend/src/retention/types.ts",
         "backend/src/retention/engine.ts"
       ],
       "testEvidence": [
         "backend/test/retention/deletionStateMachine.test.mjs",
+        "backend/test/retention/engine.test.mjs",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
         "backend/test/retention/engine.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Actual deletion-job scope enforcement happens on-device; backend role is limited to validation logic. Runtime reachability: Second-audit finding (Writer67, commit 38228e5 \"runtime-validate entityClass at the HTTP delete-now boundary\"): backend/src/http/routes/retentionRoutes.ts now imports and calls isRetentionEntityClass at the HTTP intake boundary, closing a real input-validation gap beyond the prior audit's note. Full on-device enforcement remains device-local by design (unchanged from first audit)."
+      "notes": "P23-Writer15B (2026-08-24): backfilled with real cross-platform evidence; reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-DATA-021",
@@ -262,17 +277,24 @@
         "PCA-12",
         "PCA-11"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/familyenvelope/policy.ts",
-        "backend/src/retention/policy.ts (validateRetentionPolicy rejects out-of-bounds location retention)"
+        "backend/src/retention/policy.ts (validateRetentionPolicy rejects out-of-bounds location retention)",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionCutoffCalculator.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/AuditRecordExportService.kt",
+        "android/app/src/main/java/org/pca/app/persistence/export/LocalRoomFamilyExportDataSource.kt"
       ],
       "testEvidence": [
         "backend/test/retention/*.test.mjs",
-        "backend/test/familyenvelope/policy.test.mjs"
+        "backend/test/familyenvelope/policy.test.mjs",
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionCutoffCalculatorTest.kt"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Device-side rejection of an out-of-bounds signed policy envelope is the requirement's primary locus; backend contributes server-side validation only. Runtime reachability: Server-side policy validation is reachable via retentionRoutes.ts; the requirement's literal enforcement point (\"child device MUST reject\") is on-device."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): the pure rejection function confirmed real, tested, and reused at every current call site; flagging that the specific \"signed envelope intake\" call site (as opposed to deletion-cycle-time enforcement) was not independently located and may warrant a follow-up check."
     },
     {
       "requirementId": "PCA-DATA-023",
@@ -1520,15 +1542,21 @@
       "phase": [
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitor.kt (new: transition-debounced REVOKED/DEGRADED handler) wired in PcaAppGraph.kt:167,173 to org/pca/app/platform/UsageAccessAlertNotificationDelivery.kt (real notification delivery, not the wellbeing pipeline this audit's predecessor flagged as the only wired mechanism)"
+        "android/app/src/main/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitor.kt (new: transition-debounced REVOKED/DEGRADED handler) wired in PcaAppGraph.kt:167,173 to org/pca/app/platform/UsageAccessAlertNotificationDelivery.kt (real notification delivery, not the wellbeing pipeline this audit's predecessor flagged as the only wired mechanism)",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitor.kt",
+        "android/app/src/main/java/org/pca/app/platform/UsageAccessAlertNotificationDelivery.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt"
       ],
       "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitorTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitorTest.kt"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED since first audit: was PARTIAL (\"no confirmed parent-notification-on-degradation call path... only wellbeing pipeline exists\"). Writer68 built a dedicated UsageAccessAlertNotificationDelivery this round, closing the gap the first audit identified. Still local-device-only; cross-device delivery to the parent's own device depends on the crypto-gated sync outbox. Runtime reachability: GENUINELY WIRED into both the in-process poll loop and the WorkManager safety-net job via PcaAppGraph.runUsageLocationIngestionCycle()"
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): externalGate populated with PRODUCTION_CRYPTO_SUITE (previously blank); local half confirmed genuinely closed, cross-device half confirmed genuinely external."
     },
     {
       "requirementId": "PCA-FR-082",
@@ -1537,11 +1565,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt (interface only queries state)"
+        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt (interface only queries state)",
+        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/StandardDevicePolicyCapabilitySource.kt",
+        "android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt"
       ],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: no DeviceAdminReceiver class exists anywhere in the app, none registered in AndroidManifest.xml -- vacuously unenforced because Protected Mode does not exist yet."
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/ProtectedModeProvisioningGateTest.kt",
+        "android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt"
+      ],
+      "externalGate": [
+        "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL (not upgraded) because SOURCE_COMPLETE_OWNER_DECISION_GATE is the existing, distinct sourceSolvableClass bucket already used for this exact pattern (see PCA-ADD-ENR-009); externalGate populated with the same gate string already used there rather than a new one. This is a genuine, still-open product/architecture decision (which Android provisioning path -- QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only -- is production-authorized) that blocks further source work, not a repository-solvable gap."
     },
     {
       "requirementId": "PCA-FR-083",
@@ -1592,17 +1629,28 @@
       "phase": [
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
         "backend/src/tamper/TamperEventLedger.ts",
         "backend/src/tamper/TamperStateEngine.ts",
-        "backend/src/tamper/policy.ts"
+        "backend/src/tamper/policy.ts",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/WallClockRollbackMonitor.kt",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/DevicePolicyDegradationMonitor.kt",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitor.kt",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/CameraDegradationMonitor.kt",
+        "android/app/src/main/java/org/pca/app/runtime/tamper/VpnDegradationMonitor.kt",
+        "android/app/src/main/java/org/pca/app/persistence/repository/TamperEventRepository.kt"
       ],
       "testEvidence": [
-        "backend/test/tamper/TamperStateEngine.test.mjs"
+        "backend/test/tamper/TamperStateEngine.test.mjs",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/WallClockRollbackMonitorTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/UsageAccessDegradationMonitorTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/CapabilityDegradationMonitorTest.kt"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). On-device detection (permission loss, clock rollback, Accessibility disabled) is AUDIT-B/AUDIT-C territory; backend owns ledger/state/notification-trigger side only. Runtime reachability: Tamper ledger/state engine wired via familyrbac policy resolution (EPOCH_STALE derivation) and reachable from sync path; on-device tamper-signal detection is client-side."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): closed by commit 0badc04 (WallClockRollbackMonitor); externalGate populated with PRODUCTION_CRYPTO_SUITE (previously blank), consistent with PCA-FR-081's own gate, which this row structurally depends on."
     },
     {
       "requirementId": "PCA-FR-090",
@@ -1834,15 +1882,23 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web/src/i18n/locales/ar.json (480 flattened keys) | parent-web/src/i18n/index.ts applyDocumentDirection() | parent-web/src/styles/global.css:134 mirrored-nav rule | platform-admin-web equivalent i18n files -- unchanged from first audit, PLUS this round: parent-web/tests/i18n/rtl.test.tsx (NEW, real test) asserts document.documentElement dir='rtl'/lang='ar' after i18n.changeLanguage('ar') and that Dashboard actually renders the Arabic string لوحة التحكم -- plus parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx, freeAccessRtl.test.tsx, settingsRtl.test.tsx, subscriptionRtl.test.tsx (4 more RTL-specific test files, all new this round, each rendering a real page in the ar/rtl configuration) and platform-admin-web/tests/i18n/rtl.test.tsx (NEW, real Dashboard render with Arabic direction and label assertion)."
+        "parent-web/src/i18n/locales/ar.json (480 flattened keys) | parent-web/src/i18n/index.ts applyDocumentDirection() | parent-web/src/styles/global.css:134 mirrored-nav rule | platform-admin-web equivalent i18n files -- unchanged from first audit, PLUS this round: parent-web/tests/i18n/rtl.test.tsx (NEW, real test) asserts document.documentElement dir='rtl'/lang='ar' after i18n.changeLanguage('ar') and that Dashboard actually renders the Arabic string لوحة التحكم -- plus parent-web/tests/i18n/deviceEnrollmentRtl.test.tsx, freeAccessRtl.test.tsx, settingsRtl.test.tsx, subscriptionRtl.test.tsx (4 more RTL-specific test files, all new this round, each rendering a real page in the ar/rtl configuration) and platform-admin-web/tests/i18n/rtl.test.tsx (NEW, real Dashboard render with Arabic direction and label assertion).",
+        "platform-admin-web/tests/i18n/rtl.test.tsx",
+        "ios/PCA/Localizable.xcstrings",
+        "ios/PCA/Localization/PCALocalizedStrings.swift",
+        "ios/PCA/ContentView.swift",
+        "ios/PCA/Protection/AboutProtectionView.swift",
+        "ios/PCA/Enrollment/ChildEnrollmentCoordinator.swift"
       ],
       "testEvidence": [
-        "parent-web/tests/i18n/rtl.test.tsx + 4 sibling RTL test files (5 total) -- genuinely render pages with language='ar'/dir='rtl' and assert both the DOM attribute flip and real Arabic text content; platform-admin-web/tests/i18n/rtl.test.tsx adds the same real Dashboard coverage for the operator console."
+        "parent-web/tests/i18n/rtl.test.tsx + 4 sibling RTL test files (5 total) -- genuinely render pages with language='ar'/dir='rtl' and assert both the DOM attribute flip and real Arabic text content; platform-admin-web/tests/i18n/rtl.test.tsx adds the same real Dashboard coverage for the operator console.",
+        "platform-admin-web/tests/i18n/rtl.test.tsx",
+        "ios/PCATests/LocalizationKeyParityTests.swift"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). RTL coverage now exercises both parent-web and platform-admin-web real pages. Runtime reachability: confirmed real: the platform-admin test renders Dashboard through I18nextProvider, AuthProvider, StepUpProvider, and the production i18n instance after i18n.changeLanguage('ar') + applyDocumentDirection('ar'), asserting both DOM direction and Arabic text."
+      "notes": "P23-Writer15B (2026-08-24, commit 85b2f4a): closed by building real, minimal iOS EN/AR localization infrastructure after confirming the actual scope was small (3 screens, 35 strings) rather than assumed; reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-FR-112",
@@ -2391,11 +2447,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt + ProtectedModeProvisioningGate.kt"
+        "android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt + ProtectedModeProvisioningGate.kt",
+        "android/app/src/main/java/org/pca/app/feature/removaldecision/RemovalDecisionAuditRecorder.kt",
+        "android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt",
+        "backend/src/familyrbac/RealProtectiveAuthorityResolver.ts"
       ],
-      "testEvidence": [],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit: still no Device Owner authority exists to relinquish."
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionCoordinatorTest.kt",
+        "backend/test/familyrbac/RealProtectiveAuthorityResolver.test.mjs"
+      ],
+      "externalGate": [
+        "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)",
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL with sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE, matching PCA-FR-082 and the PCA-ADD-ENR-009 precedent; two externalGate entries reflect the primary owner-decision block plus a subordinate crypto-suite dependency (precedent for multi-gate rows: PCA-NFR-034)."
     },
     {
       "requirementId": "PCA-FR-146",
@@ -2441,16 +2506,20 @@
       "phase": [
         "PCA-15"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "ios/PCA/Protection/AntiRemovalClaimCopy.swift (real, scoped anti-removal copy: statusHeadline strings incl. \"Not yet active\"/protected-state variants, explicitly avoids unscoped \"cannot be removed\" claims per doc 07 Section 14 discipline) | ios/PCA/Protection/AboutProtectionView.swift (renders the copy, reachable from ContentView.swift via a real NavigationLink at ContentView.swift:27-33) | ios/PCAShieldAction/ShieldActionExtension.swift (pre-existing anti-bypass invariant comments consistent with this copy's scope)"
+        "ios/PCA/Protection/AntiRemovalClaimCopy.swift (real, scoped anti-removal copy: statusHeadline strings incl. \"Not yet active\"/protected-state variants, explicitly avoids unscoped \"cannot be removed\" claims per doc 07 Section 14 discipline) | ios/PCA/Protection/AboutProtectionView.swift (renders the copy, reachable from ContentView.swift via a real NavigationLink at ContentView.swift:27-33) | ios/PCAShieldAction/ShieldActionExtension.swift (pre-existing anti-bypass invariant comments consistent with this copy's scope)",
+        "ios/PCA/Protection/AntiRemovalClaimCopy.swift",
+        "ios/PCA/Protection/AboutProtectionView.swift",
+        "ios/PCA/ContentView.swift"
       ],
       "testEvidence": [
         "ios/PCATests (AboutProtectionView/AntiRemovalClaimCopy covered indirectly via ChildAuthorizationCenterTests fixtures",
-        "no dedicated snapshot test for copy string content found)"
+        "no dedicated snapshot test for copy string content found)",
+        "ios/PCATests/AntiRemovalClaimCopyTests.swift"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Round-7 (Writer71) closes the prior NOT_STARTED finding: real, scoped anti-removal copy now exists and is genuinely reachable, not just present in code. Remaining gap: still no marketing/website copy outside the app itself, and no automated test asserts the copy's exact wording stays within the addendum's scoped-claim discipline (a future wording edit could silently drift into an unscoped claim with no test catching it). Runtime reachability: CONFIRMED REACHABLE this round: ContentView.swift's NavigationLink -> AboutProtectionView(authorization:) is a real, non-conditional navigation link in the only real SwiftUI screen in the app (verified by direct read, not just presence of the file)."
+      "notes": "P23-Writer15B (2026-08-24): confirmed real and reachable by direct source read, not accepted from a prior report alone; reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-IOS-003",
@@ -2885,15 +2954,19 @@
       "phase": [
         "PCA-5"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/VpnDnsRequestHandler.kt",
         "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/VpnDnsRequestHandler.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/webprotection/vpn/VpnDnsRequestHandlerLatencyBenchmarkTest.kt (new)"
+        "android/app/src/test/java/org/pca/app/feature/webprotection/vpn/VpnDnsRequestHandlerLatencyBenchmarkTest.kt (new)",
+        "android/app/src/test/java/org/pca/app/feature/webprotection/vpn/VpnDnsRequestHandlerLatencyBenchmarkTest.kt"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). CHANGED (new evidence, same verdict-leaning-stronger): first audit found no measured-latency benchmark at all; a dedicated VpnDnsRequestHandlerLatencyBenchmarkTest.kt now exists this round, though it is a JVM-side benchmark, not a real-device/network latency measurement against the doc's <20ms/250ms budget claims, so still not full closure."
+      "externalGate": [
+        "ANDROID_REAL_DEVICE_UAT"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): gate choice cross-checked directly against this repository's own ANDROID_REAL_DEVICE_UAT registry entry, an exact match for this row's remaining gap; reclassified from a stale note with a blank externalGate."
     },
     {
       "requirementId": "PCA-NFR-033",
@@ -2966,16 +3039,21 @@
       "phase": [
         "PCA-16"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "parent-web: parent-web/tests/accessibility/axe.test.tsx now imports and renders 23 distinct page components (up from 13), confirmed by direct file read -- cross-referenced against parent-web/src/App.tsx's real route list, all 23 imports correspond to genuinely routed pages. platform-admin-web/tests/accessibility/axe.test.tsx is BRAND NEW this round (previously zero axe test files existed): imports and renders all 19 real routed page components in platform-admin-web/src/App.tsx (Dashboard, AccountsList, AccountDetail, Entitlements x2 variants, EntitlementRequests, ComplimentaryCapacity, FreeAccessPolicy, 5 billing pages, 3 settlement pages, AdminUsers, Audit, Settings) plus NotPermitted and NotFound -- 21 test cases total, verified 1:1 against every non-Login route in App.tsx."
+        "parent-web: parent-web/tests/accessibility/axe.test.tsx now imports and renders 23 distinct page components (up from 13), confirmed by direct file read -- cross-referenced against parent-web/src/App.tsx's real route list, all 23 imports correspond to genuinely routed pages. platform-admin-web/tests/accessibility/axe.test.tsx is BRAND NEW this round (previously zero axe test files existed): imports and renders all 19 real routed page components in platform-admin-web/src/App.tsx (Dashboard, AccountsList, AccountDetail, Entitlements x2 variants, EntitlementRequests, ComplimentaryCapacity, FreeAccessPolicy, 5 billing pages, 3 settlement pages, AdminUsers, Audit, Settings) plus NotPermitted and NotFound -- 21 test cases total, verified 1:1 against every non-Login route in App.tsx.",
+        "parent-web/tests/accessibility/axe.test.tsx",
+        "ios/PCA/Localizable.xcstrings",
+        "ios/PCA/Localization/PCALocalizedStrings.swift"
       ],
       "testEvidence": [
         "parent-web/tests/accessibility/axe.test.tsx (23/39 parent-web pages, ~59%, up from 13/39)",
-        "platform-admin-web/tests/accessibility/axe.test.tsx (21 of platform-admin-web's ~21 real routed surfaces -- effectively full coverage, up from 0)"
+        "platform-admin-web/tests/accessibility/axe.test.tsx (21 of platform-admin-web's ~21 real routed surfaces -- effectively full coverage, up from 0)",
+        "parent-web/tests/accessibility/axe.test.tsx",
+        "ios/PCATests/LocalizationKeyParityTests.swift"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Remaining gap, smaller than before: parent-web still has ~16 of 39 pages never axe-tested (spot-checked 4 of them this round -- auth/Login, auth/Register, Settings, children/AppsPage -- all have proper <label htmlFor> associations and aria-label usage on inputs; no obvious defect found on manual read, but this is not a substitute for a real automated test). platform-admin-web's axe suite is new and effectively complete for its own route surface, closing the prior 'zero coverage' finding entirely. Runtime reachability: Both test files use full provider stacks (I18nextProvider/MemoryRouter/AuthProvider/etc.) and mock only the network boundary (fetch), not the component tree -- genuine rendering of real page components, not shallow stubs. Confirmed platform-admin-web's route-to-test mapping directly against App.tsx's route table this round."
+      "notes": "P23-Writer15B (2026-08-24): closed by commit 2fcac59 (axe coverage for PermissionsPolicy) plus commit 85b2f4a (iOS localization); reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-NFR-042",
@@ -3200,15 +3278,21 @@
         "PCA-17",
         "PCA-10"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
-        "backend/src/http/routes/retentionRoutes.ts (delete-now / export intake without contacting support)"
+        "backend/src/http/routes/retentionRoutes.ts (delete-now / export intake without contacting support)",
+        "backend/src/http/routes/retentionRoutes.ts",
+        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt"
       ],
       "testEvidence": [
-        "backend/test/retention/retentionRoutes.test.mjs"
+        "backend/test/retention/retentionRoutes.test.mjs",
+        "backend/test/retention/retentionRoutes.test.mjs",
+        "android/app/src/test/java/org/pca/app/persistence/DeleteNowCoordinatorTest.kt"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Self-service intake route reachable; actual deletion execution device-side as previously noted (PCA-DATA-001)."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): evidence and gate intentionally mirror PCA-DATA-001, which this requirement restates from a different framing; reclassified from a stale PARTIAL note with a blank externalGate."
     },
     {
       "requirementId": "PCA-NFR-063",
@@ -3405,17 +3489,24 @@
       "phase": [
         "PCA-12"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
         "backend/src/http/routes/retentionRoutes.ts (route comment: \"NONE of these routes execute a real data purge/export against family activity data...device-local/E2EE, never held by this backend\")",
-        "backend/src/retention/engine.ts, calendar.ts (cutoff-computation library used for policy validation/preview only)"
+        "backend/src/retention/engine.ts, calendar.ts (cutoff-computation library used for policy validation/preview only)",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "backend/src/http/routes/retentionRoutes.ts",
+        "backend/src/retention/engine.ts",
+        "backend/src/retention/calendar.ts"
       ],
       "testEvidence": [
+        "backend/test/retention/engine.test.mjs",
+        "backend/test/retention/retentionRoutes.test.mjs",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
         "backend/test/retention/engine.test.mjs",
         "backend/test/retention/retentionRoutes.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Requirement is satisfied by construction on the backend side (no enforcement capability exists here, which is correct); the enforcing half is device-local and owned by AUDIT-B/AUDIT-C. Runtime reachability: Backend correctly refrains from being an enforcement point (by design, matching the requirement); retentionRoutes.ts is registered and reachable for the intake/validation/audit half. Actual on-device enforcement is out of backend scope by design."
+      "notes": "P23-Writer15B (2026-08-24): reclassified once RetentionEngine.kt was confirmed a real, scheduled production caller rather than merely present-but-unwired code; was mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-SEC-015",
@@ -4117,15 +4208,27 @@
         "PCA-11",
         "PCA-13"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
-        "backend/src/invitation/InvitationService.ts (loadRedeemable/findByToken reject with fixed generic InvitationError codes) | backend/test/db/authz.mysql.test.mjs:59 (wrong-family IDOR check against real MySQL)"
+        "backend/src/invitation/InvitationService.ts (loadRedeemable/findByToken reject with fixed generic InvitationError codes) | backend/test/db/authz.mysql.test.mjs:59 (wrong-family IDOR check against real MySQL)",
+        "backend/src/familyrbac/RemovalDecisionAuthority.ts",
+        "backend/src/familyrbac/UnavailableRemovalDecisionSigningKeyResolver.ts",
+        "backend/src/http/routes/removalDecisionRoutes.ts",
+        "backend/src/main.ts",
+        "backend/src/http/buildServer.ts",
+        "backend/src/invitation/InvitationService.ts"
       ],
       "testEvidence": [
+        "backend/test/db/authz.mysql.test.mjs",
+        "backend/test/familyrbac/RemovalDecisionAuthority.test.mjs",
+        "backend/test/familyrbac/removalDecisionRoutes.wiring.test.mjs",
+        "backend/test/invitation/service.test.mjs",
         "backend/test/db/authz.mysql.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Covers invitation-side reuse/expiry/revocation/wrong-family without data leaks. Replayed signed decisions and wrong-parent authorization for removal decisions cannot be evaluated because that subsystem (ENR-016/017/018) does not exist. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): reclassified from a stale PARTIAL note (mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate) after independent verification found the evidenced clause depends on the same production-blocked signed-decision path as PCA-ADD-ENR-018/020."
     },
     {
       "requirementId": "PCA-ADD-ENR-025",
@@ -4589,15 +4692,23 @@
       "phase": [
         "PCA-PA-2"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/entitlements/slots/MySqlSlotReservationRepository.ts"
+        "backend/src/entitlements/slots/MySqlSlotReservationRepository.ts",
+        "backend/src/entitlements/slots/SlotReservationService.ts",
+        "backend/src/entitlements/slots/MySqlSlotReservationRepository.ts",
+        "backend/src/invitation/InvitationService.ts",
+        "backend/src/enrollment/EnrollmentCoordinator.ts",
+        "backend/src/http/routes/invitationRoutes.ts",
+        "backend/src/main.ts"
       ],
       "testEvidence": [
-        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs"
+        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs",
+        "backend/test/db/platformEntitlementsSlots.mysql.test.mjs",
+        "backend/test/invitation/service.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). consumeByInvitationId defined but no real PAIRED->ACTIVE device-activation event wired anywhere; code's own comments admit this. Runtime reachability: Partially wired; see gap."
+      "notes": "P23-Writer15B (2026-08-24): closed by commit d0b7029 (reject over-limit device enrollment with an actionable code, not a raw 500); reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-ADD-PA-028",
@@ -5241,18 +5352,27 @@
       "phase": [
         "PCA-BILL-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/billing/priceBook.ts"
+        "backend/src/billing/priceBook.ts",
+        "backend/src/billing/priceBook.ts",
+        "backend/src/billing/settlement/MySqlSettlementRepository.ts",
+        "backend/src/platformadmin/settlement/PlatformAdminSettlementService.ts",
+        "backend/src/http/routes/platformadmin/settlementRoutes.ts",
+        "platform-admin-web/src/pages/Dashboard.tsx"
       ],
       "testEvidence": [
         "backend/test/db/billingCore.mysql.test.mjs (explicit per-market/currency PriceBook rows, currency scope, and no fabricated fallback pricing)",
         "backend/test/db/billingCorePriceBookConcurrency.mysql.test.mjs (concurrent publication and version uniqueness for one commercial key)",
         "backend/test/entitlements/priceBookQuotePort.test.mjs (active-row quote resolution and REQUIRES_CUSTOM_QUOTE when no row exists)",
-        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs (recorded-rate-only USD rollup and write-once normalization boundary)"
+        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs (recorded-rate-only USD rollup and write-once normalization boundary)",
+        "backend/test/db/billingCore.mysql.test.mjs",
+        "backend/test/db/billingCorePriceBookConcurrency.mysql.test.mjs",
+        "backend/test/entitlements/priceBookQuotePort.test.mjs",
+        "backend/test/db/dashboardSettlementMetrics.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PriceBook stores explicit market/currency amounts without deriving SAR or YER from USD, and dashboard USD normalization uses an explicitly recorded, immutable rate with no live-FX fallback. Focused MySQL and quote-port tests cover those boundaries. This remains PARTIAL because the operator-facing cross-currency presentation is not yet fully surfaced across every dashboard view; no live-provider conversion or production settlement capability is claimed."
+      "notes": "P23-Writer15B (2026-08-24): closed by commit b439d94 (render the USD-normalized settlement rollup on the dashboard); reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
     },
     {
       "requirementId": "PCA-ADD-BILL-021",
@@ -5734,16 +5854,22 @@
       "phase": [
         "PCA-PA-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
-        "backend/src/billing/provider/providerRegistry.ts | backend/src/billing/provider/secretResolver.ts"
+        "backend/src/billing/provider/providerRegistry.ts | backend/src/billing/provider/secretResolver.ts",
+        "backend/src/billing/provider/providerRegistry.ts",
+        "backend/src/billing/provider/secretResolver.ts"
       ],
       "testEvidence": [
         "backend/test/billing/providerRegistry.test.mjs (unknown-provider failure, duplicate registration, empty production registry, and exact-name production activation kill-switch)",
-        "backend/test/billing/sandboxProvider.test.mjs (sandbox-only construction and secret-reference isolation)"
+        "backend/test/billing/sandboxProvider.test.mjs (sandbox-only construction and secret-reference isolation)",
+        "backend/test/billing/providerRegistry.test.mjs",
+        "backend/test/billing/sandboxProvider.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "The repository has no real production payment-provider adapter yet, so the external PAYMENT_PROVIDER_SELECTION gate remains open. The provider registry nevertheless fails closed in production, registers only the test/development sandbox, resolves secrets by opaque reference, and enforces an exact-name production activation kill-switch for any future adapter; focused unit tests cover those boundaries. Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "externalGate": [
+        "PAYMENT_PROVIDER_SELECTION"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): confirmed the registry fails closed exactly as required, with the gate this row's own code comment already names; reclassified from a stale note with a blank externalGate."
     },
     {
       "requirementId": "PCA-ADD-PA-048",
@@ -5892,15 +6018,23 @@
       "phase": [
         "PCA-AUTH-SESSION-1"
       ],
-      "status": "PARTIAL",
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
       "sourceEvidence": [
-        "backend/src/parentaccount/genesisDeviceSigner.ts | backend/src/parentaccount/ParentAccountService.ts"
+        "backend/src/parentaccount/genesisDeviceSigner.ts | backend/src/parentaccount/ParentAccountService.ts",
+        "backend/src/parentaccount/genesisDeviceSigner.ts",
+        "backend/src/parentaccount/ParentAccountService.ts",
+        "backend/src/familycommercial/authority/GenesisAnchorStore.ts",
+        "backend/src/familycommercial/authority/FamilyOwnerAttestationChainEngine.ts",
+        "backend/src/familycommercial/authority/MySqlGenesisAnchorStore.ts"
       ],
       "testEvidence": [
+        "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs",
         "backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs"
       ],
-      "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Genesis trigger wired and tested via an ephemeral browser-signed keypair bridging the no-device gap (flagged INTERFACE_CHANGE_REQUEST); production remains fail-closed (RejectingDeviceSignatureVerifier, PCA-DEC-020 pending human security review) exactly like every other crypto-gated surface -- source Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "externalGate": [
+        "PRODUCTION_CRYPTO_SUITE"
+      ],
+      "notes": "P23-Writer15B (2026-08-24): confirmed the fail-closed production posture and shared-gate classification by direct read of main.ts; confirmed PCA-DEC-026 already resolved the open architecture question; reclassified from a stale note with a blank externalGate."
     },
     {
       "requirementId": "PCA-ADD-IDENT-010",
