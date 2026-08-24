@@ -211,7 +211,8 @@ test('invitation integration: creating an invitation reserves a slot first; no i
 
   await assert.rejects(
     () => invitationService.createInvitation({ familyId, platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
-    (error) => error instanceof SlotReservationError && error.code === 'NO_AVAILABLE_SLOT',
+    (error) => error instanceof InvitationError && error.code === 'MANAGED_DEVICE_LIMIT_REACHED',
+    'InvitationService.createInvitation translates the raw SlotReservationError into an actionable InvitationError (see invitationRoutes.ts, which maps this to HTTP 403) rather than leaking the lower-level slot-reservation error type',
   );
 
   const invitations = await invitationRepository.listForFamily(familyId);
