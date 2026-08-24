@@ -6,10 +6,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.pca.app.feature.installapproval.InstallApprovalController
 import org.pca.app.feature.breakshield.BreakShieldTrigger
 import org.pca.app.feature.breakshield.ui.BreakShieldActivity
@@ -854,7 +856,18 @@ class PcaAppGraph private constructor(
 
     /** Test/teardown hook only -- the production [PcaApplication] never calls this, since the
      * graph is meant to live for the whole process lifetime (Section 2: composition, not a
-     * per-screen object). */
+     * per-screen object).
+     *
+     * [coroutineScope] runs on [kotlinx.coroutines.Dispatchers.Default], independent of any test's
+     * own `runTest`/`runBlocking` scope. [kotlinx.coroutines.CoroutineScope.cancel] only REQUESTS
+     * cancellation -- it does not wait for cancelled children to finish running their cancellation
+     * cleanup (e.g. [startCameraForegroundEligibilityTracking]'s `screenStateObserver.observe()`
+     * collector, whose underlying `callbackFlow.awaitClose { context.unregisterReceiver(...) }`
+     * needs a live Robolectric environment to run safely). Without joining afterward, that cleanup
+     * can execute on a background thread AFTER the test method has already returned and Robolectric
+     * has torn down `ActivityThread` for the NEXT test, throwing an uncaught NPE that gets blamed on
+     * whichever unrelated test happens to be running when the background thread gets scheduled --
+     * exactly the `UncaughtExceptionsBeforeTest` failure class this join prevents. */
     fun shutdownForTest() {
         runtime.stop()
         hardwareProximitySource.stop()
@@ -862,6 +875,7 @@ class PcaAppGraph private constructor(
         eyeRestShieldTrigger.stop()
         breakShieldTrigger.stop()
         coroutineScope.cancel()
+        runBlocking { coroutineScope.coroutineContext[Job]?.join() }
     }
 
     companion object {
