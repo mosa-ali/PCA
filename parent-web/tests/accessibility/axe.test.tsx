@@ -19,6 +19,7 @@ import RolesMatrix from '../../src/pages/family/RolesMatrix';
 import DeleteNow from '../../src/pages/privacy/DeleteNow';
 import Retention from '../../src/pages/privacy/Retention';
 import Transparency from '../../src/pages/privacy/Transparency';
+import PermissionsPolicy from '../../src/pages/privacy/PermissionsPolicy';
 import Audit from '../../src/pages/security/Audit';
 import ProtectionStatus from '../../src/pages/security/ProtectionStatus';
 import WellbeingAdmin from '../../src/pages/wellbeing/WellbeingAdmin';
@@ -170,6 +171,12 @@ describe('accessibility spot checks (axe)', () => {
 
   it('Transparency ("What parents can see") page has no critical axe violations', async () => {
     const { container } = renderWithProviders(<Transparency />);
+    const results = await axe(container, AXE_OPTIONS);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('PermissionsPolicy page has no critical axe violations', async () => {
+    const { container } = renderWithProviders(<PermissionsPolicy />);
     const results = await axe(container, AXE_OPTIONS);
     expect(results).toHaveNoViolations();
   });
