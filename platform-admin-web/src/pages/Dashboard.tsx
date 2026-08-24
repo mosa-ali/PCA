@@ -3,8 +3,24 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../state/AuthContext';
 import { platformAdminApi, PlatformAdminApiError } from '../api/platformAdminApiClient';
 import type { PlatformDashboardSnapshot } from '../domain/dashboard';
+import { isSettlementPermitted } from '../domain/settlement';
+import { formatMoney } from '../money/money';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
+
+/**
+ * PCA-ADD-BILL-020: the platform dashboard's single, explicitly-recorded-
+ * rate USD-normalized cross-batch rollup. Fetched independently of
+ * PlatformDashboardSnapshot (its own /platform-admin/settlement/usd-rollup
+ * endpoint, backend/src/http/routes/platformadmin/settlementRoutes.ts) so a
+ * failure here never blocks the rest of the dashboard from rendering.
+ */
+interface SettlementUsdRollupDto {
+  totalNetUsdMinor: string;
+  totalReceivedUsdMinor: string;
+  includedBatchCount: number;
+  excludedForMissingRateBatchCount: number;
+}
 
 function GroupedBadges({ byKey }: { byKey: Record<string, number> | null }) {
   const { t } = useTranslation();
@@ -27,6 +43,8 @@ export default function Dashboard() {
   const [snapshot, setSnapshot] = useState<PlatformDashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [usdRollup, setUsdRollup] = useState<SettlementUsdRollupDto | null>(null);
+  const canViewSettlement = isSettlementPermitted(roles, 'VIEW_SETTLEMENT_RECORDS');
 
   const load = () => {
     setLoading(true);
@@ -41,6 +59,21 @@ export default function Dashboard() {
   };
 
   useEffect(load, [t]);
+
+  useEffect(() => {
+    if (!canViewSettlement) {
+      setUsdRollup(null);
+      return;
+    }
+    // Best-effort: a failure here is surfaced as an empty section, never a
+    // page-blocking error -- this rollup is a supplementary reporting view,
+    // not core dashboard data.
+    platformAdminApi
+      .get<SettlementUsdRollupDto>('/platform-admin/settlement/usd-rollup')
+      .then(setUsdRollup)
+      .catch(() => setUsdRollup(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewSettlement]);
 
   return (
     <div className="page">
@@ -186,6 +219,41 @@ export default function Dashboard() {
               <p className="status-unavailable">{t('common.empty')}</p>
             )}
           </section>
+
+          {canViewSettlement && (
+            <section className="card">
+              <h2 className="section-title">{t('dashboard.usdRollupTitle')}</h2>
+              {usdRollup ? (
+                <>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <tbody>
+                        <tr>
+                          <th scope="row">{t('dashboard.usdRollupNet')}</th>
+                          <td>{formatMoney({ amountMinor: usdRollup.totalNetUsdMinor, currencyCode: 'USD' })}</td>
+                        </tr>
+                        <tr>
+                          <th scope="row">{t('dashboard.usdRollupReceived')}</th>
+                          <td>{formatMoney({ amountMinor: usdRollup.totalReceivedUsdMinor, currencyCode: 'USD' })}</td>
+                        </tr>
+                        <tr>
+                          <th scope="row">{t('dashboard.usdRollupIncludedBatches')}</th>
+                          <td>{usdRollup.includedBatchCount}</td>
+                        </tr>
+                        <tr>
+                          <th scope="row">{t('dashboard.usdRollupExcludedBatches')}</th>
+                          <td>{usdRollup.excludedForMissingRateBatchCount}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="status-unavailable">{t('dashboard.usdRollupNote')}</p>
+                </>
+              ) : (
+                <p className="status-unavailable">{t('common.empty')}</p>
+              )}
+            </section>
+          )}
 
           <section className="card">
             <h2 className="section-title">{t('dashboard.serviceHealthTitle')}</h2>
