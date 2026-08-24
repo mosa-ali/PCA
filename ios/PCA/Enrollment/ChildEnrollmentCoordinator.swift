@@ -552,8 +552,12 @@ public struct PCARecoverySecretDisclosureGate {
 #if canImport(SwiftUI)
 /// Reusable iOS child-facing confirmation view. It has no edit controls and
 /// leaves the actual bootstrap/profile persistence to the caller's runtime
-/// controller. English copy is intentionally local and must receive an
-/// Arabic/RTL translation binding before release.
+/// controller. Every string below is resolved through
+/// `PCALocalizedStrings`/`Localizable.xcstrings` (PCA-FR-111 /
+/// PCA-NFR-041): `disclosure`'s own properties stay plain English (they are
+/// the PCA-FR-008 compliance-pinned copy model `EnrollmentProfileTests`
+/// asserts against), and this view is the one place that translates them
+/// for display, keyed by their current English text.
 public struct PCAChildEnrollmentProfileView: View {
     private let disclosure: PCAEnrollmentDisclosure
     private let onConfirm: () -> Void
@@ -566,23 +570,23 @@ public struct PCAChildEnrollmentProfileView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(disclosure.title)
+                Text(PCALocalizedStrings.text(disclosure.title))
                     .font(.title2.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
-                Text(disclosure.summary)
-                Text("Selected age: \(disclosure.selectedAgeLabel)")
-                Text("Starting safety: \(disclosure.startingSafetyLabel)")
-                Text(disclosure.monitoredSummary)
-                Text(disclosure.notMonitoredSummary)
-                Text(disclosure.emergencySummary)
-                Text(disclosure.authorizationSummary)
+                Text(PCALocalizedStrings.text(disclosure.summary))
+                Text(PCALocalizedStrings.format("Selected age: %@", PCALocalizedStrings.text(disclosure.selectedAgeLabel)))
+                Text(PCALocalizedStrings.format("Starting safety: %@", PCALocalizedStrings.text(disclosure.startingSafetyLabel)))
+                Text(PCALocalizedStrings.text(disclosure.monitoredSummary))
+                Text(PCALocalizedStrings.text(disclosure.notMonitoredSummary))
+                Text(PCALocalizedStrings.text(disclosure.emergencySummary))
+                Text(PCALocalizedStrings.text(disclosure.authorizationSummary))
                     .foregroundStyle(.secondary)
-                Button(disclosure.confirmLabel, action: onConfirm)
-                    .accessibilityHint("Confirms the parent-selected settings without changing them")
+                Button(PCALocalizedStrings.text(disclosure.confirmLabel), action: onConfirm)
+                    .accessibilityHint(PCALocalizedStrings.text("Confirms the parent-selected settings without changing them"))
             }
             .padding()
         }
-        .navigationTitle("Enrollment")
+        .navigationTitle(PCALocalizedStrings.text("Enrollment"))
     }
 }
 #endif

@@ -18,19 +18,19 @@ struct ContentView: View {
                     .font(.system(size: 42))
                     .accessibilityHidden(true)
 
-                Text("PCA")
+                Text(PCALocalizedStrings.text("PCA"))
                     .font(.largeTitle.weight(.semibold))
 
-                Text("Native iOS foundation")
+                Text(PCALocalizedStrings.text("Native iOS foundation"))
                     .foregroundStyle(.secondary)
 
                 NavigationLink {
                     AboutProtectionView(authorization: authorization)
                 } label: {
-                    Label("Removal protection", systemImage: "lock.shield")
+                    Label(PCALocalizedStrings.text("Removal protection"), systemImage: "lock.shield")
                 }
                 .padding(.top, 8)
-                .accessibilityHint("Shows what removal protection is currently active on this device and its exact scope")
+                .accessibilityHint(PCALocalizedStrings.text("Shows what removal protection is currently active on this device and its exact scope"))
             }
             .padding()
             .accessibilityElement(children: .contain)

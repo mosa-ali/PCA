@@ -1,0 +1,636 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Active on this device" : {
+      "comment" : "AntiRemovalClaimCopy.approved statusHeadline, shown on the Removal Protection screen",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نشطة على هذا الجهاز"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active on this device"
+          }
+        }
+      }
+    },
+    "Apple approval is needed before safety controls can start." : {
+      "comment" : "PCAEnrollmentDisclosure.authorizationSummary, young-child reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يلزم موافقة Apple قبل أن تبدأ ضوابط الأمان بالعمل."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple approval is needed before safety controls can start."
+          }
+        }
+      }
+    },
+    "Apple authorization is required before iOS protection controls can run." : {
+      "comment" : "PCAEnrollmentDisclosure.authorizationSummary, teen reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يلزم تفويض من Apple قبل أن تعمل ضوابط الحماية في iOS."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple authorization is required before iOS protection controls can run."
+          }
+        }
+      }
+    },
+    "Check your safety settings" : {
+      "comment" : "PCAEnrollmentDisclosure.title, young-child reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحقّق من إعدادات الأمان الخاصة بك"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your safety settings"
+          }
+        }
+      }
+    },
+    "Confirm settings" : {
+      "comment" : "PCAEnrollmentDisclosure.confirmLabel, young-child reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تأكيد الإعدادات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm settings"
+          }
+        }
+      }
+    },
+    "Confirm these settings" : {
+      "comment" : "PCAEnrollmentDisclosure.confirmLabel, teen reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تأكيد هذه الإعدادات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm these settings"
+          }
+        }
+      }
+    },
+    "Confirms the parent-selected settings without changing them" : {
+      "comment" : "PCAChildEnrollmentProfileView confirm button accessibility hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يؤكد الإعدادات التي اختارها ولي الأمر دون تغييرها"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirms the parent-selected settings without changing them"
+          }
+        }
+      }
+    },
+    "Emergency calling and emergency help remain available." : {
+      "comment" : "PCAEnrollmentDisclosure.emergencySummary, identical for every age tier",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبقى المكالمات الطارئة والمساعدة الطارئة متاحة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emergency calling and emergency help remain available."
+          }
+        }
+      }
+    },
+    "Enrollment" : {
+      "comment" : "PCAChildEnrollmentProfileView navigation title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التسجيل"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enrollment"
+          }
+        }
+      }
+    },
+    "Important scope note: %@" : {
+      "comment" : "AboutProtectionView accessibility label prefix for the fixed anti-removal scope qualifier; %@ is the already-localized qualifier text",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملاحظة مهمة حول النطاق: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Important scope note: %@"
+          }
+        }
+      }
+    },
+    "Just turned off" : {
+      "comment" : "AntiRemovalClaimCopy.revoked statusHeadline",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُوقفت للتو"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just turned off"
+          }
+        }
+      }
+    },
+    "Native iOS foundation" : {
+      "comment" : "ContentView subtitle under the PCA app name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأساس الأصلي لنظام iOS"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Native iOS foundation"
+          }
+        }
+      }
+    },
+    "Not active" : {
+      "comment" : "AntiRemovalClaimCopy.denied statusHeadline",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير نشطة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not active"
+          }
+        }
+      }
+    },
+    "Not available" : {
+      "comment" : "AntiRemovalClaimCopy.entitlementUnavailable statusHeadline",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متاحة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available"
+          }
+        }
+      }
+    },
+    "Not yet active" : {
+      "comment" : "AntiRemovalClaimCopy.notDetermined statusHeadline",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير نشطة بعد"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not yet active"
+          }
+        }
+      }
+    },
+    "PCA" : {
+      "comment" : "App name shown on the ContentView home screen; kept as the product name in both languages",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PCA"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PCA"
+          }
+        }
+      }
+    },
+    "PCA does not read your message or call content, save camera images, or keep a readable history of exact searches." : {
+      "comment" : "PCAEnrollmentDisclosure.notMonitoredSummary, identical for every age tier",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يقرأ PCA محتوى رسائلك أو مكالماتك، ولا يحفظ صور الكاميرا، ولا يحتفظ بسجل قابل للقراءة لعمليات البحث الدقيقة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PCA does not read your message or call content, save camera images, or keep a readable history of exact searches."
+          }
+        }
+      }
+    },
+    "PCA may show your parent protection status, screen-time totals, selected app or website categories, and requests you send." : {
+      "comment" : "PCAEnrollmentDisclosure.monitoredSummary, identical for every age tier",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قد يعرض PCA لولي أمرك حالة الحماية، وإجمالي وقت الشاشة، وفئات التطبيقات أو المواقع المحددة، والطلبات التي ترسلها."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PCA may show your parent protection status, screen-time totals, selected app or website categories, and requests you send."
+          }
+        }
+      }
+    },
+    "Removal protection" : {
+      "comment" : "Shared title: ContentView's Label, AboutProtectionView's heading and navigation title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحماية من الإزالة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removal protection"
+          }
+        }
+      }
+    },
+    "Review your safety settings" : {
+      "comment" : "PCAEnrollmentDisclosure.title, teen reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "راجع إعدادات الأمان الخاصة بك"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review your safety settings"
+          }
+        }
+      }
+    },
+    "Selected age: %@" : {
+      "comment" : "PCAChildEnrollmentProfileView row label; %@ is the already-localized age tier label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفئة العمرية المختارة: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected age: %@"
+          }
+        }
+      }
+    },
+    "Shows what removal protection is currently active on this device and its exact scope" : {
+      "comment" : "ContentView accessibility hint on the Removal Protection navigation link",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعرض حماية الإزالة النشطة حاليًا على هذا الجهاز ونطاقها الدقيق"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows what removal protection is currently active on this device and its exact scope"
+          }
+        }
+      }
+    },
+    "Starting settings" : {
+      "comment" : "PCAEnrollmentDisclosure.startingSafetyLabel, balanced initial policy profile",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعدادات البداية"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting settings"
+          }
+        }
+      }
+    },
+    "Starting safety: %@" : {
+      "comment" : "PCAChildEnrollmentProfileView row label; %@ is the already-localized starting-safety label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مستوى الأمان الابتدائي: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting safety: %@"
+          }
+        }
+      }
+    },
+    "Stricter starting settings" : {
+      "comment" : "PCAEnrollmentDisclosure.startingSafetyLabel, strict initial policy profile",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعدادات بداية أكثر صرامة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stricter starting settings"
+          }
+        }
+      }
+    },
+    "Teen" : {
+      "comment" : "PCAEnrollmentDisclosure.selectedAgeLabel, teen age UX tier",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراهق"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teen"
+          }
+        }
+      }
+    },
+    "This is not a claim that PCA can never be removed from this device. A parent or guardian can always remove PCA through Apple's supported Family Controls settings and account recovery path. It does not prevent an authorized adult removal action." : {
+      "comment" : "AntiRemovalClaimCopy.scopeQualifierText, the fixed PCA-IOS-002 qualification shown alongside every authorization state",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا لا يعني أنه لا يمكن إزالة PCA أبدًا من هذا الجهاز. يمكن لولي الأمر دائمًا إزالة PCA من خلال إعدادات Family Controls المعتمدة من Apple ومسار استرداد الحساب. وهذا لا يمنع إجراء إزالة معتمَدًا من شخص بالغ مخوَّل."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not a claim that PCA can never be removed from this device. A parent or guardian can always remove PCA through Apple's supported Family Controls settings and account recovery path. It does not prevent an authorized adult removal action."
+          }
+        }
+      }
+    },
+    "This protection is not available on this device or account right now." : {
+      "comment" : "AntiRemovalClaimCopy.entitlementUnavailable statusDetail",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذه الحماية غير متاحة على هذا الجهاز أو الحساب حاليًا."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This protection is not available on this device or account right now."
+          }
+        }
+      }
+    },
+    "This protection only takes effect after a parent or guardian completes Family Controls authorization for this device. It has not been requested yet." : {
+      "comment" : "AntiRemovalClaimCopy.notDetermined statusDetail",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تصبح هذه الحماية سارية إلا بعد إتمام ولي الأمر تفويض Family Controls لهذا الجهاز. لم يُطلب ذلك بعد."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This protection only takes effect after a parent or guardian completes Family Controls authorization for this device. It has not been requested yet."
+          }
+        }
+      }
+    },
+    "This protection requires an active parent/guardian Family Controls authorization, which is not currently granted for this device." : {
+      "comment" : "AntiRemovalClaimCopy.denied statusDetail",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتطلب هذه الحماية تفويض Family Controls ساريًا من ولي الأمر، وهو غير ممنوح حاليًا لهذا الجهاز."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This protection requires an active parent/guardian Family Controls authorization, which is not currently granted for this device."
+          }
+        }
+      }
+    },
+    "This protection was active but Family Controls authorization for this device has just changed. If this was not expected, ask your parent or guardian to check Screen Time settings." : {
+      "comment" : "AntiRemovalClaimCopy.revoked statusDetail",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كانت هذه الحماية نشطة، لكن تفويض Family Controls لهذا الجهاز تغيّر للتو. إذا لم يكن هذا متوقعًا، فاطلب من ولي أمرك مراجعة إعدادات وقت الشاشة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This protection was active but Family Controls authorization for this device has just changed. If this was not expected, ask your parent or guardian to check Screen Time settings."
+          }
+        }
+      }
+    },
+    "Young child" : {
+      "comment" : "PCAEnrollmentDisclosure.selectedAgeLabel, young-child age UX tier",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طفل صغير"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Young child"
+          }
+        }
+      }
+    },
+    "Your parent chose these settings. Check them, then tap confirm." : {
+      "comment" : "PCAEnrollmentDisclosure.summary, young-child reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختار ولي أمرك هذه الإعدادات. تحقّق منها، ثم اضغط تأكيد."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your parent chose these settings. Check them, then tap confirm."
+          }
+        }
+      }
+    },
+    "Your parent chose these starting settings for this device. Check them, then confirm to finish setup." : {
+      "comment" : "PCAEnrollmentDisclosure.summary, teen reading level",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختار ولي أمرك إعدادات البداية هذه لهذا الجهاز. تحقّق منها، ثم أكِّد لإنهاء الإعداد."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your parent chose these starting settings for this device. Check them, then confirm to finish setup."
+          }
+        }
+      }
+    },
+    "Your parent or guardian has authorized PCA for this child account through Family Controls, so iOS currently prevents deleting this app through ordinary means." : {
+      "comment" : "AntiRemovalClaimCopy.approved statusDetail",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قام ولي أمرك بتفويض تطبيق PCA لحساب هذا الطفل عبر ميزة Family Controls، لذلك يمنع نظام iOS حاليًا حذف هذا التطبيق بالطرق المعتادة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your parent or guardian has authorized PCA for this child account through Family Controls, so iOS currently prevents deleting this app through ordinary means."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

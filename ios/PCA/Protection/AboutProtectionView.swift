@@ -14,29 +14,29 @@ struct AboutProtectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Removal protection")
+                    Text(PCALocalizedStrings.text("Removal protection"))
                         .font(.title2.weight(.semibold))
-                    Text(copy.statusHeadline)
+                    Text(PCALocalizedStrings.text(copy.statusHeadline))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
 
-                Text(copy.statusDetail)
+                Text(PCALocalizedStrings.text(copy.statusDetail))
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Divider()
 
-                Text(copy.scopeQualifier)
+                Text(PCALocalizedStrings.text(copy.scopeQualifier))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Important scope note: \(copy.scopeQualifier)")
+                    .accessibilityLabel(PCALocalizedStrings.format("Important scope note: %@", PCALocalizedStrings.text(copy.scopeQualifier)))
             }
             .padding()
         }
-        .navigationTitle("Removal protection")
+        .navigationTitle(PCALocalizedStrings.text("Removal protection"))
     }
 }
 
