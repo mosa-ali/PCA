@@ -63,6 +63,7 @@
     }
   },
   "common": {
+    "back": "Back to dashboard",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "retry": "Retry",

@@ -47,7 +47,8 @@ export default function Login() {
     setError(null);
     try {
       await login(email, password, totpCode);
-      navigate('/dashboard', { replace: true });
+      const from = (location.state as { from?: string } | null)?.from ?? '/dashboard';
+      navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof PlatformAdminApiError) {
         if (err.status === 429) setError(t('login.errorRateLimited'));
