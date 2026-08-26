@@ -83,7 +83,10 @@ const ACCOUNT_SUMMARY = {
   familyId: 'fam-1',
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
-  statusCapability: 'UNAVAILABLE',
+  statusCapability: 'AVAILABLE',
+  status: 'ACTIVE',
+  suspendedAt: null,
+  suspensionReason: null,
   entitlement: null,
   latestSubscription: null,
 };

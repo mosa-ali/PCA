@@ -174,7 +174,17 @@
     "currentPeriod": "Current period",
     "noSubscription": "No subscription record exists for this account.",
     "statusActions": "Account status actions",
-    "statusActionsUnavailable": "No suspend/reactivate capability exists on this backend surface yet -- this control is intentionally disabled rather than simulating an action that would not actually take effect.",
+    "statusActionsUnavailable": "This account has been deleted and cannot be suspended or reactivated.",
+    "statuses": {
+      "ACTIVE": "Active",
+      "SUSPENDED": "Suspended"
+    },
+    "suspendedAt": "Suspended at",
+    "suspensionReason": "Suspension reason",
+    "suspendReasonLabel": "Reason for suspension",
+    "suspendReasonRequired": "Enter a reason for suspending this account.",
+    "suspendSuccess": "Account suspended.",
+    "reactivateSuccess": "Account reactivated.",
     "suspend": "Suspend account",
     "reactivate": "Reactivate account"
   },

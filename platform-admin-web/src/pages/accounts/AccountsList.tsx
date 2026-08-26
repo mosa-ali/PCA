@@ -88,7 +88,9 @@ export default function AccountsList() {
                     {account.deletedAt ? (
                       <span className="badge badge-danger">{t('accounts.deleted')}</span>
                     ) : (
-                      <span className="badge">{account.statusCapability}</span>
+                      <span className={`badge ${account.status === 'SUSPENDED' ? 'badge-danger' : 'badge-success'}`}>
+                        {t(`accounts.statuses.${account.status}`)}
+                      </span>
                     )}
                   </td>
                   <td>{account.entitlement?.planRef ?? '—'}</td>

@@ -2,17 +2,28 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../../api/platformAdminApiClient';
-import type { AccountSummaryDto } from '../../domain/accounts';
+import type { AccountStatusChangeResult, AccountSummaryDto } from '../../domain/accounts';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
+import { PermissionGate } from '../../rbac/PermissionGate';
+import { useStepUp } from '../../state/StepUpContext';
+import { useToast } from '../../state/ToastContext';
+import type { PlatformAdminStepUpScope } from '../../domain/stepUpScopes';
+
+const SUSPENSION_REASON_MAX_LENGTH = 500;
 
 export default function AccountDetail() {
   const { t } = useTranslation();
+  const { notify } = useToast();
+  const { requestStepUp } = useStepUp();
   const { id } = useParams<{ id: string }>();
   const [account, setAccount] = useState<AccountSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  const [suspendReason, setSuspendReason] = useState('');
+  const [statusActionBusy, setStatusActionBusy] = useState(false);
 
   const load = () => {
     if (!id) return;
@@ -35,6 +46,54 @@ export default function AccountDetail() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [id]);
 
+  // PCA-ADD-PA-017: every mutating call here requires a fresh step-up
+  // re-verification (never assumes login MFA suffices, see StepUpContext) --
+  // this is this app's established confirmation gate for a sensitive action
+  // (mirrors AdminUsers.tsx's disable/reactivate and
+  // ComplimentaryCapacity.tsx's revoke/renew; this codebase has no separate
+  // ConfirmDialog/modal pattern to reuse instead of it).
+  const withStepUp = async (scope: PlatformAdminStepUpScope, action: (stepUpId: string) => Promise<void>) => {
+    setStatusActionBusy(true);
+    try {
+      const stepUpId = await requestStepUp(scope);
+      if (!stepUpId) return;
+      await action(stepUpId);
+    } catch (err) {
+      notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
+    } finally {
+      setStatusActionBusy(false);
+    }
+  };
+
+  const onSuspend = () => {
+    if (!account) return;
+    const reason = suspendReason.trim();
+    if (!reason) {
+      notify(t('accounts.suspendReasonRequired'), 'error');
+      return;
+    }
+    void withStepUp('FAMILY_ACCOUNT_SUSPEND', async (stepUpId) => {
+      const result = await platformAdminApi.post<AccountStatusChangeResult>(`/platform-admin/accounts/${encodeURIComponent(account.familyId)}/suspend`, {
+        reason,
+        stepUpId,
+      });
+      setAccount((prev) => (prev ? { ...prev, status: result.status, suspendedAt: result.suspendedAt, suspensionReason: result.suspensionReason } : prev));
+      setSuspendReason('');
+      notify(t('accounts.suspendSuccess'), 'success');
+    });
+  };
+
+  const onReactivate = () => {
+    if (!account) return;
+    void withStepUp('FAMILY_ACCOUNT_REACTIVATE', async (stepUpId) => {
+      const result = await platformAdminApi.post<AccountStatusChangeResult>(`/platform-admin/accounts/${encodeURIComponent(account.familyId)}/reactivate`, {
+        stepUpId,
+      });
+      setAccount((prev) => (prev ? { ...prev, status: result.status, suspendedAt: result.suspendedAt, suspensionReason: result.suspensionReason } : prev));
+      notify(t('accounts.reactivateSuccess'), 'success');
+    });
+  };
+
   return (
     <div className="page">
       <h1>{t('accounts.detailTitle', { familyId: id })}</h1>
@@ -53,11 +112,25 @@ export default function AccountDetail() {
               <dt>{t('accounts.createdAt')}</dt>
               <dd>{account.createdAt ? new Date(account.createdAt).toLocaleString() : '—'}</dd>
               <dt>{t('accounts.status')}</dt>
-              <dd>{account.deletedAt ? t('accounts.deleted') : account.statusCapability}</dd>
+              <dd>
+                {account.deletedAt ? (
+                  t('accounts.deleted')
+                ) : (
+                  <span className={`badge ${account.status === 'SUSPENDED' ? 'badge-danger' : 'badge-success'}`}>{t(`accounts.statuses.${account.status}`)}</span>
+                )}
+              </dd>
               {account.deletedAt && (
                 <>
                   <dt>{t('accounts.deletedAt')}</dt>
                   <dd>{new Date(account.deletedAt).toLocaleString()}</dd>
+                </>
+              )}
+              {!account.deletedAt && account.status === 'SUSPENDED' && (
+                <>
+                  <dt>{t('accounts.suspendedAt')}</dt>
+                  <dd>{account.suspendedAt ? new Date(account.suspendedAt).toLocaleString() : '—'}</dd>
+                  <dt>{t('accounts.suspensionReason')}</dt>
+                  <dd>{account.suspensionReason ?? '—'}</dd>
                 </>
               )}
             </dl>
@@ -114,15 +187,33 @@ export default function AccountDetail() {
 
           <section className="card">
             <h2 className="section-title">{t('accounts.statusActions')}</h2>
-            <p className="status-unavailable">{t('accounts.statusActionsUnavailable')}</p>
-            <div className="actions-row">
-              <button type="button" className="btn" disabled aria-disabled="true" title={t('accounts.statusActionsUnavailable')}>
-                {t('accounts.suspend')}
-              </button>
-              <button type="button" className="btn" disabled aria-disabled="true" title={t('accounts.statusActionsUnavailable')}>
-                {t('accounts.reactivate')}
-              </button>
-            </div>
+            {account.deletedAt ? (
+              <p className="status-unavailable">{t('accounts.statusActionsUnavailable')}</p>
+            ) : (
+              <div className="actions-row">
+                {account.status === 'ACTIVE' && (
+                  <PermissionGate operation="SUSPEND_FAMILY_ACCOUNT">
+                    <input
+                      aria-label={t('accounts.suspendReasonLabel')}
+                      placeholder={t('accounts.suspendReasonLabel')}
+                      maxLength={SUSPENSION_REASON_MAX_LENGTH}
+                      value={suspendReason}
+                      onChange={(e) => setSuspendReason(e.target.value)}
+                    />
+                    <button type="button" className="btn" disabled={statusActionBusy} onClick={onSuspend}>
+                      {t('accounts.suspend')}
+                    </button>
+                  </PermissionGate>
+                )}
+                {account.status === 'SUSPENDED' && (
+                  <PermissionGate operation="REACTIVATE_FAMILY_ACCOUNT">
+                    <button type="button" className="btn btn-primary" disabled={statusActionBusy} onClick={onReactivate}>
+                      {t('accounts.reactivate')}
+                    </button>
+                  </PermissionGate>
+                )}
+              </div>
+            )}
           </section>
         </>
       )}

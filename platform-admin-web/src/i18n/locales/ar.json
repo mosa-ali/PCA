@@ -174,7 +174,17 @@
     "currentPeriod": "الفترة الحالية",
     "noSubscription": "لا يوجد سجل اشتراك لهذا الحساب.",
     "statusActions": "إجراءات حالة الحساب",
-    "statusActionsUnavailable": "لا توجد إمكانية تعليق/إعادة تفعيل على هذه الواجهة الخلفية حتى الآن -- تم تعطيل هذا العنصر عمدًا بدلاً من محاكاة إجراء لن يُنفَّذ فعليًا.",
+    "statusActionsUnavailable": "تم حذف هذا الحساب ولا يمكن تعليقه أو إعادة تفعيله.",
+    "statuses": {
+      "ACTIVE": "نشط",
+      "SUSPENDED": "معلّق"
+    },
+    "suspendedAt": "تاريخ التعليق",
+    "suspensionReason": "سبب التعليق",
+    "suspendReasonLabel": "سبب التعليق",
+    "suspendReasonRequired": "أدخل سببًا لتعليق هذا الحساب.",
+    "suspendSuccess": "تم تعليق الحساب.",
+    "reactivateSuccess": "تمت إعادة تفعيل الحساب.",
     "suspend": "تعليق الحساب",
     "reactivate": "إعادة تفعيل الحساب"
   },

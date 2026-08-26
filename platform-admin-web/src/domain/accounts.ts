@@ -20,13 +20,31 @@ export interface AccountLatestSubscription {
   currentPeriodEnd: string | null;
 }
 
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED';
+
 export interface AccountSummaryDto {
   familyId: string;
   createdAt: string | null;
   deletedAt: string | null;
+  // Data-availability envelope (mirrors DashboardReadModel's `MetricCapability`
+  // idiom, backend/src/platformadmin/readmodels/DashboardReadModel.ts) --
+  // NOT the account's operational status. It is always 'AVAILABLE' today
+  // (families.status is a plain, always-computable column) and is never a
+  // suspension indicator; use `status` below for that.
   statusCapability: string;
+  status: AccountStatus;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
   entitlement: AccountEntitlementSummary | null;
   latestSubscription: AccountLatestSubscription | null;
+}
+
+/** Response shape of POST .../suspend and POST .../reactivate (accountsRoutes.ts). */
+export interface AccountStatusChangeResult {
+  familyId: string;
+  status: AccountStatus;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
 }
 
 export interface PagedResult<T> {
