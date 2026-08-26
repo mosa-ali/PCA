@@ -52,6 +52,8 @@ export default function WellbeingAdmin() {
   const [editing, setEditing] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<{ text: string; lang: 'en' | 'ar' } | null>(null);
   const [previewSurface, setPreviewSurface] = useState<PreviewSurface>('IN_APP_CARD');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -59,43 +61,51 @@ export default function WellbeingAdmin() {
 
   const filteredCurated = categoryFilter ? (curated ?? []).filter((c) => c.category === categoryFilter) : curated ?? [];
 
+  const describeActionFailure = (err: unknown): string =>
+    err instanceof Error ? err.message : t('requestsPage.actionErrorFallback');
+
   const toggleCurated = async (curatedId: string, enabled: boolean) => {
+    setActionError(null);
     try {
       await runFamilyAction('MANAGE_WELLBEING_MESSAGES', () => clients.wellbeingMessages.setCuratedSuggestionEnabled(curatedId, enabled));
       reload();
-    } catch {
-      // denied
+    } catch (err) {
+      setActionError(describeActionFailure(err));
     }
   };
 
   const duplicate = async (curatedId: string) => {
+    setActionError(null);
     try {
       await runFamilyAction('MANAGE_WELLBEING_MESSAGES', () => clients.wellbeingMessages.duplicateCurated(curatedId));
       reload();
-    } catch {
-      // denied
+    } catch (err) {
+      setActionError(describeActionFailure(err));
     }
   };
 
   const archive = async (messageId: string) => {
+    setActionError(null);
     try {
       await runFamilyAction('MANAGE_WELLBEING_MESSAGES', () => clients.wellbeingMessages.archiveCustomMessage(messageId));
       reload();
-    } catch {
-      // denied
+    } catch (err) {
+      setActionError(describeActionFailure(err));
     }
   };
 
   const restore = async (messageId: string) => {
+    setActionError(null);
     try {
       await runFamilyAction('MANAGE_WELLBEING_MESSAGES', () => clients.wellbeingMessages.restoreCustomMessage(messageId));
       reload();
-    } catch {
-      // denied
+    } catch (err) {
+      setActionError(describeActionFailure(err));
     }
   };
 
   const saveDraft = async (draft: DraftMessage) => {
+    setFormError(null);
     try {
       await runFamilyAction('MANAGE_WELLBEING_MESSAGES', () =>
         editing ? clients.wellbeingMessages.updateCustomMessage(editing, draft) : clients.wellbeingMessages.createCustomMessage(draft),
@@ -103,8 +113,9 @@ export default function WellbeingAdmin() {
       setFormOpen(false);
       setEditing(null);
       reload();
-    } catch {
-      // denied -- keep form open
+    } catch (err) {
+      setFormError(describeActionFailure(err));
+      // Keep the form open so the parent's in-progress draft is not lost.
     }
   };
 
@@ -116,6 +127,11 @@ export default function WellbeingAdmin() {
       <h1 id="wellbeing-title">{t('wellbeing.title')}</h1>
       <p className="card">{t('wellbeing.privateNote')}</p>
       <p className="card">{t('wellbeing.noFullScreenNote')}</p>
+      {actionError && (
+        <p role="alert" className="field-error">
+          {actionError}
+        </p>
+      )}
 
       <h2>{t('wellbeing.curated')}</h2>
       <div className="field">
@@ -263,8 +279,10 @@ export default function WellbeingAdmin() {
           onCancel={() => {
             setFormOpen(false);
             setEditing(null);
+            setFormError(null);
           }}
           onSave={saveDraft}
+          error={formError}
         />
       )}
     </section>

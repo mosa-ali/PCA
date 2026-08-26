@@ -15,9 +15,10 @@ interface CustomMessageFormProps {
   familyChildren: ChildSummary[];
   onCancel: () => void;
   onSave: (draft: DraftMessage) => void;
+  error?: string | null;
 }
 
-export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }: CustomMessageFormProps) {
+export function CustomMessageForm({ initial, familyChildren, onCancel, onSave, error }: CustomMessageFormProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<DraftMessage>(initial);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -179,6 +180,11 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave }:
           {t('wellbeing.requiresSupervision')}
         </label>
 
+        {error && (
+          <p role="alert" className="field-error">
+            {error}
+          </p>
+        )}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onCancel}>
             {t('common.cancel')}
