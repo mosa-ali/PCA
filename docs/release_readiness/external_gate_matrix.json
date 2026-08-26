@@ -1,6 +1,6 @@
 {
   "$schemaNote": "Machine-readable external/human gate state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. Every gate here is BLOCKED or EXTERNAL by definition until an owner outside this repository-editing lane closes it and records evidence. Do not set status to CLOSED/GREEN from within an automated script or an agent lane -- it must be updated by hand by the accountable human owner with an evidence reference.",
-  "lastUpdatedUtc": "2026-08-18T03:13:29.4089973Z",
+  "lastUpdatedUtc": "2026-08-26T21:21:48.0000000Z",
   "gates": [
     {
       "id": "CRYPTO_SECURITY_REVIEW",
@@ -140,6 +140,97 @@
       "status": "EXTERNAL",
       "description": "Real-device SMS delivery and locked-state behavior require hardware, carrier, and controlled UAT evidence.",
       "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "PRODUCTION_CRYPTO_SUITE",
+      "status": "BLOCKED",
+      "description": "Aggregate external dependency for requirements (retention, tamper-monitoring, envelope sync, identity) whose remaining gap is the production cryptographic suite (DeviceSignatureVerifier / EnvelopeSignatureVerifier) not yet being reviewed and activated. Backend wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier, which fail closed by design until the review completes. Tracked as a distinct register token from CRYPTO_SECURITY_REVIEW / PRODUCTION_CRYPTO_SECURITY_REVIEW / CRYPTO_ACTIVATION because the local source half of each row it covers is independently confirmed complete.",
+      "owner": "External security reviewer (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "CAMERA_REAL_DEVICE_VALIDATION",
+      "status": "EXTERNAL",
+      "description": "Physical-hardware confirmation that on-device camera-based proximity/face-geometry classification (FaceProximityClassifier, AndroidFaceGeometryDetector, CameraProximitySource) behaves correctly across real OEM camera stacks. Source structurally can only emit NEAR/FAR/UNKNOWN with no persistence/network path (guarded by CameraPrivacyStaticScanTest.kt); no Android SDK/device is available in this environment to run the confirmation.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "YOUTUBE_PLATFORM_API_PARTNERSHIP",
+      "status": "EXTERNAL",
+      "description": "A compliant Restricted Mode / platform-API signal integration for YouTube requires a real YouTube/platform API partnership and terms review that has not been established. defaultYouTubeSafeContentCapability() correctly returns UNSUPPORTED/UNAVAILABLE by construction in the absence of that partnership, guarded by a regression test (SafeContentCapability.test.mjs) against ever introducing scraping/watch-history-monitoring/TLS-interception.",
+      "owner": "Commercial/partnerships owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "PENDING_OWNER_DECISION",
+      "status": "BLOCKED",
+      "description": "Generic canonical token for requirements blocked on a genuine, still-open product/architecture owner decision rather than a repository-solvable gap (sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE). Specific decisions tracked under this gate include PCA-DEC-002/014/015 (Android provisioning path: QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only) -- see each requirement's own notes field for its specific decision citation; this canonical token itself must never be edited to imply any decision has been made.",
+      "owner": "Product owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "REQUIRES_ENTITLEMENT",
+      "status": "EXTERNAL",
+      "description": "Requires the Apple Family Controls entitlement grant/confirmation before ChildAuthorizationCenter.swift's authorization flow can be exercised against production Apple infrastructure. Related to, but registered separately from, IOS_FAMILY_CONTROLS_ENTITLEMENT.",
+      "owner": "Apple Developer Program account holder (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "DEPLOYED_LOG_METRICS_PIPELINE_CONFIG",
+      "status": "EXTERNAL",
+      "description": "Deployed log/metrics pipeline configuration (reverse proxy / container log shipping) for the relay's routing-metadata-only logging surface. Source proof is strong (type-level exclusion of plaintext fields, Fastify logger disabled, noPayloadLoggingHttp.test.mjs regression, zero stray console/log call sites); the remaining gap is infra-level deployment configuration not present in this repository beyond a plain Dockerfile.",
+      "owner": "Platform operations owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "DEPLOYED_TLS_TERMINATION_CONFIG",
+      "status": "EXTERNAL",
+      "description": "Deployed production TLS-termination configuration (reverse proxy / load balancer) is an infrastructure concern outside this repository. Confirmed via direct repo-wide search that no TLS termination is implemented or claimed in-repo, so this requirement is correctly NOT_APPLICABLE to source with the deployment step tracked as an external gate.",
+      "owner": "Platform operations owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "TELEMETRY_ACTIVATION_OWNER_SIGNOFF",
+      "status": "BLOCKED",
+      "description": "Formal product/privacy-owner sign-off required before ever activating optional telemetry. Consent module (backend/src/telemetry/consent.ts) defaults off, has an explicit distinct grant/revoke, enforces an allowlisted aggregate-only event shape, and noTelemetryEndpoint.test.mjs proves zero ingestion routes exist anywhere in the product; building ingestion infrastructure ahead of sign-off would violate PCA-NFR-014/PRIV-002 rather than satisfy it.",
+      "owner": "Product/privacy owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "OFFLINE_DEVICE_INTERRUPTION_RECOVERY_VALIDATION",
+      "status": "EXTERNAL",
+      "description": "Physical-device validation that schedule/retention runtime correctly recovers state across real offline periods and process interruptions (RetentionEngine, RetentionMaintenanceCycle, ScheduleRuntime reboot/offline handling). The repository-solvable portion (a real RetentionEngine production caller) is closed and independently verified; the remaining gap is device-lab confirmation, which this environment lacks.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "PCA_DEC_009_DISCLOSURE_TEXT",
+      "status": "BLOCKED",
+      "description": "Small, distinct pending-owner-decision sub-item (decision PCA-DEC-009) on final disclosure text for the battery-budget policy requirement (PCA-NFR-034), kept as its own gate token rather than folded into the generic PENDING_OWNER_DECISION bucket or the ANDROID_REAL_DEVICE_UAT/IOS_PHYSICAL_DEVICE gates it accompanies on that row, so the decision is not hidden behind an unrelated gate.",
+      "owner": "Product owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "PRODUCER_CATALOGUE_AUDIT_SIGNOFF",
+      "status": "BLOCKED",
+      "description": "Formal review/sign-off confirming the child-activity producer disclosure catalogue (parent-web Transparency.tsx) is complete. Every enumerable producer currently traces to a disclosed category and no concrete undisclosed producer was found, but completeness of all future platform/backend producers cannot be proven by source alone.",
+      "owner": "Compliance/privacy owner (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "OEM_DEVICE_DIVERSITY_VALIDATION",
+      "status": "EXTERNAL",
+      "description": "Real-device validation that OEM/AOSP dialer and communication-surface resolution (AndroidCommunicationSurfaceResolver, TelecomManager.getSystemDialerPackage()) behaves correctly across the diversity of real OEM Android devices. Hardcoded OEM assumptions were removed and unresolved cases now honestly report unavailable rather than being silently protected; the remaining need is a device lab this environment lacks.",
+      "owner": "Android device owner / QA (not yet assigned)",
+      "evidence": null
+    },
+    {
+      "id": "OBSERVABILITY_PIPELINE",
+      "status": "EXTERNAL",
+      "description": "Deployed observability/monitoring pipeline for the Platform Administration dashboard read-model and settlement-metrics routes is an infra-level dependency outside this repository; the in-repo dashboard read-model and its authorization-boundary tests are independently validated.",
+      "owner": "Platform operations owner (not yet assigned)",
       "evidence": null
     }
   ]

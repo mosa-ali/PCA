@@ -1,6 +1,6 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-24.
+Generated from the completion matrix and repository evidence on 2026-08-26.
 
 ## Exact requirement counts
 
@@ -8,15 +8,20 @@ Generated from the completion matrix and repository evidence on 2026-08-24.
 |---|---:|
 | Total matrix requirements | 375 |
 | SOURCE_COMPLETE | 313 |
+| SOURCE_COMPLETE_EXTERNAL_GATE | 25 |
+| SOURCE_COMPLETE_VALIDATION_PENDING | 2 |
 | PARTIAL | 28 |
 | NOT_STARTED | 1 |
 | NOT_APPLICABLE | 6 |
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
+| STATUS_BUCKET_SUM | 375 |
 | Partial plus not-started | 29 |
-| External-gate rows | 82 |
+| External-gate rows | 84 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
+
+Evidence correction (2026-08-26): this table previously omitted the SOURCE_COMPLETE_EXTERNAL_GATE (25) and SOURCE_COMPLETE_VALIDATION_PENDING (2) status buckets entirely, so the visible rows summed to 348 while "Total matrix requirements" claimed 375 -- a silent 27-row gap with no STATUS_BUCKET_SUM row to catch it. Both buckets are real, distinct status values in requirements[] (confirmed by RebuildR3DerivedLedgers.mjs's own ALL_STATUSES invariant check, which already required them to sum correctly at the JSON level; this markdown table just never surfaced them). All 6 status buckets are now listed explicitly and sum to STATUS_BUCKET_SUM = TOTAL_REQUIREMENTS = 375.
 
 ## Handoff review
 
@@ -34,7 +39,7 @@ Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/do
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
-- Parent Web typecheck: PASS; test: PASS (63 files, 465 tests); mocked E2E: PASS (41/41); real-backend E2E: PASS (login rejection/success, session-cookie persistence across reload, real settings data, unauthenticated-context redirect); production build: PASS.
+- Parent Web typecheck: PASS; lint: PASS; test: PASS (480/480 tests passing across 65 files; two later full-parallel-suite runs each showed 1-2 unrelated tests fail under heavy environment/resource contention -- DeviceIncreaseRequest.test.tsx and Retention.test.tsx -- both proven to pass cleanly in isolation, re-verified 2026-08-26, classified TEST_ENVIRONMENT_DEFECT/flaky, not a product defect; the prior 12/480-failing RouteGuard/Login/MFA-family claim did NOT reproduce across four independent runs and is corrected as stale); mocked E2E: PASS (41/41, includes RBAC/RouteGuard/step-up specs); production build: PASS; demo-mode gate: PASS; demo-mode negative control: PASS; real-backend E2E: not re-verified this session (Docker unavailable, carried forward from a prior run, not independently re-run).
 - Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
@@ -171,14 +176,19 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - This wave adds source evidence but closes no remaining `REAL_SOURCE_GAP`; the authoritative source backlog remains 77 rows, including 29 exact `REAL_SOURCE_GAP` rows with exact assignment coverage.
 - Current-head mutation evidence was rerun after the wave: 22 KILLED, 3 EQUIVALENT, 3 INVALID, and 0 SURVIVED at source entry `c5a444f96f51c8bb15ddee5f3dd809f39066a63b`.
 
-### Current-head mutation validation
+### Historical mutation validation (Prompt-1)
+
+_This section describes one past mutation-testing pass pinned to the commit named below. It does not describe the current HEAD -- see "Current mutation validation" for that._
 
 - MUTATION = PASS
 - VALID_MUTATION_SURVIVORS = 0
-- Scope: AppLayout authenticated-session gate (removal/negation), parent-web and platform-admin-web RouteGuard/RBAC (removal/negation), Platform Admin TOTP verification (negation), DeviceSessionRepository session expiry/revocation (removal/negation), DeviceSessionService cross-family actor binding (negation), Safe Zone actor-authorization decision-verdict and anti-spoofing checks (negation), and the parent login password check (negation/removal) -- 15 mutations across 8 files at commit 1ef54791030a421a6bddbd5d45b49b42e37c6cbd, each applied for real, tested against real compiled/transpiled code, and reverted (git diff empty). 2 genuine coverage gaps found (DeviceSessionRepository TTL expiry never enforced-but-tested; DeviceSessionService cross-family binding had zero real test coverage) and closed with new permanent regression tests, confirmed to kill the mutant before reverting.
+- Scope: bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.
 ### Current-head final state
 
+- P23_ENTRY_SHA = 8831316ae4a161fc7941c7b0f3789c9acaf4898d
+- P23_FINAL_IMPLEMENTATION_SHA = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
 - TOTAL_REQUIREMENTS = 375
+- STATUS_BUCKET_SUM = 375
 - REAL_SOURCE_GAP = 0
 - SOURCE_SOLVABLE_OPEN = 0
 - SOURCE_COMPLETE_EXTERNAL_GATE = 27
@@ -186,7 +196,27 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 - OWNER_DECISION_REQUIRED_FOR_SOURCE = 0
 - PARENT_REAL_E2E = PASS
 - PLATFORM_ADMIN_REAL_E2E = PASS
+- P23_MUTANTS_TOTAL = 28
+- P23_MUTANTS_KILLED = 22
+- P23_VALID_MUTATION_SURVIVORS = 0
 - VALID_MUTATION_SURVIVORS = 0
+- PARENT_PRODUCTION_DEMO_MODE_GATE = PASS
+- PARENT_DEMO_MODE_NEGATIVE_CONTROL = PASS
+- PLATFORM_ADMIN_PRODUCTION_DEMO_MODE_GATE = PASS
+- PLATFORM_ADMIN_DEMO_MODE_NEGATIVE_CONTROL = PASS
+- PRODUCTION_DEMO_MODE_GATE = PASS
+- DEMO_MODE_NEGATIVE_CONTROL = PASS
+- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
 - FINAL_SOURCE_AUDIT_FINDINGS = 0
 - KNOWN_LOCAL_DEFECTS = 0
-- TOTAL_REQUIREMENTS/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from R3_SOURCE_BACKLOG.csv on every regeneration. The five evidence fields are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
+- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read live from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_AT_CURRENT_HEAD if that report does not match today's actual git HEAD. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
+### Current mutation validation (Prompt-2/3)
+
+- MUTATION_HEAD = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
+- MUTANTS_TOTAL = 28
+- MUTANTS_KILLED = 22
+- MUTANTS_EQUIVALENT = 3
+- MUTANTS_INVALID = 3
+- VALID_MUTATION_SURVIVORS = 0
+- ENVIRONMENT_BLOCK = null
+- Scope: PCA-NFR-014, PCA-NFR-051, PCA-NFR-060, PCA-FR-137, PCA-FR-063, PCA-FR-091, PCA-FR-135 (tooling/mutation/mutation-scope.json). Generated 2026-08-25T20:50:18.796Z.

@@ -94,10 +94,17 @@
         "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt; android/app/src/main/java/org/pca/app/runtime/background/BackgroundExecutionScheduler.kt; android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:179",
-      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt; android/app/src/test/java/org/pca/app/runtime/background/BackgroundWorkMetricsTest.kt",
-      "externalGate": "",
-      "notes": "R3 Writer74 evidence reconciliation: WorkManager enqueueUniquePeriodicWork is production-wired and covered by real WorkManager tests; source gap closed."
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt",
+        "android/app/src/main/java/org/pca/app/runtime/background/BackgroundExecutionScheduler.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:179"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/BackgroundWorkMetricsTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer74 evidence reconciliation: WorkManager enqueueUniquePeriodicWork is production-wired and covered by real WorkManager tests; source gap closed. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- the schema every other row in this matrix uses. RebuildR3DerivedLedgers.mjs's joinEvidence() only accepts arrays (Array.isArray check) and silently returns '' for a string, so this row's evidence had been rendering as blank in R3_REQUIREMENT_AUDIT.csv and R3_VALIDATION_BACKLOG.csv since before this correction, even though the matrix itself always had real content. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-AND-003",
@@ -816,15 +823,14 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/breakshield/BreakShieldScreen.kt (only duration/occurrence persisted"
+        "android/app/src/main/java/org/pca/app/feature/breakshield/BreakShieldScreen.kt (only duration/occurrence persisted, no interaction content transmitted)",
+        "android/app/src/main/java/org/pca/app/persistence/entity/BreakSessionEntity.kt"
       ],
       "testEvidence": [
-        " no interaction content transmitted) + persistence/entity/BreakSessionEntity.kt"
+        "android/app/src/test/java/org/pca/app/feature/breakshield/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/feature/breakshield/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-FR-020",
@@ -987,10 +993,14 @@
         "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebFilterTypes.kt",
-      "testEvidence": "android/app/src/test/java/org/pca/app/feature/webprotection/policy/WebRuleTaxonomyStaticTest.kt",
-      "externalGate": "",
-      "notes": "R3 Writer76 implementation: exact WebRuleSource allowlist and protected-characteristic term guard prevent an unreviewed category taxonomy expansion."
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebFilterTypes.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/webprotection/policy/WebRuleTaxonomyStaticTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer76 implementation: exact WebRuleSource allowlist and protected-characteristic term guard prevent an unreviewed category taxonomy expansion. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-032",
@@ -1017,12 +1027,11 @@
         "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserActivity.kt + SafeBrowserController.kt + SafeBrowserScreen.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/feature/webprotection/safebrowser/ and ui/"
+        "android/app/src/test/java/org/pca/app/feature/webprotection/safebrowser/",
+        "android/app/src/test/java/org/pca/app/feature/webprotection/ui/"
       ],
-      "externalGate": [
-        "launchable from within the app"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: YES - SafeBrowserActivity registered android:exported=false in AndroidManifest.xml"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: YES -- SafeBrowserActivity is registered android:exported=false in AndroidManifest.xml and is launchable from within the app. Evidence correction (2026-08-25): this sentence had been mechanically split across testEvidence/externalGate (externalGate held only the leftover fragment \"launchable from within the app\"); no real external gate applies to this row. Reassembled here and cleared externalGate."
     },
     {
       "requirementId": "PCA-FR-034",
@@ -1031,16 +1040,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt:36-46 (DNS-only tunnel"
+        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt:36-46 (DNS-only tunnel, no TLS/root-CA interception, addRoute never 0.0.0.0/0)"
       ],
       "testEvidence": [
-        " no TLS/root-CA interception",
-        "addRoute never 0.0.0.0/0)"
+        "android/app/src/test/java/org/pca/app/feature/webprotection/vpn/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/feature/webprotection/vpn/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-FR-035",
@@ -1079,10 +1085,15 @@
         "PCA-5"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserScreen.kt:229-239; android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserController.kt:134-167",
-      "testEvidence": "android/app/src/test/java/org/pca/app/feature/webprotection/ui/SafeBrowserControllerTest.kt:192-230",
-      "externalGate": "",
-      "notes": "R3 Writer74 evidence reconciliation: held-page Ask Parent UI is wired to submitAskParent, with offline queue and live sync outcomes covered by focused tests; source gap closed."
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserScreen.kt:229-239",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserController.kt:134-167"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/feature/webprotection/ui/SafeBrowserControllerTest.kt:192-230"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer74 evidence reconciliation: held-page Ask Parent UI is wired to submitAskParent, with offline queue and live sync outcomes covered by focused tests; source gap closed. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-040",
@@ -1090,10 +1101,18 @@
         "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/usage/UsageSessionRecorder.kt; android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:468; android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt",
-      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/usage/UsageSessionRecorderTest.kt; android/app/src/test/java/org/pca/app/runtime/background/UsageIngestionWorkerTest.kt; android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt",
-      "externalGate": "",
-      "notes": "R3 Writer78 evidence reconciliation: per-app usage recording is called through the same production ingestion cycle from both the foreground loop and WorkManager safety net; focused recorder, worker, and scheduler tests cover the path."
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/usage/UsageSessionRecorder.kt",
+        "android/app/src/main/java/org/pca/app/runtime/graph/PcaAppGraph.kt:468",
+        "android/app/src/main/java/org/pca/app/runtime/background/UsageIngestionWorker.kt"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/usage/UsageSessionRecorderTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/UsageIngestionWorkerTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer78 evidence reconciliation: per-app usage recording is called through the same production ingestion cycle from both the foreground loop and WorkManager safety net; focused recorder, worker, and scheduler tests cover the path. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-041",
@@ -1178,10 +1197,15 @@
         "PCA-2"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "android/app/src/main/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiver.kt; android/app/src/main/AndroidManifest.xml:141-148",
-      "testEvidence": "android/app/src/test/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiverTest.kt",
-      "externalGate": "",
-      "notes": "R3 Writer74 evidence reconciliation: PACKAGE_ADDED observer is manifest-registered, filters replacements, and has positive/negative tests; source gap closed."
+      "sourceEvidence": [
+        "android/app/src/main/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiver.kt",
+        "android/app/src/main/AndroidManifest.xml:141-148"
+      ],
+      "testEvidence": [
+        "android/app/src/test/java/org/pca/app/runtime/installobserver/InstalledAppEventReceiverTest.kt"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer74 evidence reconciliation: PACKAGE_ADDED observer is manifest-registered, filters replacements, and has positive/negative tests; source gap closed. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-050",
@@ -1416,15 +1440,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/prayer/calc/PrayerTimeCalculator.kt + SolarCalculator.kt (fully local calculation"
+        "android/app/src/main/java/org/pca/app/feature/prayer/calc/PrayerTimeCalculator.kt + SolarCalculator.kt (fully local calculation, no server dependency)"
       ],
       "testEvidence": [
-        " no server dependency)"
+        "android/app/src/test/java/org/pca/app/feature/prayer/calc/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/feature/prayer/calc/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-FR-071",
@@ -1479,15 +1501,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/prayer/calc/PrayerTimeCalculator.kt (uses last known location/timezone"
+        "android/app/src/main/java/org/pca/app/feature/prayer/calc/PrayerTimeCalculator.kt (uses last known location/timezone, no network call)"
       ],
       "testEvidence": [
-        " no network call)"
+        "android/app/src/test/java/org/pca/app/feature/prayer/calc/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/feature/prayer/calc/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-FR-074A",
@@ -1576,9 +1596,9 @@
         "android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt"
       ],
       "externalGate": [
-        "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)"
+        "PENDING_OWNER_DECISION"
       ],
-      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL (not upgraded) because SOURCE_COMPLETE_OWNER_DECISION_GATE is the existing, distinct sourceSolvableClass bucket already used for this exact pattern (see PCA-ADD-ENR-009); externalGate populated with the same gate string already used there rather than a new one. This is a genuine, still-open product/architecture decision (which Android provisioning path -- QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only -- is production-authorized) that blocks further source work, not a repository-solvable gap."
+      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL (not upgraded) because SOURCE_COMPLETE_OWNER_DECISION_GATE is the existing, distinct sourceSolvableClass bucket already used for this exact pattern (see PCA-ADD-ENR-009); externalGate populated with the same gate string already used there rather than a new one. This is a genuine, still-open product/architecture decision (which Android provisioning path -- QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only -- is production-authorized) that blocks further source work, not a repository-solvable gap. Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): externalGate was previously the single string \"PENDING_OWNER_DECISION (PCA-DEC-002/014/015)\", which splitGates() cannot parse, so this row read as gate-less in every derived ledger/CSV. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead."
     },
     {
       "requirementId": "PCA-FR-083",
@@ -1700,10 +1720,16 @@
         "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "parent-web/src/pages/children/ActivityTimelinePage.tsx; parent-web/src/App.tsx:59-84; parent-web/src/nav/navConfig.ts:76-77",
-      "testEvidence": "parent-web/tests/accessibility/axe.test.tsx:146-155",
-      "externalGate": "",
-      "notes": "R3 Writer78 evidence reconciliation: consolidated child activity timeline is real-client wired, routed, navigation-registered, and included in the parent-web axe suite."
+      "sourceEvidence": [
+        "parent-web/src/pages/children/ActivityTimelinePage.tsx",
+        "parent-web/src/App.tsx:59-84",
+        "parent-web/src/nav/navConfig.ts:76-77"
+      ],
+      "testEvidence": [
+        "parent-web/tests/accessibility/axe.test.tsx:146-155"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer78 evidence reconciliation: consolidated child activity timeline is real-client wired, routed, navigation-registered, and included in the parent-web axe suite. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-093",
@@ -1762,10 +1788,16 @@
         "PCA-10"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "parent-web/src/pages/privacy/Transparency.tsx; parent-web/src/App.tsx:117; parent-web/src/nav/navConfig.ts:42-44",
-      "testEvidence": "parent-web/tests/accessibility/axe.test.tsx:136-144",
-      "externalGate": "",
-      "notes": "R3 Writer79 evidence reconciliation: What Parents Can See is a real routed page with a registered sidebar navigation entry and axe coverage; the prior missing-navigation finding is closed."
+      "sourceEvidence": [
+        "parent-web/src/pages/privacy/Transparency.tsx",
+        "parent-web/src/App.tsx:117",
+        "parent-web/src/nav/navConfig.ts:42-44"
+      ],
+      "testEvidence": [
+        "parent-web/tests/accessibility/axe.test.tsx:136-144"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer79 evidence reconciliation: What Parents Can See is a real routed page with a registered sidebar navigation entry and axe coverage; the prior missing-navigation finding is closed. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-100",
@@ -1984,13 +2016,11 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt:257-276 (persistent non-dismissible foreground-service notification"
+        "android/app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt:257-276 (persistent non-dismissible foreground-service notification via setOngoing(true); the general 'PCA protection active' indicator for the VPN specifically)"
       ],
-      "testEvidence": [
-        " setOngoing(true)"
-      ],
+      "testEvidence": [],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). YES - startForeground() called from real service lifecycle Runtime reachability:  honest non-disguised copy) - the general 'PCA protection active' indicator for the VPN specifically"
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: YES -- startForeground() is called from the real service lifecycle, with honest, non-disguised notification copy. Evidence correction (2026-08-26): sourceEvidence/testEvidence/notes had been mechanically split mid-sentence across all three fields, and testEvidence held only the leftover fragment \" setOngoing(true)\" with no real test file ever cited for this claim. Reassembled the sourceEvidence description and cleared testEvidence rather than inventing a test citation that was never present in the original data; a dedicated foreground-notification test was not identified during this correction."
     },
     {
       "requirementId": "PCA-FR-121",
@@ -2028,10 +2058,16 @@
         "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "backend/scripts/checkNoAdTrackingSdks.mjs; backend/src/sdkDisclosure/thirdPartySdks.generated.ts",
-      "testEvidence": "backend/test/security/checkNoAdTrackingSdks.test.mjs; backend/test/security/sdkDisclosure.test.mjs",
-      "externalGate": "",
-      "notes": "R3 Writer75 evidence reconciliation: dependency inventory and ad-tracking SDK gate execute against real manifests and failing fixtures; source regression guard exists."
+      "sourceEvidence": [
+        "backend/scripts/checkNoAdTrackingSdks.mjs",
+        "backend/src/sdkDisclosure/thirdPartySdks.generated.ts"
+      ],
+      "testEvidence": [
+        "backend/test/security/checkNoAdTrackingSdks.test.mjs",
+        "backend/test/security/sdkDisclosure.test.mjs"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer75 evidence reconciliation: dependency inventory and ad-tracking SDK gate execute against real manifests and failing fixtures; source regression guard exists. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-FR-124",
@@ -2457,10 +2493,10 @@
         "backend/test/familyrbac/RealProtectiveAuthorityResolver.test.mjs"
       ],
       "externalGate": [
-        "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)",
+        "PENDING_OWNER_DECISION",
         "PRODUCTION_CRYPTO_SUITE"
       ],
-      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL with sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE, matching PCA-FR-082 and the PCA-ADD-ENR-009 precedent; two externalGate entries reflect the primary owner-decision block plus a subordinate crypto-suite dependency (precedent for multi-gate rows: PCA-NFR-034)."
+      "notes": "P23-Writer15B (2026-08-24): status intentionally kept PARTIAL with sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE, matching PCA-FR-082 and the PCA-ADD-ENR-009 precedent; two externalGate entries reflect the primary owner-decision block plus a subordinate crypto-suite dependency (precedent for multi-gate rows: PCA-NFR-034). Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): the first externalGate entry was previously the single string \"PENDING_OWNER_DECISION (PCA-DEC-002/014/015)\", which splitGates() cannot parse, so only PRODUCTION_CRYPTO_SUITE ever reached the derived ledgers/CSVs. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead."
     },
     {
       "requirementId": "PCA-FR-146",
@@ -2741,10 +2777,14 @@
         "PCA-17"
       ],
       "status": "SOURCE_COMPLETE",
-      "sourceEvidence": "backend/src/http route registration surface",
-      "testEvidence": "backend/test/security/noTelemetryEndpoint.test.mjs",
-      "externalGate": "",
-      "notes": "R3 Writer75 evidence reconciliation: route-tree telemetry guard now proves both the real backend surface and a caught fixture violation; source regression guard exists."
+      "sourceEvidence": [
+        "backend/src/http route registration surface"
+      ],
+      "testEvidence": [
+        "backend/test/security/noTelemetryEndpoint.test.mjs"
+      ],
+      "externalGate": [],
+      "notes": "R3 Writer75 evidence reconciliation: route-tree telemetry guard now proves both the real backend surface and a caught fixture violation; source regression guard exists. Evidence correction (2026-08-26): sourceEvidence/testEvidence/externalGate were stored as plain strings instead of arrays -- see PCA-AND-002's note for why this silently blanked derived-CSV evidence. Converted to arrays; no evidence content was changed."
     },
     {
       "requirementId": "PCA-NFR-013",
@@ -2806,15 +2846,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt + feature/screentime/engine/ScreenTimeEngine.kt (both operate on locally persisted policy"
+        "android/app/src/main/java/org/pca/app/runtime/schedule/ScheduleRuntime.kt + feature/screentime/engine/ScreenTimeEngine.kt (both operate on locally persisted policy, no network dependency for enforcement continuation)"
       ],
       "testEvidence": [
-        " no network dependency for enforcement continuation)"
+        "android/app/src/test/java/org/pca/app/runtime/schedule/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/runtime/schedule/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-NFR-021",
@@ -2842,15 +2880,14 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebRulePolicy.kt (default-uncertain/fail-closed policy referenced in doc"
+        "android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebRulePolicy.kt (default-uncertain/fail-closed policy referenced in doc, security feed fail-closed per status doc)",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/securityfeed/SignedRulePackageConsumer.kt"
       ],
       "testEvidence": [
-        " security feed fail-closed per status doc) + feature/webprotection/securityfeed/SignedRulePackageConsumer.kt"
+        "android/app/src/test/java/org/pca/app/feature/webprotection/securityfeed/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/feature/webprotection/securityfeed/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-NFR-023",
@@ -2921,16 +2958,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt (foreground-only lifecycle"
+        "android/app/src/main/java/org/pca/app/platform/proximity/CameraProximitySource.kt (foreground-only lifecycle, immediate-stop-on-backgrounding per class doc)"
       ],
       "testEvidence": [
-        " immediate-stop-on-backgrounding per class doc)"
+        "android/app/src/test/java/org/pca/app/platform/proximity/CameraProximitySourceTest.kt"
       ],
-      "externalGate": [
-        "YES for the lifecycle guard",
-        "feature itself unreachable (FR-023)"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947)."
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence (externalGate held the two leftover fragments \"YES for the lifecycle guard\" and \"feature itself unreachable (FR-023)\", from a \"Runtime reachability: YES for the lifecycle guard, feature itself unreachable (FR-023)\" clause); no real external gate applies to this row. Historical context preserved: at the time this row was last written, PCA-FR-023 (the feature this lifecycle guard belongs to) was not yet wired into the runtime graph, making the guard itself unreachable in production. PCA-FR-023 is now SOURCE_COMPLETE and composed into PcaAppGraph via CameraProximitySource/CameraXFrameSource, so that caveat no longer holds. testEvidence corrected to the real CameraProximitySourceTest.kt file (the original fragment was not a real test citation)."
     },
     {
       "requirementId": "PCA-NFR-031",
@@ -2939,15 +2973,13 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/runtime/screenstate/ScreenStateObserver.kt (event-driven BroadcastReceiver"
+        "android/app/src/main/java/org/pca/app/runtime/screenstate/ScreenStateObserver.kt (event-driven BroadcastReceiver, not polling)"
       ],
       "testEvidence": [
-        " not polling)"
+        "android/app/src/test/java/org/pca/app/runtime/screenstate/"
       ],
-      "externalGate": [
-        "YES"
-      ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: android/app/src/test/java/org/pca/app/runtime/screenstate/"
+      "externalGate": [],
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Evidence correction (2026-08-25): sourceEvidence/testEvidence/externalGate had been mechanically split mid-sentence across all three fields (externalGate held only the leftover fragment \"YES\", from a \"Runtime reachability: YES\" clause); no real external gate applies to this row. Reassembled into sourceEvidence/testEvidence and cleared externalGate."
     },
     {
       "requirementId": "PCA-NFR-032",
@@ -3865,9 +3897,9 @@
         "android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt"
       ],
       "externalGate": [
-        "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)"
+        "PENDING_OWNER_DECISION"
       ],
-      "notes": "R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded owner-decision gate."
+      "notes": "R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded owner-decision gate. Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): externalGate was previously the single string \"PENDING_OWNER_DECISION (PCA-DEC-002/014/015)\", which splitGates() cannot parse, so this SOURCE_COMPLETE_EXTERNAL_GATE row had zero rows in R3_EXTERNAL_GATE_REGISTER.csv. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead."
     },
     {
       "requirementId": "PCA-ADD-ENR-010",
@@ -6916,9 +6948,9 @@
         "RBAC is UI-level route guarding only; RouteGuard/PermissionGate/domain/roles.ts explicitly self-document this is NOT the security boundary",
         "familyAuthority gateway has no real production implementation (UnavailableFamilyAuthorityGateway, fails closed) -- zero real server-side family-authority mutation enforcement exists yet",
         "parentFamilyData reads are architecturally trust+crypto gated but reject every call today because CRYPTO_SUITE_APPROVED_FOR_PRODUCTION is hardcoded false; writes (updateScreenTime/updateAppRule) are unimplemented even post-approval",
-        "Notifications, Subscription, and Settings pages have no backend wiring at all (static placeholders)",
         "wellbeingMessages admin client is Unavailable in production"
-      ]
+      ],
+      "note": "Evidence correction (2026-08-26): this openItems array previously included \"Notifications, Subscription, and Settings pages have no backend wiring at all (static placeholders)\". False as of this correction: parent-web/src/pages/Notifications.tsx and Settings.tsx are wired to clients.parentPreferences.get()/.update() (PCA-FR-094/PCA-FR-112, both SOURCE_COMPLETE in requirements[]), and Subscription.tsx is a real, source-backed page wired to clients.billing.* (PCA-MYKIDS-BILL-1, SOURCE_COMPLETE -- see the phases[PCA-MYKIDS-BILL-1] correction). Removed rather than reworded, since none of the three pages remain a placeholder."
     },
     {
       "phaseId": "PCA-11",
@@ -7058,43 +7090,47 @@
     },
     {
       "phaseId": "PCA-PA-1",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Admin Identity/RBAC/Audit (Addendum 002 Sections 3, 4, 17): Platform Administration accounts, role model, MFA/step-up, session separation, audit log. Foundational -- every other PA/BILL workstream depends on this existing first. No source exists."
-      ]
+        "Admin Identity/RBAC/Audit (Addendum 002 Sections 3, 4, 17): Platform Administration accounts, role model, MFA/step-up, session separation, audit log. Source-complete: backend/src/platformadmin/** (auth, RBAC policy, TOTP/step-up, account service, audit types) is real and covered by backend/test/platformadmin/**. 24 of the 24 PCA-ADD-PA-* requirement rows tagged to this phase are SOURCE_COMPLETE or SOURCE_COMPLETE_EXTERNAL_GATE (PCA-ADD-PA-041, gate OBSERVABILITY_PIPELINE); 0 remain PARTIAL/NOT_STARTED per the current matrix's own requirements[] entries."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\", a pre-R1 (pre-Addendum-002-integration) snapshot never reconciled with the requirements[] array, which has recorded this phase's own requirement rows as SOURCE_COMPLETE since revision R2 of documentControl.correctionHistory. Corrected to match the matrix's own current requirement data."
     },
     {
       "phaseId": "PCA-PA-2",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Entitlements/Enrollment Limits (Addendum 002 Sections 5-8): FREE_STARTER, entitlement model, increase-request flow, concurrency-safe slot reservation. Depends on PCA-PA-1. Slot-concurrency correctness (PCA-ADD-PA-038/039) is release-blocking within this workstream. No source exists."
-      ]
+        "Entitlements/Enrollment Limits (Addendum 002 Sections 5-8): FREE_STARTER, entitlement model, increase-request flow, concurrency-safe slot reservation. Source-complete: backend/src/entitlements/** (SlotReservationService, ChangeRequestService, price-book/quote ports) is real and covered by backend/test/entitlements/** and backend/test/db/platformEntitlementsCore.mysql.test.mjs/platformEntitlementsSlots.mysql.test.mjs. All 25 PCA-ADD-PA-* requirement rows tagged to this phase are SOURCE_COMPLETE per the current matrix."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"; see the PCA-PA-1 correction note for why."
     },
     {
       "phaseId": "PCA-PA-3",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Platform Admin Web (operator-facing UI for Addendum 002 Sections 3, 6, 7, 15, 16, 17). Depends on PCA-PA-1/2. No source exists."
-      ]
+        "Platform Admin Web (operator-facing UI for Addendum 002 Sections 3, 6, 7, 15, 16, 17). Source-complete: the entire platform-admin-web/ app (Dashboard, AccountsList/AccountDetail, Entitlements, EntitlementRequests, ComplimentaryCapacity, FreeAccessPolicy, billing/settlement pages, AdminUsers, Audit, Settings) is real, routed, and covered by platform-admin-web/tests/** including a dedicated axe accessibility suite (21/21 routed surfaces) and an RTL i18n suite."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"; see the PCA-PA-1 correction note for why."
     },
     {
       "phaseId": "PCA-PA-4",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Operations/Reporting (Addendum 002 Section 15 dashboard, cross-currency reporting). Depends on PCA-PA-1/2 and PCA-BILL-1. No source exists."
-      ]
+        "Operations/Reporting (Addendum 002 Section 15 dashboard, cross-currency reporting). Source-complete: settlement/dashboard metrics and cross-currency reporting are wired (backend/src/platformadmin/settlement/**, backend/test/db/dashboardSettlementMetrics.mysql.test.mjs) and rendered in platform-admin-web. PCA-ADD-PA-041 (operational metrics) remains SOURCE_COMPLETE_EXTERNAL_GATE on OBSERVABILITY_PIPELINE (real production metrics/alerting infrastructure is an operations gate, not a source gap)."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"; see the PCA-PA-1 correction note for why."
     },
     {
       "phaseId": "PCA-PA-5",
@@ -7103,18 +7139,19 @@
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Security/Financial Red Team (threat-model extension of doc 24 covering Addendum 002 Sections 4, 11-13, 17). Required before PCA-BILL-UAT. No work has begun."
+        "Security/Financial Red Team (threat-model extension of doc 24 covering Addendum 002 Sections 4, 11-13, 17). Required before PCA-BILL-UAT. No dedicated Addendum-002 red-team/threat-model document exists anywhere in docs/security/ (confirmed 2026-08-25; only the general production-crypto-review package exists). This is genuinely still not started -- unlike PCA-PA-1 through PCA-PA-4, this phase has no itemized requirement rows in requirements[] and is not contradicted by them."
       ]
     },
     {
       "phaseId": "PCA-PA-6",
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "sourceComplete": false,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "UX/i18n/a11y parity for Platform Admin Web and MyKids Section 18 additions. No work has begun."
-      ]
+        "UX/i18n/a11y parity for Platform Admin Web and MyKids Section 18 additions. Real work exists: platform-admin-web has its own EN/AR RTL i18n suite (platform-admin-web/tests/unit/i18nRtl.test.ts) and a dedicated axe accessibility suite (21/21 routed surfaces, PCA-NFR-041/PCA-NFR-043). Not independently certified as a complete phase-level parity audit against Addendum 002 Section 18's full requirement set."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No work has begun\", which is false -- real RTL and accessibility test suites exist for platform-admin-web. Corrected to PARTIAL (real work exists, not independently certified as complete) rather than reverting to a false SOURCE_COMPLETE claim; this phase has no itemized requirement rows in requirements[] to derive an exact status from."
     },
     {
       "phaseId": "PCA-PA-UAT",
@@ -7123,39 +7160,41 @@
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Platform Administration acceptance/UAT. Depends on PCA-PA-1 through PCA-PA-6."
+        "Platform Administration acceptance/UAT. Depends on PCA-PA-1 through PCA-PA-6. Source for PCA-PA-1 through PCA-PA-4 is now complete (see their corrected entries above); PCA-PA-5 (red team) is not started; no UAT execution has occurred for any workstream (consistent with the programme-wide REAL_UAT = 0/50 status under PCA-19)."
       ]
     },
     {
       "phaseId": "PCA-BILL-1",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Billing Core (Addendum 002 Section 9 entities including PriceBook/Quote/CommercialMarket, Section 10 money model, price-book versioning and quote-snapshot immutability). Depends on PCA-PA-1. No source exists."
-      ]
+        "Billing Core (Addendum 002 Section 9 entities including PriceBook/Quote/CommercialMarket, Section 10 money model, price-book versioning and quote-snapshot immutability). Source-complete: backend/src/billing/** (money, currency, market, priceBook, quote) is real and covered by backend/test/billing/** and backend/test/db/billingCore*.mysql.test.mjs. All 26 PCA-ADD-BILL-* requirement rows tagged to this phase are SOURCE_COMPLETE per the current matrix."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"; see the PCA-PA-1 correction note for why."
     },
     {
       "phaseId": "PCA-BILL-2",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE_EXTERNAL_GATE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Payment Provider (Addendum 002 Sections 11-13: provider-safe tokenization, provider abstraction, webhook security, idempotent payment-confirmed entitlement activation). Blocked externally on PAYMENT_PROVIDER_SELECTION before a concrete adapter can be built. No source exists."
+        "Payment Provider (Addendum 002 Sections 11-13: provider-safe tokenization, provider abstraction, webhook security, idempotent payment-confirmed entitlement activation). Source-complete: backend/src/billing/providerRegistry.ts, providerContract, sandboxProvider, webhook handling are real and covered by backend/test/billing/provider*.test.mjs. PCA-ADD-BILL-041 remains SOURCE_COMPLETE_EXTERNAL_GATE on PAYMENT_PROVIDER_SELECTION: which real-money production provider(s) PCA activates is a genuinely still-open owner/commercial decision (Addendum 002 Section 19.2), not a source gap -- the sandbox/provider-agnostic abstraction is built and tested against a sandbox provider today."
       ],
-      "note": "Provider-agnostic abstraction interface (Section 12) can be designed before PAYMENT_PROVIDER_SELECTION closes, but no concrete adapter can."
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"/\"no concrete adapter can [be built]\" pending PAYMENT_PROVIDER_SELECTION. A concrete sandbox-provider adapter now exists and is tested; only production activation of a specific real-money provider remains gated on the owner decision."
     },
     {
       "phaseId": "PCA-BILL-3",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Settlements/Reconciliation (Addendum 002 Section 14). Blocked externally on SETTLEMENT_BANK_CONFIGURATION/SUPPORTED_SETTLEMENT_CURRENCIES for production use; data model/reconciliation logic could be built and tested against provider sandbox data first. No source exists."
-      ]
+        "Settlements/Reconciliation (Addendum 002 Section 14). Source-complete: backend/src/platformadmin/settlement/** (data model, reconciliation logic) is real and covered by backend/test/billing/settlement.test.mjs and backend/test/db/settlement.mysql.test.mjs, tested against sandbox-provider data as the original note anticipated. SETTLEMENT_BANK_CONFIGURATION/SUPPORTED_SETTLEMENT_CURRENCIES remain genuinely open owner/banking decisions for production use, tracked separately under externalGates and ownerDecisions -- not a claim that the settlement source itself is missing."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase previously read NOT_STARTED/\"No source exists\"; see the PCA-PA-1 correction note for why."
     },
     {
       "phaseId": "PCA-BILL-UAT",
@@ -7164,18 +7203,19 @@
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Billing acceptance/UAT including a full sandbox-provider end-to-end payment/refund/webhook/settlement drill. Depends on PCA-BILL-1 through PCA-BILL-3, PCA-MYKIDS-BILL-1, and PCA-PA-5. Production go-live additionally requires all Section 19.2 commercial gates closed."
+        "Billing acceptance/UAT including a full sandbox-provider end-to-end payment/refund/webhook/settlement drill. Depends on PCA-BILL-1 through PCA-BILL-3, PCA-MYKIDS-BILL-1 (source-complete, see corrected entries above), and PCA-PA-5 (not started). No UAT execution has occurred. Production go-live additionally requires all Section 19.2 commercial gates closed (PAYMENT_PROVIDER_SELECTION, MERCHANT_ACCOUNT_APPROVAL, SUPPORTED_CHARGE_CURRENCIES, SUPPORTED_SETTLEMENT_CURRENCIES, SETTLEMENT_BANK_CONFIGURATION, PAYMENT_PRODUCTION_CERTIFICATION -- see externalGates)."
       ]
     },
     {
       "phaseId": "PCA-MYKIDS-BILL-1",
-      "status": "NOT_STARTED",
-      "sourceComplete": false,
+      "status": "SOURCE_COMPLETE",
+      "sourceComplete": true,
       "validatedComplete": false,
       "productionReady": false,
       "openItems": [
-        "Parent Self-Service (Addendum 002 Section 18 additions to Parent Web, full ordered self-service flow in Section 18.1). Depends on PCA-PA-2 and PCA-BILL-1. parent-web/src/pages/Subscription.tsx currently exists only as a static placeholder and is not a starting implementation of this workstream."
-      ]
+        "Parent Self-Service (Addendum 002 Section 18 additions to Parent Web, full ordered self-service flow in Section 18.1). Source-complete: parent-web/src/pages/Subscription.tsx is a real 168-line implementation wired to clients.billing.getEntitlement()/getSubscription()/listPaymentMethods() (verified by direct read, 2026-08-25), not a placeholder. All 3 PCA-MYKIDS-BILL-* requirement rows tagged to this phase are SOURCE_COMPLETE per the current matrix."
+      ],
+      "note": "Evidence correction (2026-08-25): this phase, and futureProgrammeTracks/ownerDecisions elsewhere in this file, previously claimed \"parent-web/src/pages/Subscription.tsx currently exists only as a static placeholder\". That claim is false as of this correction -- confirmed by directly reading the file, which is real, source-backed, and carries its own doc comment citing this exact requirement ID."
     }
   ],
   "externalGates": [
@@ -7321,38 +7361,45 @@
     {
       "decisionId": "PAYMENT_PROVIDER_SELECTION",
       "status": "OPEN",
-      "description": "No payment provider selected or implemented; Subscription.tsx is a static placeholder."
+      "description": "Which real-money production payment provider(s) PCA activates is a genuine, still-open owner/commercial decision (Addendum 002 Section 19.2), blocking which concrete provider ships to production. The billing/payment source itself is real and tested (backend/src/billing/**: money, currency, market, priceBook, quote, providerRegistry, providerContract, sandboxProvider), and parent-web/src/pages/Subscription.tsx is a real source-backed page.",
+      "correctionNote": "Evidence correction (2026-08-25): this decision's description previously implied billing source did not exist alongside the open provider decision. Reworded so the open decision (which provider) is not conflated with source completeness (billing source is complete); see futureProgrammeTracks.PLATFORM_ADMIN_BILLING for the full correction history."
     },
     {
       "decisionId": "MERCHANT_ACCOUNT_APPROVAL",
       "status": "OPEN",
-      "description": "Not applicable yet, no billing implementation exists to require a merchant account."
+      "description": "PCA must be approved as a merchant by its selected provider(s) and applicable card networks/banking partners, per region/currency -- external to engineering and not self-certifiable, and genuinely blocked on PAYMENT_PROVIDER_SELECTION closing first. This decision is open because no production provider has been selected yet, not because billing source is missing (see PAYMENT_PROVIDER_SELECTION above).",
+      "correctionNote": "Evidence correction (2026-08-25): this decision's description previously read \"not applicable yet, no billing implementation exists\" -- false; a billing implementation exists. Reworded to make clear this decision is open on a business/provider-selection basis, not a source-completeness basis."
     },
     {
       "decisionId": "SETTLEMENT_BANK_CONFIGURATION",
       "status": "OPEN",
-      "description": "Not applicable yet, no billing implementation exists."
+      "description": "Actual bank account(s)/settlement destination(s) require real banking-relationship setup (account opening, verification) external to this architecture. This decision is open because no production bank/settlement destination has been configured yet, not because settlement source is missing -- backend/src/platformadmin/settlement/** (data model, reconciliation logic) is real and tested against sandbox-provider data.",
+      "correctionNote": "Evidence correction (2026-08-25): this decision's description previously read \"not applicable yet, no billing implementation exists\" -- false. Reworded to make clear this decision is open on a business/banking-relationship basis, not a source-completeness basis."
     }
   ],
   "futureProgrammeTracks": [
     {
       "trackId": "PLATFORM_ADMIN_BILLING",
-      "status": "ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED",
-      "description": "Platform Administration and Billing architecture (Addendum 002) is now integrated and accepted controlled architecture authority at base 6fba8e000614e772414ba973631fbfe2f20aef20 -- see docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md. Implementation source has NOT started for any of the 98 PCA-ADD-PA-*/PCA-ADD-BILL-* requirements (confirmed both by the addendum's own Section 21/22 self-declaration and by this correction's independent targeted search).",
+      "status": "ARCHITECTURE_ACCEPTED_SOURCE_COMPLETE_EXTERNAL_GATE",
+      "description": "Platform Administration and Billing architecture (Addendum 002) was integrated and accepted as controlled architecture authority at base 6fba8e000614e772414ba973631fbfe2f20aef20 -- see docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md. Directly re-verified 2026-08-25: all 98 PCA-ADD-PA-*/PCA-ADD-BILL-*/PCA-MYKIDS-BILL-* rows in requirements[] are SOURCE_COMPLETE (96) or SOURCE_COMPLETE_EXTERNAL_GATE (2: PCA-ADD-PA-041/OBSERVABILITY_PIPELINE, PCA-ADD-BILL-041/PAYMENT_PROVIDER_SELECTION); 0 remain PARTIAL or NOT_STARTED. Genuinely open items are the Section 19.2 commercial/owner decisions (PAYMENT_PROVIDER_SELECTION and its downstream gates -- see ownerDecisions/externalGates) and the Addendum-002-specific security/financial red team + UAT (PCA-PA-5, PCA-PA-6, PCA-PA-UAT, PCA-BILL-UAT), none of which are source gaps.",
+      "correctionNote": "Evidence correction (2026-08-25): this track previously read ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED / \"Implementation source has NOT started for any of the 98 PCA-ADD-PA-*/PCA-ADD-BILL-* requirements\" -- a pre-R1 snapshot never reconciled with this file's own requirements[] array, which has recorded these 98 rows as SOURCE_COMPLETE/SOURCE_COMPLETE_EXTERNAL_GATE since documentControl.correctionHistory revision R2 (\"Reconciled all 98 Addendum-002 requirement statuses against real current source/tests\"). This is the same staleness class as the PCA-PA-*/PCA-BILL-*/PCA-MYKIDS-BILL-1 entries in phases[] and the PAYMENT_PROVIDER_SELECTION/MERCHANT_ACCOUNT_APPROVAL/SETTLEMENT_BANK_CONFIGURATION entries in ownerDecisions[], corrected in the same pass.",
       "dimensions": {
-        "PLATFORM_ADMIN_ARCHITECTURE": "ARCHITECTURE_ACCEPTED_SOURCE_NOT_STARTED",
-        "PLATFORM_ADMIN_SOURCE": "NOT_STARTED",
-        "PLATFORM_ADMIN_WEB": "NOT_STARTED",
-        "PLATFORM_ADMIN_AUTH_RBAC": "NOT_STARTED",
-        "PLATFORM_ENTITLEMENTS": "NOT_STARTED",
-        "BILLING_CORE": "NOT_STARTED",
-        "PAYMENT_PROVIDER_SOURCE": "NOT_STARTED",
-        "MYKIDS_BILLING_SELF_SERVICE": "NOT_STARTED"
+        "PLATFORM_ADMIN_ARCHITECTURE": "SOURCE_COMPLETE",
+        "PLATFORM_ADMIN_SOURCE": "SOURCE_COMPLETE_EXTERNAL_GATE",
+        "PLATFORM_ADMIN_WEB": "SOURCE_COMPLETE",
+        "PLATFORM_ADMIN_AUTH_RBAC": "SOURCE_COMPLETE",
+        "PLATFORM_ENTITLEMENTS": "SOURCE_COMPLETE",
+        "BILLING_CORE": "SOURCE_COMPLETE",
+        "PAYMENT_PROVIDER_SOURCE": "SOURCE_COMPLETE_EXTERNAL_GATE",
+        "MYKIDS_BILLING_SELF_SERVICE": "SOURCE_COMPLETE"
       },
       "evidence": [
-        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md (integrated, controlled architecture authority; Section 21 table self-declares every PCA-PA-*/PCA-BILL-*/PCA-MYKIDS-BILL-* workstream NOT_STARTED across SOURCE_COMPLETE/VALIDATED_COMPLETE/PRODUCTION_READY tiers)",
-        "parent-web/src/pages/Subscription.tsx is a static placeholder with no backend wiring",
-        "Zero matches for billing, payment, invoice, stripe, platform-admin, entitlement-sku, or paywall terms across parent-web, parent-sdk, backend/src, docs/release_readiness, and tooling (re-confirmed this pass)"
+        "docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md (integrated, controlled architecture authority)",
+        "requirements[] array of this matrix: 98 of 98 PCA-ADD-PA-*/PCA-ADD-BILL-*/PCA-MYKIDS-BILL-* rows are SOURCE_COMPLETE or SOURCE_COMPLETE_EXTERNAL_GATE, re-derived 2026-08-25 -- see documentControl.correctionHistory R2/R4 for when this reconciliation first happened",
+        "backend/src/platformadmin/**, backend/src/entitlements/**, backend/src/billing/** and their corresponding backend/test/platformadmin/**, backend/test/entitlements/**, backend/test/billing/**, backend/test/db/*.mysql.test.mjs suites are real and passing (1686/1686 non-DB backend tests, current HEAD 31aa6f1, 2026-08-25)",
+        "platform-admin-web/ is a complete, routed, RBAC-gated operator app with its own axe accessibility and RTL i18n test suites",
+        "parent-web/src/pages/Subscription.tsx is a real, 168-line, source-backed implementation wired to clients.billing.getEntitlement()/getSubscription()/listPaymentMethods() (verified by direct read, 2026-08-25) -- contradicting the placeholder-page claim this track previously carried",
+        "104 files under backend/src, parent-web/src, and platform-admin-web/src reference billing/payment-provider/entitlement terms (git grep, 2026-08-25) -- contradicting the prior claim of finding no such terms anywhere in the codebase"
       ],
       "ownerApprovedCommercialDecisions": {
         "FREE_STARTER": {
@@ -7383,7 +7430,7 @@
           "parentMemberLimit",
           "managedDeviceLimit"
         ],
-        "note": "These are Owner-approved future commercial decisions, recorded for continuity only. Not implemented. No requirement IDs assigned pending Addendum 002 integration."
+        "note": "These are Owner-approved commercial decisions. Evidence correction (2026-08-25): this note previously read \"Not implemented. No requirement IDs assigned pending Addendum 002 integration\" -- stale since Addendum 002 was integrated (documentControl.correctionHistory R1) and its 98 requirement IDs (PCA-ADD-PA-*/PCA-ADD-BILL-*/PCA-MYKIDS-BILL-*) were assigned and are now SOURCE_COMPLETE/SOURCE_COMPLETE_EXTERNAL_GATE in requirements[]. Recorded here for continuity as the source-of-truth for the commercial decisions themselves (pricing, currencies, upgrade flow), not as a claim about implementation status."
       },
       "addendumRequirementCount": {
         "platformAdministration": 51,

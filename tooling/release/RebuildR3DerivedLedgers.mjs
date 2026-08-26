@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Test-only override: PCA_R3_TEST_ROOT lets the regression test suite
@@ -1105,10 +1106,10 @@ const SOURCE_UPDATES = {
   sourceEvidence: ['android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt', 'android/app/src/main/java/org/pca/app/platform/StandardDevicePolicyCapabilitySource.kt', 'android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt'],
   testEvidence: ['android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/platform/ProtectedModeProvisioningGateTest.kt', 'android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt'],
   sourceSolvableClass: 'SOURCE_COMPLETE_OWNER_DECISION_GATE',
-  externalGate: ['PENDING_OWNER_DECISION (PCA-DEC-002/014/015)'],
+  externalGate: ['PENDING_OWNER_DECISION'],
   currentGap: 'R3 re-derivation (2026-08-21): Protected Mode\'s live DevicePolicyManager authority query, revocation-vs-unverifiable distinction, and fail-closed behavior are real, wired, and tested. Real Device Owner provisioning and uninstall-enforcement verification require an approved real child device plus the cited owner decisions -- already correctly tagged with this external/owner gate; upgrading status to match the gate that was already recorded rather than leaving it PARTIAL.',
   nextAction: 'Verify authorized Device Owner provisioning and uninstall behavior on an approved real child device once the cited owner decisions are made.',
-  notes: 'R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded owner-decision gate.',
+  notes: 'R3 re-derivation (2026-08-21): status had not been upgraded to match its own already-recorded owner-decision gate. Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): externalGate was previously the single string "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)", which splitGates() cannot parse, so this SOURCE_COMPLETE_EXTERNAL_GATE row had zero rows in R3_EXTERNAL_GATE_REGISTER.csv. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead.',
 },
 'PCA-ADD-ENR-018': {
   status: 'SOURCE_COMPLETE_EXTERNAL_GATE',
@@ -1346,20 +1347,20 @@ const SOURCE_UPDATES = {
   sourceEvidence: [...['android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt (interface only queries state)'], 'android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt', 'android/app/src/main/java/org/pca/app/platform/StandardDevicePolicyCapabilitySource.kt', 'android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt'],
   testEvidence: [...[], 'android/app/src/test/java/org/pca/app/platform/DevicePolicyCapabilityLifecycleTest.kt', 'android/app/src/test/java/org/pca/app/platform/ProtectedModeProvisioningGateTest.kt', 'android/app/src/test/java/org/pca/app/platform/DevicePolicyProtectionCapabilitiesTest.kt'],
   sourceSolvableClass: 'SOURCE_COMPLETE_OWNER_DECISION_GATE',
-  externalGate: ['PENDING_OWNER_DECISION (PCA-DEC-002/014/015)'],
+  externalGate: ['PENDING_OWNER_DECISION'],
   currentGap: 'P23-Writer15B (2026-08-24), independently verified by direct source read: DevicePolicyCapabilitySource.kt/StandardDevicePolicyCapabilitySource.kt query only the documented, public DevicePolicyManager surface (isDeviceOwnerApp), and ProtectedModeProvisioningGate.kt\'s own doc comment is explicit that it "does not start provisioning, request hidden authority, or register a DeviceAdminReceiver" -- confirmed by direct read there is no DeviceAdminReceiver class anywhere in the app and none registered in AndroidManifest.xml, by design. UnresolvedProtectedModeProvisioningGate correctly and unconditionally reports PENDING_OWNER_DECISION today, which its own doc comment states is "not a placeholder bug -- it is the CORRECT behavior until a human owner resolves PCA-DEC-002/014/015." No feature code may bypass this gate. This exactly matches the same pattern already used for PCA-ADD-ENR-009 in this ledger, which cites the identical three source files and the identical owner-decision gate.',
   nextAction: 'None for the guard/capability-query code itself. Re-verify against a concrete provisioning path once PCA-DEC-002 (doc 01) and PCA-DEC-014/015 (doc 06 Section 15) are resolved DECIDED.',
-  notes: 'P23-Writer15B (2026-08-24): status intentionally kept PARTIAL (not upgraded) because SOURCE_COMPLETE_OWNER_DECISION_GATE is the existing, distinct sourceSolvableClass bucket already used for this exact pattern (see PCA-ADD-ENR-009); externalGate populated with the same gate string already used there rather than a new one. This is a genuine, still-open product/architecture decision (which Android provisioning path -- QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only -- is production-authorized) that blocks further source work, not a repository-solvable gap.',
+  notes: 'P23-Writer15B (2026-08-24): status intentionally kept PARTIAL (not upgraded) because SOURCE_COMPLETE_OWNER_DECISION_GATE is the existing, distinct sourceSolvableClass bucket already used for this exact pattern (see PCA-ADD-ENR-009); externalGate populated with the same gate string already used there rather than a new one. This is a genuine, still-open product/architecture decision (which Android provisioning path -- QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only -- is production-authorized) that blocks further source work, not a repository-solvable gap. Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): externalGate was previously the single string "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)", which splitGates() cannot parse, so this row read as gate-less in every derived ledger/CSV. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead.',
 },
 'PCA-FR-145': {
   status: 'PARTIAL',
   sourceEvidence: [...['android/app/src/main/java/org/pca/app/platform/DevicePolicyCapabilitySource.kt + ProtectedModeProvisioningGate.kt'], 'android/app/src/main/java/org/pca/app/feature/removaldecision/RemovalDecisionAuditRecorder.kt', 'android/app/src/main/java/org/pca/app/platform/ProtectedModeProvisioningGate.kt', 'backend/src/familyrbac/RealProtectiveAuthorityResolver.ts'],
   testEvidence: [...[], 'android/app/src/test/java/org/pca/app/feature/removaldecision/RemovalDecisionCoordinatorTest.kt', 'backend/test/familyrbac/RealProtectiveAuthorityResolver.test.mjs'],
   sourceSolvableClass: 'SOURCE_COMPLETE_OWNER_DECISION_GATE',
-  externalGate: ['PENDING_OWNER_DECISION (PCA-DEC-002/014/015)', 'PRODUCTION_CRYPTO_SUITE'],
+  externalGate: ['PENDING_OWNER_DECISION', 'PRODUCTION_CRYPTO_SUITE'],
   currentGap: 'P23-Writer15B (2026-08-24), independently verified by direct source read: RemovalDecisionAuditRecorder.kt\'s own doc comment is explicit: "PCA-FR-144/145: platform-authority release on removal has no Device Owner mode to actually relinquish yet (correctly gated, see ProtectedModeProvisioningGate -- PENDING_OWNER_DECISION), so there is no DevicePolicyManager call this lane can make. What IS in scope and genuinely missing: an audit record of the local decision that authorized removal in the first place." recordAllowRemoval(...) writes exactly that record via the already-live TamperEventRepository, confirmed exercised by RemovalDecisionCoordinatorTest.kt. Server-side, RealProtectiveAuthorityResolver.ts is a real, tested, fail-closed resolver of current protective authority for a removal decision, itself gated on the same device-session/PRODUCTION_CRYPTO_SUITE path as the rest of this codebase. The audit-record half (the part genuinely in scope today) is real and closed; the platform-authority-release half cannot exist in source at all until Device Owner mode is provisionable, which is the same owner-decision gate as PCA-FR-082, not a second independent gap -- with a secondary, subordinate PRODUCTION_CRYPTO_SUITE dependency via RealProtectiveAuthorityResolver.ts for the server\'s view of protective authority.',
   nextAction: 'None for the audit-record half. The platform-authority-release outcome check becomes implementable once PCA-DEC-002/014/015 are resolved and Device Owner provisioning exists to check the outcome of.',
-  notes: 'P23-Writer15B (2026-08-24): status intentionally kept PARTIAL with sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE, matching PCA-FR-082 and the PCA-ADD-ENR-009 precedent; two externalGate entries reflect the primary owner-decision block plus a subordinate crypto-suite dependency (precedent for multi-gate rows: PCA-NFR-034).',
+  notes: 'P23-Writer15B (2026-08-24): status intentionally kept PARTIAL with sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE, matching PCA-FR-082 and the PCA-ADD-ENR-009 precedent; two externalGate entries reflect the primary owner-decision block plus a subordinate crypto-suite dependency (precedent for multi-gate rows: PCA-NFR-034). Decision references: PCA-DEC-002/014/015. Evidence correction (2026-08-25): the first externalGate entry was previously the single string "PENDING_OWNER_DECISION (PCA-DEC-002/014/015)", which splitGates() cannot parse, so only PRODUCTION_CRYPTO_SUITE ever reached the derived ledgers/CSVs. Normalized to the bare token used by every other gate in this matrix; the decision citation is preserved here in prose instead.',
 },
 'PCA-FR-111': {
   status: 'SOURCE_COMPLETE',
@@ -1722,9 +1723,19 @@ let progress = await readFile(paths.progress, 'utf8');
 progress = progress.replace(/Generated from the completion matrix and repository evidence on [^\.]+\./, `Generated from the completion matrix and repository evidence on ${new Date().toISOString().slice(0, 10)}.`);
 progress = updateFirstMetric(progress, 'Total matrix requirements', total);
 progress = updateFirstMetric(progress, 'SOURCE_COMPLETE', counts.SOURCE_COMPLETE);
+// R3 correction (2026-08-26): the "Exact requirement counts" table used to
+// list only 4 of the 6 real status buckets (omitting
+// SOURCE_COMPLETE_EXTERNAL_GATE and SOURCE_COMPLETE_VALIDATION_PENDING),
+// so its visible rows silently summed to less than "Total matrix
+// requirements" with nothing to catch the gap. Every ALL_STATUSES bucket is
+// now written, plus an explicit STATUS_BUCKET_SUM row so a future stale
+// count is a visible arithmetic mismatch, not a silent omission.
+progress = updateFirstMetric(progress, 'SOURCE_COMPLETE_EXTERNAL_GATE', counts.SOURCE_COMPLETE_EXTERNAL_GATE);
+progress = updateFirstMetric(progress, 'SOURCE_COMPLETE_VALIDATION_PENDING', counts.SOURCE_COMPLETE_VALIDATION_PENDING);
 progress = updateFirstMetric(progress, 'PARTIAL', counts.PARTIAL);
 progress = updateFirstMetric(progress, 'NOT_STARTED', counts.NOT_STARTED);
 progress = updateFirstMetric(progress, 'NOT_APPLICABLE', counts.NOT_APPLICABLE);
+progress = updateFirstMetric(progress, 'STATUS_BUCKET_SUM', accountedFor);
 progress = updateFirstMetric(progress, 'Partial plus not-started', partialPlusNotStarted);
 progress = updateFirstMetric(progress, 'External-gate rows', requirements.filter((r) => splitGates(r.externalGate).length > 0).length);
 // R3 correction (2026-08-21): "Source backlog reconciliation: N rows" was
@@ -1778,24 +1789,79 @@ progress = dbSectionPattern.test(progress)
 // This is the literal defect the correction (2026-08-21) was opened for.
 // Fixed the same way dbSection already handled it: read back whatever this
 // file currently says before deciding what to write.
+// R3 correction (2026-08-26): this section described one specific past
+// mutation-testing pass (15 mutations at commit 1ef54791...) but was titled
+// "Current-head", which stops being true the moment HEAD moves past that
+// commit -- exactly the staleness class this whole file exists to prevent.
+// Relabeled HISTORICAL and pinned to its own commit; see the
+// "Current mutation validation" section below for the live, re-verifiable
+// tooling/mutation/ harness result at today's actual HEAD.
 const previousMutationStatus = progress.match(/- MUTATION = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
 const previousMutationSurvivors = progress.match(/- VALID_MUTATION_SURVIVORS = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
-const previousMutationScope = progress.match(/(### Current-head mutation validation[\s\S]*?\n- Scope: )([^\n]*)/)?.[2]
+const previousMutationScope = progress.match(/(### Historical mutation validation \(Prompt-1\)[\s\S]*?\n- Scope: )([^\n]*)/)?.[2]
   ?? 'bounded relay/privacy disclosure, Safe Zone envelope/recipient-authorization, and Android key-epoch mutants; temporary compiled modules are restored/deleted after each case.';
 const mutationStatus = process.env.PCA_R3_MUTATION ?? previousMutationStatus;
 const mutationSurvivors = process.env.PCA_R3_VALID_MUTATION_SURVIVORS ?? previousMutationSurvivors;
 const mutationScope = process.env.PCA_R3_MUTATION_SCOPE ?? previousMutationScope;
 const mutationSection = [
-  '### Current-head mutation validation',
+  '### Historical mutation validation (Prompt-1)',
+  '',
+  '_This section describes one past mutation-testing pass pinned to the commit named below. It does not describe the current HEAD -- see "Current mutation validation" for that._',
   '',
   `- MUTATION = ${mutationStatus}`,
   `- VALID_MUTATION_SURVIVORS = ${mutationSurvivors}`,
   `- Scope: ${mutationScope}`,
 ].join('\n');
-const mutationSectionPattern = /\n### Current-head mutation validation[\s\S]*?(?=\n### |\n## |$)/;
+const mutationSectionPattern = /\n### (?:Current-head|Historical) mutation validation(?: \(Prompt-1\))?[\s\S]*?(?=\n### |\n## |$)/;
 progress = mutationSectionPattern.test(progress)
   ? progress.replace(mutationSectionPattern, `\n${mutationSection}`)
   : `${progress.trimEnd()}\n\n${mutationSection}\n`;
+
+// Current mutation validation (Prompt-2/3): read live from
+// tooling/mutation/reports/current-head-mutation.json (produced by
+// tooling/mutation/run-mutation.mjs, which itself refuses to run unless
+// invoked at the exact commit named in tooling/mutation/mutation-scope.json)
+// rather than trusting a caller-supplied claim. If the report's own
+// mutationHead does not match today's actual git HEAD, that report is
+// stale for current-head purposes and this section says so honestly
+// instead of presenting old numbers as current.
+// Git HEAD is a property of the real repository checkout, not of
+// effectiveRoot (which the test suite points at a disposable, non-git
+// fixture directory via PCA_R3_TEST_ROOT) -- always resolve it against the
+// real repo root this script lives in.
+const currentGitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+let currentMutationReport = null;
+try {
+  currentMutationReport = JSON.parse(await readFile(`${effectiveRoot}/tooling/mutation/reports/current-head-mutation.json`, 'utf8'));
+} catch {
+  currentMutationReport = null;
+}
+const reportMatchesHead = currentMutationReport?.mutationHead === currentGitHead;
+const currentMutationSection = reportMatchesHead
+  ? [
+    '### Current mutation validation (Prompt-2/3)',
+    '',
+    `- MUTATION_HEAD = ${currentMutationReport.mutationHead}`,
+    `- MUTANTS_TOTAL = ${Object.values(currentMutationReport.counts).reduce((sum, n) => sum + n, 0)}`,
+    `- MUTANTS_KILLED = ${currentMutationReport.counts.KILLED}`,
+    `- MUTANTS_EQUIVALENT = ${currentMutationReport.counts.EQUIVALENT}`,
+    `- MUTANTS_INVALID = ${currentMutationReport.counts.INVALID}`,
+    `- VALID_MUTATION_SURVIVORS = ${currentMutationReport.validSurvivors}`,
+    `- ENVIRONMENT_BLOCK = ${currentMutationReport.environmentBlock ?? 'null'}`,
+    `- Scope: ${Object.keys(currentMutationReport.boundedRequirements ?? {}).join(', ')} (tooling/mutation/mutation-scope.json). Generated ${currentMutationReport.generatedAtUtc}.`,
+  ].join('\n')
+  : [
+    '### Current mutation validation (Prompt-2/3)',
+    '',
+    `- MUTATION_HEAD_MATCH = FAIL`,
+    `- CURRENT_GIT_HEAD = ${currentGitHead}`,
+    `- REPORT_MUTATION_HEAD = ${currentMutationReport?.mutationHead ?? 'NO_REPORT_FOUND'}`,
+    '- The tooling/mutation/reports/current-head-mutation.json report does not match the current git HEAD (or does not exist). Run `node tooling/mutation/run-mutation.mjs` at the current HEAD (after updating tooling/mutation/mutation-scope.json entrySha to match) to produce a current, re-verifiable result before treating mutation coverage as evidenced at this commit.',
+  ].join('\n');
+const currentMutationSectionPattern = /\n### Current mutation validation \(Prompt-2\/3\)[\s\S]*?(?=\n### |\n## |$)/;
+progress = currentMutationSectionPattern.test(progress)
+  ? progress.replace(currentMutationSectionPattern, `\n${currentMutationSection}`)
+  : `${progress.trimEnd()}\n\n${currentMutationSection}\n`;
 
 // R3 correction (2026-08-21): the single, explicit "what is CURRENT, right
 // now, at this exact HEAD" section the correction requires -- distinct from
@@ -1817,10 +1883,35 @@ const parentRealE2e = process.env.PCA_R3_PARENT_REAL_E2E ?? previousParentRealE2
 const platformAdminRealE2e = process.env.PCA_R3_PLATFORM_ADMIN_REAL_E2E ?? previousPlatformAdminRealE2e;
 const finalSourceAuditFindings = process.env.PCA_R3_FINAL_SOURCE_AUDIT_FINDINGS ?? previousFinalSourceAuditFindings;
 const knownLocalDefects = process.env.PCA_R3_KNOWN_LOCAL_DEFECTS ?? previousKnownLocalDefects;
+// Same caller-supplied/carry-forward discipline, added 2026-08-26 for the
+// production demo-mode gates (parent-web/scripts/productionDemoModeGate.mjs,
+// platform-admin-web/scripts/productionDemoModeGate.mjs) and the two P23
+// programme-boundary SHAs, which this script has no independent way to
+// verify on its own and must not fabricate.
+const previousParentDemoGate = progress.match(/- PARENT_PRODUCTION_DEMO_MODE_GATE = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousParentDemoNegativeControl = progress.match(/- PARENT_DEMO_MODE_NEGATIVE_CONTROL = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousPlatformAdminDemoGate = progress.match(/- PLATFORM_ADMIN_PRODUCTION_DEMO_MODE_GATE = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousPlatformAdminDemoNegativeControl = progress.match(/- PLATFORM_ADMIN_DEMO_MODE_NEGATIVE_CONTROL = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const previousDemoGateSha = progress.match(/- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = (\S+)/)?.[1] ?? 'NOT_EXECUTED';
+const parentDemoGate = process.env.PCA_R3_PARENT_DEMO_GATE ?? previousParentDemoGate;
+const parentDemoNegativeControl = process.env.PCA_R3_PARENT_DEMO_NEGATIVE_CONTROL ?? previousParentDemoNegativeControl;
+const platformAdminDemoGate = process.env.PCA_R3_PLATFORM_ADMIN_DEMO_GATE ?? previousPlatformAdminDemoGate;
+const platformAdminDemoNegativeControl = process.env.PCA_R3_PLATFORM_ADMIN_DEMO_NEGATIVE_CONTROL ?? previousPlatformAdminDemoNegativeControl;
+const demoGateTestedSha = process.env.PCA_R3_DEMO_GATE_TESTED_SHA ?? previousDemoGateSha;
+const productionDemoModeGate = [parentDemoGate, platformAdminDemoGate].every((v) => v === 'PASS') ? 'PASS' : 'NOT_ALL_PASS';
+const demoModeNegativeControl = [parentDemoNegativeControl, platformAdminDemoNegativeControl].every((v) => v === 'PASS') ? 'PASS' : 'NOT_ALL_PASS';
+const p23EntrySha = process.env.PCA_R3_P23_ENTRY_SHA ?? progress.match(/- P23_ENTRY_SHA = (\S+)/)?.[1] ?? 'NOT_SUPPLIED';
+const p23FinalImplementationSha = process.env.PCA_R3_P23_FINAL_IMPLEMENTATION_SHA ?? progress.match(/- P23_FINAL_IMPLEMENTATION_SHA = (\S+)/)?.[1] ?? currentGitHead;
+const currentMutationTotal = reportMatchesHead ? Object.values(currentMutationReport.counts).reduce((sum, n) => sum + n, 0) : 'NOT_PROVEN_AT_CURRENT_HEAD';
+const currentMutationKilled = reportMatchesHead ? currentMutationReport.counts.KILLED : 'NOT_PROVEN_AT_CURRENT_HEAD';
+const currentMutationSurvivors = reportMatchesHead ? currentMutationReport.validSurvivors : 'NOT_PROVEN_AT_CURRENT_HEAD';
 const currentHeadSection = [
   '### Current-head final state',
   '',
+  `- P23_ENTRY_SHA = ${p23EntrySha}`,
+  `- P23_FINAL_IMPLEMENTATION_SHA = ${p23FinalImplementationSha}`,
   `- TOTAL_REQUIREMENTS = ${total}`,
+  `- STATUS_BUCKET_SUM = ${accountedFor}`,
   `- REAL_SOURCE_GAP = ${realSourceGapCount}`,
   `- SOURCE_SOLVABLE_OPEN = ${sourceSolvableOpenCount}`,
   `- SOURCE_COMPLETE_EXTERNAL_GATE = ${externalGateClassCount}`,
@@ -1828,10 +1919,20 @@ const currentHeadSection = [
   `- OWNER_DECISION_REQUIRED_FOR_SOURCE = ${ownerDecisionRequiredClassCount}`,
   `- PARENT_REAL_E2E = ${parentRealE2e}`,
   `- PLATFORM_ADMIN_REAL_E2E = ${platformAdminRealE2e}`,
+  `- P23_MUTANTS_TOTAL = ${currentMutationTotal}`,
+  `- P23_MUTANTS_KILLED = ${currentMutationKilled}`,
+  `- P23_VALID_MUTATION_SURVIVORS = ${currentMutationSurvivors}`,
   `- VALID_MUTATION_SURVIVORS = ${mutationSurvivors}`,
+  `- PARENT_PRODUCTION_DEMO_MODE_GATE = ${parentDemoGate}`,
+  `- PARENT_DEMO_MODE_NEGATIVE_CONTROL = ${parentDemoNegativeControl}`,
+  `- PLATFORM_ADMIN_PRODUCTION_DEMO_MODE_GATE = ${platformAdminDemoGate}`,
+  `- PLATFORM_ADMIN_DEMO_MODE_NEGATIVE_CONTROL = ${platformAdminDemoNegativeControl}`,
+  `- PRODUCTION_DEMO_MODE_GATE = ${productionDemoModeGate}`,
+  `- DEMO_MODE_NEGATIVE_CONTROL = ${demoModeNegativeControl}`,
+  `- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = ${demoGateTestedSha}`,
   `- FINAL_SOURCE_AUDIT_FINDINGS = ${finalSourceAuditFindings}`,
   `- KNOWN_LOCAL_DEFECTS = ${knownLocalDefects}`,
-  '- TOTAL_REQUIREMENTS/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from R3_SOURCE_BACKLOG.csv on every regeneration. The five evidence fields are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.',
+  '- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read live from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_AT_CURRENT_HEAD if that report does not match today\'s actual git HEAD. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.',
 ].join('\n');
 const currentHeadSectionPattern = /\n### Current-head final state[\s\S]*?(?=\n### |\n## |$)/;
 progress = currentHeadSectionPattern.test(progress)
