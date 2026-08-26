@@ -819,7 +819,8 @@
   },
   "recovery": {
     "description": "Recovery material (the Recovery Secret) is never displayed by PCA infrastructure and is never shown here in readable form. This screen only lets the Owner start an authenticated recovery transaction.",
-    "startTransaction": "Start recovery transaction (dev stub)",
+    "startTransaction": "Start recovery transaction",
+    "notYetAvailable": "Recovery transactions are not available yet: the authorized-recovery verification this action requires has not been built and reviewed. No recovery action is performed, and no recovery material is exposed by starting this.",
     "secretDisclosureTitle": "Before you create your Recovery Secret",
     "secretDisclosureBody": "PCA infrastructure never receives or stores this secret. Keep it offline and available to the family owner.",
     "secretDisclosureWarning": "If you lose the Recovery Secret and all active parent devices, family recovery is permanently impossible. PCA support cannot recover it; start a new family enrollment instead.",
