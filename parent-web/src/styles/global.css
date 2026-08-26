@@ -448,6 +448,8 @@ table.data-table td {
 .field input[type='number'],
 .field input[type='date'],
 .field input[type='time'],
+.field input[type='email'],
+.field input[type='password'],
 .field select,
 .field textarea {
   min-height: var(--touch-target);
@@ -463,6 +465,28 @@ table.data-table td {
   align-items: center;
   gap: var(--space-2);
   min-height: var(--touch-target);
+}
+
+/* ---------- Auth shell (register / login / verify-email) ---------- */
+
+.auth-page {
+  max-width: 24rem;
+  margin-inline: auto;
+  margin-block: var(--space-6);
+  padding: var(--space-4);
+}
+
+.auth-page > form {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-block: var(--space-4);
+}
+
+.auth-page > form button[type='submit'] {
+  width: 100%;
+  margin-block-start: var(--space-2);
 }
 
 /* ---------- Loading / error / empty ---------- */

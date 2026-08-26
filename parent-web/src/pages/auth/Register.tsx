@@ -49,40 +49,46 @@ export default function Register() {
       <h1 id="register-title">{t('auth.registerTitle')}</h1>
       <p>{t('auth.registerBody')}</p>
       <form onSubmit={handleSubmit} noValidate>
-        <label htmlFor="register-email">{t('auth.emailLabel')}</label>
-        <input
-          id="register-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="register-email">{t('auth.emailLabel')}</label>
+          <input
+            id="register-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
 
-        <label htmlFor="register-password">{t('auth.passwordLabel')}</label>
-        <input
-          id="register-password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={10}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="register-password">{t('auth.passwordLabel')}</label>
+          <input
+            id="register-password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={10}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
 
-        <label htmlFor="register-password-confirmation">{t('auth.passwordConfirmationLabel')}</label>
-        <input
-          id="register-password-confirmation"
-          name="passwordConfirmation"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={10}
-          value={passwordConfirmation}
-          onChange={(e) => setPasswordConfirmation(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="register-password-confirmation">{t('auth.passwordConfirmationLabel')}</label>
+          <input
+            id="register-password-confirmation"
+            name="passwordConfirmation"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={10}
+            value={passwordConfirmation}
+            onChange={(e) => setPasswordConfirmation(e.target.value)}
+          />
+        </div>
 
         {error && (
           <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>

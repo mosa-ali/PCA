@@ -47,30 +47,34 @@ export default function VerifyEmail() {
       <h1 id="verify-email-title">{t('auth.verifyTitle')}</h1>
       <p>{t('auth.verifyBody', { email: email || t('auth.emailLabel') })}</p>
       <form onSubmit={handleSubmit} noValidate>
-        <label htmlFor="verify-email-address">{t('auth.emailLabel')}</label>
-        <input
-          id="verify-email-address"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="verify-email-address">{t('auth.emailLabel')}</label>
+          <input
+            id="verify-email-address"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
 
-        <label htmlFor="verify-email-code">{t('auth.codeLabel')}</label>
-        <input
-          id="verify-email-code"
-          name="code"
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]{6}"
-          maxLength={6}
-          autoComplete="one-time-code"
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-        />
+        <div className="field">
+          <label htmlFor="verify-email-code">{t('auth.codeLabel')}</label>
+          <input
+            id="verify-email-code"
+            name="code"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            autoComplete="one-time-code"
+            required
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          />
+        </div>
 
         {error && (
           <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>

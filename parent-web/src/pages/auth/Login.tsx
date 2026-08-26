@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
 
@@ -13,6 +13,7 @@ import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
 export default function Login() {
   const { t } = useTranslation();
   const clients = getApiClients();
+  const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +26,8 @@ export default function Login() {
     setSubmitting(true);
     try {
       await clients.serviceAuth.signIn(email, password);
-      window.location.assign('/dashboard');
+      const from = (location.state as { from?: string } | null)?.from ?? '/dashboard';
+      window.location.assign(from);
     } catch (err) {
       if (err instanceof ServiceAuthError) {
         if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
@@ -42,27 +44,31 @@ export default function Login() {
     <section aria-labelledby="login-title" className="auth-page">
       <h1 id="login-title">{t('auth.loginTitle')}</h1>
       <form onSubmit={handleSubmit} noValidate>
-        <label htmlFor="login-email">{t('auth.emailLabel')}</label>
-        <input
-          id="login-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="login-email">{t('auth.emailLabel')}</label>
+          <input
+            id="login-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
 
-        <label htmlFor="login-password">{t('auth.passwordLabel')}</label>
-        <input
-          id="login-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="field">
+          <label htmlFor="login-password">{t('auth.passwordLabel')}</label>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
 
         {error && (
           <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>

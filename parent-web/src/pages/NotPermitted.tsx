@@ -6,14 +6,15 @@ export default function NotPermitted() {
   const { t } = useTranslation();
   const location = useLocation();
   const role = useCurrentRole();
-  const state = location.state as { reason?: string } | null;
+  const state = location.state as { from?: string; reason?: string; action?: string } | null;
+  const backTo = state?.from ?? '/dashboard';
 
   return (
     <section aria-labelledby="not-permitted-title" role="alert">
       <h1 id="not-permitted-title">{t('rbac.deniedTitle')}</h1>
       <p>{t('rbac.deniedBody', { role: t(`roles.${role.toLowerCase()}`) })}</p>
       {state?.reason && <p style={{ color: 'var(--color-text-muted)' }}>{state.reason}</p>}
-      <Link to="/dashboard" className="btn">
+      <Link to={backTo} className="btn">
         {t('common.back')}
       </Link>
     </section>
