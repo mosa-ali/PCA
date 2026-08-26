@@ -650,7 +650,16 @@
     "capabilityNotice": "لا تتوفر أدلة يوتيوب عندما لا يستطيع الجهاز أو الإذن المطلوب توفيرها؛ وعدم التوفر لا يعني عدم وجود استخدام."
   },
   "prayer": {
-    "calculationMethod": "طريقة الحساب: {{method}}"
+    "calculationMethod": "طريقة الحساب: {{method}}",
+    "reminders": "التذكيرات: {{status}}",
+    "methods": {
+      "MUSLIM_WORLD_LEAGUE": "رابطة العالم الإسلامي",
+      "ISNA": "الجمعية الإسلامية لأمريكا الشمالية",
+      "EGYPTIAN": "الهيئة المصرية العامة للمساحة",
+      "UMM_AL_QURA": "جامعة أم القرى، مكة المكرمة",
+      "KARACHI": "الجامعة الإسلامية للعلوم، كراتشي",
+      "TEHRAN": "معهد الجيوفيزياء، جامعة طهران"
+    }
   },
   "protectionStatus": {
     "epochSummary": "حقبة مجموعة ثقة العائلة {{trustSetEpoch}}، حقبة المفتاح {{keyEpoch}}."

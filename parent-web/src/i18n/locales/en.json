@@ -650,7 +650,16 @@
     "capabilityNotice": "YouTube evidence is unavailable when the device or required permission cannot provide it; unavailable does not mean zero use."
   },
   "prayer": {
-    "calculationMethod": "Calculation method: {{method}}"
+    "calculationMethod": "Calculation method: {{method}}",
+    "reminders": "Reminders: {{status}}",
+    "methods": {
+      "MUSLIM_WORLD_LEAGUE": "Muslim World League",
+      "ISNA": "Islamic Society of North America",
+      "EGYPTIAN": "Egyptian General Authority of Survey",
+      "UMM_AL_QURA": "Umm al-Qura University, Makkah",
+      "KARACHI": "University of Islamic Sciences, Karachi",
+      "TEHRAN": "Institute of Geophysics, University of Tehran"
+    }
   },
   "protectionStatus": {
     "epochSummary": "Family trust-set epoch {{trustSetEpoch}}, key epoch {{keyEpoch}}."

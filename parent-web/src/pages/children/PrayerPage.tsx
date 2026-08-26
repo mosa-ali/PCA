@@ -20,8 +20,12 @@ export default function PrayerPage() {
       <article className="card">
         <h2>{t('nav.prayer')}</h2>
         <StatusBadge state={data.state} />
-        <p>{t('prayer.calculationMethod', { method: data.calculationMethod })}</p>
-        <p>Reminders: {data.remindersEnabled ? t('common.enable') : t('common.disable')}</p>
+        <p>
+          {t('prayer.calculationMethod', {
+            method: t(`prayer.methods.${data.calculationMethod}`, { defaultValue: data.calculationMethod }),
+          })}
+        </p>
+        <p>{t('prayer.reminders', { status: data.remindersEnabled ? t('common.enable') : t('common.disable') })}</p>
       </article>
     </div>
   );
