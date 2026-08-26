@@ -637,7 +637,13 @@
     "safeZoneDisable": "Disable",
     "safeZoneEnable": "Enable",
     "safeZoneDeleteConfirm": "Delete this safe zone?",
-    "safeZoneSaveFailed": "The safe zone could not be saved."
+    "safeZoneSaveFailed": "The safe zone could not be saved.",
+    "safeZoneList": "Configured safe zones",
+    "safeZoneContentEncrypted": "Zone details (label, location, radius) are end-to-end encrypted and cannot be displayed here -- only delivery status is shown.",
+    "safeZoneEnabledLabel": "Enabled",
+    "safeZoneLastUpdated": "Last updated: {{value}}",
+    "safeZoneFamilyAuthorityRequired": "This action is not permitted for your role, or this browser's family trust has not converged yet.",
+    "safeZoneInvalidDefinition": "Check the label, coordinates, and radius -- one of these values is not valid."
   },
   "eyeProtection": {
     "reminders": "Reminders: {{status}}"

@@ -637,7 +637,13 @@
     "safeZoneDisable": "تعطيل",
     "safeZoneEnable": "تفعيل",
     "safeZoneDeleteConfirm": "هل تريد حذف هذه المنطقة الآمنة؟",
-    "safeZoneSaveFailed": "تعذر حفظ المنطقة الآمنة."
+    "safeZoneSaveFailed": "تعذر حفظ المنطقة الآمنة.",
+    "safeZoneList": "المناطق الآمنة المُعدّة",
+    "safeZoneContentEncrypted": "تفاصيل المنطقة (التسمية والموقع ونصف القطر) مشفّرة تشفيرًا تامًا بين الطرفين ولا يمكن عرضها هنا -- تُعرض حالة التسليم فقط.",
+    "safeZoneEnabledLabel": "مفعّلة",
+    "safeZoneLastUpdated": "آخر تحديث: {{value}}",
+    "safeZoneFamilyAuthorityRequired": "هذا الإجراء غير مسموح به لدورك، أو أن ثقة الأسرة لهذا المتصفح لم تتزامن بعد.",
+    "safeZoneInvalidDefinition": "تحقق من التسمية والإحداثيات ونصف القطر -- إحدى هذه القيم غير صالحة."
   },
   "eyeProtection": {
     "reminders": "التذكيرات: {{status}}"
