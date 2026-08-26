@@ -180,7 +180,7 @@ function buildRealClients(): PcaApiClients {
     familyAuthority: new UnavailableFamilyAuthorityGateway(),
     parentFamilyData: new RealParentFamilyDataGateway(trustedBrowser),
     deviceStatus: new RealDeviceStatusClient(trustedBrowser),
-    requests: new RealRequestClient(trustedBrowser),
+    requests: new RealRequestClient(config.apiBaseUrl, trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
     webRuleAdmin: new RealWebRuleAdminClient(trustedBrowser),
     trustedBrowser,

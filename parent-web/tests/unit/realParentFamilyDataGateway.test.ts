@@ -61,7 +61,7 @@ describe('RealParentFamilyDataGateway / RealDeviceStatusClient / RealRequestClie
     const provider = new StubTrustedBrowserProvider(snapshotWith('REVOKED'));
     const gateway = new RealParentFamilyDataGateway(provider, createLocalFamilyDataStore());
     const deviceStatus = new RealDeviceStatusClient(provider, createLocalFamilyDataStore());
-    const requests = new RealRequestClient(provider, createLocalFamilyDataStore());
+    const requests = new RealRequestClient('http://localhost', provider, createLocalFamilyDataStore());
     await expect(gateway.getScreenTime('child-1')).rejects.toMatchObject({ code: 'ENDPOINT_NOT_TRUSTED' });
     await expect(deviceStatus.listDeviceStatuses()).rejects.toMatchObject({ code: 'ENDPOINT_NOT_TRUSTED' });
     await expect(requests.listRequests()).rejects.toMatchObject({ code: 'ENDPOINT_NOT_TRUSTED' });
