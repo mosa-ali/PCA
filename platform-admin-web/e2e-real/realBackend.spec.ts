@@ -57,6 +57,10 @@ import { computeTotp, msUntilNextTotpWindow } from './support/totp';
  *        E2E_REAL_ADMIN_PASSWORD
  *        E2E_REAL_ADMIN_TOTP_SECRET (base32, from the bootstrap script's
  *          printed otpauth:// URI's `secret=` query parameter)
+ *        E2E_REAL_TEST_FAMILY_ID (optional -- a real families.family_id
+ *          row that already exists in the database, e.g. from
+ *          backend/scripts/seed-local.mjs's output. Only gates the
+ *          suspend/reactivate step below; every other step runs without it.)
  *
  * Run with: npm run test:e2e:real (see package.json).
  */
@@ -160,6 +164,38 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByRole('button', { name: /confirm/i }).click();
 
     await expect(page.getByRole('cell', { name: createdAdminName })).toBeVisible();
+  });
+
+  await test.step('accounts: suspending and reactivating a real family account round-trips through real MySQL, each requiring its own fresh step-up code', async () => {
+    const familyId = process.env.E2E_REAL_TEST_FAMILY_ID;
+    test.skip(!familyId, 'E2E_REAL_TEST_FAMILY_ID not set -- skipping the real suspend/reactivate check.');
+
+    await navigateTo(/^accounts$/i);
+    await page.getByRole('link', { name: familyId! }).click();
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+
+    await page.getByLabel(/reason for suspension/i).fill('E2E real-backend suspend/reactivate check');
+    await page.getByRole('button', { name: /^suspend account$/i }).click();
+    await page.waitForTimeout(msUntilNextTotpWindow());
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!));
+    await page.getByRole('button', { name: /confirm/i }).click();
+    await expect(page.getByText('Suspended', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E real-backend suspend/reactivate check')).toBeVisible();
+
+    await page.getByRole('button', { name: /^reactivate account$/i }).click();
+    await page.waitForTimeout(msUntilNextTotpWindow());
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!));
+    await page.getByRole('button', { name: /confirm/i }).click();
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+
+    // Navigate away and back to force a fresh GET, proving both mutations
+    // actually persisted to MySQL rather than only local React state.
+    await navigateTo(/^dashboard$/i);
+    await navigateTo(/^accounts$/i);
+    await page.getByRole('link', { name: familyId! }).click();
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
   });
 
   await test.step('audit log renders the real ADMIN_LOGIN + ADMIN_CREATED events this session itself just generated', async () => {
