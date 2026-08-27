@@ -88,7 +88,13 @@ function ChildCard({ child }: { child: ChildSummary }) {
         <dt>{t('dashboard.policyDelivery')}</dt>
         <dd><StatusBadge state={child.policyDeliveryState} /></dd>
         <dt>{t('dashboard.pendingRequests')}</dt>
-        <dd>{child.pendingRequestCount}</dd>
+        <dd>
+          {child.pendingRequestCount > 0 ? (
+            <Link to="/requests">{child.pendingRequestCount}</Link>
+          ) : (
+            child.pendingRequestCount
+          )}
+        </dd>
         <dt>{t('dashboard.importantAlerts')}</dt>
         <dd>{child.importantAlertCount}</dd>
       </dl>

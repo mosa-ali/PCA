@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
@@ -73,7 +73,7 @@ export default function ChildOverview() {
       </article>
       <article className="card">
         <h2>{t('dashboard.pendingRequests')}</h2>
-        <p>{data.pendingRequestCount}</p>
+        <p>{data.pendingRequestCount > 0 ? <Link to="/requests">{data.pendingRequestCount}</Link> : data.pendingRequestCount}</p>
       </article>
     </div>
   );
