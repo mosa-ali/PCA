@@ -4,6 +4,8 @@ Generated 2026-08-27. Baseline: pca-dev @ `d04a0816b9876c75ebcd5b9d53163ded76c5d
 
 This is a full route/source/product audit of parent-web and platform-admin-web, performed by 12 parallel writer-scoped audits reading actual source (components, API clients, backend routes, tests, i18n locales, CSS). See `PCA_PAGE_AUDIT.csv` for the per-route data. This document is the synthesis, the writer ownership plan, and the priority backlog.
 
+**`PCA_PAGE_AUDIT.csv` is a frozen Stage-0 discovery baseline — it is not updated as fixes land.** Current, per-P0 remediation status lives in `PCA_P0_DISPOSITION.csv` (16/16 P0s, one row each, with normative evidence for every reclassification). Current runtime/browser-QA truth across all 60 routes lives in `PCA_PAGE_QA_LEDGER.csv`. Both are checked by `tooling/product-completion/validate-ledgers.mjs`, which must pass before any product-completion documentation commit.
+
 ## Executive summary
 
 60 active routes audited (39 parent-web, 21 platform-admin-web). Priority distribution: **16 P0, 20 P1, 18 P2, 6 P3.**
@@ -28,9 +30,9 @@ A smaller number of standalone, concrete defects were also found and are cheap t
 
 **Runtime/Docker (Writer 13 lane)**: no `docker-compose.yml` exists at the repo root (only a `backend/Dockerfile`); `backend/scripts/seed-local.mjs` currently seeds only two minimal "happy path" families. **Docker's daemon is confirmed unavailable in this environment** (client present, server/daemon connection refused — same finding as the prior remediation session). This blocks any real-browser-against-real-DB verification and the final acceptance barrier's Docker/real-E2E requirements until Docker Desktop is actually running. This is an environment fact, not a defect, and will not be fabricated around.
 
-## One item flagged for owner decision (not resolved unilaterally)
+## Owner decision: resolved
 
-**Platform Admin `/settings` RBAC scope.** The route-level gate restricts the whole page to `ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS` (APP_OWNER/PLATFORM_ADMIN only), but the backend's own free-starter-defaults/currency/market-mapping read endpoints gate on `VIEW_SUPPORT_ACCOUNT_METADATA`, which is ALLOW for every role — so FINANCE_ADMIN/SUPPORT_ADMIN/AUDITOR_READ_ONLY currently cannot view data the backend's own file header says they should be able to see. A test (`tests/unit/App.routeSecurity.test.tsx`) locks in the current stricter behavior as intentional ("AUDITOR_READ_ONLY is redirected away from admin-account management"). Before wiring the rest of `/settings` to the real category-settings backend, this needs an explicit answer: **is the page-level gate correct as-is (and the backend's stated read policy is what's stale), or should read-only roles gain view access before write-capable UI is added?** No RBAC boundary will be widened or narrowed without this being resolved — this is exactly the kind of security-architecture/access-control question the programme's own invariants require preserving, not guessing at.
+**Platform Admin `/settings` RBAC scope — RESOLVED, keep the stricter page-level gate.** The route-level gate restricting the whole page to `ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS` (APP_OWNER/PLATFORM_ADMIN only) is confirmed correct and intentional, matching `tests/unit/App.routeSecurity.test.tsx`'s existing assertion that AUDITOR_READ_ONLY is redirected away from admin-account management. It is **not** being widened to SUPPORT_ADMIN/FINANCE_ADMIN/AUDITOR_READ_ONLY. The backend's free-starter-defaults/currency/market-mapping read endpoints gating on `VIEW_SUPPORT_ACCOUNT_METADATA` (ALLOW for every role) are a separate, legitimate surface — those endpoints have non-page consumers and their existing permission is preserved unchanged; only the `/settings` *page* gate was in question, and it stays as-is. No RBAC boundary was widened or narrowed.
 
 ## Writer ownership (confirmed against actual route evidence; unchanged from the default proposal)
 
@@ -56,12 +58,12 @@ No reassignment was needed versus the default proposal — actual route ownershi
 
 ## Priority backlog (P0, 16 items)
 
-1. `Requests.tsx` — wire `RealRequestClient.decide()`/`grantBonusTime()` to the real, already-built backend (W06)
-2. `WellbeingAdmin.tsx` — no backend/client exists at all; build it, and fix the silent-catch pattern (W06)
-3. `Members.tsx` — no family-authority backend exists at all; demo-only today (W07)
+1. `Requests.tsx` — **FIXED (`d496f32`)**, wired `RealRequestClient.decide()`/`grantBonusTime()` to the real, already-built backend (W06). Still externally gated for function by `UnavailableTrustSetRoleResolver` (fails closed 403 until a real trust-set source is wired) — see `PCA_P0_DISPOSITION.csv`.
+2. `WellbeingAdmin.tsx` — **RECLASSIFIED_NOT_DEFECT.** No backend/client is being built here: `parent-web/src/domain/wellbeing.ts`'s own header states this is "the UI-side data shape for the future Agent-8 wellbeing message-control feature... Storage/delivery authority is out of scope here," and `unavailableProviders.ts` groups `WellbeingMessageAdminClient` with `FamilyAuthorityGateway` as "still genuinely unimplemented" (future scope, not a wiring gap like Requests). The silent-catch anti-pattern (`toggleCurated`/`duplicate`/`archive`/`restore`/`saveDraft`) was fixed independently (`3d43f7d`). Building the backend now would be scope creep against the accepted architecture (W06).
+3. `Members.tsx` — no family-authority backend exists at all; demo-only today. Confirmed no `FamilyAuthorityGateway` implementation exists anywhere in the repo (unlike `TrustSetRoleResolver`, which has a real, unwired class). Tracked as a genuine open gap (`NOT_STARTED`), not a deferred feature (W07).
 4. `Devices.tsx`/panels — localize `ProtectionAdministrationPanel` (~40 orphaned strings); fix RBAC gating inconsistency (W07)
 5. `Retention.tsx` / `Export.tsx` / `DeleteNow.tsx` — no browser bearer-token session flow; render already-authored disclosure copy (W08, 3 items)
-6. `Recovery.tsx` — "Start recovery transaction" button has no `onClick` handler; feature does not exist beyond the warning screen (W08)
+6. `Recovery.tsx` — **RECLASSIFIED_EXTERNAL_GATE, crypto-primitive-level (`914c6d5` fixed the UI-honesty portion only).** The dead "Start recovery transaction" button (no `onClick` handler at all) was replaced with an honest not-yet-available message. The underlying ceremony was deliberately not built: `docs/implementation/PCA_COMPLETION_V2_MATRIX.json`'s `PCA-13` phase states recovery cryptography (RS→RWK KDF, recovery envelope AEAD/KEM open) is `NOT_IMPLEMENTED`, and `backend/src/familyrbac/UnavailableAuthorizedRecoveryAuthority.ts` mirrors `UnavailableTrustSetRoleResolver`'s fail-closed-pending-review posture — the same class of gate as `PRODUCTION_CRYPTO_SUITE`, requiring human security review before any implementation. Not rushed in this remediation pass (W08).
 7. `Audit.tsx` (parent) — no backend at all for family-facing audit trail (W08)
 8. `Dashboard.tsx` / `ChildOverview.tsx` (parent) — fix runtime-sync API path mismatch and `ChildLayout`'s raw-childId heading (W02, 2 items — both fixable independent of the crypto gate)
 9. `ScreenTimePage.tsx` / `AppsPage.tsx` — no backend route exists for screen-time or app-rule reads/writes (W03, 2 items)
