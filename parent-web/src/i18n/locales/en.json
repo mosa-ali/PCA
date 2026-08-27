@@ -722,7 +722,23 @@
     }
   },
   "protectionStatus": {
-    "epochSummary": "Family trust-set epoch {{trustSetEpoch}}, key epoch {{keyEpoch}}."
+    "epochSummary": "Family trust-set epoch {{trustSetEpoch}}, key epoch {{keyEpoch}}.",
+    "alertsTitle": "Security and protection alerts",
+    "alertsPendingDecryption": "Alerts are waiting for decryption by a trusted parent device.",
+    "alertsEmpty": "No security alerts are available.",
+    "deviceAlertSr": "Device alert",
+    "triggers": {
+      "DISABLE_OR_REMOVAL_REQUESTED": "Disable or removal requested",
+      "REPEATED_INVALID_PIN": "Repeated invalid PIN",
+      "AUTHORITY_CHANGE": "Authorization or management authority changed",
+      "CRITICAL_PERMISSION_OR_VPN_LOST": "Critical permission or VPN capability lost",
+      "UNEXPECTED_OFFLINE": "Unexpected offline state",
+      "TIME_TAMPERING": "Time tampering detected",
+      "PROTECTION_DEGRADED": "Protection degraded",
+      "REINSTALLATION": "Reinstallation detected",
+      "INVITATION_REDEEMED": "Invitation redeemed",
+      "UNENROLLMENT": "Unenrollment"
+    }
   },
   "export": {
     "description": "An export is generated and encrypted entirely on this device; only the family's own key material can open it. Requesting one here records a pending export intake request with the service -- it is not yet a downloadable file (crypto-review pending).",

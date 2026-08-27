@@ -722,7 +722,23 @@
     }
   },
   "protectionStatus": {
-    "epochSummary": "حقبة مجموعة ثقة العائلة {{trustSetEpoch}}، حقبة المفتاح {{keyEpoch}}."
+    "epochSummary": "حقبة مجموعة ثقة العائلة {{trustSetEpoch}}، حقبة المفتاح {{keyEpoch}}.",
+    "alertsTitle": "تنبيهات الأمان والحماية",
+    "alertsPendingDecryption": "التنبيهات بانتظار فك التشفير بواسطة جهاز والد موثوق.",
+    "alertsEmpty": "لا توجد تنبيهات أمان متاحة.",
+    "deviceAlertSr": "تنبيه جهاز",
+    "triggers": {
+      "DISABLE_OR_REMOVAL_REQUESTED": "طُلب تعطيل أو إزالة",
+      "REPEATED_INVALID_PIN": "محاولات متكررة برمز إدارة غير صحيح",
+      "AUTHORITY_CHANGE": "تغيّرت صلاحية التفويض أو الإدارة",
+      "CRITICAL_PERMISSION_OR_VPN_LOST": "فقدان إذن حرج أو صلاحية VPN",
+      "UNEXPECTED_OFFLINE": "حالة عدم اتصال غير متوقعة",
+      "TIME_TAMPERING": "تم اكتشاف تلاعب بالوقت",
+      "PROTECTION_DEGRADED": "تدهورت الحماية",
+      "REINSTALLATION": "تم اكتشاف إعادة تثبيت",
+      "INVITATION_REDEEMED": "تم استخدام الدعوة",
+      "UNENROLLMENT": "إلغاء التسجيل"
+    }
   },
   "export": {
     "description": "يتم إنشاء التصدير وتشفيره بالكامل على هذا الجهاز؛ فقط مواد المفتاح الخاصة بالعائلة يمكنها فتحه. يؤدي طلب التصدير هنا إلى تسجيل طلب استيعاب معلّق لدى الخدمة -- وهو ليس بعد ملفاً قابلاً للتنزيل (مراجعة التشفير معلّقة).",
