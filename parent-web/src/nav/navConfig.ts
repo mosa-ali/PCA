@@ -52,6 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
     titleKey: 'nav.security',
     items: [
       { path: '/security/status', labelKey: 'nav.protectionStatus' },
+      { path: '/security/trusted-browser', labelKey: 'nav.trustedBrowser' },
       { path: '/security/recovery', labelKey: 'nav.recovery' },
       { path: '/security/audit', labelKey: 'nav.audit' },
     ],

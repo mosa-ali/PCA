@@ -49,6 +49,7 @@
     "permissionsPolicy": "App Permissions",
     "security": "Security",
     "protectionStatus": "Protection Status",
+    "trustedBrowser": "Trusted Browser",
     "recovery": "Recovery",
     "audit": "Audit",
     "notifications": "Notifications",
