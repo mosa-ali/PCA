@@ -49,7 +49,7 @@ export default function RolesMatrix() {
       <h1 id="matrix-title">{t('rbac.matrixTitle')}</h1>
       <p>{t('shell.role', { role: t(`roles.${currentRole.toLowerCase()}`) })}</p>
       <div className="table-scroll">
-        <table className="data-table">
+        <table className="data-table responsive-cards">
           <thead>
             <tr>
               <th scope="col">{t('rbac.action')}</th>
@@ -67,7 +67,7 @@ export default function RolesMatrix() {
                   {t(`rbac.actions.${action}`)}
                 </th>
                 {ROLES.map((role) => (
-                  <td key={role}>
+                  <td key={role} data-label={t(`roles.${role.toLowerCase()}`)}>
                     <Cell role={role} action={action} />
                   </td>
                 ))}

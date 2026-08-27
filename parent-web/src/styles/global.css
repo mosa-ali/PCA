@@ -381,7 +381,8 @@ table.data-table td {
   table.data-table.responsive-cards thead,
   table.data-table.responsive-cards tbody,
   table.data-table.responsive-cards tr,
-  table.data-table.responsive-cards td {
+  table.data-table.responsive-cards td,
+  table.data-table.responsive-cards th[scope='row'] {
     display: block;
     width: 100%;
   }
@@ -394,10 +395,14 @@ table.data-table td {
     margin-block-end: var(--space-3);
     padding: var(--space-2);
   }
-  table.data-table.responsive-cards td {
+  table.data-table.responsive-cards td,
+  table.data-table.responsive-cards th[scope='row'] {
     border: none;
     white-space: normal;
     padding: var(--space-1) var(--space-2);
+  }
+  table.data-table.responsive-cards th[scope='row'] {
+    text-align: start;
   }
   table.data-table.responsive-cards td[data-label]::before {
     content: attr(data-label);
