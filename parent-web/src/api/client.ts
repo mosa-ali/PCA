@@ -43,6 +43,7 @@ import type {
   CommercialNotificationClient,
   DeviceStatusClient,
   FamilyAuthorityGateway,
+  FamilyMemberInvitationClient,
   FreeAccessStatusClient,
   ParentPreferencesClient,
   SafeZoneClient,
@@ -89,11 +90,22 @@ import { RealSchedulePolicyClient } from './real/realSchedulePolicyClient';
 import { UnavailableSchedulePolicyAuthoring, type SchedulePolicyAuthoring } from './schedulePolicyAuthoring';
 import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
 import { DevRetentionClient } from './dev/devRetentionClient';
+import { RealFamilyMemberInvitationClient } from './real/realFamilyMemberInvitationClient';
+import { DevFamilyMemberInvitationClient } from './dev/devFamilyMemberInvitationClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
   familyAuthority: FamilyAuthorityGateway;
+  /**
+   * PCA product-completion programme, Writer P0-C (family/members): real,
+   * HTTP-backed against backend/src/http/routes/familyMemberRoutes.ts
+   * outside demo mode -- same actor-device-session-token/trust-set external
+   * gate as `requests`/`safeZones` above (see ./real/realFamilyMemberInvitationClient.ts's
+   * header). Genuinely separate from `familyAuthority` -- see
+   * FamilyMemberInvitationClient's own doc comment in interfaces.ts.
+   */
+  familyMemberInvitations: FamilyMemberInvitationClient;
   parentFamilyData: ParentFamilyDataGateway;
   deviceStatus: DeviceStatusClient;
   requests: RequestClient;
@@ -141,6 +153,7 @@ function buildDevClients(): PcaApiClients {
   return {
     serviceAuth: new DevServiceAuthClient(),
     familyAuthority: new DevFamilyAuthorityGateway(),
+    familyMemberInvitations: new DevFamilyMemberInvitationClient(),
     parentFamilyData: new DevParentFamilyDataGateway(),
     deviceStatus: new DevDeviceStatusClient(),
     requests: new DevRequestClient(),
@@ -182,6 +195,7 @@ function buildRealClients(): PcaApiClients {
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     familyAuthority: new UnavailableFamilyAuthorityGateway(),
+    familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl, trustedBrowser),
     parentFamilyData: new RealParentFamilyDataGateway(
       trustedBrowser,
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),

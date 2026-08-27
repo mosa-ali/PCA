@@ -118,6 +118,8 @@ import type { ParentActionAuthorizationService } from '../familyrbac/ParentActio
 import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
 import { registerChildPolicyRoutes } from './routes/childPolicyRoutes.js';
 import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
+import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
+import type { FamilyMemberInvitationService } from '../familymembers/FamilyMemberInvitationService.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
 
@@ -205,6 +207,8 @@ export interface ServerDependencies {
    * this is omitted, never a silent allow.
    */
   childPolicyAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
+  /** PCA product-completion programme, Writer P0-C (family/members): see registerFamilyMemberRoutes below. Optional so existing buildServer() test callers that don't exercise family/members routes need no change. */
+  familyMemberInvitationService?: FamilyMemberInvitationService;
 }
 
 /**
@@ -404,6 +408,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     deviceSessionService: deps.deviceSessionService,
     parentActionAuthorization: deps.childPolicyAuthorization,
     outboundRelayService: deps.outboundRelayService,
+  });
+  registerFamilyMemberRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    familyMemberInvitationService: deps.familyMemberInvitationService,
+    deviceSessionService: deps.deviceSessionService,
   });
 
   return app;

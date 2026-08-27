@@ -50,6 +50,9 @@ import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.
 // ledger are in-memory reference implementations.
 import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepository.js';
 import { ChildRequestService } from './childrequests/ChildRequestService.js';
+import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
+import { MySqlFamilyMemberAccountBinder } from './familymembers/MySqlFamilyMemberAccountBinder.js';
+import { FamilyMemberInvitationService } from './familymembers/FamilyMemberInvitationService.js';
 import { BonusGrantLedger } from './childrequests/BonusGrantLedger.js';
 import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
 import { UnavailableRemovalDecisionSigningKeyResolver } from './familyrbac/UnavailableRemovalDecisionSigningKeyResolver.js';
@@ -484,6 +487,24 @@ async function start(): Promise<void> {
   const childRequestRepository = new InMemoryChildRequestRepository();
   const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
   const bonusGrantLedger = new BonusGrantLedger();
+  // PCA product-completion programme, Writer P0-C (family/members): reuses
+  // the SAME safeZoneParentActionAuthorization instance (a
+  // ParentActionAuthorizationService is generic across every ParentOperation,
+  // including ADD_VIEWER/ADD_ADMINISTRATOR/REMOVE_NON_OWNER_PARENT/
+  // CHANGE_ROLE) and the SAME familyAuditService instance every other
+  // consumer in this file shares -- never a second, independently
+  // -constructed copy of either. entitlementRepository is the SAME instance
+  // billing/entitlements routes already use, so the capacity check inside
+  // FamilyMemberInvitationService.createInvitation reads live, durable
+  // family entitlement state, not a second independently-tracked count.
+  const familyMemberInvitationService = new FamilyMemberInvitationService(
+    new MySqlFamilyMemberInvitationRepository(),
+    safeZoneParentActionAuthorization,
+    () => new Date(),
+    familyAuditService,
+    new MySqlFamilyMemberAccountBinder(),
+    entitlementRepository,
+  );
   // PCA-ADD-ENR-016/PCA-FR-145: single shared instance -- both
   // registerRuntimeSyncRoutes' protection-status write endpoint and
   // RealProtectiveAuthorityResolver's read below share this SAME
@@ -670,6 +691,7 @@ async function start(): Promise<void> {
     childRequestService,
     bonusGrantLedger,
     childProfileMembership: childProfileMembershipResolver,
+    familyMemberInvitationService,
   });
   await app.listen({ host, port });
 

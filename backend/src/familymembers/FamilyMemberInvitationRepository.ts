@@ -1,4 +1,4 @@
-import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, OpaqueAccountId, OpaqueFamilyId } from './types.js';
+import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, InvitedFamilyRole, OpaqueAccountId, OpaqueFamilyId } from './types.js';
 
 export type AcceptResult =
   | { outcome: 'ACCEPTED'; record: FamilyMemberInvitationRecord }
@@ -39,4 +39,14 @@ export interface FamilyMemberInvitationRepository {
    * if the invitation does not exist.
    */
   expireIfDue(invitationId: FamilyMemberInvitationId, at: Date): Promise<FamilyMemberInvitationRecord>;
+  /**
+   * Revises a still-PENDING invitation's offered role -- e.g. an Owner
+   * realizes they meant VIEWER, not ADMINISTRATOR, before the person has
+   * accepted. Family-scoped exactly like revokeForFamily. Returns null if
+   * no PENDING invitation with that id exists in that family (already
+   * accepted/expired/revoked, or never existed, or wrong family --
+   * deliberately not disambiguated, same IDOR-avoidance posture as every
+   * other family-scoped lookup in this repository).
+   */
+  updateRoleForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId, newRole: InvitedFamilyRole): Promise<FamilyMemberInvitationRecord | null>;
 }

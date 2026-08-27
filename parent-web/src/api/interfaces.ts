@@ -173,6 +173,43 @@ export interface FamilyAuthorityGateway {
   listAuditTrail(): Promise<AuditEntrySummary[]>;
 }
 
+export type FamilyMemberInvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+
+/** Mirrors backend/src/familymembers/types.ts's FamilyMemberInvitationRecord DTO exactly (never the invited person's plaintext email -- only the server holds/needs the hash). */
+export interface FamilyMemberInvitation {
+  invitationId: string;
+  familyId: string;
+  role: 'ADMINISTRATOR' | 'VIEWER';
+  status: FamilyMemberInvitationStatus;
+  invitedByAccountId: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  expiredAt: string | null;
+  revokedAt: string | null;
+  acceptedByAccountId: string | null;
+}
+
+/**
+ * PCA product-completion programme, Writer P0-C (family/members):
+ * genuinely separate from FamilyAuthorityGateway (which also carries the
+ * still-unimplemented checkPermission/listAuditTrail/transferOwnership --
+ * see UnavailableFamilyAuthorityGateway) so a real implementation of the
+ * invitation lifecycle specifically does not have to fabricate or stub
+ * those unrelated methods. Members.tsx consumes both this AND
+ * FamilyAuthorityGateway.listMembers -- the former for "invited, not yet
+ * paired" state, the latter for trust-set-resolved active members (see
+ * MEMBERSHIP_PERSISTENCE in docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md
+ * for why these are two genuinely different states, never conflated).
+ */
+export interface FamilyMemberInvitationClient {
+  list(): Promise<FamilyMemberInvitation[]>;
+  invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string): Promise<FamilyMemberInvitation>;
+  revoke(invitationId: string): Promise<FamilyMemberInvitation>;
+  changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER'): Promise<FamilyMemberInvitation>;
+  accept(invitationId: string): Promise<FamilyMemberInvitation>;
+}
+
 /** Read/administer decrypted (client-side) family child data. */
 export interface ParentFamilyDataGateway {
   getDashboard(): Promise<DashboardSnapshot>;

@@ -270,7 +270,26 @@
     "transferOwnership": "نقل الملكية",
     "newAdministratorName": "مسؤول جديد",
     "newViewerName": "مُشاهد جديد",
-    "removeMemberNotice": "تؤدي إزالة أحد الوالدين من غير المالك إلى إنهاء وصول ذلك العضو إلى العائلة. وهذا منفصل عن إزالة جهاز طفل وعن إجراء الحذف الآن."
+    "removeMemberNotice": "تؤدي إزالة أحد الوالدين من غير المالك إلى إنهاء وصول ذلك العضو إلى العائلة. وهذا منفصل عن إزالة جهاز طفل وعن إجراء الحذف الآن.",
+    "activeMembersTitle": "الأعضاء النشطون",
+    "invitations": {
+      "inviteTitle": "دعوة عضو عائلة",
+      "emailLabel": "البريد الإلكتروني",
+      "inviting": "جارٍ إرسال الدعوة...",
+      "inviteSubmit": "إرسال الدعوة",
+      "title": "الدعوات المعلَّقة",
+      "empty": "لا توجد دعوات معلَّقة.",
+      "expiresAt": "تنتهي صلاحيتها",
+      "statuses": {
+        "PENDING": "معلَّقة",
+        "ACCEPTED": "مقبولة",
+        "EXPIRED": "منتهية الصلاحية",
+        "REVOKED": "ملغاة"
+      },
+      "changeToViewer": "التغيير إلى مُشاهد",
+      "changeToAdministrator": "التغيير إلى مسؤول",
+      "revoke": "إلغاء الدعوة"
+    }
   },
   "deviceEnrollment": {
     "title": "إضافة جهاز للطفل",

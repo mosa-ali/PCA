@@ -62,5 +62,12 @@ export function createInMemoryFamilyMemberInvitationRepository() {
       record.expiredAt = at;
       return { ...record };
     },
+
+    async updateRoleForFamily(familyId, invitationId, newRole) {
+      const record = byId.get(invitationId);
+      if (!record || record.familyId !== familyId || record.status !== 'PENDING') return null;
+      record.role = newRole;
+      return { ...record };
+    },
   };
 }

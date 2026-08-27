@@ -1,6 +1,6 @@
 import { execute, runInTransaction } from '../db/pool.js';
 import type { AcceptResult, FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
-import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, FamilyMemberInvitationStatus, OpaqueAccountId, OpaqueFamilyId } from './types.js';
+import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, FamilyMemberInvitationStatus, InvitedFamilyRole, OpaqueAccountId, OpaqueFamilyId } from './types.js';
 
 interface FamilyMemberInvitationRow {
   invitation_id: string;
@@ -153,6 +153,23 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
       const current = await execute<FamilyMemberInvitationRow>(
         conn,
         `SELECT * FROM family_member_invitations WHERE invitation_id = ? AND family_id = ?`,
+        [invitationId, familyId],
+      );
+      return current.rows[0] ? mapRow(current.rows[0]) : null;
+    });
+  }
+
+  async updateRoleForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId, newRole: InvitedFamilyRole): Promise<FamilyMemberInvitationRecord | null> {
+    return runInTransaction(async (conn) => {
+      await execute(
+        conn,
+        `UPDATE family_member_invitations SET role = ?
+         WHERE invitation_id = ? AND family_id = ? AND status = 'PENDING'`,
+        [newRole, invitationId, familyId],
+      );
+      const current = await execute<FamilyMemberInvitationRow>(
+        conn,
+        `SELECT * FROM family_member_invitations WHERE invitation_id = ? AND family_id = ? AND status = 'PENDING'`,
         [invitationId, familyId],
       );
       return current.rows[0] ? mapRow(current.rows[0]) : null;

@@ -270,7 +270,26 @@
     "transferOwnership": "Transfer ownership",
     "newAdministratorName": "New Admin",
     "newViewerName": "New Viewer",
-    "removeMemberNotice": "Removing a non-owner parent ends that member's family access. It is separate from removing a child device and from Delete Now."
+    "removeMemberNotice": "Removing a non-owner parent ends that member's family access. It is separate from removing a child device and from Delete Now.",
+    "activeMembersTitle": "Active members",
+    "invitations": {
+      "inviteTitle": "Invite a family member",
+      "emailLabel": "Email address",
+      "inviting": "Sending invitation...",
+      "inviteSubmit": "Send invitation",
+      "title": "Pending invitations",
+      "empty": "No pending invitations.",
+      "expiresAt": "Expires",
+      "statuses": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "EXPIRED": "Expired",
+        "REVOKED": "Revoked"
+      },
+      "changeToViewer": "Change to Viewer",
+      "changeToAdministrator": "Change to Administrator",
+      "revoke": "Revoke invitation"
+    }
   },
   "deviceEnrollment": {
     "title": "Add a child device",
