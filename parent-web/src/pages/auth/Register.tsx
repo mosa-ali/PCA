@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
 
@@ -8,13 +8,22 @@ import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
  * PCA-AUTH-SESSION-1 (PCA-DEC-026) self-service registration. Server
  * validates password===passwordConfirmation itself (PCA-ADD-IDENT-004) --
  * this page's own client-side check is UX-only, never trusted alone.
+ *
+ * Submitting this form again for an email already PENDING_VERIFICATION is
+ * ALSO the real resend-code mechanism (ParentAccountService.register's own
+ * doc comment: the response is identical whether the email is new,
+ * already-pending, or already-verified -- never an enumeration oracle).
+ * VerifyEmail.tsx's "resend code" link relies on exactly this and lands
+ * here with the email prefilled via location.state.
  */
 export default function Register() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const clients = getApiClients();
 
-  const [email, setEmail] = useState('');
+  const prefillEmail = (location.state as { email?: string } | null)?.email ?? '';
+  const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [submitting, setSubmitting] = useState(false);

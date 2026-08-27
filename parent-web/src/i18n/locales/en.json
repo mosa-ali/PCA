@@ -913,6 +913,8 @@
     "verifyBody": "Enter the 6-digit code we sent to {{email}}.",
     "codeLabel": "Verification code",
     "verifySubmit": "Verify email",
+    "resendCodePrompt": "Didn't receive a code?",
+    "resendCodeLink": "Request a new one",
     "verifySuccess": "Your email is verified. Setting up your children's protection...",
     "loginTitle": "Sign in to PCA",
     "loginSubmit": "Sign in",

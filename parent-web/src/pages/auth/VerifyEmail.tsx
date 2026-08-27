@@ -87,6 +87,12 @@ export default function VerifyEmail() {
         </button>
       </form>
       <p>
+        {t('auth.resendCodePrompt')}{' '}
+        <Link to="/register" state={{ email }}>
+          {t('auth.resendCodeLink')}
+        </Link>
+      </p>
+      <p>
         <Link to="/register">{t('auth.registerTitle')}</Link>
       </p>
     </section>
