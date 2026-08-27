@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
@@ -7,14 +8,20 @@ export default function TrustedBrowser() {
   const { t } = useTranslation();
   const clients = getApiClients();
   const { data, loading, error, reload } = useAsync(() => clients.trustedBrowser.getSnapshot(), []);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
 
   const act = async (fn: () => Promise<unknown>) => {
-    await fn();
-    reload();
+    setActionError(null);
+    try {
+      await fn();
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('common.errorGeneric'));
+    }
   };
 
   return (
@@ -33,6 +40,7 @@ export default function TrustedBrowser() {
           <dt>{t('trustedBrowser.trustSetEpoch')}</dt>
           <dd>{data.trustSetEpoch ?? '--'}</dd>
         </dl>
+        {actionError && <ErrorState message={actionError} />}
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {data.state === 'BROWSER_NOT_TRUSTED' && (
             <button type="button" className="btn btn-primary" onClick={() => act(() => clients.trustedBrowser.beginServiceAuthentication())}>
@@ -44,12 +52,22 @@ export default function TrustedBrowser() {
               {t('trustedBrowser.requestPairing')}
             </button>
           )}
-          {data.state === 'PAIRING_PENDING' && (
+          {/*
+            simulateParentApproval/simulateEpochGoneStale/simulateRevoke have
+            no real implementation at all outside demo mode -- see
+            RealTrustedBrowserProvider, where each unconditionally throws
+            ServiceUnavailableError ("a real transition must never be
+            fabricated locally"). Showing a "(dev)"-labelled button that
+            always fails is not an honest production affordance, so these
+            are demo-mode-only, matching this app's established pattern of
+            never presenting a debug-only control as a real capability.
+          */}
+          {clients.isFixtureBacked && data.state === 'PAIRING_PENDING' && (
             <button type="button" className="btn btn-primary" onClick={() => act(() => clients.trustedBrowser.simulateParentApproval())}>
               {t('trustedBrowser.simulateApproval')}
             </button>
           )}
-          {data.state === 'TRUSTED' && (
+          {clients.isFixtureBacked && data.state === 'TRUSTED' && (
             <>
               <button type="button" className="btn" onClick={() => act(() => clients.trustedBrowser.simulateEpochGoneStale())}>
                 {t('trustedBrowser.simulateStale')}
@@ -59,7 +77,7 @@ export default function TrustedBrowser() {
               </button>
             </>
           )}
-          {data.state === 'EPOCH_STALE' && (
+          {clients.isFixtureBacked && data.state === 'EPOCH_STALE' && (
             <button type="button" className="btn btn-primary" onClick={() => act(() => clients.trustedBrowser.simulateParentApproval())}>
               {t('trustedBrowser.resync')}
             </button>
