@@ -8,11 +8,18 @@ const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms));
 
 let notifications: CommercialNotification[] = [];
 let seq = 0;
+let nextActionFailure: string | null = null;
 
 /** Test-only: resets fixture state. Not imported by any production file. */
 export function __resetDevCommercialNotificationsForTests(): void {
   notifications = [];
   seq = 0;
+  nextActionFailure = null;
+}
+
+/** Test-only: makes the next markRead/acknowledge call throw, so Notifications.tsx's error-surfacing path is exercisable. */
+export function __devFailNextNotificationAction(message: string): void {
+  nextActionFailure = message;
 }
 
 /** DEV-only: simulates a commercial notification arriving (e.g. after a simulated payment confirmation). Never called from a production code path. */
@@ -45,11 +52,21 @@ export class DevCommercialNotificationClient implements CommercialNotificationCl
 
   async markRead(notificationId: string): Promise<void> {
     await delay();
+    if (nextActionFailure) {
+      const message = nextActionFailure;
+      nextActionFailure = null;
+      throw new Error(message);
+    }
     notifications = notifications.map((n) => (n.notificationId === notificationId ? { ...n, readAtUtc: new Date().toISOString() } : n));
   }
 
   async acknowledge(notificationId: string): Promise<void> {
     await delay();
+    if (nextActionFailure) {
+      const message = nextActionFailure;
+      nextActionFailure = null;
+      throw new Error(message);
+    }
     notifications = notifications.map((n) =>
       n.notificationId === notificationId ? { ...n, acknowledgedAtUtc: new Date().toISOString(), readAtUtc: n.readAtUtc ?? new Date().toISOString() } : n,
     );

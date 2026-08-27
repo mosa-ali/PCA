@@ -629,6 +629,7 @@
     "unreadCount": "{{count}} غير مقروءة",
     "markRead": "وضع علامة كمقروء",
     "acknowledge": "الإقرار",
+    "actionErrorFallback": "تعذّر تحديث هذا الإشعار. يرجى المحاولة مرة أخرى.",
     "eventType": {
       "QUOTE_READY": "عرض السعر جاهز",
       "PAYMENT_CONFIRMED": "تم تأكيد الدفع",

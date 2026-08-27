@@ -69,14 +69,26 @@ export default function Notifications() {
     [],
   );
 
+  const [notificationActionError, setNotificationActionError] = useState<string | null>(null);
+
   const markRead = async (notificationId: string) => {
-    await clients.commercialNotifications.markRead(notificationId);
-    reload();
+    setNotificationActionError(null);
+    try {
+      await clients.commercialNotifications.markRead(notificationId);
+      reload();
+    } catch (error) {
+      setNotificationActionError(error instanceof Error ? error.message : t('notifications.actionErrorFallback'));
+    }
   };
 
   const acknowledge = async (notificationId: string) => {
-    await clients.commercialNotifications.acknowledge(notificationId);
-    reload();
+    setNotificationActionError(null);
+    try {
+      await clients.commercialNotifications.acknowledge(notificationId);
+      reload();
+    } catch (error) {
+      setNotificationActionError(error instanceof Error ? error.message : t('notifications.actionErrorFallback'));
+    }
   };
 
   return (
@@ -107,6 +119,7 @@ export default function Notifications() {
         </h2>
         {loading && <LoadingState />}
         {!loading && error && <ErrorState message={error} onRetry={reload} />}
+        {!loading && !error && notificationActionError && <ErrorState message={notificationActionError} />}
         {!loading && !error && data && data.notifications.length === 0 && <p>{t('notifications.commercialEmpty')}</p>}
         {!loading && !error && data && data.notifications.length > 0 && (
           <ul className="plain-list">
@@ -117,7 +130,7 @@ export default function Notifications() {
                 {n.readAtUtc === null && (
                   <>
                     {' '}
-                    <button type="button" className="btn btn-sm" onClick={() => markRead(n.notificationId)}>
+                    <button type="button" className="btn btn-sm" onClick={() => void markRead(n.notificationId)}>
                       {t('notifications.markRead')}
                     </button>
                   </>
@@ -125,7 +138,7 @@ export default function Notifications() {
                 {n.acknowledgedAtUtc === null && (
                   <>
                     {' '}
-                    <button type="button" className="btn btn-sm" onClick={() => acknowledge(n.notificationId)}>
+                    <button type="button" className="btn btn-sm" onClick={() => void acknowledge(n.notificationId)}>
                       {t('notifications.acknowledge')}
                     </button>
                   </>

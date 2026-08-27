@@ -629,6 +629,7 @@
     "unreadCount": "{{count}} unread",
     "markRead": "Mark read",
     "acknowledge": "Acknowledge",
+    "actionErrorFallback": "This notification could not be updated. Please try again.",
     "eventType": {
       "QUOTE_READY": "A quote is ready",
       "PAYMENT_CONFIRMED": "Payment confirmed",
