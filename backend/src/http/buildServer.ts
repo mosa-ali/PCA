@@ -119,7 +119,9 @@ import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
 import { registerChildPolicyRoutes } from './routes/childPolicyRoutes.js';
 import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
 import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
+import { registerFamilyAuditEventRoutes } from './routes/familyAuditEventRoutes.js';
 import type { FamilyMemberInvitationService } from '../familymembers/FamilyMemberInvitationService.js';
+import type { FamilyAuditEventLedger } from '../familyrbac/FamilyAuditEventLedger.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
 
@@ -209,6 +211,8 @@ export interface ServerDependencies {
   childPolicyAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
   /** PCA product-completion programme, Writer P0-C (family/members): see registerFamilyMemberRoutes below. Optional so existing buildServer() test callers that don't exercise family/members routes need no change. */
   familyMemberInvitationService?: FamilyMemberInvitationService;
+  /** PCA product-completion programme, Writer P0-D (/security/audit): see registerFamilyAuditEventRoutes below. Optional so existing buildServer() test callers that don't exercise the audit-events route need no change. */
+  familyAuditEventLedger?: FamilyAuditEventLedger;
 }
 
 /**
@@ -413,6 +417,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     familyMemberInvitationService: deps.familyMemberInvitationService,
     deviceSessionService: deps.deviceSessionService,
+  });
+  registerFamilyAuditEventRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    deviceSessionService: deps.deviceSessionService,
+    familyAuditEventLedger: deps.familyAuditEventLedger,
   });
 
   return app;

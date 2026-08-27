@@ -680,7 +680,46 @@
     "targetScope": "النطاق المستهدف",
     "result": "النتيجة",
     "timestamp": "الطابع الزمني",
-    "note": "لا تحمل إدخالات سجل التدقيق أبداً عناوين مواقع أو مواقع جغرافية أو تفاصيل نشاط أو أسرار الاسترداد."
+    "note": "لا تحمل إدخالات سجل التدقيق أبداً عناوين مواقع أو مواقع جغرافية أو تفاصيل نشاط أو أسرار الاسترداد.",
+    "pendingDecryption": "سجلات التدقيق بانتظار فك التشفير بواسطة جهاز والد موثوق.",
+    "resultStatuses": {
+      "SUCCESS": "نجاح",
+      "DENIED": "مرفوض",
+      "PENDING": "معلَّق"
+    },
+    "targetScopeKinds": {
+      "FAMILY": "الأسرة",
+      "CHILD_PROFILE": "الطفل",
+      "DEVICE": "الجهاز",
+      "MEMBER": "فرد الأسرة"
+    },
+    "actionTypes": {
+      "VIEW_DASHBOARD": "عرض لوحة التحكم",
+      "EDIT_CHILD_POLICY": "تعديل سياسة الطفل",
+      "APPROVE_BONUS_TIME": "الموافقة على وقت إضافي",
+      "APPROVE_UNBLOCK": "الموافقة على إلغاء الحظر",
+      "APPROVE_EXCEPTION": "الموافقة على استثناء",
+      "APPROVE_INSTALL": "الموافقة على التثبيت",
+      "ADD_VIEWER": "إضافة مُشاهد",
+      "REMOVE_NON_OWNER_PARENT": "إزالة والد غير مالك",
+      "ADD_ADMINISTRATOR": "إضافة مسؤول",
+      "CHANGE_ROLE": "تغيير الدور",
+      "CHANGE_RETENTION": "تغيير مدة الاحتفاظ",
+      "DELETE_NOW": "حذف البيانات الآن",
+      "EXPORT_FAMILY_DATA": "تصدير بيانات الأسرة",
+      "REMOVE_REVOKE_DEVICE": "إزالة أو إلغاء تفعيل الجهاز",
+      "DISABLE_PROTECTION_POLICY": "تعطيل سياسة الحماية",
+      "OWNERSHIP_TRANSFER_INITIATION": "بدء نقل الملكية",
+      "RECOVERY_SENSITIVE_ACTION": "إجراء حساس متعلق بالاسترداد",
+      "ROLE_INVITATION": "دعوة فرد إلى الأسرة",
+      "ROLE_ACCEPT": "قبول دعوة فرد الأسرة",
+      "ROLE_REVOKE": "إلغاء دعوة فرد الأسرة",
+      "STEP_UP_SUCCESS": "نجحت إعادة التحقق الإضافية",
+      "STEP_UP_FAILURE": "فشلت إعادة التحقق الإضافية",
+      "DEVICE_LIFECYCLE_TRANSITION": "تغيّرت حالة دورة حياة الجهاز",
+      "RECOVERY_EVENT": "حدث استرداد",
+      "DENIED_AUTHORIZATION_ATTEMPT": "محاولة تفويض مرفوضة"
+    }
   },
   "screenTime": {
     "continuousLimit": "الحد الأقصى للاستخدام المستمر (دقائق)",

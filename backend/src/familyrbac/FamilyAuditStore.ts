@@ -53,13 +53,41 @@ export class InMemoryFamilyAuditRepository implements FamilyAuditRepository {
   }
 }
 
+/** Minimal shape FamilyAuditService needs from FamilyAuditEventProducer -- avoids this file importing familyrbac/FamilyAuditEventProducer.ts's concrete class or its ledger/composer dependencies directly. */
+export interface FamilyAuditEventDelivery {
+  deliver(record: FamilyAuditRecord): Promise<unknown>;
+}
+
 export class FamilyAuditService {
   private readonly repository: FamilyAuditRepository;
   private readonly now: () => Date;
+  /**
+   * PCA product-completion programme, Writer P0-D: late-bound, optional
+   * delivery hook (see AUDIT_EVENT_MODEL in
+   * docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md).
+   * Deliberately settable AFTER construction via configureDelivery(),
+   * rather than a constructor parameter, because main.ts constructs the
+   * single SHARED FamilyAuditService instance (used by every family-rbac
+   * event source: invitation/enrollment/pairing/device/recovery/parent
+   * authorization/retention/family-members/child-policy) before the
+   * family-trust-set-attestation-backed parent-device resolver its
+   * delivery producer depends on exists. Every existing holder of this
+   * shared instance sees delivery start working the moment
+   * configureDelivery() is called once, with no other code path changed.
+   * Never required: when unset, record() behaves exactly as it always has
+   * (append-only in-memory/durable audit record, no delivery attempt) --
+   * this matches how every other test/caller of this class that doesn't
+   * care about delivery continues to work unchanged.
+   */
+  private delivery: FamilyAuditEventDelivery | null = null;
 
   constructor(repository: FamilyAuditRepository, now: () => Date = () => new Date()) {
     this.repository = repository;
     this.now = now;
+  }
+
+  configureDelivery(delivery: FamilyAuditEventDelivery): void {
+    this.delivery = delivery;
   }
 
   async record(input: Omit<FamilyAuditRecord, 'eventId' | 'occurredAtUtc' | 'freeTextNote'> & { freeTextNote?: string | null }): Promise<FamilyAuditRecord> {
@@ -74,6 +102,17 @@ export class FamilyAuditService {
       occurredAtUtc: this.now(),
     };
     await this.repository.append(record);
+    // Best-effort/non-blocking, matching runtimeSyncRoutes.ts's
+    // emitProtectionDegradedAlert precedent exactly: a delivery failure
+    // must never affect (or be affected by) the audit record itself, which
+    // has already durably committed above.
+    if (this.delivery) {
+      try {
+        await this.delivery.deliver(record);
+      } catch {
+        // Delivery is deliberately non-blocking -- see this field's own doc comment.
+      }
+    }
     return record;
   }
 }

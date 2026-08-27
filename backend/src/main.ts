@@ -63,6 +63,9 @@ import { BrowserEndpointService } from './device/BrowserEndpointService.js';
 import { ProtectionAlertProducer } from './alerts/ProtectionAlertProducer.js';
 import { MySqlProtectionAlertLedger } from './alerts/MySqlProtectionAlertLedger.js';
 import { createRejectingOpaqueProtectionAlertComposer } from './alerts/RejectingOpaqueProtectionAlertComposer.js';
+import { FamilyAuditEventProducer } from './familyrbac/FamilyAuditEventProducer.js';
+import { MySqlFamilyAuditEventLedger } from './familyrbac/MySqlFamilyAuditEventLedger.js';
+import { createRejectingOpaqueFamilyAuditEventComposer } from './familyrbac/FamilyAuditEventComposer.js';
 import { MySqlOwnerParentDeviceResolver } from './alerts/MySqlOwnerParentDeviceResolver.js';
 import { DeviceDirectoryService } from './device/DeviceDirectoryService.js';
 import { registerRemovalDecisionRoutes } from './http/routes/removalDecisionRoutes.js';
@@ -541,6 +544,30 @@ async function start(): Promise<void> {
     alertsEnabled: true,
     resolveParentDevices: (familyId: string) => protectionAlertParentDeviceResolver.resolveParentDevices(familyId),
   };
+  // PCA product-completion programme, Writer P0-D (/security/audit): the
+  // SAME ledger instance is written by familyAuditService's delivery
+  // producer below and read by registerFamilyAuditEventRoutes further down
+  // this file -- never two independently-constructed copies.
+  const familyAuditEventLedger = new MySqlFamilyAuditEventLedger();
+  // Configures the SHARED familyAuditService instance (constructed above,
+  // already injected into every family-rbac event source in this file) to
+  // best-effort-deliver an opaque AUDIT_EVENT envelope for every record()
+  // call, to the SAME family-Owner-device resolver protection alerts
+  // already use (protectionAlertParentDeviceResolver) -- reusing the real,
+  // signature-chain-verified resolver rather than inventing a second one.
+  // composeOpaquePayload is createRejectingOpaqueFamilyAuditEventComposer:
+  // the SAME CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as
+  // protectionAlertProducer above, so delivery fails closed (records
+  // nothing to family_audit_events) until a reviewed composer replaces it
+  // -- the underlying FamilyAuditRecord itself is unaffected either way,
+  // see FamilyAuditService.record's own doc comment.
+  familyAuditService.configureDelivery(
+    new FamilyAuditEventProducer(
+      familyAuditEventLedger,
+      createRejectingOpaqueFamilyAuditEventComposer(),
+      (familyId: string) => protectionAlertParentDeviceResolver.resolveParentDevices(familyId),
+    ),
+  );
   const removalDecisionAuthority = new RemovalDecisionAuthority({
     repository: new MySqlRemovalDecisionRepository(),
     authorization: safeZoneParentActionAuthorization,
@@ -692,6 +719,7 @@ async function start(): Promise<void> {
     bonusGrantLedger,
     childProfileMembership: childProfileMembershipResolver,
     familyMemberInvitationService,
+    familyAuditEventLedger,
   });
   await app.listen({ host, port });
 

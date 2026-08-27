@@ -42,6 +42,7 @@ import type {
   BillingClient,
   CommercialNotificationClient,
   DeviceStatusClient,
+  FamilyAuditDeliveryClient,
   FamilyAuthorityGateway,
   FamilyMemberInvitationClient,
   FreeAccessStatusClient,
@@ -92,6 +93,9 @@ import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyConte
 import { DevRetentionClient } from './dev/devRetentionClient';
 import { RealFamilyMemberInvitationClient } from './real/realFamilyMemberInvitationClient';
 import { DevFamilyMemberInvitationClient } from './dev/devFamilyMemberInvitationClient';
+import { RealFamilyAuditDeliveryClient } from './real/realFamilyAuditDeliveryClient';
+import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient';
+import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
@@ -106,6 +110,15 @@ export interface PcaApiClients {
    * FamilyMemberInvitationClient's own doc comment in interfaces.ts.
    */
   familyMemberInvitations: FamilyMemberInvitationClient;
+  /**
+   * PCA product-completion programme, Writer P0-D (/security/audit): real,
+   * HTTP-backed against backend/src/http/routes/familyAuditEventRoutes.ts
+   * outside demo mode -- same actor-device-session-token/crypto-boundary
+   * external gate as `safeZones`/`schedulePolicyAuthoring` above. Genuinely
+   * separate from `familyAuthority.listAuditTrail` (still unimplemented) --
+   * see AuditTrailFeedResult's own doc comment in interfaces.ts.
+   */
+  familyAuditDelivery: FamilyAuditDeliveryClient;
   parentFamilyData: ParentFamilyDataGateway;
   deviceStatus: DeviceStatusClient;
   requests: RequestClient;
@@ -154,6 +167,7 @@ function buildDevClients(): PcaApiClients {
     serviceAuth: new DevServiceAuthClient(),
     familyAuthority: new DevFamilyAuthorityGateway(),
     familyMemberInvitations: new DevFamilyMemberInvitationClient(),
+    familyAuditDelivery: new DevFamilyAuditDeliveryClient(),
     parentFamilyData: new DevParentFamilyDataGateway(),
     deviceStatus: new DevDeviceStatusClient(),
     requests: new DevRequestClient(),
@@ -196,6 +210,7 @@ function buildRealClients(): PcaApiClients {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     familyAuthority: new UnavailableFamilyAuthorityGateway(),
     familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl, trustedBrowser),
+    familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, trustedBrowser, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
     parentFamilyData: new RealParentFamilyDataGateway(
       trustedBrowser,
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),

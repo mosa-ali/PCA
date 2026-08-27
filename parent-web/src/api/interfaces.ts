@@ -210,6 +210,29 @@ export interface FamilyMemberInvitationClient {
   accept(invitationId: string): Promise<FamilyMemberInvitation>;
 }
 
+/**
+ * PCA product-completion programme, Writer P0-D (/security/audit):
+ * genuinely separate from FamilyAuthorityGateway.listAuditTrail (which
+ * remains still-unimplemented, see UnavailableFamilyAuthorityGateway) --
+ * this client fetches OPAQUE, still-encrypted audit-event envelopes from
+ * backend/src/http/routes/familyAuditEventRoutes.ts and never claims to
+ * return decrypted content itself. Decryption happens only via the
+ * injected `decryption` boundary (see AUDIT_EVENT_MODEL in
+ * docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md);
+ * `list()`'s PENDING_TRUSTED_DECRYPTION result covers BOTH "no
+ * actor-device-session available yet" and "envelopes were fetched but the
+ * decryption boundary itself is unavailable" -- Audit.tsx must render both
+ * as the same honest pending state, exactly like ProtectionAlertPanel.tsx's
+ * existing precedent, never a fabricated empty list.
+ */
+export type AuditTrailFeedResult =
+  | { status: 'PENDING_TRUSTED_DECRYPTION' }
+  | { status: 'READY'; entries: AuditEntrySummary[] };
+
+export interface FamilyAuditDeliveryClient {
+  list(): Promise<AuditTrailFeedResult>;
+}
+
 /** Read/administer decrypted (client-side) family child data. */
 export interface ParentFamilyDataGateway {
   getDashboard(): Promise<DashboardSnapshot>;

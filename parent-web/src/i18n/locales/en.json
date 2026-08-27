@@ -680,7 +680,46 @@
     "targetScope": "Target scope",
     "result": "Result",
     "timestamp": "Timestamp",
-    "note": "Audit entries never carry URLs, locations, activity detail, or recovery secrets."
+    "note": "Audit entries never carry URLs, locations, activity detail, or recovery secrets.",
+    "pendingDecryption": "Audit entries are waiting for decryption by a trusted parent device.",
+    "resultStatuses": {
+      "SUCCESS": "Success",
+      "DENIED": "Denied",
+      "PENDING": "Pending"
+    },
+    "targetScopeKinds": {
+      "FAMILY": "Family",
+      "CHILD_PROFILE": "Child",
+      "DEVICE": "Device",
+      "MEMBER": "Family member"
+    },
+    "actionTypes": {
+      "VIEW_DASHBOARD": "Viewed dashboard",
+      "EDIT_CHILD_POLICY": "Edited child policy",
+      "APPROVE_BONUS_TIME": "Approved bonus time",
+      "APPROVE_UNBLOCK": "Approved unblock",
+      "APPROVE_EXCEPTION": "Approved exception",
+      "APPROVE_INSTALL": "Approved install",
+      "ADD_VIEWER": "Added viewer",
+      "REMOVE_NON_OWNER_PARENT": "Removed non-owner parent",
+      "ADD_ADMINISTRATOR": "Added administrator",
+      "CHANGE_ROLE": "Changed role",
+      "CHANGE_RETENTION": "Changed retention",
+      "DELETE_NOW": "Deleted data now",
+      "EXPORT_FAMILY_DATA": "Exported family data",
+      "REMOVE_REVOKE_DEVICE": "Removed or revoked device",
+      "DISABLE_PROTECTION_POLICY": "Disabled protection policy",
+      "OWNERSHIP_TRANSFER_INITIATION": "Started ownership transfer",
+      "RECOVERY_SENSITIVE_ACTION": "Performed a recovery-sensitive action",
+      "ROLE_INVITATION": "Invited a family member",
+      "ROLE_ACCEPT": "Accepted a family-member invitation",
+      "ROLE_REVOKE": "Revoked a family-member invitation",
+      "STEP_UP_SUCCESS": "Step-up re-authentication succeeded",
+      "STEP_UP_FAILURE": "Step-up re-authentication failed",
+      "DEVICE_LIFECYCLE_TRANSITION": "Device lifecycle changed",
+      "RECOVERY_EVENT": "Recovery event",
+      "DENIED_AUTHORIZATION_ATTEMPT": "Denied authorization attempt"
+    }
   },
   "screenTime": {
     "continuousLimit": "Continuous-use limit (minutes)",
