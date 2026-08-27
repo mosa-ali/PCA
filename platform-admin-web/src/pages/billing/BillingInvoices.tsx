@@ -3,6 +3,23 @@ import { useTranslation } from 'react-i18next';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
 import type { PagedResult } from '../../domain/accounts';
 import type { InvoiceDto, SubscriptionDto } from '../../domain/billing';
+
+const INVOICE_STATUSES = ['DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE'] as const;
+const SUBSCRIPTION_STATUSES = ['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED', 'EXPIRED'] as const;
+const INVOICE_BADGE: Record<string, string> = {
+  DRAFT: 'badge-warning',
+  OPEN: 'badge-warning',
+  PAID: 'badge-success',
+  VOID: 'badge-danger',
+  UNCOLLECTIBLE: 'badge-danger',
+};
+const SUBSCRIPTION_BADGE: Record<string, string> = {
+  TRIALING: 'badge-warning',
+  ACTIVE: 'badge-success',
+  PAST_DUE: 'badge-danger',
+  CANCELED: 'badge-danger',
+  EXPIRED: 'badge-danger',
+};
 import { formatMoney } from '../../money/money';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
@@ -52,10 +69,10 @@ export default function BillingInvoices() {
       <h1>{t('nav.billingInvoices')}</h1>
 
       <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === 'invoices'} className={`tab-btn ${tab === 'invoices' ? 'active' : ''}`} onClick={() => { setTab('invoices'); setOffset(0); }}>
+        <button type="button" role="tab" aria-selected={tab === 'invoices'} className={`tab-btn ${tab === 'invoices' ? 'active' : ''}`} onClick={() => { setTab('invoices'); setOffset(0); setStatus(''); }}>
           {t('nav.billingInvoices')}
         </button>
-        <button type="button" role="tab" aria-selected={tab === 'subscriptions'} className={`tab-btn ${tab === 'subscriptions' ? 'active' : ''}`} onClick={() => { setTab('subscriptions'); setOffset(0); }}>
+        <button type="button" role="tab" aria-selected={tab === 'subscriptions'} className={`tab-btn ${tab === 'subscriptions' ? 'active' : ''}`} onClick={() => { setTab('subscriptions'); setOffset(0); setStatus(''); }}>
           {t('billing.subscriptions')}
         </button>
       </div>
@@ -67,7 +84,14 @@ export default function BillingInvoices() {
         </div>
         <div>
           <label htmlFor="bi-status">{t('billing.status')}</label>
-          <input id="bi-status" value={status} onChange={(e) => setStatus(e.target.value)} />
+          <select id="bi-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">{t('billing.anyStatus')}</option>
+            {(tab === 'invoices' ? INVOICE_STATUSES : SUBSCRIPTION_STATUSES).map((s) => (
+              <option key={s} value={s}>
+                {t(`billing.${tab === 'invoices' ? 'invoiceStatuses' : 'subscriptionStatuses'}.${s}`)}
+              </option>
+            ))}
+          </select>
         </div>
         <button type="button" className="btn" onClick={applyFilters}>
           {t('common.applyFilters')}
@@ -98,7 +122,9 @@ export default function BillingInvoices() {
                   <tr key={inv.invoiceId}>
                     <td>{inv.invoiceId}</td>
                     <td>{inv.accountRef}</td>
-                    <td>{inv.status}</td>
+                    <td>
+                      <span className={`badge ${INVOICE_BADGE[inv.status] ?? 'badge-warning'}`}>{t(`billing.invoiceStatuses.${inv.status}`, inv.status)}</span>
+                    </td>
                     <td>{inv.total ? formatMoney(inv.total) : '—'}</td>
                     <td>{inv.dueAt ? new Date(inv.dueAt).toLocaleDateString() : '—'}</td>
                     <td>{inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : '—'}</td>
@@ -130,7 +156,9 @@ export default function BillingInvoices() {
                   <tr key={sub.subscriptionId}>
                     <td>{sub.subscriptionId}</td>
                     <td>{sub.accountRef}</td>
-                    <td>{sub.status}</td>
+                    <td>
+                      <span className={`badge ${SUBSCRIPTION_BADGE[sub.status] ?? 'badge-warning'}`}>{t(`billing.subscriptionStatuses.${sub.status}`, sub.status)}</span>
+                    </td>
                     <td>
                       {sub.currentPeriodStart ? new Date(sub.currentPeriodStart).toLocaleDateString() : '—'} – {sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : '—'}
                     </td>

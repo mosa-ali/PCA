@@ -149,7 +149,9 @@ export default function BillingPricing() {
                 <tr key={row.priceBookId}>
                   <td>{row.priceBookVersion}</td>
                   <td>{row.price ? formatMoney(row.price) : '—'}</td>
-                  <td>{row.status}</td>
+                  <td>
+                    <span className={`badge ${row.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`}>{t(`billing.planStatuses.${row.status}`, row.status)}</span>
+                  </td>
                   <td>{row.effectiveFrom ? new Date(row.effectiveFrom).toLocaleDateString() : '—'}</td>
                   <td>{row.effectiveTo ? new Date(row.effectiveTo).toLocaleDateString() : t('billing.noExpiry')}</td>
                 </tr>

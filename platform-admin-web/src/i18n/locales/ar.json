@@ -418,6 +418,21 @@
       "ONE_TIME": "مرة واحدة",
       "FREE": "مجاني"
     },
+    "invoiceStatuses": {
+      "DRAFT": "مسودة",
+      "OPEN": "مفتوحة",
+      "PAID": "مدفوعة",
+      "VOID": "ملغاة",
+      "UNCOLLECTIBLE": "غير قابلة للتحصيل"
+    },
+    "subscriptionStatuses": {
+      "TRIALING": "فترة تجريبية",
+      "ACTIVE": "نشط",
+      "PAST_DUE": "متأخر السداد",
+      "CANCELED": "أُلغي",
+      "EXPIRED": "منتهٍ"
+    },
+    "anyStatus": "أي حالة",
     "invalidTargetLimit": "أدخل رقمًا صحيحًا موجبًا لحد الأجهزة المستهدف.",
     "invalidAmount": "أدخل مبلغًا صالحًا غير سالب، مثل 19.99.",
     "pricePublished": "تم نشر السعر.",
@@ -454,7 +469,24 @@
     "refundId": "معرّف الاسترداد",
     "reasonCode": "رمز السبب",
     "disputeId": "معرّف النزاع",
-    "evidenceDueAt": "موعد استحقاق الأدلة"
+    "evidenceDueAt": "موعد استحقاق الأدلة",
+    "paymentAttemptStatuses": {
+      "CREATED": "أُنشئت",
+      "PENDING": "قيد الانتظار",
+      "CONFIRMED": "مؤكدة",
+      "FAILED": "فشلت",
+      "CANCELLED": "أُلغيت"
+    },
+    "refundStatuses": {
+      "RECORDED": "مسجّل",
+      "FAILED": "فشل"
+    },
+    "disputeStatuses": {
+      "OPEN": "مفتوح",
+      "UNDER_REVIEW": "قيد المراجعة",
+      "WON": "تم كسبه",
+      "LOST": "خُسر"
+    }
   },
   "settlement": {
     "notAuthorized": "لا يملك دورك صلاحية عرض سجلات التسوية.",
@@ -484,7 +516,7 @@
       "fees": "الرسوم",
       "net": "الصافي",
       "received": "المستلم",
-      "difference": "الفرق (بالوحدات الصغرى)",
+      "difference": "الفرق",
       "status": "الحالة",
       "viewItems": "عرض المعاملات",
       "createTitle": "فتح دفعة تسوية",

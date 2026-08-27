@@ -418,6 +418,21 @@
       "ONE_TIME": "One-time",
       "FREE": "Free"
     },
+    "invoiceStatuses": {
+      "DRAFT": "Draft",
+      "OPEN": "Open",
+      "PAID": "Paid",
+      "VOID": "Void",
+      "UNCOLLECTIBLE": "Uncollectible"
+    },
+    "subscriptionStatuses": {
+      "TRIALING": "Trialing",
+      "ACTIVE": "Active",
+      "PAST_DUE": "Past due",
+      "CANCELED": "Canceled",
+      "EXPIRED": "Expired"
+    },
+    "anyStatus": "Any status",
     "invalidTargetLimit": "Enter a positive whole number for the target device limit.",
     "invalidAmount": "Enter a valid non-negative amount, e.g. 19.99.",
     "pricePublished": "Price published.",
@@ -454,7 +469,24 @@
     "refundId": "Refund ID",
     "reasonCode": "Reason code",
     "disputeId": "Dispute ID",
-    "evidenceDueAt": "Evidence due"
+    "evidenceDueAt": "Evidence due",
+    "paymentAttemptStatuses": {
+      "CREATED": "Created",
+      "PENDING": "Pending",
+      "CONFIRMED": "Confirmed",
+      "FAILED": "Failed",
+      "CANCELLED": "Cancelled"
+    },
+    "refundStatuses": {
+      "RECORDED": "Recorded",
+      "FAILED": "Failed"
+    },
+    "disputeStatuses": {
+      "OPEN": "Open",
+      "UNDER_REVIEW": "Under review",
+      "WON": "Won",
+      "LOST": "Lost"
+    }
   },
   "settlement": {
     "notAuthorized": "Your role cannot view settlement records.",
@@ -484,7 +516,7 @@
       "fees": "Fees",
       "net": "Net",
       "received": "Received",
-      "difference": "Difference (minor units)",
+      "difference": "Difference",
       "status": "Status",
       "viewItems": "View transactions",
       "createTitle": "Open a settlement batch",

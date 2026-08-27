@@ -111,7 +111,9 @@ export default function BillingPlans() {
                 <tr key={plan.planId}>
                   <td>{plan.planCode}</td>
                   <td>{plan.planVersion}</td>
-                  <td>{t(`billing.planStatuses.${plan.status}`)}</td>
+                  <td>
+                    <span className={`badge ${plan.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`}>{t(`billing.planStatuses.${plan.status}`)}</span>
+                  </td>
                   <td>{t(`billing.cadences.${plan.billingCadence}`)}</td>
                   <td>{plan.defaultParentMemberLimit}</td>
                   <td>{plan.defaultManagedDeviceLimit}</td>

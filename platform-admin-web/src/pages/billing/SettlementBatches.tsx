@@ -215,8 +215,12 @@ export default function SettlementBatches() {
                     <td>{formatMoney(b.fees)}</td>
                     <td>{formatMoney(b.net)}</td>
                     <td>{formatMoney(b.received)}</td>
-                    <td>{b.differenceMinor}</td>
-                    <td>{t(`settlement.reconciliation.statuses.${b.status}`)}</td>
+                    <td>{formatMoney({ amountMinor: b.differenceMinor, currencyCode: b.net.currencyCode })}</td>
+                    <td>
+                      <span className={`badge ${b.status === 'MATCHED' ? 'badge-success' : b.status === 'RESOLVED' ? 'badge-success' : 'badge-danger'}`}>
+                        {t(`settlement.reconciliation.statuses.${b.status}`)}
+                      </span>
+                    </td>
                     <td>
                       <button type="button" className="btn" onClick={() => toggleExpand(b)}>
                         {expandedBatchId === b.settlementBatchId ? t('common.hide') : t('settlement.batches.viewItems')}

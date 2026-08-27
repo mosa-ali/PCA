@@ -116,7 +116,7 @@ export default function SettlementReconciliation() {
                         <td>{b.settlementCurrency}</td>
                         <td>{formatMoney(b.net)}</td>
                         <td>{formatMoney(b.received)}</td>
-                        <td>{b.differenceMinor}</td>
+                        <td>{formatMoney({ amountMinor: b.differenceMinor, currencyCode: b.net.currencyCode })}</td>
                         {canResolve && (
                           <td>
                             <div className="actions-row">
@@ -160,7 +160,7 @@ export default function SettlementReconciliation() {
                     {resolved.map((b) => (
                       <tr key={b.settlementBatchId}>
                         <td>{b.settlementCurrency}</td>
-                        <td>{b.differenceMinor}</td>
+                        <td>{formatMoney({ amountMinor: b.differenceMinor, currencyCode: b.net.currencyCode })}</td>
                         <td>{b.resolutionReason}</td>
                         <td>{b.resolvedAt ? new Date(b.resolvedAt).toLocaleString() : '—'}</td>
                       </tr>

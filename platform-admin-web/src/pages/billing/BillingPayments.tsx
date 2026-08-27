@@ -17,6 +17,21 @@ const TAB_PATHS: Record<Tab, string> = {
   disputes: '/platform-admin/billing/disputes',
 };
 
+const ATTEMPT_BADGE: Record<string, string> = {
+  CREATED: 'badge-warning',
+  PENDING: 'badge-warning',
+  CONFIRMED: 'badge-success',
+  FAILED: 'badge-danger',
+  CANCELLED: 'badge-danger',
+};
+const REFUND_BADGE: Record<string, string> = { RECORDED: 'badge-success', FAILED: 'badge-danger' };
+const DISPUTE_BADGE: Record<string, string> = {
+  OPEN: 'badge-danger',
+  UNDER_REVIEW: 'badge-warning',
+  WON: 'badge-success',
+  LOST: 'badge-danger',
+};
+
 export default function BillingPayments() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('attempts');
@@ -123,7 +138,9 @@ export default function BillingPayments() {
                     <td>{a.paymentAttemptId}</td>
                     <td>{a.accountRef}</td>
                     <td>{a.amount ? formatMoney(a.amount) : '—'}</td>
-                    <td>{a.status}</td>
+                    <td>
+                      <span className={`badge ${ATTEMPT_BADGE[a.status] ?? 'badge-warning'}`}>{t(`billing.paymentAttemptStatuses.${a.status}`, a.status)}</span>
+                    </td>
                     <td>{a.provider}</td>
                     <td>{a.createdAt ? new Date(a.createdAt).toLocaleString() : '—'}</td>
                   </tr>
@@ -185,7 +202,9 @@ export default function BillingPayments() {
                   <tr key={r.refundId}>
                     <td>{r.refundId}</td>
                     <td>{r.amount ? formatMoney(r.amount) : '—'}</td>
-                    <td>{r.status}</td>
+                    <td>
+                      <span className={`badge ${REFUND_BADGE[r.status] ?? 'badge-warning'}`}>{t(`billing.refundStatuses.${r.status}`, r.status)}</span>
+                    </td>
                     <td>{r.reasonCode}</td>
                     <td>{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
                   </tr>
@@ -214,7 +233,9 @@ export default function BillingPayments() {
                 {disputes.map((d) => (
                   <tr key={d.disputeId}>
                     <td>{d.disputeId}</td>
-                    <td>{d.status}</td>
+                    <td>
+                      <span className={`badge ${DISPUTE_BADGE[d.status] ?? 'badge-warning'}`}>{t(`billing.disputeStatuses.${d.status}`, d.status)}</span>
+                    </td>
                     <td>{d.evidenceDueAt ? new Date(d.evidenceDueAt).toLocaleString() : '—'}</td>
                     <td>{d.createdAt ? new Date(d.createdAt).toLocaleString() : '—'}</td>
                   </tr>
