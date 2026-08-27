@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../api/client';
 import { config } from '../../config/env';
@@ -26,6 +27,11 @@ function errorMessageKey(err: unknown): string {
       case 'UNAUTHORIZED':
         return 'deviceEnrollment.errors.unauthorized';
       case 'FORBIDDEN':
+        // MANAGED_DEVICE_LIMIT_REACHED is a real, actionable entitlement
+        // state (see backend InvitationService.ts), not a genuine authority
+        // rejection -- surface it distinctly so the family is pointed at
+        // the increase-devices flow instead of told they lack permission.
+        if (err.serverCode === 'MANAGED_DEVICE_LIMIT_REACHED') return 'deviceEnrollment.errors.deviceLimitReached';
         return 'deviceEnrollment.errors.forbidden';
       case 'NOT_FOUND':
         return 'deviceEnrollment.errors.notFound';
@@ -127,8 +133,11 @@ export default function DeviceEnrollmentPanel() {
     setProtectionMode(next === 'ANDROID' ? 'ANDROID_STANDARD' : 'IOS_STANDARD');
   };
 
+  const [createErrorServerCode, setCreateErrorServerCode] = useState<string | null>(null);
+
   const create = async () => {
     setCreateError(null);
+    setCreateErrorServerCode(null);
     setCreating(true);
     try {
       const created = await clients.deviceEnrollment.createInvitation(familyId, {
@@ -143,6 +152,7 @@ export default function DeviceEnrollmentPanel() {
       reloadInvitations();
     } catch (e) {
       setCreateError(t(errorMessageKey(e)));
+      setCreateErrorServerCode(e instanceof DeviceEnrollmentError ? e.serverCode : null);
     } finally {
       setCreating(false);
       setConsentOpen(false);
@@ -276,7 +286,16 @@ export default function DeviceEnrollmentPanel() {
         >
           {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.createInvitation')}
         </button>
-        {createError && <ErrorState message={createError} />}
+        {createError && (
+          <>
+            <ErrorState message={createError} />
+            {createErrorServerCode === 'MANAGED_DEVICE_LIMIT_REACHED' && (
+              <p>
+                <Link to="/subscription/increase-devices">{t('deviceEnrollment.errors.deviceLimitReachedAction')}</Link>
+              </p>
+            )}
+          </>
+        )}
       </PermissionGate>
 
       {consentOpen && (

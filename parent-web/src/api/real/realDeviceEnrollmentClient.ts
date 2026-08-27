@@ -94,10 +94,17 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
       );
     }
     if (status === 403) {
+      // invitationRoutes.ts sends { error: 'forbidden', code } for the
+      // specific, actionable RBAC/entitlement reasons (e.g.
+      // MANAGED_DEVICE_LIMIT_REACHED) -- forward that code so callers can
+      // distinguish it from a generic authority rejection instead of only
+      // ever seeing "insufficient family authority".
+      const body = await parseJsonSafe<{ error?: string; code?: string }>(response);
       throw new DeviceEnrollmentError(
         'FORBIDDEN',
         `${operation}: the server denied this action for your account (insufficient family authority).`,
         403,
+        body?.code ?? null,
       );
     }
     if (status === 404) {

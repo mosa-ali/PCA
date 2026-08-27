@@ -19,12 +19,24 @@ type DevPairingRecord = PairingRequestDto;
 let invitations: DevInvitationRecord[] = [];
 let pairingRequests: Map<string, DevPairingRecord> = new Map();
 let seq = 0;
+let nextCreateInvitationDenial: 'MANAGED_DEVICE_LIMIT_REACHED' | null = null;
 
 /** Test/dev-only reset hook so fixture state doesn't leak between test cases. */
 export function __resetDevDeviceEnrollmentState(): void {
   invitations = [];
   pairingRequests = new Map();
   seq = 0;
+  nextCreateInvitationDenial = null;
+}
+
+/**
+ * Dev-only convenience so the UI/tests can exercise the real backend's
+ * MANAGED_DEVICE_LIMIT_REACHED 403 (see backend/src/invitation/InvitationService.ts
+ * and realDeviceEnrollmentClient.ts's forwarding of the response body's
+ * `code` field) without a real over-limit family in fixture data.
+ */
+export function __devDenyNextCreateInvitation(code: 'MANAGED_DEVICE_LIMIT_REACHED'): void {
+  nextCreateInvitationDenial = code;
 }
 
 /** Test/dev-only accessor: the device ids seeded by createInvitation() calls so far, most recent last. */
@@ -47,6 +59,16 @@ function nextId(prefix: string): string {
 export class DevDeviceEnrollmentClient implements DeviceEnrollmentClient {
   async createInvitation(familyId: string, input: CreateInvitationInput): Promise<InvitationCreatedDto> {
     await delay();
+    if (nextCreateInvitationDenial) {
+      const code = nextCreateInvitationDenial;
+      nextCreateInvitationDenial = null;
+      throw new DeviceEnrollmentError(
+        'FORBIDDEN',
+        'createInvitation: the server denied this action for your account (insufficient family authority).',
+        403,
+        code,
+      );
+    }
     const now = new Date();
     const ttlMs = input.ttlMs ?? 15 * 60_000;
     const invitationId = nextId('inv');

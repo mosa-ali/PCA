@@ -177,7 +177,14 @@ describe('RealDeviceEnrollmentClient', () => {
       fetchMock.mockResolvedValueOnce(new Response(null, { status: 403 }));
       await expect(
         client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
-      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: null });
+    });
+
+    it('forwards the body\'s code on 403 so MANAGED_DEVICE_LIMIT_REACHED is distinguishable from a generic authority rejection', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'MANAGED_DEVICE_LIMIT_REACHED' }));
+      await expect(
+        client().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: 'MANAGED_DEVICE_LIMIT_REACHED' });
     });
 
     it('maps 404 to NOT_FOUND', async () => {

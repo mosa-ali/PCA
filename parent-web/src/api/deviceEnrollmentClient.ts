@@ -85,12 +85,22 @@ export type DeviceEnrollmentErrorCode =
 export class DeviceEnrollmentError extends Error {
   readonly code: DeviceEnrollmentErrorCode;
   readonly httpStatus: number | null;
+  /**
+   * The backend's own machine-readable error `code` field (e.g.
+   * `MANAGED_DEVICE_LIMIT_REACHED`, `FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED`
+   * from InvitationService.ts), when the response body carried one. `code`
+   * above only ever reflects the HTTP status bucket (FORBIDDEN for any 403);
+   * this field lets a caller distinguish *which* 403 it was without
+   * re-deriving policy the server already told it.
+   */
+  readonly serverCode: string | null;
 
-  constructor(code: DeviceEnrollmentErrorCode, message: string, httpStatus: number | null = null) {
+  constructor(code: DeviceEnrollmentErrorCode, message: string, httpStatus: number | null = null, serverCode: string | null = null) {
     super(message);
     this.name = 'DeviceEnrollmentError';
     this.code = code;
     this.httpStatus = httpStatus;
+    this.serverCode = serverCode;
   }
 }
 

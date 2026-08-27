@@ -7,6 +7,7 @@ import { getApiClients } from '../../src/api/client';
 import {
   __resetDevDeviceEnrollmentState,
   __devKnownPairingDeviceIds,
+  __devDenyNextCreateInvitation,
 } from '../../src/api/dev/devDeviceEnrollmentClient';
 import type { DevDeviceEnrollmentClient } from '../../src/api/dev/devDeviceEnrollmentClient';
 import { clickCreateInvitation } from '../utils/deviceEnrollmentTestHelpers';
@@ -177,5 +178,17 @@ describe('DeviceEnrollmentPanel', () => {
     await screen.findByTestId('invitation-qr-code');
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByTestId('invitation-qr-code')).not.toBeInTheDocument();
+  });
+
+  it('a MANAGED_DEVICE_LIMIT_REACHED denial surfaces an actionable message with a link to request more devices, not a generic authority error', async () => {
+    __devDenyNextCreateInvitation('MANAGED_DEVICE_LIMIT_REACHED');
+    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+    await clickCreateInvitation();
+
+    expect(await screen.findByText("You've reached your plan's managed-device limit.")).toBeInTheDocument();
+    expect(screen.queryByText('The server denied this action for your account.')).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Request more devices' });
+    expect(link.getAttribute('href')).toBe('/subscription/increase-devices');
+    expect(screen.queryByTestId('raw-invitation-token')).not.toBeInTheDocument();
   });
 });

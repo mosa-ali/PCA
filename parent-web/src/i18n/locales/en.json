@@ -328,6 +328,8 @@
     "errors": {
       "unauthorized": "Your session has expired. Please sign in again.",
       "forbidden": "The server denied this action for your account.",
+      "deviceLimitReached": "You've reached your plan's managed-device limit.",
+      "deviceLimitReachedAction": "Request more devices",
       "notFound": "Not found.",
       "conflict": "This action conflicts with the current state (e.g. already paired or revoked).",
       "rateLimited": "Too many requests -- please wait a moment and try again.",
