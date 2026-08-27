@@ -15,6 +15,10 @@ const ACTIONS: FamilyAction[] = [
   'CHANGE_RETENTION',
   'DELETE_HISTORY',
   'EXPORT_DATA',
+  'VIEW_DEVICE_ENROLLMENT',
+  'CREATE_DEVICE_INVITATION',
+  'REVOKE_DEVICE_INVITATION',
+  'CONFIRM_DEVICE_PAIRING',
   'REMOVE_OR_REVOKE_DEVICE',
   'DISABLE_PROTECTION_POLICY',
   'TRANSFER_OWNERSHIP',
@@ -48,6 +52,17 @@ export default function RolesMatrix() {
     <section aria-labelledby="matrix-title">
       <h1 id="matrix-title">{t('rbac.matrixTitle')}</h1>
       <p>{t('shell.role', { role: t(`roles.${currentRole.toLowerCase()}`) })}</p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('rbac.deviceActionsHeuristicNotice')}</p>
+
+      <div className="card-grid" style={{ marginBlockEnd: '1rem' }}>
+        {ROLES.map((role) => (
+          <article className="card" key={role}>
+            <h2>{t(`roles.${role.toLowerCase()}`)}</h2>
+            <p>{t(`rbac.roleExplanation.${role}`)}</p>
+          </article>
+        ))}
+      </div>
+
       <div className="table-scroll">
         <table className="data-table responsive-cards">
           <thead>

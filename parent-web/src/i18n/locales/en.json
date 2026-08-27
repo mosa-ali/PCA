@@ -152,6 +152,13 @@
     "deniedTitle": "Action not permitted",
     "deniedBody": "Your role ({{role}}) does not permit this action. This is enforced by the family authority gateway, not just hidden in the UI.",
     "viewOnlyBanner": "You have Viewer access -- read-only. Editing controls are disabled for your role.",
+    "deviceActionsHeuristicNotice": "Device-enrollment rows below (view/invite/revoke/confirm) reflect a client-side estimate, not the server's own authority model -- the real backend decision is account family-scope and license based, separate from this role matrix. The server's own rejection is always the final answer, not this table.",
+    "roleExplanation": {
+      "OWNER": "Full control: can manage every family setting, add or remove other parents, change anyone's role, and perform sensitive one-time actions like transferring ownership or revealing recovery material.",
+      "ADMINISTRATOR": "Can manage children's policies and approve requests day to day. Some actions (adding/removing a Viewer, revoking a device) only work if the Owner has delegated them -- otherwise only the Owner can do them.",
+      "VIEWER": "Read-only access to family status and device-enrollment information. Cannot change policy, approve requests, or manage devices or other family members.",
+      "CHILD": "Can send requests (like more screen time) for a parent to review, but cannot view or change any family settings."
+    },
     "actions": {
       "EDIT_CHILD_POLICY": "Edit child policy",
       "APPROVE_REQUEST": "Approve request",
@@ -162,6 +169,10 @@
       "CHANGE_RETENTION": "Change retention",
       "DELETE_HISTORY": "Delete history",
       "EXPORT_DATA": "Export data",
+      "VIEW_DEVICE_ENROLLMENT": "View device enrollment status",
+      "CREATE_DEVICE_INVITATION": "Invite a new child device",
+      "REVOKE_DEVICE_INVITATION": "Revoke a device invitation",
+      "CONFIRM_DEVICE_PAIRING": "Confirm device pairing",
       "REMOVE_OR_REVOKE_DEVICE": "Remove or revoke device",
       "DISABLE_PROTECTION_POLICY": "Disable protection policy",
       "TRANSFER_OWNERSHIP": "Transfer ownership",
@@ -610,6 +621,10 @@
     "invoices": {
       "title": "Invoices and receipts",
       "empty": "You have no invoices yet.",
+      "emptyForFilter": "No invoices in this date range.",
+      "fromDate": "From date",
+      "toDate": "To date",
+      "showMore": "Show {{count}} more",
       "date": "Date",
       "statusLabel": "Status",
       "total": "Total",
@@ -618,6 +633,7 @@
       "detailTitle": "Invoice {{id}}",
       "lineItems": "Line items",
       "quantity": "x{{count}}",
+      "print": "Print this invoice",
       "status": {
         "DRAFT": "Draft",
         "OPEN": "Open",
@@ -759,7 +775,11 @@
     "safeZoneInvalidDefinition": "Check the label, coordinates, and radius -- one of these values is not valid."
   },
   "eyeProtection": {
-    "reminders": "Reminders: {{status}}"
+    "reminders": "Reminders: {{status}}",
+    "lastReminder": "Last reminder shown: {{time}}",
+    "noReminderYet": "No reminder has been shown yet.",
+    "historyTitle": "Reminder history",
+    "historyEmpty": "No eye-rest reminders have been recorded for this child yet."
   },
   "youtube": {
     "restrictedMode": "Restricted mode: {{status}}",
@@ -841,6 +861,10 @@
     "title": "Activity Timeline",
     "description": "A single, chronological, category-level view of this child's recent activity across every PCA feature -- distinct from the Audit log, which only records changes YOU made to settings, not the child's own activity.",
     "empty": "No activity has been recorded for this child yet.",
+    "emptyForFilter": "No activity in this category yet.",
+    "filterLabel": "Filter by category",
+    "filterAll": "All categories",
+    "showMore": "Show {{count}} more",
     "category": {
       "APP_USAGE": "App usage",
       "WEB_BROWSING": "Web browsing",

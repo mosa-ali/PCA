@@ -36,9 +36,12 @@ export default function InvoiceDetail() {
               </li>
             ))}
           </ul>
+          <button type="button" className="btn no-print" onClick={() => window.print()}>
+            {t('subscription.invoices.print')}
+          </button>
         </div>
       )}
-      <p>
+      <p className="no-print">
         <Link to="/subscription/invoices">{t('common.back')}</Link>
       </p>
     </section>

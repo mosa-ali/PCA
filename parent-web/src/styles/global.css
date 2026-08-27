@@ -673,3 +673,16 @@ bdi.iso {
   gap: var(--space-2);
   margin-block: var(--space-2);
 }
+
+/* InvoiceDetail's browser-native print affordance (P2 finding: no
+   download/print/PDF action) -- hides app chrome so a printed invoice
+   shows only its own content, not the sidebar/nav/back-link. */
+@media print {
+  .sidebar,
+  .app-header,
+  .breadcrumb,
+  .skip-link,
+  .no-print {
+    display: none !important;
+  }
+}
