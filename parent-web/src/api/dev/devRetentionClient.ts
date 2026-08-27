@@ -32,7 +32,21 @@ export class DevRetentionClient implements RetentionClient {
 
   async deleteNow(actionId: string): Promise<DeleteNowResult> {
     await delay();
-    return { actionId, idempotent: false, plan: { toDelete: [], retainedCount: 0 }, deliveryStatus: 'DELETE_PENDING_REMOTE_DEVICE' };
+    return {
+      actionId,
+      idempotent: false,
+      // Non-trivial, non-empty plan so the dev/demo UI exercises the same
+      // disclosure rendering a real over-the-floor family would see, rather
+      // than an always-empty plan that would mask a UI regression.
+      plan: {
+        toDelete: [
+          { entityClass: 'ACTIVITY_EVENT', id: 'dev-activity-1', reason: 'WITHIN_ACTIVE_RETENTION_WINDOW' },
+          { entityClass: 'LOCATION_SAMPLE', id: 'dev-location-1', reason: 'WITHIN_ACTIVE_RETENTION_WINDOW' },
+        ],
+        retainedCount: 1,
+      },
+      deliveryStatus: 'DELETE_PENDING_REMOTE_DEVICE',
+    };
   }
 
   async requestExport(): Promise<ExportRequestResult> {

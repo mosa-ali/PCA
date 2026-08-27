@@ -65,6 +65,8 @@ export default function Retention() {
     <section aria-labelledby="retention-title">
       <h1 id="retention-title">{t('nav.retention')}</h1>
       <p>{t('retention.description')}</p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('retention.localEnforcementNotice')}</p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('retention.auditRetentionNotice')}</p>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={reload} />}

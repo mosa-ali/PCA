@@ -755,7 +755,8 @@
     "scopeNotice": "Delete Now removes activity content only. It does not remove enrollment keys, policies, roles, or recovery configuration; full device or family removal is a separate, strongly confirmed action.",
     "offlineNotice": "A child device that stays offline cannot be reported as erased. Its deletion remains pending until the device can acknowledge the instruction.",
     "externalCopyNotice": "Delete Now does not erase encrypted exports or backups outside PCA-managed storage. Those copies must be removed using the storage provider's controls.",
-    "secureEraseNotice": "PCA does not promise forensic-grade physical erasure on flash storage. Local encryption and best-effort platform/database cleanup reduce exposure without claiming more than the device can prove."
+    "secureEraseNotice": "PCA does not promise forensic-grade physical erasure on flash storage. Local encryption and best-effort platform/database cleanup reduce exposure without claiming more than the device can prove.",
+    "planSummary": "{{count}} item(s) queued for deletion; {{retained}} retained under a longer floor (e.g. audit records)."
   },
   "childWellbeing": {
     "noMessages": "No custom wellbeing messages target this child yet."

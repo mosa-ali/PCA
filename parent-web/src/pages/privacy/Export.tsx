@@ -32,6 +32,8 @@ export default function Export() {
     <section aria-labelledby="export-title">
       <h1 id="export-title">{t('nav.export')}</h1>
       <p>{t('export.description')}</p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('export.scopeNotice')}</p>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('export.externalCopyNotice')}</p>
       {status && <p role="status">{status}</p>}
       <PermissionGate action="EXPORT_DATA" showDisabledFallback>
         <button type="button" className="btn btn-primary" onClick={doExport}>
