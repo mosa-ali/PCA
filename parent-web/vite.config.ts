@@ -62,6 +62,19 @@ export default defineConfig(({ mode }) => {
               target: e2eRealProxyTarget,
               changeOrigin: true,
             },
+            // Real HTTP clients whose backend routes live under /v1 (billing/
+            // commercial, retention, device enrollment/pairing) -- confirmed
+            // by direct reproduction that without this rule, RealBillingClient's
+            // cookie-authenticated (no bearer-token gate) requests to
+            // /v1/families/:familyId/commercial/* 404 against THIS dev
+            // server itself instead of reaching the real backend, which looks
+            // indistinguishable from "route doesn't exist" even though the
+            // backend route (backend/src/http/routes/familyCommercialRoutes.ts)
+            // is genuinely implemented.
+            '/v1': {
+              target: e2eRealProxyTarget,
+              changeOrigin: true,
+            },
           }
         : undefined,
     },
