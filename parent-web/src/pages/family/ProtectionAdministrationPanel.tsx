@@ -101,7 +101,7 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
         setApprovals(pending);
       })
       .catch(() => {
-        if (!cancelled) setError(t('protectionAdministration.errors.load', { defaultValue: 'Protection administration is unavailable right now.' }));
+        if (!cancelled) setError(t('protectionAdministration.errors.load'));
       });
     return () => { cancelled = true; };
   }, [actions, t]);
@@ -113,7 +113,7 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
     setError(null);
     setMessage(null);
     if (!/^\d{6,64}$/.test(pinDraft) || pinDraft !== pinConfirmation) {
-      setError(t('protectionAdministration.errors.pinFormat', { defaultValue: 'Use the same numeric PIN twice; it must contain at least six digits.' }));
+      setError(t('protectionAdministration.errors.pinFormat'));
       return;
     }
     setBusy(true);
@@ -121,9 +121,9 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
       setPinStatus(await actions.configurePin(pinDraft));
       setPinDraft('');
       setPinConfirmation('');
-      setMessage(t('protectionAdministration.pinSaved', { defaultValue: 'Administration PIN configured. Keep it private; it is only an offline fallback.' }));
+      setMessage(t('protectionAdministration.pinSaved'));
     } catch {
-      setError(t('protectionAdministration.errors.savePin', { defaultValue: 'The Administration PIN could not be saved.' }));
+      setError(t('protectionAdministration.errors.savePin'));
     } finally {
       setBusy(false);
     }
@@ -143,9 +143,9 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
         reasonCategory,
       });
       setApprovals((current) => [created, ...current.filter((item) => item.requestId !== created.requestId)]);
-      setMessage(t('protectionAdministration.requestCreated', { defaultValue: 'Parent approval requested. The device remains under the pending protection decision until an authorized decision is accepted.' }));
+      setMessage(t('protectionAdministration.requestCreated'));
     } catch {
-      setError(t('protectionAdministration.errors.request', { defaultValue: 'The parent approval request could not be created.' }));
+      setError(t('protectionAdministration.errors.request'));
     } finally {
       setBusy(false);
     }
@@ -156,7 +156,7 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
     setError(null);
     setMessage(null);
     if (method === 'LOCAL_ADMINISTRATION_PIN' && !/^\d{6,64}$/.test(decisionPin)) {
-      setError(t('protectionAdministration.errors.decisionPin', { defaultValue: 'Enter the configured Administration PIN to use the local fallback.' }));
+      setError(t('protectionAdministration.errors.decisionPin'));
       return;
     }
     setBusy(true);
@@ -172,9 +172,9 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
       });
       setApprovals((current) => current.map((item) => item.requestId === updated.requestId ? updated : item));
       if (method === 'LOCAL_ADMINISTRATION_PIN') setDecisionPin('');
-      setMessage(t('protectionAdministration.decisionAccepted', { defaultValue: 'The authorized parent decision was accepted and recorded for this exact child and device.' }));
+      setMessage(t('protectionAdministration.decisionAccepted'));
     } catch {
-      setError(t('protectionAdministration.errors.decision', { defaultValue: 'The decision was not accepted. The device remains pending parent approval.' }));
+      setError(t('protectionAdministration.errors.decision'));
     } finally {
       setBusy(false);
     }
@@ -183,10 +183,10 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
   return (
     <section aria-labelledby="protection-administration-title" style={{ marginBlock: '1.5rem' }}>
       <h2 id="protection-administration-title">
-        {t('protectionAdministration.title', { defaultValue: 'Protection administration' })}
+        {t('protectionAdministration.title')}
       </h2>
       <p>
-        {t('protectionAdministration.intro', { defaultValue: 'Removal or protection-disable requests require an explicit parent decision when protective authority applies.' })}
+        {t('protectionAdministration.intro')}
       </p>
       <p style={{ color: 'var(--color-text-muted)' }}>
         {pinStatus?.offlineFallbackExplanation ?? FALLBACK_PIN_EXPLANATION}
@@ -194,7 +194,7 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
 
       {!actions && (
         <p role="status">
-          {t('protectionAdministration.bindingPending', { defaultValue: 'The authenticated family route binding for PIN and approval actions is not installed in this repository slice; no local or remote decision is claimed here.' })}
+          {t('protectionAdministration.bindingPending')}
         </p>
       )}
       {error && <p role="alert">{error}</p>}
@@ -202,106 +202,106 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
 
       <PermissionGate action="DISABLE_PROTECTION_POLICY" showDisabledFallback>
         <fieldset disabled={!actions || busy}>
-          <legend>{t('protectionAdministration.pinTitle', { defaultValue: 'Administration PIN' })}</legend>
-          <p>{t('protectionAdministration.pinBody', { defaultValue: 'Choose at least six digits. PCA stores only a salted, deliberately slow verifier and uses progressive delay after failures.' })}</p>
+          <legend>{t('protectionAdministration.pinTitle')}</legend>
+          <p>{t('protectionAdministration.pinBody')}</p>
           <div className="field">
-            <label htmlFor="administration-pin">{t('protectionAdministration.pin', { defaultValue: 'Administration PIN' })}</label>
+            <label htmlFor="administration-pin">{t('protectionAdministration.pin')}</label>
             <input id="administration-pin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinDraft} onChange={(event) => setPinDraft(event.target.value)} />
           </div>
           <div className="field">
-            <label htmlFor="administration-pin-confirm">{t('protectionAdministration.pinConfirm', { defaultValue: 'Confirm Administration PIN' })}</label>
+            <label htmlFor="administration-pin-confirm">{t('protectionAdministration.pinConfirm')}</label>
             <input id="administration-pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinConfirmation} onChange={(event) => setPinConfirmation(event.target.value)} />
           </div>
           <button type="button" className="btn btn-primary" onClick={() => void configurePin()}>
-            {t('protectionAdministration.savePin', { defaultValue: 'Save Administration PIN' })}
+            {t('protectionAdministration.savePin')}
           </button>
         </fieldset>
       </PermissionGate>
 
       <PermissionGate action="DISABLE_PROTECTION_POLICY" showDisabledFallback>
         <fieldset disabled={!actions || busy || targets.length === 0}>
-          <legend>{t('protectionAdministration.requestTitle', { defaultValue: 'Request a parent decision' })}</legend>
+          <legend>{t('protectionAdministration.requestTitle')}</legend>
           <div className="field">
-            <label htmlFor="protection-target">{t('protectionAdministration.target', { defaultValue: 'Child device' })}</label>
+            <label htmlFor="protection-target">{t('protectionAdministration.target')}</label>
             <select id="protection-target" value={selectedTargetId} onChange={(event) => setSelectedTargetId(event.target.value)}>
-              {targets.length === 0 && <option value="">{t('protectionAdministration.noTargets', { defaultValue: 'No enrolled child devices available' })}</option>}
+              {targets.length === 0 && <option value="">{t('protectionAdministration.noTargets')}</option>}
               {targets.map((target) => <option key={target.deviceId} value={target.deviceId}>{target.childLabel} — {target.deviceLabel}</option>)}
             </select>
           </div>
           <div className="field">
-            <label htmlFor="protection-operation">{t('protectionAdministration.operation', { defaultValue: 'Requested action' })}</label>
+            <label htmlFor="protection-operation">{t('protectionAdministration.operation')}</label>
             <select id="protection-operation" value={operation} onChange={(event) => setOperation(event.target.value as typeof operation)}>
-              <option value="REMOVE_REVOKE_DEVICE">{t('protectionAdministration.removeDevice', { defaultValue: 'Remove or revoke device' })}</option>
-              <option value="DISABLE_PROTECTION_POLICY">{t('protectionAdministration.disableProtection', { defaultValue: 'Temporarily disable protection' })}</option>
+              <option value="REMOVE_REVOKE_DEVICE">{t('protectionAdministration.removeDevice')}</option>
+              <option value="DISABLE_PROTECTION_POLICY">{t('protectionAdministration.disableProtection')}</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="protection-reason">{t('protectionAdministration.reason', { defaultValue: 'Reason category' })}</label>
+            <label htmlFor="protection-reason">{t('protectionAdministration.reason')}</label>
             <select id="protection-reason" value={reasonCategory} onChange={(event) => setReasonCategory(event.target.value)}>
-              <option value="CHILD_SAFETY_CONCERN">{t('protectionAdministration.reasonSafety', { defaultValue: 'Child safety concern' })}</option>
-              <option value="ROUTINE_POLICY_CHANGE">{t('protectionAdministration.reasonPolicy', { defaultValue: 'Routine policy change' })}</option>
-              <option value="DEVICE_LOST_OR_STOLEN">{t('protectionAdministration.reasonLost', { defaultValue: 'Device lost or stolen' })}</option>
-              <option value="FAMILY_MEMBERSHIP_CHANGE">{t('protectionAdministration.reasonMembership', { defaultValue: 'Family membership change' })}</option>
-              <option value="RECOVERY">{t('protectionAdministration.reasonRecovery', { defaultValue: 'Recovery' })}</option>
-              <option value="OTHER">{t('protectionAdministration.reasonOther', { defaultValue: 'Other' })}</option>
+              <option value="CHILD_SAFETY_CONCERN">{t('protectionAdministration.reasonSafety')}</option>
+              <option value="ROUTINE_POLICY_CHANGE">{t('protectionAdministration.reasonPolicy')}</option>
+              <option value="DEVICE_LOST_OR_STOLEN">{t('protectionAdministration.reasonLost')}</option>
+              <option value="FAMILY_MEMBERSHIP_CHANGE">{t('protectionAdministration.reasonMembership')}</option>
+              <option value="RECOVERY">{t('protectionAdministration.reasonRecovery')}</option>
+              <option value="OTHER">{t('protectionAdministration.reasonOther')}</option>
             </select>
           </div>
           <button type="button" className="btn btn-primary" onClick={() => void requestApproval()}>
-            {t('protectionAdministration.request', { defaultValue: 'Request parent approval' })}
+            {t('protectionAdministration.request')}
           </button>
         </fieldset>
       </PermissionGate>
 
-      <h3>{t('protectionAdministration.pendingTitle', { defaultValue: 'Pending and decided requests' })}</h3>
+      <h3>{t('protectionAdministration.pendingTitle')}</h3>
       {approvals.length === 0 ? (
-        <p>{t('protectionAdministration.noRequests', { defaultValue: 'No approval requests are available.' })}</p>
+        <p>{t('protectionAdministration.noRequests')}</p>
       ) : (
         <div className="table-scroll">
           <table className="data-table responsive-cards">
             <thead>
               <tr>
-                <th scope="col">{t('protectionAdministration.child', { defaultValue: 'Child' })}</th>
-                <th scope="col">{t('protectionAdministration.device', { defaultValue: 'Device' })}</th>
-                <th scope="col">{t('protectionAdministration.requestedAt', { defaultValue: 'Requested' })}</th>
-                <th scope="col">{t('protectionAdministration.protection', { defaultValue: 'Protection' })}</th>
-                <th scope="col">{t('protectionAdministration.reason', { defaultValue: 'Reason' })}</th>
-                <th scope="col">{t('protectionAdministration.state', { defaultValue: 'State' })}</th>
+                <th scope="col">{t('protectionAdministration.child')}</th>
+                <th scope="col">{t('protectionAdministration.device')}</th>
+                <th scope="col">{t('protectionAdministration.requestedAt')}</th>
+                <th scope="col">{t('protectionAdministration.protection')}</th>
+                <th scope="col">{t('protectionAdministration.reason')}</th>
+                <th scope="col">{t('protectionAdministration.state')}</th>
                 <th scope="col" aria-label={t('common.actions', { defaultValue: 'Actions' })} />
               </tr>
             </thead>
             <tbody>
               {approvals.map((approval) => (
                 <tr key={approval.requestId}>
-                  <td data-label={t('protectionAdministration.child', { defaultValue: 'Child' })}>{approval.childLabel}</td>
-                  <td data-label={t('protectionAdministration.device', { defaultValue: 'Device' })}>{approval.deviceLabel}</td>
-                  <td data-label={t('protectionAdministration.requestedAt', { defaultValue: 'Requested' })}>{new Date(approval.requestedAtUtc).toLocaleString()}</td>
-                  <td data-label={t('protectionAdministration.protection', { defaultValue: 'Protection' })}>{approval.protectionLevel}</td>
-                  <td data-label={t('protectionAdministration.reason', { defaultValue: 'Reason' })}>{approval.reasonCategory ?? '—'}</td>
-                  <td data-label={t('protectionAdministration.state', { defaultValue: 'State' })}>{approval.state}</td>
+                  <td data-label={t('protectionAdministration.child')}>{approval.childLabel}</td>
+                  <td data-label={t('protectionAdministration.device')}>{approval.deviceLabel}</td>
+                  <td data-label={t('protectionAdministration.requestedAt')}>{new Date(approval.requestedAtUtc).toLocaleString()}</td>
+                  <td data-label={t('protectionAdministration.protection')}>{approval.protectionLevel}</td>
+                  <td data-label={t('protectionAdministration.reason')}>{approval.reasonCategory ?? '—'}</td>
+                  <td data-label={t('protectionAdministration.state')}>{approval.state}</td>
                   <td>
                     {approval.state === 'PARENT_APPROVAL_REQUIRED' && (
                       <>
-                        <label htmlFor={`decision-${approval.requestId}`} className="visually-hidden">{t('protectionAdministration.decision', { defaultValue: 'Decision' })}</label>
+                        <label htmlFor={`decision-${approval.requestId}`} className="visually-hidden">{t('protectionAdministration.decision')}</label>
                         <select id={`decision-${approval.requestId}`} value={decision} onChange={(event) => setDecision(event.target.value as ProtectionDecision)} disabled={!actions || busy}>
-                          <option value="KEEP_ACTIVE">{t('protectionAdministration.keepActive', { defaultValue: 'Keep active' })}</option>
-                          <option value="TEMPORARILY_DISABLE">{t('protectionAdministration.temporarilyDisable', { defaultValue: 'Temporarily disable' })}</option>
-                          <option value="ALLOW_REMOVAL">{t('protectionAdministration.allowRemoval', { defaultValue: 'Allow removal' })}</option>
+                          <option value="KEEP_ACTIVE">{t('protectionAdministration.keepActive')}</option>
+                          <option value="TEMPORARILY_DISABLE">{t('protectionAdministration.temporarilyDisable')}</option>
+                          <option value="ALLOW_REMOVAL">{t('protectionAdministration.allowRemoval')}</option>
                         </select>
                         {decision === 'TEMPORARILY_DISABLE' && (
                           <label htmlFor={`temporary-disable-minutes-${approval.requestId}`}>
-                            {t('protectionAdministration.disableForMinutes', { defaultValue: 'Disable for minutes' })}
+                            {t('protectionAdministration.disableForMinutes')}
                             <input id={`temporary-disable-minutes-${approval.requestId}`} type="number" min={1} max={15} step={1} value={temporaryDisableMinutes} onChange={(event) => setTemporaryDisableMinutes(event.target.value)} disabled={!actions || busy} />
                           </label>
                         )}
-                        <input aria-label={t('protectionAdministration.pinForDecision', { defaultValue: 'PIN for local decision' })} type="password" inputMode="numeric" autoComplete="off" maxLength={64} value={decisionPin} onChange={(event) => setDecisionPin(event.target.value)} disabled={!actions || busy} />
+                        <input aria-label={t('protectionAdministration.pinForDecision')} type="password" inputMode="numeric" autoComplete="off" maxLength={64} value={decisionPin} onChange={(event) => setDecisionPin(event.target.value)} disabled={!actions || busy} />
                         <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'LOCAL_ADMINISTRATION_PIN')} disabled={!actions || busy}>
-                          {t('protectionAdministration.applyPin', { defaultValue: 'Apply with PIN' })}
+                          {t('protectionAdministration.applyPin')}
                         </button>
                         <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'REMOTE_PARENT')} disabled={!actions || busy}>
-                          {t('protectionAdministration.applyRemote', { defaultValue: 'Use approved parent device' })}
+                          {t('protectionAdministration.applyRemote')}
                         </button>
                         <button type="button" className="btn" onClick={() => void applyDecision(approval.requestId, 'AUTHORIZED_RECOVERY')} disabled={!actions || busy}>
-                          {t('protectionAdministration.applyRecovery', { defaultValue: 'Use authorized recovery' })}
+                          {t('protectionAdministration.applyRecovery')}
                         </button>
                       </>
                     )}
