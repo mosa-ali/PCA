@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryFamilyTrustSetStore.js';
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
+import { UnavailableTrustSetRoleResolver } from '../../dist/familyrbac/UnavailableTrustSetRoleResolver.js';
 import { InMemoryActionIdempotencyLedger } from '../../dist/familyrbac/ActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from '../../dist/familyrbac/ParentActionAuthorizationService.js';
 import { defaultFamilyRbacPolicyConfig } from '../../dist/familyrbac/types.js';
+import { FamilyRbacPolicyConfigStore } from '../../dist/familyrbac/FamilyRbacPolicyConfigStore.js';
 import {
   StaticChildProfileMembershipResolver,
   UnavailableChildProfileMembershipResolver,
@@ -31,14 +33,14 @@ function epoch(overrides = {}) {
   };
 }
 
-function makeService(nowFn = () => T0, childProfileResolver = undefined) {
+function makeService(nowFn = () => T0, childProfileResolver = undefined, configProvider = defaultFamilyRbacPolicyConfig) {
   const store = new InMemoryFamilyTrustSetStore();
   store.setCurrentEpoch(epoch());
   const resolver = new FamilyTrustSetRoleResolver(store);
   const ledger = new InMemoryActionIdempotencyLedger();
   const service = childProfileResolver === undefined
-    ? new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, nowFn)
-    : new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, nowFn, childProfileResolver);
+    ? new ParentActionAuthorizationService(resolver, configProvider, ledger, nowFn)
+    : new ParentActionAuthorizationService(resolver, configProvider, ledger, nowFn, childProfileResolver);
   return { store, service, ledger };
 }
 
@@ -514,4 +516,175 @@ test('offline/reconnect re-validation: trust-set state at APPLY time governs, no
     childProfileRequest({ idempotencyKey: 'idem-cp-reco-2', actionId: 'act-cp-reco-2' }), // a DIFFERENT action/idempotency pair -- a fresh apply-time re-check, not a replay
   );
   assert.deepEqual(applyTimeDecision, { verdict: 'DENY', reason: 'ACTOR_NOT_RESOLVABLE' });
+});
+
+// =====================================================================
+// PCA product-completion programme, Writer P0-A: family-scoped negative
+// tests for the four ParentOperations family/members-shaped features
+// (ADD_VIEWER, ADD_ADMINISTRATOR, REMOVE_NON_OWNER_PARENT, CHANGE_ROLE)
+// depend on, plus the P0-A success criterion -- every new P0-B/C/D route
+// calling this service today gets a correct, honest DENY while the
+// resolver is Unavailable*, and needs zero further backend changes once a
+// real resolver is wired in.
+// =====================================================================
+
+const FAMILY_MEMBER_OPERATIONS = ['ADD_VIEWER', 'ADD_ADMINISTRATOR', 'REMOVE_NON_OWNER_PARENT', 'CHANGE_ROLE'];
+
+test('family/members operations: cross-family MEMBER target fails for every operation this package needs, even for a legitimate Owner', () => {
+  const { service } = makeService();
+  for (const operation of FAMILY_MEMBER_OPERATIONS) {
+    const decision = service.authorize(
+      baseRequest({
+        operation,
+        targetScope: { kind: 'MEMBER', id: 'dev-in-some-other-family' },
+        stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+        idempotencyKey: `idem-fm-cross-${operation}`,
+        actionId: `act-fm-cross-${operation}`,
+      }),
+    );
+    assert.deepEqual(decision, { verdict: 'DENY', reason: 'CROSS_FAMILY_TARGET' }, `expected CROSS_FAMILY_TARGET for ${operation}`);
+  }
+});
+
+test('family/members operations: a Viewer is denied every one of them outright (wrong-role denial)', () => {
+  const { service } = makeService();
+  for (const operation of FAMILY_MEMBER_OPERATIONS) {
+    const decision = service.authorize(
+      baseRequest({
+        actorDeviceId: 'dev-viewer',
+        operation,
+        targetScope: { kind: 'MEMBER', id: 'dev-admin' },
+        stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+        idempotencyKey: `idem-fm-viewer-${operation}`,
+        actionId: `act-fm-viewer-${operation}`,
+      }),
+    );
+    assert.equal(decision.verdict, 'DENY', `expected DENY for Viewer attempting ${operation}`);
+  }
+});
+
+test('family/members operations: an Administrator is denied ADD_ADMINISTRATOR/CHANGE_ROLE outright -- these are Owner-only regardless of FamilyRbacPolicyConfig', () => {
+  const { service } = makeService();
+  for (const operation of ['ADD_ADMINISTRATOR', 'CHANGE_ROLE']) {
+    const decision = service.authorize(
+      baseRequest({
+        actorDeviceId: 'dev-admin',
+        operation,
+        targetScope: { kind: 'MEMBER', id: 'dev-viewer' },
+        stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+        idempotencyKey: `idem-fm-admin-${operation}`,
+        actionId: `act-fm-admin-${operation}`,
+      }),
+    );
+    assert.equal(decision.verdict, 'DENY', `expected DENY for Administrator attempting ${operation}`);
+  }
+});
+
+test('family/members operations: an expired action fails for every operation this package needs', () => {
+  const { service } = makeService(() => new Date('2026-01-01T01:00:00Z'));
+  for (const operation of FAMILY_MEMBER_OPERATIONS) {
+    const decision = service.authorize(
+      baseRequest({
+        operation,
+        targetScope: { kind: 'MEMBER', id: 'dev-viewer' },
+        stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date('2026-01-01T02:00:00Z') },
+        idempotencyKey: `idem-fm-expired-${operation}`,
+        actionId: `act-fm-expired-${operation}`,
+      }),
+    );
+    assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTION_EXPIRED' }, `expected ACTION_EXPIRED for ${operation}`);
+  }
+});
+
+test('family/members operations: ADD_VIEWER for Owner needs no step-up and no FamilyRbacPolicyConfig delegation', () => {
+  const { service } = makeService();
+  const decision = service.authorize(
+    baseRequest({ operation: 'ADD_VIEWER', targetScope: { kind: 'MEMBER', id: 'dev-viewer' }, idempotencyKey: 'idem-fm-owner-add-viewer', actionId: 'act-fm-owner-add-viewer' }),
+  );
+  assert.deepEqual(decision, { verdict: 'ALLOW' });
+});
+
+test('family/members operations: ADD_VIEWER for Administrator is denied under the default (safe) FamilyRbacPolicyConfig even with fresh step-up', () => {
+  const { service } = makeService();
+  const decision = service.authorize(
+    baseRequest({
+      actorDeviceId: 'dev-admin',
+      operation: 'ADD_VIEWER',
+      targetScope: { kind: 'MEMBER', id: 'dev-viewer' },
+      stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+      idempotencyKey: 'idem-fm-admin-add-viewer-default',
+      actionId: 'act-fm-admin-add-viewer-default',
+    }),
+  );
+  assert.equal(decision.verdict, 'DENY');
+});
+
+test('FamilyRbacPolicyConfigStore integration: real per-family config (not the hardcoded default) genuinely changes the ADD_VIEWER verdict for an Administrator, proving configProvider is called with the REQUEST familyId', async () => {
+  const configStore = new FamilyRbacPolicyConfigStore({
+    async getForFamily() { return null; },
+    async setForFamily() {},
+  });
+  await configStore.setForFamily('fam-1', { administratorCanManageViewers: true, administratorCanRevokeDeviceOrDisableProtection: false }, T0);
+  // Sanity: an unconfigured family still gets the safe default, so this isn't just "always ALLOW now".
+  assert.equal(configStore.snapshotFor('fam-NEVER-CONFIGURED').administratorCanManageViewers, false);
+
+  const { service } = makeService(() => T0, undefined, configStore.snapshotFor);
+
+  const allowed = service.authorize(
+    baseRequest({
+      actorDeviceId: 'dev-admin',
+      operation: 'ADD_VIEWER',
+      targetScope: { kind: 'MEMBER', id: 'dev-viewer' },
+      stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+      idempotencyKey: 'idem-fm-rbac-store-fam1',
+      actionId: 'act-fm-rbac-store-fam1',
+    }),
+  );
+  assert.deepEqual(allowed, { verdict: 'ALLOW' }); // fam-1's real, durable config delegates administratorCanManageViewers -- the default alone would DENY this (see the "default (safe) FamilyRbacPolicyConfig" test above)
+});
+
+// =====================================================================
+// P0-A success criterion (see IMPLEMENTATION_SEQUENCE in
+// PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md): every future P0-B/C/D
+// route calling ParentActionAuthorizationService today, wired to the REAL
+// production UnavailableTrustSetRoleResolver (not the in-memory test
+// resolver used everywhere else in this file), must get a correct, honest
+// fail-closed DENY -- never a crash, never a silent ALLOW -- and will start
+// working with zero further backend changes the moment a real resolver
+// replaces it.
+// =====================================================================
+
+test('P0-A success criterion: every family/members operation fails closed with ACTOR_NOT_RESOLVABLE against the REAL production UnavailableTrustSetRoleResolver', () => {
+  const resolver = new UnavailableTrustSetRoleResolver();
+  const ledger = new InMemoryActionIdempotencyLedger();
+  const service = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, () => T0);
+
+  for (const operation of [...FAMILY_MEMBER_OPERATIONS, 'EDIT_CHILD_POLICY']) {
+    const decision = service.authorize(
+      baseRequest({
+        operation,
+        targetScope: operation === 'EDIT_CHILD_POLICY' ? { kind: 'CHILD_PROFILE', id: 'child-A' } : { kind: 'MEMBER', id: 'dev-viewer' },
+        stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+        idempotencyKey: `idem-p0a-unavailable-${operation}`,
+        actionId: `act-p0a-unavailable-${operation}`,
+      }),
+    );
+    assert.deepEqual(decision, { verdict: 'DENY', reason: 'ACTOR_NOT_RESOLVABLE' }, `expected fail-closed DENY for ${operation} against UnavailableTrustSetRoleResolver`);
+  }
+});
+
+test('P0-A success criterion: does not crash or throw when authorizing against UnavailableTrustSetRoleResolver -- an honest DENY, never an unhandled exception', () => {
+  const resolver = new UnavailableTrustSetRoleResolver();
+  const ledger = new InMemoryActionIdempotencyLedger();
+  const service = new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, ledger, () => T0);
+  assert.doesNotThrow(() =>
+    service.authorize(
+      baseRequest({
+        operation: 'ADD_VIEWER',
+        targetScope: { kind: 'MEMBER', id: 'dev-viewer' },
+        idempotencyKey: 'idem-p0a-no-throw',
+        actionId: 'act-p0a-no-throw',
+      }),
+    ),
+  );
 });

@@ -33,7 +33,7 @@ import { InMemoryDeleteNowLedger } from './retention/InMemoryDeleteNowLedger.js'
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
-import { defaultFamilyRbacPolicyConfig } from './familyrbac/types.js';
+import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
 import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
 import { UnavailableChildProfileMembershipResolver } from './childprofiles/ChildProfileMembershipResolver.js';
 // PCA-ADD-ENR-012/016/017/018/020: consolidated removal/disable decision
@@ -425,9 +425,17 @@ async function start(): Promise<void> {
   // boundary" posture trustSetRoleResolver above already established, so a future real resolver
   // swapped in at ONE site is never silently missing at the other.
   const childProfileMembershipResolver = new UnavailableChildProfileMembershipResolver();
+  // Real, durable, per-family persistence (PCA product-completion
+  // programme, Writer P0-A) replacing the previous hardcoded closure
+  // default shared across every family regardless of familyId -- see
+  // FamilyRbacPolicyConfigStore.ts's own doc comment for why a
+  // synchronously-read in-memory snapshot (populated from this durable
+  // repository) is the correct shape for ParentActionAuthorizationService's
+  // synchronous, advisory-only configProvider contract.
+  const familyRbacPolicyConfigStore = new FamilyRbacPolicyConfigStore(new MySqlFamilyRbacPolicyConfigRepository());
   const safeZoneParentActionAuthorization = new ParentActionAuthorizationService(
     trustSetRoleResolver,
-    defaultFamilyRbacPolicyConfig,
+    familyRbacPolicyConfigStore.snapshotFor,
     new InMemoryActionIdempotencyLedger(),
     () => new Date(),
     childProfileMembershipResolver,

@@ -59,7 +59,7 @@ export interface AuthorizeRequest {
  */
 export class ParentActionAuthorizationService {
   private readonly roleResolver: TrustSetRoleResolver;
-  private readonly configProvider: () => FamilyRbacPolicyConfig;
+  private readonly configProvider: (familyId: string) => FamilyRbacPolicyConfig;
   private readonly idempotency: ActionIdempotencyLedger;
   private readonly now: () => Date;
   private readonly childProfileMembership: ChildProfileMembershipResolver;
@@ -67,7 +67,15 @@ export class ParentActionAuthorizationService {
 
   constructor(
     roleResolver: TrustSetRoleResolver,
-    configProvider: () => FamilyRbacPolicyConfig,
+    // Takes the REQUEST's familyId so config genuinely varies per family
+    // (see FamilyRbacPolicyConfigStore.snapshotFor) rather than being one
+    // global default shared by every family, as the original zero-arg
+    // closure signature made unavoidable. A plain zero-arg function like
+    // defaultFamilyRbacPolicyConfig remains a valid argument here (fewer
+    // parameters than the declared type is always callable with more, per
+    // TypeScript's own contravariant function-parameter rule), so this is
+    // backward compatible with every existing caller.
+    configProvider: (familyId: string) => FamilyRbacPolicyConfig,
     idempotency: ActionIdempotencyLedger,
     now: () => Date = () => new Date(),
     // PCA10: defaults to fail-closed (UNAVAILABLE -> DENY for every CHILD_PROFILE target) when no trustworthy
@@ -206,7 +214,7 @@ export class ParentActionAuthorizationService {
       }
     }
 
-    const verdict = resolveOperationAuthorization(resolved.role, request.operation, this.configProvider());
+    const verdict = resolveOperationAuthorization(resolved.role, request.operation, this.configProvider(request.familyId));
     if (verdict === 'DENY') {
       return { verdict: 'DENY', reason: 'ROLE_NOT_PERMITTED' };
     }
