@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
@@ -12,22 +13,25 @@ export default function AppsPage() {
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
   const { data, loading, error, reload } = useAsync(() => clients.parentFamilyData.getAppRules(childId), [childId]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data || data.length === 0) return <EmptyState />;
 
   const toggle = async (appId: string, allowed: boolean) => {
+    setActionError(null);
     try {
       await runFamilyAction('EDIT_CHILD_POLICY', () => clients.parentFamilyData.updateAppRule(childId, appId, { allowed }));
       reload();
-    } catch {
-      // denied/cancelled -- state unchanged
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('requestsPage.actionErrorFallback'));
     }
   };
 
   return (
     <div className="table-scroll">
+      {actionError && <ErrorState message={actionError} />}
       <table className="data-table responsive-cards">
         <thead>
           <tr>

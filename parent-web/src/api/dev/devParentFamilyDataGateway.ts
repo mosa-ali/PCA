@@ -29,6 +29,13 @@ function requireFixture<T>(map: Record<string, T>, childId: string, what: string
   return v;
 }
 
+let nextUpdateAppRuleFailure: string | null = null;
+
+/** Dev-only hook so AppsPage.tsx's error-surfacing path is exercisable without a real backend failure. */
+export function __devFailNextUpdateAppRule(message: string): void {
+  nextUpdateAppRuleFailure = message;
+}
+
 /**
  * PCA-FR-092: illustrative, in-memory, category-level activity entries --
  * NOT a claim about real event shapes/volume, only enough variety to
@@ -97,6 +104,11 @@ export class DevParentFamilyDataGateway implements ParentFamilyDataGateway {
 
   async updateAppRule(childId: string, appId: string, patch: Partial<AppRule>): Promise<{ auditEventId: string }> {
     await delay();
+    if (nextUpdateAppRuleFailure) {
+      const message = nextUpdateAppRuleFailure;
+      nextUpdateAppRuleFailure = null;
+      throw new Error(message);
+    }
     const rules = requireFixture(DEV_APP_RULES, childId, 'app rules');
     DEV_APP_RULES[childId] = rules.map((r) => (r.appId === appId ? { ...r, ...patch } : r));
     return { auditEventId: `audit-app-rule-${Date.now()}` };
