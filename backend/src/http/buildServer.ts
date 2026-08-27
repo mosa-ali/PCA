@@ -110,11 +110,13 @@ import type { PlatformAdminSettlementService } from '../platformadmin/settlement
 import type { ParentPreferenceRepository } from '../parentaccount/ParentPreferenceRepository.js';
 import type { SafeZoneRepository } from '../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../location/SafeZonePolicyAuthorization.js';
+import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 // PCA-FR-130 (Bonus Time): an eighth structurally independent surface,
 // registered exactly like every other domain's registerXRoutes call --
 // reuses the SAME deviceSessionService instance already wired above (never
 // a second, independently-constructed copy) for its actor-device binding.
 import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
+import { registerChildPolicyRoutes } from './routes/childPolicyRoutes.js';
 import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
@@ -192,6 +194,17 @@ export interface ServerDependencies {
    * the SAME fail-closed UnavailableChildProfileMembershipResolver when this is omitted.
    */
   childProfileMembership?: ChildProfileMembershipResolver;
+  /**
+   * PCA product-completion Writer P0-B: see registerChildPolicyRoutes' own
+   * doc comment. Reuses the SAME ParentActionAuthorizationService instance
+   * every other consumer in this file shares (main.ts's own
+   * safeZoneParentActionAuthorization) -- never a second, independently-
+   * constructed copy. Optional purely so existing buildServer() test
+   * callers that don't exercise this route need no change;
+   * registerChildPolicyRoutes itself fails the route closed with 503 when
+   * this is omitted, never a silent allow.
+   */
+  childPolicyAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
 }
 
 /**
@@ -385,6 +398,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     bonusGrantLedger: deps.bonusGrantLedger,
     deviceSessionService: deps.deviceSessionService,
     childProfileMembership: deps.childProfileMembership,
+  });
+  registerChildPolicyRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    deviceSessionService: deps.deviceSessionService,
+    parentActionAuthorization: deps.childPolicyAuthorization,
+    outboundRelayService: deps.outboundRelayService,
   });
 
   return app;

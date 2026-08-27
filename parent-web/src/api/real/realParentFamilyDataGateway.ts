@@ -11,6 +11,16 @@
 // how to serve that data (including honestly labeling offline/stale reads
 // via CapabilityState, e.g. OFFLINE/EPOCH_STALE, which the domain type
 // already models -- see ../../domain/types.ts).
+//
+// updateScreenTime/updateAppRule are genuinely real writes (not stubs):
+// they construct a schedulePolicyAuthoring.ts plaintext definition and
+// submit it via VerifiedFamilySchedulePolicyPublisher, which encrypts
+// (currently always CRYPTO_REVIEW_REQUIRED -- see UnavailableSchedulePolicyAuthoring)
+// and, once that gate clears, relays through the real
+// backend/src/http/routes/childPolicyRoutes.ts -> OutboundRelayService
+// path. This resolves to PENDING only -- never APPLIED -- matching the
+// PENDING/DELIVERED/APPLIED discipline documented in
+// docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md.
 import type {
   AppRule,
   DashboardSnapshot,
@@ -27,10 +37,24 @@ import type { ParentFamilyDataGateway } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { localFamilyDataStore, type LocalFamilyDataStore } from '../../security/localFamilyDataStore';
 import { requireTrustedAndCryptoReady } from './familyDataGate';
+import { cookieSessionFamilyId } from './realBillingClient';
+import {
+  VerifiedFamilySchedulePolicyPublisher,
+  type SchedulePolicyAuthoring,
+  type SchedulePolicyPlaintextDefinition,
+  type SchedulePolicyTransport,
+} from '../schedulePolicyAuthoring';
+
+function recipientDeviceIdFor(childId: string): string {
+  return `device-${childId}`;
+}
 
 export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   constructor(
     private readonly trustedBrowser: TrustedBrowserProvider,
+    private readonly schedulePolicyAuthoring: SchedulePolicyAuthoring,
+    private readonly schedulePolicyTransport: SchedulePolicyTransport,
+    private readonly apiBaseUrl: string,
     private readonly store: LocalFamilyDataStore = localFamilyDataStore,
   ) {}
 
@@ -53,16 +77,44 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   getScreenTime(childId: string): Promise<ScreenTimeStatus> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getScreenTime', `screenTime:${childId}`);
   }
-  async updateScreenTime(_childId: string, _patch: ScreenTimePatch): Promise<{ auditEventId: string }> {
+  async updateScreenTime(childId: string, patch: ScreenTimePatch): Promise<{ auditEventId: string }> {
     await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateScreenTime');
-    throw new Error('ParentFamilyDataGateway.updateScreenTime: mutation path not implemented yet even post-crypto-approval.');
+    if (patch.continuousUseLimitMinutes === undefined || patch.breakDurationMinutes === undefined) {
+      throw new Error('ParentFamilyDataGateway.updateScreenTime: both continuousUseLimitMinutes and breakDurationMinutes are required -- this is a full-policy replacement, not a partial patch (see schedulePolicyAuthoring.ts).');
+    }
+    const result = await this.publishSchedulePolicy(childId, {
+      kind: 'CONTINUOUS_USE_AND_BREAK',
+      childProfileId: childId,
+      continuousUseLimitMinutes: patch.continuousUseLimitMinutes,
+      breakDurationMinutes: patch.breakDurationMinutes,
+    });
+    return { auditEventId: result.messageId };
   }
   getAppRules(childId: string): Promise<AppRule[]> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getAppRules', `appRules:${childId}`);
   }
-  async updateAppRule(_childId: string, _appId: string, _patch: Partial<AppRule>): Promise<{ auditEventId: string }> {
+  async updateAppRule(childId: string, appId: string, patch: Partial<AppRule>): Promise<{ auditEventId: string }> {
     await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateAppRule');
-    throw new Error('ParentFamilyDataGateway.updateAppRule: mutation path not implemented yet even post-crypto-approval.');
+    if (patch.allowed === undefined) {
+      throw new Error('ParentFamilyDataGateway.updateAppRule: allowed is required.');
+    }
+    const result = await this.publishSchedulePolicy(childId, {
+      kind: 'APP_RULE',
+      childProfileId: childId,
+      appRule: { appId, allowed: patch.allowed, dailyLimitMinutes: patch.dailyLimitMinutes ?? null },
+    });
+    return { auditEventId: result.messageId };
+  }
+
+  private async publishSchedulePolicy(
+    childId: string,
+    definition: SchedulePolicyPlaintextDefinition,
+  ): Promise<{ messageId: string }> {
+    const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
+    if (!familyId) throw new Error('ParentFamilyDataGateway: no authenticated family session available.');
+    const publisher = new VerifiedFamilySchedulePolicyPublisher(this.schedulePolicyAuthoring, this.schedulePolicyTransport);
+    const result = await publisher.publish(familyId, recipientDeviceIdFor(childId), definition);
+    return { messageId: result.messageId };
   }
   getWebProtection(childId: string): Promise<WebProtectionStatus> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getWebProtection', `webProtection:${childId}`);

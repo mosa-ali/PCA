@@ -85,6 +85,8 @@ import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
 import { RealSafeZoneClient } from './real/realSafeZoneClient';
 import { UnavailableSafeZonePolicyAuthoring, type SafeZonePolicyAuthoring } from './safeZonePolicyAuthoring';
+import { RealSchedulePolicyClient } from './real/realSchedulePolicyClient';
+import { UnavailableSchedulePolicyAuthoring, type SchedulePolicyAuthoring } from './schedulePolicyAuthoring';
 import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
 import { DevRetentionClient } from './dev/devRetentionClient';
 import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
@@ -123,6 +125,7 @@ export interface PcaApiClients {
   parentPreferences: ParentPreferencesClient;
   safeZones: SafeZoneClient;
   safeZonePolicyAuthoring: SafeZonePolicyAuthoring;
+  schedulePolicyAuthoring: SchedulePolicyAuthoring;
   /**
    * PCA-FR-093: real, HTTP-backed against
    * backend/src/http/routes/retentionRoutes.ts outside demo mode. Same
@@ -152,6 +155,7 @@ function buildDevClients(): PcaApiClients {
     parentPreferences: new DevParentPreferencesClient(),
     safeZones: new DevSafeZoneClient(),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('ENCRYPTION_UNAVAILABLE'),
+    schedulePolicyAuthoring: new UnavailableSchedulePolicyAuthoring('ENCRYPTION_UNAVAILABLE'),
     retention: new DevRetentionClient(),
     isFixtureBacked: true,
   };
@@ -178,7 +182,12 @@ function buildRealClients(): PcaApiClients {
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     familyAuthority: new UnavailableFamilyAuthorityGateway(),
-    parentFamilyData: new RealParentFamilyDataGateway(trustedBrowser),
+    parentFamilyData: new RealParentFamilyDataGateway(
+      trustedBrowser,
+      new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
+      new RealSchedulePolicyClient(config.apiBaseUrl, trustedBrowser),
+      config.apiBaseUrl,
+    ),
     deviceStatus: new RealDeviceStatusClient(trustedBrowser),
     requests: new RealRequestClient(config.apiBaseUrl, trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
@@ -212,6 +221,7 @@ function buildRealClients(): PcaApiClients {
     parentPreferences: new RealParentPreferencesClient(config.apiBaseUrl),
     safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
+    schedulePolicyAuthoring: new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
     // billing above -- see ./real/realRetentionClient.ts's header.
     retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, noRetentionFamilyContextAvailable),

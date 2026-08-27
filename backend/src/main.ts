@@ -584,6 +584,11 @@ async function start(): Promise<void> {
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
+    // PCA product-completion Writer P0-B: reuses the SAME
+    // safeZoneParentActionAuthorization instance every other consumer in
+    // this file shares (see its own doc comment above) -- never a second,
+    // independently-constructed copy.
+    childPolicyAuthorization: safeZoneParentActionAuthorization,
     inboundReconnectService: new InboundReconnectService(relayService, syncCoordinator),
     statusTracker: new DeviceSyncStatusTracker(),
     deleteNowLedger,
