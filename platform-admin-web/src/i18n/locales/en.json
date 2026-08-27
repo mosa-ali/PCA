@@ -395,7 +395,9 @@
     },
     "occurredAt": "Occurred at",
     "actorRole": "Actor role",
-    "metadata": "Metadata"
+    "metadata": "Metadata",
+    "since": "From date",
+    "until": "To date"
   },
   "billing": {
     "invalidPlanForm": "Enter a plan code and non-negative whole numbers for both default limits.",

@@ -20,7 +20,16 @@ export default function Audit() {
   const [actorAdminId, setActorAdminId] = useState('');
   const [targetRef, setTargetRef] = useState('');
   const [result, setResult] = useState<AuditResult | ''>('');
-  const [appliedFilters, setAppliedFilters] = useState({ eventType: '', actorAdminId: '', targetRef: '', result: '' as AuditResult | '' });
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({
+    eventType: '',
+    actorAdminId: '',
+    targetRef: '',
+    result: '' as AuditResult | '',
+    since: '',
+    until: '',
+  });
 
   const load = () => {
     setLoading(true);
@@ -33,6 +42,8 @@ export default function Audit() {
         actorAdminId: appliedFilters.actorAdminId || undefined,
         targetRef: appliedFilters.targetRef || undefined,
         result: appliedFilters.result || undefined,
+        since: appliedFilters.since || undefined,
+        until: appliedFilters.until || undefined,
       })
       .then((res) => {
         setItems(res.items);
@@ -50,7 +61,7 @@ export default function Audit() {
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
-    setAppliedFilters({ eventType, actorAdminId, targetRef, result });
+    setAppliedFilters({ eventType, actorAdminId, targetRef, result, since, until });
   };
 
   return (
@@ -80,6 +91,14 @@ export default function Audit() {
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label htmlFor="audit-since">{t('audit.since')}</label>
+          <input id="audit-since" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="audit-until">{t('audit.until')}</label>
+          <input id="audit-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
         </div>
         <button type="submit" className="btn">
           {t('common.applyFilters')}
