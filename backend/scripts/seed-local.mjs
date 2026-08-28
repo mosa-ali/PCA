@@ -178,7 +178,12 @@ console.log('Seeded PENDING (unverified) parent account:', { email: pendingEmail
 const familyC = await registerAndVerifyFamily('owner-resettable');
 console.log('Seeded Family C (password-reset target):', { accountId: familyC.accountId, familyId: familyC.familyId });
 await parentAccountService.requestPasswordReset(`owner-resettable@${SEED_EMAIL_DOMAIN}`);
-const pendingResetCode = emailSender.lastCodeFor(`owner-resettable@${SEED_EMAIL_DOMAIN}`);
+// lastCodeFor() defaults its `kind` param to 'VERIFICATION' -- this MUST be
+// 'PASSWORD_RESET' here, or it silently returns this account's earlier
+// registration verification code instead (same shape, wrong code: a real,
+// reproducible bug found and fixed this session -- see
+// docs/product-completion/PCA_QA_DEFECT_HANDOFF.md QA-B-005).
+const pendingResetCode = emailSender.lastCodeFor(`owner-resettable@${SEED_EMAIL_DOMAIN}`, 'PASSWORD_RESET');
 manifest.codes.pendingResetCode = pendingResetCode;
 console.log('Seeded pending password-reset code:', { email: `owner-resettable@${SEED_EMAIL_DOMAIN}`, pendingResetCode });
 

@@ -113,21 +113,69 @@ together.
 
 ---
 
+## QA-B-005 — (fixed, QA tooling only) seed-local.mjs read the WRONG code for password-reset, not a backend defect
+
+`backend/scripts/seed-local.mjs`'s `pendingResetCode` line called
+`emailSender.lastCodeFor(email)` with no second argument.
+`TestSandboxEmailSender.lastCodeFor(email, kind = 'VERIFICATION')` defaults
+`kind` to `'VERIFICATION'` -- so after `requestPasswordReset()` sent a REAL,
+correctly-hashed-and-stored `'PASSWORD_RESET'`-kind code, this call
+silently returned the account's much-earlier REGISTRATION verification
+code instead (same 6-digit shape, so nothing about it looked wrong).
+Every `/reset-password` real-browser test this session was therefore
+submitting a code that could never match the stored hash -- confirmed by
+direct backend tracing (`ParentAccountService.resetPassword` correctly
+threw `UNAUTHORIZED`; the STORED code hash never matched
+`SHA256(the code the seed script printed)`). **The backend's reset-code
+verification is correct and was never in question** -- this was purely a
+QA-tooling bug, now fixed (`lastCodeFor(email, 'PASSWORD_RESET')`) and
+verified end-to-end via a standalone trace script: reset succeeds, the OLD
+password is correctly rejected afterward, and the NEW password correctly
+signs in. Retested via the full real-browser suite after the fix -- see
+the ledger's `/reset-password` row.
+
+## QA-B-006 — (fixed, QA tooling only) `127.0.0.1` vs `localhost` broke session-cookie delivery under the direct-cross-origin workaround
+
+Follow-up to QA-B-001's workaround (`VITE_PCA_API_BASE_URL` pointed
+directly at the backend, bypassing vite's proxy): pointing it at
+`http://127.0.0.1:<port>` while parent-web itself serves from
+`http://localhost:4000` makes every authenticated follow-up request
+cross-**site** by browser cookie rules (`localhost` and `127.0.0.1` are
+different sites for `SameSite=Strict` purposes, even though they resolve
+to the same machine) -- so the session cookie set at login was never sent
+back on subsequent calls. This surfaced as: login succeeds and lands on
+`/dashboard`, but any page whose data fetch depends on a fresh
+`/api/parent/session` check (e.g. `/subscription/invoices`, via
+`cookieSessionFamilyId()`) silently bounces back to `/login`. Confirmed via
+direct `curl`/`Invoke-WebRequest` session tests (worked fine, because
+neither enforces `SameSite`) versus real Chromium network capture (401 on
+every `/api/parent/session` call post-login). Fixed by pointing
+`VITE_PCA_API_BASE_URL` at `http://localhost:<port>` (same host as the
+frontend, different port only -- same-site, cookie delivery restored).
+Not a backend defect: `/api/parent/session` returns 200 correctly for a
+real cookie session (confirmed directly); this was purely a QA
+dev-server-config artifact of the QA-B-001 workaround.
+
+---
+
 ## Summary for Coordinator A
 
 **No genuine product/backend defects were found and confirmed this
 session.** Every initially-suspicious failure resolved to either: (a) this
-session's own QA-environment setup bug (missing
-`VITE_PCA_API_BASE_URL=""`, since fixed), (b) the vite-dev-proxy-only
-artifact above (QA-B-001, tooling, not product), (c) real, working
-anti-abuse controls (rate limiting, anti-brute-force delay) triggered by this
-session's own repeated testing, or (d) test-authoring bugs in this session's
-own new Playwright specs (wrong field id, a `.count()` read that needed to be
-an auto-retrying `expect().toBeVisible()`), all fixed in-session and
-committed.
+session's own QA-environment setup bugs (missing
+`VITE_PCA_API_BASE_URL=""`, then a `127.0.0.1`/`localhost` host mismatch in
+its replacement, both fixed -- QA-B-001/006), (b) the vite-dev-proxy-only
+artifact (QA-B-001, tooling, not product), (c) real, working anti-abuse
+controls (rate limiting, anti-brute-force delay, TOTP replay rejection)
+triggered by this session's own repeated testing (QA-B-002/004), (d)
+test-authoring bugs in this session's own new Playwright specs (wrong field
+id, a `.count()` read that needed to be an auto-retrying
+`expect().toBeVisible()`), or (e) a QA seed-script bug reading the wrong
+sandbox-email code kind (QA-B-005) -- all fixed in-session and committed.
 
 Positive confirmations this session added real-browser evidence for (see
 ledger): `/forgot-password` and `/reset-password` (previously untested,
 explicitly listed P1 items) both work correctly end-to-end against the real
 backend, including the anti-enumeration property and single-use code
-consumption.
+consumption, with the reset flow's full old-password-rejected /
+new-password-accepted round trip now genuinely verified after QA-B-005's fix.

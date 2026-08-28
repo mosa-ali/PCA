@@ -100,8 +100,20 @@ test('reset-password: a genuinely issued code sets a new password, and the OLD p
   await page.locator('#reset-password-code').fill(RESET_CODE);
   await page.locator('#reset-password-new-password').fill(newPassword);
   await page.locator('#reset-password-new-password-confirmation').fill(newPassword);
-  await page.getByRole('button', { name: /reset/i }).click();
-  await expect(page.locator('h1')).toContainText(/success|reset/i, { timeout: 15_000 });
+  // Wait for the ACTUAL reset-password network response, not just a text
+  // match -- ResetPassword.tsx's pre-submission title ("Enter your reset
+  // code") and its post-success title ("Password reset") both contain the
+  // word "reset", so a loose /success|reset/i text check against <h1>
+  // matches the page immediately on load and never actually confirms the
+  // request completed. This was a real false-positive in an earlier
+  // version of this test: the OLD-password check that follows only means
+  // anything if the reset genuinely finished first.
+  const [resetResponse] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/api/parent/reset-password')),
+    page.getByRole('button', { name: /reset/i }).click(),
+  ]);
+  expect(resetResponse.status(), `reset-password request did not succeed: ${await resetResponse.text()}`).toBe(200);
+  await expect(page.locator('#reset-password-success-title')).toBeVisible({ timeout: 15_000 });
 
   // OLD password must no longer work. This account is dedicated (never
   // reused), so this is its first-ever failed attempt -- generous timeout
