@@ -129,9 +129,10 @@ describe('Requests page -- PCA-FR-131 Install Approval (CAPABILITY_HONEST_INSTAL
   it('an already-APPROVED install-approval request whose device cannot enforce it still honestly shows REQUEST_ONLY, never a fabricated ENFORCED', async () => {
     renderWithProviders(<Requests />, { role: 'OWNER' });
     await screen.findByText('ChatterBox (DEV)');
-    // "APPROVED" (the decision) and "REQUEST_ONLY" (the device's real capability) coexist in the
-    // same row without one being silently upgraded into the other.
-    expect(screen.getAllByText('APPROVED').length).toBeGreaterThan(0);
+    // "Approved" (the decision, translated -- see requestsPage.decisionApproved) and
+    // "REQUEST_ONLY" (the device's real capability) coexist in the same row without one being
+    // silently upgraded into the other.
+    expect(screen.getAllByText('Approved').length).toBeGreaterThan(0);
     expect(screen.getByText('Request only (cannot be blocked)')).toBeInTheDocument();
     // No enforcement-outcome badge on the page claims ENFORCED -- req-4 is still PENDING (no
     // outcome reported yet) and req-5's own outcome is REQUEST_ONLY, never upgraded.

@@ -7,6 +7,21 @@ import { PermissionGate } from '../rbac/PermissionGate';
 import { useFamilyAction } from '../rbac/useFamilyAction';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { MAX_BONUS_GRANT_MINUTES, MIN_BONUS_GRANT_MINUTES, validateBonusMinutes, validateCounterOffer } from '../domain/bonusTime';
+import type { RequestStatus } from '../domain/types';
+
+// A request's decision status (PENDING/APPROVED/DENIED/COUNTERED/EXPIRED/
+// CANCELLED -- see domain/types.ts's RequestStatus) is family-facing
+// terminology, not a raw wire value: it must go through requestsPage.decision*
+// like every other status shown on this page (StatusBadge's install-
+// capability states, policyStatus.*), so it renders correctly in Arabic too.
+const STATUS_TRANSLATION_KEY: Record<RequestStatus, string> = {
+  PENDING: 'requestsPage.decisionPending',
+  APPROVED: 'requestsPage.decisionApproved',
+  DENIED: 'requestsPage.decisionDenied',
+  COUNTERED: 'requestsPage.decisionCountered',
+  EXPIRED: 'requestsPage.decisionExpired',
+  CANCELLED: 'requestsPage.decisionCancelled',
+};
 
 export default function Requests() {
   const { t, i18n } = useTranslation();
@@ -187,7 +202,7 @@ export default function Requests() {
                       new Date(req.createdAtUtc),
                     )}
                   </td>
-                  <td data-label={t('requestsPage.status')}>{req.status}</td>
+                  <td data-label={t('requestsPage.status')}>{t(STATUS_TRANSLATION_KEY[req.status])}</td>
                   <td>
                     {req.status === 'PENDING' && (
                       <PermissionGate action="APPROVE_REQUEST" showDisabledFallback>
