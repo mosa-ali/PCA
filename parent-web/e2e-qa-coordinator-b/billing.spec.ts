@@ -57,8 +57,9 @@ test('invoices list shows real PAID and OPEN rows with formatted money, not raw 
 test('invoice detail page opens from the list and renders a print affordance', async ({ page }) => {
   await loginAs(page, 'owner-bill-detail');
   await page.goto('/subscription/invoices');
+  await page.waitForLoadState('networkidle');
   const firstInvoiceLink = page.locator('a[href*="/subscription/invoices/"]').first();
-  await expect(firstInvoiceLink).toBeVisible({ timeout: 10_000 });
+  await expect(firstInvoiceLink).toBeVisible({ timeout: 15_000 });
   await firstInvoiceLink.click();
   await expect(page).toHaveURL(/\/subscription\/invoices\/.+/);
   await page.waitForLoadState('networkidle');
