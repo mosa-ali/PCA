@@ -12,9 +12,22 @@
 // substitution is the email sender: TestSandboxEmailSender (NODE_ENV=test
 // or development only) so this script can read back the verification code
 // it "sent", exactly like backend/test/parentaccount/e2e.*.test.mjs does.
+//
+// Coordinator B QA-harness-isolation pass: every auth-sensitive Playwright
+// test gets its OWN dedicated account (parent or platform-admin), never a
+// shared one -- reusing one account across many logins/failed-attempts
+// accumulates real rate-limit/anti-replay state across a run (this is a
+// deliberately working security control, not something to work around by
+// weakening it) and was the actual cause of an earlier session's non-
+// deterministic E2E failures. This script writes every credential/code it
+// creates to a JSON manifest (QA_SEED_MANIFEST_PATH) so the Playwright
+// specs can look accounts up by purpose-key instead of hardcoding emails
+// or piping dozens of individual env vars.
 process.env.PLATFORM_ADMIN_MFA_ENC_KEY ??= 'ab'.repeat(32);
 
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { getPool, closePool } from '../dist/db/pool.js';
 import { AuthService } from '../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../dist/auth/MySqlAuthRepository.js';
@@ -66,6 +79,9 @@ if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
 }
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
+const SEED_EMAIL_DOMAIN = 'pca-seed.test';
+
+const manifest = { seedPassword: SEED_PASSWORD, parentAccounts: {}, adminAccounts: {}, codes: {}, invoices: {} };
 
 const authService = new AuthService(new MySqlAuthRepository());
 const emailSender = createTestSandboxEmailSender();
@@ -82,30 +98,61 @@ const parentAccountService = new ParentAccountService({
   familyGenesisEngine: familyAuthorityChainEngine,
 });
 
-async function registerAndVerifyFamily(email) {
+async function registerAndVerifyFamily(key) {
+  const email = `${key}@${SEED_EMAIL_DOMAIN}`;
   await parentAccountService.register(email, SEED_PASSWORD, SEED_PASSWORD);
   const code = emailSender.lastCodeFor(email);
   if (!code) throw new Error(`Seed failed: no verification code recorded for ${email}`);
   const outcome = await parentAccountService.verifyEmail(email, code);
   if (!outcome.familyId) throw new Error(`Seed failed: ${email} did not receive a genesis familyId`);
+  manifest.parentAccounts[key] = { email, accountId: outcome.accountId, familyId: outcome.familyId };
   return outcome;
 }
 
-const familyA = await registerAndVerifyFamily('owner-a@pca-seed.test');
+const familyA = await registerAndVerifyFamily('owner-a');
 console.log('Seeded Family A:', { accountId: familyA.accountId, familyId: familyA.familyId });
 
-const familyB = await registerAndVerifyFamily('owner-b@pca-seed.test');
+const familyB = await registerAndVerifyFamily('owner-b');
 console.log('Seeded Family B:', { accountId: familyB.accountId, familyId: familyB.familyId });
 
-// QA-Coordinator-B addition: a FOURTH verified family, dedicated
-// exclusively to the "wrong password" real-browser negative-credentials
-// check. AuthService's anti-brute-force delay (and LOGIN_EMAIL_RATE_LIMIT,
-// backend/src/parentaccount/policy.ts) key off the account -- giving that
-// ONE test its own never-reused account keeps every other test's happy-path
-// login against owner-a/owner-b from ever contaminating (or being
-// contaminated by) that budget.
-const familyWrongpass = await registerAndVerifyFamily('owner-wrongpass@pca-seed.test');
-console.log('Seeded Family D (negative-credentials target):', { accountId: familyWrongpass.accountId, familyId: familyWrongpass.familyId });
+// ---------------------------------------------------------------------
+// Coordinator B: one dedicated, never-reused verified account per
+// auth-sensitive Playwright test that performs a real login, so no test's
+// login/failed-attempt history can accumulate against LOGIN_EMAIL_RATE_LIMIT
+// (backend/src/parentaccount/policy.ts) and contaminate another test in the
+// same run. Grouped by which spec file consumes them.
+const AUTH_SPEC_KEYS = ['owner-login-ok', 'owner-deeplink', 'owner-forgot', 'owner-notpermitted'];
+for (const key of AUTH_SPEC_KEYS) {
+  const outcome = await registerAndVerifyFamily(key);
+  console.log(`Seeded dedicated auth.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+}
+
+// wrong-credentials test never succeeds a login for this account -- its
+// anti-brute-force failure history must never leak onto any other test.
+await registerAndVerifyFamily('owner-wrongpass');
+console.log('Seeded dedicated wrong-credentials test account (owner-wrongpass).');
+
+const CHILDREN_POLICY_ROUTE_KEYS = [
+  'owner-cp-dashboard',
+  'owner-cp-children',
+  'owner-cp-requests',
+  'owner-cp-members',
+  'owner-cp-roles',
+  'owner-cp-devices',
+  'owner-cp-secstatus',
+  'owner-cp-trustedbrowser',
+  'owner-cp-notifications',
+];
+for (const key of CHILDREN_POLICY_ROUTE_KEYS) {
+  const outcome = await registerAndVerifyFamily(key);
+  console.log(`Seeded dedicated children-policy.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+}
+
+const BILLING_SPEC_KEYS = ['owner-bill-sub', 'owner-bill-list', 'owner-bill-detail'];
+for (const key of BILLING_SPEC_KEYS) {
+  const outcome = await registerAndVerifyFamily(key);
+  console.log(`Seeded dedicated billing.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+}
 
 // QA writer-2 addition: a registered-but-NEVER-verified account, so
 // /verify-email and the "resend verification" flow have a genuine pending
@@ -117,19 +164,23 @@ console.log('Seeded Family D (negative-credentials target):', { accountId: famil
 // backend process keeps it in memory), so Writer 3 can drive a real
 // verify-email run against this account without this script guessing a
 // code that would go stale.
-await parentAccountService.register('owner-pending@pca-seed.test', SEED_PASSWORD, SEED_PASSWORD);
-const pendingVerificationCode = emailSender.lastCodeFor('owner-pending@pca-seed.test');
-console.log('Seeded PENDING (unverified) parent account:', { email: 'owner-pending@pca-seed.test', pendingVerificationCode });
+const pendingEmail = `owner-pending@${SEED_EMAIL_DOMAIN}`;
+await parentAccountService.register(pendingEmail, SEED_PASSWORD, SEED_PASSWORD);
+const pendingVerificationCode = emailSender.lastCodeFor(pendingEmail);
+manifest.parentAccounts['owner-pending'] = { email: pendingEmail };
+manifest.codes.pendingVerificationCode = pendingVerificationCode;
+console.log('Seeded PENDING (unverified) parent account:', { email: pendingEmail, pendingVerificationCode });
 
 // QA writer-2 addition: a THIRD verified family, dedicated to the
 // forgot-password/reset-password real-browser flow, with a genuine
 // already-issued (not yet consumed) reset code -- created through the
 // real requestPasswordReset() service call, not a fabricated row.
-const familyC = await registerAndVerifyFamily('owner-resettable@pca-seed.test');
+const familyC = await registerAndVerifyFamily('owner-resettable');
 console.log('Seeded Family C (password-reset target):', { accountId: familyC.accountId, familyId: familyC.familyId });
-await parentAccountService.requestPasswordReset('owner-resettable@pca-seed.test');
-const pendingResetCode = emailSender.lastCodeFor('owner-resettable@pca-seed.test');
-console.log('Seeded pending password-reset code:', { email: 'owner-resettable@pca-seed.test', pendingResetCode });
+await parentAccountService.requestPasswordReset(`owner-resettable@${SEED_EMAIL_DOMAIN}`);
+const pendingResetCode = emailSender.lastCodeFor(`owner-resettable@${SEED_EMAIL_DOMAIN}`);
+manifest.codes.pendingResetCode = pendingResetCode;
+console.log('Seeded pending password-reset code:', { email: `owner-resettable@${SEED_EMAIL_DOMAIN}`, pendingResetCode });
 
 // Family A: Arabic-language preference (the second seeded family, B, stays
 // on the default English preference) -- gives real browser EN/AR coverage
@@ -170,10 +221,10 @@ await seedInvitation(familyB.familyId, 'seed-child-b', 'YOUNG_CHILD', 'ANDROID',
 const authRepository = new MySqlPlatformAdminAuthRepository();
 const platformAdminAccountService = new PlatformAdminAccountService(authRepository);
 
-async function seedPlatformAdmin(role) {
-  const email = `${role.toLowerCase()}@pca-seed.test`;
+async function seedPlatformAdmin(role, key) {
+  const email = `${key}@${SEED_EMAIL_DOMAIN}`;
   const account = await platformAdminAccountService.createAccount(
-    `Seed ${role}`,
+    `Seed ${key}`,
     hashAdminEmail(email),
     SEED_PASSWORD,
     role,
@@ -184,19 +235,64 @@ async function seedPlatformAdmin(role) {
   // endpoint in this repository slice yet) so this seeded account can
   // actually complete a real login for DB-parity/negative-test checks.
   const secret = generateTotpSecret();
-  const key = loadMfaEncryptionKey();
-  const { ciphertext, nonce } = encryptTotpSecret(secret, key);
+  const mfaKey = loadMfaEncryptionKey();
+  const { ciphertext, nonce } = encryptTotpSecret(secret, mfaKey);
   await getPool().query(
     `UPDATE platform_admin_mfa_state SET status = 'ACTIVE', totp_secret_ciphertext = ?, totp_secret_nonce = ?, activated_at = NOW(3) WHERE admin_id = ?`,
     [ciphertext, nonce, account.adminId],
   );
-  console.log(`Seeded platform admin (${role}):`, { adminId: account.adminId, email, totpSecretBase32: base32Encode(secret) });
+  const totpSecretBase32 = base32Encode(secret);
+  manifest.adminAccounts[key] = { email, role, adminId: account.adminId, totpSecretBase32 };
+  console.log(`Seeded platform admin (${role}, key=${key}):`, { adminId: account.adminId, email, totpSecretBase32 });
   return { ...account, email, totpSecret: secret };
 }
 
+// ---------------------------------------------------------------------
+// Coordinator B: canonical one-per-role admins (used where only ONE login
+// for that role is needed), PLUS a dedicated account per Playwright test
+// that performs its own real login -- avoids TOTP-counter replay
+// collisions (backend/src/platformadmin/auth/PlatformAdminAuthService.ts's
+// TOTP-REPLAY-1: the same 30s window's counter cannot be claimed twice,
+// even across unrelated logins for the same admin) when many tests for the
+// same role run in close sequence. This is a real, correctly-working
+// anti-replay control -- the fix is more distinct admins, never weakening
+// the control.
+const ADMIN_SPECS = [
+  { role: 'APP_OWNER', key: 'app_owner' },
+  { role: 'PLATFORM_ADMIN', key: 'platform_admin' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin' },
+  { role: 'SUPPORT_ADMIN', key: 'support_admin' },
+  { role: 'AUDITOR_READ_ONLY', key: 'auditor_read_only' },
+  // personas.spec.ts: settings-RBAC test, one dedicated account per role
+  { role: 'APP_OWNER', key: 'app_owner_settings' },
+  { role: 'PLATFORM_ADMIN', key: 'platform_admin_settings' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_settings' },
+  { role: 'SUPPORT_ADMIN', key: 'support_admin_settings' },
+  { role: 'AUDITOR_READ_ONLY', key: 'auditor_read_only_settings' },
+  // admin-audit.spec.ts: one dedicated APP_OWNER per test
+  { role: 'APP_OWNER', key: 'app_owner_accounts_route' },
+  { role: 'APP_OWNER', key: 'app_owner_adminusers_route' },
+  { role: 'APP_OWNER', key: 'app_owner_audit_route' },
+  { role: 'APP_OWNER', key: 'app_owner_entitlements_route' },
+  // billing-settlement.spec.ts: one dedicated FINANCE_ADMIN per test
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_plans_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_pricing_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_quotes_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_invoices_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_payments_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_settlacct_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_settlbatch_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_settlrecon_route' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_paymentsbadges_test' },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin_reconbatch_test' },
+  // dedicated explicit TOTP-replay-rejection security test (Section 3's
+  // "explicitly test replay rejection separately" requirement)
+  { role: 'APP_OWNER', key: 'app_owner_replay_test' },
+];
+
 const seededAdmins = {};
-for (const role of ['APP_OWNER', 'PLATFORM_ADMIN', 'FINANCE_ADMIN', 'SUPPORT_ADMIN', 'AUDITOR_READ_ONLY']) {
-  seededAdmins[role] = await seedPlatformAdmin(role);
+for (const spec of ADMIN_SPECS) {
+  seededAdmins[spec.key] = await seedPlatformAdmin(spec.role, spec.key);
 }
 
 // ---------------------------------------------------------------------
@@ -230,7 +326,13 @@ for (const role of ['APP_OWNER', 'PLATFORM_ADMIN', 'FINANCE_ADMIN', 'SUPPORT_ADM
 // in backend/test/db/billingCore.mysql.test.mjs and
 // refundBalanceRaceConcurrency.mysql.test.mjs's own `createConsumedStepUp`
 // helpers, not a new invention.
-const financeAdmin = seededAdmins.FINANCE_ADMIN;
+//
+// This section uses the CANONICAL finance_admin identity for its
+// service-level actor objects (financeActor/financeRoles) -- these are
+// direct in-process service calls carrying an explicit actor, not real
+// HTTP logins, so they never contend with any Playwright test's own TOTP
+// window or session budget for the canonical account.
+const financeAdmin = seededAdmins.finance_admin;
 
 const platformAdminAuditService = new PlatformAdminAuditService(new MySqlPlatformAdminAuditRepository());
 const priceBookRepository = new PriceBookRepository();
@@ -402,42 +504,52 @@ sandboxProvider.simulateConfirm(gulfCheckout.providerCheckoutRef);
 const gulfTransaction = await paymentService.confirmPaymentAttempt(gulfAttempt.paymentAttemptId, 'TEST_SANDBOX', gulfCheckout.providerCheckoutRef, financeActor);
 console.log('Seeded CONFIRMED SAR/GULF payment:', { paymentTransactionId: gulfTransaction.paymentTransactionId });
 
-// 6) A PAID and an OPEN invoice for Family A -- parent-web's /invoices
-// list (FamilyInvoiceReadRepository.listForFamily, accountRef ===
-// familyId) and platform-admin-web's billing invoice views both need real
-// rows in more than one status. Built through the real InvoiceService
-// (same discipline as every other fixture here); InvoiceService exposes
-// only createInvoice (always starts DRAFT) and markPaid, with no DRAFT->
-// OPEN transition method yet, so the OPEN row uses one direct SQL UPDATE
-// -- the EXACT statement InvoiceRepository.updateStatus itself runs --
-// mirroring this script's own established precedent above (MFA
-// activation, step-up session rows) for state with no service-level
-// mutation surface.
+// 6) A PAID and an OPEN invoice for each dedicated billing.spec.ts account
+// (owner-bill-sub/owner-bill-list/owner-bill-detail) AND for Family A
+// (kept for backward-compat with anything that still expects it) --
+// parent-web's /invoices list (FamilyInvoiceReadRepository.listForFamily,
+// accountRef === familyId) and platform-admin-web's billing invoice views
+// both need real rows in more than one status. Built through the real
+// InvoiceService (same discipline as every other fixture here);
+// InvoiceService exposes only createInvoice (always starts DRAFT) and
+// markPaid, with no DRAFT->OPEN transition method yet, so the OPEN row
+// uses one direct SQL UPDATE -- the EXACT statement
+// InvoiceRepository.updateStatus itself runs -- mirroring this script's
+// own established precedent above (MFA activation, step-up session rows)
+// for state with no service-level mutation surface.
 const invoiceService = new InvoiceService(new InvoiceRepository());
 
-const paidInvoice = await invoiceService.createInvoice({
-  accountRef: familyA.familyId,
-  subscriptionId: null,
-  currencyCode: 'USD',
-  dueAt: new Date('2026-02-01T00:00:00Z'),
-  periodStart: new Date('2026-01-01T00:00:00Z'),
-  periodEnd: new Date('2026-01-31T00:00:00Z'),
-  lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
-}, financeRoles);
-await invoiceService.markPaid(paidInvoice.invoiceId, financeRoles);
-console.log('Seeded PAID invoice:', { invoiceId: paidInvoice.invoiceId, familyId: familyA.familyId });
+async function seedPaidAndOpenInvoice(familyId, key) {
+  const paidInvoice = await invoiceService.createInvoice({
+    accountRef: familyId,
+    subscriptionId: null,
+    currencyCode: 'USD',
+    dueAt: new Date('2026-02-01T00:00:00Z'),
+    periodStart: new Date('2026-01-01T00:00:00Z'),
+    periodEnd: new Date('2026-01-31T00:00:00Z'),
+    lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
+  }, financeRoles);
+  await invoiceService.markPaid(paidInvoice.invoiceId, financeRoles);
 
-const openInvoice = await invoiceService.createInvoice({
-  accountRef: familyA.familyId,
-  subscriptionId: null,
-  currencyCode: 'USD',
-  dueAt: new Date('2026-09-15T00:00:00Z'),
-  periodStart: new Date('2026-08-01T00:00:00Z'),
-  periodEnd: new Date('2026-08-31T00:00:00Z'),
-  lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
-}, financeRoles);
-await getPool().query(`UPDATE billing_invoices SET status = 'OPEN' WHERE invoice_id = ?`, [openInvoice.invoiceId]);
-console.log('Seeded OPEN invoice:', { invoiceId: openInvoice.invoiceId, familyId: familyA.familyId });
+  const openInvoice = await invoiceService.createInvoice({
+    accountRef: familyId,
+    subscriptionId: null,
+    currencyCode: 'USD',
+    dueAt: new Date('2026-09-15T00:00:00Z'),
+    periodStart: new Date('2026-08-01T00:00:00Z'),
+    periodEnd: new Date('2026-08-31T00:00:00Z'),
+    lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
+  }, financeRoles);
+  await getPool().query(`UPDATE billing_invoices SET status = 'OPEN' WHERE invoice_id = ?`, [openInvoice.invoiceId]);
+
+  manifest.invoices[key] = { paidInvoiceId: paidInvoice.invoiceId, openInvoiceId: openInvoice.invoiceId, familyId };
+  console.log(`Seeded PAID + OPEN invoice for ${key}:`, { familyId, paidInvoiceId: paidInvoice.invoiceId, openInvoiceId: openInvoice.invoiceId });
+}
+
+await seedPaidAndOpenInvoice(familyA.familyId, 'owner-a');
+for (const key of BILLING_SPEC_KEYS) {
+  await seedPaidAndOpenInvoice(manifest.parentAccounts[key].familyId, key);
+}
 
 const [[{ familyCount }]] = await getPool().query('SELECT COUNT(*) AS familyCount FROM families');
 const [[{ accountCount }]] = await getPool().query('SELECT COUNT(*) AS accountCount FROM parent_accounts');
@@ -449,5 +561,9 @@ const [[{ disputeCount }]] = await getPool().query('SELECT COUNT(*) AS disputeCo
 const [[{ settlementBatchCount }]] = await getPool().query('SELECT COUNT(*) AS settlementBatchCount FROM settlement_batches');
 const [[{ invoiceCount }]] = await getPool().query('SELECT COUNT(*) AS invoiceCount FROM billing_invoices');
 console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount, paymentAttemptCount, refundCount, disputeCount, settlementBatchCount, invoiceCount });
+
+const manifestPath = process.env.QA_SEED_MANIFEST_PATH ?? fileURLToPath(new URL('../qa-seed-manifest.json', import.meta.url));
+await writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+console.log('Wrote QA seed manifest:', manifestPath);
 
 await closePool();

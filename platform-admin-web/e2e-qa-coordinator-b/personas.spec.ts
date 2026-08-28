@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { computeUniqueTotp } from './totp';
+import { adminAccount, seedPassword } from './qaManifest';
 
 /**
  * Coordinator B (QA/runtime) real-browser persona sweep: logs in as each of
@@ -12,31 +13,27 @@ import { computeUniqueTotp } from './totp';
  * denied) holds against the real backend, not just route-guard config.
  *
  * ONE test per persona (dashboard-no-crash + settings-RBAC in the same
- * session): each persona still gets exactly one real login, so a 5-persona
- * run claims 5 distinct TOTP windows total (one per DISTINCT secret --
- * computeUniqueTotp's per-label lock only needs to protect against the SAME
- * secret being reused close together, which no longer happens here).
- *
- * TOTP secrets are supplied via environment variables (QA_TOTP_<ROLE>),
- * copied from THIS session's most recent seed-local.mjs run output -- they
- * are freshly random every reseed, so they cannot be hardcoded here.
+ * session, via test.step): each persona gets exactly one real login, so a
+ * 5-persona run claims 5 distinct TOTP windows -- computeUniqueTotp's
+ * per-label cross-process lock is still used as a defensive guarantee
+ * (see totp.ts's own header), but with one dedicated account per persona
+ * it will never actually observe a collision.
  */
 
-const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
+const SEED_PASSWORD = seedPassword();
 
 interface Persona {
   role: string;
-  email: string;
-  secretEnvVar: string;
+  key: string;
   settingsAllowed: boolean;
 }
 
 const PERSONAS: Persona[] = [
-  { role: 'APP_OWNER', email: 'app_owner@pca-seed.test', secretEnvVar: 'QA_TOTP_APP_OWNER', settingsAllowed: true },
-  { role: 'PLATFORM_ADMIN', email: 'platform_admin@pca-seed.test', secretEnvVar: 'QA_TOTP_PLATFORM_ADMIN', settingsAllowed: true },
-  { role: 'FINANCE_ADMIN', email: 'finance_admin@pca-seed.test', secretEnvVar: 'QA_TOTP_FINANCE_ADMIN', settingsAllowed: false },
-  { role: 'SUPPORT_ADMIN', email: 'support_admin@pca-seed.test', secretEnvVar: 'QA_TOTP_SUPPORT_ADMIN', settingsAllowed: false },
-  { role: 'AUDITOR_READ_ONLY', email: 'auditor_read_only@pca-seed.test', secretEnvVar: 'QA_TOTP_AUDITOR_READ_ONLY', settingsAllowed: false },
+  { role: 'APP_OWNER', key: 'app_owner', settingsAllowed: true },
+  { role: 'PLATFORM_ADMIN', key: 'platform_admin', settingsAllowed: true },
+  { role: 'FINANCE_ADMIN', key: 'finance_admin', settingsAllowed: false },
+  { role: 'SUPPORT_ADMIN', key: 'support_admin', settingsAllowed: false },
+  { role: 'AUDITOR_READ_ONLY', key: 'auditor_read_only', settingsAllowed: false },
 ];
 
 // See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
@@ -52,12 +49,11 @@ function collectConsoleErrors(page: Page): string[] {
 }
 
 async function loginAs(page: Page, persona: Persona) {
-  const secret = process.env[persona.secretEnvVar];
-  if (!secret) throw new Error(`${persona.secretEnvVar} not set -- copy the base32 secret from this run's seed-local.mjs output.`);
+  const account = adminAccount(persona.key);
   await page.goto('/login');
-  await page.locator('#login-email').fill(persona.email);
+  await page.locator('#login-email').fill(account.email);
   await page.locator('#login-password').fill(SEED_PASSWORD);
-  await page.locator('#login-totp').fill(await computeUniqueTotp(secret, persona.email));
+  await page.locator('#login-totp').fill(await computeUniqueTotp(account.totpSecretBase32, account.email));
   await page.getByRole('button', { name: /sign in|submit|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }

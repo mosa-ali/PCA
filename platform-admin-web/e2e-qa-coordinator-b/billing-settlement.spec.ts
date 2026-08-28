@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { computeUniqueTotp } from './totp';
+import { adminAccount, seedPassword } from './qaManifest';
 
 /**
  * Coordinator B (QA/runtime) real-browser sweep of platform-admin-web's
@@ -14,7 +15,7 @@ import { computeUniqueTotp } from './totp';
  * persona login COUNT is the real fix for TOTP-window collisions).
  */
 
-const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
+const SEED_PASSWORD = seedPassword();
 
 // See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
 const BENIGN_CONSOLE_PATTERN = /Failed to load resource: the server responded with a status of 401/;
@@ -29,12 +30,11 @@ function collectConsoleErrors(page: Page): string[] {
 }
 
 async function loginFinanceAdmin(page: Page) {
-  const secret = process.env.QA_TOTP_FINANCE_ADMIN;
-  if (!secret) throw new Error('QA_TOTP_FINANCE_ADMIN not set.');
+  const account = adminAccount('finance_admin_settlrecon_route');
   await page.goto('/login');
-  await page.locator('#login-email').fill('finance_admin@pca-seed.test');
+  await page.locator('#login-email').fill(account.email);
   await page.locator('#login-password').fill(SEED_PASSWORD);
-  await page.locator('#login-totp').fill(await computeUniqueTotp(secret, 'finance_admin@pca-seed.test'));
+  await page.locator('#login-totp').fill(await computeUniqueTotp(account.totpSecretBase32, account.email));
   await page.getByRole('button', { name: /sign in|submit|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }

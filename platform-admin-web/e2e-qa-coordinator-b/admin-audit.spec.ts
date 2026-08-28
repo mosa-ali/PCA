@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { computeUniqueTotp } from './totp';
+import { adminAccount, seedPassword } from './qaManifest';
 
 /**
  * Coordinator B (QA/runtime) real-browser sweep of platform-admin-web's
@@ -14,7 +15,7 @@ import { computeUniqueTotp } from './totp';
  * not a bigger lock (see totp.ts's header).
  */
 
-const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
+const SEED_PASSWORD = seedPassword();
 
 // See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
 const BENIGN_CONSOLE_PATTERN = /Failed to load resource: the server responded with a status of 401/;
@@ -29,12 +30,11 @@ function collectConsoleErrors(page: Page): string[] {
 }
 
 async function loginAppOwner(page: Page) {
-  const secret = process.env.QA_TOTP_APP_OWNER;
-  if (!secret) throw new Error('QA_TOTP_APP_OWNER not set.');
+  const account = adminAccount('app_owner_accounts_route');
   await page.goto('/login');
-  await page.locator('#login-email').fill('app_owner@pca-seed.test');
+  await page.locator('#login-email').fill(account.email);
   await page.locator('#login-password').fill(SEED_PASSWORD);
-  await page.locator('#login-totp').fill(await computeUniqueTotp(secret, 'app_owner@pca-seed.test'));
+  await page.locator('#login-totp').fill(await computeUniqueTotp(account.totpSecretBase32, account.email));
   await page.getByRole('button', { name: /sign in|submit|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
@@ -63,16 +63,18 @@ test('APP_OWNER: accounts, admin-users search, audit, and entitlements surface -
 
   await test.step('/admin-users search by name and by email against the real backend', async () => {
     await clickNav(page, '/admin-users');
+    // seed-local.mjs names every admin "Seed <key>" -- the canonical
+    // finance_admin account's display name is therefore "Seed finance_admin".
     const nameSearch = page.locator('#admin-name-search');
-    await nameSearch.fill('Seed FINANCE_ADMIN');
+    await nameSearch.fill('Seed finance_admin');
     await page.keyboard.press('Enter');
-    await expect(page.locator('body')).toContainText('finance_admin@pca-seed.test', { timeout: 10_000 });
+    await expect(page.locator('body')).toContainText(adminAccount('finance_admin').email, { timeout: 10_000 });
 
     await nameSearch.fill('');
     const emailSearch = page.locator('#admin-email-search');
-    await emailSearch.fill('auditor_read_only@pca-seed.test');
+    await emailSearch.fill(adminAccount('auditor_read_only').email);
     await page.keyboard.press('Enter');
-    await expect(page.locator('body')).toContainText('auditor_read_only@pca-seed.test', { timeout: 10_000 });
+    await expect(page.locator('body')).toContainText(adminAccount('auditor_read_only').email, { timeout: 10_000 });
   });
 
   await test.step('/audit renders real audit events with formatted timestamps, no crash', async () => {
