@@ -32,17 +32,18 @@ function collectConsoleErrors(page: Page): string[] {
 test('wrong credentials against the real backend are rejected with a generic error', async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await page.goto('/login');
-  await page.locator('#login-email').fill('owner-b@pca-seed.test');
+  // Dedicated account, used ONLY for this negative-credentials check --
+  // never owner-b/owner-a, which real happy-path tests reuse. Invalid-
+  // credential responses carry a deliberate anti-brute-force delay that
+  // GROWS with repeated failed attempts against the SAME account (measured
+  // directly: a single fresh attempt took ~8s) -- a working security
+  // control, not a defect. Isolating this test to its own never-reused
+  // account keeps that delay at its fresh-account baseline instead of
+  // accumulating across suite reruns.
+  await page.locator('#login-email').fill('owner-wrongpass@pca-seed.test');
   await page.locator('#login-password').fill('definitely-the-wrong-password');
   await page.getByRole('button', { name: /sign in|log in/i }).click();
-  // Real backend observation: invalid-credential responses carry a
-  // deliberate anti-brute-force delay that grows with repeated failed
-  // attempts against the same account (measured directly: a single fresh
-  // attempt took ~8s; this suite reuses owner-b@pca-seed.test across
-  // multiple runs, so budget generously) -- a working security control,
-  // not a defect, so this assertion's timeout accommodates it rather than
-  // asserting a specific latency.
-  await expect(page.getByRole('alert')).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\/login/);
   expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
 });

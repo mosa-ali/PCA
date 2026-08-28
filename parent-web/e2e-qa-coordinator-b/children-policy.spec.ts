@@ -8,6 +8,13 @@ import { test, expect, type Page } from '@playwright/test';
  * GATE here, not a defect -- this suite asserts the honest-blocked-state
  * contract (no crash, no raw stack trace, clean console) rather than
  * asserting real child data renders.
+ *
+ * ONE login for the whole route sweep (parent-web uses a real, cookie-
+ * backed session -- unlike platform-admin-web's in-memory-only token, a
+ * hard page.goto() keeps the session, so nothing is lost by not
+ * re-logging in per route). This also keeps owner-b@pca-seed.test's real
+ * LOGIN_EMAIL_RATE_LIMIT budget (10/15min, backend/src/parentaccount/
+ * policy.ts) from being burned by this one spec file alone.
  */
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
@@ -24,23 +31,23 @@ function collectConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-async function loginOwnerB(page: Page) {
+const ROUTES = ['/dashboard', '/children', '/requests', '/family/members', '/family/roles', '/family/devices', '/security/status', '/security/trusted-browser', '/notifications'];
+
+test('owner-b: every child/policy route renders an honest state with no crash and a clean console -- one real session', async ({ page }) => {
+  const errors = collectConsoleErrors(page);
   await page.goto('/login');
   await page.locator('#login-email').fill('owner-b@pca-seed.test');
   await page.locator('#login-password').fill(SEED_PASSWORD);
   await page.getByRole('button', { name: /sign in|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-}
 
-const ROUTES = ['/dashboard', '/children', '/requests', '/family/members', '/family/roles', '/family/devices', '/security/status', '/security/trusted-browser', '/notifications'];
+  for (const route of ROUTES) {
+    await test.step(route, async () => {
+      await page.goto(route);
+      await page.waitForLoadState('networkidle');
+      await expect(page.locator('body')).not.toContainText(/TypeError|ReferenceError|Cannot read propert|unhandled/i);
+    });
+  }
 
-for (const route of ROUTES) {
-  test(`${route}: renders an honest state with no crash and a clean console`, async ({ page }) => {
-    const errors = collectConsoleErrors(page);
-    await loginOwnerB(page);
-    await page.goto(route);
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('body')).not.toContainText(/TypeError|ReferenceError|Cannot read propert|unhandled/i);
-    expect(errors, `${route}: unexpected console errors: ${errors.join('; ')}`).toEqual([]);
-  });
-}
+  expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
+});

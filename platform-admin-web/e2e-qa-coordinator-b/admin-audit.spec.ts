@@ -1,10 +1,17 @@
 import { test, expect, type Page } from '@playwright/test';
-import { computeTotp, ensureComfortablyInsideTotpWindow } from './totp';
+import { computeUniqueTotp } from './totp';
 
 /**
  * Coordinator B (QA/runtime) real-browser sweep of platform-admin-web's
  * accounts/admin-users/audit/entitlements surface (Writers 7 & 9 scope), as
  * APP_OWNER, against the real backend/MySQL QA stack.
+ *
+ * Consolidated into ONE test (one login, multiple test.step()s) rather than
+ * one test per route: secureSession.ts's session token is in-memory-only,
+ * so each separate test needs its own fresh login, and each login claims a
+ * real TOTP window (backend's TOTP-REPLAY-1) -- minimizing login COUNT per
+ * persona is the real fix for TOTP-window collisions across a dense run,
+ * not a bigger lock (see totp.ts's header).
  */
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
@@ -27,8 +34,7 @@ async function loginAppOwner(page: Page) {
   await page.goto('/login');
   await page.locator('#login-email').fill('app_owner@pca-seed.test');
   await page.locator('#login-password').fill(SEED_PASSWORD);
-  await ensureComfortablyInsideTotpWindow();
-  await page.locator('#login-totp').fill(computeTotp(secret));
+  await page.locator('#login-totp').fill(await computeUniqueTotp(secret, 'app_owner@pca-seed.test'));
   await page.getByRole('button', { name: /sign in|submit|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
@@ -41,59 +47,49 @@ async function clickNav(page: Page, route: string) {
   await expect(page).toHaveURL(new RegExp(route.replace(/\//g, '\\/')), { timeout: 10_000 });
 }
 
-test('APP_OWNER: /accounts lists real seeded parent accounts by familyId with a status, no crash', async ({ page }) => {
+test('APP_OWNER: accounts, admin-users search, audit, and entitlements surface -- one real session', async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await loginAppOwner(page);
-  await clickNav(page, '/accounts');
-  // AccountsList.tsx lists rows by familyId (not email), populated by an
-  // async fetch AFTER networkidle fires -- wait for the row itself
-  // (auto-retrying), not a one-shot .count() read.
-  const rowLinks = page.locator('a[href^="/accounts/"]');
-  await expect(rowLinks.first()).toBeVisible({ timeout: 10_000 });
-  const bodyText = (await page.locator('body').textContent()) ?? '';
-  expect(bodyText).not.toMatch(/TypeError|Cannot read propert/i);
-  expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
-});
 
-test('APP_OWNER: /admin-users search by name and by email against the real backend', async ({ page }) => {
-  await loginAppOwner(page);
-  await clickNav(page, '/admin-users');
-  await page.waitForLoadState('networkidle');
+  await test.step('/accounts lists real seeded parent accounts by familyId with a status, no crash', async () => {
+    await clickNav(page, '/accounts');
+    // AccountsList.tsx lists rows by familyId, populated by an async fetch
+    // AFTER networkidle fires -- wait for the row itself (auto-retrying).
+    const rowLinks = page.locator('a[href^="/accounts/"]');
+    await expect(rowLinks.first()).toBeVisible({ timeout: 10_000 });
+    const bodyText = (await page.locator('body').textContent()) ?? '';
+    expect(bodyText).not.toMatch(/TypeError|Cannot read propert/i);
+  });
 
-  const nameSearch = page.locator('#admin-name-search');
-  await nameSearch.fill('Seed FINANCE_ADMIN');
-  await page.keyboard.press('Enter');
-  await page.waitForLoadState('networkidle');
-  let bodyText = (await page.locator('body').textContent()) ?? '';
-  expect(bodyText).toMatch(/finance_admin@pca-seed\.test/);
+  await test.step('/admin-users search by name and by email against the real backend', async () => {
+    await clickNav(page, '/admin-users');
+    const nameSearch = page.locator('#admin-name-search');
+    await nameSearch.fill('Seed FINANCE_ADMIN');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('body')).toContainText('finance_admin@pca-seed.test', { timeout: 10_000 });
 
-  await nameSearch.fill('');
-  const emailSearch = page.locator('#admin-email-search');
-  await emailSearch.fill('auditor_read_only@pca-seed.test');
-  await page.keyboard.press('Enter');
-  await page.waitForLoadState('networkidle');
-  bodyText = (await page.locator('body').textContent()) ?? '';
-  expect(bodyText).toMatch(/auditor_read_only@pca-seed\.test/);
-});
+    await nameSearch.fill('');
+    const emailSearch = page.locator('#admin-email-search');
+    await emailSearch.fill('auditor_read_only@pca-seed.test');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('body')).toContainText('auditor_read_only@pca-seed.test', { timeout: 10_000 });
+  });
 
-test('APP_OWNER: /audit renders real audit events with formatted timestamps, no crash', async ({ page }) => {
-  const errors = collectConsoleErrors(page);
-  await loginAppOwner(page);
-  await clickNav(page, '/audit');
-  await page.waitForLoadState('networkidle');
-  const bodyText = (await page.locator('body').textContent()) ?? '';
-  expect(bodyText).not.toMatch(/TypeError|Cannot read propert|\[object Object\]/i);
-  expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
-});
-
-test('APP_OWNER: /entitlements and /entitlement-requests render without crashing', async ({ page }) => {
-  const errors = collectConsoleErrors(page);
-  await loginAppOwner(page);
-  for (const route of ['/entitlements', '/entitlement-requests', '/complimentary-capacity', '/free-access-policy']) {
-    await clickNav(page, route);
+  await test.step('/audit renders real audit events with formatted timestamps, no crash', async () => {
+    await clickNav(page, '/audit');
     await page.waitForLoadState('networkidle');
     const bodyText = (await page.locator('body').textContent()) ?? '';
-    expect(bodyText, `${route} crashed`).not.toMatch(/TypeError|Cannot read propert/i);
-  }
+    expect(bodyText).not.toMatch(/TypeError|Cannot read propert|\[object Object\]/i);
+  });
+
+  await test.step('/entitlements, /entitlement-requests, /complimentary-capacity, /free-access-policy render without crashing', async () => {
+    for (const route of ['/entitlements', '/entitlement-requests', '/complimentary-capacity', '/free-access-policy']) {
+      await clickNav(page, route);
+      await page.waitForLoadState('networkidle');
+      const bodyText = (await page.locator('body').textContent()) ?? '';
+      expect(bodyText, `${route} crashed`).not.toMatch(/TypeError|Cannot read propert/i);
+    }
+  });
+
   expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
 });

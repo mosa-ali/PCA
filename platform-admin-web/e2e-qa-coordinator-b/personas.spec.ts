@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { computeTotp, ensureComfortablyInsideTotpWindow } from './totp';
+import { computeUniqueTotp } from './totp';
 
 /**
  * Coordinator B (QA/runtime) real-browser persona sweep: logs in as each of
@@ -10,6 +10,12 @@ import { computeTotp, ensureComfortablyInsideTotpWindow } from './totp';
  * restricted roles), and confirms the /settings RBAC matrix (APP_OWNER,
  * PLATFORM_ADMIN allowed; SUPPORT_ADMIN, FINANCE_ADMIN, AUDITOR_READ_ONLY
  * denied) holds against the real backend, not just route-guard config.
+ *
+ * ONE test per persona (dashboard-no-crash + settings-RBAC in the same
+ * session): each persona still gets exactly one real login, so a 5-persona
+ * run claims 5 distinct TOTP windows total (one per DISTINCT secret --
+ * computeUniqueTotp's per-label lock only needs to protect against the SAME
+ * secret being reused close together, which no longer happens here).
  *
  * TOTP secrets are supplied via environment variables (QA_TOTP_<ROLE>),
  * copied from THIS session's most recent seed-local.mjs run output -- they
@@ -51,38 +57,40 @@ async function loginAs(page: Page, persona: Persona) {
   await page.goto('/login');
   await page.locator('#login-email').fill(persona.email);
   await page.locator('#login-password').fill(SEED_PASSWORD);
-  await ensureComfortablyInsideTotpWindow();
-  await page.locator('#login-totp').fill(computeTotp(secret));
+  await page.locator('#login-totp').fill(await computeUniqueTotp(secret, persona.email));
   await page.getByRole('button', { name: /sign in|submit|log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
 
 for (const persona of PERSONAS) {
-  test(`${persona.role}: signs in and the dashboard renders without crashing (billing/settlement fields may be legitimately omitted)`, async ({ page }) => {
+  test(`${persona.role}: dashboard renders without crashing and /settings RBAC matches the real backend -- one real session`, async ({ page }) => {
     const errors = collectConsoleErrors(page);
     await loginAs(page, persona);
-    await expect(page.locator('body')).not.toContainText(/something went wrong|error boundary|TypeError|Cannot read propert/i);
-    expect(errors, `${persona.role} dashboard: unexpected console errors: ${errors.join('; ')}`).toEqual([]);
-  });
 
-  test(`${persona.role}: /settings is ${persona.settingsAllowed ? 'ALLOWED' : 'DENIED'} against the real backend`, async ({ page }) => {
-    // secureSession.ts's session token is deliberately in-memory-only (a
-    // documented security posture, PCA-ADD-PA-014/016) -- ANY hard
-    // page.goto() after login loses it and bounces to /login regardless of
-    // role, which would make an allowed role indistinguishable from a
-    // denied one. The real, meaningful RBAC signal is therefore whether the
-    // Settings sidebar link is offered at all (Sidebar.tsx filters nav
-    // items by isPermitted(roles, item.operation)), plus a CLIENT-SIDE
-    // click through for allowed roles (preserves the in-memory token).
-    await loginAs(page, persona);
-    const settingsLink = page.locator('a.nav-link[href="/settings"]');
-    if (persona.settingsAllowed) {
-      await expect(settingsLink).toBeVisible();
-      await settingsLink.click();
-      await expect(page).toHaveURL(/\/settings/, { timeout: 10_000 });
-      await expect(page.locator('body')).not.toContainText(/not.permitted|denied|forbidden/i);
-    } else {
-      await expect(settingsLink).toHaveCount(0);
-    }
+    await test.step('dashboard renders without crashing (billing/settlement fields may be legitimately omitted)', async () => {
+      await expect(page.locator('body')).not.toContainText(/something went wrong|error boundary|TypeError|Cannot read propert/i);
+    });
+
+    await test.step(`/settings is ${persona.settingsAllowed ? 'ALLOWED' : 'DENIED'}`, async () => {
+      // secureSession.ts's session token is deliberately in-memory-only
+      // (PCA-ADD-PA-014/016) -- ANY hard page.goto() after login loses it
+      // and bounces to /login regardless of role, which would make an
+      // allowed role indistinguishable from a denied one. The real,
+      // meaningful RBAC signal is therefore whether the Settings sidebar
+      // link is offered at all (Sidebar.tsx filters nav items by
+      // isPermitted(roles, item.operation)), plus a CLIENT-SIDE click
+      // through for allowed roles (preserves the in-memory token).
+      const settingsLink = page.locator('a.nav-link[href="/settings"]');
+      if (persona.settingsAllowed) {
+        await expect(settingsLink).toBeVisible();
+        await settingsLink.click();
+        await expect(page).toHaveURL(/\/settings/, { timeout: 10_000 });
+        await expect(page.locator('body')).not.toContainText(/not.permitted|denied|forbidden/i);
+      } else {
+        await expect(settingsLink).toHaveCount(0);
+      }
+    });
+
+    expect(errors, `${persona.role}: unexpected console errors: ${errors.join('; ')}`).toEqual([]);
   });
 }

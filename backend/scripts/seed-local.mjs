@@ -97,6 +97,16 @@ console.log('Seeded Family A:', { accountId: familyA.accountId, familyId: family
 const familyB = await registerAndVerifyFamily('owner-b@pca-seed.test');
 console.log('Seeded Family B:', { accountId: familyB.accountId, familyId: familyB.familyId });
 
+// QA-Coordinator-B addition: a FOURTH verified family, dedicated
+// exclusively to the "wrong password" real-browser negative-credentials
+// check. AuthService's anti-brute-force delay (and LOGIN_EMAIL_RATE_LIMIT,
+// backend/src/parentaccount/policy.ts) key off the account -- giving that
+// ONE test its own never-reused account keeps every other test's happy-path
+// login against owner-a/owner-b from ever contaminating (or being
+// contaminated by) that budget.
+const familyWrongpass = await registerAndVerifyFamily('owner-wrongpass@pca-seed.test');
+console.log('Seeded Family D (negative-credentials target):', { accountId: familyWrongpass.accountId, familyId: familyWrongpass.familyId });
+
 // QA writer-2 addition: a registered-but-NEVER-verified account, so
 // /verify-email and the "resend verification" flow have a genuine pending
 // row to exercise (every account above this point is already verified).
