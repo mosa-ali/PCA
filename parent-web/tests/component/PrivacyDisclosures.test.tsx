@@ -34,7 +34,7 @@ describe('Privacy pages render their authored disclosure copy', () => {
     renderWithProviders(<DeleteNow />, { role: 'OWNER' });
     await userEvent.click(screen.getByRole('button', { name: 'Delete Now' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate (dev stub)' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
 
     expect(await screen.findByText('2 item(s) queued for deletion; 1 retained under a longer floor (e.g. audit records).')).toBeInTheDocument();
   });

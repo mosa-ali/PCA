@@ -28,13 +28,19 @@ export default function Register() {
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Distinguishes the one genuinely field-scoped error (the two password
+  // fields disagree) from the form-scoped ones (rate limit, generic), so
+  // aria-invalid is only ever set on inputs that really are invalid.
+  const [passwordMismatch, setPasswordMismatch] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setPasswordMismatch(false);
 
     if (password !== passwordConfirmation) {
       setError(t('auth.passwordMismatch'));
+      setPasswordMismatch(true);
       return;
     }
 
@@ -66,6 +72,7 @@ export default function Register() {
             type="email"
             autoComplete="email"
             required
+            aria-describedby={error ? 'register-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -80,6 +87,8 @@ export default function Register() {
             autoComplete="new-password"
             required
             minLength={10}
+            aria-describedby={error ? 'register-error' : undefined}
+            aria-invalid={passwordMismatch || undefined}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -94,18 +103,20 @@ export default function Register() {
             autoComplete="new-password"
             required
             minLength={10}
+            aria-describedby={error ? 'register-error' : undefined}
+            aria-invalid={passwordMismatch || undefined}
             value={passwordConfirmation}
             onChange={(e) => setPasswordConfirmation(e.target.value)}
           />
         </div>
 
         {error && (
-          <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>
+          <p id="register-error" role="alert" className="field-error">
             {error}
           </p>
         )}
 
-        <button type="submit" className="btn" disabled={submitting}>
+        <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
           {t('auth.registerSubmit')}
         </button>
       </form>

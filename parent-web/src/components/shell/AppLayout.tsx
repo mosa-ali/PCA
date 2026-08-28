@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Header } from './Header';
@@ -38,6 +38,35 @@ export function AppLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
+
+  /*
+   * Mobile drawer keyboard contract. The drawer is a fixed, off-screen panel
+   * that covers the page when open, and before this it could only be dismissed
+   * by pointing at the scrim: there was no Escape handler and no close control
+   * anywhere inside it, so a keyboard user who opened it had no way back out.
+   * Escape now closes it, focus moves to the in-drawer close button when it
+   * opens, and focus returns to the header toggle that opened it when it
+   * closes (never on first mount -- `drawerWasOpen` guards that).
+   */
+  useEffect(() => {
+    if (!drawerOpen) {
+      if (drawerWasOpen.current) {
+        drawerWasOpen.current = false;
+        drawerToggleRef.current?.focus();
+      }
+      return;
+    }
+    drawerWasOpen.current = true;
+    drawerCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawerOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [drawerOpen]);
 
   if (loading) return null;
   if (session === null) {
@@ -49,7 +78,13 @@ export function AppLayout() {
       <a href="#main-content" className="skip-link">
         {t('app.skipToContent')}
       </a>
-      <Sidebar collapsed={collapsed} drawerOpen={drawerOpen} onNavigate={() => setDrawerOpen(false)} />
+      <Sidebar
+        collapsed={collapsed}
+        drawerOpen={drawerOpen}
+        onNavigate={() => setDrawerOpen(false)}
+        onClose={() => setDrawerOpen(false)}
+        closeButtonRef={drawerCloseRef}
+      />
       {drawerOpen && (
         <div
           className="drawer-scrim"
@@ -62,6 +97,8 @@ export function AppLayout() {
           onToggleSidebar={() => setCollapsed((c) => !c)}
           onToggleDrawer={() => setDrawerOpen((d) => !d)}
           sidebarCollapsed={collapsed}
+          drawerOpen={drawerOpen}
+          drawerToggleRef={drawerToggleRef}
         />
         <DemoBanner />
         <ConnectionStatusBanner />

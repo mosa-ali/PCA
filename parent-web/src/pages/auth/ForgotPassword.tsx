@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
@@ -21,6 +21,14 @@ export default function ForgotPassword() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // The success state replaces the whole form, unmounting the submit button
+  // that had focus -- without this, focus falls back to <body> and nothing
+  // is announced. Mirrors AppLayout.tsx's `<main tabIndex={-1}>` pattern.
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (done) successHeadingRef.current?.focus();
+  }, [done]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,7 +51,9 @@ export default function ForgotPassword() {
   if (done) {
     return (
       <section aria-labelledby="forgot-password-success-title" className="auth-page">
-        <h1 id="forgot-password-success-title">{t('auth.forgotPasswordSuccessTitle')}</h1>
+        <h1 id="forgot-password-success-title" ref={successHeadingRef} tabIndex={-1}>
+          {t('auth.forgotPasswordSuccessTitle')}
+        </h1>
         <p>{t('auth.forgotPasswordSuccess')}</p>
         <p>
           {t('auth.haveResetCode')}{' '}
@@ -68,18 +78,19 @@ export default function ForgotPassword() {
             type="email"
             autoComplete="email"
             required
+            aria-describedby={error ? 'forgot-password-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 
         {error && (
-          <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>
+          <p id="forgot-password-error" role="alert" className="field-error">
             {error}
           </p>
         )}
 
-        <button type="submit" className="btn" disabled={submitting}>
+        <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
           {t('auth.forgotPasswordSubmit')}
         </button>
       </form>

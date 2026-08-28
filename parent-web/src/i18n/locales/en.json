@@ -59,6 +59,7 @@
   "shell": {
     "openMenu": "Open navigation menu",
     "closeMenu": "Close navigation menu",
+    "primaryNav": "Main navigation",
     "breadcrumbHome": "Home",
     "breadcrumbNav": "Breadcrumb",
     "toggleSidebar": "Collapse sidebar",
@@ -67,6 +68,13 @@
     "demoRoleSwitcher": "Demo role switcher",
     "signedInAs": "Signed in as {{name}}",
     "role": "Role: {{role}}"
+  },
+  "breadcrumb": {
+    "notPermitted": "Not permitted"
+  },
+  "settings": {
+    "loadPreferencesFailed": "We could not load your saved settings.",
+    "saveLanguageFailed": "We could not save your language preference. It is applied on this browser only."
   },
   "roles": {
     "owner": "Owner",
@@ -122,6 +130,12 @@
     "deniedGeneric": "Denied",
     "actions": "Actions"
   },
+  "errors": {
+    "cryptoReviewRequired": "Your family's encrypted data cannot be opened on this browser yet. This capability is not available in this version -- no data was lost, and nothing was shown from an unverified source.",
+    "endpointNotTrusted": "This browser is not trusted with your family's data yet. Pair it from an already-trusted device, then try again.",
+    "serviceUnavailable": "This feature is not connected to PCA's service yet, so there is nothing to show here. No data was hidden or lost.",
+    "unknown": "Something went wrong and this could not be completed. Please try again."
+  },
   "notFound": {
     "title": "Page not found",
     "back": "Back to dashboard"
@@ -159,6 +173,24 @@
       "VIEWER": "Read-only access to family status and device-enrollment information. Cannot change policy, approve requests, or manage devices or other family members.",
       "CHILD": "Can send requests (like more screen time) for a parent to review, but cannot view or change any family settings."
     },
+    "denialReason": {
+      "CHILD_ONLY_REQUEST_ACTION": "Only a child can make this kind of request. Parents review and decide requests instead.",
+      "ROLE_NOT_RECOGNISED": "Your role is not recognised, so this action cannot be permitted.",
+      "VIEWER_READ_ONLY_POLICY": "Viewers are read-only and cannot edit family policy.",
+      "CHILD_CANNOT_EDIT_POLICY": "A child may only submit requests, not edit policy.",
+      "VIEWER_MANAGEMENT_NOT_DELEGATED": "The Owner has not delegated Viewer management to Administrators.",
+      "OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS": "Only the Owner (or a delegated Administrator) may manage Viewers.",
+      "OWNER_ONLY_STEP_UP": "Only the Owner may perform this action, with step-up authentication.",
+      "OWNER_ONLY_RETENTION_DELETE_EXPORT": "Only the Owner may change retention, delete history, or export by default.",
+      "DEVICE_REVOCATION_NOT_DELEGATED": "The Owner has not delegated device revocation to Administrators.",
+      "OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES": "Only the Owner (or a delegated Administrator) may revoke devices or disable protection.",
+      "ENROLLMENT_NOT_FOR_CHILD": "Device enrollment status is a parent-management surface, not shown to a Child.",
+      "OWNER_OR_ADMIN_ONLY_INVITE_DEVICE": "Only the Owner or an Administrator may invite a new child device.",
+      "INVITATION_REVOCATION_NOT_DELEGATED": "The Owner has not delegated device revocation or pairing to Administrators.",
+      "OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION": "Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.",
+      "OWNER_ONLY_BILLING": "Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.",
+      "UNRECOGNISED_ACTION": "This action is not recognised."
+    },
     "actions": {
       "EDIT_CHILD_POLICY": "Edit child policy",
       "APPROVE_REQUEST": "Approve request",
@@ -187,7 +219,7 @@
   "stepUp": {
     "title": "Re-authenticate to continue",
     "body": "This is a sensitive family-authority action and requires step-up authentication.",
-    "confirm": "Re-authenticate (dev stub)"
+    "confirm": "Re-authenticate"
   },
   "trustedBrowser": {
     "title": "Trusted browser status",
@@ -199,11 +231,11 @@
     "REVOKED": "This browser's trust has been revoked. Pair again to regain access.",
     "beginServiceAuth": "Sign in",
     "requestPairing": "Request pairing",
-    "simulateApproval": "Simulate parent approval (dev)",
-    "simulateStale": "Simulate epoch gone stale (dev)",
-    "simulateRevoke": "Simulate revoke (dev)",
+    "simulateApproval": "Simulate parent approval (demo mode)",
+    "simulateStale": "Simulate epoch gone stale (demo mode)",
+    "simulateRevoke": "Simulate revoke (demo mode)",
     "reset": "Reset this browser's trust",
-    "resync": "Resync (dev)",
+    "resync": "Resync (demo mode)",
     "note": "Signing in to the account service does NOT by itself grant family decryption authority -- those are separate trust boundaries.",
     "serviceAuthenticated": "Service authenticated",
     "browserEndpoint": "Browser endpoint",
@@ -457,6 +489,14 @@
   "requestsPage": {
     "title": "Requests",
     "type": "Type",
+    "types": {
+      "BONUS_TIME": "Bonus time",
+      "UNBLOCK_APP": "Unblock app",
+      "UNBLOCK_SITE": "Unblock site",
+      "EXCEPTION": "Policy exception",
+      "DEVICE_PAIRING": "Device pairing",
+      "INSTALL_APPROVAL": "Install approval"
+    },
     "child": "Child",
     "reason": "Reason",
     "created": "Created",
@@ -718,6 +758,10 @@
   "devicesTable": {
     "device": "Device",
     "os": "OS",
+    "osFamily": {
+      "ANDROID": "Android",
+      "IOS": "iOS"
+    },
     "protection": "Protection",
     "policyRevision": "Policy revision",
     "epoch": "Epoch",
@@ -904,6 +948,9 @@
     "description": "This issues a signed, one-time deletion instruction to your children's devices. It cannot retroactively erase a device that stays offline.",
     "confirmBody": "This action cannot be undone once devices acknowledge it.",
     "issuedStatus": "Deletion instruction issued and audited -- delivery status: {{status}}.",
+    "deliveryStatusValue": {
+      "DELETE_PENDING_REMOTE_DEVICE": "pending on the child's device"
+    },
     "scopeNotice": "Delete Now removes activity content only. It does not remove enrollment keys, policies, roles, or recovery configuration; full device or family removal is a separate, strongly confirmed action.",
     "offlineNotice": "A child device that stays offline cannot be reported as erased. Its deletion remains pending until the device can acknowledge the instruction.",
     "externalCopyNotice": "Delete Now does not erase encrypted exports or backups outside PCA-managed storage. Those copies must be removed using the storage provider's controls.",

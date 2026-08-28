@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../state/AuthContext';
 import { applyDocumentDirection } from '../../i18n';
@@ -7,11 +8,21 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onToggleDrawer: () => void;
   sidebarCollapsed: boolean;
+  /** Whether the mobile navigation drawer is currently open. */
+  drawerOpen?: boolean;
+  /** Lets AppLayout restore focus here when the drawer is closed. */
+  drawerToggleRef?: RefObject<HTMLButtonElement>;
 }
 
 const DEMO_ROLES: FamilyRole[] = ['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'];
 
-export function Header({ onToggleSidebar, onToggleDrawer, sidebarCollapsed }: HeaderProps) {
+export function Header({
+  onToggleSidebar,
+  onToggleDrawer,
+  sidebarCollapsed,
+  drawerOpen = false,
+  drawerToggleRef,
+}: HeaderProps) {
   const { t, i18n } = useTranslation();
   const { session, isFixtureBacked, setDemoRole } = useAuth();
 
@@ -23,10 +34,12 @@ export function Header({ onToggleSidebar, onToggleDrawer, sidebarCollapsed }: He
   return (
     <header className="app-header">
       <button
+        ref={drawerToggleRef}
         type="button"
         className="icon-btn mobile-only"
-        aria-label={t('shell.openMenu')}
+        aria-label={drawerOpen ? t('shell.closeMenu') : t('shell.openMenu')}
         aria-controls="app-sidebar"
+        aria-expanded={drawerOpen}
         onClick={onToggleDrawer}
       >
         <span aria-hidden="true">≡</span>

@@ -22,10 +22,15 @@ export default function VerifyEmail() {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Distinguishes the one genuinely field-scoped error (the entered code is
+  // wrong/expired) from the form-scoped ones (rate limit, generic), so
+  // aria-invalid is only ever set on an input that really is invalid.
+  const [codeInvalid, setCodeInvalid] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setCodeInvalid(false);
     setSubmitting(true);
     try {
       await clients.serviceAuth.verifyEmail(email, code);
@@ -33,8 +38,10 @@ export default function VerifyEmail() {
     } catch (err) {
       if (err instanceof ServiceAuthError) {
         if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
-        else if (err.code === 'INVALID_CREDENTIALS') setError(t('auth.invalidCode'));
-        else setError(t('auth.genericError'));
+        else if (err.code === 'INVALID_CREDENTIALS') {
+          setError(t('auth.invalidCode'));
+          setCodeInvalid(true);
+        } else setError(t('auth.genericError'));
       } else {
         setError(t('auth.genericError'));
       }
@@ -55,6 +62,7 @@ export default function VerifyEmail() {
             type="email"
             autoComplete="email"
             required
+            aria-describedby={error ? 'verify-email-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -71,18 +79,20 @@ export default function VerifyEmail() {
             maxLength={6}
             autoComplete="one-time-code"
             required
+            aria-describedby={error ? 'verify-email-error' : undefined}
+            aria-invalid={codeInvalid || undefined}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
           />
         </div>
 
         {error && (
-          <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>
+          <p id="verify-email-error" role="alert" className="field-error">
             {error}
           </p>
         )}
 
-        <button type="submit" className="btn" disabled={submitting}>
+        <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
           {t('auth.verifySubmit')}
         </button>
       </form>

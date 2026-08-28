@@ -24,8 +24,15 @@ export function PermissionGate({ action, children, showDisabledFallback = false 
   if (result.allowed) return <>{children}</>;
   if (!showDisabledFallback) return null;
 
+  // The tooltip is user-facing copy, so it must be the localized reason
+  // (result.reasonKey), never result.reason -- that field is the English
+  // developer diagnostic (see domain/roles.ts).
   return (
-    <div className="permission-disabled" aria-disabled="true" title={result.reason}>
+    <div
+      className="permission-disabled"
+      aria-disabled="true"
+      title={result.reasonKey ? t(result.reasonKey) : t('rbac.denied')}
+    >
       <span className="permission-disabled-badge">{t('rbac.denied')}</span>
     </div>
   );

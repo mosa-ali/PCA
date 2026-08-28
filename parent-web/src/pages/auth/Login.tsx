@@ -52,6 +52,7 @@ export default function Login() {
             type="email"
             autoComplete="email"
             required
+            aria-describedby={error ? 'login-error' : undefined}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -65,18 +66,19 @@ export default function Login() {
             type="password"
             autoComplete="current-password"
             required
+            aria-describedby={error ? 'login-error' : undefined}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
 
         {error && (
-          <p role="alert" style={{ color: 'var(--color-danger, #b00020)' }}>
+          <p id="login-error" role="alert" className="field-error">
             {error}
           </p>
         )}
 
-        <button type="submit" className="btn" disabled={submitting}>
+        <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
           {t('auth.loginSubmit')}
         </button>
       </form>

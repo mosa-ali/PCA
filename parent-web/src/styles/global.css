@@ -128,7 +128,14 @@ textarea {
     inset-inline-start: 0;
     width: min(85vw, 20rem);
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    /* `visibility: hidden` is what actually takes the ~19 closed-drawer nav
+       links OUT of the tab order and the accessibility tree. `transform`
+       alone only moves them off-screen: they stayed focusable, so tabbing
+       through a mobile page walked the whole invisible nav before reaching
+       any page content. The 0.2s visibility delay lets the slide-out
+       animation finish before the panel is hidden. */
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
     z-index: 60;
   }
   [dir='rtl'] .sidebar {
@@ -136,6 +143,8 @@ textarea {
   }
   .sidebar.drawer-open {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.2s ease, visibility 0s;
   }
   .drawer-scrim {
     position: fixed;
@@ -143,6 +152,12 @@ textarea {
     background: rgba(0, 0, 0, 0.5);
     z-index: 50;
   }
+}
+
+/* In-drawer close control (carries `mobile-only`, so it is only displayed on
+   the viewports where the sidebar is actually a drawer). */
+.drawer-close {
+  margin-block-end: var(--space-2);
 }
 
 .sidebar-section-title {
@@ -531,6 +546,21 @@ table.data-table td {
   gap: var(--space-2);
 }
 
+/* The generic sibling of .web-rule-list above, used by 8 lists across 7 pages
+   (Notifications, Subscription, InvoiceDetail, ActivityTimelinePage,
+   EyeProtectionPage, LocationPage, ProtectionAlertPanel). It had no rule at
+   all, so every one of those lists rendered with default browser bullets and
+   the default list indent instead of the flat card-content list it was
+   written for. */
+.plain-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .web-rule-list-item {
   display: flex;
   align-items: center;
@@ -646,7 +676,12 @@ table.data-table td {
 
 /* ---------- Utility ---------- */
 
-.visually-hidden {
+/* `.sr-only` is the same affordance under its other common name.
+   ProtectionAlertPanel.tsx uses it for screen-reader-only text; with no rule
+   for it that text was rendered VISIBLE on the page, so this is an
+   accessibility/presentation fix, not a cosmetic one. */
+.visually-hidden,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -656,6 +691,12 @@ table.data-table td {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Muted secondary text (CheckoutReturn.tsx). Uses the same token every other
+   muted surface in this stylesheet already uses. */
+.text-muted {
+  color: var(--color-text-muted);
 }
 
 .mobile-only {

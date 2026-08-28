@@ -7,14 +7,26 @@ import { PermissionGate } from '../rbac/PermissionGate';
 import { useFamilyAction } from '../rbac/useFamilyAction';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { MAX_BONUS_GRANT_MINUTES, MIN_BONUS_GRANT_MINUTES, validateBonusMinutes, validateCounterOffer } from '../domain/bonusTime';
-import type { RequestStatus } from '../domain/types';
+import type { RequestStatus, RequestType } from '../domain/types';
 
-// A request's decision status (PENDING/APPROVED/DENIED/COUNTERED/EXPIRED/
-// CANCELLED -- see domain/types.ts's RequestStatus) is family-facing
-// terminology, not a raw wire value: it must go through requestsPage.decision*
-// like every other status shown on this page (StatusBadge's install-
-// capability states, policyStatus.*), so it renders correctly in Arabic too.
-const STATUS_TRANSLATION_KEY: Record<RequestStatus, string> = {
+// The Type and Status columns used to render `req.type` / `req.status`
+// verbatim, so a parent read the backend enum ("BONUS_TIME", "COUNTERED") in
+// every locale. Both are family-facing terminology, not raw wire values: they
+// go through requestsPage.types.* / requestsPage.decision* like every other
+// status shown on this page (StatusBadge's install-capability states,
+// policyStatus.*), so they render correctly in Arabic too. The status labels
+// reuse the `requestsPage.decision*` keys that already existed for exactly
+// these values.
+const REQUEST_TYPE_LABEL_KEYS: Readonly<Record<RequestType, string>> = {
+  BONUS_TIME: 'requestsPage.types.BONUS_TIME',
+  UNBLOCK_APP: 'requestsPage.types.UNBLOCK_APP',
+  UNBLOCK_SITE: 'requestsPage.types.UNBLOCK_SITE',
+  EXCEPTION: 'requestsPage.types.EXCEPTION',
+  DEVICE_PAIRING: 'requestsPage.types.DEVICE_PAIRING',
+  INSTALL_APPROVAL: 'requestsPage.types.INSTALL_APPROVAL',
+};
+
+const REQUEST_STATUS_LABEL_KEYS: Readonly<Record<RequestStatus, string>> = {
   PENDING: 'requestsPage.decisionPending',
   APPROVED: 'requestsPage.decisionApproved',
   DENIED: 'requestsPage.decisionDenied',
@@ -159,7 +171,9 @@ export default function Requests() {
               {data.map((req) => (
                 <tr key={req.requestId}>
                   <td data-label={t('requestsPage.child')}>{req.childDisplayName}</td>
-                  <td data-label={t('requestsPage.type')}>{req.type}</td>
+                  <td data-label={t('requestsPage.type')}>
+                    {REQUEST_TYPE_LABEL_KEYS[req.type] ? t(REQUEST_TYPE_LABEL_KEYS[req.type]) : req.type}
+                  </td>
                   <td data-label={t('requestsPage.reason')}>
                     <bdi className="iso">{req.reasonText ?? '--'}</bdi>
                   </td>
@@ -202,7 +216,9 @@ export default function Requests() {
                       new Date(req.createdAtUtc),
                     )}
                   </td>
-                  <td data-label={t('requestsPage.status')}>{t(STATUS_TRANSLATION_KEY[req.status])}</td>
+                  <td data-label={t('requestsPage.status')}>
+                    {REQUEST_STATUS_LABEL_KEYS[req.status] ? t(REQUEST_STATUS_LABEL_KEYS[req.status]) : req.status}
+                  </td>
                   <td>
                     {req.status === 'PENDING' && (
                       <PermissionGate action="APPROVE_REQUEST" showDisabledFallback>

@@ -48,9 +48,46 @@ export type FamilyAction =
   | 'REQUEST_PARENT_MEMBER_INCREASE'
   | 'MANAGE_PAYMENT_METHOD';
 
+/**
+ * `reasonKey` is what the UI renders (PermissionGate's tooltip and the
+ * /not-permitted page look it up through i18n, in the same `rbac.*` namespace
+ * RolesMatrix/NotPermitted already use), so an Arabic parent reads Arabic.
+ * `reason` is the unchanged English diagnostic: it is what the dev
+ * FamilyAuthorityGateway and useFamilyAction still put on the thrown Error, so
+ * it stays greppable in logs and in the audit trail. Never render `reason`.
+ *
+ * `reasonKey` is optional only because a PermissionResult can also be produced
+ * by a gateway rather than by evaluatePermission below (see
+ * api/real/unavailableProviders.ts's fail-closed denial). Every denial
+ * evaluatePermission returns always carries one; consumers must fall back to
+ * their own localized copy, never to `reason`.
+ */
 export type PermissionResult =
   | { allowed: true; requiresStepUp: boolean }
-  | { allowed: false; reason: string };
+  | { allowed: false; reason: string; reasonKey?: string };
+
+/** The `rbac.denialReason.*` i18n keys this module can produce. */
+export type DenialReasonCode =
+  | 'CHILD_ONLY_REQUEST_ACTION'
+  | 'ROLE_NOT_RECOGNISED'
+  | 'VIEWER_READ_ONLY_POLICY'
+  | 'CHILD_CANNOT_EDIT_POLICY'
+  | 'VIEWER_MANAGEMENT_NOT_DELEGATED'
+  | 'OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS'
+  | 'OWNER_ONLY_STEP_UP'
+  | 'OWNER_ONLY_RETENTION_DELETE_EXPORT'
+  | 'DEVICE_REVOCATION_NOT_DELEGATED'
+  | 'OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES'
+  | 'ENROLLMENT_NOT_FOR_CHILD'
+  | 'OWNER_OR_ADMIN_ONLY_INVITE_DEVICE'
+  | 'INVITATION_REVOCATION_NOT_DELEGATED'
+  | 'OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION'
+  | 'OWNER_ONLY_BILLING'
+  | 'UNRECOGNISED_ACTION';
+
+export function denialReasonKey(code: DenialReasonCode): string {
+  return `rbac.denialReason.${code}`;
+}
 
 /**
  * Whether an Administrator may perform the "configurable" actions the Owner
@@ -99,7 +136,11 @@ export function evaluatePermission(
   delegation: DelegableAdministratorPolicy = SAFE_DEFAULT_DELEGATION,
 ): PermissionResult {
   const requiresStepUp = STEP_UP_ACTIONS.has(action);
-  const deny = (reason: string): PermissionResult => ({ allowed: false, reason });
+  const deny = (code: DenialReasonCode, reason: string): PermissionResult => ({
+    allowed: false,
+    reason,
+    reasonKey: denialReasonKey(code),
+  });
   const allow = (): PermissionResult => ({ allowed: true, requiresStepUp });
 
   switch (action) {
@@ -107,63 +148,69 @@ export function evaluatePermission(
       return allow();
     case 'CREATE_CHILD_REQUEST':
       return role === 'CHILD' ? allow() : role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'VIEWER'
-        ? deny('Only a child requests through this action; parents act via APPROVE_REQUEST/EDIT_CHILD_POLICY.')
-        : deny('Role not recognised.');
+        ? deny('CHILD_ONLY_REQUEST_ACTION', 'Only a child requests through this action; parents act via APPROVE_REQUEST/EDIT_CHILD_POLICY.')
+        : deny('ROLE_NOT_RECOGNISED', 'Role not recognised.');
     case 'EDIT_CHILD_POLICY':
     case 'APPROVE_REQUEST':
     case 'MANAGE_WELLBEING_MESSAGES':
       if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
-      if (role === 'VIEWER') return deny('Viewers are read-only and cannot edit family policy.');
-      return deny('A child may only submit requests, not edit policy.');
+      if (role === 'VIEWER') return deny('VIEWER_READ_ONLY_POLICY', 'Viewers are read-only and cannot edit family policy.');
+      return deny('CHILD_CANNOT_EDIT_POLICY', 'A child may only submit requests, not edit policy.');
     case 'ADD_VIEWER':
     case 'REMOVE_NON_OWNER_PARENT':
       if (role === 'OWNER') return allow();
       if (role === 'ADMINISTRATOR') {
         return delegation.administratorsCanManageViewers
           ? allow()
-          : deny('Owner has not delegated Viewer management to Administrators.');
+          : deny('VIEWER_MANAGEMENT_NOT_DELEGATED', 'Owner has not delegated Viewer management to Administrators.');
       }
-      return deny('Only the Owner (or a delegated Administrator) may manage Viewers.');
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS', 'Only the Owner (or a delegated Administrator) may manage Viewers.');
     case 'ADD_ADMINISTRATOR':
     case 'CHANGE_ANY_ROLE':
     case 'TRANSFER_OWNERSHIP':
     case 'REVEAL_RECOVERY_MATERIAL':
-      return role === 'OWNER' ? allow() : deny('Only the Owner may perform this action, with step-up authentication.');
+      return role === 'OWNER'
+        ? allow()
+        : deny('OWNER_ONLY_STEP_UP', 'Only the Owner may perform this action, with step-up authentication.');
     case 'CHANGE_RETENTION':
     case 'DELETE_HISTORY':
     case 'EXPORT_DATA':
-      return role === 'OWNER' ? allow() : deny('Only the Owner may change retention, delete history, or export by default.');
+      return role === 'OWNER'
+        ? allow()
+        : deny('OWNER_ONLY_RETENTION_DELETE_EXPORT', 'Only the Owner may change retention, delete history, or export by default.');
     case 'REMOVE_OR_REVOKE_DEVICE':
     case 'DISABLE_PROTECTION_POLICY':
       if (role === 'OWNER') return allow();
       if (role === 'ADMINISTRATOR') {
         return delegation.administratorsCanRevokeDevices
           ? allow()
-          : deny('Owner has not delegated device revocation to Administrators.');
+          : deny('DEVICE_REVOCATION_NOT_DELEGATED', 'Owner has not delegated device revocation to Administrators.');
       }
-      return deny('Only the Owner (or a delegated Administrator) may revoke devices or disable protection.');
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES', 'Only the Owner (or a delegated Administrator) may revoke devices or disable protection.');
     case 'VIEW_DEVICE_ENROLLMENT':
       if (role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'VIEWER') return allow();
-      return deny('Device enrollment status is a parent-management surface, not shown to a Child.');
+      return deny('ENROLLMENT_NOT_FOR_CHILD', 'Device enrollment status is a parent-management surface, not shown to a Child.');
     case 'CREATE_DEVICE_INVITATION':
       if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
-      return deny('Only the Owner or an Administrator may invite a new child device.');
+      return deny('OWNER_OR_ADMIN_ONLY_INVITE_DEVICE', 'Only the Owner or an Administrator may invite a new child device.');
     case 'REVOKE_DEVICE_INVITATION':
     case 'CONFIRM_DEVICE_PAIRING':
       if (role === 'OWNER') return allow();
       if (role === 'ADMINISTRATOR') {
         return delegation.administratorsCanRevokeDevices
           ? allow()
-          : deny('Owner has not delegated device revocation/pairing to Administrators.');
+          : deny('INVITATION_REVOCATION_NOT_DELEGATED', 'Owner has not delegated device revocation/pairing to Administrators.');
       }
-      return deny('Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.');
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION', 'Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.');
     case 'VIEW_BILLING':
     case 'REQUEST_DEVICE_INCREASE':
     case 'REQUEST_PARENT_MEMBER_INCREASE':
     case 'MANAGE_PAYMENT_METHOD':
-      return role === 'OWNER' ? allow() : deny('Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.');
+      return role === 'OWNER'
+        ? allow()
+        : deny('OWNER_ONLY_BILLING', 'Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.');
     default:
-      return deny('Unrecognised action.');
+      return deny('UNRECOGNISED_ACTION', 'Unrecognised action.');
   }
 }
 

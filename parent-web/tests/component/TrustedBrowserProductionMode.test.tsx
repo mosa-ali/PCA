@@ -20,7 +20,7 @@ describe('TrustedBrowser hides dev-only simulation controls outside demo mode', 
     await clients.trustedBrowser.requestPairing();
     renderWithProviders(<TrustedBrowser />);
 
-    expect(await screen.findByRole('button', { name: 'Simulate parent approval (dev)' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Simulate parent approval (demo mode)' })).toBeInTheDocument();
     // Real, working actions are no longer mislabeled as dev-only.
     expect(screen.getByRole('button', { name: "Reset this browser's trust" })).toBeInTheDocument();
 
@@ -37,7 +37,7 @@ describe('TrustedBrowser hides dev-only simulation controls outside demo mode', 
     try {
       renderWithProviders(<TrustedBrowser />);
       await screen.findByText('Pairing request sent. Waiting for parent approval on an already-trusted device.');
-      expect(screen.queryByRole('button', { name: 'Simulate parent approval (dev)' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Simulate parent approval (demo mode)' })).not.toBeInTheDocument();
     } finally {
       clients.isFixtureBacked = original;
       await clients.trustedBrowser.reset();
@@ -55,7 +55,7 @@ describe('TrustedBrowser hides dev-only simulation controls outside demo mode', 
     };
     try {
       renderWithProviders(<TrustedBrowser />);
-      const button = await screen.findByRole('button', { name: 'Simulate parent approval (dev)' });
+      const button = await screen.findByRole('button', { name: 'Simulate parent approval (demo mode)' });
       await userEvent.click(button);
       expect(await screen.findByText(/real parent-approval confirmation requires the backend relay/)).toBeInTheDocument();
     } finally {

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getApiClients } from '../../api/client';
 import { config } from '../../config/env';
 import { useAsync } from '../../hooks/useAsync';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useAuth } from '../../state/AuthContext';
@@ -98,6 +99,19 @@ export default function DeviceEnrollmentPanel() {
     null,
   );
   const [fallbackCode, setFallbackCode] = useState<string | null>(null);
+
+  // Same modal-dialog behaviour as every other role="dialog" surface in this
+  // app (privacy/DeleteNow.tsx, state/StepUpContext.tsx,
+  // wellbeing/CustomMessageForm.tsx): initial focus into the dialog, a Tab
+  // focus trap, and focus restored to the trigger on close.
+  const consentDialogRef = useRef<HTMLDivElement>(null);
+  const consentContinueRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (consentOpen) consentContinueRef.current?.focus();
+  }, [consentOpen]);
+
+  useModalFocusTrap(consentDialogRef, consentOpen);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,9 +313,19 @@ export default function DeviceEnrollmentPanel() {
       </PermissionGate>
 
       {consentOpen && (
-        <div className="modal-overlay" role="presentation">
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-consent-title">
-            <h3 id="enrollment-consent-title">{t('deviceEnrollment.consentTitle')}</h3>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onKeyDown={(e) => e.key === 'Escape' && !creating && setConsentOpen(false)}
+        >
+          <div
+            ref={consentDialogRef}
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="enrollment-consent-title"
+          >
+            <h2 id="enrollment-consent-title">{t('deviceEnrollment.consentTitle')}</h2>
             <p>{t('deviceEnrollment.consentBody')}</p>
             <p>{t('deviceEnrollment.consentMonitored')}</p>
             <p>{t('deviceEnrollment.consentNotMonitored')}</p>
@@ -309,7 +333,13 @@ export default function DeviceEnrollmentPanel() {
               <button type="button" className="btn" onClick={() => setConsentOpen(false)} disabled={creating}>
                 {t('deviceEnrollment.consentCancel')}
               </button>
-              <button type="button" className="btn btn-primary" onClick={create} disabled={creating}>
+              <button
+                ref={consentContinueRef}
+                type="button"
+                className="btn btn-primary"
+                onClick={create}
+                disabled={creating}
+              >
                 {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.consentContinue')}
               </button>
             </div>

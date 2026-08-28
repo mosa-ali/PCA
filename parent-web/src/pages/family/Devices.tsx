@@ -57,6 +57,9 @@ export default function Devices() {
         reasonCategory: null,
       });
     } catch {
+      // `devicesTable.removeRequestFailed` now exists in BOTH locales, so the
+      // English `defaultValue` fallback is no longer the string an Arabic
+      // parent actually reads.
       setRemoveError(t('devicesTable.removeRequestFailed'));
     } finally {
       setRemovingDeviceId(null);
@@ -95,7 +98,8 @@ export default function Devices() {
             {data.map((d) => (
               <tr key={d.deviceId}>
                 <td data-label={t('devicesTable.device')}>{d.deviceLabel}</td>
-                <td data-label={t('devicesTable.os')}>{d.osFamily}</td>
+                {/* Rendered the raw `ANDROID` / `IOS` enum before. */}
+                <td data-label={t('devicesTable.os')}>{t(`devicesTable.osFamily.${d.osFamily}`)}</td>
                 <td data-label={t('devicesTable.protection')}>
                   <StatusBadge state={d.protectionState} />
                 </td>

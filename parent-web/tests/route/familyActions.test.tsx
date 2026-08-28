@@ -52,7 +52,7 @@ describe('useFamilyAction gateway enforcement', () => {
     await userEvent.click(screen.getByText('Change role'));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(run).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByText('Re-authenticate (dev stub)'));
+    await userEvent.click(screen.getByText('Re-authenticate'));
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('result')).toHaveTextContent('success');
   });

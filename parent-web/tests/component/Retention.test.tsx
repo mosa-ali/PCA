@@ -18,7 +18,7 @@ describe('Retention', () => {
     expect(locationRadio).not.toBeDisabled();
     await userEvent.click(locationRadio);
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate (dev stub)' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Retention policy validated and audited');
     expect(__devLastSubmittedRetentionPolicy()?.locationMode).toEqual({ window: '14_DAYS' });

@@ -35,7 +35,17 @@ export default function DeleteNow() {
       await runFamilyAction('DELETE_HISTORY', async () => {
         const actionId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `delete-now-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const result = await clients.retention.deleteNow(actionId);
-        setStatus(t('deleteNow.issuedStatus', { status: result.deliveryStatus }));
+        // The backend's literal enum (DELETE_PENDING_REMOTE_DEVICE) used to be
+        // interpolated straight into the sentence a parent reads. The
+        // disposition itself is unchanged -- still always "pending", never
+        // "done" -- only its presentation is now a translated label.
+        setStatus(
+          t('deleteNow.issuedStatus', {
+            status: t(`deleteNow.deliveryStatusValue.${result.deliveryStatus}`, {
+              defaultValue: result.deliveryStatus,
+            }),
+          }),
+        );
         setPlan(result.plan);
       });
     } catch (e) {
