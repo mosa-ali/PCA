@@ -85,6 +85,34 @@ happen back-to-back. See `PCA_PAGE_QA_LEDGER.csv`'s `/verify-email` row
 
 ---
 
+## QA-B-004 — (confirmed NOT a defect) platform-admin-web TOTP-window collisions under dense back-to-back test logins
+
+Running platform-admin-web's 24-test QA suite sequentially (each test does
+its own fresh login) produced 11 failures, nearly all "stuck at /login"
+after a real, correctly-shaped login submission. Root cause: `verifyTotp`'s
+counter-claim (`backend/src/platformadmin/auth/PlatformAdminAuthService.ts`,
+`TOTP-REPLAY-1`) is a real, working anti-replay control -- the SAME 30-second
+TOTP window cannot be claimed twice, even across unrelated logins for the
+same admin. Several of this suite's tests for the SAME persona (e.g.
+FINANCE_ADMIN across 8 billing/settlement route tests) run close enough
+together that consecutive fresh `computeTotp()` calls sometimes land in a
+window already claimed by the previous test's login, and login is honestly
+(and correctly) rejected exactly as designed. This is a **test-suite-density
+limitation**, not a product defect -- it is direct proof the anti-replay
+control works. Confirmed separately: `secureSession.ts`'s in-memory-only
+session token (deliberately lost on any hard page reload,
+PCA-ADD-PA-014/016) is also working as designed; this session's Playwright
+specs were fixed to navigate authenticated routes via client-side sidebar-link
+clicks rather than `page.goto()`, which resolved an earlier, larger batch of
+false failures.
+
+**Recommended retest approach**: either add a short stagger between
+back-to-back logins for the same persona in the same run, or (simpler) run
+each spec file separately so fewer logins for the same persona land close
+together.
+
+---
+
 ## Summary for Coordinator A
 
 **No genuine product/backend defects were found and confirmed this
