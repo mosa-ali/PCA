@@ -62,14 +62,22 @@ const dataRows = rows.slice(1);
 const col = (name) => header.indexOf(name);
 
 const EXPECTED_COLUMNS = 26;
+// Kept identical to tooling/product-completion/validate-ledgers.mjs's own
+// VALID_ACCEPTANCE_STATE -- that script is the canonical structural gate for
+// this CSV (wired into the dynamic-workflow programme); this one exists to
+// add the browser-evidence-honesty checks that script doesn't do. Diverging
+// from its enum caused this script to reject rows the canonical validator
+// accepts -- see the reconciliation report.
 const ALLOWED_FINAL_STATUS = new Set([
-  'VERIFIED_BROWSER_PASS',
-  'BLOCKED_EXTERNAL',
-  'BLOCKED_OWNER_DECISION',
-  'PARTIAL',
   'NOT_TESTED',
-  'RECLASSIFIED_NOT_DEFECT',
-  'FIXED_AWAITING_BROWSER',
+  'IMPLEMENTATION_IN_PROGRESS',
+  'AWAITING_BROWSER',
+  'DEFECT_FOUND',
+  'REMEDIATION_IN_PROGRESS',
+  'RETEST_REQUIRED',
+  'BLOCKED_ENVIRONMENT',
+  'BLOCKED_EXTERNAL',
+  'VERIFIED_BROWSER_PASS',
 ]);
 const NON_BROWSER_EVIDENCE_PATTERN = /\bjsdom\b|\bunit test(s)?\b|\bmocked backend\b|\bcode review only\b/i;
 
@@ -96,8 +104,12 @@ dataRows.forEach((row, idx) => {
   if (finalStatus === 'VERIFIED_BROWSER_PASS' && evidence.length === 0) {
     problems.push(`Line ${lineNo}: VERIFIED_BROWSER_PASS with empty EVIDENCE.`);
   }
-  if (evidence && NON_BROWSER_EVIDENCE_PATTERN.test(evidence)) {
-    problems.push(`Line ${lineNo}: EVIDENCE text admits a non-real-browser source ("${evidence.slice(0, 80)}...").`);
+  // Only a problem when the row is actually CLAIMING browser-verified pass --
+  // a RETEST_REQUIRED/NOT_TESTED row is allowed (in fact expected) to
+  // honestly disclose a non-browser source or a past miscorrection in its
+  // own EVIDENCE text.
+  if (finalStatus === 'VERIFIED_BROWSER_PASS' && evidence && NON_BROWSER_EVIDENCE_PATTERN.test(evidence)) {
+    problems.push(`Line ${lineNo}: VERIFIED_BROWSER_PASS but EVIDENCE text admits a non-real-browser source ("${evidence.slice(0, 80)}...").`);
   }
 
   const key = [get('APP'), get('ROUTE'), get('PERSONA'), get('LANGUAGE'), get('VIEWPORT'), get('DATA_SCENARIO')].join('');
