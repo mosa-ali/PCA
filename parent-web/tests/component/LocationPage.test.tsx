@@ -18,10 +18,25 @@ function TestApp() {
 // (production and this dev fixture alike -- see UnavailableSafeZonePolicyAuthoring
 // in api/client.ts) until a reviewed family-crypto adapter exists. These
 // tests confirm the honest not-ready path, never a fabricated success.
+//
+// The empty-state text is the FIRST thing these tests wait on, and it only
+// renders after a two-stage async chain settles (resolve familyId, then
+// fetch the zone list -- see LocationPage.tsx's two chained useAsync calls).
+// That second stage can re-render once its dependency array's familyId
+// value settles, orphaning a DOM node `findByText` already resolved to --
+// `expect(await findByText(...)).toBeInTheDocument()` holds a single element
+// reference, so it can intermittently fail with "element could not be found"
+// even though the SAME text is genuinely on screen a moment later, under a
+// NEW node. `waitFor` re-queries the DOM fresh on every poll instead of
+// holding a stale reference, which is immune to that class of remount.
+const INITIAL_LOAD_TIMEOUT_MS = 10_000;
+
 describe('LocationPage Safe Zone authoring', () => {
   it('shows the empty state when no safe zone is configured for this child', async () => {
     renderWithProviders(<TestApp />, { route: '/children/child-amir/location', role: 'OWNER' });
-    expect(await screen.findByText('No safe zone is configured for this child.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('No safe zone is configured for this child.')).toBeInTheDocument(), {
+      timeout: INITIAL_LOAD_TIMEOUT_MS,
+    });
   });
 
   it('rejects an invalid definition client-side without attempting to save it', async () => {
@@ -55,7 +70,9 @@ describe('LocationPage Safe Zone authoring', () => {
 
   it('a VIEWER sees the create form disabled rather than able to submit', async () => {
     renderWithProviders(<TestApp />, { route: '/children/child-amir/location', role: 'VIEWER' });
-    await screen.findByText('No safe zone is configured for this child.');
+    await waitFor(() => expect(screen.getByText('No safe zone is configured for this child.')).toBeInTheDocument(), {
+      timeout: INITIAL_LOAD_TIMEOUT_MS,
+    });
     expect(screen.queryByRole('button', { name: 'Create safe zone' })).not.toBeInTheDocument();
   });
 });
