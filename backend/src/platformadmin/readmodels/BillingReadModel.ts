@@ -96,6 +96,12 @@ export interface PendingCustomQuoteRow {
   readonly updatedAt: Date;
 }
 
+export interface PendingCustomQuoteFilter {
+  readonly familyId?: string;
+  readonly sinceCreatedAt?: Date;
+  readonly untilCreatedAt?: Date;
+}
+
 function buildFilterClause(filters: Array<[string, unknown]>): { clause: string; params: unknown[] } {
   const present = filters.filter(([, value]) => value !== undefined && value !== null && value !== '');
   if (present.length === 0) return { clause: '', params: [] };
@@ -328,12 +334,36 @@ export class BillingReadModel {
    * which `PlatformAdminEntitlementService.issueCustomQuote` already
    * delegates to, so it is the correct source for an operator's "quotes
    * awaiting my action" queue.
+   *
+   * `filter` mirrors AuditReadModel.query's optional-conditions-array
+   * pattern exactly (same file's the closest existing precedent for a
+   * family/date-range filter on top of an otherwise-fixed WHERE clause).
    */
-  async listPendingCustomQuoteRequests(page: PageRequest): Promise<PageResult<PendingCustomQuoteRow>> {
+  async listPendingCustomQuoteRequests(
+    page: PageRequest,
+    filter: PendingCustomQuoteFilter = {},
+  ): Promise<PageResult<PendingCustomQuoteRow>> {
+    const conditions = [`state = 'PENDING'`, `awaiting_admin_quote = 1`];
+    const params: unknown[] = [];
+    if (filter.familyId) {
+      conditions.push('family_id = ?');
+      params.push(filter.familyId);
+    }
+    if (filter.sinceCreatedAt) {
+      conditions.push('created_at >= ?');
+      params.push(filter.sinceCreatedAt);
+    }
+    if (filter.untilCreatedAt) {
+      conditions.push('created_at <= ?');
+      params.push(filter.untilCreatedAt);
+    }
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
     return runInTransaction(async (conn) => {
       const { rows: countRows } = await execute<{ total: number }>(
         conn,
-        `SELECT COUNT(*) AS total FROM entitlement_change_requests WHERE state = 'PENDING' AND awaiting_admin_quote = 1`,
+        `SELECT COUNT(*) AS total FROM entitlement_change_requests ${whereClause}`,
+        params,
       );
       const { rows } = await execute<{
         request_id: string;
@@ -347,10 +377,10 @@ export class BillingReadModel {
         conn,
         `SELECT request_id, family_id, limit_type, target_limit, current_limit_at_request, created_at, updated_at
          FROM entitlement_change_requests
-         WHERE state = 'PENDING' AND awaiting_admin_quote = 1
+         ${whereClause}
          ORDER BY created_at ASC, request_id ASC
          LIMIT ? OFFSET ?`,
-        [page.limit, page.offset],
+        [...params, page.limit, page.offset],
       );
       return {
         items: rows.map((r) => ({

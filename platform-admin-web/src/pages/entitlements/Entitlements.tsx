@@ -7,6 +7,7 @@ import { LIMIT_TYPES } from '../../domain/entitlements';
 import type { EntitlementRequestDto } from '../../domain/entitlements';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
+import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useStepUp } from '../../state/StepUpContext';
 import { useToast } from '../../state/ToastContext';
@@ -61,8 +62,8 @@ export default function Entitlements() {
     setSearchParams(trimmed ? { familyId: trimmed } : {});
   };
 
-  const onSetLimit = async (e: FormEvent) => {
-    e.preventDefault();
+  const onSetLimit = async (e?: FormEvent) => {
+    e?.preventDefault();
     if (!familyId) return;
     const targetLimit = Number.parseInt(limitValue, 10);
     if (!Number.isInteger(targetLimit) || targetLimit < 0) {
@@ -191,7 +192,7 @@ export default function Entitlements() {
           <PermissionGate operation="ADMINISTER_ENTITLEMENT_QUANTITY">
             <section className="card">
               <h2 className="section-title">{t('entitlements.setLimitTitle')}</h2>
-              <form className="form-grid" onSubmit={onSetLimit}>
+              <form className="form-grid" onSubmit={(e) => e.preventDefault()}>
                 <label htmlFor="limit-type">{t('entitlements.limitType')}</label>
                 <select id="limit-type" value={limitType} onChange={(e) => setLimitType(e.target.value as LimitType)}>
                   {LIMIT_TYPES.map((lt) => (
@@ -203,9 +204,12 @@ export default function Entitlements() {
                 <label htmlFor="limit-value">{t('entitlements.targetLimit')}</label>
                 <input id="limit-value" type="number" min={0} step={1} value={limitValue} onChange={(e) => setLimitValue(e.target.value)} required />
                 <div className="actions-row">
-                  <button type="submit" className="btn btn-primary" disabled={limitSubmitting}>
-                    {t('entitlements.setLimit')}
-                  </button>
+                  <ConfirmButton
+                    className="btn btn-primary"
+                    label={t('entitlements.setLimit')}
+                    disabled={limitSubmitting}
+                    onConfirm={() => void onSetLimit()}
+                  />
                 </div>
               </form>
             </section>

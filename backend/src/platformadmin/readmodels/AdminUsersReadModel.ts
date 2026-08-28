@@ -45,11 +45,42 @@ interface MfaRow {
   status: string;
 }
 
+/** Escapes LIKE wildcard characters in a raw search term before it is wrapped in '%...%' -- a literal '%'/'_'/'\' the operator typed must never be interpreted as a wildcard. */
+function escapeLikeTerm(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 export class AdminUsersReadModel {
-  async list(page: PageRequest, filter: { status?: 'ACTIVE' | 'DISABLED' }): Promise<PageResult<AdminUserListRow>> {
+  /**
+   * `emailHash`: an EXACT match only (hashed server-side by the route from
+   * a raw email before it ever reaches this method) -- `platform_admin_accounts`
+   * never stores a plaintext or reversible email anywhere (only
+   * `email_hash`, a one-way digest -- see migration 0005), so a partial/
+   * fuzzy email search is structurally impossible by this schema's own
+   * design, not a missing feature. `nameQuery` is a genuine substring
+   * search since `display_name` IS stored in plaintext.
+   */
+  async list(
+    page: PageRequest,
+    filter: { status?: 'ACTIVE' | 'DISABLED'; nameQuery?: string; emailHash?: Buffer },
+  ): Promise<PageResult<AdminUserListRow>> {
     return runInTransaction(async (conn) => {
-      const clause = filter.status ? 'WHERE status = ?' : '';
-      const params = filter.status ? [filter.status] : [];
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+      if (filter.status) {
+        conditions.push('status = ?');
+        params.push(filter.status);
+      }
+      if (filter.nameQuery) {
+        // MySQL's default LIKE escape character is already backslash, matching escapeLikeTerm's own escaping -- no explicit ESCAPE clause needed.
+        conditions.push('display_name LIKE ?');
+        params.push(`%${escapeLikeTerm(filter.nameQuery)}%`);
+      }
+      if (filter.emailHash) {
+        conditions.push('email_hash = ?');
+        params.push(filter.emailHash);
+      }
+      const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const { rows: countRows } = await execute<{ total: number }>(conn, `SELECT COUNT(*) AS total FROM platform_admin_accounts ${clause}`, params);
       const { rows: accountRows } = await execute<AccountRow>(
         conn,

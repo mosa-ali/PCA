@@ -4,6 +4,7 @@ import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdmin
 import { BILLING_CADENCES, PLAN_STATUSES, type BillingCadence, type PlanDto, type PlanStatus } from '../../domain/billing';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
+import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { BillingPermissionGate } from '../../rbac/BillingPermissionGate';
 import { useToast } from '../../state/ToastContext';
 
@@ -43,8 +44,8 @@ export default function BillingPlans() {
     runSearch();
   };
 
-  const onCreate = async (e: FormEvent) => {
-    e.preventDefault();
+  const onCreate = async (e?: FormEvent) => {
+    e?.preventDefault();
     const defaultParentMemberLimit = Number.parseInt(parentLimit, 10);
     const defaultManagedDeviceLimit = Number.parseInt(deviceLimit, 10);
     if (!newPlanCode.trim() || !Number.isInteger(defaultParentMemberLimit) || defaultParentMemberLimit < 0 || !Number.isInteger(defaultManagedDeviceLimit) || defaultManagedDeviceLimit < 0) {
@@ -128,7 +129,7 @@ export default function BillingPlans() {
       <BillingPermissionGate operation="ADMINISTER_BILLING_RECORDS">
         <section className="card">
           <h2 className="section-title">{t('billing.createPlanTitle')}</h2>
-          <form className="form-grid" onSubmit={onCreate}>
+          <form className="form-grid" onSubmit={(e) => e.preventDefault()}>
             <label htmlFor="new-plan-code">{t('billing.planCode')}</label>
             <input id="new-plan-code" value={newPlanCode} onChange={(e) => setNewPlanCode(e.target.value)} maxLength={64} required />
             <label htmlFor="new-plan-status">{t('billing.status')}</label>
@@ -154,9 +155,12 @@ export default function BillingPlans() {
             <label htmlFor="new-plan-price-book">{t('billing.priceBookId')}</label>
             <input id="new-plan-price-book" value={priceBookId} onChange={(e) => setPriceBookId(e.target.value)} />
             <div className="actions-row">
-              <button type="submit" className="btn btn-primary" disabled={creating}>
-                {t('billing.createPlan')}
-              </button>
+              <ConfirmButton
+                className="btn btn-primary"
+                label={t('billing.createPlan')}
+                disabled={creating}
+                onConfirm={() => void onCreate()}
+              />
             </div>
           </form>
         </section>

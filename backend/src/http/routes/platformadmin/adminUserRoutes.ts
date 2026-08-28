@@ -83,7 +83,9 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
     const query = (request.query ?? {}) as Record<string, unknown>;
     const page = parsePageRequest(query);
     const status = query.status === 'ACTIVE' || query.status === 'DISABLED' ? query.status : undefined;
-    const result = await readModel.list(page, { status });
+    const nameQuery = typeof query.name === 'string' && query.name.trim().length > 0 ? query.name.trim() : undefined;
+    const emailHash = typeof query.email === 'string' && query.email.trim().length > 0 ? hashAdminEmail(query.email) : undefined;
+    const result = await readModel.list(page, { status, nameQuery, emailHash });
     return reply.code(200).send({
       items: result.items.map((r) => ({
         adminId: r.adminId,

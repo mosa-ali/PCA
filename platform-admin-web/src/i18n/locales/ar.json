@@ -356,7 +356,16 @@
     "revokeSessions": "إلغاء جميع الجلسات",
     "adminId": "معرّف المشرف",
     "status": "الحالة",
-    "mfaStatus": "حالة المصادقة متعددة العوامل"
+    "mfaStatus": "حالة المصادقة متعددة العوامل",
+    "mfaStatuses": {
+      "PENDING_SETUP": "الإعداد معلّق",
+      "ACTIVE": "مفعّلة",
+      "DISABLED": "معطّلة",
+      "NONE": "لم يبدأ الإعداد"
+    },
+    "nameSearchLabel": "البحث بالاسم",
+    "emailSearchLabel": "البحث بالبريد الإلكتروني",
+    "emailSearchHint": "تطابق تام للبريد الإلكتروني فقط -- لا يخزّن هذا التطبيق بريدًا إلكترونيًا نصيًا قابلًا للبحث."
   },
   "settings": {
     "invalidLimits": "أدخل أرقامًا صحيحة غير سالبة لكلا الحدين.",
@@ -401,6 +410,8 @@
   },
   "billing": {
     "invalidPlanForm": "أدخل رمز خطة وأرقامًا صحيحة غير سالبة لكلا الحدين الافتراضيين.",
+    "sinceCreatedAt": "من تاريخ",
+    "untilCreatedAt": "إلى تاريخ",
     "planCreated": "تم إنشاء الخطة \"{{planCode}}\".",
     "planCode": "رمز الخطة",
     "planVersion": "الإصدار",

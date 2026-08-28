@@ -12,6 +12,13 @@ import { useToast } from '../state/ToastContext';
 
 const PAGE_SIZE = 20;
 
+const MFA_STATUS_BADGE_CLASS: Record<'PENDING_SETUP' | 'ACTIVE' | 'DISABLED' | 'NONE', string> = {
+  ACTIVE: 'badge-success',
+  DISABLED: 'badge-danger',
+  PENDING_SETUP: 'badge-warning',
+  NONE: '',
+};
+
 function CreateAdminForm({ onCreated }: { onCreated: () => void }) {
   const { t } = useTranslation();
   const { notify } = useToast();
@@ -136,7 +143,9 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
         <td>{admin.displayName}</td>
         <td>{admin.status === 'ACTIVE' ? <span className="badge badge-success">{t('adminUsers.active')}</span> : <span className="badge badge-danger">{t('adminUsers.disabledStatus')}</span>}</td>
         <td>{admin.roles.map((r) => t(`roles.${r}`)).join(', ')}</td>
-        <td>{admin.mfaStatus}</td>
+        <td>
+          <span className={`badge ${MFA_STATUS_BADGE_CLASS[admin.mfaStatus ?? 'NONE']}`}>{t(`adminUsers.mfaStatuses.${admin.mfaStatus ?? 'NONE'}`)}</span>
+        </td>
         <td>
           <PermissionGate operation="ASSIGN_ADMIN_ROLE">
             <button type="button" className="btn" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
@@ -197,6 +206,10 @@ export default function AdminUsers() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<'' | 'ACTIVE' | 'DISABLED'>('');
+  const [nameQuery, setNameQuery] = useState('');
+  const [emailQuery, setEmailQuery] = useState('');
+  const [appliedNameQuery, setAppliedNameQuery] = useState('');
+  const [appliedEmailQuery, setAppliedEmailQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -205,7 +218,13 @@ export default function AdminUsers() {
     setLoading(true);
     setError(null);
     platformAdminApi
-      .get<PagedResult<AdminUserSummary>>('/platform-admin/admin-users', { limit: PAGE_SIZE, offset, status: statusFilter || undefined })
+      .get<PagedResult<AdminUserSummary>>('/platform-admin/admin-users', {
+        limit: PAGE_SIZE,
+        offset,
+        status: statusFilter || undefined,
+        name: appliedNameQuery || undefined,
+        email: appliedEmailQuery || undefined,
+      })
       .then((result) => {
         setItems(result.items);
         setTotal(result.total);
@@ -217,7 +236,14 @@ export default function AdminUsers() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [offset, statusFilter]);
+  useEffect(load, [offset, statusFilter, appliedNameQuery, appliedEmailQuery]);
+
+  const onSearchSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setOffset(0);
+    setAppliedNameQuery(nameQuery.trim());
+    setAppliedEmailQuery(emailQuery.trim());
+  };
 
   return (
     <div className="page">
@@ -232,7 +258,7 @@ export default function AdminUsers() {
         </section>
       </PermissionGate>
 
-      <div className="filters">
+      <form className="filters" onSubmit={onSearchSubmit}>
         <div>
           <label htmlFor="admin-status">{t('adminUsers.status')}</label>
           <select id="admin-status" value={statusFilter} onChange={(e) => { setOffset(0); setStatusFilter(e.target.value as '' | 'ACTIVE' | 'DISABLED'); }}>
@@ -241,7 +267,18 @@ export default function AdminUsers() {
             <option value="DISABLED">{t('adminUsers.disabledStatus')}</option>
           </select>
         </div>
-      </div>
+        <div>
+          <label htmlFor="admin-name-search">{t('adminUsers.nameSearchLabel')}</label>
+          <input id="admin-name-search" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} maxLength={128} />
+        </div>
+        <div>
+          <label htmlFor="admin-email-search">{t('adminUsers.emailSearchLabel')}</label>
+          <input id="admin-email-search" type="email" value={emailQuery} onChange={(e) => setEmailQuery(e.target.value)} maxLength={255} title={t('adminUsers.emailSearchHint')} />
+        </div>
+        <button type="submit" className="btn">
+          {t('common.applyFilters')}
+        </button>
+      </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}

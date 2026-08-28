@@ -135,8 +135,8 @@ export default function Audit() {
                     <span className={`badge ${event.result === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`}>{t(`audit.results.${event.result}`)}</span>
                   </td>
                   <td>
-                    {/* Rendered as plain text (React auto-escapes), never dangerouslySetInnerHTML -- metadata is operator/system-supplied and must never be interpreted as markup. */}
-                    <code>{event.metadata ? JSON.stringify(event.metadata) : '—'}</code>
+                    {/* Rendered as plain text (React auto-escapes), never dangerouslySetInnerHTML -- metadata is operator/system-supplied and must never be interpreted as markup. Pretty-printed (2-space indent) and wrapped so multi-field metadata doesn't collapse into an unreadable single line. */}
+                    <pre className="audit-metadata">{event.metadata ? JSON.stringify(event.metadata, null, 2) : '—'}</pre>
                   </td>
                 </tr>
               ))}

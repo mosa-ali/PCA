@@ -423,6 +423,16 @@ select {
   font-weight: 600;
 }
 
+.audit-metadata {
+  max-width: 32rem;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .table tbody tr:hover {
   background: var(--surface-raised);
 }

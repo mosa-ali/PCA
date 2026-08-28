@@ -66,11 +66,22 @@ export default function BillingQuotes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [familyId, setFamilyId] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({ familyId: '', since: '', until: '' });
+
   const load = () => {
     setLoading(true);
     setError(null);
     platformAdminApi
-      .get<PagedResult<PendingQuoteRequest>>('/platform-admin/quotes/pending', { limit: PAGE_SIZE, offset })
+      .get<PagedResult<PendingQuoteRequest>>('/platform-admin/quotes/pending', {
+        limit: PAGE_SIZE,
+        offset,
+        familyId: appliedFilters.familyId || undefined,
+        since: appliedFilters.since || undefined,
+        until: appliedFilters.until || undefined,
+      })
       .then((res) => {
         setItems(res.items);
         setTotal(res.total);
@@ -82,7 +93,13 @@ export default function BillingQuotes() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [offset]);
+  useEffect(load, [offset, appliedFilters]);
+
+  const onFilterSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setOffset(0);
+    setAppliedFilters({ familyId, since, until });
+  };
 
   const onIssued = (requestId: string) => {
     setItems((prev) => prev.filter((item) => item.requestId !== requestId));
@@ -92,6 +109,24 @@ export default function BillingQuotes() {
   return (
     <div className="page">
       <h1>{t('nav.billingQuotes')}</h1>
+
+      <form className="filters" onSubmit={onFilterSubmit}>
+        <div>
+          <label htmlFor="quotes-family-id">{t('entitlements.familyIdLabel')}</label>
+          <input id="quotes-family-id" value={familyId} onChange={(e) => setFamilyId(e.target.value)} maxLength={128} />
+        </div>
+        <div>
+          <label htmlFor="quotes-since">{t('billing.sinceCreatedAt')}</label>
+          <input id="quotes-since" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="quotes-until">{t('billing.untilCreatedAt')}</label>
+          <input id="quotes-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+        </div>
+        <button type="submit" className="btn">
+          {t('common.applyFilters')}
+        </button>
+      </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}

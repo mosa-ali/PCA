@@ -356,7 +356,16 @@
     "revokeSessions": "Revoke all sessions",
     "adminId": "Admin ID",
     "status": "Status",
-    "mfaStatus": "MFA status"
+    "mfaStatus": "MFA status",
+    "mfaStatuses": {
+      "PENDING_SETUP": "Setup pending",
+      "ACTIVE": "Active",
+      "DISABLED": "Disabled",
+      "NONE": "Not started"
+    },
+    "nameSearchLabel": "Search by name",
+    "emailSearchLabel": "Search by email",
+    "emailSearchHint": "Exact email match only -- this app never stores a searchable plaintext email."
   },
   "settings": {
     "invalidLimits": "Enter non-negative whole numbers for both limits.",
@@ -401,6 +410,8 @@
   },
   "billing": {
     "invalidPlanForm": "Enter a plan code and non-negative whole numbers for both default limits.",
+    "sinceCreatedAt": "From date",
+    "untilCreatedAt": "To date",
     "planCreated": "Plan \"{{planCode}}\" created.",
     "planCode": "Plan code",
     "planVersion": "Version",

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
 import type { PagedResult } from '../../domain/accounts';
 import { formatMoney, isSupportedCurrency, parseExactMinorUnits, type SupportedCurrencyCode } from '../../money/money';
@@ -15,6 +15,7 @@ import {
 } from '../../domain/entitlements';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
+import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
 
@@ -224,7 +225,9 @@ export default function EntitlementRequests() {
               {items.map((r) => (
                 <tr key={r.requestId}>
                   <td>{r.requestId}</td>
-                  <td>{r.familyId}</td>
+                  <td>
+                    <Link to={`/accounts/${encodeURIComponent(r.familyId)}`}>{r.familyId}</Link>
+                  </td>
                   <td>{t(`entitlements.limitTypes.${r.limitType}`)}</td>
                   <td>{r.targetLimit}</td>
                   <td>
@@ -240,9 +243,11 @@ export default function EntitlementRequests() {
                     <div className="actions-row">
                       {r.limitType === 'PARENT_MEMBER_LIMIT' && r.state === 'PENDING' && (
                         <PermissionGate operation="ADMINISTER_ENTITLEMENT_QUANTITY">
-                          <button type="button" className="btn" disabled={approvingId === r.requestId} onClick={() => onApprove(r.requestId)}>
-                            {t('entitlementRequests.approve')}
-                          </button>
+                          <ConfirmButton
+                            label={t('entitlementRequests.approve')}
+                            disabled={approvingId === r.requestId}
+                            onConfirm={() => void onApprove(r.requestId)}
+                          />
                         </PermissionGate>
                       )}
                       {(r.state === 'PENDING' || r.state === 'QUOTED') && (

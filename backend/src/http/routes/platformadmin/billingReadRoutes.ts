@@ -31,6 +31,13 @@ export interface PlatformAdminBillingReadRoutesDeps {
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
+/** Mirrors auditRoutes.ts's own local parseDate exactly -- this codebase does not share one helper across route files. */
+function parseDate(value: unknown): Date | undefined {
+  if (typeof value !== 'string') return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 export function registerPlatformAdminBillingReadRoutes(app: FastifyInstance, deps: PlatformAdminBillingReadRoutesDeps): void {
   const requirePlatformAdminSession = createRequirePlatformAdminSession(deps.platformAdminAuthService);
   const readLimiter = deps.rateLimiter({ windowMs: 60_000, max: 120, bucket: 'platform-admin-billing-read' });
@@ -193,7 +200,11 @@ export function registerPlatformAdminBillingReadRoutes(app: FastifyInstance, dep
     if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
     const query = (request.query ?? {}) as Record<string, unknown>;
     const page = parsePageRequest(query);
-    const result = await readModel.listPendingCustomQuoteRequests(page);
+    const result = await readModel.listPendingCustomQuoteRequests(page, {
+      familyId: typeof query.familyId === 'string' && query.familyId.length > 0 ? query.familyId : undefined,
+      sinceCreatedAt: parseDate(query.since),
+      untilCreatedAt: parseDate(query.until),
+    });
     return reply.code(200).send({
       items: result.items.map((r) => ({
         requestId: r.requestId,
