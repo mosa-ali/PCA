@@ -85,7 +85,7 @@ export default function ScreenTimePage() {
       breakDurationMinutes: effectiveBreak,
     });
     if (!result.valid) {
-      setValidationErrors(result.errors.map(describeScreenTimePolicyError));
+      setValidationErrors(result.errors.map((code) => describeScreenTimePolicyError(code, t)));
       return;
     }
     setValidationErrors([]);
@@ -167,7 +167,6 @@ export default function ScreenTimePage() {
           min={CONTINUOUS_USE_LIMIT_MIN_MINUTES}
           max={CONTINUOUS_USE_LIMIT_MAX_MINUTES}
           value={effectiveLimit}
-          disabled={!!error}
           onChange={(e) => setLimit(Number(e.target.value))}
         />
       </div>

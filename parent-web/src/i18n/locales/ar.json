@@ -745,7 +745,15 @@
     "nightProtectionWindow": "{{start}} - {{end}}",
     "nightProtectionCommunication": "تبقى المكالمات متاحة أثناء الحماية الليلية.",
     "nightProtectionEmergency": "يبقى الوصول إلى الطوارئ متاحاً.",
-    "nightProtectionSms": "يبقى استلام الرسائل النصية متاحاً؛ ولا يُفتح استخدام تطبيق الرسائل تلقائياً."
+    "nightProtectionSms": "يبقى استلام الرسائل النصية متاحاً؛ ولا يُفتح استخدام تطبيق الرسائل تلقائياً.",
+    "validation": {
+      "continuousUseLimitNotANumber": "يجب أن يكون الحد الأقصى للاستخدام المستمر رقمًا.",
+      "continuousUseLimitTooLow": "يجب ألا يقل الحد الأقصى للاستخدام المستمر عن {{min}} دقيقة.",
+      "continuousUseLimitTooHigh": "لا يمكن ضبط الحد الأقصى للاستخدام المستمر فوق {{max}} دقيقة -- فهذا يُضعف الحد الأساسي الإلزامي 60/30 لمكافحة التحايل.",
+      "breakDurationNotANumber": "يجب أن تكون مدة الاستراحة رقمًا.",
+      "breakDurationTooLow": "لا يمكن ضبط مدة الاستراحة أقل من {{min}} دقيقة -- فهذا يُضعف الحد الأساسي الإلزامي 60/30 لمكافحة التحايل.",
+      "breakDurationTooHigh": "لا يمكن ضبط مدة الاستراحة فوق {{max}} دقيقة."
+    }
   },
   "location": {
     "accuracy": "الدقة: {{value}}",

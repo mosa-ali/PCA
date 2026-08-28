@@ -86,20 +86,31 @@ export function isBaselineCompliantScreenTimePolicy(input: ScreenTimePolicyInput
   return validateScreenTimePolicy(input).valid;
 }
 
-/** Human-readable messages for the errors above, for direct display in a form. */
-export function describeScreenTimePolicyError(error: ScreenTimePolicyValidationError): string {
+/**
+ * Human-readable messages for the errors above, for direct display in a form.
+ *
+ * Takes an i18next-style translate function rather than returning a hardcoded English string --
+ * this validator's output is rendered directly in ScreenTimePage's `role="alert"` error list, and
+ * this codebase's i18n discipline (see src/i18n/locales/{en,ar}.json) requires every user-facing
+ * string to route through translation, not just page-level copy. See screenTime.validation.* for
+ * the EN/AR text.
+ */
+export function describeScreenTimePolicyError(
+  error: ScreenTimePolicyValidationError,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
   switch (error) {
     case 'CONTINUOUS_USE_LIMIT_NOT_A_NUMBER':
-      return 'Continuous-use limit must be a number.';
+      return translate('screenTime.validation.continuousUseLimitNotANumber');
     case 'CONTINUOUS_USE_LIMIT_TOO_LOW':
-      return `Continuous-use limit must be at least ${CONTINUOUS_USE_LIMIT_MIN_MINUTES} minutes.`;
+      return translate('screenTime.validation.continuousUseLimitTooLow', { min: CONTINUOUS_USE_LIMIT_MIN_MINUTES });
     case 'CONTINUOUS_USE_LIMIT_TOO_HIGH':
-      return `Continuous-use limit cannot be set above ${CONTINUOUS_USE_LIMIT_MAX_MINUTES} minutes -- this would weaken the mandatory 60/30 anti-gaming baseline.`;
+      return translate('screenTime.validation.continuousUseLimitTooHigh', { max: CONTINUOUS_USE_LIMIT_MAX_MINUTES });
     case 'BREAK_DURATION_NOT_A_NUMBER':
-      return 'Break duration must be a number.';
+      return translate('screenTime.validation.breakDurationNotANumber');
     case 'BREAK_DURATION_TOO_LOW':
-      return `Break duration cannot be set below ${BREAK_DURATION_MIN_MINUTES} minutes -- this would weaken the mandatory 60/30 anti-gaming baseline.`;
+      return translate('screenTime.validation.breakDurationTooLow', { min: BREAK_DURATION_MIN_MINUTES });
     case 'BREAK_DURATION_TOO_HIGH':
-      return `Break duration cannot be set above ${BREAK_DURATION_MAX_MINUTES} minutes.`;
+      return translate('screenTime.validation.breakDurationTooHigh', { max: BREAK_DURATION_MAX_MINUTES });
   }
 }

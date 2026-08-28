@@ -745,7 +745,15 @@
     "nightProtectionWindow": "{{start}} - {{end}}",
     "nightProtectionCommunication": "Calls remain available during night protection.",
     "nightProtectionEmergency": "Emergency access remains available.",
-    "nightProtectionSms": "SMS delivery remains available; Messages app use is not automatically unlocked."
+    "nightProtectionSms": "SMS delivery remains available; Messages app use is not automatically unlocked.",
+    "validation": {
+      "continuousUseLimitNotANumber": "Continuous-use limit must be a number.",
+      "continuousUseLimitTooLow": "Continuous-use limit must be at least {{min}} minutes.",
+      "continuousUseLimitTooHigh": "Continuous-use limit cannot be set above {{max}} minutes -- this would weaken the mandatory 60/30 anti-gaming baseline.",
+      "breakDurationNotANumber": "Break duration must be a number.",
+      "breakDurationTooLow": "Break duration cannot be set below {{min}} minutes -- this would weaken the mandatory 60/30 anti-gaming baseline.",
+      "breakDurationTooHigh": "Break duration cannot be set above {{max}} minutes."
+    }
   },
   "location": {
     "accuracy": "Accuracy: {{value}}",
