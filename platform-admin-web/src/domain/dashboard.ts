@@ -63,12 +63,18 @@ export interface PlatformDashboardSnapshot {
   entitlementRequestsByState: GroupedCountMetric;
   subscriptionsByStatus: GroupedCountMetric;
   quotesByStatus: GroupedCountMetric;
-  invoicesByStatusAndCurrency: { capability: MetricCapability; rows: StatusCurrencyRow[] | null };
-  paymentAttemptsByStatusAndCurrency: { capability: MetricCapability; rows: StatusCurrencyRow[] | null };
-  refundsByCurrency: { capability: MetricCapability; rows: CurrencyCountRow[] | null };
-  openDisputes: CountMetric;
-  settlementSummary: { capability: MetricCapability; summary: SettlementDashboardSummary | null };
-  serviceHealth: {
+  // These six fields are omitted entirely from the wire response (not sent
+  // as null/empty) for a role without VIEW_BILLING_RECORDS /
+  // VIEW_SETTLEMENT_RECORDS -- PLATFORM_ADMIN and SUPPORT_ADMIN, per
+  // backend/src/http/routes/platformadmin/dashboardRoutes.ts. Optional here
+  // so Dashboard.tsx must guard on canViewBilling/canViewSettlement instead
+  // of assuming presence.
+  invoicesByStatusAndCurrency?: { capability: MetricCapability; rows: StatusCurrencyRow[] | null };
+  paymentAttemptsByStatusAndCurrency?: { capability: MetricCapability; rows: StatusCurrencyRow[] | null };
+  refundsByCurrency?: { capability: MetricCapability; rows: CurrencyCountRow[] | null };
+  openDisputes?: CountMetric;
+  settlementSummary?: { capability: MetricCapability; summary: SettlementDashboardSummary | null };
+  serviceHealth?: {
     capability: MetricCapability;
     openReconciliationExceptions: number | null;
     mostRecentBatchStatusByAccount: MostRecentBatchStatusRow[] | null;

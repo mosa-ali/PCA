@@ -4,6 +4,7 @@ import { useAuth } from '../state/AuthContext';
 import { platformAdminApi, PlatformAdminApiError } from '../api/platformAdminApiClient';
 import type { PlatformDashboardSnapshot } from '../domain/dashboard';
 import { isSettlementPermitted } from '../domain/settlement';
+import { isBillingPermitted } from '../domain/billingRbac';
 import { formatMoney } from '../money/money';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
@@ -45,6 +46,12 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [usdRollup, setUsdRollup] = useState<SettlementUsdRollupDto | null>(null);
   const canViewSettlement = isSettlementPermitted(roles, 'VIEW_SETTLEMENT_RECORDS');
+  // GET /platform-admin/dashboard (dashboardRoutes.ts) omits these fields
+  // entirely from the wire response for a role without VIEW_BILLING_RECORDS
+  // / VIEW_SETTLEMENT_RECORDS (PLATFORM_ADMIN, SUPPORT_ADMIN) rather than
+  // sending a placeholder -- mirror that gate here so this component never
+  // dereferences a field the response doesn't include.
+  const canViewBilling = isBillingPermitted(roles, 'VIEW_BILLING_RECORDS');
 
   const load = () => {
     setLoading(true);
@@ -144,10 +151,12 @@ export default function Dashboard() {
                     <th scope="row">{t('dashboard.pendingRequests')}</th>
                     <td>{snapshot.pendingEntitlementRequests.value ?? '—'}</td>
                   </tr>
-                  <tr>
-                    <th scope="row">{t('dashboard.openDisputes')}</th>
-                    <td>{snapshot.openDisputes.value ?? '—'}</td>
-                  </tr>
+                  {canViewBilling && (
+                    <tr>
+                      <th scope="row">{t('dashboard.openDisputes')}</th>
+                      <td>{snapshot.openDisputes!.value ?? '—'}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -168,46 +177,49 @@ export default function Dashboard() {
             <GroupedBadges byKey={snapshot.quotesByStatus.byKey} />
           </section>
 
-          <section className="card">
-            <h2 className="section-title">{t('dashboard.invoicesByStatusCurrency')}</h2>
-            {snapshot.invoicesByStatusAndCurrency.rows && snapshot.invoicesByStatusAndCurrency.rows.length > 0 ? (
-              <div className="actions-row">
-                {snapshot.invoicesByStatusAndCurrency.rows.map((row) => (
-                  <span key={`${row.status}-${row.currencyCode}`} className="badge">
-                    {row.status} ({row.currencyCode}): {row.count}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="status-unavailable">{t('common.empty')}</p>
-            )}
-          </section>
+          {canViewBilling && (
+            <section className="card">
+              <h2 className="section-title">{t('dashboard.invoicesByStatusCurrency')}</h2>
+              {snapshot.invoicesByStatusAndCurrency!.rows && snapshot.invoicesByStatusAndCurrency!.rows.length > 0 ? (
+                <div className="actions-row">
+                  {snapshot.invoicesByStatusAndCurrency!.rows!.map((row) => (
+                    <span key={`${row.status}-${row.currencyCode}`} className="badge">
+                      {row.status} ({row.currencyCode}): {row.count}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="status-unavailable">{t('common.empty')}</p>
+              )}
+            </section>
+          )}
 
-          <section className="card">
-            <h2 className="section-title">{t('dashboard.settlementSummaryTitle')}</h2>
-            {snapshot.settlementSummary.capability === 'AVAILABLE' && snapshot.settlementSummary.summary ? (
+          {canViewSettlement && (
+            <section className="card">
+              <h2 className="section-title">{t('dashboard.settlementSummaryTitle')}</h2>
+              {snapshot.settlementSummary!.capability === 'AVAILABLE' && snapshot.settlementSummary!.summary ? (
               <>
                 <div className="table-wrap">
                   <table className="table">
                     <tbody>
                       <tr>
                         <th scope="row">{t('dashboard.settlementMatched')}</th>
-                        <td>{snapshot.settlementSummary.summary.matchedBatchCount}</td>
+                        <td>{snapshot.settlementSummary!.summary.matchedBatchCount}</td>
                       </tr>
                       <tr>
                         <th scope="row">{t('dashboard.settlementUnderInvestigation')}</th>
-                        <td>{snapshot.settlementSummary.summary.underInvestigationBatchCount}</td>
+                        <td>{snapshot.settlementSummary!.summary.underInvestigationBatchCount}</td>
                       </tr>
                       <tr>
                         <th scope="row">{t('dashboard.settlementResolved')}</th>
-                        <td>{snapshot.settlementSummary.summary.resolvedBatchCount}</td>
+                        <td>{snapshot.settlementSummary!.summary.resolvedBatchCount}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-                {snapshot.settlementSummary.summary.byCurrency.length > 0 && (
+                {snapshot.settlementSummary!.summary.byCurrency.length > 0 && (
                   <div className="actions-row">
-                    {snapshot.settlementSummary.summary.byCurrency.map((row) => (
+                    {snapshot.settlementSummary!.summary.byCurrency.map((row) => (
                       <span key={row.currencyCode} className="badge">
                         {row.currencyCode}: net {row.totalNet.amountMinor}, received {row.totalReceived.amountMinor}, diff {row.totalDifferenceMinor}
                       </span>
@@ -218,7 +230,8 @@ export default function Dashboard() {
             ) : (
               <p className="status-unavailable">{t('common.empty')}</p>
             )}
-          </section>
+            </section>
+          )}
 
           {canViewSettlement && (
             <section className="card">
@@ -255,15 +268,16 @@ export default function Dashboard() {
             </section>
           )}
 
+          {canViewSettlement && (
           <section className="card">
             <h2 className="section-title">{t('dashboard.serviceHealthTitle')}</h2>
-            {snapshot.serviceHealth.capability === 'AVAILABLE' ? (
+            {snapshot.serviceHealth!.capability === 'AVAILABLE' ? (
               <>
                 <dl className="kv-list">
                   <dt>{t('dashboard.openReconciliationExceptions')}</dt>
-                  <dd>{snapshot.serviceHealth.openReconciliationExceptions ?? '—'}</dd>
+                  <dd>{snapshot.serviceHealth!.openReconciliationExceptions ?? '—'}</dd>
                 </dl>
-                {snapshot.serviceHealth.mostRecentBatchStatusByAccount && snapshot.serviceHealth.mostRecentBatchStatusByAccount.length > 0 ? (
+                {snapshot.serviceHealth!.mostRecentBatchStatusByAccount && snapshot.serviceHealth!.mostRecentBatchStatusByAccount.length > 0 ? (
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
@@ -274,7 +288,7 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {snapshot.serviceHealth.mostRecentBatchStatusByAccount.map((row) => (
+                        {snapshot.serviceHealth!.mostRecentBatchStatusByAccount.map((row) => (
                           <tr key={row.settlementAccountId}>
                             <td>
                               {row.displayLabel} ({row.settlementCurrency})
@@ -294,6 +308,7 @@ export default function Dashboard() {
               <p className="status-unavailable">{t('common.empty')}</p>
             )}
           </section>
+          )}
         </>
       )}
     </div>

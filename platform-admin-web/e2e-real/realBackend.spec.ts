@@ -233,7 +233,12 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.locator('#new-plan-code').fill(planCode);
     await page.getByLabel(/parent member limit/i).fill('2');
     await page.getByLabel(/managed device limit/i).fill('5');
+    // Plan creation is gated by the shared two-click ConfirmButton (see
+    // ConfirmButton.tsx's doc comment) -- the first click only arms the
+    // action and swaps the button to Confirm/Cancel; a second, explicit
+    // click on Confirm is what actually fires PlanService.createPlanVersion.
     await page.getByRole('button', { name: /create plan/i }).click();
+    await page.getByRole('button', { name: /^confirm$/i }).click();
     await expect(page.getByText(/created/i)).toBeVisible();
 
     await page.locator('#plan-code-search').fill(planCode);

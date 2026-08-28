@@ -100,9 +100,71 @@ describe('Dashboard USD-normalized settlement rollup (PCA-ADD-BILL-020)', () => 
     const rollupCalls: string[] = [];
     renderPage(['PLATFORM_ADMIN'], rollupCalls);
 
-    // Let the dashboard snapshot fetch (and any effect) settle.
-    await screen.findByText('Service health / exception queue');
+    // Let the dashboard snapshot fetch (and any effect) settle -- "Platform
+    // metrics" is the one KPI section every role sees, so it's a safe
+    // synchronization anchor regardless of billing/settlement permissions.
+    await screen.findByText('Platform metrics');
     expect(rollupCalls).toEqual([]);
     expect(screen.queryByText('USD-normalized cross-batch rollup')).not.toBeInTheDocument();
+    // Real regression coverage for the bug this fix closed: GET
+    // /platform-admin/dashboard omits settlementSummary/serviceHealth
+    // entirely for a role without VIEW_SETTLEMENT_RECORDS (dashboardRoutes.ts) --
+    // Dashboard.tsx must not render (or dereference) those sections either.
+    expect(screen.queryByText('Service health / exception queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Settlement reconciliation summary')).not.toBeInTheDocument();
+  });
+
+  it('does not crash and hides billing/settlement-gated sections for a role the backend omits them for entirely (PCA regression: Dashboard.tsx used to dereference these fields unconditionally and crash to the error boundary for PLATFORM_ADMIN/SUPPORT_ADMIN)', async () => {
+    const rollupCalls: string[] = [];
+    const snapshotWithoutRestrictedFields = {
+      generatedAt: DASHBOARD_SNAPSHOT.generatedAt,
+      accountsTotal: DASHBOARD_SNAPSHOT.accountsTotal,
+      accountsActiveSuspended: DASHBOARD_SNAPSHOT.accountsActiveSuspended,
+      parentMemberEntitlementUtilization: DASHBOARD_SNAPSHOT.parentMemberEntitlementUtilization,
+      managedDeviceEntitlementUtilization: DASHBOARD_SNAPSHOT.managedDeviceEntitlementUtilization,
+      managedDeviceActive: DASHBOARD_SNAPSHOT.managedDeviceActive,
+      managedDeviceReserved: DASHBOARD_SNAPSHOT.managedDeviceReserved,
+      pendingEntitlementRequests: DASHBOARD_SNAPSHOT.pendingEntitlementRequests,
+      entitlementRequestsByState: DASHBOARD_SNAPSHOT.entitlementRequestsByState,
+      subscriptionsByStatus: DASHBOARD_SNAPSHOT.subscriptionsByStatus,
+      quotesByStatus: DASHBOARD_SNAPSHOT.quotesByStatus,
+      // openDisputes/invoicesByStatusAndCurrency/paymentAttemptsByStatusAndCurrency/
+      // refundsByCurrency/settlementSummary/serviceHealth deliberately omitted --
+      // this mirrors exactly what dashboardRoutes.ts sends over the wire for
+      // SUPPORT_ADMIN/PLATFORM_ADMIN, not merely a null/unavailable placeholder.
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['SUPPORT_ADMIN'] }));
+        if (url.includes('/platform-admin/dashboard')) return Promise.resolve(jsonResponse(200, snapshotWithoutRestrictedFields));
+        if (url.includes('/platform-admin/settlement/usd-rollup')) {
+          rollupCalls.push(url);
+          return Promise.resolve(jsonResponse(200, USD_ROLLUP));
+        }
+        return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
+      }),
+    );
+    secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <ToastProvider>
+            <AuthProvider>
+              <StepUpProvider>
+                <Dashboard />
+              </StepUpProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    await screen.findByText('Platform metrics');
+    expect(screen.queryByText('Open disputes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Invoices by status and currency')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service health / exception queue')).not.toBeInTheDocument();
+    expect(screen.queryByText('Settlement reconciliation summary')).not.toBeInTheDocument();
   });
 });
