@@ -55,8 +55,16 @@ export function computeTotp(secretBase32: string, timeMs: number = Date.now()): 
   return hotp(base32Decode(secretBase32), counter);
 }
 
-/** Waits until comfortably inside a 30s TOTP window so a code computed right after is not validated a moment after its window rolls over. */
-export async function ensureComfortablyInsideTotpWindow(marginMs = 5_000): Promise<void> {
+/**
+ * Waits until comfortably inside a 30s TOTP window so a code computed right
+ * after is not validated a moment after its window rolls over. Default
+ * margin is generous (not just "code computation time") because the real
+ * risk window is EVERYTHING between computing the code and the server
+ * receiving it -- filling the email/password/TOTP fields and clicking
+ * submit in a real (occasionally loaded) browser, observed to occasionally
+ * exceed a 5s margin and land the submission one window late.
+ */
+export async function ensureComfortablyInsideTotpWindow(marginMs = 15_000): Promise<void> {
   const msIntoStep = Date.now() % 30_000;
   const msRemaining = 30_000 - msIntoStep;
   if (msRemaining < marginMs) {

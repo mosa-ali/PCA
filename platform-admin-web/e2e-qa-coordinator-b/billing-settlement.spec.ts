@@ -56,10 +56,17 @@ test('FINANCE_ADMIN: every billing/settlement route renders without crashing, no
   const errors = collectConsoleErrors(page);
   await loginFinanceAdmin(page);
 
+  // Async data fetches can still be in flight after networkidle fires --
+  // wait for any visible "Loading..." indicator to clear before reading
+  // page text, rather than a one-shot read right after navigation.
+  async function waitForDataSettled(p: Page) {
+    await p.getByText(/^loading/i).waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
+  }
+
   for (const route of ROUTES) {
     await test.step(`${route} renders without crashing, no raw minor units`, async () => {
       await clickNav(page, route);
-      await page.waitForLoadState('networkidle');
+      await waitForDataSettled(page);
       const bodyText = (await page.locator('body').textContent()) ?? '';
       expect(bodyText).not.toMatch(/TypeError|Cannot read propert/i);
       for (const rawMinor of RAW_MINOR_UNITS) {
@@ -70,7 +77,7 @@ test('FINANCE_ADMIN: every billing/settlement route renders without crashing, no
 
   await test.step('/billing/payments shows the seeded FAILED, refunded, and GULF/SAR CONFIRMED rows with distinct status badges', async () => {
     await clickNav(page, '/billing/payments');
-    await page.waitForLoadState('networkidle');
+    await waitForDataSettled(page);
     const bodyText = ((await page.locator('body').textContent()) ?? '').toLowerCase();
     expect(bodyText).toMatch(/fail/);
     expect(bodyText).toMatch(/sar|gulf/);
@@ -78,9 +85,9 @@ test('FINANCE_ADMIN: every billing/settlement route renders without crashing, no
 
   await test.step('/settlement/reconciliation shows the UNDER_INVESTIGATION batch with a real formatted difference', async () => {
     await clickNav(page, '/settlement/reconciliation');
-    await page.waitForLoadState('networkidle');
-    const bodyText = ((await page.locator('body').textContent()) ?? '').toLowerCase();
-    expect(bodyText).toMatch(/investigation/);
+    // Async data fetch can still be in flight after networkidle fires --
+    // wait for the real content (auto-retrying), not a one-shot read.
+    await expect(page.getByText(/investigation/i).first()).toBeVisible({ timeout: 15_000 });
   });
 
   expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);

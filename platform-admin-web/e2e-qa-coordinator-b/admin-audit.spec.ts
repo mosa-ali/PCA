@@ -63,18 +63,25 @@ test('APP_OWNER: accounts, admin-users search, audit, and entitlements surface -
 
   await test.step('/admin-users search by name and by email against the real backend', async () => {
     await clickNav(page, '/admin-users');
-    // seed-local.mjs names every admin "Seed <key>" -- the canonical
-    // finance_admin account's display name is therefore "Seed finance_admin".
+    // seed-local.mjs names every admin "Seed <key>" -- with 25 seeded admins
+    // now, a name search matching multiple accounts (e.g. "finance_admin",
+    // which many keys contain as a substring) can push the one row this
+    // test checks for onto page 2 of the results. Search for a key that is
+    // NOT a substring of any other seeded key, so exactly one row matches.
+    // AdminUsers' results table renders Admin ID / Display name / Status /
+    // Role / MFA status -- it never renders the email address as visible
+    // text, so the real assertion is the DISPLAY NAME ("Seed <key>"), not
+    // the email, even for the "search by email" case.
     const nameSearch = page.locator('#admin-name-search');
-    await nameSearch.fill('Seed finance_admin');
+    await nameSearch.fill('Seed app_owner_replay_test');
     await page.keyboard.press('Enter');
-    await expect(page.locator('body')).toContainText(adminAccount('finance_admin').email, { timeout: 10_000 });
+    await expect(page.locator('body')).toContainText('Seed app_owner_replay_test', { timeout: 10_000 });
 
     await nameSearch.fill('');
     const emailSearch = page.locator('#admin-email-search');
     await emailSearch.fill(adminAccount('auditor_read_only').email);
     await page.keyboard.press('Enter');
-    await expect(page.locator('body')).toContainText(adminAccount('auditor_read_only').email, { timeout: 10_000 });
+    await expect(page.locator('body')).toContainText('Seed auditor_read_only', { timeout: 10_000 });
   });
 
   await test.step('/audit renders real audit events with formatted timestamps, no crash', async () => {
