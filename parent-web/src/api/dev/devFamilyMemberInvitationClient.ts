@@ -1,4 +1,5 @@
 import type { FamilyMemberInvitation, FamilyMemberInvitationClient } from '../interfaces';
+import { FamilyMemberInvitationError } from '../interfaces';
 
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 const FAMILY_ID = 'dev-family-1';
@@ -29,7 +30,12 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
   async invite(role: 'ADMINISTRATOR' | 'VIEWER', invitedEmail: string): Promise<FamilyMemberInvitation> {
     await delay();
     if (invitations.some((i) => i.status === 'PENDING')) {
-      throw new Error('FamilyMemberInvitationClient.invite: A pending invitation already exists for this family member.');
+      throw new FamilyMemberInvitationError(
+        'CONFLICT',
+        'FamilyMemberInvitationClient.invite: A pending invitation already exists for this family member.',
+        409,
+        'duplicate_pending_invitation',
+      );
     }
     seq += 1;
     const now = new Date();
@@ -54,7 +60,9 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
   async revoke(invitationId: string): Promise<FamilyMemberInvitation> {
     await delay();
     const existing = invitations.find((i) => i.invitationId === invitationId);
-    if (!existing) throw new Error('FamilyMemberInvitationClient.revoke: Invitation was not found.');
+    if (!existing) {
+      throw new FamilyMemberInvitationError('NOT_FOUND', 'FamilyMemberInvitationClient.revoke: Invitation was not found.', 404, 'not_found');
+    }
     if (existing.status !== 'PENDING') return existing;
     const updated = { ...existing, status: 'REVOKED' as const, revokedAt: new Date().toISOString() };
     invitations = invitations.map((i) => (i.invitationId === invitationId ? updated : i));
@@ -64,9 +72,16 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
   async changeRole(invitationId: string, newRole: 'ADMINISTRATOR' | 'VIEWER'): Promise<FamilyMemberInvitation> {
     await delay();
     const existing = invitations.find((i) => i.invitationId === invitationId);
-    if (!existing) throw new Error('FamilyMemberInvitationClient.changeRole: Invitation was not found.');
+    if (!existing) {
+      throw new FamilyMemberInvitationError('NOT_FOUND', 'FamilyMemberInvitationClient.changeRole: Invitation was not found.', 404, 'not_found');
+    }
     if (existing.status !== 'PENDING') {
-      throw new Error('FamilyMemberInvitationClient.changeRole: This invitation is no longer pending and its role can no longer be changed.');
+      throw new FamilyMemberInvitationError(
+        'CONFLICT',
+        'FamilyMemberInvitationClient.changeRole: This invitation is no longer pending and its role can no longer be changed.',
+        409,
+        'not_pending',
+      );
     }
     const updated = { ...existing, role: newRole };
     invitations = invitations.map((i) => (i.invitationId === invitationId ? updated : i));
@@ -76,11 +91,17 @@ export class DevFamilyMemberInvitationClient implements FamilyMemberInvitationCl
   async accept(invitationId: string): Promise<FamilyMemberInvitation> {
     await delay();
     const existing = invitations.find((i) => i.invitationId === invitationId);
-    if (!existing) throw new Error('FamilyMemberInvitationClient.accept: Invitation was not found.');
-    if (existing.status === 'ACCEPTED') throw new Error('FamilyMemberInvitationClient.accept: Invitation was already accepted.');
-    if (existing.status === 'REVOKED') throw new Error('FamilyMemberInvitationClient.accept: Invitation was revoked.');
+    if (!existing) {
+      throw new FamilyMemberInvitationError('NOT_FOUND', 'FamilyMemberInvitationClient.accept: Invitation was not found.', 404, 'not_found');
+    }
+    if (existing.status === 'ACCEPTED') {
+      throw new FamilyMemberInvitationError('CONFLICT', 'FamilyMemberInvitationClient.accept: Invitation was already accepted.', 409, 'already_accepted');
+    }
+    if (existing.status === 'REVOKED') {
+      throw new FamilyMemberInvitationError('CONFLICT', 'FamilyMemberInvitationClient.accept: Invitation was revoked.', 409, 'revoked');
+    }
     if (new Date(existing.expiresAt).getTime() <= Date.now()) {
-      throw new Error('FamilyMemberInvitationClient.accept: Invitation has expired.');
+      throw new FamilyMemberInvitationError('CONFLICT', 'FamilyMemberInvitationClient.accept: Invitation has expired.', 409, 'expired');
     }
     const updated = { ...existing, status: 'ACCEPTED' as const, acceptedAt: new Date().toISOString(), acceptedByAccountId: 'dev-accepting-account' };
     invitations = invitations.map((i) => (i.invitationId === invitationId ? updated : i));

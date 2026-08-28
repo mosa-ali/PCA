@@ -321,6 +321,7 @@ export default function DeviceEnrollmentPanel() {
         <div className="token-reveal-once" role="region" aria-labelledby="token-reveal-title">
           <h3 id="token-reveal-title">{t('deviceEnrollment.tokenRevealTitle')}</h3>
           <p>{t('deviceEnrollment.tokenRevealBody')}</p>
+          <p style={HINT_STYLE}>{t('deviceEnrollment.invitationSecurityNotice')}</p>
           <InvitationQrCode value={enrollmentLink} />
           <div className="copyable-value">
             <code data-testid="enrollment-link">{enrollmentLink}</code>
@@ -376,7 +377,9 @@ export default function DeviceEnrollmentPanel() {
                   <td data-label={t('deviceEnrollment.protectionMode')}>
                     {t(`deviceEnrollment.mode.${inv.requestedProtectionMode}`)}
                   </td>
-                  <td data-label={t('family.status')}>{inv.status}</td>
+                  <td data-label={t('family.status')}>
+                    {t(`deviceEnrollment.invitationStatuses.${inv.status}`, { defaultValue: inv.status })}
+                  </td>
                   <td data-label={t('deviceEnrollment.expiresAt')}>{new Date(inv.expiresAt).toLocaleString()}</td>
                   <td>
                     {inv.status !== 'REVOKED' && (
@@ -396,6 +399,7 @@ export default function DeviceEnrollmentPanel() {
       {actionError && <ErrorState message={actionError} />}
 
       <h3>{t('deviceEnrollment.pairingTitle')}</h3>
+      <p style={HINT_STYLE}>{t('deviceEnrollment.pairingSecurityNotice')}</p>
       <div className="field">
         <label htmlFor="pairing-device-id">{t('deviceEnrollment.deviceId')}</label>
         <input
@@ -416,7 +420,7 @@ export default function DeviceEnrollmentPanel() {
             {t('deviceEnrollment.devicePlatformLabel')}: {pairing.platform}
           </p>
           <p>
-            {t('family.status')}: {pairing.status}
+            {t('family.status')}: {t(`deviceEnrollment.pairingStatuses.${pairing.status}`, { defaultValue: pairing.status })}
           </p>
           <div className="fingerprint-grid">
             <div className="copyable-value">

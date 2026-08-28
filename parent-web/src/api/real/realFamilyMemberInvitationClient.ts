@@ -17,7 +17,14 @@
 // in this codebase threads a client-supplied step-up assertion through yet
 // -- inviting/changing-role-to ADMINISTRATOR will therefore also fail
 // closed even once trust-set is real, until a real step-up ceremony exists.
-import type { FamilyMemberInvitation, FamilyMemberInvitationClient } from '../interfaces';
+//
+// Every rejection (transport-level precondition or a non-2xx response) is
+// surfaced as a FamilyMemberInvitationError, never a bare Error -- mirrors
+// DeviceEnrollmentError/realDeviceEnrollmentClient.ts's own pattern exactly,
+// so Members.tsx can map a rejection to a clear, translated, actionable
+// message instead of displaying a raw diagnostic string.
+import type { FamilyMemberInvitation, FamilyMemberInvitationClient, FamilyMemberInvitationErrorCode } from '../interfaces';
+import { FamilyMemberInvitationError } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { cookieSessionFamilyId } from './realBillingClient';
 
@@ -28,6 +35,24 @@ function readCsrfCookie(): string | null {
   if (typeof document === 'undefined') return null;
   const entry = document.cookie.split('; ').find((value) => value.startsWith(`${CSRF_COOKIE_NAME}=`));
   return entry ? decodeURIComponent(entry.slice(CSRF_COOKIE_NAME.length + 1)) : null;
+}
+
+/** Coarse HTTP-status bucket, same convention as realDeviceEnrollmentClient.ts's own mapping. */
+function codeForStatus(status: number): FamilyMemberInvitationErrorCode {
+  switch (status) {
+    case 400:
+      return 'INVALID_REQUEST';
+    case 401:
+      return 'UNAUTHORIZED';
+    case 403:
+      return 'FORBIDDEN';
+    case 404:
+      return 'NOT_FOUND';
+    case 409:
+      return 'CONFLICT';
+    default:
+      return 'UNKNOWN';
+  }
 }
 
 interface WireInvitationEnvelope {
@@ -51,7 +76,7 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
       credentials: 'include',
       headers: { Accept: 'application/json' },
     });
-    if (!response.ok) throw new Error(await this.errorMessage('FamilyMemberInvitationClient.list', response));
+    if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.list', response);
     const body = (await this.json(response)) as { invitations?: FamilyMemberInvitation[] };
     return body.invitations ?? [];
   }
@@ -65,7 +90,7 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...actorHeaders, ...this.csrfHeader() },
       body: JSON.stringify({ invitedEmail, role }),
     });
-    if (!response.ok) throw new Error(await this.errorMessage('FamilyMemberInvitationClient.invite', response));
+    if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.invite', response);
     return this.invitationFrom('FamilyMemberInvitationClient.invite', response);
   }
 
@@ -76,7 +101,7 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
       this.url(`/api/parent/families/${encodeURIComponent(familyId)}/members/invitations/${encodeURIComponent(invitationId)}/revoke`),
       { method: 'POST', credentials: 'include', headers: { Accept: 'application/json', ...actorHeaders, ...this.csrfHeader() } },
     );
-    if (!response.ok) throw new Error(await this.errorMessage('FamilyMemberInvitationClient.revoke', response));
+    if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.revoke', response);
     return this.invitationFrom('FamilyMemberInvitationClient.revoke', response);
   }
 
@@ -92,7 +117,7 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
         body: JSON.stringify({ role: newRole }),
       },
     );
-    if (!response.ok) throw new Error(await this.errorMessage('FamilyMemberInvitationClient.changeRole', response));
+    if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.changeRole', response);
     return this.invitationFrom('FamilyMemberInvitationClient.changeRole', response);
   }
 
@@ -103,13 +128,15 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
       credentials: 'include',
       headers: { Accept: 'application/json', ...this.csrfHeader() },
     });
-    if (!response.ok) throw new Error(await this.errorMessage('FamilyMemberInvitationClient.accept', response));
+    if (!response.ok) throw await this.errorFrom('FamilyMemberInvitationClient.accept', response);
     return this.invitationFrom('FamilyMemberInvitationClient.accept', response);
   }
 
   private async familyId(operation: string): Promise<string> {
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
-    if (!familyId) throw new Error(`${operation}: no family session is available to scope this request.`);
+    if (!familyId) {
+      throw new FamilyMemberInvitationError('UNAUTHORIZED', `${operation}: no family session is available to scope this request.`, null, 'family_session_unavailable');
+    }
     return familyId;
   }
 
@@ -121,8 +148,12 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
   /** SECURITY (actor-identity binding): mirrors RealRequestClient.actorHeaders()/RealSafeZoneClient's own doc comment exactly -- never a self-reported device id. */
   private async actorHeaders(): Promise<Record<string, string>> {
     const snapshot = await this.trustedBrowser.getSnapshot();
-    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
-    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+    if (snapshot.state !== 'TRUSTED') {
+      throw new FamilyMemberInvitationError('UNAUTHORIZED', 'TRUSTED_BROWSER_REQUIRED', null, 'trusted_browser_required');
+    }
+    if (!snapshot.actorDeviceSessionToken) {
+      throw new FamilyMemberInvitationError('UNAUTHORIZED', 'ACTOR_DEVICE_SESSION_UNAVAILABLE', null, 'actor_device_session_unavailable');
+    }
     return { Authorization: `Bearer ${snapshot.actorDeviceSessionToken}` };
   }
 
@@ -130,19 +161,27 @@ export class RealFamilyMemberInvitationClient implements FamilyMemberInvitationC
     try {
       return await response.json();
     } catch {
-      throw new Error('FAMILY_MEMBER_INVITATION_RESPONSE_INVALID');
+      throw new FamilyMemberInvitationError('UNKNOWN', 'FAMILY_MEMBER_INVITATION_RESPONSE_INVALID', response.status, 'response_invalid');
     }
   }
 
   private async invitationFrom(operation: string, response: Response): Promise<FamilyMemberInvitation> {
     const body = (await this.json(response)) as WireInvitationEnvelope;
-    if (!body.invitation) throw new Error(`${operation}: empty response body.`);
+    if (!body.invitation) {
+      throw new FamilyMemberInvitationError('UNKNOWN', `${operation}: empty response body.`, response.status, 'empty_response_body');
+    }
     return body.invitation;
   }
 
-  private async errorMessage(operation: string, response: Response): Promise<string> {
+  /** Extracts the backend's own machine-readable `error` code (see familyMemberRoutes.ts's handleError/errorStatus) alongside the coarse HTTP-status bucket. */
+  private async errorFrom(operation: string, response: Response): Promise<FamilyMemberInvitationError> {
     const body = await this.json(response).catch(() => null);
-    const code = body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : null;
-    return `${operation}: request failed (${response.status}${code ? `: ${code}` : ''}).`;
+    const serverCode = body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : null;
+    return new FamilyMemberInvitationError(
+      codeForStatus(response.status),
+      `${operation}: request failed (${response.status}${serverCode ? `: ${serverCode}` : ''}).`,
+      response.status,
+      serverCode,
+    );
   }
 }

@@ -57,7 +57,7 @@ export default function Devices() {
         reasonCategory: null,
       });
     } catch {
-      setRemoveError(t('devicesTable.removeRequestFailed', { defaultValue: 'The removal request could not be created.' }));
+      setRemoveError(t('devicesTable.removeRequestFailed'));
     } finally {
       setRemovingDeviceId(null);
     }
@@ -77,6 +77,8 @@ export default function Devices() {
       {error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && (!data || data.length === 0) && <EmptyState />}
       {!loading && !error && data && data.length > 0 && (
+      <>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('devicesTable.removalNotice')}</p>
       <div className="table-scroll">
         <table className="data-table responsive-cards">
           <thead>
@@ -118,6 +120,7 @@ export default function Devices() {
           </tbody>
         </table>
       </div>
+      </>
       )}
     </section>
   );

@@ -108,7 +108,7 @@ describe('DeviceEnrollmentPanel', () => {
     const revokeButton = await screen.findByRole('button', { name: 'Revoke' });
     await userEvent.click(revokeButton);
 
-    await screen.findByText('REVOKED');
+    await screen.findByText('Revoked');
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
 

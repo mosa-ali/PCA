@@ -1,11 +1,88 @@
 import { useTranslation } from 'react-i18next';
 import { useState, type FormEvent } from 'react';
 import { getApiClients } from '../../api/client';
+import { FamilyMemberInvitationError } from '../../api/interfaces';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
+
+/**
+ * Maps a FamilyMemberInvitationClient rejection to a clear, translated,
+ * actionable i18n key -- never the raw diagnostic Error.message a client
+ * implementation throws (e.g. "FamilyMemberInvitationClient.invite: request
+ * failed (409: duplicate_pending_invitation)."). Only FamilyMemberInvitationError
+ * (the typed rejection every FamilyMemberInvitationClient implementation
+ * throws) is mapped this way -- see describeInvitationError below for the
+ * unchanged fallback used for a plain Error (e.g. from useFamilyAction's own
+ * pre-flight permission/trust-epoch/step-up checks).
+ */
+function invitationErrorKey(err: FamilyMemberInvitationError): string {
+  switch (err.serverCode) {
+    case 'duplicate_pending_invitation':
+      return 'family.invitations.errors.duplicatePending';
+    case 'capacity_exceeded':
+      return 'family.invitations.errors.capacityExceeded';
+    case 'not_pending':
+      return 'family.invitations.errors.notPending';
+    case 'not_found':
+      return 'family.invitations.errors.notFound';
+    case 'already_accepted':
+      return 'family.invitations.errors.alreadyAccepted';
+    case 'revoked':
+      return 'family.invitations.errors.revoked';
+    case 'expired':
+      return 'family.invitations.errors.expired';
+    case 'invalid_input':
+    case 'invalid_request':
+      return 'family.invitations.errors.invalidInput';
+    case 'not_authorized':
+    case 'family_scope_required':
+    case 'family_scope_forbidden':
+    case 'csrf_mismatch':
+      return 'family.invitations.errors.forbidden';
+    case 'unauthorized':
+    case 'actor_device_session_required':
+    case 'actor_device_session_invalid':
+    case 'family_session_unavailable':
+    case 'trusted_browser_required':
+    case 'actor_device_session_unavailable':
+      return 'family.invitations.errors.unauthorized';
+    default:
+      break;
+  }
+  switch (err.code) {
+    case 'INVALID_REQUEST':
+      return 'family.invitations.errors.invalidInput';
+    case 'UNAUTHORIZED':
+      return 'family.invitations.errors.unauthorized';
+    case 'FORBIDDEN':
+      return 'family.invitations.errors.forbidden';
+    case 'NOT_FOUND':
+      return 'family.invitations.errors.notFound';
+    case 'CONFLICT':
+      return 'family.invitations.errors.conflict';
+    case 'NETWORK_ERROR':
+      return 'family.invitations.errors.network';
+    default:
+      return 'family.invitations.errors.unknown';
+  }
+}
+
+/**
+ * Preserves the existing fallback (raw Error.message) for any rejection that
+ * is NOT a FamilyMemberInvitationError -- e.g. useFamilyAction's own
+ * pre-flight permission/trust-epoch/step-up checks, or FamilyAuthorityGateway
+ * (a separate, still-dev-only client `remove()` below calls). Only the
+ * FamilyMemberInvitationClient-specific rejections this file actually
+ * triggers (invite/revoke/changeRole) get the clear, translated mapping
+ * above.
+ */
+function describeInvitationError(t: (key: string) => string, err: unknown): string {
+  if (err instanceof FamilyMemberInvitationError) return t(invitationErrorKey(err));
+  return err instanceof Error ? err.message : t('common.deniedGeneric');
+}
 
 export default function Members() {
   const { t } = useTranslation();
@@ -40,7 +117,7 @@ export default function Members() {
       setInviteEmail('');
       reloadInvitations();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));
+      setActionError(describeInvitationError(t, e));
     } finally {
       setInviting(false);
     }
@@ -52,7 +129,7 @@ export default function Members() {
       await runFamilyAction('REMOVE_NON_OWNER_PARENT', () => clients.familyMemberInvitations.revoke(invitationId));
       reloadInvitations();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));
+      setActionError(describeInvitationError(t, e));
     }
   };
 
@@ -62,7 +139,7 @@ export default function Members() {
       await runFamilyAction('CHANGE_ANY_ROLE', () => clients.familyMemberInvitations.changeRole(invitationId, newRole));
       reloadInvitations();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t('common.deniedGeneric'));
+      setActionError(describeInvitationError(t, e));
     }
   };
 
@@ -156,6 +233,7 @@ export default function Members() {
       )}
 
       <h2>{t('family.activeMembersTitle')}</h2>
+      <p style={{ color: 'var(--color-text-muted)' }}>{t('family.removeMemberNotice')}</p>
       <div className="table-scroll">
         <table className="data-table responsive-cards">
           <thead>
@@ -193,7 +271,7 @@ export default function Members() {
         </table>
       </div>
       <p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>
-        No recovery secrets, keys, or tokens are ever shown on this page.
+        {t('family.noRecoverySecretsNotice')}
       </p>
     </section>
   );

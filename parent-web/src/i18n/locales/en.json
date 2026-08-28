@@ -283,6 +283,7 @@
     "newViewerName": "New Viewer",
     "removeMemberNotice": "Removing a non-owner parent ends that member's family access. It is separate from removing a child device and from Delete Now.",
     "activeMembersTitle": "Active members",
+    "noRecoverySecretsNotice": "No recovery secrets, keys, or tokens are ever shown on this page.",
     "invitations": {
       "inviteTitle": "Invite a family member",
       "emailLabel": "Email address",
@@ -299,7 +300,22 @@
       },
       "changeToViewer": "Change to Viewer",
       "changeToAdministrator": "Change to Administrator",
-      "revoke": "Revoke invitation"
+      "revoke": "Revoke invitation",
+      "errors": {
+        "invalidInput": "That invitation request was invalid.",
+        "unauthorized": "Your session has expired. Please sign in again.",
+        "forbidden": "You don't have permission to perform this action.",
+        "notFound": "That invitation could not be found. It may already have been removed.",
+        "conflict": "This action conflicts with the current state of this invitation.",
+        "duplicatePending": "A pending invitation already exists for this person. Revoke it first before sending a new one.",
+        "capacityExceeded": "This family has reached its parent-member limit.",
+        "notPending": "This invitation is no longer pending, so its role can no longer be changed.",
+        "alreadyAccepted": "This invitation was already accepted.",
+        "expired": "This invitation has expired.",
+        "revoked": "This invitation was already revoked.",
+        "network": "Could not reach the PCA service. Check your connection and try again.",
+        "unknown": "Something went wrong. Please try again."
+      }
     }
   },
   "deviceEnrollment": {
@@ -356,6 +372,23 @@
     "confirmPairing": "Confirm pairing",
     "confirming": "Confirming...",
     "paired": "This device is now paired.",
+    "invitationStatuses": {
+      "PENDING": "Pending",
+      "CREATED": "Created",
+      "OPENED": "Opened",
+      "INSTALL_REQUIRED": "Install required",
+      "APP_INSTALLED": "App installed",
+      "AUTHORIZATION_REQUIRED": "Authorization required",
+      "REDEEMED": "Redeemed",
+      "EXPIRED": "Expired",
+      "REVOKED": "Revoked"
+    },
+    "pairingStatuses": {
+      "PAIRING_PENDING": "Pairing pending",
+      "PAIRED": "Paired",
+      "ACTIVE": "Active",
+      "REVOKED": "Revoked"
+    },
     "errors": {
       "unauthorized": "Your session has expired. Please sign in again.",
       "forbidden": "The server denied this action for your account.",
@@ -689,7 +722,8 @@
     "policyRevision": "Policy revision",
     "epoch": "Epoch",
     "epochValue": "trust {{trust}} / key {{key}}",
-    "removalNotice": "Removing or revoking a child device changes family trust; it is separate from Delete Now. An offline device may remain pending until it reconnects."
+    "removalNotice": "Removing or revoking a child device changes family trust; it is separate from Delete Now. An offline device may remain pending until it reconnects.",
+    "removeRequestFailed": "The removal request could not be created."
   },
   "appsTable": {
     "app": "App",

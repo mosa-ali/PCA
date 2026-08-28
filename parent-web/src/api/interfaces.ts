@@ -233,6 +233,42 @@ export interface FamilyMemberInvitationClient {
   accept(invitationId: string): Promise<FamilyMemberInvitation>;
 }
 
+/** Coarse HTTP-status-bucket code, same shape/spirit as DeviceEnrollmentErrorCode (deviceEnrollmentClient.ts) -- callers branch on this first. */
+export type FamilyMemberInvitationErrorCode =
+  | 'INVALID_REQUEST' // 400
+  | 'UNAUTHORIZED' // 401
+  | 'FORBIDDEN' // 403
+  | 'NOT_FOUND' // 404
+  | 'CONFLICT' // 409 -- duplicate/expired/revoked/already-accepted/not-pending/capacity-exceeded
+  | 'NETWORK_ERROR'
+  | 'UNKNOWN';
+
+/**
+ * Thrown by every FamilyMemberInvitationClient implementation (real and dev)
+ * instead of a bare Error, so callers (Members.tsx) can map a rejection to a
+ * clear, translated, actionable message instead of displaying a raw
+ * diagnostic string. Mirrors DeviceEnrollmentError's shape exactly: `code`
+ * is the coarse HTTP bucket, `serverCode` is the backend's own lower_snake_case
+ * error id (see backend/src/familymembers/FamilyMemberInvitationService.ts's
+ * FamilyMemberInvitationErrorCode, lower-cased by familyMemberRoutes.ts) when
+ * one was available, so a caller can distinguish e.g. a duplicate-pending
+ * invitation from a capacity-exceeded rejection without re-deriving policy
+ * the server already told it.
+ */
+export class FamilyMemberInvitationError extends Error {
+  readonly code: FamilyMemberInvitationErrorCode;
+  readonly httpStatus: number | null;
+  readonly serverCode: string | null;
+
+  constructor(code: FamilyMemberInvitationErrorCode, message: string, httpStatus: number | null = null, serverCode: string | null = null) {
+    super(message);
+    this.name = 'FamilyMemberInvitationError';
+    this.code = code;
+    this.httpStatus = httpStatus;
+    this.serverCode = serverCode;
+  }
+}
+
 /**
  * PCA product-completion programme, Writer P0-D (/security/audit):
  * genuinely separate from FamilyAuthorityGateway.listAuditTrail (which
