@@ -705,6 +705,13 @@
     "timestamp": "Timestamp",
     "note": "Audit entries never carry URLs, locations, activity detail, or recovery secrets.",
     "pendingDecryption": "Audit entries are waiting for decryption by a trusted parent device.",
+    "filterLabel": "Filter by result",
+    "filterAll": "All results",
+    "filterSuccess": "Successful only",
+    "filterDenied": "Denied only",
+    "filterPending": "Pending only",
+    "emptyForFilter": "No audit entries match this filter.",
+    "showMore": "Show {{count}} more",
     "resultStatuses": {
       "SUCCESS": "Success",
       "DENIED": "Denied",

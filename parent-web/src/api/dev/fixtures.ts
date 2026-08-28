@@ -301,12 +301,23 @@ export const DEV_MEMBERS: FamilyMember[] = [
   },
 ];
 
+// actionType/targetScope MUST be drawn from the same canonical
+// ParentOperation/TargetScopeKind vocabulary the real backend uses
+// (backend/src/familyrbac/types.ts) and that parent-web/src/i18n's
+// audit.actionTypes/audit.targetScopeKinds dictionaries translate --
+// Audit.tsx's own doc comment calls out "the exact anti-pattern already
+// flagged and fixed once this session, in ProtectionAlertPanel's
+// raw-enum-dump, must not recur here". A fixture value outside that
+// vocabulary (e.g. a composite 'child-lina/screen-time' description) has no
+// i18n translation and falls back to the raw untranslated string in the
+// rendered table, which is exactly that anti-pattern re-appearing via demo
+// data rather than app code.
 export const DEV_AUDIT: AuditEntrySummary[] = [
   {
     eventId: 'audit-1',
-    actionType: 'POLICY_CHANGE',
+    actionType: 'EDIT_CHILD_POLICY',
     actorMemberId: 'member-owner',
-    targetScope: 'child-lina/screen-time',
+    targetScope: 'CHILD_PROFILE',
     trustSetEpoch: 4,
     policyRevision: 14,
     timestampUtc: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
@@ -318,7 +329,7 @@ export const DEV_AUDIT: AuditEntrySummary[] = [
     eventId: 'audit-2',
     actionType: 'DENIED_AUTHORIZATION_ATTEMPT',
     actorMemberId: 'member-viewer',
-    targetScope: 'child-amir/screen-time',
+    targetScope: 'CHILD_PROFILE',
     trustSetEpoch: 4,
     policyRevision: 14,
     timestampUtc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
