@@ -12,6 +12,13 @@ export interface NewVerificationCode {
   codeId: string;
   accountId: ParentAccountId;
   codeHash: string;
+  /**
+   * The credential THIS code authorises (migration 0030). Registration no
+   * longer writes a pending account's credential directly -- see
+   * ParentAccountService.register's own doc comment for the account-takeover
+   * this closes.
+   */
+  passwordHash: string;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -20,6 +27,8 @@ export interface ActiveVerificationCode {
   codeId: string;
   accountId: ParentAccountId;
   codeHash: string;
+  /** Null only for a row written before migration 0030 -- verifyEmail then leaves the account's existing credential untouched. */
+  passwordHash: string | null;
   expiresAt: Date;
   consumedAt: Date | null;
   attemptCount: number;
@@ -29,6 +38,8 @@ export interface VerifiedTransition {
   accountId: ParentAccountId;
   verifiedAt: Date;
   familyId: OpaqueFamilyId | null;
+  /** The consumed verification code's own bound credential; null leaves the account's existing password_hash unchanged (pre-migration-0030 rows only). */
+  passwordHash: string | null;
   freeAccess: FreeAccessSnapshot;
 }
 
@@ -85,17 +96,26 @@ export interface ParentAccountRepository {
    * missing family row is never itself a reason to deny a parent's login.
    */
   findFamilyStatus(familyId: OpaqueFamilyId): Promise<'ACTIVE' | 'SUSPENDED' | null>;
-  /** Only valid while the account is still PENDING_VERIFICATION -- used when a not-yet-verified email registers again (resend semantics). */
-  updatePendingPasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void>;
 
   insertVerificationCode(record: NewVerificationCode): Promise<void>;
-  /** Most recent verification code row for the account, regardless of consumed/expired state -- the caller evaluates freshness/consumption itself. */
-  findLatestVerificationCode(accountId: ParentAccountId): Promise<ActiveVerificationCode | null>;
+  /**
+   * The account's most recently issued verification codes (newest first,
+   * bounded by `limit`), regardless of consumed/expired/attempt state --
+   * the caller evaluates freshness/consumption/attempt budget itself.
+   *
+   * Deliberately plural: a registration for an already-PENDING email issues
+   * an ADDITIONAL code (each bound to its own credential, migration 0030)
+   * rather than replacing the previous one, so an unauthenticated third
+   * party can no longer invalidate the code the real mailbox owner is
+   * holding. See ParentAccountService.verifyEmail for the per-candidate
+   * attempt accounting that keeps the total guess budget unchanged.
+   */
+  findRecentVerificationCodes(accountId: ParentAccountId, limit: number): Promise<ActiveVerificationCode[]>;
   incrementVerificationAttempt(codeId: string): Promise<void>;
   /** Atomic compare-and-swap: marks the code consumed iff it was not already consumed. Returns true iff THIS call won the race. */
   consumeVerificationCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
 
-  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the FREE_ACCESS snapshot and (if genesis succeeded) familyId in the same statement -- see migration 0013's CHECK constraint requiring these to move together. */
+  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the consumed code's bound credential, the FREE_ACCESS snapshot and (if genesis succeeded) familyId in the same statement -- see migration 0013's CHECK constraint requiring these to move together. */
   markVerified(transition: VerifiedTransition): Promise<void>;
 
   insertPasswordResetCode(record: NewPasswordResetCode): Promise<void>;

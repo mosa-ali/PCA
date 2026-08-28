@@ -49,6 +49,16 @@ export class ParentAccountError extends Error {
 
 const GENESIS_DEVICE_ATTESTATION_TTL_MS = 24 * 60 * 60 * 1000; // 24h -- comfortably inside FamilyOwnerAttestationChainEngine's sane-TTL bounds
 
+/**
+ * How many of an account's most recent verification-code rows verifyEmail
+ * will consider. Bounded work per request, and comfortably above what
+ * REGISTER_EMAIL_RATE_LIMIT (5 registrations per email per hour) can
+ * produce inside one VERIFICATION_CODE_TTL_MS (15 minute) window, so a real
+ * registrant's own code can never be pushed out of the candidate set by
+ * someone else's re-registrations.
+ */
+const MAX_LIVE_VERIFICATION_CODES_CONSIDERED = 10;
+
 export interface ParentAccountServiceDeps {
   repository: ParentAccountRepository;
   authService: AuthService;
@@ -97,6 +107,21 @@ export class ParentAccountService {
    * Response is IDENTICAL ({status:'PENDING_VERIFICATION'}) whether the
    * email was new, already PENDING_VERIFICATION (resend), or already
    * VERIFIED (silent no-op) -- never an enumeration oracle.
+   *
+   * PENDING_VERIFICATION CREDENTIAL BINDING (security fix, migration 0030):
+   * a registration for an email that ALREADY has a still-unverified account
+   * no longer writes that account's credential at all. It used to call
+   * `updatePendingPasswordHash`, which meant any unauthenticated caller
+   * could overwrite a pending account's stored password hash with their own
+   * while the fresh code was still delivered to the real mailbox owner --
+   * the owner's own verification then activated the account carrying the
+   * OTHER party's password. Note that neither "last registration wins" (the
+   * old rule) nor "first registration wins" fixes this: whichever party the
+   * rule favours can simply register in that position. Instead each
+   * registration issues its OWN verification code carrying its OWN
+   * credential, previously-issued codes stay independently redeemable (see
+   * verifyEmail), and the account's credential is written exactly once, by
+   * whichever code is actually redeemed.
    */
   async register(email: string, password: string, passwordConfirmation: string): Promise<RegisterOutcome> {
     if (!isPlausibleEmail(email) || !isPlausiblePassword(password) || password !== passwordConfirmation) {
@@ -119,26 +144,28 @@ export class ParentAccountService {
       }
       const account = await this.repository.findByEmailHash(emailHash);
       if (account && account.status === 'PENDING_VERIFICATION') {
-        await this.issueAndSendVerificationCode(account.accountId, email);
+        await this.issueAndSendVerificationCode(account.accountId, email, passwordHash);
       }
       return { status: 'PENDING_VERIFICATION' };
     }
 
     if (existing.status === 'PENDING_VERIFICATION') {
-      await this.repository.updatePendingPasswordHash(existing.accountId, passwordHash);
-      await this.issueAndSendVerificationCode(existing.accountId, email);
+      await this.issueAndSendVerificationCode(existing.accountId, email, passwordHash);
     }
     // existing.status === 'VERIFIED': silent no-op, identical response.
     return { status: 'PENDING_VERIFICATION' };
   }
 
-  private async issueAndSendVerificationCode(accountId: ParentAccountId, email: string): Promise<void> {
+  private async issueAndSendVerificationCode(accountId: ParentAccountId, email: string, passwordHash: string): Promise<void> {
     const now = this.now();
     const { code, codeHash } = generateVerificationCode();
     await this.repository.insertVerificationCode({
       codeId: randomUUID(),
       accountId,
       codeHash,
+      // The credential THIS code authorises -- never applied to the account
+      // until (and unless) this specific code is redeemed. See register().
+      passwordHash,
       createdAt: now,
       expiresAt: new Date(now.getTime() + VERIFICATION_CODE_TTL_MS),
     });
@@ -151,6 +178,27 @@ export class ParentAccountService {
     }
   }
 
+  /**
+   * Redeems ONE of the account's still-live verification codes and applies
+   * THAT code's own bound credential (migration 0030) as it marks the
+   * account VERIFIED.
+   *
+   * Every code the account has been issued that is still live (unconsumed,
+   * unexpired, under its own attempt budget) is a candidate, not merely the
+   * most recent one. That is what makes register()'s credential binding an
+   * actual fix rather than a rename: with a single-newest-code lookup, a
+   * hostile re-registration silently invalidates the code the real mailbox
+   * owner is holding, leaving them with only the attacker's freshly-issued
+   * code to redeem -- exactly the takeover this is meant to close.
+   *
+   * The total guess budget is UNCHANGED, not widened: one submitted code
+   * costs one attempt against EVERY live candidate (the increment happens
+   * before any comparison, exactly as before), so at most
+   * MAX_VERIFICATION_ATTEMPTS_PER_CODE guesses can ever be made against the
+   * account's live set no matter how many codes it contains. TTL, the
+   * single-use compare-and-swap, the timing-safe comparison, and the single
+   * generic UNAUTHORIZED for every failure mode are all preserved exactly.
+   */
   async verifyEmail(email: string, code: string): Promise<VerifyEmailOutcome> {
     if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) {
       throw new ParentAccountError('INVALID_INPUT');
@@ -159,14 +207,22 @@ export class ParentAccountService {
     const account = await this.repository.findByEmailHash(emailHash);
     if (!account || account.status !== 'PENDING_VERIFICATION') throw new ParentAccountError('UNAUTHORIZED');
 
-    const activeCode = await this.repository.findLatestVerificationCode(account.accountId);
-    if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    if (activeCode.attemptCount >= MAX_VERIFICATION_ATTEMPTS_PER_CODE) throw new ParentAccountError('UNAUTHORIZED');
-    if (activeCode.expiresAt.getTime() <= this.now().getTime()) throw new ParentAccountError('UNAUTHORIZED');
+    const recentCodes = await this.repository.findRecentVerificationCodes(account.accountId, MAX_LIVE_VERIFICATION_CODES_CONSIDERED);
+    const nowMs = this.now().getTime();
+    const liveCodes = recentCodes.filter(
+      (candidate) =>
+        candidate.consumedAt === null &&
+        candidate.attemptCount < MAX_VERIFICATION_ATTEMPTS_PER_CODE &&
+        candidate.expiresAt.getTime() > nowMs,
+    );
+    if (liveCodes.length === 0) throw new ParentAccountError('UNAUTHORIZED');
 
-    await this.repository.incrementVerificationAttempt(activeCode.codeId);
+    for (const candidate of liveCodes) {
+      await this.repository.incrementVerificationAttempt(candidate.codeId);
+    }
     const candidateHash = hashVerificationCode(code);
-    if (!verificationCodeHashesMatch(candidateHash, activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+    const activeCode = liveCodes.find((candidate) => verificationCodeHashesMatch(candidateHash, candidate.codeHash));
+    if (!activeCode) throw new ParentAccountError('UNAUTHORIZED');
 
     const won = await this.repository.consumeVerificationCodeIfUnconsumed(activeCode.codeId, this.now());
     if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent verify-email race for the same code
@@ -180,6 +236,10 @@ export class ParentAccountService {
       accountId: account.accountId,
       verifiedAt: now,
       familyId,
+      // The redeemed code's OWN credential -- the single point at which a
+      // pending account's password is ever written. Null only for a
+      // pre-migration-0030 row, which leaves it unchanged.
+      passwordHash: activeCode.passwordHash,
       freeAccess: {
         mode: defaults.mode,
         durationDays: defaults.durationDays,

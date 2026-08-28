@@ -181,6 +181,99 @@ test('SECURITY: a code is locked out after too many wrong attempts, even if the 
   });
 });
 
+// ---- PENDING_VERIFICATION credential-takeover fix (migration 0030) ----
+//
+// Before this fix, register() called updatePendingPasswordHash whenever a
+// registration arrived for an already-pending email, so ANY unauthenticated
+// caller could overwrite that account's stored credential with their own
+// while the fresh code still went to the real mailbox owner -- and, because
+// verify-email only ever considered the single most-recently-issued code,
+// the owner's own code stopped working, leaving them nothing to redeem but
+// the attacker's. Both halves have to move for this to actually be closed:
+// the credential travels with the code that authorises it, and a code the
+// owner already holds stays redeemable.
+
+test('SECURITY: a hostile re-registration of a still-unverified email cannot install its own credential -- the first registrant\'s own code still verifies and activates THEIR password', async () => {
+  const harness = buildHarness();
+  const ownerPassword = 'the real mailbox owner chose this';
+  const attackerPassword = 'the attacker chose this other one';
+
+  await harness.service.register(EMAIL, ownerPassword, ownerPassword);
+  const ownerCode = harness.emailSender.lastCodeFor(EMAIL);
+
+  // A completely unauthenticated third party registers the SAME address.
+  let attackerCode = ownerCode;
+  while (attackerCode === ownerCode) {
+    await harness.service.register(EMAIL, attackerPassword, attackerPassword);
+    attackerCode = harness.emailSender.lastCodeFor(EMAIL);
+  }
+
+  // The real mailbox owner verifies with the code THEY asked for.
+  const verified = await harness.service.verifyEmail(EMAIL, ownerCode);
+  assert.equal(typeof verified.rawSessionToken, 'string');
+
+  // The account carries the owner's credential -- never the third party's.
+  await assert.rejects(() => harness.service.login(EMAIL, attackerPassword), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+  const login = await harness.service.login(EMAIL, ownerPassword);
+  assert.equal(typeof login.rawSessionToken, 'string');
+});
+
+test('SECURITY: each verification code carries the credential IT was issued for -- redeeming a given code activates exactly that registration\'s password', async () => {
+  const harness = buildHarness();
+  const firstPassword = 'the first registration password';
+  const secondPassword = 'the second registration password';
+
+  await harness.service.register(EMAIL, firstPassword, firstPassword);
+  const firstCode = harness.emailSender.lastCodeFor(EMAIL);
+  let secondCode = firstCode;
+  while (secondCode === firstCode) {
+    await harness.service.register(EMAIL, secondPassword, secondPassword);
+    secondCode = harness.emailSender.lastCodeFor(EMAIL);
+  }
+
+  await harness.service.verifyEmail(EMAIL, secondCode);
+  await assert.rejects(() => harness.service.login(EMAIL, firstPassword));
+  assert.equal(typeof (await harness.service.login(EMAIL, secondPassword)).rawSessionToken, 'string');
+});
+
+test('SECURITY: a redeemed code is single-use, and every OTHER live code for that account dies with the account leaving PENDING_VERIFICATION', async () => {
+  const harness = buildHarness();
+  await harness.service.register(EMAIL, PASSWORD, PASSWORD);
+  const firstCode = harness.emailSender.lastCodeFor(EMAIL);
+  let secondCode = firstCode;
+  while (secondCode === firstCode) {
+    await harness.service.register(EMAIL, PASSWORD, PASSWORD);
+    secondCode = harness.emailSender.lastCodeFor(EMAIL);
+  }
+
+  await harness.service.verifyEmail(EMAIL, firstCode);
+  // Neither the consumed code nor the still-unconsumed sibling can be replayed.
+  await assert.rejects(() => harness.service.verifyEmail(EMAIL, firstCode), (err) => err.code === 'UNAUTHORIZED');
+  await assert.rejects(() => harness.service.verifyEmail(EMAIL, secondCode), (err) => err.code === 'UNAUTHORIZED');
+});
+
+test('SECURITY: the guess budget is not widened by having several live codes -- one wrong guess costs an attempt on every one of them', async () => {
+  const harness = buildHarness();
+  await harness.service.register(EMAIL, PASSWORD, PASSWORD);
+  const firstCode = harness.emailSender.lastCodeFor(EMAIL);
+  let secondCode = firstCode;
+  while (secondCode === firstCode) {
+    await harness.service.register(EMAIL, PASSWORD, PASSWORD);
+    secondCode = harness.emailSender.lastCodeFor(EMAIL);
+  }
+
+  // MAX_VERIFICATION_ATTEMPTS_PER_CODE (8) wrong guesses in total -- not 8
+  // per live code -- must exhaust the whole live set.
+  for (let i = 0; i < 8; i += 1) {
+    await harness.service.verifyEmail(EMAIL, '000001').catch(() => {});
+  }
+  await assert.rejects(() => harness.service.verifyEmail(EMAIL, firstCode), (err) => err.code === 'UNAUTHORIZED');
+  await assert.rejects(() => harness.service.verifyEmail(EMAIL, secondCode), (err) => err.code === 'UNAUTHORIZED');
+});
+
 test('SECURITY: verify-email for an unverified/nonexistent account never leaks which case it is (unregistered email)', async () => {
   const harness = buildHarness();
   await assert.rejects(() => harness.service.verifyEmail('nobody@example.com', '123456'), (err) => {

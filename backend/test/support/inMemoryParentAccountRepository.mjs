@@ -64,24 +64,23 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       return clone(accountsById.get(accountId));
     },
 
-    async updatePendingPasswordHash(accountId, passwordHash) {
-      const account = accountsById.get(accountId);
-      if (account && account.status === 'PENDING_VERIFICATION') account.passwordHash = passwordHash;
-    },
-
     async insertVerificationCode(record) {
-      const code = { ...record, consumedAt: null, attemptCount: 0 };
+      const code = { ...record, passwordHash: record.passwordHash ?? null, consumedAt: null, attemptCount: 0 };
       codesById.set(record.codeId, code);
       const list = codesByAccount.get(record.accountId) ?? [];
       list.push(record.codeId);
       codesByAccount.set(record.accountId, list);
     },
 
-    async findLatestVerificationCode(accountId) {
+    // Newest-first, bounded by `limit` -- mirrors the MySQL implementation's
+    // `ORDER BY created_at DESC, code_id DESC LIMIT ?` exactly.
+    async findRecentVerificationCodes(accountId, limit) {
       const list = codesByAccount.get(accountId) ?? [];
-      if (list.length === 0) return null;
-      const code = codesById.get(list[list.length - 1]);
-      return { ...code };
+      return list
+        .slice()
+        .reverse()
+        .slice(0, limit)
+        .map((codeId) => ({ ...codesById.get(codeId) }));
     },
 
     async incrementVerificationAttempt(codeId) {
@@ -102,6 +101,12 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       account.status = 'VERIFIED';
       account.verifiedAt = transition.verifiedAt;
       account.familyId = transition.familyId;
+      // COALESCE(?, password_hash) in the MySQL implementation: the redeemed
+      // code's own bound credential, or the existing one for a legacy
+      // (pre-migration-0030) code row.
+      if (transition.passwordHash !== null && transition.passwordHash !== undefined) {
+        account.passwordHash = transition.passwordHash;
+      }
       account.freeAccess = { ...transition.freeAccess };
     },
 

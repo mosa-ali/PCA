@@ -174,6 +174,44 @@ test('RBAC: PAYMENT_PROVIDER mutation is APP_OWNER-only -- PLATFORM_ADMIN (who C
   );
 });
 
+test('SECURITY: a PLATFORM_ADMIN cannot escalate by re-declaring a stored PAYMENT_PROVIDER key as BRANDING', async () => {
+  // The gate was chosen from the REQUEST BODY's category while upsert's
+  // ON DUPLICATE KEY UPDATE rewrote category/is_sensitive from those same
+  // request values. A PLATFORM_ADMIN (denied ADMINISTER_SENSITIVE_PLATFORM_
+  // SETTINGS by the test above) could therefore overwrite APP_OWNER-only
+  // provider configuration by simply claiming a non-sensitive category --
+  // and flip is_sensitive to 0, so every later read returned the value
+  // UNMASKED. Authorization must follow the STORED row, not the claim.
+  const owner = await createAdmin({ role: 'APP_OWNER' });
+  const platformAdmin = await createAdmin({ role: 'PLATFORM_ADMIN' });
+  const key = `payment_provider.${randomUUID().replace(/-/g, '')}`;
+  await settingsService.put(actorOf(owner), key, 'PAYMENT_PROVIDER', { providerRef: 'live-secret-ref' }, '**** 4242');
+
+  await assert.rejects(
+    () => settingsService.put(actorOf(platformAdmin), key, 'BRANDING', { providerRef: 'attacker-ref' }, null),
+    (err) => err instanceof PlatformAdminSettingsError && err.code === 'FORBIDDEN',
+  );
+
+  // The stored row is untouched and still masked on every read path.
+  const read = await settingsService.get(actorOf(owner), key);
+  assert.equal(read.category, 'PAYMENT_PROVIDER');
+  assert.equal(read.maskedDisplay, '**** 4242');
+  assert.equal('value' in read, false, 'a sensitive setting must never return its raw value');
+});
+
+test("SECURITY: an existing setting's category is immutable even for APP_OWNER (no silent sensitivity downgrade)", async () => {
+  const owner = await createAdmin({ role: 'APP_OWNER' });
+  const key = `payment_provider.${randomUUID().replace(/-/g, '')}`;
+  await settingsService.put(actorOf(owner), key, 'PAYMENT_PROVIDER', { providerRef: 'live-secret-ref' }, '**** 1111');
+  await assert.rejects(
+    () => settingsService.put(actorOf(owner), key, 'BRANDING', { providerRef: 'x' }, null),
+    (err) => err instanceof PlatformAdminSettingsError && err.code === 'INVALID_INPUT',
+  );
+  const read = await settingsService.get(actorOf(owner), key);
+  assert.equal(read.category, 'PAYMENT_PROVIDER');
+  assert.equal('value' in read, false);
+});
+
 test('a non-sensitive category rejects a caller-supplied maskedDisplay (nothing to mask)', async () => {
   const owner = await createAdmin({ role: 'APP_OWNER' });
   const key = `branding.reject_masked_${randomUUID().replace(/-/g, '')}`;

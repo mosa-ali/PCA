@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, InvitedFamilyRole, OpaqueAccountId, OpaqueFamilyId } from './types.js';
 
 export type AcceptResult =
@@ -6,6 +7,20 @@ export type AcceptResult =
   | { outcome: 'REVOKED' }
   | { outcome: 'EXPIRED' }
   | { outcome: 'NOT_FOUND' };
+
+/**
+ * Runs inside the SAME transaction as acceptAtomically's accepting UPDATE,
+ * after that UPDATE has succeeded and before it commits. Throwing rolls the
+ * acceptance back, so a caller can attach an effect that must never drift
+ * from the invitation's own lifecycle (see
+ * FamilyMemberInvitationService.acceptInvitation's parent-member seat
+ * consumption). `conn` is the transaction's own connection -- the same
+ * "hand the caller the connection it must use" convention
+ * `EntitlementRepository.lockForFamily/adjustParentMemberUsedCount` already
+ * establish. An implementation with no real transaction (the in-memory test
+ * double) passes null and is documented as such.
+ */
+export type AcceptTransactionHook = (conn: PoolConnection, record: FamilyMemberInvitationRecord) => Promise<void>;
 
 /**
  * Persistence port for the family-member invitation lifecycle, mirroring
@@ -23,7 +38,26 @@ export interface FamilyMemberInvitationRepository {
   /** Used to enforce "at most one PENDING invitation per (family, email)" -- see FamilyMemberInvitationService.createInvitation. */
   findPendingByFamilyAndEmailHash(familyId: OpaqueFamilyId, invitedEmailHash: Buffer): Promise<FamilyMemberInvitationRecord | null>;
   listForFamily(familyId: OpaqueFamilyId): Promise<FamilyMemberInvitationRecord[]>;
-  acceptAtomically(invitationId: FamilyMemberInvitationId, acceptedByAccountId: OpaqueAccountId, acceptedAt: Date): Promise<AcceptResult>;
+  /**
+   * IDENTITY BINDING (required of every implementation): acceptance MUST be
+   * refused unless the accepting account's own registered email hash equals
+   * this invitation's `invited_email_hash`, and that check MUST be part of
+   * the same atomic guard as the status/expiry predicates -- never a
+   * separate read-then-write pair. Without it, any authenticated account
+   * that merely learns an invitationId can take the role a completely
+   * different person was invited to. A non-addressee is reported as
+   * NOT_FOUND, deliberately indistinguishable from a nonexistent
+   * invitation, matching this repository's family-scoped IDOR posture
+   * everywhere else -- and checked BEFORE the revoked/accepted/expired
+   * disambiguation, so a stranger learns nothing about an invitation's real
+   * state either.
+   */
+  acceptAtomically(
+    invitationId: FamilyMemberInvitationId,
+    acceptedByAccountId: OpaqueAccountId,
+    acceptedAt: Date,
+    onAcceptedInTransaction?: AcceptTransactionHook,
+  ): Promise<AcceptResult>;
   /**
    * Family-scoped revoke: the UPDATE itself is filtered by family_id (not
    * just a preceding read), so this method alone can never revoke another

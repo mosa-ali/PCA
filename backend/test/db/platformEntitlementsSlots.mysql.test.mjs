@@ -138,6 +138,33 @@ test('slot reserve: succeeds when capacity is available, decrements availability
   assert.equal(entitlement.managedDeviceReservedCount, 1);
 });
 
+test('slot reserve: filling the LAST licensed slot is AT the limit, not OVER it (SET-order regression)', async () => {
+  // REGRESSION: adjustManagedDeviceCounts assigned over_limit_managed_device
+  // AFTER the count columns in the same UPDATE. MySQL evaluates single-table
+  // SET assignments left to right and later expressions read the value an
+  // earlier assignment already wrote, so the CASE re-added the delta to an
+  // already-incremented count and flagged every family that exactly filled
+  // its limit as over it. over_limit_managed_device is surfaced to platform
+  // admins and into the family commercial DTO, so this mislabelled every
+  // fully-provisioned family. Reproduced directly against MySQL 8.4:
+  // (limit 2, reserved 1, +1) previously yielded over_limit_managed_device = 1.
+  const familyId = uniqueFamilyId('reserve-at-limit');
+  await setDeviceLimit(familyId, 2);
+  const first = await insertRawInvitation(familyId, new Date(Date.now() + 60_000));
+  await slotReservationService.reserveForInvitation(familyId, first, new Date(Date.now() + 60_000));
+  const second = await insertRawInvitation(familyId, new Date(Date.now() + 60_000));
+  await slotReservationService.reserveForInvitation(familyId, second, new Date(Date.now() + 60_000));
+
+  const entitlement = await entitlementRepository.getForFamily(familyId);
+  assert.equal(entitlement.managedDeviceReservedCount, 2);
+  assert.equal(entitlement.managedDeviceActiveCount, 0);
+  assert.equal(
+    entitlement.overLimitManagedDevice,
+    false,
+    'reserved(2) + active(0) == limit(2) is AT the limit, never over it',
+  );
+});
+
 test('slot reserve: NO_AVAILABLE_SLOT when reserved+active already meets the limit', async () => {
   const familyId = uniqueFamilyId('reserve-full');
   await setDeviceLimit(familyId, 1);

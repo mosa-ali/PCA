@@ -18,8 +18,19 @@ function fakeAuthorization(verdict = { verdict: 'ALLOW' }) {
   };
 }
 
+// The invited person's real, registered account: acceptAtomically's IDENTITY
+// BINDING contract means only the account whose OWN email hash matches an
+// invitation's invited_email_hash can ever accept it.
+const INVITED_EMAIL = 'newmember@example.test';
+const INVITED_ACCOUNT = 'acct-new-member';
+
+function seededAccountEmailHashes(extra = []) {
+  return new Map([[INVITED_ACCOUNT, hashInvitedEmail(INVITED_EMAIL)], ...extra]);
+}
+
 function buildService(overrides = {}) {
-  const repository = overrides.repository ?? createInMemoryFamilyMemberInvitationRepository();
+  const repository =
+    overrides.repository ?? createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes: seededAccountEmailHashes() });
   let currentTime = overrides.startTime ?? BASE_TIME;
   const clock = {
     now: () => new Date(currentTime),
@@ -37,7 +48,7 @@ function buildService(overrides = {}) {
   return { service, repository, clock, authorization };
 }
 
-const baseInput = { familyId: 'fam-1', invitedEmail: 'newmember@example.test', role: 'VIEWER', invitedByAccountId: 'acct-owner', actorDeviceId: 'dev-owner' };
+const baseInput = { familyId: 'fam-1', invitedEmail: INVITED_EMAIL, role: 'VIEWER', invitedByAccountId: 'acct-owner', actorDeviceId: 'dev-owner' };
 
 test('createInvitation persists a PENDING invitation with a hashed email, never the plaintext', async () => {
   const { service, repository } = buildService();
@@ -141,9 +152,9 @@ test('the default NoopFamilyMemberAccountBinder is a real, safe no-op (never thr
 test('acceptInvitation is idempotent-safe: accepting an already-ACCEPTED invitation fails honestly, not silently', async () => {
   const { service } = buildService();
   const created = await service.createInvitation(baseInput);
-  await service.acceptInvitation(created.invitationId, 'acct-new-member');
+  await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
   await assert.rejects(
-    () => service.acceptInvitation(created.invitationId, 'acct-someone-else'),
+    () => service.acceptInvitation(created.invitationId, INVITED_ACCOUNT),
     (err) => err instanceof FamilyMemberInvitationError && err.code === 'ALREADY_ACCEPTED',
   );
 });
@@ -269,8 +280,8 @@ test('changeInvitationRole rejects an invalid role value', async () => {
 
 test('createInvitation denies with CAPACITY_EXCEEDED once used + pending invitations reach the family\'s parentMemberLimit, and never persists the invitation', async () => {
   const entitlementRepository = {
-    async getForFamily(familyId) {
-      return { familyId, parentMemberLimit: 2, parentMemberUsedCount: 1 };
+    async getEffectiveSnapshotForFamily() {
+      return { effectiveParentMemberLimit: 2, baseParentMemberLimit: 2, complimentaryParentMemberCapacity: 0, parentMemberUsed: 1 };
     },
   };
   const { service, repository } = buildService({ entitlementRepository });
@@ -289,4 +300,199 @@ test('createInvitation denies with CAPACITY_EXCEEDED once used + pending invitat
 test('createInvitation skips the capacity check entirely when no entitlementRepository is supplied (backward compatible with pre-P0-C callers)', async () => {
   const { service } = buildService({ entitlementRepository: null });
   await assert.doesNotReject(() => service.createInvitation(baseInput));
+});
+
+// ---- Invitation acceptance is bound to the invited identity ----
+
+test('acceptInvitation refuses an authenticated account the invitation was NOT addressed to, and reports it as NOT_FOUND (never a distinguishable "exists but not yours")', async () => {
+  const repository = createInMemoryFamilyMemberInvitationRepository({
+    accountEmailHashes: seededAccountEmailHashes([['acct-stranger', hashInvitedEmail('stranger@example.test')]]),
+  });
+  const { service } = buildService({ repository });
+  const created = await service.createInvitation(baseInput);
+
+  await assert.rejects(
+    () => service.acceptInvitation(created.invitationId, 'acct-stranger'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  );
+  // The invitation is untouched -- the stranger gained no role in this family.
+  const stored = await repository.findByIdForFamily('fam-1', created.invitationId);
+  assert.equal(stored.status, 'PENDING');
+  assert.equal(stored.acceptedByAccountId, null);
+});
+
+test('acceptInvitation never binds a non-addressee to the family, and the real addressee can still accept afterwards', async () => {
+  const bindCalls = [];
+  const accountBinder = { async bindAccountToFamily(accountId, familyId) { bindCalls.push({ accountId, familyId }); } };
+  const repository = createInMemoryFamilyMemberInvitationRepository({
+    accountEmailHashes: seededAccountEmailHashes([['acct-stranger', hashInvitedEmail('stranger@example.test')]]),
+  });
+  const { service } = buildService({ repository, accountBinder });
+  const created = await service.createInvitation(baseInput);
+
+  await assert.rejects(() => service.acceptInvitation(created.invitationId, 'acct-stranger'));
+  assert.equal(bindCalls.length, 0);
+
+  const accepted = await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
+  assert.equal(accepted.status, 'ACCEPTED');
+  assert.deepEqual(bindCalls, [{ accountId: INVITED_ACCOUNT, familyId: 'fam-1' }]);
+});
+
+test('acceptInvitation refuses an accepting account with no registered email hash at all (fails closed, NOT_FOUND)', async () => {
+  const { service } = buildService();
+  const created = await service.createInvitation(baseInput);
+  await assert.rejects(
+    () => service.acceptInvitation(created.invitationId, 'acct-never-registered'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  );
+});
+
+// ---- Effective (complimentary-inclusive) capacity ----
+
+test('createInvitation counts COMPLIMENTARY parent-member capacity, not just the base entitlement column', async () => {
+  // Base limit 1, already fully used -- but an ACTIVE complimentary grant of
+  // 2 raises the EFFECTIVE limit to 3, so this invitation genuinely fits.
+  const entitlementRepository = {
+    async getForFamily() {
+      return { parentMemberLimit: 1, parentMemberUsedCount: 1 };
+    },
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 1, complimentaryParentMemberCapacity: 2, effectiveParentMemberLimit: 3, parentMemberUsed: 1 };
+    },
+  };
+  const { service } = buildService({ entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+  assert.equal(created.status, 'PENDING');
+});
+
+test('createInvitation passes the decision time through to getEffectiveSnapshotForFamily, so an EXPIRED complimentary grant is not counted', async () => {
+  const asOfCalls = [];
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily(familyId, now) {
+      asOfCalls.push({ familyId, now });
+      return { baseParentMemberLimit: 4, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 4, parentMemberUsed: 0 };
+    },
+  };
+  const { service } = buildService({ entitlementRepository });
+  await service.createInvitation(baseInput);
+  assert.equal(asOfCalls.length, 1);
+  assert.equal(asOfCalls[0].familyId, 'fam-1');
+  assert.equal(asOfCalls[0].now.getTime(), BASE_TIME);
+});
+
+// ---- Parent-member seat consumption ----
+
+test('acceptInvitation consumes exactly one parent-member seat, inside the same transaction that flips the invitation row', async () => {
+  const adjustments = [];
+  const locks = [];
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 4, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 4, parentMemberUsed: 0 };
+    },
+    async lockForFamily(_conn, familyId) {
+      locks.push(familyId);
+      return { familyId, parentMemberUsedCount: 0 };
+    },
+    async adjustParentMemberUsedCount(_conn, familyId, delta, now) {
+      adjustments.push({ familyId, delta, now });
+      return { familyId, parentMemberUsedCount: delta };
+    },
+  };
+  const { service } = buildService({ entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+  await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
+
+  assert.deepEqual(locks, ['fam-1'], 'the family entitlement row must be locked before it is adjusted');
+  assert.equal(adjustments.length, 1);
+  assert.equal(adjustments[0].familyId, 'fam-1');
+  assert.equal(adjustments[0].delta, 1);
+});
+
+test('re-inviting someone who is already a member charges no second seat (seat is per member, not per acceptance)', async () => {
+  // createInvitation's only duplicate guard is "no PENDING invitation for
+  // this address", so re-inviting an existing member is allowed -- and is in
+  // fact the only way to offer them a different role, since
+  // changeInvitationRole refuses anything not PENDING. Without a
+  // prior-acceptance check the second acceptance charged a second seat while
+  // accountBinder (idempotent) changed no membership at all, permanently
+  // burning a seat the family had paid for and eventually producing a false
+  // CAPACITY_EXCEEDED on an invitation the family was entitled to.
+  const adjustments = [];
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 4, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 4, parentMemberUsed: 0 };
+    },
+    async lockForFamily(_conn, familyId) {
+      return { familyId, parentMemberUsedCount: 0 };
+    },
+    async adjustParentMemberUsedCount(_conn, familyId, delta, now) {
+      adjustments.push({ familyId, delta, now });
+      return { familyId, parentMemberUsedCount: delta };
+    },
+  };
+  const { service } = buildService({ entitlementRepository });
+
+  const first = await service.createInvitation(baseInput);
+  await service.acceptInvitation(first.invitationId, INVITED_ACCOUNT);
+  assert.equal(adjustments.length, 1, 'the first acceptance charges the seat');
+
+  // Same person, invited again (nothing PENDING, so this is allowed) and
+  // accepting again.
+  const second = await service.createInvitation(baseInput);
+  await service.acceptInvitation(second.invitationId, INVITED_ACCOUNT);
+
+  assert.equal(adjustments.length, 1, 'the same account accepting twice must never charge two seats');
+});
+
+test('a refused acceptance consumes no seat at all', async () => {
+  const adjustments = [];
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 4, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 4, parentMemberUsed: 0 };
+    },
+    async lockForFamily(_conn, familyId) { return { familyId, parentMemberUsedCount: 0 }; },
+    async adjustParentMemberUsedCount(_conn, familyId, delta) { adjustments.push({ familyId, delta }); return { familyId }; },
+  };
+  const repository = createInMemoryFamilyMemberInvitationRepository({
+    accountEmailHashes: seededAccountEmailHashes([['acct-stranger', hashInvitedEmail('stranger@example.test')]]),
+  });
+  const { service } = buildService({ repository, entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+
+  await assert.rejects(() => service.acceptInvitation(created.invitationId, 'acct-stranger'));
+  await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
+  await assert.rejects(() => service.acceptInvitation(created.invitationId, INVITED_ACCOUNT)); // ALREADY_ACCEPTED
+
+  assert.equal(adjustments.length, 1, 'only the one genuine acceptance may ever charge a seat');
+});
+
+test('a seat adjustment that fails rolls the whole acceptance back -- the invitation is never left ACCEPTED with an uncharged seat', async () => {
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 4, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 4, parentMemberUsed: 0 };
+    },
+    async lockForFamily(_conn, familyId) { return { familyId, parentMemberUsedCount: 0 }; },
+    async adjustParentMemberUsedCount() { throw new Error('entitlement ledger unavailable'); },
+  };
+  const { service, repository } = buildService({ entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+
+  await assert.rejects(() => service.acceptInvitation(created.invitationId, INVITED_ACCOUNT), /entitlement ledger unavailable/);
+  const stored = await repository.findByIdForFamily('fam-1', created.invitationId);
+  assert.equal(stored.status, 'PENDING');
+  assert.equal(stored.acceptedByAccountId, null);
+});
+
+test('acceptInvitation charges no seat when the family has no account_entitlements row yet (nothing to charge, never a fabricated row)', async () => {
+  const adjustments = [];
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() { return null; },
+    async lockForFamily() { return null; },
+    async adjustParentMemberUsedCount(_conn, familyId, delta) { adjustments.push({ familyId, delta }); return { familyId }; },
+  };
+  const { service } = buildService({ entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+  const accepted = await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
+  assert.equal(accepted.status, 'ACCEPTED');
+  assert.equal(adjustments.length, 0);
 });

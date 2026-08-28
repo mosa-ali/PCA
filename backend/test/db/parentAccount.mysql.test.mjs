@@ -289,6 +289,187 @@ test('MySQL: two DISTINCT emails each verifying independently land in two DISTIN
   assert.notEqual(outcomeA.accountId, outcomeB.accountId);
 });
 
+// PENDING_VERIFICATION credential-takeover fix (migration 0030): real-MySQL
+// proof that the credential a verification code authorises now travels with
+// the CODE ROW, not with the shared, third-party-writable
+// parent_accounts.password_hash column, and that a code the real mailbox
+// owner already holds stays redeemable after a hostile re-registration.
+test('MySQL SECURITY: a hostile re-registration of a still-unverified email cannot install its own credential -- the first registrant\'s own code still verifies and activates THEIR password', async () => {
+  const { service, emailSender } = buildService();
+  const email = uniqueEmail();
+  const ownerPassword = 'the real mailbox owner chose this';
+  const attackerPassword = 'the attacker chose this other one';
+
+  await service.register(email, ownerPassword, ownerPassword);
+  const ownerCode = emailSender.lastCodeFor(email);
+
+  let attackerCode = ownerCode;
+  while (attackerCode === ownerCode) {
+    await service.register(email, attackerPassword, attackerPassword);
+    attackerCode = emailSender.lastCodeFor(email);
+  }
+
+  const verified = await service.verifyEmail(email, ownerCode);
+  assert.equal(typeof verified.rawSessionToken, 'string');
+
+  await assert.rejects(() => service.login(email, attackerPassword), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+  const login = await service.login(email, ownerPassword);
+  assert.equal(typeof login.rawSessionToken, 'string');
+});
+
+test('MySQL: parent_email_verification_codes.password_hash stores the same scrypt-derived digest shape as parent_accounts.password_hash -- never a raw password', async () => {
+  const { service } = buildService();
+  const email = uniqueEmail();
+  const password = 'a genuinely long password';
+  await service.register(email, password, password);
+
+  const account = await new MySqlParentAccountRepository().findByEmailHash(hashParentEmail(email));
+  const { rows } = await runInTransaction((conn) =>
+    execute(conn, `SELECT password_hash FROM parent_email_verification_codes WHERE account_id = ?`, [account.accountId]),
+  );
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].password_hash, /^scrypt\$\d+\$\d+\$\d+\$[0-9a-f]+\$[0-9a-f]+$/);
+  assert.equal(rows[0].password_hash.includes(password), false);
+});
+
+// ---------------------------------------------------------------------
+// Family-member invitation acceptance is bound to parent_accounts.email_hash.
+//
+// These two live here, rather than in a file of their own, because
+// backend/package.json's `test:db` file list is outside this lane's
+// ownership -- a new test file would never actually be run. They belong
+// with parent_accounts in any case: the property under test is precisely
+// the cross-domain read of THIS table's email_hash column, and both need
+// real, separately-registered parent_accounts rows to mean anything.
+// ---------------------------------------------------------------------
+
+function pendingInvitationRow(familyId, invitedEmailHash, at) {
+  return {
+    invitationId: randomUUID(),
+    familyId,
+    invitedEmailHash,
+    role: 'VIEWER',
+    status: 'PENDING',
+    invitedByAccountId: randomUUID(),
+    createdAt: at,
+    expiresAt: new Date(at.getTime() + 7 * 24 * 60 * 60 * 1000),
+    acceptedAt: null,
+    expiredAt: null,
+    revokedAt: null,
+    acceptedByAccountId: null,
+  };
+}
+
+async function registerAndVerifyRealAccount(service, emailSender, email, password) {
+  await service.register(email, password, password);
+  return service.verifyEmail(email, emailSender.lastCodeFor(email));
+}
+
+test('MySQL SECURITY: a family-member invitation can only be accepted by the account whose OWN registered email it was addressed to -- a stranger with a valid session gets NOT_FOUND and the invitation stays PENDING', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const invitedEmail = uniqueEmail();
+  const strangerEmail = uniqueEmail();
+  const invited = await registerAndVerifyRealAccount(service, emailSender, invitedEmail, password);
+  const stranger = await registerAndVerifyRealAccount(service, emailSender, strangerEmail, password);
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const familyId = randomUUID();
+  const now = new Date();
+  const invitation = pendingInvitationRow(familyId, hashInvitedEmail(invitedEmail), now);
+  await repository.create(invitation);
+
+  // A fully authenticated, real parent account that this invitation was
+  // simply not addressed to must learn nothing and change nothing.
+  const stolen = await repository.acceptAtomically(invitation.invitationId, stranger.accountId, now);
+  assert.equal(stolen.outcome, 'NOT_FOUND');
+  const afterTheft = await repository.findByIdForFamily(familyId, invitation.invitationId);
+  assert.equal(afterTheft.status, 'PENDING');
+  assert.equal(afterTheft.acceptedByAccountId, null);
+
+  // The real addressee is unaffected.
+  const accepted = await repository.acceptAtomically(invitation.invitationId, invited.accountId, now);
+  assert.equal(accepted.outcome, 'ACCEPTED');
+  assert.equal(accepted.record.acceptedByAccountId, invited.accountId);
+
+  // And a non-addressee still cannot distinguish an ACCEPTED invitation
+  // from one that never existed.
+  const afterwards = await repository.acceptAtomically(invitation.invitationId, stranger.accountId, now);
+  assert.equal(afterwards.outcome, 'NOT_FOUND');
+});
+
+test('MySQL: accepting a family-member invitation consumes exactly one parent-member seat, in the SAME transaction as the invitation transition (a failed adjustment rolls the acceptance back)', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService, NoopFamilyMemberAccountBinder } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const invitedEmail = uniqueEmail();
+  const invited = await registerAndVerifyRealAccount(service, emailSender, invitedEmail, password);
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const familyId = randomUUID();
+  const now = new Date();
+  await entitlementRepository.getOrCreateForFamily(
+    familyId,
+    'FREE_STARTER',
+    { tier: 'FREE_STARTER', parentMemberLimit: 4, managedDeviceLimit: 5, updatedAt: now, updatedByAdminId: null },
+    now,
+  );
+  const before = await entitlementRepository.getForFamily(familyId);
+  assert.equal(before.parentMemberUsedCount, 0);
+
+  const authorization = { authorize: () => ({ verdict: 'ALLOW' }) };
+
+  // 1. A seat adjustment that FAILS must leave the invitation PENDING --
+  // proof the increment really runs inside the acceptance transaction.
+  const failingEntitlementRepository = Object.create(entitlementRepository);
+  failingEntitlementRepository.adjustParentMemberUsedCount = async () => {
+    throw new Error('entitlement ledger unavailable');
+  };
+  const failingService = new FamilyMemberInvitationService(
+    repository,
+    authorization,
+    () => now,
+    undefined,
+    new NoopFamilyMemberAccountBinder(),
+    failingEntitlementRepository,
+  );
+  const doomed = pendingInvitationRow(familyId, hashInvitedEmail(invitedEmail), now);
+  await repository.create(doomed);
+  await assert.rejects(() => failingService.acceptInvitation(doomed.invitationId, invited.accountId), /entitlement ledger unavailable/);
+  const rolledBack = await repository.findByIdForFamily(familyId, doomed.invitationId);
+  assert.equal(rolledBack.status, 'PENDING', 'a failed seat adjustment must roll the whole acceptance back');
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 0);
+
+  // 2. The real acceptance charges exactly one seat, durably.
+  const memberService = new FamilyMemberInvitationService(
+    repository,
+    authorization,
+    () => now,
+    undefined,
+    new NoopFamilyMemberAccountBinder(),
+    entitlementRepository,
+  );
+  const accepted = await memberService.acceptInvitation(doomed.invitationId, invited.accountId);
+  assert.equal(accepted.status, 'ACCEPTED');
+  const after = await entitlementRepository.getForFamily(familyId);
+  assert.equal(after.parentMemberUsedCount, 1);
+
+  // 3. A second acceptance attempt is refused and charges nothing more.
+  await assert.rejects(() => memberService.acceptInvitation(doomed.invitationId, invited.accountId));
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
+});
+
 test.after(async () => {
   await closePool();
 });

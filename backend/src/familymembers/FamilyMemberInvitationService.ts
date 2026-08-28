@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PoolConnection } from 'mysql2/promise';
 import { hashInvitedEmail, isPlausibleInvitedEmail } from './emailHash.js';
 import type { FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
 import type {
@@ -115,12 +116,12 @@ export class FamilyMemberInvitationService {
    * even one wired to UnavailableTrustSetRoleResolver in production --
    * that is a fail-closed real answer, not a missing one.
    *
-   * `entitlementRepository` is optional (null = capacity check skipped)
-   * only because the same PARENT_MEMBER_CONSUMPTION_BINDING_REQUIRED gap
-   * this constructor closes means some callers (e.g. lower-level unit
-   * tests of the invitation lifecycle alone) legitimately don't care about
-   * billing capacity; production wiring (buildServer.ts) must supply a
-   * real one.
+   * `entitlementRepository` is optional (null = capacity check AND seat
+   * consumption both skipped) only because the same
+   * PARENT_MEMBER_CONSUMPTION_BINDING_REQUIRED gap this constructor closes
+   * means some callers (e.g. lower-level unit tests of the invitation
+   * lifecycle alone) legitimately don't care about billing capacity;
+   * production wiring (buildServer.ts) must supply a real one.
    */
   constructor(
     repository: FamilyMemberInvitationRepository,
@@ -167,12 +168,20 @@ export class FamilyMemberInvitationService {
       throw new FamilyMemberInvitationError('DUPLICATE_PENDING_INVITATION');
     }
 
+    // EFFECTIVE capacity, not the base entitlement column: this error's own
+    // doc comment above promises "including complimentary capacity", and
+    // EntitlementRepository.getEffectiveSnapshotForFamily is this codebase's
+    // declared single source of truth for it (base parentMemberLimit + the
+    // family's ACTIVE PARENT_MEMBER_CAPACITY grants -- see
+    // complimentary/EffectiveEntitlementCapacity.ts's header). Reading
+    // getForFamily().parentMemberLimit instead denied invitations a
+    // complimentary grant had genuinely paid for.
     if (this.entitlementRepository) {
-      const entitlement = await this.entitlementRepository.getForFamily(input.familyId);
-      if (entitlement) {
+      const snapshot = await this.entitlementRepository.getEffectiveSnapshotForFamily(input.familyId, createdAt);
+      if (snapshot) {
         const pending = await this.repository.listForFamily(input.familyId);
         const pendingCount = pending.filter((r) => r.status === 'PENDING' && !this.isExpired(r)).length;
-        if (entitlement.parentMemberUsedCount + pendingCount >= entitlement.parentMemberLimit) {
+        if (snapshot.parentMemberUsed + pendingCount >= snapshot.effectiveParentMemberLimit) {
           throw new FamilyMemberInvitationError('CAPACITY_EXCEEDED');
         }
       }
@@ -306,15 +315,41 @@ export class FamilyMemberInvitationService {
   /**
    * Accepting an invitation is NOT itself trust-set membership -- see
    * types.ts's own doc comment and this file header. It (a) transitions
-   * this invitation's own row to ACCEPTED, and (b) best-effort binds the
-   * accepting account to the family via the injected FamilyMemberAccountBinder,
-   * so the family_id assignment happens atomically with acceptance from this
-   * service's point of view, without this domain importing parentaccount/
-   * directly.
+   * this invitation's own row to ACCEPTED -- only ever for the account whose
+   * own registered email the invitation was addressed to, enforced inside
+   * the atomic UPDATE itself (see
+   * FamilyMemberInvitationRepository.acceptAtomically's IDENTITY BINDING
+   * contract), (b) consumes one parent-member seat in the SAME transaction
+   * as that transition, and (c) best-effort binds the accepting account to
+   * the family via the injected FamilyMemberAccountBinder, so the family_id
+   * assignment happens atomically with acceptance from this service's point
+   * of view, without this domain importing parentaccount/ directly.
+   *
+   * SEAT CONSUMPTION: createInvitation's capacity check counts
+   * `parentMemberUsed + still-PENDING invitations`, but nothing ever raised
+   * the used counter (EntitlementRepository.adjustParentMemberUsedCount had
+   * no caller anywhere in the backend), so an accepted member consumed no
+   * seat and the limit was unenforceable once invitations left PENDING. The
+   * increment runs on the acceptance transaction's OWN connection, after the
+   * invitation row has flipped and before it commits, so the counter can
+   * never drift from the lifecycle: if the adjustment throws, the whole
+   * acceptance rolls back. The family's row is locked first
+   * (lockForFamily), as that repository's contract requires. A family with
+   * no account_entitlements row yet has no seat ledger to charge and is
+   * left alone, matching createInvitation's own "no row = no capacity
+   * check" behaviour.
    */
   async acceptInvitation(invitationId: FamilyMemberInvitationId, acceptingAccountId: OpaqueAccountId): Promise<FamilyMemberInvitationRecord> {
     const acceptedAt = this.now();
-    const result = await this.repository.acceptAtomically(invitationId, acceptingAccountId, acceptedAt);
+    const entitlementRepository = this.entitlementRepository;
+    const consumeParentMemberSeat = entitlementRepository
+      ? async (conn: PoolConnection, record: FamilyMemberInvitationRecord): Promise<void> => {
+          const locked = await entitlementRepository.lockForFamily(conn, record.familyId);
+          if (!locked) return;
+          await entitlementRepository.adjustParentMemberUsedCount(conn, record.familyId, 1, acceptedAt);
+        }
+      : undefined;
+    const result = await this.repository.acceptAtomically(invitationId, acceptingAccountId, acceptedAt, consumeParentMemberSeat);
     switch (result.outcome) {
       case 'ACCEPTED':
         await this.accountBinder.bindAccountToFamily(acceptingAccountId, result.record.familyId, acceptedAt);

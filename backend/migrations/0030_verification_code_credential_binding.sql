@@ -1,0 +1,37 @@
+-- PCA-AUTH-SESSION-1 security fix (PENDING_VERIFICATION credential
+-- takeover): bind the credential a verification code AUTHORISES to the
+-- code row itself, instead of to the shared, mutable
+-- parent_accounts.password_hash column.
+--
+-- THE DEFECT THIS CLOSES: ParentAccountService.register() previously
+-- called ParentAccountRepository.updatePendingPasswordHash() whenever a
+-- registration arrived for an email that already had a still-unverified
+-- account, i.e. ANY unauthenticated caller could overwrite a pending
+-- account's stored credential with their own while the fresh verification
+-- code was still delivered to the real mailbox owner. The owner's own
+-- verification then activated the account carrying the OTHER party's
+-- password. Neither "last registration wins" (the old behaviour) nor
+-- "first registration wins" is a fix: whichever rule is chosen, the party
+-- it favours can simply register in that position. The credential has to
+-- travel with the one-time secret that authorises it, which is what this
+-- column makes possible.
+--
+-- ADDITIVE AND BACKWARD-COMPATIBLE: NULLable with no default and no
+-- backfill. A row written before this migration (or by an older binary
+-- mid-deploy) simply carries NULL, and
+-- MySqlParentAccountRepository.markVerified's
+-- `password_hash = COALESCE(?, password_hash)` leaves the account's
+-- existing credential exactly as it was for such a row -- byte-for-byte
+-- the pre-migration behaviour, never a fabricated or emptied credential.
+--
+-- NO PLAINTEXT PERSONAL DATA: the column stores exactly the same
+-- scrypt-derived credential digest shape that parent_accounts.password_hash
+-- already stores (see backend/src/parentaccount/passwordCredential.ts --
+-- `scrypt$N$r$p$salt$derivedKey`, never a raw password), under the same
+-- VARCHAR(255) type as that column, and is never read back out to any
+-- caller: verifyEmail moves it onto the account row and nothing else ever
+-- selects it. No raw email, password, or other personal datum is added to
+-- this table by this migration -- see migration 0013's own header for this
+-- table's unchanged privacy posture.
+ALTER TABLE parent_email_verification_codes
+  ADD COLUMN password_hash VARCHAR(255) NULL AFTER code_hash;

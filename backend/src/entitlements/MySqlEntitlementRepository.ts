@@ -199,17 +199,24 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
       : 0;
     await execute(
       conn,
+      // MySQL evaluates single-table SET assignments LEFT TO RIGHT, and a
+      // later expression reads the value an earlier assignment already
+      // wrote. The over_limit_* CASE therefore MUST be assigned BEFORE the
+      // count columns it re-derives, or it reads count+delta and adds delta
+      // a second time -- flagging a family that exactly fills its limit as
+      // over it. Verified against MySQL 8.4: with the CASE last,
+      // (limit 2, reserved 1, +1) yielded over_limit_managed_device = 1.
       `UPDATE account_entitlements
-       SET managed_device_reserved_count = GREATEST(managed_device_reserved_count + ?, 0),
-           managed_device_active_count = GREATEST(managed_device_active_count + ?, 0),
-           revision = revision + 1,
-           updated_at = ?,
-           over_limit_managed_device = CASE
+       SET over_limit_managed_device = CASE
              WHEN (managed_device_limit + ?) < GREATEST(managed_device_reserved_count + ?, 0) + GREATEST(managed_device_active_count + ?, 0) THEN 1
              ELSE 0
-           END
+           END,
+           managed_device_reserved_count = GREATEST(managed_device_reserved_count + ?, 0),
+           managed_device_active_count = GREATEST(managed_device_active_count + ?, 0),
+           revision = revision + 1,
+           updated_at = ?
        WHERE family_id = ?`,
-      [reservedDelta, activeDelta, now, complimentaryAmount, reservedDelta, activeDelta, familyId],
+      [complimentaryAmount, reservedDelta, activeDelta, reservedDelta, activeDelta, now, familyId],
     );
     const updated = await selectForFamily(conn, familyId, false);
     if (!updated) throw new Error(`account_entitlements row missing for family ${familyId} after adjustManagedDeviceCounts`);
@@ -231,16 +238,19 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
       : 0;
     await execute(
       conn,
+      // Same left-to-right SET-evaluation rule as adjustManagedDeviceCounts
+      // above: the over_limit_* CASE is assigned FIRST so it re-derives the
+      // new count from the OLD column value exactly once.
       `UPDATE account_entitlements
-       SET parent_member_used_count = GREATEST(parent_member_used_count + ?, 0),
-           revision = revision + 1,
-           updated_at = ?,
-           over_limit_parent_member = CASE
+       SET over_limit_parent_member = CASE
              WHEN (parent_member_limit + ?) < GREATEST(parent_member_used_count + ?, 0) THEN 1
              ELSE 0
-           END
+           END,
+           parent_member_used_count = GREATEST(parent_member_used_count + ?, 0),
+           revision = revision + 1,
+           updated_at = ?
        WHERE family_id = ?`,
-      [delta, now, complimentaryAmount, delta, familyId],
+      [complimentaryAmount, delta, delta, now, familyId],
     );
     const updated = await selectForFamily(conn, familyId, false);
     if (!updated) throw new Error(`account_entitlements row missing for family ${familyId} after adjustParentMemberUsedCount`);

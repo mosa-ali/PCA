@@ -151,6 +151,25 @@ export class PlatformAdminSettingsService {
     const now = this.now();
 
     return this.runTx(async (conn) => {
+      // PRIVILEGE-ESCALATION GUARD. requireMutate() above authorizes against
+      // the category in the REQUEST BODY, while upsert's ON DUPLICATE KEY
+      // UPDATE rewrites category and is_sensitive from those same request
+      // values. Without the check below, an admin holding only
+      // ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS could PUT an existing
+      // PAYMENT_PROVIDER key with category:'BRANDING' and (a) pass the weaker
+      // gate, (b) overwrite provider configuration that is APP_OWNER-only,
+      // and (c) permanently flip is_sensitive to 0 so every later read
+      // returns the value UNMASKED. An existing key's category is therefore
+      // immutable, and touching a stored sensitive key always requires the
+      // sensitive gate regardless of what the body claims. Read inside this
+      // transaction so the decision cannot race a concurrent write.
+      const existing = await this.repository.getRaw(conn, settingKey);
+      if (existing) {
+        this.requireMutate(actor, existing.category);
+        if (existing.category !== category) {
+          throw new PlatformAdminSettingsError('INVALID_INPUT', "an existing setting's category cannot be changed.");
+        }
+      }
       const record = await this.repository.upsert(conn, settingKey, category, valueJson, sensitive, maskedDisplay, actor.adminId);
       await insertPlatformAdminAuditEventRow(conn, {
         eventId: randomUUID(),

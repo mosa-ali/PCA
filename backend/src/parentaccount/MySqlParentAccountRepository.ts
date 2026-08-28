@@ -38,6 +38,11 @@ interface CodeRow {
   attempt_count: number;
 }
 
+/** parent_email_verification_codes only -- migration 0030's credential-binding column. parent_password_reset_codes deliberately has no such column (that flow's new credential is supplied at reset time). */
+interface VerificationCodeRow extends CodeRow {
+  password_hash: string | null;
+}
+
 // Same row shape as CodeRow -- kept as a distinct alias so a future
 // divergence between the two tables' schemas doesn't silently type-check.
 type ResetCodeRow = CodeRow;
@@ -100,44 +105,34 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
     return rows[0] ? rowToRecord(rows[0]) : null;
   }
 
-  async updatePendingPasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void> {
-    await runInTransaction((conn) =>
-      execute(conn, `UPDATE parent_accounts SET password_hash = ? WHERE account_id = ? AND status = 'PENDING_VERIFICATION'`, [
-        passwordHash,
-        accountId,
-      ]),
-    );
-  }
-
   async insertVerificationCode(record: NewVerificationCode): Promise<void> {
     await runInTransaction((conn) =>
       execute(
         conn,
-        `INSERT INTO parent_email_verification_codes (code_id, account_id, code_hash, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [record.codeId, record.accountId, record.codeHash, record.createdAt, record.expiresAt],
+        `INSERT INTO parent_email_verification_codes (code_id, account_id, code_hash, password_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [record.codeId, record.accountId, record.codeHash, record.passwordHash, record.createdAt, record.expiresAt],
       ),
     );
   }
 
-  async findLatestVerificationCode(accountId: ParentAccountId): Promise<ActiveVerificationCode | null> {
+  async findRecentVerificationCodes(accountId: ParentAccountId, limit: number): Promise<ActiveVerificationCode[]> {
     const { rows } = await runInTransaction((conn) =>
-      execute<CodeRow>(
+      execute<VerificationCodeRow>(
         conn,
-        `SELECT * FROM parent_email_verification_codes WHERE account_id = ? ORDER BY created_at DESC, code_id DESC LIMIT 1`,
-        [accountId],
+        `SELECT * FROM parent_email_verification_codes WHERE account_id = ? ORDER BY created_at DESC, code_id DESC LIMIT ?`,
+        [accountId, limit],
       ),
     );
-    const row = rows[0];
-    if (!row) return null;
-    return {
+    return rows.map((row) => ({
       codeId: row.code_id,
       accountId: row.account_id,
       codeHash: row.code_hash,
+      passwordHash: row.password_hash,
       expiresAt: row.expires_at,
       consumedAt: row.consumed_at,
       attemptCount: row.attempt_count,
-    };
+    }));
   }
 
   async incrementVerificationAttempt(codeId: string): Promise<void> {
@@ -160,13 +155,20 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
     await runInTransaction((conn) =>
       execute(
         conn,
+        // password_hash = COALESCE(?, password_hash): the credential the
+        // consumed verification code was ISSUED for becomes the account's
+        // credential at the same instant the account becomes VERIFIED (see
+        // migration 0030). A NULL (pre-0030 row) leaves the existing
+        // credential exactly as it was.
         `UPDATE parent_accounts
-         SET status = 'VERIFIED', verified_at = ?, family_id = ?, free_access_mode = ?, free_access_duration_days = ?,
+         SET status = 'VERIFIED', verified_at = ?, family_id = ?, password_hash = COALESCE(?, password_hash),
+             free_access_mode = ?, free_access_duration_days = ?,
              free_access_started_at = ?, free_access_expires_at = ?, default_parent_member_limit = ?, default_managed_device_limit = ?
          WHERE account_id = ? AND status = 'PENDING_VERIFICATION'`,
         [
           transition.verifiedAt,
           transition.familyId,
+          transition.passwordHash,
           transition.freeAccess.mode,
           transition.freeAccess.durationDays,
           transition.freeAccess.startedAt,

@@ -10,10 +10,12 @@ import { InMemoryFamilyTrustSetStore } from '../../dist/familytrustset/InMemoryF
 import { FamilyTrustSetRoleResolver } from '../../dist/familyrbac/TrustSetRoleResolver.js';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 import { createInMemoryFamilyMemberInvitationRepository } from '../support/inMemoryFamilyMemberInvitationRepository.mjs';
+import { hashInvitedEmail } from '../../dist/familymembers/emailHash.js';
 
 const FAMILY = 'family-members-http-1';
 const OTHER_FAMILY = 'family-members-http-other';
 const T0 = new Date('2026-01-07T09:00:00.000Z');
+const INVITED_EMAIL = 'newmember@example.test';
 
 function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinder = new NoopFamilyMemberAccountBinder() } = {}) {
   const store = new InMemoryFamilyTrustSetStore();
@@ -44,7 +46,15 @@ function buildApp({ nowFn = () => T0, entitlementRepository = null, accountBinde
     new InMemoryActionIdempotencyLedger(),
     nowFn,
   );
-  const repository = createInMemoryFamilyMemberInvitationRepository();
+  // The real registered email hashes behind each session below -- what
+  // acceptAtomically's IDENTITY BINDING contract matches an invitation's
+  // invited_email_hash against (in production, parent_accounts.email_hash).
+  const repository = createInMemoryFamilyMemberInvitationRepository({
+    accountEmailHashes: new Map([
+      ['acct-no-family', hashInvitedEmail(INVITED_EMAIL)],
+      ['acct-viewer', hashInvitedEmail('someone-else@example.test')],
+    ]),
+  });
   const familyMemberInvitationService = new FamilyMemberInvitationService(
     repository,
     authorization,
@@ -245,8 +255,51 @@ test('a request missing CSRF header/cookie match is rejected on every mutating r
   }
 });
 
-test('invitation creation is denied with capacity_exceeded once the family\'s parentMemberLimit is reached', async () => {
-  const entitlementRepository = { async getForFamily() { return { parentMemberLimit: 1, parentMemberUsedCount: 1 }; } };
+test('an authenticated parent the invitation was NOT addressed to cannot accept it (404 not_found, and it stays PENDING for the real addressee)', async () => {
+  const { app, repository } = buildApp();
+  try {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { invitedEmail: INVITED_EMAIL, role: 'VIEWER' },
+    });
+    assert.equal(invite.statusCode, 201);
+    const invitationId = invite.json().invitation.invitationId;
+
+    // acct-viewer holds a perfectly valid family session -- and is not the
+    // person this invitation was addressed to.
+    const steal = await app.inject({
+      method: 'POST',
+      url: `/api/parent/member-invitations/${invitationId}/accept`,
+      headers: viewerHeaders,
+    });
+    assert.equal(steal.statusCode, 404);
+    assert.equal(steal.json().error, 'not_found');
+
+    const stored = await repository.findByIdForFamily(FAMILY, invitationId);
+    assert.equal(stored.status, 'PENDING');
+    assert.equal(stored.acceptedByAccountId, null);
+
+    // The real addressee is unaffected.
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/api/parent/member-invitations/${invitationId}/accept`,
+      headers: { cookie: 'pca_family_session=session-no-family; pca_family_csrf=csrf-d', 'x-pca-csrf-token': 'csrf-d' },
+    });
+    assert.equal(accept.statusCode, 200);
+    assert.equal(accept.json().invitation.acceptedByAccountId, 'acct-no-family');
+  } finally {
+    await app.close();
+  }
+});
+
+test('invitation creation is denied with capacity_exceeded once the family\'s EFFECTIVE parentMemberLimit is reached', async () => {
+  const entitlementRepository = {
+    async getEffectiveSnapshotForFamily() {
+      return { baseParentMemberLimit: 1, complimentaryParentMemberCapacity: 0, effectiveParentMemberLimit: 1, parentMemberUsed: 1 };
+    },
+  };
   const { app } = buildApp({ entitlementRepository });
   try {
     const invite = await app.inject({
