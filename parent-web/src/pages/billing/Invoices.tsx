@@ -93,7 +93,7 @@ export default function Invoices() {
                 {visible.map((invoice) => (
                   <tr key={invoice.invoiceId}>
                     <td data-label={t('subscription.invoices.date')}>{new Date(invoice.createdAtUtc).toLocaleDateString(i18n.language)}</td>
-                    <td data-label={t('subscription.invoices.status')}>{t(`subscription.invoices.status.${invoice.status}`)}</td>
+                    <td data-label={t('subscription.invoices.statusLabel')}>{t(`subscription.invoices.status.${invoice.status}`)}</td>
                     <td data-label={t('subscription.invoices.total')}>{formatMoney(invoice.total, i18n.language)}</td>
                     <td>
                       <Link to={`/subscription/invoices/${invoice.invoiceId}`}>{t('subscription.invoices.viewDetail')}</Link>
