@@ -500,7 +500,11 @@
       "UNDER_REVIEW": "قيد المراجعة",
       "WON": "تم كسبه",
       "LOST": "خُسر"
-    }
+    },
+    "issueRefund": "إصدار استرداد",
+    "refundIssued": "تم إصدار الاسترداد.",
+    "refundReasonRequired": "رمز السبب مطلوب لإصدار الاسترداد.",
+    "noRefundPermission": "لا يملك دورك صلاحية إصدار الاسترداد."
   },
   "settlement": {
     "notAuthorized": "لا يملك دورك صلاحية عرض سجلات التسوية.",

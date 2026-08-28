@@ -1,11 +1,114 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
 import type { PagedResult } from '../../domain/accounts';
 import type { DisputeDto, PaymentAttemptDto, PaymentTransactionDto, RefundDto } from '../../domain/billing';
-import { formatMoney } from '../../money/money';
+import { formatMoney, parseExactMinorUnits } from '../../money/money';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
+import { BillingPermissionGate } from '../../rbac/BillingPermissionGate';
+import { useStepUp } from '../../state/StepUpContext';
+import { useToast } from '../../state/ToastContext';
+
+const REASON_CODE_MAX_LENGTH = 32;
+
+function nextIdempotencyKey(): string {
+  return typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `refund-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Issues a refund against a settled PaymentTransaction via the already-live
+ * backend orchestration route (POST /billing/admin/refund,
+ * backend/src/http/routes/billingRefundRoutes.ts) -- this route existed and
+ * was fully wired (step-up, idempotency, audit) before this form did,
+ * unused by any Platform Administration UI. Gated the same way every other
+ * sensitive Platform Administration mutation is: a fresh step-up
+ * (`REFUND` scope, mirroring the backend's own `consumeStepUp` call) rather
+ * than ConfirmButton, per this app's established rule that step-up-gated
+ * actions don't also need the two-click ConfirmButton pattern.
+ */
+function RefundForm({ transaction, onIssued }: { transaction: PaymentTransactionDto; onIssued: () => void }) {
+  const { t } = useTranslation();
+  const { notify } = useToast();
+  const { requestStepUp } = useStepUp();
+  const [amount, setAmount] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  // Reused across a failed/retried attempt so a retry after a lost response
+  // is a safe idempotent resume rather than a second real refund attempt at
+  // the provider (see billingRefundRoutes.ts's IDEMPOTENCY KEY doc comment)
+  // -- only rotated after a confirmed success, for the next distinct refund.
+  const [idempotencyKey, setIdempotencyKey] = useState(nextIdempotencyKey);
+
+  if (!transaction.amount) return null;
+  const currencyCode = transaction.amount.currencyCode;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!reasonCode.trim()) {
+      notify(t('billing.refundReasonRequired'), 'error');
+      return;
+    }
+    let amountMinor: string;
+    try {
+      amountMinor = parseExactMinorUnits(amount, currencyCode);
+    } catch {
+      notify(t('billing.invalidAmount'), 'error');
+      return;
+    }
+    if (BigInt(amountMinor) <= 0n) {
+      notify(t('billing.invalidAmount'), 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const stepUpId = await requestStepUp('REFUND');
+      if (!stepUpId) return;
+      await platformAdminApi.post('/billing/admin/refund', {
+        paymentTransactionId: transaction.paymentTransactionId,
+        amountMinor,
+        currencyCode,
+        reasonCode: reasonCode.trim(),
+        stepUpId,
+        idempotencyKey,
+      });
+      notify(t('billing.refundIssued'), 'success');
+      setAmount('');
+      setReasonCode('');
+      setIdempotencyKey(nextIdempotencyKey());
+      onIssued();
+    } catch (err) {
+      notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="actions-row" onSubmit={submit} aria-label={t('billing.issueRefund')}>
+      <input
+        aria-label={t('entitlementRequests.amountLabel')}
+        style={{ width: '7rem' }}
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        required
+      />
+      <input
+        aria-label={t('billing.reasonCode')}
+        style={{ width: '10rem' }}
+        maxLength={REASON_CODE_MAX_LENGTH}
+        value={reasonCode}
+        onChange={(e) => setReasonCode(e.target.value)}
+        placeholder={t('billing.reasonCode')}
+        required
+      />
+      <button type="submit" className="btn" disabled={submitting}>
+        {t('billing.issueRefund')}
+      </button>
+    </form>
+  );
+}
 
 const PAGE_SIZE = 20;
 type Tab = 'attempts' | 'transactions' | 'refunds' | 'disputes';
@@ -164,6 +267,7 @@ export default function BillingPayments() {
                   <th scope="col">{t('billing.amount')}</th>
                   <th scope="col">{t('billing.provider')}</th>
                   <th scope="col">{t('billing.confirmedAt')}</th>
+                  <th scope="col">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,6 +278,11 @@ export default function BillingPayments() {
                     <td>{tx.amount ? formatMoney(tx.amount) : '—'}</td>
                     <td>{tx.provider}</td>
                     <td>{tx.confirmedAt ? new Date(tx.confirmedAt).toLocaleString() : '—'}</td>
+                    <td>
+                      <BillingPermissionGate operation="ISSUE_REFUND" fallback={<span className="status-unavailable">{t('billing.noRefundPermission')}</span>}>
+                        <RefundForm transaction={tx} onIssued={load} />
+                      </BillingPermissionGate>
+                    </td>
                   </tr>
                 ))}
               </tbody>

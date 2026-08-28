@@ -500,7 +500,11 @@
       "UNDER_REVIEW": "Under review",
       "WON": "Won",
       "LOST": "Lost"
-    }
+    },
+    "issueRefund": "Issue refund",
+    "refundIssued": "Refund issued.",
+    "refundReasonRequired": "A reason code is required to issue a refund.",
+    "noRefundPermission": "Your role cannot issue refunds."
   },
   "settlement": {
     "notAuthorized": "Your role cannot view settlement records.",
