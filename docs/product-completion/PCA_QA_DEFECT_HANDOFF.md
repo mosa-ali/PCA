@@ -113,6 +113,25 @@ together.
 
 ---
 
+## QA-B-007 — POSSIBLE real gap: an account's stored language_code preference is never read/applied by the frontend (needs Coordinator A confirmation)
+
+`parent_account_preferences.language_code` (a real DB row -- owner-a is
+seeded with `'ar'`, see seed-local.mjs) is not referenced anywhere in
+`parent-web/src/state/AuthContext.tsx` or `parent-web/src/App.tsx` (direct
+source search, zero matches for `parentPreferences`/`languageCode`/
+`changeLanguage`). A real-browser check confirms it: logging in as owner-a
+and landing on `/dashboard` renders `dir="ltr"` (English), not the
+account's stored `'ar'` preference -- only an explicit `?lng=ar`
+querystring (i18next's own detector, unrelated to the account row) flips
+it. This may be intentional (the preference row might be read elsewhere,
+e.g. a Settings page, or by a different client not yet wired to
+auto-apply on load) rather than a defect -- flagging for Coordinator A to
+confirm scope rather than asserting it's broken. If genuinely unused, this
+is a P2/P3 UX gap: a returning Arabic-speaking parent's saved preference
+would not take effect automatically.
+
+---
+
 ## QA-B-005 — (fixed, QA tooling only) seed-local.mjs read the WRONG code for password-reset, not a backend defect
 
 `backend/scripts/seed-local.mjs`'s `pendingResetCode` line called
