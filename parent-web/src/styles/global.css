@@ -472,6 +472,101 @@ table.data-table td {
   min-height: var(--touch-target);
 }
 
+/* Inline field-level status text (`<p role="alert|status" className="field-error|field-warning">`),
+   used across Requests/WellbeingAdmin/LocationPage/ScreenTimePage/WebProtectionPage -- these two
+   classes had no matching rule anywhere, so every one of those pages rendered its error/warning
+   copy as plain unstyled text. */
+.field-error,
+.field-warning {
+  margin-block: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 0.9rem;
+}
+
+.field-error {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+}
+
+.field-warning {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+}
+
+/* ---------- Web protection allow/deny-list authoring (WebProtectionPage.tsx) ---------- */
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+}
+
+.field-row label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.field-row input[type='text'],
+.field-row select {
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.web-rule-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.web-rule-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+/* Matches WebRuleDeliveryStatus's real values (webRulePolicy.ts), lowercased by the component. */
+.web-rule-status {
+  font-weight: 600;
+}
+
+.web-rule-status-delivered,
+.web-rule-status-applied {
+  color: var(--color-success);
+}
+
+.web-rule-status-local_draft,
+.web-rule-status-pending_delivery,
+.web-rule-status-stale {
+  color: var(--color-warning);
+}
+
+.web-rule-status-failed {
+  color: var(--color-danger);
+}
+
+.web-rule-revision {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
 /* ---------- Auth shell (register / login / verify-email) ---------- */
 
 .auth-page {

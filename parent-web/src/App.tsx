@@ -40,6 +40,8 @@ import NotFound from './pages/NotFound';
 import Register from './pages/auth/Register';
 import VerifyEmail from './pages/auth/VerifyEmail';
 import Login from './pages/auth/Login';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import { RouteGuard } from './rbac/RouteGuard';
 
 export default function App() {
@@ -51,6 +53,8 @@ export default function App() {
       <Route path="register" element={<Register />} />
       <Route path="verify-email" element={<VerifyEmail />} />
       <Route path="login" element={<Login />} />
+      <Route path="forgot-password" element={<ForgotPassword />} />
+      <Route path="reset-password" element={<ResetPassword />} />
 
       <Route element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />

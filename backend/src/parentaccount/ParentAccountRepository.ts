@@ -32,6 +32,24 @@ export interface VerifiedTransition {
   freeAccess: FreeAccessSnapshot;
 }
 
+/** Same shape as NewVerificationCode/ActiveVerificationCode, deliberately kept as a separate type against the separate parent_password_reset_codes table (migration 0029) -- see that migration's header. */
+export interface NewPasswordResetCode {
+  codeId: string;
+  accountId: ParentAccountId;
+  codeHash: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface ActivePasswordResetCode {
+  codeId: string;
+  accountId: ParentAccountId;
+  codeHash: string;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  attemptCount: number;
+}
+
 /**
  * Persistence port for the parentaccount domain. `MySqlParentAccountRepository`
  * is the production implementation; a deterministic in-memory
@@ -79,6 +97,15 @@ export interface ParentAccountRepository {
 
   /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the FREE_ACCESS snapshot and (if genesis succeeded) familyId in the same statement -- see migration 0013's CHECK constraint requiring these to move together. */
   markVerified(transition: VerifiedTransition): Promise<void>;
+
+  insertPasswordResetCode(record: NewPasswordResetCode): Promise<void>;
+  /** Most recent password-reset code row for the account, regardless of consumed/expired state -- the caller evaluates freshness/consumption itself. */
+  findLatestPasswordResetCode(accountId: ParentAccountId): Promise<ActivePasswordResetCode | null>;
+  incrementPasswordResetAttempt(codeId: string): Promise<void>;
+  /** Atomic compare-and-swap: marks the code consumed iff it was not already consumed. Returns true iff THIS call won the race. */
+  consumePasswordResetCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
+  /** Only valid against a VERIFIED account -- resetPassword's own guard enforces this before calling. */
+  updatePasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void>;
   /** Idempotent: only writes if the column is currently NULL (the deterministic accountReferenceHash lookup means every subsequent call resolves to the same service account anyway). */
   setServiceAccountIdIfAbsent(accountId: ParentAccountId, serviceAccountId: string): Promise<void>;
 

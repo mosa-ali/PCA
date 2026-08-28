@@ -1,4 +1,4 @@
-import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult } from '../interfaces';
+import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult } from '../interfaces';
 import { buildDevSession, setServiceAuthenticated } from './devState';
 
 const DELAY_MS = 120;
@@ -40,5 +40,15 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     await delay();
     setServiceAuthenticated(true);
     return buildDevSession();
+  }
+
+  async requestPasswordReset(_email: string): Promise<RequestPasswordResetResult> {
+    await delay();
+    return { status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS' };
+  }
+
+  async resetPassword(_email: string, _code: string, _newPassword: string, _newPasswordConfirmation: string): Promise<ResetPasswordResult> {
+    await delay();
+    return { status: 'PASSWORD_RESET' };
   }
 }

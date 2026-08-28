@@ -1005,6 +1005,23 @@
     "genericError": "Something went wrong. Please try again.",
     "invalidCredentials": "Email or password is incorrect.",
     "invalidCode": "That verification code is incorrect or has expired.",
-    "rateLimited": "Too many attempts. Please wait a moment and try again."
+    "rateLimited": "Too many attempts. Please wait a moment and try again.",
+    "forgotPasswordLink": "Forgot password?",
+    "forgotPasswordTitle": "Reset your password",
+    "forgotPasswordBody": "Enter your account email and we'll send you a one-time code to reset your password, if an account exists for that address.",
+    "forgotPasswordSubmit": "Send reset code",
+    "forgotPasswordSuccessTitle": "Check your email",
+    "forgotPasswordSuccess": "If an account exists for that email, we've sent a password reset code.",
+    "haveResetCode": "Already have a reset code?",
+    "resetPasswordEntryLink": "Enter it here",
+    "resetPasswordTitle": "Enter your reset code",
+    "resetPasswordBody": "Enter the code we sent to your email along with your new password.",
+    "newPasswordLabel": "New password",
+    "newPasswordConfirmationLabel": "Confirm new password",
+    "resetPasswordSubmit": "Reset password",
+    "resetPasswordSuccessTitle": "Password reset",
+    "resetPasswordSuccess": "Your password has been reset. Sign in with your new password.",
+    "invalidResetCode": "That reset code is incorrect or has expired.",
+    "backToLogin": "Back to sign in"
   }
 }

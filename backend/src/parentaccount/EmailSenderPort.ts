@@ -14,4 +14,13 @@
  */
 export interface EmailSenderPort {
   sendVerificationCode(email: string, code: string): Promise<void>;
+  /**
+   * PCA product-completion programme (P1 /login finding): a distinct
+   * method (not a reused sendVerificationCode call) because a password-
+   * reset email's content is materially different (it must be unambiguous
+   * that this was NOT requested at registration) even though it shares the
+   * same underlying transport/gate. Same EXTERNAL_GATE posture as
+   * sendVerificationCode -- see this interface's own header.
+   */
+  sendPasswordResetCode(email: string, code: string): Promise<void>;
 }

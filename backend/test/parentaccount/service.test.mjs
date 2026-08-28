@@ -22,11 +22,14 @@ class RecordingEmailSender {
     this.sent = [];
   }
   async sendVerificationCode(email, code) {
-    this.sent.push({ email, code });
+    this.sent.push({ email, code, kind: 'VERIFICATION' });
   }
-  lastCodeFor(email) {
+  async sendPasswordResetCode(email, code) {
+    this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
+  }
+  lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
-      if (this.sent[i].email === email) return this.sent[i].code;
+      if (this.sent[i].kind === kind && this.sent[i].email === email) return this.sent[i].code;
     }
     return null;
   }
@@ -369,5 +372,140 @@ test('CONCURRENCY: two concurrent verify-email calls with the same valid code on
   const fulfilled = results.filter((r) => r.status === 'fulfilled');
   const rejected = results.filter((r) => r.status === 'rejected');
   assert.equal(fulfilled.length, 1, 'exactly one concurrent verify-email call must win the single-use code');
+  assert.equal(rejected.length, 1);
+});
+
+// ---- Password reset (PCA product-completion programme, P1 /login finding) ----
+
+const NEW_PASSWORD = 'a brand new correct horse battery';
+
+test('requestPasswordReset returns the identical response for a VERIFIED account and sends a real code', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  const result = await harness.service.requestPasswordReset(EMAIL);
+  assert.deepEqual(result, { status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS' });
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  assert.ok(code, 'a password-reset code must have been sent');
+});
+
+test('SECURITY: requestPasswordReset never leaks account existence -- identical response for an unknown email, and no code is sent', async () => {
+  const harness = buildHarness();
+  const result = await harness.service.requestPasswordReset('nobody@example.com');
+  assert.deepEqual(result, { status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS' });
+  assert.equal(harness.emailSender.lastCodeFor('nobody@example.com', 'PASSWORD_RESET'), null);
+});
+
+test('SECURITY: requestPasswordReset never sends a code for an unverified (PENDING_VERIFICATION) account', async () => {
+  const harness = buildHarness();
+  await harness.service.register(EMAIL, PASSWORD, PASSWORD); // never verified
+  await harness.service.requestPasswordReset(EMAIL);
+  assert.equal(harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET'), null);
+});
+
+test('resetPassword replaces the password and the new password works at login', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+
+  const result = await harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD);
+  assert.deepEqual(result, { status: 'PASSWORD_RESET' });
+
+  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+  const loggedIn = await harness.service.login(EMAIL, NEW_PASSWORD);
+  assert.ok(loggedIn.rawSessionToken);
+});
+
+test('SECURITY: resetPassword rejects a mismatched newPassword/newPasswordConfirmation before ever touching the stored code', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  await assert.rejects(() => harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, 'a different password entirely'), (err) => {
+    assert.equal(err.code, 'INVALID_INPUT');
+    return true;
+  });
+  // The code must still be usable afterward -- a rejected confirmation-mismatch attempt must not burn the real code.
+  const result = await harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD);
+  assert.deepEqual(result, { status: 'PASSWORD_RESET' });
+});
+
+test('SECURITY: an expired password-reset code is denied', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  harness.advance(16 * 60 * 1000); // past the 15-minute TTL
+  await assert.rejects(() => harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+});
+
+test('SECURITY: a password-reset code is locked out after too many wrong attempts, even if the correct code is later supplied', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  for (let i = 0; i < 8; i += 1) {
+    await harness.service.resetPassword(EMAIL, '999999', NEW_PASSWORD, NEW_PASSWORD).catch(() => {});
+  }
+  await assert.rejects(() => harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+});
+
+test('SECURITY: resetPassword for an unverified/nonexistent account never leaks which case it is', async () => {
+  const harness = buildHarness();
+  await assert.rejects(() => harness.service.resetPassword('nobody@example.com', '123456', NEW_PASSWORD, NEW_PASSWORD), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+  await harness.service.register(EMAIL, PASSWORD, PASSWORD); // PENDING_VERIFICATION, never verified
+  await assert.rejects(() => harness.service.resetPassword(EMAIL, '123456', NEW_PASSWORD, NEW_PASSWORD), (err) => {
+    assert.equal(err.code, 'UNAUTHORIZED');
+    return true;
+  });
+});
+
+test('SECURITY: a successful password reset revokes every existing session for the account', async () => {
+  const harness = buildHarness();
+  const verified = await registerAndVerify(harness);
+  assert.ok(verified.rawSessionToken, 'verify-email must have issued a session');
+  await harness.authService.validateSession(verified.rawSessionToken); // still valid before reset
+
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  await harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD);
+
+  await assert.rejects(() => harness.authService.validateSession(verified.rawSessionToken));
+});
+
+test('resetPassword does NOT auto-issue a new session -- the family must sign in fresh with the new password', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  const result = await harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD);
+  assert.ok(!('rawSessionToken' in result), 'resetPassword must not return a session token');
+});
+
+test('CONCURRENCY: two concurrent resetPassword calls with the same valid code only let ONE of them win (no duplicate-reset-code race)', async () => {
+  const harness = buildHarness();
+  await registerAndVerify(harness);
+  await harness.service.requestPasswordReset(EMAIL);
+  const code = harness.emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+
+  const results = await Promise.allSettled([
+    harness.service.resetPassword(EMAIL, code, NEW_PASSWORD, NEW_PASSWORD),
+    harness.service.resetPassword(EMAIL, code, 'yet another valid password!', 'yet another valid password!'),
+  ]);
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  const rejected = results.filter((r) => r.status === 'rejected');
+  assert.equal(fulfilled.length, 1, 'exactly one concurrent resetPassword call must win the single-use code');
   assert.equal(rejected.length, 1);
 });

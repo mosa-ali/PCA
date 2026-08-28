@@ -17,11 +17,14 @@ class RecordingEmailSender {
     this.sent = [];
   }
   async sendVerificationCode(email, code) {
-    this.sent.push({ email, code });
+    this.sent.push({ email, code, kind: 'VERIFICATION' });
   }
-  lastCodeFor(email) {
+  async sendPasswordResetCode(email, code) {
+    this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
+  }
+  lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
-      if (this.sent[i].email === email) return this.sent[i].code;
+      if (this.sent[i].kind === kind && this.sent[i].email === email) return this.sent[i].code;
     }
     return null;
   }
@@ -194,4 +197,88 @@ test('registration/verification/login are rate-limited', async () => {
     }
   }
   assert.ok(sawRateLimit, 'registration must eventually be rate-limited per source IP');
+});
+
+// ---- Password reset (PCA product-completion programme, P1 /login finding) ----
+
+test('POST /api/parent/request-password-reset returns 202 identically for a real account and an unknown email, and never sets a session cookie', async () => {
+  const { app, emailSender } = buildApp();
+  await registerVerifyAndCookies(app, emailSender);
+
+  const real = await app.inject({ method: 'POST', url: '/api/parent/request-password-reset', payload: { email: EMAIL } });
+  const unknown = await app.inject({ method: 'POST', url: '/api/parent/request-password-reset', payload: { email: 'nobody@example.com' } });
+
+  assert.equal(real.statusCode, 202);
+  assert.equal(unknown.statusCode, 202);
+  assert.deepEqual(real.json(), unknown.json());
+  assert.equal(setCookieHeaders(real).length, 0);
+  assert.ok(emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET'), 'a real code must have been sent for the known account');
+  assert.equal(emailSender.lastCodeFor('nobody@example.com', 'PASSWORD_RESET'), null);
+});
+
+test('POST /api/parent/reset-password: full request -> reset -> old password rejected -> new password logs in', async () => {
+  const { app, emailSender } = buildApp();
+  await registerVerifyAndCookies(app, emailSender);
+  const NEW_PASSWORD = 'a brand new correct horse battery';
+
+  await app.inject({ method: 'POST', url: '/api/parent/request-password-reset', payload: { email: EMAIL } });
+  const code = emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+
+  const reset = await app.inject({
+    method: 'POST',
+    url: '/api/parent/reset-password',
+    payload: { email: EMAIL, code, newPassword: NEW_PASSWORD, newPasswordConfirmation: NEW_PASSWORD },
+  });
+  assert.equal(reset.statusCode, 200);
+  assert.deepEqual(reset.json(), { status: 'PASSWORD_RESET' });
+  assert.equal(setCookieHeaders(reset).length, 0, 'reset-password must not itself establish a session');
+
+  const oldLogin = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
+  assert.equal(oldLogin.statusCode, 401);
+
+  const newLogin = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: NEW_PASSWORD } });
+  assert.equal(newLogin.statusCode, 200);
+});
+
+test('POST /api/parent/reset-password rejects an invalid/expired code with 401 invalid_code', async () => {
+  const { app, emailSender } = buildApp();
+  await registerVerifyAndCookies(app, emailSender);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/reset-password',
+    payload: { email: EMAIL, code: '000000', newPassword: 'a brand new correct horse battery', newPasswordConfirmation: 'a brand new correct horse battery' },
+  });
+  assert.equal(response.statusCode, 401);
+  assert.deepEqual(response.json(), { error: 'invalid_code' });
+});
+
+test('POST /api/parent/reset-password rejects a mismatched confirmation with 400 invalid_request', async () => {
+  const { app, emailSender } = buildApp();
+  await registerVerifyAndCookies(app, emailSender);
+  await app.inject({ method: 'POST', url: '/api/parent/request-password-reset', payload: { email: EMAIL } });
+  const code = emailSender.lastCodeFor(EMAIL, 'PASSWORD_RESET');
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/parent/reset-password',
+    payload: { email: EMAIL, code, newPassword: 'one valid password here', newPasswordConfirmation: 'a totally different one' },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'invalid_request' });
+});
+
+test('request-password-reset/reset-password are rate-limited', async () => {
+  const { app } = buildApp();
+  let sawRateLimit = false;
+  for (let i = 0; i < 30; i += 1) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/parent/request-password-reset',
+      payload: { email: `flood-reset-${i}@example.com` },
+    });
+    if (response.statusCode === 429) {
+      sawRateLimit = true;
+      break;
+    }
+  }
+  assert.ok(sawRateLimit, 'request-password-reset must eventually be rate-limited per source IP');
 });

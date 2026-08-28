@@ -81,6 +81,9 @@ export default function Login() {
         </button>
       </form>
       <p>
+        <Link to="/forgot-password">{t('auth.forgotPasswordLink')}</Link>
+      </p>
+      <p>
         {t('auth.needAccount')} <Link to="/register">{t('auth.registerLink')}</Link>
       </p>
     </section>

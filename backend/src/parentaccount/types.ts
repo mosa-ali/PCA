@@ -56,3 +56,12 @@ export interface SessionReadOutcome {
   familyId: OpaqueFamilyId | null;
   emailVerified: true;
 }
+
+/** Deliberately identical whether or not the email matches a VERIFIED account -- see ParentAccountService.requestPasswordReset, same enumeration-oracle avoidance as RegisterOutcome. */
+export interface RequestPasswordResetOutcome {
+  status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS';
+}
+
+export interface ResetPasswordOutcome {
+  status: 'PASSWORD_RESET';
+}

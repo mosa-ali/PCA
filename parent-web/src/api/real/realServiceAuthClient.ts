@@ -41,7 +41,7 @@
 // (the least-privileged placeholder) until a real role-resolution capability
 // exists. `displayName`/`memberId` are not resolvable at all yet and are
 // filled with clearly-synthetic placeholders derived from `accountId`.
-import type { AuthenticatedSession, RegistrationResult, ServiceAuthClient } from '../interfaces';
+import type { AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient } from '../interfaces';
 
 export type ServiceAuthErrorCode =
   | 'INVALID_CREDENTIALS'
@@ -189,6 +189,47 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     // A session established via verify-email is, by construction, the
     // family's initial Owner (PCA-DEC-026 step 4) when genesis succeeded.
     return toAuthenticatedSession(body, body.familyId ? 'OWNER' : 'VIEWER');
+  }
+
+  async requestPasswordReset(email: string): Promise<RequestPasswordResetResult> {
+    let response: Response;
+    try {
+      response = await fetch(this.url('/api/parent/request-password-reset'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Password reset request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected request-password-reset status ${response.status}`);
+    const body = await parseJsonSafe<RequestPasswordResetResult>(response);
+    if (!body) throw new ServiceAuthError('UNKNOWN', 'Password reset request succeeded but the response was empty.');
+    return body;
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string, newPasswordConfirmation: string): Promise<ResetPasswordResult> {
+    let response: Response;
+    try {
+      response = await fetch(this.url('/api/parent/reset-password'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email, code, newPassword, newPasswordConfirmation }),
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That reset code is incorrect or has expired.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Password reset request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected reset-password status ${response.status}`);
+    const body = await parseJsonSafe<ResetPasswordResult>(response);
+    if (!body) throw new ServiceAuthError('UNKNOWN', 'Password reset succeeded but the response was empty.');
+    return body;
   }
 
   async signIn(email: string, password: string): Promise<AuthenticatedSession> {

@@ -9,10 +9,25 @@ import { generateEphemeralGenesisDeviceKeyPair, signWithGenesisDeviceKey } from 
 import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
 import { hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
 import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
-import { MAX_VERIFICATION_ATTEMPTS_PER_CODE, VERIFICATION_CODE_TTL_MS, computeFreeAccessExpiry, resolveFreeAccessDefaults } from './policy.js';
+import {
+  MAX_PASSWORD_RESET_ATTEMPTS_PER_CODE,
+  MAX_VERIFICATION_ATTEMPTS_PER_CODE,
+  PASSWORD_RESET_CODE_TTL_MS,
+  VERIFICATION_CODE_TTL_MS,
+  computeFreeAccessExpiry,
+  resolveFreeAccessDefaults,
+} from './policy.js';
 import type { ParentAccountRepository } from './ParentAccountRepository.js';
 import type { EmailSenderPort } from './EmailSenderPort.js';
-import type { LoginOutcome, ParentAccountId, RegisterOutcome, SessionReadOutcome, VerifyEmailOutcome } from './types.js';
+import type {
+  LoginOutcome,
+  ParentAccountId,
+  RegisterOutcome,
+  RequestPasswordResetOutcome,
+  ResetPasswordOutcome,
+  SessionReadOutcome,
+  VerifyEmailOutcome,
+} from './types.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
 
@@ -329,6 +344,87 @@ export class ParentAccountService {
       throw new ParentAccountError('UNAUTHORIZED');
     }
     await this.repository.revokeAllServiceSessionsFor(serviceAccountId, this.now());
+  }
+
+  /**
+   * PCA product-completion programme (P1 /login finding): account-level
+   * password reset, distinct from the family-E2EE Recovery flow. Response
+   * is IDENTICAL whether the email matches no account, an unverified
+   * account, or a disabled account -- never an enumeration oracle, same
+   * posture as register().
+   */
+  async requestPasswordReset(email: string): Promise<RequestPasswordResetOutcome> {
+    if (!isPlausibleEmail(email)) throw new ParentAccountError('INVALID_INPUT');
+    const emailHash = hashParentEmail(email);
+    const account = await this.repository.findByEmailHash(emailHash);
+    if (account && account.status === 'VERIFIED' && account.disabledAt === null) {
+      await this.issueAndSendPasswordResetCode(account.accountId, email);
+    }
+    return { status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS' };
+  }
+
+  private async issueAndSendPasswordResetCode(accountId: ParentAccountId, email: string): Promise<void> {
+    const now = this.now();
+    const { code, codeHash } = generateVerificationCode();
+    await this.repository.insertPasswordResetCode({
+      codeId: randomUUID(),
+      accountId,
+      codeHash,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + PASSWORD_RESET_CODE_TTL_MS),
+    });
+    // Best-effort: see issueAndSendVerificationCode's own doc comment -- the
+    // same reasoning applies unchanged.
+    try {
+      await this.emailSender.sendPasswordResetCode(email, code);
+    } catch {
+      // deliberately swallowed
+    }
+  }
+
+  /**
+   * Consumes a password-reset code and replaces the account's credential.
+   * Deliberately does NOT auto-issue a new session afterward (unlike
+   * verifyEmail) -- the family must sign in fresh with the new password,
+   * a deliberately more conservative choice than treating "proved control
+   * of the reset code" as equivalent to "proved control of the account for
+   * session-issuance purposes." Every existing session for the account is
+   * revoked on success, so a previously-stolen session cannot outlive a
+   * password reset.
+   */
+  async resetPassword(email: string, code: string, newPassword: string, newPasswordConfirmation: string): Promise<ResetPasswordOutcome> {
+    if (
+      !isPlausibleEmail(email) ||
+      !isPlausibleVerificationCode(code) ||
+      !isPlausiblePassword(newPassword) ||
+      newPassword !== newPasswordConfirmation
+    ) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    const emailHash = hashParentEmail(email);
+    const account = await this.repository.findByEmailHash(emailHash);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+
+    const activeCode = await this.repository.findLatestPasswordResetCode(account.accountId);
+    if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.attemptCount >= MAX_PASSWORD_RESET_ATTEMPTS_PER_CODE) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.expiresAt.getTime() <= this.now().getTime()) throw new ParentAccountError('UNAUTHORIZED');
+
+    await this.repository.incrementPasswordResetAttempt(activeCode.codeId);
+    const candidateHash = hashVerificationCode(code);
+    if (!verificationCodeHashesMatch(candidateHash, activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+
+    const won = await this.repository.consumePasswordResetCodeIfUnconsumed(activeCode.codeId, this.now());
+    if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent reset race for the same code
+
+    const newPasswordHash = await hashPassword(newPassword);
+    await this.repository.updatePasswordHash(account.accountId, newPasswordHash);
+
+    if (account.serviceAccountId !== null) {
+      await this.repository.revokeAllServiceSessionsFor(account.serviceAccountId, this.now());
+    }
+
+    return { status: 'PASSWORD_RESET' };
   }
 }
 

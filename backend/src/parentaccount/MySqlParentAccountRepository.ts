@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import type {
+  ActivePasswordResetCode,
   ActiveVerificationCode,
+  NewPasswordResetCode,
   NewPendingAccount,
   NewVerificationCode,
   ParentAccountRepository,
@@ -35,6 +37,10 @@ interface CodeRow {
   consumed_at: Date | null;
   attempt_count: number;
 }
+
+// Same row shape as CodeRow -- kept as a distinct alias so a future
+// divergence between the two tables' schemas doesn't silently type-check.
+type ResetCodeRow = CodeRow;
 
 function rowToRecord(row: AccountRow): ParentAccountRecord {
   return {
@@ -170,6 +176,62 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
           transition.accountId,
         ],
       ),
+    );
+  }
+
+  async insertPasswordResetCode(record: NewPasswordResetCode): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `INSERT INTO parent_password_reset_codes (code_id, account_id, code_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [record.codeId, record.accountId, record.codeHash, record.createdAt, record.expiresAt],
+      ),
+    );
+  }
+
+  async findLatestPasswordResetCode(accountId: ParentAccountId): Promise<ActivePasswordResetCode | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<ResetCodeRow>(
+        conn,
+        `SELECT * FROM parent_password_reset_codes WHERE account_id = ? ORDER BY created_at DESC, code_id DESC LIMIT 1`,
+        [accountId],
+      ),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      codeId: row.code_id,
+      accountId: row.account_id,
+      codeHash: row.code_hash,
+      expiresAt: row.expires_at,
+      consumedAt: row.consumed_at,
+      attemptCount: row.attempt_count,
+    };
+  }
+
+  async incrementPasswordResetAttempt(codeId: string): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_password_reset_codes SET attempt_count = attempt_count + 1 WHERE code_id = ?`, [codeId]),
+    );
+  }
+
+  async consumePasswordResetCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_password_reset_codes SET consumed_at = ? WHERE code_id = ? AND consumed_at IS NULL`, [
+        consumedAt,
+        codeId,
+      ]),
+    );
+    return rowCount > 0;
+  }
+
+  async updatePasswordHash(accountId: ParentAccountId, passwordHash: string): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_accounts SET password_hash = ? WHERE account_id = ? AND status = 'VERIFIED'`, [
+        passwordHash,
+        accountId,
+      ]),
     );
   }
 

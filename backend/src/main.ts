@@ -204,6 +204,9 @@ class RejectingEmailSender implements EmailSenderPort {
   async sendVerificationCode(): Promise<void> {
     throw new Error('Email sending is not configured in production (PCA-ADD-IDENT-005 EXTERNAL_GATE, provider not yet selected).');
   }
+  async sendPasswordResetCode(): Promise<void> {
+    throw new Error('Email sending is not configured in production (PCA-ADD-IDENT-005 EXTERNAL_GATE, provider not yet selected).');
+  }
 }
 
 function createDefaultEmailSender(env: NodeJS.ProcessEnv = process.env): EmailSenderPort {

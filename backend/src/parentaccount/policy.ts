@@ -18,6 +18,14 @@ export const VERIFY_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 10
 export const LOGIN_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
 export const LOGIN_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
 
+/** Same TTL/attempt-budget shape as email verification (PCA-ADD-IDENT-007) -- see migration 0029's own header for why this is a distinct table/code kind, not a reused one. */
+export const PASSWORD_RESET_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+export const MAX_PASSWORD_RESET_ATTEMPTS_PER_CODE = 8;
+export const REQUEST_PASSWORD_RESET_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 60 * 1000, max: 20 };
+export const REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 60 * 1000, max: 5 };
+export const RESET_PASSWORD_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
+export const RESET_PASSWORD_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
+
 export interface FreeAccessDefaults {
   mode: FreeAccessMode;
   durationDays: number | null;

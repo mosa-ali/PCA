@@ -60,6 +60,15 @@ export interface RegistrationResult {
   status: 'PENDING_VERIFICATION';
 }
 
+/** Deliberately identical whether or not the email matches an account -- see requestPasswordReset's own doc comment. */
+export interface RequestPasswordResetResult {
+  status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS';
+}
+
+export interface ResetPasswordResult {
+  status: 'PASSWORD_RESET';
+}
+
 /** Service-level (account) authentication -- separate from family authority. */
 export interface ServiceAuthClient {
   getSession(): Promise<AuthenticatedSession | null>;
@@ -83,6 +92,20 @@ export interface ServiceAuthClient {
    * ../real/realServiceAuthClient.ts's header).
    */
   verifyEmail(email: string, code: string): Promise<AuthenticatedSession>;
+  /**
+   * PCA product-completion programme (P1 /login finding): account-level
+   * password reset, distinct from the family-E2EE Recovery flow. Always
+   * resolves to the identical RESET_CODE_SENT_IF_ACCOUNT_EXISTS result
+   * regardless of whether the email matches a real, verified account --
+   * never an enumeration oracle, same posture as register().
+   */
+  requestPasswordReset(email: string): Promise<RequestPasswordResetResult>;
+  /**
+   * Consumes a password-reset code and replaces the account's credential.
+   * Deliberately does NOT establish a session (unlike verifyEmail) -- the
+   * caller must sign in fresh with the new password.
+   */
+  resetPassword(email: string, code: string, newPassword: string, newPasswordConfirmation: string): Promise<ResetPasswordResult>;
 }
 
 /**

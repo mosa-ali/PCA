@@ -40,6 +40,10 @@ import {
   LOGIN_IP_RATE_LIMIT,
   REGISTER_EMAIL_RATE_LIMIT,
   REGISTER_IP_RATE_LIMIT,
+  REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT,
+  REQUEST_PASSWORD_RESET_IP_RATE_LIMIT,
+  RESET_PASSWORD_EMAIL_RATE_LIMIT,
+  RESET_PASSWORD_IP_RATE_LIMIT,
   VERIFY_EMAIL_RATE_LIMIT,
   VERIFY_IP_RATE_LIMIT,
 } from '../../parentaccount/policy.js';
@@ -203,6 +207,59 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       const result = await parentAccountService.verifyEmail(email, code);
       setSessionCookies(reply, result.rawSessionToken);
       await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        const status = error.code === 'INVALID_INPUT' ? 400 : 401;
+        await reply.code(status).send({ error: error.code === 'INVALID_INPUT' ? 'invalid_request' : 'invalid_code' });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/request-password-reset', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!isPlainObject(request.body)) {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    const { email } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string') {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    if (!rateLimited('request-password-reset', REQUEST_PASSWORD_RESET_IP_RATE_LIMIT, REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT, request.ip, email)) {
+      await reply.code(429).send({ error: 'rate_limited' });
+      return;
+    }
+    try {
+      const result = await parentAccountService.requestPasswordReset(email);
+      await reply.code(202).send(result);
+    } catch (error) {
+      if (error instanceof ParentAccountError && error.code === 'INVALID_INPUT') {
+        await reply.code(400).send({ error: 'invalid_request' });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/reset-password', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!isPlainObject(request.body)) {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    const { email, code, newPassword, newPasswordConfirmation } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof code !== 'string' || typeof newPassword !== 'string' || typeof newPasswordConfirmation !== 'string') {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    if (!rateLimited('reset-password', RESET_PASSWORD_IP_RATE_LIMIT, RESET_PASSWORD_EMAIL_RATE_LIMIT, request.ip, email)) {
+      await reply.code(429).send({ error: 'rate_limited' });
+      return;
+    }
+    try {
+      const result = await parentAccountService.resetPassword(email, code, newPassword, newPasswordConfirmation);
+      await reply.code(200).send(result);
     } catch (error) {
       if (error instanceof ParentAccountError) {
         const status = error.code === 'INVALID_INPUT' ? 400 : 401;

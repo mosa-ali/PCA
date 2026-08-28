@@ -37,6 +37,9 @@ export default function YouTubePage() {
         <StatusBadge state={data.visibilityState} />
         <p>{t('youtube.restrictedMode', { status: restrictedModeLabel(data.safeContentCapability, t) })}</p>
         <p>{t('youtube.approvedChannels', { count: data.approvedChannelCount })}</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>{t('youtube.modeA')}</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>{t('youtube.modeB')}</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>{t('youtube.capabilityNotice')}</p>
       </article>
     </div>
   );

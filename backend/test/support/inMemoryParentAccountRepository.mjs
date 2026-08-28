@@ -12,6 +12,8 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
   const accountsByServiceAccountId = new Map(); // serviceAccountId -> accountId
   const codesById = new Map();
   const codesByAccount = new Map(); // accountId -> [codeId,...] insertion order
+  const resetCodesById = new Map();
+  const resetCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
 
   function hexOf(buf) {
     return buf.toString('hex');
@@ -101,6 +103,38 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       account.verifiedAt = transition.verifiedAt;
       account.familyId = transition.familyId;
       account.freeAccess = { ...transition.freeAccess };
+    },
+
+    async insertPasswordResetCode(record) {
+      const code = { ...record, consumedAt: null, attemptCount: 0 };
+      resetCodesById.set(record.codeId, code);
+      const list = resetCodesByAccount.get(record.accountId) ?? [];
+      list.push(record.codeId);
+      resetCodesByAccount.set(record.accountId, list);
+    },
+
+    async findLatestPasswordResetCode(accountId) {
+      const list = resetCodesByAccount.get(accountId) ?? [];
+      if (list.length === 0) return null;
+      const code = resetCodesById.get(list[list.length - 1]);
+      return { ...code };
+    },
+
+    async incrementPasswordResetAttempt(codeId) {
+      const code = resetCodesById.get(codeId);
+      if (code) code.attemptCount += 1;
+    },
+
+    async consumePasswordResetCodeIfUnconsumed(codeId, consumedAt) {
+      const code = resetCodesById.get(codeId);
+      if (!code || code.consumedAt !== null) return false;
+      code.consumedAt = consumedAt;
+      return true;
+    },
+
+    async updatePasswordHash(accountId, passwordHash) {
+      const account = accountsById.get(accountId);
+      if (account && account.status === 'VERIFIED') account.passwordHash = passwordHash;
     },
 
     async setServiceAccountIdIfAbsent(accountId, serviceAccountId) {
