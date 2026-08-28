@@ -45,6 +45,7 @@ import { QuoteRepository, QuoteService } from '../dist/billing/quote.js';
 import { PaymentRepository, PaymentService } from '../dist/billing/payment.js';
 import { RefundRepository, RefundService } from '../dist/billing/refund.js';
 import { DisputeRepository, DisputeService } from '../dist/billing/dispute.js';
+import { InvoiceRepository, InvoiceService } from '../dist/billing/invoice.js';
 import { money } from '../dist/billing/money.js';
 import { createSandboxPaymentProvider } from '../dist/billing/provider/sandboxProvider.js';
 import { SandboxStaticSecretResolver } from '../dist/billing/provider/secretResolver.js';
@@ -95,6 +96,30 @@ console.log('Seeded Family A:', { accountId: familyA.accountId, familyId: family
 
 const familyB = await registerAndVerifyFamily('owner-b@pca-seed.test');
 console.log('Seeded Family B:', { accountId: familyB.accountId, familyId: familyB.familyId });
+
+// QA writer-2 addition: a registered-but-NEVER-verified account, so
+// /verify-email and the "resend verification" flow have a genuine pending
+// row to exercise (every account above this point is already verified).
+// Uses the same real register() call as every other seeded account; the
+// only difference is this script deliberately never calls verifyEmail for
+// it. The verification code itself is still readable at browser-QA time
+// via the SAME TestSandboxEmailSender this script already uses (the
+// backend process keeps it in memory), so Writer 3 can drive a real
+// verify-email run against this account without this script guessing a
+// code that would go stale.
+await parentAccountService.register('owner-pending@pca-seed.test', SEED_PASSWORD, SEED_PASSWORD);
+const pendingVerificationCode = emailSender.lastCodeFor('owner-pending@pca-seed.test');
+console.log('Seeded PENDING (unverified) parent account:', { email: 'owner-pending@pca-seed.test', pendingVerificationCode });
+
+// QA writer-2 addition: a THIRD verified family, dedicated to the
+// forgot-password/reset-password real-browser flow, with a genuine
+// already-issued (not yet consumed) reset code -- created through the
+// real requestPasswordReset() service call, not a fabricated row.
+const familyC = await registerAndVerifyFamily('owner-resettable@pca-seed.test');
+console.log('Seeded Family C (password-reset target):', { accountId: familyC.accountId, familyId: familyC.familyId });
+await parentAccountService.requestPasswordReset('owner-resettable@pca-seed.test');
+const pendingResetCode = emailSender.lastCodeFor('owner-resettable@pca-seed.test');
+console.log('Seeded pending password-reset code:', { email: 'owner-resettable@pca-seed.test', pendingResetCode });
 
 // Family A: Arabic-language preference (the second seeded family, B, stays
 // on the default English preference) -- gives real browser EN/AR coverage
@@ -160,7 +185,7 @@ async function seedPlatformAdmin(role) {
 }
 
 const seededAdmins = {};
-for (const role of ['APP_OWNER', 'FINANCE_ADMIN', 'SUPPORT_ADMIN']) {
+for (const role of ['APP_OWNER', 'PLATFORM_ADMIN', 'FINANCE_ADMIN', 'SUPPORT_ADMIN', 'AUDITOR_READ_ONLY']) {
   seededAdmins[role] = await seedPlatformAdmin(role);
 }
 
@@ -351,6 +376,59 @@ if (settlementBatch.status !== 'UNDER_INVESTIGATION') {
 }
 console.log('Seeded UNDER_INVESTIGATION settlement batch:', { settlementBatchId: settlementBatch.settlementBatchId, differenceMinor: settlementBatch.differenceMinor?.toString?.() ?? settlementBatch.differenceMinor });
 
+// 5) A plain CONFIRMED payment in the GULF market/SAR currency -- every
+// other seeded payment above is USD/GLOBAL_OTHER; this gives platform-
+// admin-web's money/currency formatting a genuine non-USD row to render
+// (SUPPORTED_CURRENCIES is USD/SAR/YER only -- see billing/currency.ts's
+// own header for why EUR is deliberately not one of them) and gives this
+// batch of fixtures one healthy/happy-path payment alongside the FAILED/
+// refunded/disputed ones above, so a reviewer can tell a "nothing wrong"
+// badge apart from the exceptional ones.
+const gulfAttempt = await publishPriceAndCreateAttempt({
+  market: 'GULF', currencyCode: 'SAR', amountMinor: 15000n, accountRef: `account-seed-gulf-${randomUUID()}`,
+});
+const gulfCheckout = await sandboxProvider.createCheckout({ amountMinor: 15000n, currencyCode: 'SAR', accountRef: `account-seed-gulf-${gulfAttempt.paymentAttemptId}`, paymentAttemptId: gulfAttempt.paymentAttemptId });
+sandboxProvider.simulateConfirm(gulfCheckout.providerCheckoutRef);
+const gulfTransaction = await paymentService.confirmPaymentAttempt(gulfAttempt.paymentAttemptId, 'TEST_SANDBOX', gulfCheckout.providerCheckoutRef, financeActor);
+console.log('Seeded CONFIRMED SAR/GULF payment:', { paymentTransactionId: gulfTransaction.paymentTransactionId });
+
+// 6) A PAID and an OPEN invoice for Family A -- parent-web's /invoices
+// list (FamilyInvoiceReadRepository.listForFamily, accountRef ===
+// familyId) and platform-admin-web's billing invoice views both need real
+// rows in more than one status. Built through the real InvoiceService
+// (same discipline as every other fixture here); InvoiceService exposes
+// only createInvoice (always starts DRAFT) and markPaid, with no DRAFT->
+// OPEN transition method yet, so the OPEN row uses one direct SQL UPDATE
+// -- the EXACT statement InvoiceRepository.updateStatus itself runs --
+// mirroring this script's own established precedent above (MFA
+// activation, step-up session rows) for state with no service-level
+// mutation surface.
+const invoiceService = new InvoiceService(new InvoiceRepository());
+
+const paidInvoice = await invoiceService.createInvoice({
+  accountRef: familyA.familyId,
+  subscriptionId: null,
+  currencyCode: 'USD',
+  dueAt: new Date('2026-02-01T00:00:00Z'),
+  periodStart: new Date('2026-01-01T00:00:00Z'),
+  periodEnd: new Date('2026-01-31T00:00:00Z'),
+  lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
+}, financeRoles);
+await invoiceService.markPaid(paidInvoice.invoiceId, financeRoles);
+console.log('Seeded PAID invoice:', { invoiceId: paidInvoice.invoiceId, familyId: familyA.familyId });
+
+const openInvoice = await invoiceService.createInvoice({
+  accountRef: familyA.familyId,
+  subscriptionId: null,
+  currencyCode: 'USD',
+  dueAt: new Date('2026-09-15T00:00:00Z'),
+  periodStart: new Date('2026-08-01T00:00:00Z'),
+  periodEnd: new Date('2026-08-31T00:00:00Z'),
+  lines: [{ description: 'Monthly plan charge', lineType: 'PLAN_CHARGE', amountMinor: 2999n, currencyCode: 'USD', quantity: 1, planId: null, priceBookId: null }],
+}, financeRoles);
+await getPool().query(`UPDATE billing_invoices SET status = 'OPEN' WHERE invoice_id = ?`, [openInvoice.invoiceId]);
+console.log('Seeded OPEN invoice:', { invoiceId: openInvoice.invoiceId, familyId: familyA.familyId });
+
 const [[{ familyCount }]] = await getPool().query('SELECT COUNT(*) AS familyCount FROM families');
 const [[{ accountCount }]] = await getPool().query('SELECT COUNT(*) AS accountCount FROM parent_accounts');
 const [[{ adminCount }]] = await getPool().query('SELECT COUNT(*) AS adminCount FROM platform_admin_accounts');
@@ -359,6 +437,7 @@ const [[{ paymentAttemptCount }]] = await getPool().query('SELECT COUNT(*) AS pa
 const [[{ refundCount }]] = await getPool().query('SELECT COUNT(*) AS refundCount FROM billing_refunds');
 const [[{ disputeCount }]] = await getPool().query('SELECT COUNT(*) AS disputeCount FROM billing_disputes');
 const [[{ settlementBatchCount }]] = await getPool().query('SELECT COUNT(*) AS settlementBatchCount FROM settlement_batches');
-console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount, paymentAttemptCount, refundCount, disputeCount, settlementBatchCount });
+const [[{ invoiceCount }]] = await getPool().query('SELECT COUNT(*) AS invoiceCount FROM billing_invoices');
+console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount, paymentAttemptCount, refundCount, disputeCount, settlementBatchCount, invoiceCount });
 
 await closePool();
