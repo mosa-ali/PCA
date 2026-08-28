@@ -12,7 +12,10 @@ import { __resetDevFamilyMemberInvitationsForTests } from '../../src/api/dev/dev
  * it, mirroring tests/route/familyActions.test.tsx's established pattern.
  */
 async function confirmStepUp() {
-  await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate (dev stub)' }));
+  // The step-up confirm button's label lost its '(dev stub)' developer marker
+  // when that copy was made production-honest; StepUpProvider is mounted
+  // app-wide with no fixture gate, so real users were reading it.
+  await userEvent.click(await screen.findByRole('button', { name: 'Re-authenticate' }));
 }
 
 async function sendInvite(email: string) {
@@ -22,6 +25,16 @@ async function sendInvite(email: string) {
   await userEvent.click(screen.getByRole('button', { name: 'Send invitation' }));
   await confirmStepUp();
 }
+
+// TEST TIMING: the three tests below each drive the full step-up modal
+// (open -> confirm -> re-issue the guarded action) through userEvent, which
+// reproducibly exceeds vitest's default 5000ms testTimeout on a loaded
+// machine -- they pass on a quiet one and fail on a busy one, with the
+// failure always reported as "Test timed out", never as a failed assertion.
+// Same environment characteristic, and same remedy, as
+// platform-admin-web/tests/unit/Dashboard.test.tsx's rollup waitFor timeout
+// (commit 601690a). No assertion is weakened; only the clock is.
+const STEP_UP_FLOW_TIMEOUT_MS = 20_000;
 
 describe('Members', () => {
   beforeEach(() => {
@@ -41,7 +54,7 @@ describe('Members', () => {
     // Never the raw diagnostic string a FamilyMemberInvitationClient implementation throws internally.
     expect(screen.queryByText(/FamilyMemberInvitationClient\.invite/)).not.toBeInTheDocument();
     expect(screen.queryByText(/duplicate_pending_invitation/)).not.toBeInTheDocument();
-  });
+  }, STEP_UP_FLOW_TIMEOUT_MS);
 
   it('revoking a pending invitation transitions its status and removes its action controls', async () => {
     renderWithProviders(<Members />, { role: 'OWNER' });
@@ -54,7 +67,7 @@ describe('Members', () => {
     await waitFor(() => expect(screen.getByText('Revoked')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Revoke invitation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Change to/ })).not.toBeInTheDocument();
-  });
+  }, STEP_UP_FLOW_TIMEOUT_MS);
 
   it('changing an invitation role updates the displayed role while it is still pending', async () => {
     renderWithProviders(<Members />, { role: 'OWNER' });
@@ -66,7 +79,7 @@ describe('Members', () => {
     await confirmStepUp();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Change to Viewer' })).toBeInTheDocument());
-  });
+  }, STEP_UP_FLOW_TIMEOUT_MS);
 
   it('never renders the raw "No recovery secrets..." notice as a translation-key path -- always the real EN copy', async () => {
     renderWithProviders(<Members />, { role: 'OWNER' });
