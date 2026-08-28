@@ -83,5 +83,8 @@ describe('RouteGuard', () => {
     renderAt('/admin-users', ['SUPPORT_ADMIN']);
     expect(await screen.findByRole('heading', { name: /not permitted/i })).toBeInTheDocument();
     expect(screen.queryByText('Admin accounts content')).not.toBeInTheDocument();
+    // RouteGuard.tsx passes the denied `operation` through navigation state --
+    // NotPermitted.tsx must surface it, not just the generic body copy.
+    expect(screen.getByText(/VIEW_ADMIN_ACCOUNTS/)).toBeInTheDocument();
   });
 });

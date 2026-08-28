@@ -100,7 +100,8 @@
   },
   "notPermitted": {
     "title": "Not permitted",
-    "body": "Your role does not include this capability."
+    "body": "Your role does not include this capability.",
+    "requiredOperation": "Required capability: {{operation}}"
   },
   "notFound": {
     "title": "Page not found",

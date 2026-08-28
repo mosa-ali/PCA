@@ -100,7 +100,8 @@
   },
   "notPermitted": {
     "title": "غير مصرح به",
-    "body": "دورك لا يشمل هذه الصلاحية."
+    "body": "دورك لا يشمل هذه الصلاحية.",
+    "requiredOperation": "الصلاحية المطلوبة: {{operation}}"
   },
   "notFound": {
     "title": "الصفحة غير موجودة",

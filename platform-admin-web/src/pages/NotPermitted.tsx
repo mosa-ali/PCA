@@ -12,6 +12,7 @@ export default function NotPermitted() {
       <div className="card" role="alert">
         <h1>{t('notPermitted.title')}</h1>
         <p>{t('notPermitted.body')}</p>
+        {state?.operation && <p className="status-unavailable">{t('notPermitted.requiredOperation', { operation: state.operation })}</p>}
         <Link to={backTo} className="btn">
           {t('common.back')}
         </Link>

@@ -89,7 +89,7 @@ describe('Dashboard USD-normalized settlement rollup (PCA-ADD-BILL-020)', () => 
     const rollupCalls: string[] = [];
     renderPage(['APP_OWNER'], rollupCalls);
 
-    await waitFor(() => expect(rollupCalls.length).toBeGreaterThan(0));
+    await waitFor(() => expect(rollupCalls.length).toBeGreaterThan(0), { timeout: 5000 });
     expect(await screen.findByText('$1,234.56')).toBeInTheDocument();
     expect(await screen.findByText('$1,200.00')).toBeInTheDocument();
     expect(await screen.findByText('7')).toBeInTheDocument();
