@@ -55,7 +55,16 @@ export const platformAdminApi = {
     const response = await fetch(buildUrl(path), {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: body === undefined ? undefined : JSON.stringify(body),
+      // A bodyless POST must still send a syntactically valid JSON document.
+      // Sending Content-Type: application/json with a genuinely empty body
+      // makes Fastify's default JSON parser fail with
+      // FST_ERR_CTP_EMPTY_JSON_BODY (400) BEFORE the route's RBAC preHandler
+      // ever runs -- buildServer.ts's error handler then rewrites it to
+      // {error:'invalid_request'}, so e.g. the bodyless
+      // POST .../entitlement-requests/:id/approve-parent-member could never
+      // succeed. '{}' satisfies every backend route: each one either ignores
+      // the body entirely or validates named fields it would reject anyway.
+      body: body === undefined ? '{}' : JSON.stringify(body),
     });
     if (!response.ok) throw new PlatformAdminApiError(response.status, await parseErrorBody(response));
     if (response.status === 204) return undefined as T;

@@ -59,7 +59,8 @@
       "ADMIN_ROLE_GRANT": "منح دور إداري",
       "FAMILY_ACCOUNT_SUSPEND": "تعليق حساب الأسرة",
       "FAMILY_ACCOUNT_REACTIVATE": "إعادة تفعيل حساب الأسرة",
-      "ENTITLEMENT_LIMIT_OVERRIDE": "تجاوز حد الاستحقاق"
+      "ENTITLEMENT_LIMIT_OVERRIDE": "تجاوز حد الاستحقاق",
+      "COMPLIMENTARY_GRANT_MUTATION": "إنشاء منحة مجانية أو إلغاؤها أو تجديدها"
     }
   },
   "common": {
@@ -131,6 +132,9 @@
     "settlementMatched": "دفعات مطابقة",
     "settlementUnderInvestigation": "قيد التحقيق",
     "settlementResolved": "دفعات محلولة",
+    "settlementNet": "الصافي",
+    "settlementReceived": "المستلم",
+    "settlementDifference": "الفرق",
     "usdRollupTitle": "تجميع الدولار الأمريكي عبر الدفعات",
     "usdRollupNet": "الصافي (دولار أمريكي)",
     "usdRollupReceived": "المستلم (دولار أمريكي)",
@@ -390,8 +394,23 @@
       "GULF": "الخليج",
       "GLOBAL_OTHER": "عالمي / أخرى"
     },
-    "sensitiveSettingsTitle": "الإعدادات الحسّاسة",
-    "sensitiveSettingsUnavailable": "لا يوجد مسار للإعدادات الحسّاسة (بيانات اعتماد المزوّد، إعدادات التسوية/البنك) على هذه الواجهة الخلفية. يعرض هذا القسم فارغًا عمدًا بدلاً من تلفيق نموذج لن يحفظ أي شيء فعليًا."
+    "sensitiveSettingsTitle": "الإعدادات الحسّاسة — مزوّد الدفع",
+    "sensitiveSettingsMaskedNote": "تُقرأ إعدادات مزوّد الدفع مُقنَّعة: تعيد الواجهة الخلفية تسمية مُقنَّعة فقط لكل مفتاح ولا تعيد القيمة المخزَّنة أبدًا، لذا لا يمكن عرض القيمة المحفوظة هنا. أمّا إعدادات التسوية والبنك فلها واجهتها المُقنَّعة الخاصة في صفحة حسابات التسوية.",
+    "categories": {
+      "BRANDING": "الهوية البصرية وبيانات الدعم",
+      "NOTIFICATION": "إعدادات الإشعارات",
+      "MAINTENANCE": "وضع الصيانة",
+      "FEATURE_FLAG": "مفاتيح الميزات"
+    },
+    "settingKey": "مفتاح الإعداد",
+    "settingValue": "القيمة (JSON)",
+    "settingValueHint": "أدخل القيمة بصيغة JSON، مثل true أو 42 أو \"support@example.com\" أو {\"enabled\": true}.",
+    "maskedValue": "التسمية المُقنَّعة",
+    "updatedBy": "حُدِّث بواسطة",
+    "settingSaved": "تم حفظ الإعداد.",
+    "invalidSettingKey": "مفاتيح الإعدادات تتكوّن من أحرف صغيرة وأرقام ونقاط وشرطات سفلية، من 2 إلى 128 حرفًا، وتبدأ بحرف.",
+    "invalidSettingValue": "أدخل القيمة بصيغة JSON صحيحة.",
+    "maskedDisplayRequired": "التسمية المُقنَّعة مطلوبة للإعداد الحسّاس، ويجب ألّا تتجاوز 128 حرفًا."
   },
   "audit": {
     "eventType": "نوع الحدث",

@@ -87,4 +87,18 @@ describe('RouteGuard', () => {
     // NotPermitted.tsx must surface it, not just the generic body copy.
     expect(screen.getByText(/VIEW_ADMIN_ACCOUNTS/)).toBeInTheDocument();
   });
+
+  // RouteGuard sets navigation state.from to the route it just DENIED.
+  // NotPermitted.tsx used to point its "Back to dashboard" link at exactly
+  // that route, so clicking it re-entered the guard and bounced straight back
+  // to /not-permitted -- a no-op loop with no way out but the browser's own
+  // back button.
+  it('offers a back link the denied operator can actually reach -- never the route that was just denied', async () => {
+    renderAt('/admin-users', ['SUPPORT_ADMIN']);
+    await screen.findByRole('heading', { name: /not permitted/i });
+
+    const back = screen.getByRole('link', { name: 'Back to dashboard' });
+    expect(back).toHaveAttribute('href', '/dashboard');
+    expect(back).not.toHaveAttribute('href', '/admin-users');
+  });
 });

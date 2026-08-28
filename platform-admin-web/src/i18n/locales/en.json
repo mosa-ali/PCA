@@ -59,7 +59,8 @@
       "ADMIN_ROLE_GRANT": "grant admin role",
       "FAMILY_ACCOUNT_SUSPEND": "suspend family account",
       "FAMILY_ACCOUNT_REACTIVATE": "reactivate family account",
-      "ENTITLEMENT_LIMIT_OVERRIDE": "override entitlement limit"
+      "ENTITLEMENT_LIMIT_OVERRIDE": "override entitlement limit",
+      "COMPLIMENTARY_GRANT_MUTATION": "create, revoke or renew a complimentary grant"
     }
   },
   "common": {
@@ -131,6 +132,9 @@
     "settlementMatched": "Matched batches",
     "settlementUnderInvestigation": "Under investigation",
     "settlementResolved": "Resolved batches",
+    "settlementNet": "net",
+    "settlementReceived": "received",
+    "settlementDifference": "difference",
     "usdRollupTitle": "USD-normalized cross-batch rollup",
     "usdRollupNet": "Net (USD)",
     "usdRollupReceived": "Received (USD)",
@@ -390,8 +394,23 @@
       "GULF": "Gulf",
       "GLOBAL_OTHER": "Global / Other"
     },
-    "sensitiveSettingsTitle": "Sensitive settings",
-    "sensitiveSettingsUnavailable": "No sensitive-settings route (provider credentials, settlement/bank configuration) exists on this backend surface. This section intentionally shows nothing rather than fabricating a form that would not actually save anything."
+    "sensitiveSettingsTitle": "Sensitive settings — payment provider",
+    "sensitiveSettingsMaskedNote": "Payment-provider configuration is read-masked: the backend returns only a masked label for each key and never returns the stored value, so a saved value cannot be displayed back here. Settlement and bank configuration has its own masked surface on the Settlement accounts page.",
+    "categories": {
+      "BRANDING": "Branding and support metadata",
+      "NOTIFICATION": "Notification settings",
+      "MAINTENANCE": "Maintenance mode",
+      "FEATURE_FLAG": "Feature flags"
+    },
+    "settingKey": "Setting key",
+    "settingValue": "Value (JSON)",
+    "settingValueHint": "Enter the value as JSON, e.g. true, 42, \"support@example.com\" or {\"enabled\": true}.",
+    "maskedValue": "Masked label",
+    "updatedBy": "Updated by",
+    "settingSaved": "Setting saved.",
+    "invalidSettingKey": "Setting keys are lowercase letters, digits, dots and underscores, 2–128 characters, starting with a letter.",
+    "invalidSettingValue": "Enter the value as valid JSON.",
+    "maskedDisplayRequired": "A masked label is required for a sensitive setting, and must be at most 128 characters."
   },
   "audit": {
     "eventType": "Event type",

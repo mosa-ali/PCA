@@ -69,4 +69,31 @@ describe('Audit date-range filter', () => {
     expect(lastCall).toContain('since=2026-01-01');
     expect(lastCall).toContain('until=2026-01-31');
   });
+
+  // auditRoutes.ts parses `until` with new Date(value) and AuditReadModel
+  // filters `occurred_at <= <that instant>`. A bare YYYY-MM-DD resolves to
+  // UTC MIDNIGHT, so every event that actually happened on the selected end
+  // date was silently excluded -- the filter did not mean what its label
+  // said. The UI must send the last instant of that UTC day instead.
+  it('sends an INCLUSIVE end-of-day instant for until, not the bare date (which the backend reads as UTC midnight)', async () => {
+    const auditCalls: string[] = [];
+    renderPage(auditCalls);
+
+    const sinceInput = await screen.findByLabelText('From date');
+    const untilInput = screen.getByLabelText('To date');
+    await userEvent.type(sinceInput, '2026-01-01');
+    await userEvent.type(untilInput, '2026-01-31');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    const params = new URL(auditCalls[auditCalls.length - 1]).searchParams;
+    const until = params.get('until');
+    expect(until).toBe('2026-01-31T23:59:59.999Z');
+    // The exact property that matters server-side: the upper bound must sit
+    // at the END of the selected day, not at its UTC midnight start.
+    expect(new Date(until as string).getTime()).toBeGreaterThan(new Date('2026-01-31').getTime());
+    expect(new Date(until as string).getTime()).toBeLessThan(new Date('2026-02-01').getTime());
+    // `since` stays a bare date on purpose -- UTC midnight is already the
+    // correct INCLUSIVE lower bound for the selected start date.
+    expect(params.get('since')).toBe('2026-01-01');
+  });
 });

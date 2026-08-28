@@ -1,11 +1,163 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../api/platformAdminApiClient';
-import { COMMERCIAL_MARKETS, type CommercialMarket, type CurrencyMetadataRow, type FreeStarterDefaults, type MarketMappingRow } from '../domain/settings';
+import {
+  COMMERCIAL_MARKETS,
+  MASKED_DISPLAY_MAX_LENGTH,
+  SETTING_KEY_PATTERN,
+  isMaskedSettingRow,
+  isSensitiveSettingCategory,
+  type CommercialMarket,
+  type CurrencyMetadataRow,
+  type FreeStarterDefaults,
+  type MarketMappingRow,
+  type PlatformAdminSettingCategory,
+  type PlatformAdminSettingRow,
+} from '../domain/settings';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { PermissionGate } from '../rbac/PermissionGate';
 import { useToast } from '../state/ToastContext';
+
+/**
+ * One card per named settings category served by
+ * backend/src/http/routes/platformadmin/settingsRoutes.ts
+ * (GET /platform-admin/settings/category/:category, PUT /settings/key/:settingKey).
+ *
+ * RBAC is reused VERBATIM from that backend, never widened here: reads are
+ * VIEW_SUPPORT_ACCOUNT_METADATA (this whole page already sits behind the
+ * stricter ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS route guard, so only
+ * APP_OWNER/PLATFORM_ADMIN reach it at all), writes are
+ * ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS for every ordinary category and
+ * ADMINISTER_SENSITIVE_PLATFORM_SETTINGS (APP_OWNER only) for the sensitive
+ * PAYMENT_PROVIDER category -- exactly the split
+ * PlatformAdminSettingsService.requireMutate enforces.
+ *
+ * A sensitive category is READ MASKED: the response carries maskedDisplay
+ * and no `value` field at all, so this card renders no value column for it
+ * and never attempts to pre-fill one.
+ */
+function CategorySettingsCard({ category, title }: { category: PlatformAdminSettingCategory; title: string }) {
+  const { t } = useTranslation();
+  const { notify } = useToast();
+  const sensitive = isSensitiveSettingCategory(category);
+  const [rows, setRows] = useState<PlatformAdminSettingRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [settingKey, setSettingKey] = useState('');
+  const [valueJson, setValueJson] = useState('');
+  const [maskedDisplay, setMaskedDisplay] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = () => {
+    setError(null);
+    platformAdminApi
+      .get<{ items: PlatformAdminSettingRow[] }>(`/platform-admin/settings/category/${encodeURIComponent(category)}`)
+      .then((res) => setRows(res.items))
+      .catch((err: unknown) => {
+        setRows(null);
+        setError(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'));
+      });
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [category]);
+
+  const onSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!SETTING_KEY_PATTERN.test(settingKey)) {
+      notify(t('settings.invalidSettingKey'), 'error');
+      return;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(valueJson) as unknown;
+    } catch {
+      notify(t('settings.invalidSettingValue'), 'error');
+      return;
+    }
+    if (sensitive && (maskedDisplay.trim().length === 0 || maskedDisplay.trim().length > MASKED_DISPLAY_MAX_LENGTH)) {
+      notify(t('settings.maskedDisplayRequired'), 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      // maskedDisplay is REQUIRED for a sensitive category and REJECTED for
+      // any other one (PlatformAdminSettingsService.put) -- send it only here.
+      const saved = await platformAdminApi.put<PlatformAdminSettingRow>(`/platform-admin/settings/key/${encodeURIComponent(settingKey)}`, {
+        category,
+        value,
+        ...(sensitive ? { maskedDisplay: maskedDisplay.trim() } : {}),
+      });
+      setRows((prev) => [...(prev ?? []).filter((r) => r.settingKey !== saved.settingKey), saved].sort((a, b) => a.settingKey.localeCompare(b.settingKey)));
+      setSettingKey('');
+      setValueJson('');
+      setMaskedDisplay('');
+      notify(t('settings.settingSaved'), 'success');
+    } catch (err) {
+      notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const keyInputId = `setting-key-${category}`;
+  const valueInputId = `setting-value-${category}`;
+  const maskedInputId = `setting-masked-${category}`;
+
+  return (
+    <section className="card">
+      <h2 className="section-title">{title}</h2>
+      {sensitive && <p className="status-unavailable">{t('settings.sensitiveSettingsMaskedNote')}</p>}
+      {error && <ErrorState message={error} onRetry={load} />}
+      {!error && rows && rows.length === 0 && <p className="status-unavailable">{t('common.empty')}</p>}
+      {!error && rows && rows.length > 0 && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">{t('settings.settingKey')}</th>
+                <th scope="col">{sensitive ? t('settings.maskedValue') : t('settings.settingValue')}</th>
+                <th scope="col">{t('settings.updatedAt')}</th>
+                <th scope="col">{t('settings.updatedBy')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.settingKey}>
+                  <td>{row.settingKey}</td>
+                  <td>{isMaskedSettingRow(row) ? row.maskedDisplay : JSON.stringify(row.value)}</td>
+                  <td>{row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '—'}</td>
+                  <td>{row.updatedByAdminId ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <PermissionGate operation={sensitive ? 'ADMINISTER_SENSITIVE_PLATFORM_SETTINGS' : 'ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS'}>
+        <form className="form-grid" onSubmit={onSave}>
+          <label htmlFor={keyInputId}>{t('settings.settingKey')}</label>
+          <input id={keyInputId} value={settingKey} onChange={(e) => setSettingKey(e.target.value)} maxLength={128} required />
+          <label htmlFor={valueInputId}>{t('settings.settingValue')}</label>
+          <textarea id={valueInputId} rows={2} value={valueJson} onChange={(e) => setValueJson(e.target.value)} required />
+          <p className="field-hint">{t('settings.settingValueHint')}</p>
+          {sensitive && (
+            <>
+              <label htmlFor={maskedInputId}>{t('settings.maskedValue')}</label>
+              <input id={maskedInputId} value={maskedDisplay} onChange={(e) => setMaskedDisplay(e.target.value)} maxLength={MASKED_DISPLAY_MAX_LENGTH} required />
+            </>
+          )}
+          <div className="actions-row">
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {t('common.save')}
+            </button>
+          </div>
+        </form>
+      </PermissionGate>
+    </section>
+  );
+}
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -211,10 +363,11 @@ export default function Settings() {
             </PermissionGate>
           </section>
 
-          <section className="card">
-            <h2 className="section-title">{t('settings.sensitiveSettingsTitle')}</h2>
-            <p className="status-unavailable">{t('settings.sensitiveSettingsUnavailable')}</p>
-          </section>
+          <CategorySettingsCard category="BRANDING" title={t('settings.categories.BRANDING')} />
+          <CategorySettingsCard category="NOTIFICATION" title={t('settings.categories.NOTIFICATION')} />
+          <CategorySettingsCard category="MAINTENANCE" title={t('settings.categories.MAINTENANCE')} />
+          <CategorySettingsCard category="FEATURE_FLAG" title={t('settings.categories.FEATURE_FLAG')} />
+          <CategorySettingsCard category="PAYMENT_PROVIDER" title={t('settings.sensitiveSettingsTitle')} />
         </>
       )}
     </div>

@@ -96,6 +96,69 @@ describe('Dashboard USD-normalized settlement rollup (PCA-ADD-BILL-020)', () => 
     expect(await screen.findByText('2')).toBeInTheDocument();
   });
 
+  // The per-currency settlement rollup used to print bare wire values -- e.g.
+  // "USD: net 100000, received 99500, diff -500" -- so $1,000.00 rendered as
+  // "100000", with the labels hardcoded in English right in the JSX. Every
+  // amount now goes through formatMoney with the row's own currency (the
+  // signed difference included), and the labels come from both locales.
+  it('formats the per-currency settlement rollup as money, never as raw minor units', async () => {
+    const rollupCalls: string[] = [];
+    secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
+        if (url.includes('/platform-admin/dashboard')) {
+          return Promise.resolve(
+            jsonResponse(200, {
+              ...DASHBOARD_SNAPSHOT,
+              settlementSummary: {
+                capability: 'AVAILABLE',
+                summary: {
+                  matchedBatchCount: 1,
+                  underInvestigationBatchCount: 0,
+                  resolvedBatchCount: 0,
+                  byCurrency: [
+                    {
+                      currencyCode: 'USD',
+                      totalNet: { amountMinor: '100000', currencyCode: 'USD' },
+                      totalReceived: { amountMinor: '99500', currencyCode: 'USD' },
+                      totalDifferenceMinor: '-500',
+                    },
+                  ],
+                },
+              },
+            }),
+          );
+        }
+        if (url.includes('/platform-admin/settlement/usd-rollup')) {
+          rollupCalls.push(url);
+          return Promise.resolve(jsonResponse(200, USD_ROLLUP));
+        }
+        return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
+      }),
+    );
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <ToastProvider>
+            <AuthProvider>
+              <StepUpProvider>
+                <Dashboard />
+              </StepUpProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByText(/USD: net \$1,000\.00, received \$995\.00, difference -\$5\.00/)).toBeInTheDocument();
+    // The old raw-wire rendering must not survive anywhere on the page.
+    expect(screen.queryByText(/100000/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/, diff /)).not.toBeInTheDocument();
+  });
+
   it('never requests the rollup for a role without VIEW_SETTLEMENT_RECORDS, and shows no rollup section', async () => {
     const rollupCalls: string[] = [];
     renderPage(['PLATFORM_ADMIN'], rollupCalls);

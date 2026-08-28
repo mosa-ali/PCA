@@ -8,6 +8,20 @@ import { ErrorState } from '../components/common/ErrorState';
 
 const PAGE_SIZE = 25;
 
+/**
+ * The "To date" input yields a bare YYYY-MM-DD. The backend parses it with
+ * `new Date(value)` (backend/src/http/routes/platformadmin/auditRoutes.ts's
+ * parseDate) -- which resolves a date-only string to UTC MIDNIGHT -- and
+ * then filters `occurred_at <= <that instant>` (AuditReadModel.query). A
+ * bare date therefore excludes every event that actually occurred ON the
+ * selected end date. Sending the last representable instant of that UTC day
+ * makes the filter mean what its label says (inclusive), and mirrors
+ * `since`, whose UTC-midnight lower bound is already inclusive as-is.
+ */
+function toInclusiveEndOfDayInstant(yyyyMmDd: string): string {
+  return `${yyyyMmDd}T23:59:59.999Z`;
+}
+
 export default function Audit() {
   const { t } = useTranslation();
   const [items, setItems] = useState<AuditEvent[]>([]);
@@ -43,7 +57,7 @@ export default function Audit() {
         targetRef: appliedFilters.targetRef || undefined,
         result: appliedFilters.result || undefined,
         since: appliedFilters.since || undefined,
-        until: appliedFilters.until || undefined,
+        until: appliedFilters.until ? toInclusiveEndOfDayInstant(appliedFilters.until) : undefined,
       })
       .then((res) => {
         setItems(res.items);

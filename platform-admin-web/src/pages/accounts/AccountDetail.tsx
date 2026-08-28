@@ -173,7 +173,12 @@ export default function AccountDetail() {
                 <dt>{t('accounts.subscriptionId')}</dt>
                 <dd>{account.latestSubscription.subscriptionId}</dd>
                 <dt>{t('accounts.subscriptionStatus')}</dt>
-                <dd>{account.latestSubscription.status}</dd>
+                {/* Reuses the existing billing.subscriptionStatuses table (the same
+                    TRIALING/ACTIVE/PAST_DUE/CANCELED/EXPIRED union backend/src/billing/
+                    subscription.ts defines) rather than duplicating those labels under
+                    accounts.*; the raw wire value is the explicit fallback so an
+                    unmapped status degrades to the code instead of a bare i18n key. */}
+                <dd>{t(`billing.subscriptionStatuses.${account.latestSubscription.status}`, account.latestSubscription.status)}</dd>
                 <dt>{t('accounts.currentPeriod')}</dt>
                 <dd>
                   {account.latestSubscription.currentPeriodStart ? new Date(account.latestSubscription.currentPeriodStart).toLocaleDateString() : '—'} –{' '}

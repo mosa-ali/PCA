@@ -72,13 +72,23 @@ export default function Entitlements() {
     }
     setLimitSubmitting(true);
     try {
-      const updated = await platformAdminApi.post<FamilyEntitlement>(`/platform-admin/families/${encodeURIComponent(familyId)}/entitlement/limit`, {
+      // POST .../entitlement/limit answers with the FLAT usage record
+      // (parentMemberUsedCount/managedDeviceActiveCount/revision, and no
+      // pendingRequestSummary at all -- backend/src/http/routes/platformadmin/
+      // entitlementRoutes.ts), NOT the read model this page renders. Feeding
+      // that response straight into setEntitlement used to crash the whole SPA
+      // on a SUCCESSFUL set-limit (entitlement.pendingRequestSummary.length on
+      // undefined). The mutation response is therefore deliberately discarded:
+      // the page re-reads through GET .../entitlement, the one route that
+      // actually returns FamilyEntitlement (same discipline onDeviceOverride
+      // below already follows).
+      await platformAdminApi.post(`/platform-admin/families/${encodeURIComponent(familyId)}/entitlement/limit`, {
         limitType,
         targetLimit,
       });
-      setEntitlement(updated);
       setLimitValue('');
       notify(t('entitlements.limitUpdated'), 'success');
+      load(familyId);
     } catch (err) {
       notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
     } finally {

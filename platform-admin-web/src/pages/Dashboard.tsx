@@ -5,7 +5,7 @@ import { platformAdminApi, PlatformAdminApiError } from '../api/platformAdminApi
 import type { PlatformDashboardSnapshot } from '../domain/dashboard';
 import { isSettlementPermitted } from '../domain/settlement';
 import { isBillingPermitted } from '../domain/billingRbac';
-import { formatMoney } from '../money/money';
+import { formatMoney, isSupportedCurrency } from '../money/money';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 
@@ -21,6 +21,20 @@ interface SettlementUsdRollupDto {
   totalReceivedUsdMinor: string;
   includedBatchCount: number;
   excludedForMissingRateBatchCount: number;
+}
+
+/**
+ * Per-currency settlement rollup amounts arrive as wire minor-unit decimal
+ * strings with a plain `string` currencyCode (DashboardReadModel does not
+ * narrow it to the three supported codes). Render through formatMoney
+ * whenever the code is one this app actually supports -- including the
+ * signed `totalDifferenceMinor`, whose negative branch formatMoney renders
+ * as a real negative amount -- and fall back to "<CODE> <minor units>" for
+ * any currency the money module deliberately does not support, rather than
+ * throwing inside render.
+ */
+function formatRollupAmount(amountMinor: string, currencyCode: string): string {
+  return isSupportedCurrency(currencyCode) ? formatMoney({ amountMinor, currencyCode }) : `${currencyCode} ${amountMinor}`;
 }
 
 function GroupedBadges({ byKey }: { byKey: Record<string, number> | null }) {
@@ -221,7 +235,9 @@ export default function Dashboard() {
                   <div className="actions-row">
                     {snapshot.settlementSummary!.summary.byCurrency.map((row) => (
                       <span key={row.currencyCode} className="badge">
-                        {row.currencyCode}: net {row.totalNet.amountMinor}, received {row.totalReceived.amountMinor}, diff {row.totalDifferenceMinor}
+                        {row.currencyCode}: {t('dashboard.settlementNet')} {formatRollupAmount(row.totalNet.amountMinor, row.currencyCode)}, {t('dashboard.settlementReceived')}{' '}
+                        {formatRollupAmount(row.totalReceived.amountMinor, row.currencyCode)}, {t('dashboard.settlementDifference')}{' '}
+                        {formatRollupAmount(row.totalDifferenceMinor, row.currencyCode)}
                       </span>
                     ))}
                   </div>
