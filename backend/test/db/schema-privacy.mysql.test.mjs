@@ -27,6 +27,21 @@ const ALLOWED_CONTROLLED_CONFIGURATION_COLUMNS = new Set([
   'enrollment_invitations.initial_policy_profile',
 ]);
 
+// PCA-FAMILY-RBAC-1: family_rbac_policy_config (migration 0027) is the
+// per-family override point for FamilyRbacPolicyConfig
+// (backend/src/familyrbac/types.ts). Its entire payload is two boolean
+// authority flags -- administrator_can_manage_viewers and
+// administrator_can_revoke_device_or_disable_protection -- plus family_id
+// and updated_at. It describes WHAT A FAMILY ADMINISTRATOR MAY DO, i.e. an
+// access-control configuration row; it is not a readable policy document,
+// an activity record, or a parent-authored child-monitoring surface, and it
+// holds no child data of any kind. Same review basis as
+// enrollment_invitations.initial_policy_profile above. Keep this exception
+// exact; no other table containing "policy" is implicitly allowed.
+const ALLOWED_CONTROLLED_CONFIGURATION_TABLES = new Set([
+  'family_rbac_policy_config',
+]);
+
 // Columns that are allowed to contain the substring "key" only in these
 // specific, reviewed, non-secret contexts (opaque public keys / key labels).
 // signing_key_id/encryption_key_id/signing_public_key/encryption_public_key
@@ -105,6 +120,7 @@ test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-
   for (const { table_name: table } of tables) {
     const lower = table.toLowerCase();
     for (const term of scannedTerms) {
+      if (ALLOWED_CONTROLLED_CONFIGURATION_TABLES.has(table) && term === 'policy') continue;
       if (lower.includes(term)) violations.push(`table ${table} matches prohibited term "${term}"`);
     }
     if (lower.replace(/entitlement/g, '').includes('title')) violations.push(`table ${table} matches prohibited term "title" outside the "entitlement" false-positive`);
