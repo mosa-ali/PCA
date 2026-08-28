@@ -14,6 +14,7 @@
 // it "sent", exactly like backend/test/parentaccount/e2e.*.test.mjs does.
 process.env.PLATFORM_ADMIN_MFA_ENC_KEY ??= 'ab'.repeat(32);
 
+import { randomUUID } from 'node:crypto';
 import { getPool, closePool } from '../dist/db/pool.js';
 import { AuthService } from '../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../dist/auth/MySqlAuthRepository.js';
@@ -39,6 +40,22 @@ import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
 import { base32Encode, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../dist/platformadmin/auth/totp.js';
 import { InvitationService } from '../dist/invitation/InvitationService.js';
 import { MySqlInvitationRepository } from '../dist/invitation/MySqlInvitationRepository.js';
+import { PriceBookRepository, PriceBookService } from '../dist/billing/priceBook.js';
+import { QuoteRepository, QuoteService } from '../dist/billing/quote.js';
+import { PaymentRepository, PaymentService } from '../dist/billing/payment.js';
+import { RefundRepository, RefundService } from '../dist/billing/refund.js';
+import { DisputeRepository, DisputeService } from '../dist/billing/dispute.js';
+import { money } from '../dist/billing/money.js';
+import { createSandboxPaymentProvider } from '../dist/billing/provider/sandboxProvider.js';
+import { SandboxStaticSecretResolver } from '../dist/billing/provider/secretResolver.js';
+import { MySqlSettlementRepository } from '../dist/billing/settlement/MySqlSettlementRepository.js';
+import { SettlementService } from '../dist/billing/settlement/SettlementService.js';
+import { PlatformAdminSettlementService } from '../dist/platformadmin/settlement/PlatformAdminSettlementService.js';
+import { PlatformAdminAuditService } from '../dist/platformadmin/audit/PlatformAdminAuditService.js';
+import { MySqlPlatformAdminAuditRepository } from '../dist/platformadmin/audit/MySqlPlatformAdminAuditRepository.js';
+import { PlatformAdminAuthService } from '../dist/platformadmin/auth/PlatformAdminAuthService.js';
+import { LoggingAlertAdapter } from '../dist/platformadmin/auth/alertPort.js';
+import { computeTotp } from '../dist/platformadmin/auth/totp.js';
 
 const connectionString = process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL is required.');
@@ -142,14 +159,206 @@ async function seedPlatformAdmin(role) {
   return { ...account, email, totpSecret: secret };
 }
 
+const seededAdmins = {};
 for (const role of ['APP_OWNER', 'FINANCE_ADMIN', 'SUPPORT_ADMIN']) {
-  await seedPlatformAdmin(role);
+  seededAdmins[role] = await seedPlatformAdmin(role);
 }
+
+// ---------------------------------------------------------------------
+// Billing/settlement fixtures (PCA product-completion programme, Writer
+// P0-review browser-gap closure pass): a FAILED payment attempt, a
+// refunded transaction, an OPEN dispute, and an UNDER_INVESTIGATION
+// settlement reconciliation batch -- so platform-admin-web's
+// /billing/payments and /settlement/reconciliation pages have real,
+// non-healthy rows to render (previously every seeded payment was a
+// plain CONFIRMED/MATCHED happy path, so their status-badge/money-
+// formatting fixes had never been exercised against the states they
+// actually exist to distinguish).
+//
+// Built entirely through the SAME real service/repository classes
+// backend/src/main.ts wires in production -- same discipline as every
+// other fixture in this script. The one test-only substitution is
+// TestSandboxPaymentProvider (TEST_SANDBOX), which production's
+// createDefaultProviderRegistry() deliberately leaves unregistered
+// (see main.ts's own comment: no real payment provider is selected in
+// production yet -- an explicit, honest external gate, not a silent
+// stub) -- exactly the same class of sanctioned test-only substitution
+// this script already uses for TestSandboxEmailSender above. A real
+// step-up grant is required for every settlement mutation and refund,
+// matching this repo's real MySQL test suite: settlement mutations
+// consume a genuinely-issued (login + TOTP + assertStepUp) grant
+// end-to-end, exactly like backend/test/db/settlement.mysql.test.mjs's
+// own `stepUpFor` helper; issueRefund takes an ALREADY-consumed step-up
+// id as an input (per refund.ts's own header: the real HTTP route calls
+// consumeStepUp itself before calling issueRefund) -- creating that
+// consumed row directly is the same established convention already used
+// in backend/test/db/billingCore.mysql.test.mjs and
+// refundBalanceRaceConcurrency.mysql.test.mjs's own `createConsumedStepUp`
+// helpers, not a new invention.
+const financeAdmin = seededAdmins.FINANCE_ADMIN;
+
+const platformAdminAuditService = new PlatformAdminAuditService(new MySqlPlatformAdminAuditRepository());
+const priceBookRepository = new PriceBookRepository();
+const priceBookService = new PriceBookService(priceBookRepository, platformAdminAuditService);
+const quoteService = new QuoteService(priceBookRepository, new QuoteRepository(), platformAdminAuditService);
+const paymentRepository = new PaymentRepository();
+const paymentService = new PaymentService(paymentRepository, quoteService, platformAdminAuditService);
+const refundService = new RefundService(new RefundRepository(), paymentRepository, platformAdminAuditService);
+const disputeService = new DisputeService(new DisputeRepository());
+const settlementService = new SettlementService(new MySqlSettlementRepository(), paymentRepository);
+const platformAdminAuthService = new PlatformAdminAuthService(authRepository, new LoggingAlertAdapter());
+const platformAdminSettlementService = new PlatformAdminSettlementService(platformAdminAuthService, settlementService);
+const sandboxProvider = createSandboxPaymentProvider(new SandboxStaticSecretResolver('seed-local-sandbox-secret'), { NODE_ENV: 'development' });
+
+const financeActor = { adminId: financeAdmin.adminId, role: 'FINANCE_ADMIN' };
+const financeRoles = ['FINANCE_ADMIN'];
+
+/** Same convention as backend/test/db/billingCore.mysql.test.mjs's own createConsumedStepUp helper -- see this section's header comment. */
+async function createConsumedStepUp(adminId, scope) {
+  const sessionId = randomUUID();
+  const stepUpId = randomUUID();
+  const now = new Date();
+  await getPool().query(
+    `INSERT INTO platform_admin_sessions (session_id, admin_id, token_hash, realm, issued_at, expires_at, revoked_at) VALUES (?, ?, ?, 'PLATFORM_ADMIN', ?, ?, NULL)`,
+    [sessionId, adminId, randomUUID().replace(/-/g, '').padEnd(64, '0'), now, new Date(now.getTime() + 3600_000)],
+  );
+  await getPool().query(
+    `INSERT INTO platform_admin_step_up_sessions (step_up_id, admin_id, session_id, scope, asserted_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [stepUpId, adminId, sessionId, scope, now, new Date(now.getTime() + 300_000), now],
+  );
+  return stepUpId;
+}
+
+/**
+ * Blocks until at least `marginMs` remain before the NEXT TOTP step
+ * boundary (or just crossed into a fresh one), so a code computed right
+ * after this returns is never validated a moment after its window has
+ * already rolled over -- the same "wait for a genuinely fresh window"
+ * discipline this repo's real-E2E suites already use for exactly this
+ * flake class.
+ */
+async function ensureComfortablyInsideTotpWindow(marginMs = 5_000) {
+  const msIntoStep = Date.now() % 30_000;
+  const msRemaining = 30_000 - msIntoStep;
+  if (msRemaining < marginMs) {
+    await new Promise((resolve) => setTimeout(resolve, msRemaining + 1_000));
+  }
+}
+
+/**
+ * ONE real login -> ONE session, reused for as many step-ups as needed --
+ * mirrors backend/test/db/settlement.mysql.test.mjs's own createAdmin()
+ * (logs in once) + stepUpFor() (reuses that session, called repeatedly)
+ * split exactly. Logging in a SECOND time for the same admin to obtain a
+ * second step-up is NOT the established pattern anywhere in this
+ * codebase's real MySQL test suite and empirically fails here (a repeat
+ * login for an admin with an already-active session is rejected) --
+ * this was the actual bug in an earlier version of this script, which
+ * called login() once per step-up instead of once per admin session.
+ */
+async function loginAdmin(admin) {
+  await ensureComfortablyInsideTotpWindow();
+  const code = computeTotp(admin.totpSecret, Date.now());
+  const { rawToken } = await platformAdminAuthService.login(admin.email, SEED_PASSWORD, code);
+  const identity = await platformAdminAuthService.validateSession(rawToken);
+  return identity.sessionId;
+}
+
+/** A REAL, genuinely-issued, not-yet-consumed step-up grant against an already-logged-in session -- required for settlement mutations, which consume it themselves (PlatformAdminSettlementService.stepUp -> authService.consumeStepUp). */
+async function realStepUpFor(admin, sessionId, scope) {
+  // A fresh TOTP window is required for each assertStepUp call (the login -- or a previous step-up -- already claimed the prior window's counter; counters are shared across login/step-up per admin).
+  await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 1_000));
+  await ensureComfortablyInsideTotpWindow();
+  const stepUpCode = computeTotp(admin.totpSecret, Date.now());
+  const result = await platformAdminAuthService.assertStepUp(admin.adminId, sessionId, scope, stepUpCode, 'FINANCE_ADMIN');
+  return result.stepUpId;
+}
+
+async function publishPriceAndCreateAttempt({ market, currencyCode, amountMinor, accountRef }) {
+  const targetDeviceLimit = 800_000 + Math.floor(Math.random() * 100_000);
+  await priceBookService.publishPrice({ commercialMarket: market, currencyCode, targetDeviceLimit, amountMinor }, financeActor, financeRoles);
+  const resolution = await quoteService.resolveStandardQuote(market, currencyCode, targetDeviceLimit, new Date());
+  if (resolution.kind !== 'RESOLVED') throw new Error(`Seed failed: quote resolution was ${resolution.kind}, expected RESOLVED`);
+  return paymentService.createAttemptFromSnapshot({ accountRef, invoiceId: null, increaseRequestRef: null, paymentMethodId: null }, resolution.snapshot);
+}
+
+// 1) A FAILED payment attempt -- platform-admin-web's /billing/payments
+// "attempts" tab must show this with a real badge-danger status, not
+// identical plain text to a healthy CONFIRMED row.
+const failedAttempt = await publishPriceAndCreateAttempt({
+  market: 'GLOBAL_OTHER', currencyCode: 'USD', amountMinor: 2999n, accountRef: `account-seed-failed-${randomUUID()}`,
+});
+await paymentService.markFailed(failedAttempt.paymentAttemptId);
+console.log('Seeded FAILED payment attempt:', { paymentAttemptId: failedAttempt.paymentAttemptId });
+
+// 2) A refunded transaction -- confirm a real payment, then issue a real
+// partial refund against it, so the "refunds" tab has a genuine RECORDED
+// row (not empty).
+const refundAttempt = await publishPriceAndCreateAttempt({
+  market: 'GLOBAL_OTHER', currencyCode: 'USD', amountMinor: 5000n, accountRef: `account-seed-refund-${randomUUID()}`,
+});
+const refundCheckout = await sandboxProvider.createCheckout({ amountMinor: 5000n, currencyCode: 'USD', accountRef: `account-seed-refund-${refundAttempt.paymentAttemptId}`, paymentAttemptId: refundAttempt.paymentAttemptId });
+sandboxProvider.simulateConfirm(refundCheckout.providerCheckoutRef);
+const refundTransaction = await paymentService.confirmPaymentAttempt(refundAttempt.paymentAttemptId, 'TEST_SANDBOX', refundCheckout.providerCheckoutRef, financeActor);
+const refundStepUpId = await createConsumedStepUp(financeAdmin.adminId, 'REFUND');
+const refund = await refundService.issueRefund(
+  { paymentTransactionId: refundTransaction.paymentTransactionId, amountMinor: 2000n, currencyCode: 'USD', reasonCode: 'REQUESTED_BY_CUSTOMER', reasonNote: 'Seed fixture: partial refund', stepUpSessionId: refundStepUpId, entitlementTreatment: 'NOT_APPLICABLE' },
+  financeActor,
+  financeRoles,
+);
+console.log('Seeded refunded payment:', { paymentTransactionId: refundTransaction.paymentTransactionId, refundId: refund.refundId });
+
+// 3) An OPEN dispute -- confirm a separate real payment, then open a
+// dispute against it, so the "disputes" tab has a genuine badge-danger
+// row.
+const disputeAttempt = await publishPriceAndCreateAttempt({
+  market: 'GLOBAL_OTHER', currencyCode: 'USD', amountMinor: 4500n, accountRef: `account-seed-dispute-${randomUUID()}`,
+});
+const disputeCheckout = await sandboxProvider.createCheckout({ amountMinor: 4500n, currencyCode: 'USD', accountRef: `account-seed-dispute-${disputeAttempt.paymentAttemptId}`, paymentAttemptId: disputeAttempt.paymentAttemptId });
+sandboxProvider.simulateConfirm(disputeCheckout.providerCheckoutRef);
+const disputeTransaction = await paymentService.confirmPaymentAttempt(disputeAttempt.paymentAttemptId, 'TEST_SANDBOX', disputeCheckout.providerCheckoutRef, financeActor);
+const dispute = await disputeService.openDispute(disputeTransaction.paymentTransactionId, new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), financeRoles, new Date());
+console.log('Seeded OPEN dispute:', { disputeId: dispute.disputeId, paymentTransactionId: disputeTransaction.paymentTransactionId });
+
+// 4) An UNDER_INVESTIGATION settlement reconciliation batch -- opening a
+// batch whose `received` does not equal `expectedGross - fees` is itself
+// what produces this status (SettlementService.openBatch's own state-
+// machine rule), giving /settlement/reconciliation a real, non-zero
+// differenceMinor to render as formatted money.
+const settlementSessionId = await loginAdmin(financeAdmin);
+const settlementStepUp1 = await realStepUpFor(financeAdmin, settlementSessionId, 'SETTLEMENT_BANK_CONFIG');
+const settlementAccount = await platformAdminSettlementService.createAccount(
+  { adminId: financeAdmin.adminId, roles: financeRoles, sessionId: settlementSessionId },
+  { providerRef: `secretref:${randomUUID()}`, displayLabel: '****4242', settlementCurrency: 'USD', stepUpId: settlementStepUp1 },
+);
+const settlementStepUp2 = await realStepUpFor(financeAdmin, settlementSessionId, 'SETTLEMENT_BANK_CONFIG');
+const settlementBatch = await platformAdminSettlementService.openBatch(
+  { adminId: financeAdmin.adminId, roles: financeRoles, sessionId: settlementSessionId },
+  {
+    settlementAccountRef: settlementAccount.settlementAccountId,
+    settlementCurrency: 'USD',
+    periodStart: new Date('2026-01-01T00:00:00Z'),
+    periodEnd: new Date('2026-01-08T00:00:00Z'),
+    expectedGross: money(100000n, 'USD'),
+    fees: money(0n, 'USD'),
+    received: money(97500n, 'USD'),
+    providerRef: `report:${randomUUID()}`,
+    stepUpId: settlementStepUp2,
+  },
+);
+if (settlementBatch.status !== 'UNDER_INVESTIGATION') {
+  throw new Error(`Seed failed: expected settlement batch status UNDER_INVESTIGATION, got ${settlementBatch.status}`);
+}
+console.log('Seeded UNDER_INVESTIGATION settlement batch:', { settlementBatchId: settlementBatch.settlementBatchId, differenceMinor: settlementBatch.differenceMinor?.toString?.() ?? settlementBatch.differenceMinor });
 
 const [[{ familyCount }]] = await getPool().query('SELECT COUNT(*) AS familyCount FROM families');
 const [[{ accountCount }]] = await getPool().query('SELECT COUNT(*) AS accountCount FROM parent_accounts');
 const [[{ adminCount }]] = await getPool().query('SELECT COUNT(*) AS adminCount FROM platform_admin_accounts');
 const [[{ invitationCount }]] = await getPool().query('SELECT COUNT(*) AS invitationCount FROM enrollment_invitations');
-console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount });
+const [[{ paymentAttemptCount }]] = await getPool().query('SELECT COUNT(*) AS paymentAttemptCount FROM billing_payment_attempts');
+const [[{ refundCount }]] = await getPool().query('SELECT COUNT(*) AS refundCount FROM billing_refunds');
+const [[{ disputeCount }]] = await getPool().query('SELECT COUNT(*) AS disputeCount FROM billing_disputes');
+const [[{ settlementBatchCount }]] = await getPool().query('SELECT COUNT(*) AS settlementBatchCount FROM settlement_batches');
+console.log('Seed complete.', { familyCount, accountCount, adminCount, invitationCount, paymentAttemptCount, refundCount, disputeCount, settlementBatchCount });
 
 await closePool();
