@@ -14,6 +14,11 @@ export default function NotPermitted() {
       <h1 id="not-permitted-title">{t('rbac.deniedTitle')}</h1>
       <p>{t('rbac.deniedBody', { role: t(`roles.${role.toLowerCase()}`) })}</p>
       {state?.reason && <p style={{ color: 'var(--color-text-muted)' }}>{state.reason}</p>}
+      {state?.action && (
+        <p style={{ color: 'var(--color-text-muted)' }}>
+          {t('rbac.action')}: {t(`rbac.actions.${state.action}`)}
+        </p>
+      )}
       <Link to={backTo} className="btn">
         {t('common.back')}
       </Link>

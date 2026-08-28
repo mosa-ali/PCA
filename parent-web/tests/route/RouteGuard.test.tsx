@@ -35,10 +35,15 @@ describe('RouteGuard', () => {
     renderWithProviders(<TestApp />, { route: '/children/child-1/screen-time', role: 'VIEWER' });
     expect(await screen.findByText('Action not permitted')).toBeInTheDocument();
     expect(screen.queryByText('Edit screen content')).not.toBeInTheDocument();
+    // NotPermitted must render the denied action (RouteGuard's own `action`
+    // prop), not just the human-readable `reason`, so the reader knows what
+    // was blocked.
+    expect(screen.getByText('Action: Edit child policy')).toBeInTheDocument();
   });
 
   it('blocks a Child from reaching an edit route via direct deep link', async () => {
     renderWithProviders(<TestApp />, { route: '/children/child-1/screen-time', role: 'CHILD' });
     expect(await screen.findByText('Action not permitted')).toBeInTheDocument();
+    expect(screen.getByText('Action: Edit child policy')).toBeInTheDocument();
   });
 });
