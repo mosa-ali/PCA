@@ -45,12 +45,13 @@ test('APP_OWNER: /accounts lists real seeded parent accounts by familyId with a 
   const errors = collectConsoleErrors(page);
   await loginAppOwner(page);
   await clickNav(page, '/accounts');
-  await page.waitForLoadState('networkidle');
+  // AccountsList.tsx lists rows by familyId (not email), populated by an
+  // async fetch AFTER networkidle fires -- wait for the row itself
+  // (auto-retrying), not a one-shot .count() read.
+  const rowLinks = page.locator('a[href^="/accounts/"]');
+  await expect(rowLinks.first()).toBeVisible({ timeout: 10_000 });
   const bodyText = (await page.locator('body').textContent()) ?? '';
   expect(bodyText).not.toMatch(/TypeError|Cannot read propert/i);
-  // AccountsList.tsx lists rows by familyId (not email) -- any 3 seeded families is enough real-data evidence.
-  const rowLinks = page.locator('a[href^="/accounts/"]');
-  expect(await rowLinks.count()).toBeGreaterThan(0);
   expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
 });
 

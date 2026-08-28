@@ -35,7 +35,14 @@ test('wrong credentials against the real backend are rejected with a generic err
   await page.locator('#login-email').fill('owner-b@pca-seed.test');
   await page.locator('#login-password').fill('definitely-the-wrong-password');
   await page.getByRole('button', { name: /sign in|log in/i }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  // Real backend observation: invalid-credential responses carry a
+  // deliberate anti-brute-force delay that grows with repeated failed
+  // attempts against the same account (measured directly: a single fresh
+  // attempt took ~8s; this suite reuses owner-b@pca-seed.test across
+  // multiple runs, so budget generously) -- a working security control,
+  // not a defect, so this assertion's timeout accommodates it rather than
+  // asserting a specific latency.
+  await expect(page.getByRole('alert')).toBeVisible({ timeout: 45_000 });
   await expect(page).toHaveURL(/\/login/);
   expect(errors, `unexpected console errors: ${errors.join('; ')}`).toEqual([]);
 });
@@ -98,7 +105,7 @@ test('reset-password: a genuinely issued code sets a new password, and the OLD p
   await page.locator('#login-email').fill('owner-resettable@pca-seed.test');
   await page.locator('#login-password').fill(SEED_PASSWORD);
   await page.getByRole('button', { name: /sign in|log in/i }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('alert')).toBeVisible({ timeout: 20_000 });
 
   // NEW password must work.
   await page.locator('#login-password').fill(newPassword);
