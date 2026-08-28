@@ -15,6 +15,7 @@ believed then, and this document records what was independently re‑derived now
 | `WORKFLOW_ENTRY_SHA` | `601690ad010db01c6a879d25108c1e03f449a18f` |
 | Prompt-declared entry SHA | `025a684a54121fb3e52684ce5f77626624671e02` |
 | Entry reconciliation | `origin/pca-dev` had legitimately advanced by two commits (`a5073df`, `601690a`). Both were read and reviewed before any work began; neither was reverted. |
+| Publication reconciliation | `origin/pca-dev` advanced **again during this run**, to `d5f06df` (nine further commits from a concurrent session). All nine were read before integrating. Two of them — `1896d89` and `c4e4580` — are **byte-identical patches** to this run's own first two commits: both sessions independently found the broken privacy gate and made the same fix. `git rebase` skipped them automatically as already-applied. This run's remaining commits were rebased onto `d5f06df`; three content conflicts (`Requests.tsx`, `Devices.tsx`, `Requests.test.tsx`) were resolved by hand, keeping the superset behaviour in each case. **No force push, no rebase of published history.** |
 | `REMOTE_MAIN` | `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd` — **unchanged**, never checked out, never merged into. |
 | Branch | `pca-dev` only. No force push, no rebase of published history, no destructive reset, nothing deleted. |
 
@@ -242,8 +243,8 @@ adversarial reader against the real diff, and several did not survive.
 | `NOT_TESTED` routes | 0 | **2** (`/forgot-password`, `/reset-password`) | ❌ |
 | AR / RTL browser proof | PASS | 9 of 71 ledger rows | ❌ |
 | RESPONSIVE browser proof | 6 viewports | 1 row, 1 viewport | ❌ |
-| `CLEAN_BOOTSTRAP_1` | PASS | **PASS** — fresh DB, 28 migrations, gate green | ✅ |
-| `CLEAN_BOOTSTRAP_2` | PASS | not run | ❌ |
+| `CLEAN_BOOTSTRAP_1` | PASS | **PASS** — 0 tables → 28 migrations → 436/440, 0 fail | ✅ |
+| `CLEAN_BOOTSTRAP_2` | PASS | **PASS** — identical, from zero again | ✅ |
 | Mutation survivors | 0 | mutation pass not run | ❌ |
 | Security findings open | 0 | 2 found and fixed this run; no full red-team run | ⚠️ partial |
 | `main` unchanged | yes | **yes** | ✅ |
@@ -276,6 +277,15 @@ given that two mutation-path defects were found on routes carrying that status.
   after a rapid `down -v` / `up` cycle, and once left a zombie container that had
   to be force-removed. Every database result quoted here was taken against a
   connection-probed, genuinely healthy container.
+- **A concurrent session was using the same Compose database.** An early
+  bootstrap attempt produced 251 failures, all `PROTOCOL_CONNECTION_LOST`, and a
+  later one died on `Table 'schema_migrations' already exists` moments after the
+  database was verified to hold zero tables — the other session's `down -v` and
+  its own migrations were landing underneath this run. Both clean-bootstrap
+  cycles were therefore re-run against a **dedicated, isolated MySQL instance on
+  port 33071**, created and destroyed by this run alone, and both passed
+  identically. This is called out because the 251-failure run is exactly the kind
+  of result that would otherwise have been recorded as a code regression.
 
 ---
 
@@ -318,16 +328,17 @@ seat usage.
 
 | Metric | Value |
 | --- | --- |
-| `COMMITS_CREATED` | 6 (`079f9a7`, `3761e10`, `cdd7316`, `de32179`, `23ab179`, + this document) |
+| `COMMITS_CREATED` | 7; **5 published** after rebase (2 were byte-identical to commits a concurrent session had already pushed, and git skipped them) |
 | Backend non-DB suite | **1787 / 1787 pass, 0 fail** (baseline 1772) |
-| Backend fresh-DB suite | **440 tests, 436 pass, 0 fail, 4 skipped** (baseline 428 pass / **1 fail**) |
+| Backend fresh-DB suite | **440 tests, 436 pass, 0 fail, 4 skipped** (baseline 428 pass / **1 fail**) — reproduced twice from zero |
 | platform-admin-web | typecheck + lint clean, **112 / 112 tests pass** |
-| parent-web | typecheck + lint clean, 595/603 under load — 7 flakes, 1 pre-existing (§7) |
+| parent-web | typecheck + lint clean, **610/613** post-rebase — 2 flakes (pass in isolation) + 1 pre-existing (§7) |
 | `QA_DEFECTS_FOUND` / `FIXED` / `OPEN` | 299 / 20 / 279 |
 | `SECURITY_FINDINGS_FOUND` / `FIXED` / `OPEN` | 4 / 4 / 0 *(from source audit; no red-team sweep ran)* |
 | `MUTANTS_TOTAL` / `KILLED` / `VALID_SURVIVORS` | 0 / 0 / n/a — **not run** |
 | `DOCKER` / `MYSQL` / `MIGRATIONS` | PASS / PASS / PASS (28 migrations, fresh DB) |
 | `SEED` | not exercised this run |
+| `CLEAN_BOOTSTRAP_1` / `CLEAN_BOOTSTRAP_2` | **PASS / PASS** (isolated instance, destroyed and rebuilt from zero each cycle) |
 | `PARENT_REAL_E2E` / `PLATFORM_ADMIN_REAL_E2E` | not run |
 | `KNOWN_LOCAL_SOURCE_DEFECTS` | 110 repo-solvable open + 1 pre-existing failing parent-web test |
 
@@ -347,10 +358,12 @@ PCA_DYNAMIC_PRODUCT_COMPLETION = NOT_COMPLETE
    universe are `NOT_TESTED` — a state the gate explicitly forbids.
 3. AR/RTL and RESPONSIVE gates are unmet by evidence: 9 of 71 rows carry AR/RTL,
    1 row covers a single non-desktop viewport, against a required six.
-4. `CLEAN_BOOTSTRAP_2` not run.
-5. Mutation pass not run; `VALID_MUTATION_SURVIVORS` therefore unknown, not zero.
-6. Squad 8's parent and platform-admin red teams did not run.
-7. One pre-existing deterministic parent-web test failure at the entry SHA.
+4. Mutation pass not run; `VALID_MUTATION_SURVIVORS` therefore unknown, not zero.
+5. Squad 8's parent and platform-admin red teams did not run.
+6. One pre-existing deterministic parent-web test failure at the entry SHA
+   (`LocationPage` safe-zone empty state), reproduced at `601690a`.
+
+Not blockers, now closed: `CLEAN_BOOTSTRAP_1` and `CLEAN_BOOTSTRAP_2` both pass.
 
 **This verdict is deliberately not `READY_FOR_INDEPENDENT_REVIEW`.** The work that
 did land is real, evidenced and adversarially reviewed — two P0s, four security
