@@ -151,20 +151,20 @@ for (const [filename, spec] of Object.entries(SPECS)) {
 }
 
 // ---------------------------------------------------------------------
-// Cross-file route-universe check: PCA_PAGE_AUDIT.csv's 60 rows are the
+// Cross-file route-universe check: PCA_PAGE_AUDIT.csv's 62 rows are the
 // one authoritative route list. P0/P1/P2 disposition tables must each
 // cover EXACTLY the routes the audit assigned that priority -- no route
 // silently dropped, duplicated, or promoted/demoted across priority
 // tables without the audit itself being updated to match. The QA ledger
-// must mention every one of the 60 routes at least once (routes tracked,
+// must mention every one of the 62 routes at least once (routes tracked,
 // not yet necessarily verified).
 // ---------------------------------------------------------------------
 if (parsed['PCA_PAGE_AUDIT.csv']) {
   const audit = parsed['PCA_PAGE_AUDIT.csv'];
   const auditKey = (r) => `${r[audit.idx.APP]} ${r[audit.idx.ROUTE]}`;
   const auditRouteUniverse = new Set(audit.rows.map(auditKey));
-  if (auditRouteUniverse.size !== 60) {
-    fail(`PCA_PAGE_AUDIT.csv: route universe has ${auditRouteUniverse.size} distinct (APP,ROUTE) pairs, expected exactly 60`);
+  if (auditRouteUniverse.size !== 62) {
+    fail(`PCA_PAGE_AUDIT.csv: route universe has ${auditRouteUniverse.size} distinct (APP,ROUTE) pairs, expected exactly 62`);
   }
 
   const byPriority = { P0: new Set(), P1: new Set(), P2: new Set(), P3: new Set() };
@@ -191,11 +191,11 @@ if (parsed['PCA_PAGE_AUDIT.csv']) {
     const ledgerKeys = new Set(ledger.rows.map((r) => `${r[ledger.idx.APP]} ${r[ledger.idx.ROUTE]}`));
     const missingFromLedger = [...auditRouteUniverse].filter((k) => !ledgerKeys.has(k));
     if (missingFromLedger.length) {
-      fail(`PCA_PAGE_QA_LEDGER.csv: ${missingFromLedger.length} route(s) from the audit's 60-route universe have no row at all: ${missingFromLedger.join(', ')}`);
+      fail(`PCA_PAGE_QA_LEDGER.csv: ${missingFromLedger.length} route(s) from the audit's 62-route universe have no row at all: ${missingFromLedger.join(', ')}`);
     }
   }
 
-  if (ok) console.log(`PASS: route universe (60/60), P0/P1/P2 tables match PCA_PAGE_AUDIT.csv's priority assignments exactly`);
+  if (ok) console.log(`PASS: route universe (62/62), P0/P1/P2 tables match PCA_PAGE_AUDIT.csv's priority assignments exactly`);
 }
 
 if (!ok) process.exitCode = 1;
