@@ -103,6 +103,15 @@ async function card(headingText: string): Promise<HTMLElement> {
   return section as HTMLElement;
 }
 
+// The initial render chain is: whoami resolves -> roles set -> 5 independent
+// CategorySettingsCard components mount -> each fires its own effect-triggered
+// fetch -> re-render. All 5 fetches genuinely run in parallel (see
+// Settings.tsx's useEffect(load, [category]) per card, not a sequential loop),
+// so this is a scheduling/CPU-contention sensitivity, not a real performance
+// defect -- same class of fix as LocationPage.test.tsx's empty-state wait and
+// Dashboard.test.tsx's rollup waitFor (601690a).
+const INITIAL_LOAD_TIMEOUT_MS = 10_000;
+
 describe('Settings: category settings surface', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -112,7 +121,7 @@ describe('Settings: category settings surface', () => {
   it('reads every named settings category from the backend and renders key/value/updatedAt', async () => {
     const recorded = renderPage(['APP_OWNER']);
 
-    expect(await screen.findByText('branding.support_email')).toBeInTheDocument();
+    expect(await screen.findByText('branding.support_email', {}, { timeout: INITIAL_LOAD_TIMEOUT_MS })).toBeInTheDocument();
     await waitFor(() => expect(recorded.categoryReads.sort()).toEqual(['BRANDING', 'FEATURE_FLAG', 'MAINTENANCE', 'NOTIFICATION', 'PAYMENT_PROVIDER']));
 
     const branding = await card('Branding and support metadata');
