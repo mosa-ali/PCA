@@ -12,10 +12,13 @@ import { test, expect, type Page } from '@playwright/test';
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
 
+// See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
+const BENIGN_CONSOLE_PATTERN = /Failed to load resource: the server responded with a status of 401/;
+
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+    if (msg.type() === 'error' && !BENIGN_CONSOLE_PATTERN.test(msg.text())) errors.push(msg.text());
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
   return errors;

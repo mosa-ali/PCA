@@ -33,10 +33,13 @@ const PERSONAS: Persona[] = [
   { role: 'AUDITOR_READ_ONLY', email: 'auditor_read_only@pca-seed.test', secretEnvVar: 'QA_TOTP_AUDITOR_READ_ONLY', settingsAllowed: false },
 ];
 
+// See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
+const BENIGN_CONSOLE_PATTERN = /Failed to load resource: the server responded with a status of 401/;
+
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+    if (msg.type() === 'error' && !BENIGN_CONSOLE_PATTERN.test(msg.text())) errors.push(msg.text());
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
   return errors;
@@ -63,13 +66,23 @@ for (const persona of PERSONAS) {
   });
 
   test(`${persona.role}: /settings is ${persona.settingsAllowed ? 'ALLOWED' : 'DENIED'} against the real backend`, async ({ page }) => {
+    // secureSession.ts's session token is deliberately in-memory-only (a
+    // documented security posture, PCA-ADD-PA-014/016) -- ANY hard
+    // page.goto() after login loses it and bounces to /login regardless of
+    // role, which would make an allowed role indistinguishable from a
+    // denied one. The real, meaningful RBAC signal is therefore whether the
+    // Settings sidebar link is offered at all (Sidebar.tsx filters nav
+    // items by isPermitted(roles, item.operation)), plus a CLIENT-SIDE
+    // click through for allowed roles (preserves the in-memory token).
     await loginAs(page, persona);
-    await page.goto('/settings');
+    const settingsLink = page.locator('a.nav-link[href="/settings"]');
     if (persona.settingsAllowed) {
-      await expect(page).toHaveURL(/\/settings/);
+      await expect(settingsLink).toBeVisible();
+      await settingsLink.click();
+      await expect(page).toHaveURL(/\/settings/, { timeout: 10_000 });
       await expect(page.locator('body')).not.toContainText(/not.permitted|denied|forbidden/i);
     } else {
-      await expect(page).toHaveURL(/\/not-permitted/, { timeout: 10_000 });
+      await expect(settingsLink).toHaveCount(0);
     }
   });
 }

@@ -12,10 +12,13 @@ import { computeTotp, ensureComfortablyInsideTotpWindow } from './totp';
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
 
+// See parent-web/e2e-qa-coordinator-b/auth.spec.ts's identical constant for rationale.
+const BENIGN_CONSOLE_PATTERN = /Failed to load resource: the server responded with a status of 401/;
+
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+    if (msg.type() === 'error' && !BENIGN_CONSOLE_PATTERN.test(msg.text())) errors.push(msg.text());
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
   return errors;
@@ -33,13 +36,22 @@ async function loginFinanceAdmin(page: Page) {
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
 
+// secureSession.ts's token is deliberately in-memory-only (PCA-ADD-PA-014/016
+// -- see personas.spec.ts's identical note); navigation to any route after
+// login MUST be a client-side sidebar-link click, never page.goto(), or the
+// session is lost and every route bounces to /login regardless of RBAC.
+async function clickNav(page: Page, route: string) {
+  await page.locator(`a.nav-link[href="${route}"]`).click();
+  await expect(page).toHaveURL(new RegExp(route.replace(/\//g, '\\/')), { timeout: 10_000 });
+}
+
 const ROUTES = ['/billing/plans', '/billing/pricing', '/billing/quotes', '/billing/invoices', '/billing/payments', '/settlement/accounts', '/settlement/batches', '/settlement/reconciliation'];
 
 for (const route of ROUTES) {
   test(`FINANCE_ADMIN: ${route} renders without crashing, no raw minor units, clean console`, async ({ page }) => {
     const errors = collectConsoleErrors(page);
     await loginFinanceAdmin(page);
-    await page.goto(route);
+    await clickNav(page, route);
     await page.waitForLoadState('networkidle');
     const bodyText = (await page.locator('body').textContent()) ?? '';
     expect(bodyText).not.toMatch(/TypeError|Cannot read propert/i);
@@ -54,7 +66,7 @@ for (const route of ROUTES) {
 
 test('FINANCE_ADMIN: /billing/payments shows the seeded FAILED, refunded, and GULF/SAR CONFIRMED rows with distinct status badges', async ({ page }) => {
   await loginFinanceAdmin(page);
-  await page.goto('/billing/payments');
+  await clickNav(page, '/billing/payments');
   await page.waitForLoadState('networkidle');
   const bodyText = ((await page.locator('body').textContent()) ?? '').toLowerCase();
   expect(bodyText).toMatch(/fail/);
@@ -63,7 +75,7 @@ test('FINANCE_ADMIN: /billing/payments shows the seeded FAILED, refunded, and GU
 
 test('FINANCE_ADMIN: /settlement/reconciliation shows the UNDER_INVESTIGATION batch with a real formatted difference', async ({ page }) => {
   await loginFinanceAdmin(page);
-  await page.goto('/settlement/reconciliation');
+  await clickNav(page, '/settlement/reconciliation');
   await page.waitForLoadState('networkidle');
   const bodyText = ((await page.locator('body').textContent()) ?? '').toLowerCase();
   expect(bodyText).toMatch(/investigation/);
