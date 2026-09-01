@@ -143,19 +143,132 @@ describe('getApiClients demo-mode discipline', () => {
     expect(realSyncModule.RealParentRuntimeSyncClient).toBeTypeOf('function');
   });
 
-  it('demoMode false: trustedBrowser and runtimeSync are the real implementations, not Unavailable* stand-ins', async () => {
+  it('demoMode false: trustedBrowser, deviceStatus and requests are the real implementations, not Unavailable* stand-ins', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
     const { RealTrustedBrowserProvider } = await import('../../src/api/real/realTrustedBrowserProvider');
-    const { RealParentRuntimeSyncClient } = await import('../../src/api/real/realParentRuntimeSyncClient');
     const { RealDeviceStatusClient } = await import('../../src/api/real/realDeviceStatusClient');
     const { RealRequestClient } = await import('../../src/api/real/realRequestClient');
     const clients = getApiClients();
     expect(clients.trustedBrowser).toBeInstanceOf(RealTrustedBrowserProvider);
-    expect(clients.runtimeSync).toBeInstanceOf(RealParentRuntimeSyncClient);
     expect(clients.deviceStatus).toBeInstanceOf(RealDeviceStatusClient);
     expect(clients.requests).toBeInstanceOf(RealRequestClient);
+    // runtimeSync is deliberately NOT in this list -- see the dedicated
+    // describe block below for why it must stay fail-closed.
+  });
+});
+
+/**
+ * Regression guard for the parent runtime-sync relay wiring.
+ *
+ * buildRealClients() used to wire RealParentRuntimeSyncClient in production.
+ * That client targets `/api/sync/*`, a surface this backend does not serve at
+ * all -- its only runtime-sync API is `/v1/runtime-sync/*`, the DEVICE-facing
+ * relay behind a device-session challenge/signature, which is a different API
+ * with a different caller and not a prefix this client can be repointed at.
+ * A real-browser sweep proved the consequence: every Dashboard, ChildOverview
+ * and ScreenTimePage load fired real 404s at the backend.
+ *
+ * Two properties matter and are asserted here:
+ *  1. no doomed request is issued (fetch is never called), and
+ *  2. the failure is CLASSIFIED as NOT_IMPLEMENTED, so i18n/errorMessages.ts
+ *     renders the honest localized "not available yet" copy rather than the
+ *     generic `errors.unknown` sentence a raw 404 Error produced before.
+ */
+describe('parent runtime-sync client is fail-closed until the relay exists', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.doUnmock('../../src/config/env');
+    vi.unstubAllGlobals();
+  });
+
+  it('demoMode false: runtimeSync is the Unavailable stand-in, never the /api/sync real client', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
+    }));
+    const { getApiClients } = await import('../../src/api/client');
+    const { UnavailableParentRuntimeSyncClient } = await import(
+      '../../src/api/real/unavailableProviders'
+    );
+    const { RealParentRuntimeSyncClient } = await import(
+      '../../src/api/real/realParentRuntimeSyncClient'
+    );
+    const clients = getApiClients();
+    expect(clients.runtimeSync).toBeInstanceOf(UnavailableParentRuntimeSyncClient);
+    expect(clients.runtimeSync).not.toBeInstanceOf(RealParentRuntimeSyncClient);
+  });
+
+  it('every port method rejects with a NOT_IMPLEMENTED ServiceUnavailableError and issues no network request', async () => {
+    const fetchSpy = vi.fn(() => Promise.reject(new Error('no network call expected')));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { UnavailableParentRuntimeSyncClient } = await import(
+      '../../src/api/real/unavailableProviders'
+    );
+    const { ServiceUnavailableError } = await import('../../src/api/unavailable');
+    const client = new UnavailableParentRuntimeSyncClient();
+
+    const calls: Array<[string, () => Promise<unknown>]> = [
+      ['submitCiphertextEnvelope', () =>
+        client.submitCiphertextEnvelope({
+          targetEndpointId: 'endpoint-1',
+          policyRevision: 1,
+          payloadCiphertextBase64: 'AA==',
+        })],
+      ['listQueuedForEndpoint', () => client.listQueuedForEndpoint('endpoint-1')],
+      ['acknowledgeEnvelope', () => client.acknowledgeEnvelope('envelope-1')],
+      ['getConnectionStatus', () => client.getConnectionStatus()],
+      ['getLastSuccessfulSync', () => client.getLastSuccessfulSync()],
+      ['getPendingDeliveryStatus', () => client.getPendingDeliveryStatus('endpoint-1')],
+    ];
+
+    for (const [name, call] of calls) {
+      const error = await call().then(
+        () => {
+          throw new Error(`${name} resolved; it must reject while the relay is unbuilt`);
+        },
+        (e: unknown) => e,
+      );
+      expect(error, name).toBeInstanceOf(ServiceUnavailableError);
+      expect((error as { code: string }).code, name).toBe('NOT_IMPLEMENTED');
+      expect((error as Error).message, name).toContain(`ParentRuntimeSyncClient.${name}`);
+    }
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('the rejection maps to the honest localized copy, not the generic unknown-error sentence', async () => {
+    const { UnavailableParentRuntimeSyncClient } = await import(
+      '../../src/api/real/unavailableProviders'
+    );
+    const { userFacingErrorKey } = await import('../../src/i18n/errorMessages');
+    const client = new UnavailableParentRuntimeSyncClient();
+    const error = await client.getPendingDeliveryStatus('endpoint-1').catch((e: unknown) => e);
+    expect(userFacingErrorKey(error)).toBe('errors.serviceUnavailable');
+
+    // The pre-fix behaviour for comparison: the real client threw a bare Error
+    // on the 404, which this mapper cannot name, so a parent saw errors.unknown.
+    expect(userFacingErrorKey(new Error('getPendingDeliveryStatus: unexpected status 404'))).toBeNull();
+  });
+
+  it('implements the whole ParentRuntimeSyncClient port -- no method silently missing', async () => {
+    const { UnavailableParentRuntimeSyncClient } = await import(
+      '../../src/api/real/unavailableProviders'
+    );
+    const client = new UnavailableParentRuntimeSyncClient();
+    for (const method of [
+      'submitCiphertextEnvelope',
+      'listQueuedForEndpoint',
+      'acknowledgeEnvelope',
+      'getConnectionStatus',
+      'getLastSuccessfulSync',
+      'getPendingDeliveryStatus',
+    ]) {
+      expect(client[method as keyof typeof client], method).toBeTypeOf('function');
+    }
   });
 });

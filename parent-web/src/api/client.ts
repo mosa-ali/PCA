@@ -78,7 +78,6 @@ import { RealTrustedBrowserProvider } from './real/realTrustedBrowserProvider';
 import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway';
 import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
-import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEnrollmentBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, cookieSessionFamilyId } from './real/realBillingClient';
@@ -96,7 +95,11 @@ import { DevFamilyMemberInvitationClient } from './dev/devFamilyMemberInvitation
 import { RealFamilyAuditDeliveryClient } from './real/realFamilyAuditDeliveryClient';
 import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient';
 import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
-import { UnavailableFamilyAuthorityGateway, UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
+import {
+  UnavailableFamilyAuthorityGateway,
+  UnavailableParentRuntimeSyncClient,
+  UnavailableWellbeingMessageAdminClient,
+} from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -222,7 +225,13 @@ function buildRealClients(): PcaApiClients {
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
     webRuleAdmin: new RealWebRuleAdminClient(trustedBrowser),
     trustedBrowser,
-    runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl),
+    // KNOWN_BACKEND_INTEGRATION_ACTION: RealParentRuntimeSyncClient targets
+    // `/api/sync/*`, which this backend does not serve at all (its only
+    // runtime-sync surface, `/v1/runtime-sync/*`, is the device-facing relay).
+    // Wiring it here made every Dashboard/ChildOverview/ScreenTimePage load
+    // fire real 404s -- proved by a Round-2 real-browser sweep. Fail closed
+    // until the parent-facing relay API exists.
+    runtimeSync: new UnavailableParentRuntimeSyncClient(),
     // KNOWN_BACKEND_INTEGRATION_ACTION: noServiceBearerTokenAvailable is a
     // placeholder -- parent-web has no browser-reachable flow yet that
     // issues this backend's Authorization: Bearer session token (see
