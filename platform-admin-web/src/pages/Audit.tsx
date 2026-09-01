@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { adminRoleLabel, auditEventTypeLabel } from '../i18n/enumLabels';
 import { platformAdminApi, PlatformAdminApiError } from '../api/platformAdminApiClient';
 import type { PagedResult } from '../domain/accounts';
 import { AUDIT_RESULTS, type AuditEvent, type AuditResult } from '../domain/audit';
@@ -141,9 +142,9 @@ export default function Audit() {
               {items.map((event) => (
                 <tr key={event.eventId}>
                   <td>{event.occurredAt ? new Date(event.occurredAt).toLocaleString() : '—'}</td>
-                  <td>{event.eventType}</td>
+                  <td>{auditEventTypeLabel(t, event.eventType)}</td>
                   <td>{event.actorAdminId}</td>
-                  <td>{event.actorRole ?? '—'}</td>
+                  <td>{event.actorRole ? adminRoleLabel(t, event.actorRole) : '—'}</td>
                   <td>{event.targetRef ?? '—'}</td>
                   <td>
                     <span className={`badge ${event.result === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`}>{t(`audit.results.${event.result}`)}</span>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { planRefLabel } from '../../i18n/enumLabels';
 import { Link } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
 import type { AccountSummaryDto, PagedResult } from '../../domain/accounts';
@@ -93,7 +94,7 @@ export default function AccountsList() {
                       </span>
                     )}
                   </td>
-                  <td>{account.entitlement?.planRef ?? '—'}</td>
+                  <td>{account.entitlement?.planRef ? planRefLabel(t, account.entitlement.planRef) : '—'}</td>
                   <td>
                     {account.entitlement ? `${account.entitlement.parentMemberUsedCount}/${account.entitlement.parentMemberLimit}` : '—'}
                     {account.entitlement?.overLimitParentMember && <span className="badge badge-warning">{t('accounts.overLimit')}</span>}

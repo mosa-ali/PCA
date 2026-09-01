@@ -1,5 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { planRefLabel } from '../i18n/enumLabels';
+/** Mirrors backend/src/entitlements/types.ts's FREE_STARTER_TIER constant. */
+const FREE_STARTER_TIER = 'FREE_STARTER';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../api/platformAdminApiClient';
 import {
   COMMERCIAL_MARKETS,
@@ -227,7 +230,7 @@ export default function Settings() {
       });
       setDefaults((prev) => (prev ? { ...prev, parentMemberLimit: result.parentMemberLimit, managedDeviceLimit: result.managedDeviceLimit } : prev));
       setDefaultsMissing(false);
-      notify(t('settings.defaultsSaved'), 'success');
+      notify(t('settings.defaultsSaved', { plan: planRefLabel(t, FREE_STARTER_TIER) }), 'success');
     } catch (err) {
       notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
     } finally {
@@ -267,8 +270,12 @@ export default function Settings() {
       {!loading && !error && (
         <>
           <section className="card">
-            <h2 className="section-title">{t('settings.freeStarterTitle')}</h2>
-            {defaultsMissing && <p className="status-unavailable">{t('settings.defaultsNotConfigured')}</p>}
+            <h2 className="section-title">{t('settings.freeStarterTitle', { plan: planRefLabel(t, FREE_STARTER_TIER) })}</h2>
+            {defaultsMissing && (
+              <p className="status-unavailable">
+                {t('settings.defaultsNotConfigured', { plan: planRefLabel(t, FREE_STARTER_TIER) })}
+              </p>
+            )}
             {defaults && (
               <dl className="kv-list">
                 <dt>{t('settings.parentMemberLimit')}</dt>

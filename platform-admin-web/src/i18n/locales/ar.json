@@ -191,7 +191,10 @@
     "suspendSuccess": "تم تعليق الحساب.",
     "reactivateSuccess": "تمت إعادة تفعيل الحساب.",
     "suspend": "تعليق الحساب",
-    "reactivate": "إعادة تفعيل الحساب"
+    "reactivate": "إعادة تفعيل الحساب",
+    "plans": {
+      "FREE_STARTER": "الباقة المجانية"
+    }
   },
   "entitlements": {
     "familyIdLabel": "معرّف الأسرة",
@@ -374,11 +377,11 @@
   },
   "settings": {
     "invalidLimits": "أدخل أرقامًا صحيحة غير سالبة لكلا الحدين.",
-    "defaultsSaved": "تم حفظ إعدادات FREE_STARTER الافتراضية.",
+    "defaultsSaved": "تم حفظ الحدود الافتراضية لـ{{plan}}.",
     "invalidCountryCode": "أدخل رمز دولة صالحًا مكوّنًا من حرفين، مثل US.",
     "mappingSaved": "تم حفظ تعيين السوق.",
-    "freeStarterTitle": "الحدود الافتراضية لـ FREE_STARTER",
-    "defaultsNotConfigured": "لم يتم تكوين الحدود الافتراضية لـ FREE_STARTER بعد.",
+    "freeStarterTitle": "الحدود الافتراضية لـ{{plan}}",
+    "defaultsNotConfigured": "لم يتم ضبط الحدود الافتراضية لـ{{plan}} بعد.",
     "parentMemberLimit": "حد أعضاء الوالدين",
     "managedDeviceLimit": "حد الأجهزة المُدارة",
     "updatedAt": "آخر تحديث",
@@ -426,7 +429,41 @@
     "actorRole": "دور الفاعل",
     "metadata": "بيانات وصفية",
     "since": "من تاريخ",
-    "until": "إلى تاريخ"
+    "until": "إلى تاريخ",
+    "eventTypes": {
+      "ADMIN_LOGIN": "تسجيل دخول مسؤول",
+      "ADMIN_LOGIN_FAILED": "فشل تسجيل دخول مسؤول",
+      "ADMIN_CREATED": "إنشاء مسؤول",
+      "ADMIN_ROLE_CHANGED": "تغيير دور مسؤول",
+      "ACCOUNT_SUSPENDED": "تعليق حساب",
+      "ACCOUNT_REACTIVATED": "إعادة تفعيل حساب",
+      "DEVICE_LIMIT_CHANGED": "تغيير حد الأجهزة",
+      "LIMIT_REQUEST_APPROVED": "الموافقة على طلب رفع الحد",
+      "LIMIT_REQUEST_DENIED": "رفض طلب رفع الحد",
+      "PLAN_CHANGED": "تغيير الخطة",
+      "PAYMENT_REFUNDED": "استرداد دفعة",
+      "BANK_SETTING_CHANGED": "تغيير إعداد بنكي",
+      "SETTING_CHANGED": "تغيير إعداد",
+      "PRICE_BOOK_CHANGED": "تغيير دليل الأسعار",
+      "QUOTE_ISSUED": "إصدار عرض سعر",
+      "PAYMENT_CONFIRMED": "تأكيد دفعة",
+      "ENTITLEMENT_INCREASED": "زيادة الاستحقاق",
+      "PAYMENT_ROLLED_BACK": "التراجع عن دفعة",
+      "ADMIN_SESSION_REVOKED": "إبطال جلسة مسؤول",
+      "ADMIN_LOGIN_LOCKED_OUT": "قفل تسجيل دخول مسؤول",
+      "ADMIN_STEP_UP_GRANTED": "منح تحقق إضافي",
+      "ADMIN_STEP_UP_DENIED": "رفض تحقق إضافي",
+      "ADMIN_MFA_ENROLLED": "تسجيل مصادقة متعددة العوامل لمسؤول",
+      "COMPLIMENTARY_GRANT_CREATED": "إنشاء منحة مجانية",
+      "COMPLIMENTARY_GRANT_CHANGED": "تغيير منحة مجانية",
+      "COMPLIMENTARY_GRANT_REVOKED": "إلغاء منحة مجانية",
+      "COMPLIMENTARY_GRANT_EXPIRED": "انتهاء صلاحية منحة مجانية",
+      "SETTLEMENT_ACCOUNT_CREATED": "إنشاء حساب تسوية",
+      "SETTLEMENT_ACCOUNT_CHANGED": "تغيير حساب تسوية",
+      "SETTLEMENT_BATCH_CREATED": "إنشاء دفعة تسوية",
+      "SETTLEMENT_BATCH_ITEM_ATTRIBUTED": "إسناد عنصر دفعة تسوية",
+      "SETTLEMENT_RECONCILIATION_RESOLVED": "تسوية مطابقة مالية"
+    }
   },
   "billing": {
     "invalidPlanForm": "أدخل رمز خطة وأرقامًا صحيحة غير سالبة لكلا الحدين الافتراضيين.",

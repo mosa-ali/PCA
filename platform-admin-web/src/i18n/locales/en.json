@@ -191,7 +191,10 @@
     "suspendSuccess": "Account suspended.",
     "reactivateSuccess": "Account reactivated.",
     "suspend": "Suspend account",
-    "reactivate": "Reactivate account"
+    "reactivate": "Reactivate account",
+    "plans": {
+      "FREE_STARTER": "Free Starter"
+    }
   },
   "entitlements": {
     "familyIdLabel": "Family ID",
@@ -374,11 +377,11 @@
   },
   "settings": {
     "invalidLimits": "Enter non-negative whole numbers for both limits.",
-    "defaultsSaved": "FREE_STARTER defaults saved.",
+    "defaultsSaved": "{{plan}} defaults saved.",
     "invalidCountryCode": "Enter a valid 2-letter country code, e.g. US.",
     "mappingSaved": "Market mapping saved.",
-    "freeStarterTitle": "FREE_STARTER default limits",
-    "defaultsNotConfigured": "No FREE_STARTER defaults are configured yet.",
+    "freeStarterTitle": "{{plan}} default limits",
+    "defaultsNotConfigured": "No {{plan}} defaults are configured yet.",
     "parentMemberLimit": "Parent member limit",
     "managedDeviceLimit": "Managed device limit",
     "updatedAt": "Last updated",
@@ -426,7 +429,41 @@
     "actorRole": "Actor role",
     "metadata": "Metadata",
     "since": "From date",
-    "until": "To date"
+    "until": "To date",
+    "eventTypes": {
+      "ADMIN_LOGIN": "Admin sign-in",
+      "ADMIN_LOGIN_FAILED": "Admin sign-in failed",
+      "ADMIN_CREATED": "Admin created",
+      "ADMIN_ROLE_CHANGED": "Admin role changed",
+      "ACCOUNT_SUSPENDED": "Account suspended",
+      "ACCOUNT_REACTIVATED": "Account reactivated",
+      "DEVICE_LIMIT_CHANGED": "Device limit changed",
+      "LIMIT_REQUEST_APPROVED": "Limit request approved",
+      "LIMIT_REQUEST_DENIED": "Limit request denied",
+      "PLAN_CHANGED": "Plan changed",
+      "PAYMENT_REFUNDED": "Payment refunded",
+      "BANK_SETTING_CHANGED": "Bank setting changed",
+      "SETTING_CHANGED": "Setting changed",
+      "PRICE_BOOK_CHANGED": "Price book changed",
+      "QUOTE_ISSUED": "Quote issued",
+      "PAYMENT_CONFIRMED": "Payment confirmed",
+      "ENTITLEMENT_INCREASED": "Entitlement increased",
+      "PAYMENT_ROLLED_BACK": "Payment rolled back",
+      "ADMIN_SESSION_REVOKED": "Admin session revoked",
+      "ADMIN_LOGIN_LOCKED_OUT": "Admin sign-in locked out",
+      "ADMIN_STEP_UP_GRANTED": "Step-up approval granted",
+      "ADMIN_STEP_UP_DENIED": "Step-up approval denied",
+      "ADMIN_MFA_ENROLLED": "Admin MFA enrolled",
+      "COMPLIMENTARY_GRANT_CREATED": "Complimentary grant created",
+      "COMPLIMENTARY_GRANT_CHANGED": "Complimentary grant changed",
+      "COMPLIMENTARY_GRANT_REVOKED": "Complimentary grant revoked",
+      "COMPLIMENTARY_GRANT_EXPIRED": "Complimentary grant expired",
+      "SETTLEMENT_ACCOUNT_CREATED": "Settlement account created",
+      "SETTLEMENT_ACCOUNT_CHANGED": "Settlement account changed",
+      "SETTLEMENT_BATCH_CREATED": "Settlement batch created",
+      "SETTLEMENT_BATCH_ITEM_ATTRIBUTED": "Settlement batch item attributed",
+      "SETTLEMENT_RECONCILIATION_RESOLVED": "Settlement reconciliation resolved"
+    }
   },
   "billing": {
     "invalidPlanForm": "Enter a plan code and non-negative whole numbers for both default limits.",

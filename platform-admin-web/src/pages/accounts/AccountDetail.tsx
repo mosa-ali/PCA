@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { planRefLabel } from '../../i18n/enumLabels';
 import { Link, useParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../../api/platformAdminApiClient';
 import type { AccountStatusChangeResult, AccountSummaryDto } from '../../domain/accounts';
@@ -141,7 +142,7 @@ export default function AccountDetail() {
             {account.entitlement ? (
               <dl className="kv-list">
                 <dt>{t('accounts.plan')}</dt>
-                <dd>{account.entitlement.planRef ?? '—'}</dd>
+                <dd>{account.entitlement.planRef ? planRefLabel(t, account.entitlement.planRef) : '—'}</dd>
                 <dt>{t('accounts.parentMembers')}</dt>
                 <dd>
                   {account.entitlement.parentMemberUsedCount}/{account.entitlement.parentMemberLimit}
