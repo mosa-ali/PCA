@@ -66,8 +66,21 @@ export default function PermissionsPolicy() {
         <dl>
           {PERMISSION_KEYS.map((key) => (
             <div className="permission-entry" key={key}>
-              <dt>
-                {t(`permissionsPolicy.permissions.${key}.name`)} <code>{MANIFEST_PERMISSION_NAMES[key]}</code>
+              <dt className="permission-entry-term">
+                <span className="permission-entry-name">
+                  {t(`permissionsPolicy.permissions.${key}.name`)}
+                </span>
+                {/* The manifest string is kept verbatim -- this page is a 1:1
+                    citation of AndroidManifest.xml and the identifier IS the
+                    evidence. It is presented as secondary technical detail
+                    under the human-readable name (never as the label itself),
+                    with an explicit screen-reader label so it is never an
+                    unexplained raw token, and dir="ltr" so this Latin
+                    identifier is not visually reordered on the Arabic page. */}
+                <code className="permission-entry-id" dir="ltr" translate="no">
+                  <span className="sr-only">{t('permissionsPolicy.manifestIdentifierLabel')}: </span>
+                  {MANIFEST_PERMISSION_NAMES[key]}
+                </code>
               </dt>
               <dd>{t(`permissionsPolicy.permissions.${key}.purpose`)}</dd>
             </div>

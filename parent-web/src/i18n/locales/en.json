@@ -1029,6 +1029,7 @@
     "intro": "This page explains every permission PCA's Android app can ask your device for, in plain language: which feature uses it, and exactly what data path it feeds. Nothing here is aspirational or a general industry disclosure -- this list is generated to match the permissions actually declared in the app's own manifest.",
     "scopeNotice": "Declaring a permission here is a precondition for asking, not proof the app already uses it in the background: PCA still requests each dangerous permission through its own runtime consent screen at the exact moment the feature that needs it is used, and every feature keeps working (in a reduced form, never a fabricated one) if you decline.",
     "androidHeading": "Permissions requested by the Android app",
+    "manifestIdentifierLabel": "Android manifest identifier",
     "permissions": {
       "accessFineLocation": {
         "name": "Precise location",

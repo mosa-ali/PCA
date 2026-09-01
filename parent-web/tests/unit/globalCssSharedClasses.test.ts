@@ -80,7 +80,11 @@ describe('shared CSS classes referenced from TSX', () => {
     'invitation-qr-code',
     'offline-draft-notice',
     'offline-notice',
-    'permission-entry',
+    // 'permission-entry' was pinned here as design-decision-pending. It is now
+    // genuinely styled: being unstyled was the root cause of the /privacy/permissions
+    // horizontal overflow at 375x812 (its 49-character manifest identifier had no
+    // break opportunity). See the .permission-entry* block in global.css and
+    // tests/responsive/permissionsPolicyLayout.test.tsx.
   ];
 
   it('has no unstyled class beyond the known, design-decision-pending list', () => {

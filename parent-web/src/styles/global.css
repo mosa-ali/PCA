@@ -764,6 +764,73 @@ bdi.iso {
   background: var(--color-bg);
 }
 
+/* ---------- Privacy > Android permissions policy (PermissionsPolicy.tsx) ----------
+
+   `.permission-entry` was used by the markup but had no rules at all, so each
+   entry rendered as an unstyled <dt>/<dd> pair whose manifest identifier was a
+   single unbreakable 49-character token
+   (`android.permission.FOREGROUND_SERVICE_SPECIAL_USE`). With nothing allowing
+   it to wrap, that token set the element's minimum width and pushed the
+   document wider than a 375px viewport -- the one horizontal overflow left in
+   the mobile sweep.
+
+   The identifiers themselves are deliberate and must not change: this page is a
+   1:1 citation of android/app/src/main/AndroidManifest.xml's <uses-permission>
+   entries. So they are kept verbatim and instead demoted to clearly-secondary
+   technical detail on their own line, wrapped with the same
+   overflow-wrap/word-break pair `.copyable-value code` already uses for long
+   opaque strings elsewhere in this stylesheet. */
+
+.permission-entry {
+  margin-block-end: var(--space-4);
+  /* A grid item's default `min-width: auto` floors it at its longest
+     unbreakable token, which is what defeats wrapping in a flex/grid ancestor;
+     0 lets the wrap rules below actually take effect. */
+  min-width: 0;
+}
+
+.permission-entry:last-child {
+  margin-block-end: 0;
+}
+
+.permission-entry-term {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.permission-entry-name {
+  /* The human-readable label is the primary text a parent reads; the manifest
+     identifier below it is deliberately secondary. */
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.permission-entry-id {
+  max-width: 100%;
+  min-width: 0;
+  /* `anywhere` + `break-all` is the pair used by `.copyable-value code`: the
+     first lets the line box shrink below the token's width when measuring, the
+     second permits the break inside the token itself. Both are needed. */
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  background: var(--color-surface-raised);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.permission-entry dd {
+  margin-inline-start: 0;
+  margin-block-start: var(--space-1);
+  min-width: 0;
+}
+
 /* ---------- Device enrollment (invitations / pairing) ---------- */
 
 .enrollment-panel {
