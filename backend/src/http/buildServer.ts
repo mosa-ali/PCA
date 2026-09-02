@@ -131,6 +131,12 @@ import type { ChildRequestService } from '../childrequests/ChildRequestService.j
 // "no new plaintext policy store" posture.
 import { registerEyeProtectionRoutes } from './routes/eyeProtectionRoutes.js';
 import type { EyeProtectionSettingsService } from '../eyeprotection/EyeProtectionSettingsService.js';
+// WEB_RULE parent authoring: a per-family, plaintext (never E2EE) rule
+// DEFINITION -- see webRuleRoutes.ts's own header comment for why this is
+// the same reviewed exception eyeProtectionRoutes.ts already establishes,
+// and why it never attempts the still-crypto-gated device-delivery step.
+import { registerWebRuleRoutes } from './routes/webRuleRoutes.js';
+import type { WebRuleService } from '../web/WebRuleStore.js';
 import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
 import { registerFamilyAuditEventRoutes } from './routes/familyAuditEventRoutes.js';
 import { registerProtectionAlertRoutes } from './routes/protectionAlertRoutes.js';
@@ -241,6 +247,23 @@ export interface ServerDependencies {
    * silent allow.
    */
   eyeProtectionSettingsService?: EyeProtectionSettingsService;
+  /**
+   * WEB_RULE parent authoring: see registerWebRuleRoutes' own doc comment.
+   * Optional purely so existing buildServer() test callers that don't
+   * exercise this route need no change; registerWebRuleRoutes itself fails
+   * the route closed with 503 when this is omitted, never a silent allow.
+   */
+  webRuleService?: WebRuleService;
+  /**
+   * WEB_RULE parent authoring: reuses the SAME ParentActionAuthorizationService
+   * instance every other consumer of this file shares (main.ts's own
+   * safeZoneParentActionAuthorization) -- never a second, independently-
+   * constructed copy. Optional purely so existing buildServer() test
+   * callers that don't exercise this route need no change;
+   * registerWebRuleRoutes itself fails the mutation routes closed with 503
+   * when this is omitted, never a silent allow.
+   */
+  webRuleAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
   /** PCA product-completion programme, Writer P0-C (family/members): see registerFamilyMemberRoutes below. Optional so existing buildServer() test callers that don't exercise family/members routes need no change. */
   familyMemberInvitationService?: FamilyMemberInvitationService;
   /** PCA product-completion programme, Writer P0-D (/security/audit): see registerFamilyAuditEventRoutes below. Optional so existing buildServer() test callers that don't exercise the audit-events route need no change. */
@@ -461,6 +484,12 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     deviceSessionService: deps.deviceSessionService,
     eyeProtectionSettingsService: deps.eyeProtectionSettingsService,
+  });
+  registerWebRuleRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    deviceSessionService: deps.deviceSessionService,
+    parentActionAuthorization: deps.webRuleAuthorization,
+    webRuleService: deps.webRuleService,
   });
   registerFamilyMemberRoutes(app, {
     parentAccountService: deps.parentAccountService,

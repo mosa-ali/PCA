@@ -13,6 +13,8 @@ export interface WebRuleRepository {
   remove(familyId: OpaqueFamilyId | null, domain: CanonicalDomain, listType: WebRuleListType): Promise<void>;
   /** Every rule matching this domain, across the family's own rules AND the global security feed -- the full candidate set resolveWebRuleSource ranks. */
   findMatching(familyId: OpaqueFamilyId, domain: CanonicalDomain): Promise<WebRule[]>;
+  /** Every rule stored under this family (across all domains) -- never includes the global security feed (familyId: null) or another family's rules. Backs the parent-facing rule-list authoring surface (WebRuleService.listParentRules), never the per-domain decision pipeline (that stays on findMatching). */
+  listByFamily(familyId: OpaqueFamilyId): Promise<WebRule[]>;
 }
 
 export class InMemoryWebRuleRepository implements WebRuleRepository {
@@ -35,6 +37,14 @@ export class InMemoryWebRuleRepository implements WebRuleRepository {
     for (const rule of this.rules.values()) {
       if (rule.domain !== domain) continue;
       if (rule.familyId === null || rule.familyId === familyId) matched.push(rule);
+    }
+    return matched;
+  }
+
+  async listByFamily(familyId: OpaqueFamilyId): Promise<WebRule[]> {
+    const matched: WebRule[] = [];
+    for (const rule of this.rules.values()) {
+      if (rule.familyId === familyId) matched.push(rule);
     }
     return matched;
   }
@@ -105,5 +115,19 @@ export class WebRuleService {
     const canonicalDomain = canonicalizeDomain(domain);
     if (canonicalDomain === null) throw new WebRuleError('INVALID_DOMAIN');
     await this.repository.remove(familyId, canonicalDomain, listType);
+  }
+
+  /**
+   * The parent-facing rule LIST, filtered to exactly the two sources this
+   * service's own writes can ever produce (PARENT_ALLOWLIST/PARENT_DENYLIST)
+   * -- mirrors setParentRule/removeParentRule's FORBIDDEN_SOURCE restriction
+   * on the read side, so a family-scoped caller can never see a
+   * SECURITY_DENYLIST or CATEGORY_RULE/SCHEDULE_RULE entry (age-profile
+   * configuration owned elsewhere) through this authoring surface, even
+   * though WebRuleRepository.listByFamily itself has no such filter.
+   */
+  async listParentRules(familyId: OpaqueFamilyId): Promise<WebRule[]> {
+    const rules = await this.repository.listByFamily(familyId);
+    return rules.filter((rule) => FAMILY_WRITABLE_SOURCES.has(rule.source));
   }
 }

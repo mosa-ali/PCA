@@ -259,7 +259,7 @@ function buildRealClients(): PcaApiClients {
     deviceStatus: new RealDeviceStatusClient(trustedBrowser),
     requests: new RealRequestClient(config.apiBaseUrl, trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
-    webRuleAdmin: new RealWebRuleAdminClient(trustedBrowser),
+    webRuleAdmin: new RealWebRuleAdminClient(config.apiBaseUrl, trustedBrowser),
     trustedBrowser,
     // Real, HTTP-backed against the parent-facing
     // backend/src/http/routes/parentRuntimeSyncRoutes.ts route for its 3

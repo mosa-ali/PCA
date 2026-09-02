@@ -52,6 +52,7 @@ import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepo
 import { ChildRequestService } from './childrequests/ChildRequestService.js';
 import { MySqlEyeProtectionSettingsRepository } from './eyeprotection/MySqlEyeProtectionSettingsRepository.js';
 import { EyeProtectionSettingsService } from './eyeprotection/EyeProtectionSettingsService.js';
+import { InMemoryWebRuleRepository, WebRuleService } from './web/WebRuleStore.js';
 import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
 import { MySqlFamilyMemberAccountBinder } from './familymembers/MySqlFamilyMemberAccountBinder.js';
 import { FamilyMemberInvitationService } from './familymembers/FamilyMemberInvitationService.js';
@@ -505,6 +506,20 @@ async function start(): Promise<void> {
   // eyeprotection/EyeProtectionSettingsRepository.ts's own doc comment.
   const eyeProtectionSettingsRepository = new MySqlEyeProtectionSettingsRepository();
   const eyeProtectionSettingsService = new EyeProtectionSettingsService(eyeProtectionSettingsRepository, safeZoneParentActionAuthorization);
+  // WEB_RULE parent authoring: reuses the SAME safeZoneParentActionAuthorization
+  // instance (a ParentActionAuthorizationService is generic across every
+  // ParentOperation, including EDIT_CHILD_POLICY) every other consumer in
+  // this file shares -- never a second, independently-constructed copy.
+  // Unlike eyeProtectionSettingsRepository above, this reuses the
+  // pre-existing InMemoryWebRuleRepository (web/WebRuleStore.ts's own doc
+  // comment: "Only a deterministic in-memory implementation exists today --
+  // MySQL persistence is a later slice, mirroring RecoveryRepository/
+  // RelayRepository") -- WebFilterEngine's live decision pipeline is not
+  // wired to any request path in this file yet either, so there is no
+  // existing MySQL-backed WebRuleRepository to reuse, and adding one is out
+  // of this task's scope (no new schema improvised here).
+  const webRuleRepository = new InMemoryWebRuleRepository();
+  const webRuleService = new WebRuleService(webRuleRepository);
   // PCA product-completion programme, Writer P0-C (family/members): reuses
   // the SAME safeZoneParentActionAuthorization instance (a
   // ParentActionAuthorizationService is generic across every ParentOperation,
@@ -751,6 +766,10 @@ async function start(): Promise<void> {
     // PCA eye-protection reminders: see the wiring block above (near
     // childRequestRepository) for construction/rationale.
     eyeProtectionSettingsService,
+    // WEB_RULE parent authoring: see the wiring block above (near
+    // eyeProtectionSettingsRepository) for construction/rationale.
+    webRuleService,
+    webRuleAuthorization: safeZoneParentActionAuthorization,
   });
   await app.listen({ host, port });
 

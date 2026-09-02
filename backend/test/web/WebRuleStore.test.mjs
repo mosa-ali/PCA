@@ -88,3 +88,40 @@ test('rule keys round-trip through put/remove and never collide across distinct 
   assert.equal((await repo.findMatching('fam-1', 'other.example')).length, 1);
   assert.equal((await repo.findMatching('fam-2', 'example.com')).length, 1);
 });
+
+// WEB_RULE mutation shape/serialization end-to-end: listParentRules backs
+// the parent-facing rule LIST returned by the new webRuleRoutes.ts mutation
+// routes (GET/POST/POST-remove), never the per-domain decision pipeline
+// (findMatching stays the sole source for that).
+test('listParentRules returns every parent-authored rule for the family, across domains', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const service = new WebRuleService(repo);
+  await service.setParentRule('fam-1', 'example.com', 'DENY', 'PARENT_DENYLIST');
+  await service.setParentRule('fam-1', 'other.example', 'ALLOW', 'PARENT_ALLOWLIST');
+  await service.setParentRule('fam-2', 'third.example', 'DENY', 'PARENT_DENYLIST');
+
+  const rules = await service.listParentRules('fam-1');
+  const domains = rules.map((r) => r.domain).sort();
+  assert.deepEqual(domains, ['example.com', 'other.example']);
+});
+
+test('listParentRules never exposes the global SECURITY_DENYLIST feed through the family-scoped API', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const service = new WebRuleService(repo);
+  await service.setParentRule('fam-1', 'example.com', 'DENY', 'PARENT_DENYLIST');
+  // A security-feed rule is never family-scoped (familyId: null), so listByFamily('fam-1')
+  // would never surface it regardless -- this asserts listParentRules' own
+  // FAMILY_WRITABLE_SOURCES filter is real, not merely relying on that fact.
+  await repo.put({ domain: 'malware.example', listType: 'DENY', source: 'SECURITY_DENYLIST', familyId: 'fam-1', createdAt: new Date() });
+
+  const rules = await service.listParentRules('fam-1');
+  assert.deepEqual(rules.map((r) => r.domain).sort(), ['example.com']);
+});
+
+test('listParentRules reflects a removal', async () => {
+  const repo = new InMemoryWebRuleRepository();
+  const service = new WebRuleService(repo);
+  await service.setParentRule('fam-1', 'example.com', 'DENY', 'PARENT_DENYLIST');
+  await service.removeParentRule('fam-1', 'example.com', 'DENY');
+  assert.deepEqual(await service.listParentRules('fam-1'), []);
+});
