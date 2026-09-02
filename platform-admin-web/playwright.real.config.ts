@@ -32,6 +32,17 @@ export default defineConfig({
   // end even with both TOTP waits landing well under worst-case -- 120s
   // was already tight, not merely theoretically at risk.
   timeout: 180_000,
+  // 15s, not Playwright's 5s default: individual assertions in this spec
+  // (e.g. the dashboard heading after login, the admin-users table after
+  // navigation) each wait on a REAL round trip through the same-origin
+  // proxy to a real Fastify backend and real MySQL, not a mock -- under
+  // real load (a cold Vite compile of a route touched for the first time,
+  // a loaded disposable-MySQL container, general host contention) that can
+  // exceed 5s even though the underlying capability is correct, confirmed
+  // by direct, non-Playwright reproduction of the exact same login+MFA+
+  // dashboard flow completing successfully end to end. Same reasoning as
+  // this file's own 180s overall `timeout` above, applied per-assertion.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: 'http://localhost:4102',
     trace: 'retain-on-failure',

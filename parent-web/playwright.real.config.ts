@@ -21,6 +21,17 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   timeout: 60_000,
+  // 15s, not Playwright's 5s default: mirrors
+  // platform-admin-web/playwright.real.config.ts's identical, already-
+  // documented reasoning -- individual assertions here (e.g. the
+  // post-login toHaveURL(/\/dashboard$/) in each spec's signIn() helper)
+  // wait on a REAL round trip through a real Fastify backend and real
+  // MySQL, not a mock. Confirmed in direct reproduction: a signIn() that
+  // timed out at the 5s default passed immediately on an isolated re-run
+  // of the exact same test against the exact same account/backend, with
+  // no code change -- pure real-network/dev-server latency under host
+  // load, not a product defect.
+  expect: { timeout: 15_000 },
   use: {
     baseURL: 'http://localhost:4002',
     trace: 'retain-on-failure',
