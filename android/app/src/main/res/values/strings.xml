@@ -340,6 +340,27 @@
     <string name="admin_pin_save_button">Save PIN</string>
     <string name="admin_pin_cancel_button">Cancel</string>
     <string name="admin_pin_use_biometric_instead_button">Use biometrics instead</string>
+    <!-- PCA-NFR-044: closes the documented gap that AdminPinScreen (reachable by a child via
+         ChildHomeScreen's AdminSecurityEntryCard) had no reading-level-differentiated copy. Base
+         keys above are the CLEAR/TEEN-tier copy, matching the base-key-means-CLEAR convention
+         established by break_shield_*/child_home_*/safe_browser_held_*/eye_rest_shield_*; the
+         "_simple" suffix holds the YOUNG_CHILD-tier copy. admin_pin_incorrect_message(_simple) is
+         new: this surface previously hardcoded "Incorrect PIN" directly in
+         AdminSecurityActivity.kt instead of using a string resource at all. Field labels that are
+         already single/two words ("PIN", "Current PIN", "New PIN") and the Cancel/biometric
+         actions have no separate "_simple" variant, mirroring eye_rest_shield_title's documented
+         shared-title precedent: the PIN value and verification result are identical for both
+         tiers, only wording complexity changes. -->
+    <string name="admin_pin_setup_title_simple">Create a parent PIN</string>
+    <string name="admin_pin_change_title_simple">Change the parent PIN</string>
+    <string name="admin_pin_verify_title_simple">Enter the parent PIN</string>
+    <string name="admin_pin_confirm_field_label_simple">Type the new PIN again</string>
+    <string name="admin_pin_confirm_button_simple">OK</string>
+    <string name="admin_pin_continue_button_simple">Next</string>
+    <string name="admin_pin_save_button_simple">Save</string>
+    <string name="admin_pin_incorrect_message">Incorrect PIN. Please try again.</string>
+    <string name="admin_pin_incorrect_message_simple">That PIN is not right. Try again.</string>
+    <string name="admin_pin_locked_out_message_simple">Too many wrong tries. Wait %1$d seconds and try again.</string>
 
     <!-- PCA-FR-084/144/145 gap item 4: removal/disable decision subsystem UI. -->
     <string name="removal_decision_title">Manage device protection</string>

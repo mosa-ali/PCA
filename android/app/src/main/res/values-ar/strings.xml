@@ -333,6 +333,17 @@
     <string name="admin_pin_save_button">حفظ رمز PIN</string>
     <string name="admin_pin_cancel_button">إلغاء</string>
     <string name="admin_pin_use_biometric_instead_button">استخدم القياسات الحيوية بدلاً من ذلك</string>
+    <!-- PCA-NFR-044: SIMPLE/YOUNG_CHILD-tier copy, mirroring the English "_simple" keys. -->
+    <string name="admin_pin_setup_title_simple">إنشاء رمز PIN للوالد</string>
+    <string name="admin_pin_change_title_simple">تغيير رمز PIN الخاص بالوالد</string>
+    <string name="admin_pin_verify_title_simple">أدخل رمز PIN الخاص بالوالد</string>
+    <string name="admin_pin_confirm_field_label_simple">اكتب رمز PIN الجديد مرة أخرى</string>
+    <string name="admin_pin_confirm_button_simple">موافق</string>
+    <string name="admin_pin_continue_button_simple">التالي</string>
+    <string name="admin_pin_save_button_simple">حفظ</string>
+    <string name="admin_pin_incorrect_message">رمز PIN غير صحيح. يرجى المحاولة مرة أخرى.</string>
+    <string name="admin_pin_incorrect_message_simple">هذا الرمز غير صحيح. حاول مرة أخرى.</string>
+    <string name="admin_pin_locked_out_message_simple">محاولات كثيرة جدًا. انتظر %1$d ثانية ثم حاول مرة أخرى.</string>
 
     <!-- PCA-FR-084/144/145 gap item 4: removal/disable decision subsystem UI. -->
     <string name="removal_decision_title">إدارة حماية الجهاز</string>

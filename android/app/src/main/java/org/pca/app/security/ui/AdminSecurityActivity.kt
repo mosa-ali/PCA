@@ -112,7 +112,11 @@ class AdminSecurityActivity : FragmentActivity() {
             PcaAccessibilityContent {
                 MaterialTheme {
                     var isAuthenticated by remember { mutableStateOf(false) }
-                    var pinErrorMessage by remember { mutableStateOf<String?>(null) }
+                    // PCA-NFR-044: a flag, not a pre-formatted string -- AdminPinScreen itself
+                    // selects the tier-appropriate "incorrect PIN" copy (see AdminPinScreen.kt's
+                    // AdminPinCopy/adminPinCopyForTier), so this caller no longer hardcodes
+                    // English error text.
+                    var pinHasIncorrectError by remember { mutableStateOf(false) }
                     var record by remember { mutableStateOf(coordinator.currentRecord()) }
 
                     if (!isAuthenticated) {
@@ -122,7 +126,7 @@ class AdminSecurityActivity : FragmentActivity() {
                             state = AdminPinScreenState(
                                 isLockedOut = pinVerifier.isLockedOut(),
                                 remainingLockoutMillis = pinVerifier.remainingLockoutMillis(),
-                                errorMessage = pinErrorMessage,
+                                hasIncorrectPinError = pinHasIncorrectError,
                             ),
                             onSubmitNewPin = { newPin ->
                                 pinVerifier.setPin(newPin)
@@ -130,10 +134,10 @@ class AdminSecurityActivity : FragmentActivity() {
                             },
                             onVerifyPin = { candidate ->
                                 if (pinVerifier.verify(candidate)) {
-                                    pinErrorMessage = null
+                                    pinHasIncorrectError = false
                                     isAuthenticated = true
                                 } else {
-                                    pinErrorMessage = "Incorrect PIN"
+                                    pinHasIncorrectError = true
                                 }
                             },
                             onCancel = { finish() },
