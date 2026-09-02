@@ -4,14 +4,26 @@
  * this module reads and writes.
  */
 
-/** The closed vocabulary migration 0012's CHECK constraint enforces. */
+/** The closed vocabulary migration 0012's CHECK constraint enforces (widened
+ * by migration 0033 to add `RENEWAL_UPCOMING`). */
 export type CommercialNotificationEventType =
   | 'QUOTE_READY'
   | 'PAYMENT_CONFIRMED'
   | 'ENTITLEMENT_INCREASED'
   | 'PAYMENT_FAILED'
   | 'REQUEST_DENIED'
-  | 'QUOTE_EXPIRED';
+  | 'QUOTE_EXPIRED'
+  /**
+   * migration 0033: a purely internal, provider-neutral "your subscription
+   * renews soon" reminder -- published by
+   * CommercialMaintenanceRunner.publishPendingRenewalUpcomingNotifications
+   * ahead of an actual renewal charge/cycle (billing_subscriptions.current_period_end,
+   * see billing/subscription.ts). Distinct from `auto_renew` (migration
+   * 0031): that flag/mutation is about a parent's stated renewal
+   * preference; this event is a proactive heads-up notification, and never
+   * itself charges anyone or talks to a payment provider.
+   */
+  | 'RENEWAL_UPCOMING';
 
 export const COMMERCIAL_NOTIFICATION_EVENT_TYPES: readonly CommercialNotificationEventType[] = [
   'QUOTE_READY',
@@ -20,6 +32,7 @@ export const COMMERCIAL_NOTIFICATION_EVENT_TYPES: readonly CommercialNotificatio
   'PAYMENT_FAILED',
   'REQUEST_DENIED',
   'QUOTE_EXPIRED',
+  'RENEWAL_UPCOMING',
 ];
 
 /**

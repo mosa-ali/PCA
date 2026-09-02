@@ -17,6 +17,7 @@ import { CommercialNotificationRepository } from '../../dist/commercialnotificat
 import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 import { MySqlCommercialMaintenanceRunner } from '../../dist/commercialmaintenance/CommercialMaintenanceRunner.js';
 import { COMMERCIAL_MAINTENANCE_CONFIG_DEFAULTS } from '../../dist/commercialmaintenance/config.js';
+import { SubscriptionRepository } from '../../dist/billing/subscription.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -92,6 +93,42 @@ async function countNotificationRows(dedupeKey) {
 async function readQuoteStatus(quoteId) {
   const [rows] = await getPool().query(`SELECT status FROM billing_quotes WHERE quote_id = ?`, [quoteId]);
   return rows[0]?.status ?? null;
+}
+
+/** Fixture: billing_subscriptions.plan_id is a real FOREIGN KEY into
+ * billing_plans (migration 0007) -- unlike quotes' opaque
+ * increase_request_ref, a subscription test row needs an actual plan row to
+ * satisfy the constraint. */
+async function createPlan() {
+  const planId = randomUUID();
+  const planCode = `RENEWAL_TEST_PLAN_${randomUUID().slice(0, 8)}`;
+  await getPool().query(
+    `INSERT INTO billing_plans
+       (plan_id, plan_code, plan_version, status, billing_cadence, default_parent_member_limit, default_managed_device_limit)
+     VALUES (?, ?, 1, 'ACTIVE', 'MONTHLY', 2, 5)`,
+    [planId, planCode],
+  );
+  return planId;
+}
+
+/** Directly inserts a `billing_subscriptions` row via the repository's
+ * `create`, bypassing SubscriptionService's RBAC gate (mirroring
+ * insertQuoteAt's bypass of QuoteService's own validation above), so tests
+ * can freely set `status` and `currentPeriodEnd` to exercise the
+ * upcoming-renewal sweep without waiting in real time. */
+async function insertSubscriptionAt(subscriptionRepository, { accountRef, planId, status = 'ACTIVE', currentPeriodStart, currentPeriodEnd }) {
+  return runInTransaction((conn) =>
+    subscriptionRepository.create(
+      conn,
+      { accountRef, planId, status, currentPeriodStart, currentPeriodEnd, paymentMethodId: null },
+      new Date(Date.now() - 60_000),
+    ),
+  );
+}
+
+async function readNotificationRow(dedupeKey) {
+  const [rows] = await getPool().query(`SELECT account_ref, event_type, resource_ref FROM commercial_notifications WHERE dedupe_key = ?`, [dedupeKey]);
+  return rows[0] ?? null;
 }
 
 test('MySQL BOUNDARY: a quote whose expiresAt has just passed is expired; one whose expiresAt has not yet passed is untouched', async () => {
@@ -312,6 +349,119 @@ test('MySQL CONCURRENCY: two concurrent retention-prune passes never double-dele
   // A THIRD prune call against the now-empty backlog must be a safe no-op, not an error.
   const c = await repository.pruneOlderThan(cutoff, 100);
   assert.equal(c, 0);
+});
+
+test('MySQL RENEWAL UPCOMING: a subscription renewing within the 7-day window is reminded once; one renewing well outside the window is untouched', async () => {
+  const subscriptionRepository = new SubscriptionRepository();
+  const planId = await createPlan();
+  const now = new Date();
+
+  const soon = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'ACTIVE',
+    currentPeriodStart: new Date(now.getTime() - 23 * 24 * 60 * 60 * 1000),
+    currentPeriodEnd: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 days out -- within window
+  });
+  const faraway = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'ACTIVE',
+    currentPeriodStart: now,
+    currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days out -- outside window
+  });
+
+  const runner = buildRunner({ now: () => now });
+  const result = await runner.runOnce();
+
+  assert.ok(result.notificationsPublished >= 1);
+  const soonDedupeKey = `RENEWAL_UPCOMING:${soon.subscriptionId}:${soon.currentPeriodEnd.toISOString().slice(0, 10)}`;
+  const farDedupeKey = `RENEWAL_UPCOMING:${faraway.subscriptionId}:${faraway.currentPeriodEnd.toISOString().slice(0, 10)}`;
+  assert.equal(await countNotificationRows(soonDedupeKey), 1, 'a subscription renewing within the window must be reminded');
+  assert.equal(await countNotificationRows(farDedupeKey), 0, 'a subscription renewing well outside the window must never be reminded yet');
+
+  const notifRow = await readNotificationRow(soonDedupeKey);
+  assert.equal(notifRow.account_ref, soon.accountRef);
+  assert.equal(notifRow.event_type, 'RENEWAL_UPCOMING');
+  assert.equal(notifRow.resource_ref, soon.subscriptionId);
+});
+
+test('MySQL RENEWAL UPCOMING: a CANCELED subscription renewing within the window is never reminded', async () => {
+  const subscriptionRepository = new SubscriptionRepository();
+  const planId = await createPlan();
+  const now = new Date();
+
+  const canceled = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'CANCELED',
+    currentPeriodStart: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000),
+    currentPeriodEnd: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000), // within window, but CANCELED
+  });
+
+  const runner = buildRunner({ now: () => now });
+  await runner.runOnce();
+
+  const dedupeKey = `RENEWAL_UPCOMING:${canceled.subscriptionId}:${canceled.currentPeriodEnd.toISOString().slice(0, 10)}`;
+  assert.equal(await countNotificationRows(dedupeKey), 0, 'a CANCELED subscription must never be reminded, even if current_period_end is within the window');
+});
+
+test('MySQL RENEWAL UPCOMING: idempotent across repeated runOnce() calls for the same cycle -- no duplicate reminder', async () => {
+  const subscriptionRepository = new SubscriptionRepository();
+  const planId = await createPlan();
+  const now = new Date();
+
+  const subscription = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'ACTIVE',
+    currentPeriodStart: new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000),
+    currentPeriodEnd: new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000),
+  });
+  const dedupeKey = `RENEWAL_UPCOMING:${subscription.subscriptionId}:${subscription.currentPeriodEnd.toISOString().slice(0, 10)}`;
+
+  const runner = buildRunner({ now: () => now });
+  const first = await runner.runOnce();
+  assert.ok(first.notificationsPublished >= 1);
+  assert.equal(await countNotificationRows(dedupeKey), 1);
+
+  await runner.runOnce();
+  assert.equal(await countNotificationRows(dedupeKey), 1, 'a second runOnce() for the SAME renewal cycle must never create a duplicate notification');
+
+  // A THIRD run via an entirely separate runner instance (simulating another
+  // process) racing the same already-notified cycle must also be a safe no-op.
+  const other = buildRunner({ now: () => now });
+  await other.runOnce();
+  assert.equal(await countNotificationRows(dedupeKey), 1);
+});
+
+test('MySQL RENEWAL UPCOMING: a subscription renewing exactly at the window boundaries is reminded (inclusive range)', async () => {
+  const subscriptionRepository = new SubscriptionRepository();
+  const planId = await createPlan();
+  const now = new Date();
+
+  const exactlyNow = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'ACTIVE',
+    currentPeriodStart: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+    currentPeriodEnd: now,
+  });
+  const exactlySevenDaysOut = await insertSubscriptionAt(subscriptionRepository, {
+    accountRef: `family_${randomUUID()}`,
+    planId,
+    status: 'ACTIVE',
+    currentPeriodStart: now,
+    currentPeriodEnd: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+  });
+
+  const runner = buildRunner({ now: () => now });
+  await runner.runOnce();
+
+  const nowDedupeKey = `RENEWAL_UPCOMING:${exactlyNow.subscriptionId}:${exactlyNow.currentPeriodEnd.toISOString().slice(0, 10)}`;
+  const sevenDayDedupeKey = `RENEWAL_UPCOMING:${exactlySevenDaysOut.subscriptionId}:${exactlySevenDaysOut.currentPeriodEnd.toISOString().slice(0, 10)}`;
+  assert.equal(await countNotificationRows(nowDedupeKey), 1, 'a subscription renewing exactly now must be reminded');
+  assert.equal(await countNotificationRows(sevenDayDedupeKey), 1, 'a subscription renewing exactly at the far edge of the window must be reminded');
 });
 
 test.after(async () => {

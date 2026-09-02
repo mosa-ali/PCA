@@ -39,6 +39,7 @@ export const DEFAULT_MESSAGE_KEYS: Readonly<Record<PublishCommercialNotification
   PAYMENT_FAILED: 'commercial_notification.PAYMENT_FAILED',
   REQUEST_DENIED: 'commercial_notification.REQUEST_DENIED',
   QUOTE_EXPIRED: 'commercial_notification.QUOTE_EXPIRED',
+  RENEWAL_UPCOMING: 'commercial_notification.RENEWAL_UPCOMING',
 };
 
 export class MySqlCommercialNotificationPublisher implements CommercialNotificationPublisher {

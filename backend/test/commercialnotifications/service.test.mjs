@@ -43,6 +43,7 @@ test('renderLocalizedBody produces the correct English text by default for every
     PAYMENT_FAILED: 'Your payment could not be completed.',
     REQUEST_DENIED: 'Your request was not approved.',
     QUOTE_EXPIRED: 'Your quote has expired.',
+    RENEWAL_UPCOMING: 'Your subscription is due to renew soon.',
   };
   for (const eventType of COMMERCIAL_NOTIFICATION_EVENT_TYPES) {
     assert.equal(service.renderLocalizedBody(row({ eventType }), 'en'), expected[eventType], `mismatch for ${eventType}`);

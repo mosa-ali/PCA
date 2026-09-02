@@ -134,6 +134,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'commercial_notification.PAYMENT_FAILED': 'تعذر إتمام عملية الدفع.',
   'commercial_notification.REQUEST_DENIED': 'لم تتم الموافقة على طلبك.',
   'commercial_notification.QUOTE_EXPIRED': 'انتهت صلاحية عرض السعر الخاص بك.',
+  'commercial_notification.RENEWAL_UPCOMING': 'من المقرر تجديد اشتراكك قريبًا.',
 
   DOMAIN_BLOCKED_NOTICE: `تم حظر ${isolateLtr('{domain}')} بموجب قاعدة عائلتك`,
 };

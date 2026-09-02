@@ -159,6 +159,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'commercial_notification.PAYMENT_FAILED': 'Your payment could not be completed.',
   'commercial_notification.REQUEST_DENIED': 'Your request was not approved.',
   'commercial_notification.QUOTE_EXPIRED': 'Your quote has expired.',
+  'commercial_notification.RENEWAL_UPCOMING': 'Your subscription is due to renew soon.',
 
   DOMAIN_BLOCKED_NOTICE: '{domain} was blocked under your family’s rule',
 };
