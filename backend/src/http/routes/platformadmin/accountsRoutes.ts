@@ -111,7 +111,15 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       const query = (request.query ?? {}) as Record<string, unknown>;
       const page = parsePageRequest(query);
       const includeDeleted = query.includeDeleted === 'true';
-      const result = await readModel.list(page, includeDeleted);
+      // B103/B105: familyId is an exact-match search (mirrors accountRef
+      // filtering on every other Platform Administration list route --
+      // family_id is an opaque UUID, never a fuzzy-searched display name).
+      // sortBy/sortDir are validated against AccountsReadModel's own
+      // fixed allow-list (never passed through as a raw column/direction).
+      const familyId = typeof query.familyId === 'string' && query.familyId.length > 0 && query.familyId.length <= FAMILY_ID_MAX_LENGTH ? query.familyId : undefined;
+      const sortBy = query.sortBy === 'familyId' ? 'familyId' : 'createdAt';
+      const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
+      const result = await readModel.list(page, includeDeleted, { familyId, sortBy, sortDir });
       return reply.code(200).send({
         items: result.items.map(toAccountDto),
         total: result.total,

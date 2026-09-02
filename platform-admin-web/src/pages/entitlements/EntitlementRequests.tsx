@@ -81,8 +81,14 @@ function DenyForm({ requestId, onDenied }: { requestId: string; onDenied: (updat
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  // Two-click ConfirmButton gate (this app's established confirmation
+  // pattern for a real, consequential-but-not-step-up-sensitive mutation --
+  // see ConfirmButton.tsx's own doc comment, and the identical treatment
+  // Approve already has below). A denial used to fire on a single click of
+  // a type="submit" button; the form's own onSubmit is now inert
+  // (preventDefault only) and ConfirmButton's second click is what actually
+  // calls submit().
+  const submit = async () => {
     if (!reason.trim()) {
       notify(t('entitlementRequests.reasonRequired'), 'error');
       return;
@@ -103,11 +109,9 @@ function DenyForm({ requestId, onDenied }: { requestId: string; onDenied: (updat
   };
 
   return (
-    <form className="actions-row" onSubmit={submit} aria-label={t('entitlementRequests.deny')}>
+    <form className="actions-row" onSubmit={(e) => e.preventDefault()} aria-label={t('entitlementRequests.deny')}>
       <input aria-label={t('entitlementRequests.reasonLabel')} style={{ width: '12rem' }} maxLength={255} value={reason} onChange={(e) => setReason(e.target.value)} required />
-      <button type="submit" className="btn" disabled={submitting}>
-        {t('entitlementRequests.deny')}
-      </button>
+      <ConfirmButton label={t('entitlementRequests.deny')} disabled={submitting} onConfirm={() => void submit()} />
     </form>
   );
 }
@@ -215,9 +219,11 @@ export default function EntitlementRequests() {
                 <th scope="col">{t('entitlements.requestId')}</th>
                 <th scope="col">{t('entitlements.familyIdLabel')}</th>
                 <th scope="col">{t('entitlements.limitType')}</th>
+                <th scope="col">{t('entitlements.currentLimit')}</th>
                 <th scope="col">{t('entitlements.targetLimit')}</th>
                 <th scope="col">{t('entitlements.state')}</th>
                 <th scope="col">{t('entitlementRequests.quote')}</th>
+                <th scope="col">{t('accounts.createdAt')}</th>
                 <th scope="col">{t('common.actions')}</th>
               </tr>
             </thead>
@@ -229,6 +235,10 @@ export default function EntitlementRequests() {
                     <Link to={`/accounts/${encodeURIComponent(r.familyId)}`}>{r.familyId}</Link>
                   </td>
                   <td>{t(`entitlements.limitTypes.${r.limitType}`)}</td>
+                  {/* B118: the current limit gives the admin the "from" half of
+                      the change being approved/denied -- the target-limit column
+                      alone doesn't say what it's a change FROM. */}
+                  <td>{r.currentLimitAtRequest}</td>
                   <td>{r.targetLimit}</td>
                   <td>
                     {t(`entitlements.states.${r.state}`)}
@@ -239,6 +249,7 @@ export default function EntitlementRequests() {
                       ? formatMoney({ amountMinor: r.quote.amountMinor, currencyCode: r.quote.currencyCode })
                       : '—'}
                   </td>
+                  <td>{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
                   <td>
                     <div className="actions-row">
                       {r.limitType === 'PARENT_MEMBER_LIMIT' && r.state === 'PENDING' && (

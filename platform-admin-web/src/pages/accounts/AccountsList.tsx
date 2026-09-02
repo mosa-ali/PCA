@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { planRefLabel } from '../../i18n/enumLabels';
 import { Link } from 'react-router-dom';
@@ -9,12 +9,20 @@ import { ErrorState } from '../../components/common/ErrorState';
 
 const PAGE_SIZE = 20;
 
+/** B103/B105: the two columns AccountsReadModel.list() can sort by server-side (see its own doc comment for why the joined entitlement/subscription columns can't be). */
+type AccountSortField = 'createdAt' | 'familyId';
+type SortDirection = 'asc' | 'desc';
+
 export default function AccountsList() {
   const { t } = useTranslation();
   const [items, setItems] = useState<AccountSummaryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [includeDeleted, setIncludeDeleted] = useState(false);
+  const [familyIdQuery, setFamilyIdQuery] = useState('');
+  const [appliedFamilyIdQuery, setAppliedFamilyIdQuery] = useState('');
+  const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
+  const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +34,9 @@ export default function AccountsList() {
         limit: PAGE_SIZE,
         offset,
         includeDeleted: includeDeleted ? 'true' : undefined,
+        familyId: appliedFamilyIdQuery || undefined,
+        sortBy,
+        sortDir,
       })
       .then((result) => {
         setItems(result.items);
@@ -37,14 +48,39 @@ export default function AccountsList() {
       .finally(() => setLoading(false));
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on paging/filter change only
-  useEffect(load, [offset, includeDeleted]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on paging/filter/sort change only
+  useEffect(load, [offset, includeDeleted, appliedFamilyIdQuery, sortBy, sortDir]);
+
+  const onSearchSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    setOffset(0);
+    setAppliedFamilyIdQuery(familyIdQuery.trim());
+  };
+
+  /** Clicking the already-active column reverses direction; clicking the other column switches to it, defaulting to descending (matches this list's original default order). */
+  const toggleSort = (field: AccountSortField) => {
+    setOffset(0);
+    if (sortBy === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDir('desc');
+    }
+  };
+
+  const sortIndicator = (field: AccountSortField) => (sortBy === field ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
+  const ariaSortFor = (field: AccountSortField): 'ascending' | 'descending' | 'none' =>
+    sortBy === field ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
 
   return (
     <div className="page">
       <h1>{t('nav.accounts')}</h1>
 
-      <div className="filters">
+      <form className="filters" onSubmit={onSearchSubmit}>
+        <div>
+          <label htmlFor="accounts-family-id-search">{t('accounts.familyIdSearchLabel')}</label>
+          <input id="accounts-family-id-search" value={familyIdQuery} onChange={(e) => setFamilyIdQuery(e.target.value)} maxLength={128} />
+        </div>
         <label htmlFor="accounts-include-deleted" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <input
             id="accounts-include-deleted"
@@ -58,7 +94,10 @@ export default function AccountsList() {
           />
           {t('accounts.includeDeleted')}
         </label>
-      </div>
+        <button type="submit" className="btn">
+          {t('common.applyFilters')}
+        </button>
+      </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}
@@ -70,8 +109,18 @@ export default function AccountsList() {
           <table className="table">
             <thead>
               <tr>
-                <th scope="col">{t('accounts.familyId')}</th>
-                <th scope="col">{t('accounts.createdAt')}</th>
+                <th scope="col" aria-sort={ariaSortFor('familyId')}>
+                  <button type="button" className="sort-btn" onClick={() => toggleSort('familyId')}>
+                    {t('accounts.familyId')}
+                    {sortIndicator('familyId')}
+                  </button>
+                </th>
+                <th scope="col" aria-sort={ariaSortFor('createdAt')}>
+                  <button type="button" className="sort-btn" onClick={() => toggleSort('createdAt')}>
+                    {t('accounts.createdAt')}
+                    {sortIndicator('createdAt')}
+                  </button>
+                </th>
                 <th scope="col">{t('accounts.status')}</th>
                 <th scope="col">{t('accounts.plan')}</th>
                 <th scope="col">{t('accounts.parentMembers')}</th>

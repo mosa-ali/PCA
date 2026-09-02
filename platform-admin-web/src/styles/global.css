@@ -423,6 +423,27 @@ select {
   font-weight: 600;
 }
 
+/* B105: sortable column header trigger -- looks like the plain header text
+   it replaces (no border/background of its own) but stays a real <button>
+   so it is keyboard-operable and announced correctly; aria-sort lives on
+   the parent <th>, per the WAI-ARIA sortable-table-header pattern. */
+.sort-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sort-btn:hover,
+.sort-btn:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .audit-metadata {
   max-width: 32rem;
   max-height: 12rem;

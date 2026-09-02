@@ -1,4 +1,4 @@
-// Two raw-value leaks into the operator UI:
+// Three raw-value/missing-field defects in the operator UI:
 //
 // 1. AccountDetail.tsx printed `latestSubscription.status` as the bare wire
 //    enum ("PAST_DUE"), even though this app already carries translated
@@ -8,6 +8,11 @@
 //    requests for create/revoke/renew -- had no entry in either locale, so
 //    i18next fell back to echoing the key path and the dialog asked the
 //    operator to confirm "stepUp.scopes.COMPLIMENTARY_GRANT_MUTATION".
+// 3. B112 (docs/product-completion/PCA_P1_P2_BEHAVIOR_LEDGER.csv): the
+//    backend's GET /platform-admin/accounts/:id already returns
+//    `latestSubscription.planId` (accountsRoutes.ts's toAccountDto), but
+//    AccountDetail.tsx silently dropped it -- it was never rendered
+//    anywhere in the subscription card.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -80,6 +85,38 @@ describe('operator-facing labels', () => {
 
     expect(await screen.findByText('Past due')).toBeInTheDocument();
     expect(screen.queryByText('PAST_DUE')).not.toBeInTheDocument();
+  });
+
+  it('renders the subscription plan ID the backend already returns, instead of silently dropping it (B112)', async () => {
+    secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
+        if (url.includes('/platform-admin/accounts/fam-1')) return Promise.resolve(jsonResponse(200, ACCOUNT));
+        return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
+      }),
+    );
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={['/accounts/fam-1']}>
+          <ToastProvider>
+            <AuthProvider>
+              <StepUpProvider>
+                <Routes>
+                  <Route path="/accounts/:id" element={<AccountDetail />} />
+                </Routes>
+              </StepUpProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(await screen.findByText('plan-1')).toBeInTheDocument();
+    expect(screen.getByText('Subscription plan ID')).toBeInTheDocument();
   });
 
   it('has a real label in BOTH locales for every step-up scope the app can request', () => {

@@ -173,6 +173,8 @@ export default function AccountDetail() {
               <dl className="kv-list">
                 <dt>{t('accounts.subscriptionId')}</dt>
                 <dd>{account.latestSubscription.subscriptionId}</dd>
+                <dt>{t('accounts.subscriptionPlanId')}</dt>
+                <dd>{account.latestSubscription.planId ?? '—'}</dd>
                 <dt>{t('accounts.subscriptionStatus')}</dt>
                 {/* Reuses the existing billing.subscriptionStatuses table (the same
                     TRIALING/ACTIVE/PAST_DUE/CANCELED/EXPIRED union backend/src/billing/

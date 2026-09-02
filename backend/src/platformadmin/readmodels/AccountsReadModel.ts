@@ -111,24 +111,49 @@ function toSubscriptionSummary(row: SubscriptionRow | undefined): AccountSubscri
   };
 }
 
+/** B103/B105: the only two columns this list can search/sort by server-side -- both live directly on `families` (see this class's own doc comment on why entitlement/subscription columns, which only exist for the CURRENT page's rows via a post-pagination join, cannot be sorted this way without restructuring the query). */
+export type AccountSortField = 'createdAt' | 'familyId';
+export type SortDirection = 'asc' | 'desc';
+
+export interface AccountListFilter {
+  /** Exact match on the opaque family UUID -- mirrors this codebase's existing accountRef/familyId filter convention (BillingReadModel, EntitlementRequestsReadModel: always `= ?`, never a fuzzy LIKE, since these are opaque identifiers an operator pastes in whole, not names). */
+  readonly familyId?: string;
+  readonly sortBy?: AccountSortField;
+  readonly sortDir?: SortDirection;
+}
+
 export class AccountsReadModel {
-  async list(page: PageRequest, includeDeleted: boolean): Promise<PageResult<AccountSummary>> {
+  async list(page: PageRequest, includeDeleted: boolean, filter: AccountListFilter = {}): Promise<PageResult<AccountSummary>> {
     return runInTransaction(async (conn) => {
-      const deletedClause = includeDeleted ? '' : 'WHERE f.deleted_at IS NULL';
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+      if (!includeDeleted) conditions.push('f.deleted_at IS NULL');
+      if (filter.familyId) {
+        conditions.push('f.family_id = ?');
+        params.push(filter.familyId);
+      }
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const { rows: countRows } = await execute<{ total: number }>(
         conn,
-        `SELECT COUNT(*) AS total FROM families f ${deletedClause}`,
+        `SELECT COUNT(*) AS total FROM families f ${whereClause}`,
+        params,
       );
       const total = Number(countRows[0]?.total ?? 0);
+
+      // Fixed allow-list, never a raw interpolated client string -- the only
+      // two columns a client's sortBy/sortDir can ever select are these two
+      // literal ORDER BY clauses.
+      const sortDir = filter.sortDir === 'asc' ? 'ASC' : 'DESC';
+      const orderClause = filter.sortBy === 'familyId' ? `f.family_id ${sortDir}` : `f.created_at ${sortDir}, f.family_id ${sortDir}`;
 
       const { rows: familyRows } = await execute<FamilyRow>(
         conn,
         `SELECT f.family_id, f.created_at, f.deleted_at, f.status, f.suspended_at, f.suspension_reason
          FROM families f
-         ${deletedClause}
-         ORDER BY f.created_at DESC, f.family_id DESC
+         ${whereClause}
+         ORDER BY ${orderClause}
          LIMIT ? OFFSET ?`,
-        [page.limit, page.offset],
+        [...params, page.limit, page.offset],
       );
       if (familyRows.length === 0) return { items: [], total, limit: page.limit, offset: page.offset };
 
