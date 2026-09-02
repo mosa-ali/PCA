@@ -19,7 +19,11 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [['list']],
+  // A committed machine-readable artifact, not just console output. PPR-1's adversarial pass
+  // ruled that PARENT_REAL_E2E / PLATFORM_ADMIN_REAL_E2E were unsupported precisely because a
+  // list reporter leaves nothing a release-gate script can read -- the same evidentiary class
+  // as the Android test count that was deleted for having no backing artifact.
+  reporter: [['list'], ['json', { outputFile: 'test-results/real-e2e-results.json' }]],
   // 180s, not 120s: the spec now waits for a genuinely fresh TOTP window
   // TWICE (once before the real login, once before the admin-user-creation
   // step-up -- see realBackend.spec.ts's step-up comment for why the second

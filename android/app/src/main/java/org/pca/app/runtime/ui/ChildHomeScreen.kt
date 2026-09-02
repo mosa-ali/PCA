@@ -61,6 +61,8 @@ fun ChildHomeScreen(
     onOpenAdminSecurity: () -> Unit = {},
     onOpenYouTubeMode: () -> Unit = {},
     onRequestCallStatePermission: () -> Unit = {},
+    onRequestUsageAccess: () -> Unit = {},
+    onRequestNotificationPermission: () -> Unit = {},
     onRequestWellbeingIdea: () -> Unit = {},
 ) {
     val rows = statusRows(status)
@@ -85,6 +87,18 @@ fun ChildHomeScreen(
 
             items(rows) { row -> StatusRow(row) }
 
+            item {
+                UsageAccessOnboardingCard(
+                    state = status.usageAccessState,
+                    onClick = onRequestUsageAccess,
+                )
+            }
+            item {
+                NotificationPermissionCard(
+                    notificationsEnabled = status.wellbeingNotificationsAvailable,
+                    onClick = onRequestNotificationPermission,
+                )
+            }
             item {
                 CallStatePermissionCard(
                     available = status.callStatePermissionAvailable,
@@ -305,6 +319,88 @@ private fun statusRows(status: PcaRuntimeStatus): List<StatusRowContent> = listO
     StatusRowContent(stringResource(R.string.child_home_pending_requests), localizedNumber(status.pendingChildRequestCount.toLong())),
     StatusRowContent(stringResource(R.string.child_home_call_state_permission), callStatePermissionLabel(status.callStatePermissionAvailable)),
 )
+
+/**
+ * PCA-FR-081 / doc 06 closure: the app's ONLY user-facing route to the `PACKAGE_USAGE_STATS`
+ * grant. Before this card the permission was declared in the manifest and checked at runtime but
+ * could never actually be turned on, so on a real device screen time, Break Shield, wellbeing
+ * eligibility and YouTube Mode A duration silently read a permanently-empty event list.
+ *
+ * Honest in all three states, per [UsageAccessOnboardingPolicy]: the card only becomes clickable
+ * when there is genuinely a Settings screen to hand off to, and when access is not granted it
+ * states plainly that the dependent capabilities are NOT measuring anything -- it never implies a
+ * feature is working. Mirrors [CallStatePermissionCard]'s structure exactly.
+ */
+@Composable
+private fun UsageAccessOnboardingCard(state: UsageAccessState, onClick: () -> Unit) {
+    val action = UsageAccessOnboardingPolicy.nextAction(state)
+    val actionable = action == UsageAccessOnboardingPolicy.Action.OPEN_USAGE_ACCESS_SETTINGS
+    val baseModifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = if (actionable) {
+            baseModifier.clickable(onClick = onClick).semantics { role = Role.Button }
+        } else {
+            baseModifier
+        },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_usage_access_title), style = MaterialTheme.typography.titleMedium)
+            Text(text = stringResource(R.string.child_home_usage_access_explanation), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = when (action) {
+                    UsageAccessOnboardingPolicy.Action.ALREADY_GRANTED ->
+                        stringResource(R.string.child_home_usage_access_granted)
+                    UsageAccessOnboardingPolicy.Action.OPEN_USAGE_ACCESS_SETTINGS ->
+                        stringResource(R.string.child_home_usage_access_capability_unavailable)
+                    UsageAccessOnboardingPolicy.Action.UNAVAILABLE_ON_DEVICE ->
+                        stringResource(R.string.child_home_usage_access_device_unsupported)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (actionable) {
+                Text(text = stringResource(R.string.child_home_usage_access_enable), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/**
+ * PCA-WELL-012/PCA-FR-073/PCA-FR-081 closure: the app's ONLY user-facing route to the
+ * `POST_NOTIFICATIONS` grant. Every notification delivery site in the app already guards its
+ * `notify()` call on that permission, but nothing ever requested it, so on API 33+ each of those
+ * guards evaluated false forever and prayer reminders, wellbeing suggestions and capability-tamper
+ * alerts were all inert.
+ *
+ * [notificationsEnabled] is the live `areNotificationsEnabled()` answer already carried in
+ * [org.pca.app.runtime.status.PcaRuntimeStatus] -- the honest end-state, not merely the permission
+ * bit, so a user who disabled the channel in Settings is reported as accurately as one who denied
+ * the dialog. See [NotificationPermissionPromptPolicy] for the decision itself.
+ */
+@Composable
+private fun NotificationPermissionCard(notificationsEnabled: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button },
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = stringResource(R.string.child_home_notifications_title), style = MaterialTheme.typography.titleMedium)
+            Text(text = stringResource(R.string.child_home_notifications_explanation), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = if (notificationsEnabled) {
+                    stringResource(R.string.child_home_notifications_enabled)
+                } else {
+                    stringResource(R.string.child_home_notifications_capability_unavailable)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (!notificationsEnabled) {
+                Text(text = stringResource(R.string.child_home_notifications_enable), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
 
 @Composable
 private fun CallStatePermissionCard(available: Boolean, onClick: () -> Unit) {

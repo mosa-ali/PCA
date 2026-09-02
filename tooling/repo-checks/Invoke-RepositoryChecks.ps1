@@ -74,7 +74,14 @@ foreach ($Path in $TrackedFiles) {
 if ($LASTEXITCODE -ne 0) { Add-Failure $Failures 'git diff --check reported whitespace errors.' }
 
 if ($Failures.Count -gt 0) {
-  $Failures | ForEach-Object { Write-Error "PCA repository check failed: $_" }
+  # -ErrorAction Continue is load-bearing: this script sets $ErrorActionPreference = 'Stop', which
+  # makes Write-Error terminating, so without the override only the FIRST collected failure is ever
+  # emitted and the remainder are silently discarded. Every failure must be reported in one run.
+  $Unique = @($Failures | Sort-Object -Unique)
+  foreach ($Failure in $Unique) {
+    Write-Error "PCA repository check failed: $Failure" -ErrorAction Continue
+  }
+  Write-Host "PCA repository checks FAILED: $($Unique.Count) distinct violation(s) reported above."
   exit 1
 }
 

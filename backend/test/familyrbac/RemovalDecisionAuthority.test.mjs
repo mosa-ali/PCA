@@ -19,6 +19,12 @@ import {
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
+// Server-ciphertext TTL (migration 0034): the alert ledger now expires rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so fixtures dated in the past
+// would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant these fixtures use.
+const LEDGER_NOW = new Date('2026-08-20T12:00:00.000Z');
+
 const NOW = new Date('2026-08-20T12:00:00.000Z');
 const FAMILY = 'family-84';
 const CHILD = 'child-84';
@@ -128,7 +134,7 @@ function buildAuthority({
 }
 
 function makeAlerting({ enabled = true } = {}) {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const composed = [];
   const producer = new ProtectionAlertProducer(
     ledger,
@@ -517,7 +523,7 @@ test('disabled alerting never invokes the composer and never blocks the decision
 });
 
 test('an alert composer failure never blocks or reverses a decision', async () => {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const producer = new ProtectionAlertProducer(ledger, async () => {
     throw new Error('composer unavailable');
   }, () => NOW);

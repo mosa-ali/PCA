@@ -74,6 +74,42 @@ async function gitHead() {
   return result.code === 0 ? result.stdout.trim() : null;
 }
 
+async function gitWorktreeIsClean() {
+  const result = await run('git', ['-C', TOOLING_ROOT, 'status', '--porcelain'], TOOLING_ROOT);
+  return result.code === 0 ? result.stdout.trim().length === 0 : null;
+}
+
+// The baseline this run is allowed to execute at.
+//
+// Previously the runner hard-compared HEAD against the manifest's entrySha and
+// aborted on any difference. That pin is a hand-edited constant, so the harness
+// silently became unrunnable as soon as the branch moved past it -- and it did, by
+// 141 commits -- which is how the mutation numbers came to rest on a written table
+// with no tool artifact behind them. The equality check itself is correct (a mutation
+// result is only meaningful against a stated baseline); what was wrong is that the
+// baseline could only ever be changed by editing a file.
+//
+// So it is now an input:  --baseline <sha> | --baseline=<sha> | --baseline HEAD
+// or PCA_MUTATION_BASELINE. With nothing supplied it still falls back to the
+// manifest's entrySha, so the default behaviour is unchanged. The resolved baseline
+// and where it came from are both recorded in the report.
+function resolveRequestedBaseline() {
+  const args = process.argv.slice(2);
+  let requested = process.env.PCA_MUTATION_BASELINE ?? null;
+  let source = requested === null ? null : 'PCA_MUTATION_BASELINE';
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '--baseline') {
+      requested = args[index + 1];
+      source = '--baseline';
+      index += 1;
+    } else if (args[index].startsWith('--baseline=')) {
+      requested = args[index].slice('--baseline='.length);
+      source = '--baseline';
+    }
+  }
+  return { requested, source };
+}
+
 async function checkBackend(root) {
   return run('node.exe', [path.join(TOOLING_ROOT, 'tooling', 'mutation', 'check-backend-boundaries.mjs'), root], TOOLING_ROOT);
 }
@@ -182,7 +218,18 @@ async function classify(mutant, context) {
 
 assertScope();
 const head = await gitHead();
-if (head !== scope.entrySha) fail(`runner must execute at entry SHA ${scope.entrySha}, found ${head ?? '<unknown>'}`);
+if (head === null) fail('git rev-parse HEAD failed; this runner requires a git worktree');
+const { requested: requestedBaseline, source: baselineSource } = resolveRequestedBaseline();
+const baseline = requestedBaseline === null
+  ? scope.entrySha
+  : (/^HEAD$/i.test(requestedBaseline) ? head : requestedBaseline);
+if (!/^[0-9a-f]{40}$/i.test(baseline)) {
+  fail(`baseline must be a full 40-character commit SHA or the literal HEAD, got ${requestedBaseline}`);
+}
+if (head.toLowerCase() !== baseline.toLowerCase()) {
+  fail(`runner must execute at baseline ${baseline}, found ${head}. Check that commit out, or pass --baseline ${head} / --baseline HEAD to run against the current one.`);
+}
+const worktreeClean = await gitWorktreeIsClean();
 
 const tempRoot = await (async () => {
   const prefix = path.join(os.tmpdir(), 'pca-r3-current-head-mutation-');
@@ -232,6 +279,14 @@ const report = {
   mission: scope.mission,
   mutationHead: head,
   entrySha: head,
+  // How the baseline for this run was chosen, so a reader of the artifact can tell a
+  // manifest-pinned run from an explicitly-parameterised one without re-deriving it.
+  baseline,
+  baselineSource: baselineSource ?? 'mutation-scope.json:entrySha',
+  // The runner mutates COPIES of the working tree, not of the commit. A dirty worktree
+  // therefore means these results describe HEAD plus uncommitted edits, which is a
+  // materially different claim -- record it rather than let the report imply otherwise.
+  worktreeCleanAtRun: worktreeClean,
   generatedAtUtc: new Date().toISOString(),
   boundedRequirements: scope.requirements,
   counts,

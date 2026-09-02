@@ -763,15 +763,9 @@ bdi.iso {
   text-align: center;
 }
 
-.preview-mobile-frame {
-  width: 20rem;
-  max-width: 100%;
-  border: 6px solid #333;
-  border-radius: 1.5rem;
-  padding: var(--space-3);
-  margin-inline: auto;
-  background: var(--color-bg);
-}
+/* `.preview-mobile-frame` was removed with the non-canonical MOBILE_VIEWPORT
+   preview surface: the delivery surfaces are exactly PCA-WELLCTRL-040's, and a
+   simulated phone bezel is not one of them. */
 
 /* ---------- Privacy > Android permissions policy (PermissionsPolicy.tsx) ----------
 

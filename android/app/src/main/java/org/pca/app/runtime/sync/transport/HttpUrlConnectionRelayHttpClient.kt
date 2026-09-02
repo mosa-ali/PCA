@@ -141,6 +141,22 @@ class HttpUrlConnectionRelayHttpClient(
         return response.getString("connectionState")
     }
 
+    /**
+     * Follows the six methods above exactly: one route, one authenticated `request(...)` call, no
+     * generic escape hatch. The route answers 204 with an empty body, which [request] already
+     * normalizes to an empty [JSONObject], so there is nothing to parse -- a non-2xx status still
+     * surfaces as the same typed [RelayHttpException] every other method here throws, so the caller
+     * can never mistake a rejected report for a delivered one.
+     */
+    override suspend fun reportProtectionStatus(sessionToken: String, protectionLevel: RelayProtectionLevel) {
+        request(
+            "/v1/runtime-sync/protection-status",
+            "POST",
+            sessionToken,
+            JSONObject().put("protectionLevel", protectionLevel.name),
+        )
+    }
+
     private companion object {
         val LOCAL_DEV_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
     }

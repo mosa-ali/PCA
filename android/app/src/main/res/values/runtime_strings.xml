@@ -88,6 +88,29 @@
     <string name="child_home_call_state_enabled">Available</string>
     <string name="child_home_call_state_unavailable">Unavailable; the break timer will not pause automatically during a call</string>
     <string name="child_home_call_state_enable">Allow call-state access</string>
+
+    <!-- PCA-FR-081 / doc 06: the usage-access disclosure + Settings hand-off card (see
+         UsageAccessOnboardingPolicy). PACKAGE_USAGE_STATS has no runtime dialog: the only way it is
+         ever granted is the manual per-app toggle in Settings > Special app access > Usage access,
+         and until this card existed nothing in the app sent the parent there. The not-granted copy
+         names the exact capabilities that are NOT measuring anything, so the screen can never imply
+         a feature is working while queryEventsSince() returns an empty list. -->
+    <string name="child_home_usage_access_title">Allow usage access</string>
+    <string name="child_home_usage_access_explanation">Android keeps app usage time behind a separate permission you turn on in Settings. PCA reads only which app is in the foreground and for how long — never message content, what is typed, or anything inside an app.</string>
+    <string name="child_home_usage_access_granted">Available</string>
+    <string name="child_home_usage_access_capability_unavailable">Not allowed yet. Screen time, break reminders, wellbeing suggestions and YouTube time are not being measured on this device.</string>
+    <string name="child_home_usage_access_device_unsupported">This device does not offer usage access, so screen time, break reminders, wellbeing suggestions and YouTube time cannot be measured here.</string>
+    <string name="child_home_usage_access_enable">Open usage access settings</string>
+
+    <!-- PCA-WELL-012/PCA-FR-073/PCA-FR-081: the POST_NOTIFICATIONS disclosure + request card (see
+         NotificationPermissionPromptPolicy). Same honesty rule as the usage-access card above: the
+         not-enabled copy names the features that cannot be delivered rather than leaving them
+         silently inert. -->
+    <string name="child_home_notifications_title">Allow PCA notifications</string>
+    <string name="child_home_notifications_explanation">PCA uses notifications for prayer reminders, wellbeing suggestions, and alerts when protection stops working. It never sends promotional notifications.</string>
+    <string name="child_home_notifications_enabled">Available</string>
+    <string name="child_home_notifications_capability_unavailable">Turned off. Prayer reminders, wellbeing suggestions and protection alerts cannot be shown on this device.</string>
+    <string name="child_home_notifications_enable">Allow notifications</string>
     <!-- PCA-16B: locale-owned format for a status row's merged accessibility description
          (label + value), so translators control punctuation/order per locale instead of a
          code-level concatenation. -->

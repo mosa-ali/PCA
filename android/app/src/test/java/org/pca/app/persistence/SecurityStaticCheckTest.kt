@@ -69,6 +69,33 @@ class SecurityStaticCheckTest {
         val location = File(entityDir, "LocationPointEntity.kt").readText()
         assertTrue(location.contains("latitudeEnc") && location.contains("latitudeIv"))
         assertTrue(location.contains("longitudeEnc") && location.contains("longitudeIv"))
+
+        val usageSession = File(entityDir, "UsageSessionEntity.kt").readText()
+        assertTrue(usageSession.contains("appOrCategoryTokenEnc") && usageSession.contains("appOrCategoryTokenIv"))
+
+        // PCA-LOCAL-DB-1 Section 8: an installed package name / app label is the SAME class of
+        // family-sensitive value UsageSessionEntity's own comment says must be encrypted ("an
+        // app/category identifier can be family-sensitive"). Both were stored in plaintext until
+        // MIGRATION_5_6; this assertion is what stops that regressing.
+        val installedApp = File(entityDir, "InstalledAppEventEntity.kt").readText()
+        assertTrue(installedApp.contains("packageNameEnc") && installedApp.contains("packageNameIv"))
+        assertTrue(installedApp.contains("appLabelEnc") && installedApp.contains("appLabelIv"))
+    }
+
+    /**
+     * The companion to the positive assertion above: a plain `val packageName: String` / `val
+     * appLabel: String?` column on the installed-app entity IS the defect, so the plaintext field
+     * declarations must be structurally absent, not merely accompanied by encrypted ones.
+     */
+    @Test
+    fun `the installed-app entity declares no plaintext package name or app label column`() {
+        val installedApp = entityDir.resolve("InstalledAppEventEntity.kt").readText()
+            .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+            .lines()
+            .joinToString("\n") { it.substringBefore("//") }
+
+        assertFalse(Regex("""\bval\s+packageName\s*:""").containsMatchIn(installedApp))
+        assertFalse(Regex("""\bval\s+appLabel\s*:""").containsMatchIn(installedApp))
     }
 
     @Test

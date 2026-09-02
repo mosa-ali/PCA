@@ -10,6 +10,7 @@ import org.pca.app.runtime.sync.transport.OutboundSubmitItem
 import org.pca.app.runtime.sync.transport.RelayHttpClient
 import org.pca.app.runtime.sync.transport.RelayHttpErrorCode
 import org.pca.app.runtime.sync.transport.RelayHttpException
+import org.pca.app.runtime.sync.transport.RelayProtectionLevel
 
 /** Deterministic in-memory RelayHttpClient for tests only -- simulates the backend surface, including per-messageId ack tracking so re-listing only returns items not yet acknowledged. */
 class FakeRelayHttpClient(
@@ -17,6 +18,8 @@ class FakeRelayHttpClient(
 ) : RelayHttpClient {
     val submittedBatches = mutableListOf<List<OutboundSubmitItem>>()
     val acknowledgedMessageIds = mutableListOf<String>()
+    /** Every protection-status report this fake received, in order -- lets a test assert the device actually reported a degradation rather than only detecting it locally. */
+    val reportedProtectionLevels = mutableListOf<RelayProtectionLevel>()
     var failNextSubmit = false
     var failNextList = false
 
@@ -29,6 +32,11 @@ class FakeRelayHttpClient(
 
     override suspend fun completeChallenge(deviceId: String, challengeId: String, signature: String): DeviceSessionInfo =
         DeviceSessionInfo(sessionToken = "session-for-$deviceId", expiresAt = "2099-01-01T00:00:00.000Z")
+
+    /** Records the report. The real client sends familyId/deviceId from the verified session, never the body, so there is nothing else to capture here. */
+    override suspend fun reportProtectionStatus(sessionToken: String, protectionLevel: RelayProtectionLevel) {
+        reportedProtectionLevels.add(protectionLevel)
+    }
 
     override suspend fun submitOutbound(sessionToken: String, items: List<OutboundSubmitItem>): OutboundBatchResult {
         if (failNextSubmit) {

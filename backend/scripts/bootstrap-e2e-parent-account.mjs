@@ -70,9 +70,15 @@ const code = emailSender.lastCodeFor(email);
 if (!code) throw new Error(`Bootstrap failed: no verification code recorded for ${email}`);
 const outcome = await parentAccountService.verifyEmail(email, code);
 
-console.log('Parent account created and verified.');
-console.log(`accountId: ${outcome.accountId}`);
-console.log(`familyId: ${outcome.familyId ?? '(none -- family genesis did not complete)'}`);
-console.log(`email: ${email}`);
+// Reports outcome, not identifiers. The caller already knows which account this is
+// (it supplied E2E_REAL_PARENT_EMAIL); the accountId and familyId it does not need are
+// exactly the family-scoped identifiers that must not be written to a terminal or to
+// the log of whatever harness shells out to this script. Whether family genesis
+// completed IS the operationally useful signal -- production wires
+// RejectingDeviceSignatureVerifier, so a real deployment reports "did not complete"
+// here -- and it is reported as a boolean, carrying no identifier.
+const genesisCompleted = outcome.familyId != null;
+console.log('Parent account created and verified for the configured E2E_REAL_PARENT_EMAIL.');
+console.log(`family genesis: ${genesisCompleted ? 'completed' : 'did not complete'}`);
 
 await closePool();

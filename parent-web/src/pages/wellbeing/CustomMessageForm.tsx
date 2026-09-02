@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WELLBEING_CATEGORIES, WELLBEING_TRIGGERS } from '../../domain/wellbeing';
 import type { DayOfWeek, WellbeingCategory, WellbeingCustomMessage, WellbeingTrigger } from '../../domain/wellbeing';
 import type { ChildSummary } from '../../domain/types';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 
-const CATEGORIES: WellbeingCategory[] = ['ENCOURAGEMENT', 'BREAK_REMINDER', 'FOCUS', 'GRATITUDE', 'SAFETY_CHECK_IN', 'CUSTOM'];
-const TRIGGERS: WellbeingTrigger[] = ['BREAK_DUE', 'CONTINUOUS_USE_WARNING', 'APP_LAUNCH', 'SCHEDULED_TIME_WINDOW', 'LOCK_SCREEN', 'MANUAL'];
+// Categories and triggers are NOT restated here. They come from the canonical
+// `@pca/parent-sdk-wellbeing-control` vocabulary (PCA-WELLCTRL-031/032, doc 38
+// Section 1) via ../../domain/wellbeing, so this form cannot drift out of the
+// single taxonomy the Android runtime actually enforces.
 const DAYS: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 export type DraftMessage = Omit<WellbeingCustomMessage, 'messageId' | 'createdAtUtc' | 'updatedAtUtc'>;
@@ -77,7 +80,7 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave, e
         <div className="field">
           <label htmlFor="category">{t('wellbeing.category')}</label>
           <select id="category" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as WellbeingCategory })}>
-            {CATEGORIES.map((c) => (
+            {WELLBEING_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {t(`wellbeing.categories.${c}`)}
               </option>
@@ -97,7 +100,7 @@ export function CustomMessageForm({ initial, familyChildren, onCancel, onSave, e
 
         <fieldset className="field">
           <legend>{t('wellbeing.triggers')}</legend>
-          {TRIGGERS.map((tr) => (
+          {WELLBEING_TRIGGERS.map((tr) => (
             <label key={tr} className="checkbox-row">
               <input type="checkbox" checked={draft.triggers.includes(tr)} onChange={() => toggleTrigger(tr)} />
               {t(`wellbeing.triggerLabels.${tr}`)}

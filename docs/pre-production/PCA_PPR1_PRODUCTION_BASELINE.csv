@@ -2,7 +2,7 @@ REQUIREMENT_ID,PHASE,MATRIX_STATUS_AT_fa6dee2,FINAL_CLASSIFICATION,V1_SCOPE,BASI
 PCA-AI-001,PCA-14,PARTIAL,NEW_FEATURE_ARCHITECTURE_REQUIRED,POST_V1,"No trained model and no production call site; scaffolding only (A10, A19 D3)"
 PCA-AND-001,PCA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-AND-002,PCA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-AND-003,PCA-2,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
+PCA-AND-003,PCA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"A2 trace: emergency allowlist floor is implemented, composed and executed on every evaluate. PPR-1 false positive, restored."
 PCA-DATA-001,PCA-12,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-DATA-002,PCA-12,NOT_APPLICABLE,NOT_APPLICABLE_V1,NOT_APPLICABLE,Out of V1 scope by normative derivation (A01 §2.7)
 PCA-DATA-010,PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
@@ -11,7 +11,7 @@ PCA-DATA-012,PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source comp
 PCA-DATA-013,PCA-12,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-DATA-014,PCA-0,NOT_APPLICABLE,NOT_APPLICABLE_V1,NOT_APPLICABLE,Out of V1 scope by normative derivation (A01 §2.7)
 PCA-DATA-020,PCA-12,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-DATA-021,PCA-12+PCA-13,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,"AND-9 tamper state has no transport to backend; route exists, Android client implements 6 of 7 paths"
+PCA-DATA-021,PCA-12+PCA-13,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"PPR-1R: reportProtectionStatus implemented (D008). Capability still gated - relay transport uncomposed, device session crypto-gated."
 PCA-DATA-022,PCA-12+PCA-11,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-DATA-023,PCA-12,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-DATA-024,PCA-12+PCA-11,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
@@ -31,7 +31,7 @@ PCA-FR-004A,PCA-PA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source com
 PCA-FR-005,PCA-1,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-006,PCA-1,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-007,PCA-1,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-008,PCA-1,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-FR-008,PCA-1,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-FR-010,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-011,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-011A,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
@@ -42,7 +42,7 @@ PCA-FR-014,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complet
 PCA-FR-014A,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-015,PCA-2+PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-016,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-017,PCA-3+PCA-13,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,"AND-9 tamper state has no transport to backend; route exists, Android client implements 6 of 7 paths"
+PCA-FR-017,PCA-3+PCA-13,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"PPR-1R: reportProtectionStatus implemented (D008). Capability still gated - relay transport uncomposed, device session crypto-gated."
 PCA-FR-018,PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-020,PCA-8,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-021,PCA-8,SOURCE_COMPLETE_VALIDATION_PENDING,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)
@@ -60,12 +60,12 @@ PCA-FR-035,PCA-5,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complet
 PCA-FR-036,PCA-5,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-037,PCA-5,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-040,PCA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-041,PCA-2,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
-PCA-FR-042,PCA-2,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
-PCA-FR-043,PCA-4,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
-PCA-FR-043A,PCA-4,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
+PCA-FR-041,PCA-2,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"A2 trace: chain complete; blocked by fail-closed crypto (PCA-DEC-020), not a source defect."
+PCA-FR-042,PCA-2,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"A2 trace: chain complete; blocked by fail-closed crypto (PCA-DEC-020), not a source defect."
+PCA-FR-043,PCA-4,SOURCE_COMPLETE,SOURCE_COMPLETE_OWNER_DECISION,V1_REQUIRED,"A2 trace: on-device router repo-solvable, BUT no parent-web UI authors schedule windows at all. Product gap + crypto gate."
+PCA-FR-043A,PCA-4,SOURCE_COMPLETE,SOURCE_COMPLETE_OWNER_DECISION,V1_REQUIRED,A2 trace: same as PCA-FR-043; the override-requires-approval toggle exists nowhere in the parent-web domain model.
 PCA-FR-044,PCA-2,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-045,PCA-2,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,"PR-1/PR-2/A20-5 installed-app inventory undisclosed, stored plaintext, and package-visibility-filtered"
+PCA-FR-045,PCA-2,SOURCE_COMPLETE,COMPLIANCE_REQUIRED,V1_REQUIRED,"PPR-1R: installed-app fields now encrypted at rest (D033) and <queries> added (D010). Residual is the producer-catalogue disclosure, which needs sign-off."
 PCA-FR-050,PCA-6,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-051,PCA-6,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-052,PCA-6,NOT_STARTED,COMPLIANCE_REQUIRED,V1_REQUIRED,Legal/policy/store sign-off outstanding (A13)
@@ -80,13 +80,13 @@ PCA-FR-065,PCA-7,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complet
 PCA-FR-070,PCA-9,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-071,PCA-9,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-072,PCA-9,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-073,PCA-9,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-6 prayer subsystem inert; scheduleReminder has zero production callers
+PCA-FR-073,PCA-9,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,PPR-1R: still OPEN. scheduleReminder has no production caller; writer was interrupted before wiring it.
 PCA-FR-074,PCA-9,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-074A,PCA-9,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-080,PCA-13,SOURCE_COMPLETE,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)
 PCA-FR-081,PCA-13,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-082,PCA-13,PARTIAL,SOURCE_COMPLETE_OWNER_DECISION,V1_REQUIRED,Blocked on a named owner decision (A19)
-PCA-FR-083,PCA-13,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-FR-083,PCA-13,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-FR-084,PCA-13,SOURCE_COMPLETE,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)
 PCA-FR-085,PCA-13,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-090,PCA-10,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
@@ -111,7 +111,7 @@ PCA-FR-120,PCA-2+PCA-10,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source 
 PCA-FR-121,PCA-10,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-122,PCA-17,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-123,PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-124,PCA-12,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,"AND-9 tamper state has no transport to backend; route exists, Android client implements 6 of 7 paths"
+PCA-FR-124,PCA-12,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"PPR-1R: reportProtectionStatus implemented (D008). Capability still gated - relay transport uncomposed, device session crypto-gated."
 PCA-FR-125,PCA-12,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-126,PCA-8+PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, no external gate; matrix carries NO testEvidence for this row - coverage unverified"
 PCA-FR-127,PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
@@ -119,22 +119,22 @@ PCA-FR-130,PCA-3+PCA-10,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_G
 PCA-FR-131,PCA-2+PCA-10,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-132,PCA-2+PCA-3,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-133,PCA-1,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-134,PCA-2+PCA-3,SOURCE_COMPLETE,REAL_SOURCE_DEFECT,V1_REQUIRED,AND-5 no production writer for SchedulePolicyStore; no parent-authored policy can reach a device
+PCA-FR-134,PCA-2+PCA-3,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,"A2 trace: chain complete; blocked by fail-closed crypto (PCA-DEC-020), not a source defect."
 PCA-FR-135,PCA-7+PCA-10,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-136,PCA-17,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-137,PCA-17,SOURCE_COMPLETE,PRODUCTION_INFRA_REQUIRED,V1_REQUIRED,Needs deployed production infrastructure (A14)
 PCA-FR-138,PCA-11,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
 PCA-FR-139,PCA-10+PCA-11,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
-PCA-FR-140,PCA-1+PCA-11,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-FR-140,PCA-1+PCA-11,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-FR-141,PCA-1+PCA-11,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-142,PCA-1+PCA-11,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-143,PCA-10+PCA-11,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
-PCA-FR-144,PCA-11+PCA-13,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-FR-144,PCA-11+PCA-13,SOURCE_COMPLETE_EXTERNAL_GATE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-FR-145,PCA-13+PCA-15,PARTIAL,SOURCE_COMPLETE_OWNER_DECISION,V1_REQUIRED,Blocked on a named owner decision (A19)
 PCA-FR-146,PCA-11+PCA-13,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
-PCA-IOS-001,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
-PCA-IOS-002,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10); corrected from PRODUCTION_COMPLETE by adversarial pass - contradicted IOS_V1=DEFER_POST_V1"
-PCA-IOS-003,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-IOS-001,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
+PCA-IOS-002,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
+PCA-IOS-003,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-NFR-000,PCA-0,NOT_APPLICABLE,NOT_APPLICABLE_V1,NOT_APPLICABLE,Out of V1 scope by normative derivation (A01 §2.7)
 PCA-NFR-001,PCA-17+PCA-11,NOT_APPLICABLE,PRODUCTION_INFRA_REQUIRED,V1_REQUIRED,"TLS terminated upstream; no source implements it. Gates DEPLOYED_TLS_TERMINATION_CONFIG + DOMAIN_DNS_HOSTING; follows owner decision D16 single-origin vs split-origin. Matrix status NOT_APPLICABLE is itself wrong - infra-required, not out of scope."
 PCA-NFR-002,PCA-17+PCA-11,PARTIAL,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
@@ -207,7 +207,7 @@ PCA-ADD-ENR-006,PCA-1,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source co
 PCA-ADD-ENR-007,PCA-10,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-ADD-ENR-008,PCA-1+PCA-2,PARTIAL,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)
 PCA-ADD-ENR-009,PCA-2,SOURCE_COMPLETE_EXTERNAL_GATE,SOURCE_COMPLETE_OWNER_DECISION,V1_REQUIRED,Blocked on a named owner decision (A19)
-PCA-ADD-ENR-010,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-ADD-ENR-010,PCA-15,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-ADD-ENR-011,PCA-10+PCA-16,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-ADD-ENR-012,PCA-10+PCA-13,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-ADD-ENR-013,PCA-10+PCA-11+PCA-13,SOURCE_COMPLETE,SOURCE_COMPLETE_EXTERNAL_GATE,V1_REQUIRED,Fail-closed pending PCA-DEC-020/021 crypto review (A11)
@@ -371,6 +371,6 @@ PCA-ADD-COMP-023,PCA-COMPLIMENTARY-ENTITLEMENTS-1,SOURCE_COMPLETE,PRODUCTION_COM
 PCA-ADD-COMP-024,PCA-COMPLIMENTARY-ENTITLEMENTS-1,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-ADD-COMP-025,PCA-COMPLIMENTARY-ENTITLEMENTS-1,SOURCE_COMPLETE,PRODUCTION_COMPLETE,V1_REQUIRED,"Source complete, test-covered, no external gate"
 PCA-FR-043B,PCA-4,SOURCE_COMPLETE,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)
-PCA-FR-043C,PCA-3+PCA-4,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
-PCA-FR-015A,PCA-3,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,"macOS+Xcode, Family Controls entitlement, physical device (A10)"
+PCA-FR-043C,PCA-3+PCA-4,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
+PCA-FR-015A,PCA-3,SOURCE_COMPLETE,IOS_ENTITLEMENT_REQUIRED,POST_V1,A6: host-app composition layer is unwritten code = POST_V1 source debt. Entitlement/device gate applies to runtime enforcement validation only; macOS+Xcode is NOT a gate (CI has a macos-14 runner).
 PCA-AND-003A,PCA-3,SOURCE_COMPLETE,REAL_DEVICE_REQUIRED,V1_REQUIRED,Needs real Android hardware; UAT 0/50 executed (A05)

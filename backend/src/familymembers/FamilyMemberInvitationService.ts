@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PoolConnection } from 'mysql2/promise';
 import { hashInvitedEmail, isPlausibleInvitedEmail } from './emailHash.js';
-import type { FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
+import type { CreateInvitationCapacityGuard, FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
 import type {
   FamilyMemberInvitationId,
   FamilyMemberInvitationRecord,
@@ -260,7 +260,48 @@ export class FamilyMemberInvitationService {
       revokedAt: null,
       acceptedByAccountId: null,
     };
-    await this.repository.create(record);
+    // The AUTHORITATIVE duplicate-pending and seat-capacity decision. The two
+    // checks above remain as a cheap fast path -- they reject the common case
+    // without opening a transaction -- but they are check-then-act and cannot
+    // be trusted under concurrency, which is exactly the defect this replaced.
+    // createAtomically re-evaluates both inside ONE transaction, under the
+    // family's entitlement row lock, with the UNIQUE key from migration 0035
+    // as a final backstop.
+    //
+    // The guard reads through the CALLER'S connection (the one createAtomically
+    // just locked) via getEffectiveSnapshotForFamilyOnConnection -- reading
+    // through getEffectiveSnapshotForFamily instead would open a separate
+    // connection and would not observe that lock, defeating the serialization.
+    // `livePendingInvitationCount` excludes this record, matching the fast-path
+    // comparison above exactly, so both paths admit the same Nth seat.
+    const capacityGuard: CreateInvitationCapacityGuard | undefined = this.entitlementRepository
+      ? {
+          lock: async (conn: PoolConnection, familyId) => {
+            await this.entitlementRepository!.lockForFamily(conn, familyId);
+          },
+          evaluate: async (conn: PoolConnection, familyId, livePendingInvitationCount) => {
+            const locked = await this.entitlementRepository!.getEffectiveSnapshotForFamilyOnConnection(
+              conn,
+              familyId,
+              createdAt,
+            );
+            // No entitlement row = no configured limit to enforce, matching the
+            // fast path's `if (snapshot)` guard rather than denying by default.
+            if (!locked) return 'ALLOW';
+            return locked.parentMemberUsed + livePendingInvitationCount >= locked.effectiveParentMemberLimit
+              ? 'CAPACITY_EXCEEDED'
+              : 'ALLOW';
+          },
+        }
+      : undefined;
+
+    const created = await this.repository.createAtomically(record, createdAt, capacityGuard);
+    if (created.outcome === 'DUPLICATE_PENDING_INVITATION') {
+      throw new FamilyMemberInvitationError('DUPLICATE_PENDING_INVITATION');
+    }
+    if (created.outcome === 'CAPACITY_EXCEEDED') {
+      throw new FamilyMemberInvitationError('CAPACITY_EXCEEDED');
+    }
     await this.auditService.record({
       familyId: record.familyId,
       actionType: 'ROLE_INVITATION',

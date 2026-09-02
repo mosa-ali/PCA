@@ -15,6 +15,12 @@ interface MessagePreviewProps {
  * standard-sized notification, or redacted lock-screen line. Full-screen
  * impersonation/system-warning-style behaviour is intentionally not
  * implemented anywhere in this component set.
+ *
+ * Surface names are the canonical `@pca/parent-sdk-wellbeing-control` ones
+ * (PCA-WELLCTRL-040). `ARABIC_RTL`/`ENGLISH` are that contract's
+ * locale-forcing preview variants rather than distinct chrome, so they render
+ * as the small in-app card -- exactly the normalization the SDK's own
+ * buildPreviewCard() applies (parent-sdk/wellbeing-control/src/previewModel.ts).
  */
 export function MessagePreview({ text, languageTag, surface }: MessagePreviewProps) {
   const { t } = useTranslation();
@@ -23,7 +29,9 @@ export function MessagePreview({ text, languageTag, surface }: MessagePreviewPro
 
   const content = (() => {
     switch (surface) {
-      case 'IN_APP_CARD':
+      case 'IN_APP_SMALL_CARD':
+      case 'ARABIC_RTL':
+      case 'ENGLISH':
         return (
           <div className="preview-card" dir={dir} lang={languageTag}>
             <p style={{ margin: 0 }}>{safeText}</p>
@@ -41,14 +49,6 @@ export function MessagePreview({ text, languageTag, surface }: MessagePreviewPro
           <div className="preview-lockscreen" dir={dir} lang={languageTag}>
             <p style={{ margin: 0, fontSize: '0.85rem' }}>{t('wellbeing.newMessageAvailable', { lng: languageTag })}</p>
             <p style={{ margin: 0, fontSize: '0.7rem', opacity: 0.7 }}>{t('wellbeing.unlockToView', { lng: languageTag })}</p>
-          </div>
-        );
-      case 'MOBILE_VIEWPORT':
-        return (
-          <div className="preview-mobile-frame" dir={dir} lang={languageTag}>
-            <div className="preview-card">
-              <p style={{ margin: 0 }}>{safeText}</p>
-            </div>
           </div>
         );
       default:

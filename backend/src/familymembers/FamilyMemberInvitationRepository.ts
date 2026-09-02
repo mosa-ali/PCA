@@ -22,6 +22,37 @@ export type AcceptResult =
  */
 export type AcceptTransactionHook = (conn: PoolConnection, record: FamilyMemberInvitationRecord) => Promise<void>;
 
+export type CreateInvitationResult =
+  | { outcome: 'CREATED' }
+  | { outcome: 'DUPLICATE_PENDING_INVITATION' }
+  | { outcome: 'CAPACITY_EXCEEDED' };
+
+/**
+ * The seat-capacity decision, evaluated INSIDE createAtomically's own
+ * transaction so it cannot be raced.
+ *
+ * Split into two calls on purpose. `lock` is the serialization point: it
+ * takes the family's entitlement row with SELECT ... FOR UPDATE (exactly
+ * what MySqlSlotReservationRepository.reserve does before its own
+ * availability check), so two concurrent invitations for the same family
+ * cannot both evaluate capacity against the same pre-insert state.
+ * `evaluate` then runs on that SAME locked connection, after the live
+ * pending-invitation rows have been counted under the lock, and returns the
+ * verdict. Splitting them is what lets the repository take the two locks in
+ * a single, consistent order (invitations, then entitlements -- the same
+ * order acceptAtomically uses) without a lock-order inversion.
+ */
+export interface CreateInvitationCapacityGuard {
+  /** Lock the family's entitlement row on `conn`. Must not mutate anything. */
+  lock(conn: PoolConnection, familyId: OpaqueFamilyId): Promise<void>;
+  /**
+   * Verdict for admitting ONE more pending invitation, given how many live
+   * PENDING invitations the family already holds. Must read only through
+   * `conn` so it observes the lock taken above.
+   */
+  evaluate(conn: PoolConnection, familyId: OpaqueFamilyId, livePendingInvitationCount: number): Promise<'ALLOW' | 'CAPACITY_EXCEEDED'>;
+}
+
 export type RemoveMemberResult =
   | { outcome: 'REMOVED' }
   | { outcome: 'NOT_FOUND' }
@@ -49,9 +80,40 @@ export type RemoveMemberTransactionHook = (conn: PoolConnection, familyId: Opaqu
  * InvitationRepository.redeemAtomically for device redemption.
  */
 export interface FamilyMemberInvitationRepository {
-  create(record: FamilyMemberInvitationRecord): Promise<void>;
+  /**
+   * Issues an invitation, with the duplicate-pending check, the seat-capacity
+   * check, and the INSERT in ONE transaction under row locks.
+   *
+   * This REPLACED a bare `create()`. Those three steps used to run as three
+   * independent transactions with no locking, so two concurrent invitations
+   * for the same family could both pass and produce a duplicate pending
+   * invitation and seats beyond the paid entitlement. Implementations MUST
+   * guarantee that, for a given family, only one caller can observe "no
+   * pending invitation for this email" / "a seat is free" and act on it --
+   * the same guarantee acceptAtomically already gives for redemption, and
+   * MySqlSlotReservationRepository.reserve for device slots.
+   *
+   * Time-expired-but-still-PENDING rows are transitioned to EXPIRED inside
+   * the same transaction before the decision (the persisted transition
+   * expireIfDue already defines), so a stale pending invitation neither
+   * blocks a re-invite nor holds a seat.
+   *
+   * DUPLICATE_PENDING_INVITATION must also be reported when the database's
+   * own uniqueness backstop rejects the INSERT -- never surfaced as an
+   * unhandled duplicate-key error.
+   */
+  createAtomically(
+    record: FamilyMemberInvitationRecord,
+    now: Date,
+    capacityGuard?: CreateInvitationCapacityGuard,
+  ): Promise<CreateInvitationResult>;
   findByIdForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId): Promise<FamilyMemberInvitationRecord | null>;
-  /** Used to enforce "at most one PENDING invitation per (family, email)" -- see FamilyMemberInvitationService.createInvitation. */
+  /**
+   * Read-only lookup of the family's current PENDING invitation for an
+   * email. NOT a concurrency guard: the duplicate-pending invariant is
+   * enforced by createAtomically's locked transaction plus the
+   * UNIQUE(family_id, pending_invited_email_hash) key from migration 0035.
+   */
   findPendingByFamilyAndEmailHash(familyId: OpaqueFamilyId, invitedEmailHash: Buffer): Promise<FamilyMemberInvitationRecord | null>;
   listForFamily(familyId: OpaqueFamilyId): Promise<FamilyMemberInvitationRecord[]>;
   /**

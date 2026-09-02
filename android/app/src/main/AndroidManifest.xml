@@ -18,7 +18,13 @@
          required on API 33+ to post the ordinary, dismissable "positive suggestion" notification
          (STANDARD_NOTIFICATION / LOCK_SCREEN_NOTIFICATION_BEST_EFFORT, doc 35 PCA-WELL-012).
          Checked at runtime via ContextCompat.checkSelfPermission before every notify() call;
-         delivery degrades to SUPPRESSED_CAPABILITY_UNAVAILABLE (never a crash) if denied. -->
+         delivery degrades to SUPPRESSED_CAPABILITY_UNAVAILABLE (never a crash) if denied.
+         REQUESTED at runtime by MainActivity.requestNotificationPermission(), driven by
+         org.pca.app.runtime.ui.NotificationPermissionPromptPolicy from the Child Home
+         "Allow PCA notifications" card. Before that flow existed this declaration was necessary
+         but not sufficient: on API 33+ the permission defaults to denied, so every notify() guard
+         in the app (wellbeing, prayer reminders, usage-access and capability-tamper alerts)
+         evaluated false forever and each of those features was inert while appearing wired. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- PCA-RUNTIME-ANDROID-1 (org.pca.app.runtime.connectivity.NetworkConnectivityObserver):
@@ -58,11 +64,14 @@
          tools:ignore="ProtectedPermissions" is required because this is a signature/privileged
          permission that an ordinary app may only declare, never be granted directly: the actual
          grant is a manual per-user toggle in that Settings screen.
-         STILL REQUIRED, NOT DONE HERE: no user-facing flow sends the parent to
-         Settings.ACTION_USAGE_ACCESS_SETTINGS anywhere in this app, so on a fresh install nothing
-         ever prompts for or explains this grant. This declaration is necessary but NOT sufficient;
-         building that disclosure + hand-off screen is deliberately outside this change's scope and
-         must be picked up by the lane that owns the parent-facing setup surface. -->
+         CLOSED: the disclosure + hand-off surface this declaration previously lacked now exists.
+         The Child Home "Allow usage access" card (org.pca.app.runtime.ui.ChildHomeScreen's
+         UsageAccessOnboardingCard) opens Settings.ACTION_USAGE_ACCESS_SETTINGS via
+         MainActivity.requestUsageAccess(), decided by
+         org.pca.app.runtime.ui.UsageAccessOnboardingPolicy against the live AppOps state. While the
+         grant is absent that card states plainly that screen time, break reminders, wellbeing
+         suggestions and YouTube time are NOT being measured; the capability is never fabricated
+         and never implied to be working. -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
@@ -86,6 +95,34 @@
          tier) on camera-less devices. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <!-- PCA-FR-045/PCA-FR-131 package visibility (Android 11 / API 30+, enforced because this app
+         targets SDK 35): without a <queries> element every cross-package PackageManager call is
+         filtered, so org.pca.app.runtime.installobserver.InstalledAppEventReceiver's
+         getApplicationInfo()/getApplicationLabel()/getPackageInfo() lookups throw
+         NameNotFoundException for the very package that was just installed: the receiver would
+         degrade to a null label and a fabricated-from-`now` install time for every real install,
+         and the OS would not even deliver the PACKAGE_ADDED broadcast for a package this app
+         cannot see.
+
+         Deliberately SCOPED, never android.permission.QUERY_ALL_PACKAGES: the MAIN/LAUNCHER
+         intent filter below grants visibility of exactly the user-launchable apps a parent-facing
+         "recently installed apps" list is about, and nothing else (no background/system-only
+         packages, no provider/service enumeration). QUERY_ALL_PACKAGES is a Play-policy-restricted
+         permission requiring a declared core-functionality justification, and this app's genuine
+         need does not reach that bar. See that receiver's own doc comment for the scope line.
+
+         Nothing else in this app makes a cross-package PackageManager query: the only other
+         PackageManager uses are hasSystemFeature() calls (own-device hardware capability, never
+         filtered), communication-surface resolution goes through TelecomManager/Telephony rather
+         than a package query, and package suspension runs under DevicePolicyManager device-owner
+         authority, which is not subject to visibility filtering. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".PcaApplication"

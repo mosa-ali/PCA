@@ -1,5 +1,14 @@
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
-import type { FamilyAuditEventEnvelope, FamilyAuditEventLedger, RecordFamilyAuditEventResult } from './FamilyAuditEventLedger.js';
+import type {
+  FamilyAuditEventEnvelope,
+  FamilyAuditEventLedger,
+  FamilyAuditEventListOptions,
+  RecordFamilyAuditEventResult,
+} from './FamilyAuditEventLedger.js';
+import {
+  computeServerCiphertextExpiry,
+  resolveServerCiphertextFeedLimit,
+} from '../retention/serverCiphertextTtl.js';
 
 interface FamilyAuditEventRow {
   envelope_id: string;
@@ -9,6 +18,7 @@ interface FamilyAuditEventRow {
   generated_at_utc: Date | string;
   encrypted_payload_b64: string;
   nonce_b64: string;
+  expires_at: Date | string;
 }
 
 function toDate(value: Date | string): Date {
@@ -47,14 +57,25 @@ function sameEnvelope(a: FamilyAuditEventEnvelope, b: FamilyAuditEventEnvelope):
  * silent overwrite. Mirrors alerts/MySqlProtectionAlertLedger.ts exactly.
  */
 export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
+  private readonly now: () => Date;
+
+  constructor(now: () => Date = () => new Date()) {
+    this.now = now;
+  }
+
   async record(envelope: FamilyAuditEventEnvelope): Promise<RecordFamilyAuditEventResult> {
+    // Best-effort housekeeping, exactly as RelayService purges around each
+    // relay operation. The expiry filter on the reads is what enforces the
+    // TTL; this only stops expired ciphertext accumulating on disk, so a
+    // failure here must never fail the audit write itself.
+    await this.purgeExpired(this.now()).catch(() => 0);
     try {
       await runInTransaction((conn) =>
         execute(
           conn,
           `INSERT INTO family_audit_events
-             (envelope_id, family_id, parent_device_id, key_epoch, generated_at_utc, encrypted_payload_b64, nonce_b64)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (envelope_id, family_id, parent_device_id, key_epoch, generated_at_utc, encrypted_payload_b64, nonce_b64, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             envelope.envelopeId,
             envelope.familyId,
@@ -63,6 +84,8 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
             envelope.generatedAtUtc,
             envelope.encryptedPayloadB64,
             envelope.nonceB64,
+            // Server retention policy, never a caller-supplied field.
+            computeServerCiphertextExpiry(envelope.generatedAtUtc),
           ],
         ),
       );
@@ -81,25 +104,56 @@ export class MySqlFamilyAuditEventLedger implements FamilyAuditEventLedger {
     return rows[0] ? toEnvelope(rows[0]) : null;
   }
 
-  async listForFamily(familyId: string): Promise<FamilyAuditEventEnvelope[]> {
+  async listForFamily(familyId: string, options: FamilyAuditEventListOptions = {}): Promise<FamilyAuditEventEnvelope[]> {
+    const now = options.now ?? this.now();
+    const limit = resolveServerCiphertextFeedLimit(options.limit);
     const { rows } = await runInTransaction((conn) =>
       execute<FamilyAuditEventRow>(
         conn,
-        `SELECT * FROM family_audit_events WHERE family_id = ? ORDER BY generated_at_utc ASC, envelope_id ASC`,
-        [familyId],
+        // Inner query: the newest `limit` non-expired rows. Outer query:
+        // the ascending order this feed has always returned. See
+        // MySqlProtectionAlertLedger for why the cap is newest-first.
+        `SELECT * FROM (
+           SELECT * FROM family_audit_events
+            WHERE family_id = ? AND expires_at > ?
+            ORDER BY generated_at_utc DESC, envelope_id DESC
+            LIMIT ?
+         ) AS recent
+         ORDER BY generated_at_utc ASC, envelope_id ASC`,
+        [familyId, now, limit],
       ),
     );
     return rows.map(toEnvelope);
   }
 
-  async listForParentDevice(familyId: string, parentDeviceId: string): Promise<FamilyAuditEventEnvelope[]> {
+  async listForParentDevice(
+    familyId: string,
+    parentDeviceId: string,
+    options: FamilyAuditEventListOptions = {},
+  ): Promise<FamilyAuditEventEnvelope[]> {
+    const now = options.now ?? this.now();
+    const limit = resolveServerCiphertextFeedLimit(options.limit);
     const { rows } = await runInTransaction((conn) =>
       execute<FamilyAuditEventRow>(
         conn,
-        `SELECT * FROM family_audit_events WHERE family_id = ? AND parent_device_id = ? ORDER BY generated_at_utc ASC, envelope_id ASC`,
-        [familyId, parentDeviceId],
+        `SELECT * FROM (
+           SELECT * FROM family_audit_events
+            WHERE family_id = ? AND parent_device_id = ? AND expires_at > ?
+            ORDER BY generated_at_utc DESC, envelope_id DESC
+            LIMIT ?
+         ) AS recent
+         ORDER BY generated_at_utc ASC, envelope_id ASC`,
+        [familyId, parentDeviceId, now, limit],
       ),
     );
     return rows.map(toEnvelope);
+  }
+
+  /** Mirrors MySqlRelayRepository.purgeExpired exactly. */
+  async purgeExpired(now: Date): Promise<number> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `DELETE FROM family_audit_events WHERE expires_at <= ?`, [now]),
+    );
+    return rowCount;
   }
 }

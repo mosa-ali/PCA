@@ -57,4 +57,23 @@ export interface EntitlementRepository {
    * getForFamily/lockForFamily exactly as before.
    */
   getEffectiveSnapshotForFamily(familyId: OpaqueFamilyId, now: Date): Promise<EffectiveEntitlementSnapshot | null>;
+
+  /**
+   * Connection-scoped variant of the method above: reads through the
+   * CALLER'S OWN transaction connection instead of opening its own.
+   *
+   * This exists because `getEffectiveSnapshotForFamily` opens its own
+   * transaction on its own pooled connection, so a caller that has just
+   * taken `lockForFamily(conn, ...)` would not observe that lock through it
+   * -- the capacity decision would be read outside the very serialization
+   * it depends on. Any seat-admission decision (see
+   * FamilyMemberInvitationService.createInvitation, and the same shape
+   * MySqlSlotReservationRepository.reserve already uses inline) MUST use
+   * this one, on the same `conn` it locked.
+   */
+  getEffectiveSnapshotForFamilyOnConnection(
+    conn: PoolConnection,
+    familyId: OpaqueFamilyId,
+    now: Date,
+  ): Promise<EffectiveEntitlementSnapshot | null>;
 }

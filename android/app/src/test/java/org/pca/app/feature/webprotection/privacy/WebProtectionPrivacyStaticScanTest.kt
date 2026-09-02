@@ -2,7 +2,6 @@ package org.pca.app.feature.webprotection.privacy
 
 import java.io.File
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -24,13 +23,25 @@ import org.junit.Test
  */
 class WebProtectionPrivacyStaticScanTest {
 
-    private fun mainSourceRoot(): File? {
+    /**
+     * These four scans ARE the no-raw-URL / no-TLS-MITM guard -- an unresolvable source root means
+     * the guard did not run, which is a build failure, never a skip. This previously used
+     * `Assume.assumeTrue`, so a wrong working directory silently reported four green "skipped"
+     * tests while scanning nothing at all. Hard-fails with the same `error(...)` shape every other
+     * directory-resolving static scan in this module already uses (`SecurityStaticCheckTest`,
+     * `NoHardcodedUiStringsTest`, `RuntimeStringsParityTest`).
+     */
+    private fun mainSourceRoot(): File {
         val candidates = listOf(
             "src/main/java/org/pca/app/feature/webprotection",
             "android/app/src/main/java/org/pca/app/feature/webprotection",
             "app/src/main/java/org/pca/app/feature/webprotection",
         )
         return candidates.map { File(it) }.firstOrNull { it.isDirectory }
+            ?: error(
+                "Could not locate feature/webprotection main sources from test working directory " +
+                    "${File(".").absolutePath} -- the privacy static scan cannot be skipped, it must run.",
+            )
     }
 
     private val forbiddenInterceptionTokens = listOf(
@@ -47,9 +58,8 @@ class WebProtectionPrivacyStaticScanTest {
     @Test
     fun `no source file in the webprotection module references a TLS-interception-capable API`() {
         val root = mainSourceRoot()
-        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
 
-        val offenders = root!!.walkTopDown()
+        val offenders = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .flatMap { file -> forbiddenInterceptionTokens.filter { file.readText().contains(it) }.map { file.name to it } }
             .toList()
@@ -60,9 +70,8 @@ class WebProtectionPrivacyStaticScanTest {
     @Test
     fun `no source file outside safebrowser subpackage declares a url or pageTitle field`() {
         val root = mainSourceRoot()
-        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
 
-        val offenders = root!!.walkTopDown()
+        val offenders = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .filterNot { it.path.replace('\\', '/').contains("/safebrowser/") }
             .filter { file ->
@@ -78,9 +87,8 @@ class WebProtectionPrivacyStaticScanTest {
     @Test
     fun `no source file in the webprotection module ever calls SslErrorHandler proceed`() {
         val root = mainSourceRoot()
-        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
 
-        val offenders = root!!.walkTopDown()
+        val offenders = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .filter { it.readText().contains(".proceed(") }
             .map { it.name }
@@ -93,14 +101,24 @@ class WebProtectionPrivacyStaticScanTest {
     @Test
     fun `no source file in the webprotection module logs, prints or sends telemetry`() {
         val root = mainSourceRoot()
-        assumeTrue("could not locate feature/webprotection main sources from test working directory", root != null)
         val forbiddenLoggingTokens = listOf("Log.", "println(", "printStackTrace(", "analytics", "telemetry")
 
-        val offenders = root!!.walkTopDown()
+        val offenders = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .flatMap { file -> forbiddenLoggingTokens.filter { file.readText().contains(it) }.map { file.name to it } }
             .toList()
 
         assertTrue("files referencing a logging/telemetry API: $offenders", offenders.isEmpty())
+    }
+
+    /**
+     * The companion guard to hard-failing [mainSourceRoot]: a resolvable-but-empty directory would
+     * make all four scans above vacuously green while proving nothing. Asserts the scan genuinely
+     * had source files to read.
+     */
+    @Test
+    fun `the privacy scan actually reads webprotection source files`() {
+        val scanned = mainSourceRoot().walkTopDown().filter { it.isFile && it.extension == "kt" }.count()
+        assertTrue("the webprotection privacy scan found no .kt files to scan", scanned > 0)
     }
 }

@@ -121,6 +121,51 @@ class PcaLocalDatabaseMigrationTest {
         }
     }
 
+    /**
+     * PCA-LOCAL-DB-1 Section 8: `installed_app_events.packageName`/`appLabel` were plaintext while
+     * the sibling `usage_sessions` encrypted the identical class of value. [Migrations.MIGRATION_5_6]
+     * replaces them with the repo-standard `<field>Enc`/`<field>Iv` pair and deliberately DISCARDS
+     * pre-migration rows -- a Migration has no access to the AndroidKeyStore-backed cipher, and
+     * copying the old values across unencrypted would defeat the fix (see that migration's own doc
+     * comment). This asserts both halves: the old plaintext row is gone, and the new encrypted
+     * schema is writable and validates against the exported 6.json.
+     */
+    @Test
+    fun migrate5To6ReplacesPlaintextInstalledAppColumnsWithEncryptedPairs() {
+        helper.createDatabase(TEST_DB_NAME, 5).apply {
+            execSQL(
+                "INSERT INTO installed_app_events (id, deviceId, packageName, appLabel, installedAtEpochMillis, observedAtEpochMillis) " +
+                    "VALUES ('i-old', 'device-1', 'com.example.plaintext', 'Plaintext App', 1000, 1500)",
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(TEST_DB_NAME, 6, true, Migrations.MIGRATION_5_6)
+        val dropped = migrated.query("SELECT COUNT(*) FROM installed_app_events")
+        try {
+            org.junit.Assert.assertTrue(dropped.moveToFirst())
+            org.junit.Assert.assertEquals(0, dropped.getInt(0))
+        } finally {
+            dropped.close()
+        }
+
+        migrated.execSQL(
+            "INSERT INTO installed_app_events (id, deviceId, packageNameEnc, packageNameIv, appLabelEnc, appLabelIv, " +
+                "installedAtEpochMillis, observedAtEpochMillis) " +
+                "VALUES ('i-new', 'device-1', 'cipher-b64', 'iv-b64', NULL, NULL, 2000, 2500)",
+        )
+        val cursor = migrated.query("SELECT packageNameEnc, packageNameIv, appLabelEnc FROM installed_app_events WHERE id = 'i-new'")
+        try {
+            org.junit.Assert.assertTrue(cursor.moveToFirst())
+            org.junit.Assert.assertEquals("cipher-b64", cursor.getString(cursor.getColumnIndexOrThrow("packageNameEnc")))
+            org.junit.Assert.assertEquals("iv-b64", cursor.getString(cursor.getColumnIndexOrThrow("packageNameIv")))
+            org.junit.Assert.assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("appLabelEnc")))
+        } finally {
+            cursor.close()
+            migrated.close()
+        }
+    }
+
     private companion object {
         const val TEST_DB_NAME = "pca_local_migration_test.db"
     }

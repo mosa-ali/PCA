@@ -130,7 +130,7 @@ test('parent-member invitation enforces FREE_ACCESS before any invitation read o
   const repository = {
     findPendingByFamilyAndEmailHash: async () => { repositoryTouches += 1; return null; },
     listForFamily: async () => { repositoryTouches += 1; return []; },
-    create: async () => { repositoryTouches += 1; },
+    createAtomically: async () => { repositoryTouches += 1; return { outcome: 'CREATED' }; },
   };
   const service = new FamilyMemberInvitationService(repository, allowingAuthorization(), () => NOW, undefined, undefined, null, policy);
 
@@ -165,7 +165,7 @@ test('an allowed FREE_ACCESS account still issues the invitation, consulting the
   const repository = {
     findPendingByFamilyAndEmailHash: async () => null,
     listForFamily: async () => [],
-    create: async (record) => { created = record; },
+    createAtomically: async (record) => { created = record; return { outcome: 'CREATED' }; },
   };
   const service = new FamilyMemberInvitationService(repository, allowingAuthorization(), () => NOW, undefined, undefined, null, policy);
 

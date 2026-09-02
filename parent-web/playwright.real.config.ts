@@ -19,7 +19,11 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [['list']],
+  // A committed machine-readable artifact, not just console output. PPR-1's adversarial pass
+  // ruled that PARENT_REAL_E2E / PLATFORM_ADMIN_REAL_E2E were unsupported precisely because a
+  // list reporter leaves nothing a release-gate script can read -- the same evidentiary class
+  // as the Android test count that was deleted for having no backing artifact.
+  reporter: [['list'], ['json', { outputFile: 'test-results/real-e2e-results.json' }]],
   timeout: 60_000,
   // 15s, not Playwright's 5s default: mirrors
   // platform-admin-web/playwright.real.config.ts's identical, already-

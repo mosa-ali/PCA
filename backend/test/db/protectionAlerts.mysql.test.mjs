@@ -17,7 +17,14 @@ import { buildGenesisAnchor, buildGenesisAttestation, buildTransferAttestation }
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
-const ledger = new MySqlProtectionAlertLedger();
+// Server-ciphertext TTL (migration 0034): protection_alerts rows now expire
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, and record() purges expired
+// rows as housekeeping. The fixtures below are dated 2026-08-21, so against a
+// real wall clock they would be legitimately expired; anchor the ledger's clock
+// to the fixture instant so these tests keep asserting persistence semantics
+// rather than the TTL (which backend/test/db/auditAlertCiphertextExpiry.mysql.test.mjs covers).
+const LEDGER_NOW = new Date('2026-08-21T00:00:00.000Z');
+const ledger = new MySqlProtectionAlertLedger(() => LEDGER_NOW);
 const attestationChainStore = new MySqlFamilyAuthorityAttestationChainStore();
 const resolver = new MySqlOwnerParentDeviceResolver(attestationChainStore);
 

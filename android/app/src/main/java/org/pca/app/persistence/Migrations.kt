@@ -97,5 +97,46 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    /**
+     * PCA-LOCAL-DB-1 Section 8 security fix: `installed_app_events.packageName`/`appLabel` were
+     * stored in PLAINTEXT while the sibling `usage_sessions.appOrCategoryTokenEnc` encrypts the
+     * identical class of family-sensitive value (see [org.pca.app.persistence.entity.InstalledAppEventEntity]'s
+     * own doc comment). This replaces both with the repo-standard encrypted column pair
+     * (`<field>Enc` + `<field>Iv`, Base64 `TEXT`, per [org.pca.app.persistence.crypto.EncryptedFieldCodec]).
+     *
+     * The pre-migration rows are DROPPED rather than carried across. This is deliberate and is the
+     * only honest option available here: a [androidx.room.migration.Migration] runs inside Room's
+     * own schema-upgrade transaction with nothing but a [SupportSQLiteDatabase], so it has no
+     * access to the `AndroidKeyStore`-backed [org.pca.app.persistence.crypto.LocalRecordCipher]
+     * needed to encrypt the existing values -- and copying them into the new columns unencrypted
+     * would silently defeat the very fix this migration exists to apply, leaving plaintext package
+     * names on disk under a column name that claims otherwise. `installed_app_events` is a
+     * device-local, retention-bounded visibility log (pruned by
+     * [org.pca.app.persistence.retention.RetentionEngine] on the general retention policy, 14 days
+     * by default) whose rows are re-observed from the OS as new installs happen; it holds no
+     * decision/approval state and nothing else references its rows, so discarding the pre-upgrade
+     * window is a bounded, recoverable cost, whereas retaining plaintext is not.
+     *
+     * `DROP TABLE` also drops that table's indices, so both are recreated below with the exact
+     * names Room's generated schema expects.
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS `installed_app_events`")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `installed_app_events` (" +
+                    "`id` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `packageNameEnc` TEXT NOT NULL, " +
+                    "`packageNameIv` TEXT NOT NULL, `appLabelEnc` TEXT, `appLabelIv` TEXT, " +
+                    "`installedAtEpochMillis` INTEGER NOT NULL, " +
+                    "`observedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_installed_app_events_deviceId` ON `installed_app_events` (`deviceId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_installed_app_events_installedAtEpochMillis` " +
+                    "ON `installed_app_events` (`installedAtEpochMillis`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 }

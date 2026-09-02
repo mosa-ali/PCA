@@ -274,7 +274,16 @@ export default function DeviceEnrollmentPanel() {
             onChange={(e) => handlePlatformChange(e.target.value as InvitationPlatform)}
           >
             <option value="ANDROID">{t('deviceEnrollment.platformAndroid')}</option>
-            <option value="IOS">{t('deviceEnrollment.platformIos')}</option>
+            {/*
+              No IOS option: iOS is deferred POST_V1 and no iOS host app exists on the
+              App Store. Offering it here made the backend mint a real, scannable
+              enrollment token + QR for an app a parent can never install -- a promise
+              the product cannot keep. The IOS/IOS_STANDARD branches above and the
+              `platformIos` / `mode.IOS_STANDARD` copy are deliberately RETAINED (existing
+              invitation rows may legitimately carry IOS, and Devices.tsx still renders
+              those labels), so re-enabling this is restoring this one <option> when the
+              iOS app actually ships.
+            */}
           </select>
         </div>
         <div className="field">

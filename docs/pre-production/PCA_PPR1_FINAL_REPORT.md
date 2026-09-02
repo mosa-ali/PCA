@@ -171,7 +171,14 @@ tests all stub the client with a real record, proving nothing about production. 
 JVM-test-against-unreachable-code pattern §1 of the gaps report identifies**, reproduced inside this
 mission's own fix. Returned to the open register.
 
-### The 27 open defects are catalogued in `PCA_PPR1_RELEASE_READINESS_GAPS.md` §2.
+### The open defects are catalogued in `PCA_PPR1_RELEASE_READINESS_GAPS.md` §2
+
+> **PPR-1R correction.** This heading previously read "The 27 open defects". That 27 was a stale
+> `33 − 6` carried over from the pre-adversarial draft and never updated when the counts were
+> rewritten. PPR-1's true figures, re-derived from the actual rows, are
+> **FOUND 39 · FIXED 12 · PARTIAL 3 · OPEN 24** — the published `38`/`23` had silently dropped the
+> iOS defect from the arithmetic in the very pass that elevated it to the most consequential open
+> item. Superseded by `PCA_PPR1R_DEFECT_REGISTER.csv`.
 
 They were deliberately not fixed here. Closing them means building an Android onboarding-permission
 flow, an iOS application layer, and a parental-consent/privacy-policy/account-deletion surface — a

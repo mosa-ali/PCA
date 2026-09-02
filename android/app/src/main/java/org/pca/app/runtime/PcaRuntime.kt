@@ -210,6 +210,21 @@ class PcaRuntime(
         statusFlow.update { buildStatus() }
     }
 
+    /**
+     * Re-reads every live capability signal into the status snapshot immediately, rather than
+     * waiting up to one full tick interval for the next scheduled refresh. The counterpart to
+     * [refreshCommunicationCallStateObserver] for the two capabilities that are granted OUTSIDE
+     * this app -- `PACKAGE_USAGE_STATS` (granted only in
+     * [android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS]) and `POST_NOTIFICATIONS` (runtime
+     * dialog or app-notification settings) -- called by [org.pca.app.MainActivity] when the parent
+     * returns from either screen having actually changed the grant. Neither of those has an
+     * observer lifecycle to restart, so this only re-evaluates [buildStatus], which already reads
+     * both live via [usageObservationSource] and [notificationCapabilitySource].
+     */
+    fun refreshCapabilityStatus() {
+        statusFlow.update { buildStatus() }
+    }
+
     fun pauseScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Pause(nowNanos))
     fun resumeScreenTime() = applyScreenTimeEvent(ScreenTimeEvent.Resume(nowNanos))
     /** PCA-FR-015A: ordinary answered calls pause Break Shield recovery without using the SOS

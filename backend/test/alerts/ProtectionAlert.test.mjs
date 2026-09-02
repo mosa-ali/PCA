@@ -6,6 +6,12 @@ import {
 } from '../../dist/alerts/ProtectionAlertGenerator.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-08-19T12:00:00.000Z');
+
 const BASE = {
   alertId: 'alert-1',
   familyId: 'family-1',
@@ -41,7 +47,7 @@ test('PCA-ADD-ENR-020 requires encrypted payloads and device identity for device
 });
 
 test('PCA-ADD-ENR-020 ledger is append-only and idempotent without a plaintext read path', async () => {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const event = generateProtectionAlert(BASE);
   assert.ok(event);
   assert.deepEqual(await ledger.record(event), { outcome: 'RECORDED' });

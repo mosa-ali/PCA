@@ -66,7 +66,7 @@ class PcaLocalPersistence private constructor(
     val policyReceiptRepository = PolicyReceiptRepository(database.policyReceiptDao())
     /** PCA-FR-045/PCA-FR-131 (WRITER69): local record of observed app-install events -- see
      * [org.pca.app.persistence.entity.InstalledAppEventEntity]'s own doc comment for scope. */
-    val installedAppEventRepository = InstalledAppEventRepository(database.installedAppEventDao())
+    val installedAppEventRepository = InstalledAppEventRepository(database.installedAppEventDao(), cipher)
     /** PCA-FR-140: durable local record of [org.pca.app.enrollment.EnrollmentLifecycleAuditor]
      * transitions -- see [org.pca.app.enrollment.PersistentEnrollmentLifecycleAuditSink]'s own
      * doc comment for the sink adapter built on top of this. */

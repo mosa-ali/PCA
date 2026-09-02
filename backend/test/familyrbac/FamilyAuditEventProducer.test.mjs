@@ -9,6 +9,12 @@ import { FamilyAuditEventProducer } from '../../dist/familyrbac/FamilyAuditEvent
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
 import { createRejectingOpaqueFamilyAuditEventComposer } from '../../dist/familyrbac/FamilyAuditEventComposer.js';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
 function sampleRecord(overrides = {}) {
   return {
     eventId: 'event-1',
@@ -33,7 +39,7 @@ function sampleRecord(overrides = {}) {
 }
 
 test('delivers one opaque envelope per resolved parent device', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composed = [];
   const composer = async (input) => {
     composed.push(input);
@@ -61,7 +67,7 @@ test('delivers one opaque envelope per resolved parent device', async () => {
 });
 
 test('a family with zero resolved parent devices delivers to no one and never throws', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(ledger, async () => {
     throw new Error('composer must never be called with zero recipients');
   }, async () => []);
@@ -71,7 +77,7 @@ test('a family with zero resolved parent devices delivers to no one and never th
 });
 
 test('a per-device composer failure is isolated -- other devices still receive delivery', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composer = async (input) => {
     if (input.parentDeviceId === 'parent-device-fails') throw new Error('composition rejected');
     return { encryptedPayloadB64: 'b2s', nonceB64: 'bm9uY2U' };
@@ -88,7 +94,7 @@ test('a per-device composer failure is isolated -- other devices still receive d
 });
 
 test('resolveParentDevices throwing resolves to zero deliveries rather than propagating', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(
     ledger,
     async () => ({ encryptedPayloadB64: 'x', nonceB64: 'y' }),
@@ -101,7 +107,7 @@ test('resolveParentDevices throwing resolves to zero deliveries rather than prop
 });
 
 test('the production default (createRejectingOpaqueFamilyAuditEventComposer) fails closed -- delivery FAILS, never a fabricated payload', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(
     ledger,
     createRejectingOpaqueFamilyAuditEventComposer(),
@@ -114,7 +120,7 @@ test('the production default (createRejectingOpaqueFamilyAuditEventComposer) fai
 });
 
 test('MySqlFamilyAuditEventLedger-shaped idempotency: a re-record of the exact same envelope id+content is IDEMPOTENT_MATCH, a conflicting one is CONFLICT', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const envelope = {
     envelopeId: 'env-1',
     familyId: 'fam-1',

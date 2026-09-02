@@ -5,10 +5,16 @@ import { registerProtectionAlertRoutes } from '../../dist/http/routes/protection
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
 const FAMILY = 'family-protection-alerts-http-1';
 const OTHER_FAMILY = 'family-protection-alerts-http-other';
 
-function buildApp({ ledger = new InMemoryProtectionAlertLedger() } = {}) {
+function buildApp({ ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW) } = {}) {
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
     ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
@@ -43,7 +49,7 @@ function buildApp({ ledger = new InMemoryProtectionAlertLedger() } = {}) {
 const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
 
 test('a parent device receives only its OWN family/device-scoped opaque protection-alert envelopes -- never another device’s queue, never a family it does not belong to', async () => {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   await ledger.record({
     alertId: 'alert-owner-1',
     familyId: FAMILY,
@@ -130,7 +136,7 @@ test('a device from a different family cannot read this family’s protection-al
 });
 
 test('an actor device bound to a different family cannot use its bearer token to read this family’s queue even with a matching session cookie', async () => {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   await ledger.record({
     alertId: 'alert-owner-1',
     familyId: FAMILY,

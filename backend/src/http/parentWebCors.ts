@@ -2,7 +2,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export const DEFAULT_PARENT_WEB_ORIGIN = 'http://localhost:4000';
 
-const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
+// Exactly the methods a browser client actually issues cross-origin against
+// this boundary: parent-web sends GET/HEAD/POST/PATCH, plus DELETE for
+// safe-zone deletion. PUT is deliberately absent -- the only PUT routes in
+// the service are same-origin platform-admin settings routes, which never
+// reach the method check because the origin comparison above rejects them
+// first. An allowlist entry with no cross-origin client is pure attack
+// surface, so it is not granted.
+const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS']);
 const ALLOWED_HEADERS = new Set(['accept', 'content-type', 'authorization', 'x-pca-csrf-token', 'x-pca-actor-device-id']);
 
 function normalizeOrigin(value: string): string {

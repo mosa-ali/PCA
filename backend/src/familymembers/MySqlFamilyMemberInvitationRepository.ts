@@ -1,7 +1,9 @@
-import { execute, runInTransaction } from '../db/pool.js';
+import { execute, isDeadlock, isDuplicateEntry, runInTransaction } from '../db/pool.js';
 import type {
   AcceptResult,
   AcceptTransactionHook,
+  CreateInvitationCapacityGuard,
+  CreateInvitationResult,
   FamilyMemberInvitationRepository,
   RemoveMemberResult,
   RemoveMemberTransactionHook,
@@ -42,10 +44,107 @@ function mapRow(row: FamilyMemberInvitationRow): FamilyMemberInvitationRecord {
   };
 }
 
+/**
+ * A create() racing a concurrent acceptInvitation() for the SAME family can
+ * still, in principle, interleave into an InnoDB lock cycle even though both
+ * take their locks in the same order (family_member_invitations, then
+ * account_entitlements) -- a COMMIT and a fresh lock request on another
+ * connection can interleave mid-transaction. InnoDB detects the cycle and
+ * has ALREADY rolled the losing transaction back, so retrying the whole
+ * attempt from scratch is both safe and correct (no partial state survives).
+ * Same bounded-retry treatment MySqlEnvelopeAcceptanceTransaction gives the
+ * same class of risk.
+ */
+const MAX_CREATE_ATTEMPTS = 3;
+
 export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvitationRepository {
-  async create(record: FamilyMemberInvitationRecord): Promise<void> {
-    await runInTransaction((conn) =>
-      execute(
+  /**
+   * The duplicate-pending check, the seat-capacity check, and the INSERT in
+   * ONE transaction, under row locks -- see the interface's own doc comment
+   * for the concurrency defect this replaced.
+   *
+   * LOCK ORDER (deliberate): this family's PENDING invitation rows first,
+   * then the family's account_entitlements row. That is the SAME order
+   * acceptAtomically uses (its guarded UPDATE locks the invitation row, then
+   * its transaction hook calls lockForFamily), so a concurrent create and
+   * accept cannot invert on each other.
+   */
+  async createAtomically(
+    record: FamilyMemberInvitationRecord,
+    now: Date,
+    capacityGuard?: CreateInvitationCapacityGuard,
+  ): Promise<CreateInvitationResult> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.attemptCreate(record, now, capacityGuard);
+      } catch (error) {
+        // The UNIQUE(family_id, pending_invited_email_hash) backstop from
+        // migration 0035. Reaching it means a concurrent caller committed
+        // its own pending invitation for this exact (family, email) between
+        // our read and our INSERT; that IS a duplicate pending invitation,
+        // so the caller gets the domain outcome rather than a 500.
+        if (isDuplicateEntry(error)) return { outcome: 'DUPLICATE_PENDING_INVITATION' };
+        if (isDeadlock(error) && attempt < MAX_CREATE_ATTEMPTS) continue;
+        throw error;
+      }
+    }
+  }
+
+  private async attemptCreate(
+    record: FamilyMemberInvitationRecord,
+    now: Date,
+    capacityGuard?: CreateInvitationCapacityGuard,
+  ): Promise<CreateInvitationResult> {
+    return runInTransaction(async (conn) => {
+      // 1. Take the invitation-side lock FIRST (see the lock-order note
+      //    above). Under READ COMMITTED this locks the rows that exist now,
+      //    with no gap locks -- which is exactly why step 4 re-reads and why
+      //    the unique key is the real backstop for the "no pending row yet"
+      //    case.
+      await execute(
+        conn,
+        `SELECT invitation_id FROM family_member_invitations WHERE family_id = ? AND status = 'PENDING' FOR UPDATE`,
+        [record.familyId],
+      );
+
+      // 2. Serialize every concurrent invitation for this family on its
+      //    entitlement row, exactly as MySqlSlotReservationRepository.reserve
+      //    does before ITS availability check. Without this, two invitations
+      //    for two DIFFERENT emails could both see the last free seat.
+      if (capacityGuard) await capacityGuard.lock(conn, record.familyId);
+
+      // 3. Persist the due EXPIRED transitions inside the same transaction.
+      //    Two reasons, both load-bearing: a stale pending invitation must
+      //    not block a re-invite or hold a seat (the pre-fix service did
+      //    this via isExpiredNow), and clearing status also clears the
+      //    generated pending_invited_email_hash, freeing the unique slot so
+      //    the INSERT below is not rejected by the backstop.
+      await execute(
+        conn,
+        `UPDATE family_member_invitations
+            SET status = 'EXPIRED', expired_at = ?
+          WHERE family_id = ? AND status = 'PENDING' AND expires_at <= ?`,
+        [now, record.familyId, now],
+      );
+
+      // 4. Authoritative read, under both locks: everything still PENDING
+      //    here is live.
+      const { rows: livePending } = await execute<FamilyMemberInvitationRow>(
+        conn,
+        `SELECT * FROM family_member_invitations WHERE family_id = ? AND status = 'PENDING' FOR UPDATE`,
+        [record.familyId],
+      );
+
+      if (livePending.some((row) => row.invited_email_hash.equals(record.invitedEmailHash))) {
+        return { outcome: 'DUPLICATE_PENDING_INVITATION' };
+      }
+
+      if (capacityGuard) {
+        const verdict = await capacityGuard.evaluate(conn, record.familyId, livePending.length);
+        if (verdict === 'CAPACITY_EXCEEDED') return { outcome: 'CAPACITY_EXCEEDED' };
+      }
+
+      await execute(
         conn,
         `INSERT INTO family_member_invitations
            (invitation_id, family_id, invited_email_hash, role, status, invited_by_account_id,
@@ -65,8 +164,9 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
           record.revokedAt,
           record.acceptedByAccountId,
         ],
-      ),
-    );
+      );
+      return { outcome: 'CREATED' };
+    });
   }
 
   async findByIdForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId): Promise<FamilyMemberInvitationRecord | null> {

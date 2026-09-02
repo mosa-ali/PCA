@@ -3,6 +3,7 @@ package org.pca.app.persistence
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Test
@@ -98,7 +99,7 @@ class ProducerAdapterRepositoryTest {
 
     @Test
     fun `installed app event record is idempotent on id and preserves package name and label`() = runTest {
-        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+        val repo = InstalledAppEventRepository(db.installedAppEventDao(), PersistenceTestSupport.testCipher())
 
         repo.record("install-1", "device-1", "com.example.newapp", "New App", 1000L, 1500L)
         repo.record("install-1", "device-1", "com.example.newapp", "New App", 1000L, 1500L)
@@ -109,19 +110,48 @@ class ProducerAdapterRepositoryTest {
         assertEquals("New App", stored.single().appLabel)
     }
 
+    /**
+     * PCA-LOCAL-DB-1 Section 8: the package name and label are the same class of family-sensitive
+     * value `usage_sessions` already encrypts, and both were previously written to disk in
+     * plaintext. Asserts against the RAW row (via the DAO, bypassing the repository's decrypt) that
+     * neither value is recoverable from the database file, and that the round trip still returns
+     * the real values -- the exact shape of the sibling usage-session assertion above.
+     */
+    @Test
+    fun `installed app event encrypts the package name and label at rest`() = runTest {
+        val repo = InstalledAppEventRepository(db.installedAppEventDao(), PersistenceTestSupport.testCipher())
+
+        repo.record("install-enc", "device-1", "com.example.newapp", "New App", 1000L, 1500L)
+
+        val raw = db.installedAppEventDao().getForDevice("device-1").single()
+        assertNotEquals("com.example.newapp", raw.packageNameEnc)
+        assertNotEquals("New App", raw.appLabelEnc)
+        assertFalse(raw.packageNameEnc.contains("com.example.newapp"))
+        assertFalse(raw.appLabelEnc!!.contains("New App"))
+
+        val decrypted = repo.getForDevice("device-1").single()
+        assertEquals("com.example.newapp", decrypted.packageName)
+        assertEquals("New App", decrypted.appLabel)
+    }
+
     @Test
     fun `installed app event tolerates a null app label`() = runTest {
-        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+        val repo = InstalledAppEventRepository(db.installedAppEventDao(), PersistenceTestSupport.testCipher())
 
         repo.record("install-2", "device-1", "com.example.gone", null, 1000L, 1500L)
 
         val stored = repo.getForDevice("device-1").single()
         assertEquals(null, stored.appLabel)
+        // A null label must leave BOTH ciphertext columns null -- a half-written pair would make
+        // decryptFromColumnsOrNull's null contract ambiguous on read-back.
+        val raw = db.installedAppEventDao().getForDevice("device-1").single()
+        assertEquals(null, raw.appLabelEnc)
+        assertEquals(null, raw.appLabelIv)
     }
 
     @Test
     fun `installed app events are readable in reverse chronological order by install time`() = runTest {
-        val repo = InstalledAppEventRepository(db.installedAppEventDao())
+        val repo = InstalledAppEventRepository(db.installedAppEventDao(), PersistenceTestSupport.testCipher())
 
         repo.record("install-early", "device-1", "app-a", "A", 1000L, 1000L)
         repo.record("install-late", "device-1", "app-b", "B", 5000L, 5000L)

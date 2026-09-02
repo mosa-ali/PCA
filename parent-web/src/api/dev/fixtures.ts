@@ -362,6 +362,13 @@ export const DEV_PROTECTION_ALERTS: ParentProtectionAlert[] = [
   },
 ];
 
+// DEVELOPMENT_ONLY demo content, tagged with the canonical wellbeing taxonomy
+// (PCA-WELLCTRL-031/032, doc 38 Section 1) -- never parent-web's retired local
+// enum. The retired values map as: BREAK_REMINDER -> REST_AND_RESET,
+// ENCOURAGEMENT -> CUSTOM (a tone, not an activity). SAFETY_CHECK_IN was
+// dropped rather than mapped (outside this feature's boundary, PCA-WELL-001);
+// the one demo message that carried it is retagged on what its own copy
+// actually is -- connecting with a family member, i.e. FAMILY_HELP.
 export const DEV_CURATED_SUGGESTIONS: CuratedSuggestion[] = [
   {
     curatedId: 'curated-1',
@@ -369,9 +376,9 @@ export const DEV_CURATED_SUGGESTIONS: CuratedSuggestion[] = [
       { languageTag: 'en', text: 'Nice work today! Time for a short break.' },
       { languageTag: 'ar', text: 'أحسنت اليوم! حان وقت استراحة قصيرة.' },
     ],
-    category: 'BREAK_REMINDER',
+    category: 'REST_AND_RESET',
     requiresAdultSupervision: false,
-    recommendedTriggers: ['BREAK_DUE'],
+    recommendedTriggers: ['BREAK_STARTED'],
   },
   {
     curatedId: 'curated-2',
@@ -379,9 +386,9 @@ export const DEV_CURATED_SUGGESTIONS: CuratedSuggestion[] = [
       { languageTag: 'en', text: 'Remember to check in with a family member.' },
       { languageTag: 'ar', text: 'تذكّر التواصل مع أحد أفراد العائلة.' },
     ],
-    category: 'SAFETY_CHECK_IN',
+    category: 'FAMILY_HELP',
     requiresAdultSupervision: true,
-    recommendedTriggers: ['SCHEDULED_TIME_WINDOW'],
+    recommendedTriggers: ['SCHEDULED_TIME'],
   },
   {
     curatedId: 'curated-3',
@@ -389,9 +396,9 @@ export const DEV_CURATED_SUGGESTIONS: CuratedSuggestion[] = [
       { languageTag: 'en', text: 'You are doing great. Keep it up!' },
       { languageTag: 'ar', text: 'أنت تبلي بلاءً حسناً. واصل ذلك!' },
     ],
-    category: 'ENCOURAGEMENT',
+    category: 'CUSTOM',
     requiresAdultSupervision: false,
-    recommendedTriggers: ['APP_LAUNCH'],
+    recommendedTriggers: ['AFTER_UNLOCK'],
   },
 ];
 
@@ -409,14 +416,14 @@ export const DEV_WELLBEING_CONTROL: WellbeingMessageControlV1 = {
         { languageTag: 'en', text: 'We are proud of you, habibi!' },
         { languageTag: 'ar', text: 'نحن فخورون بك يا حبيبي!' },
       ],
-      category: 'ENCOURAGEMENT',
+      category: 'CUSTOM',
       enabled: true,
       archived: false,
       startDate: null,
       endDate: null,
       daysOfWeek: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
       timeWindows: [{ startLocalTime: '16:00', endLocalTime: '19:00' }],
-      triggers: ['APP_LAUNCH'],
+      triggers: ['AFTER_UNLOCK'],
       minimumIntervalMinutes: 120,
       maximumPerDay: 3,
       repeatCooldownMinutes: 1440,

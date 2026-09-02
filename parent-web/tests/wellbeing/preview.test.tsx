@@ -6,7 +6,7 @@ import { renderWithProviders } from '../utils/renderWithProviders';
 describe('wellbeing message preview simulator', () => {
   it('renders the in-app card surface as a small card, not full screen', () => {
     const { container } = renderWithProviders(
-      <MessagePreview text="Nice work today!" languageTag="en" surface="IN_APP_CARD" />,
+      <MessagePreview text="Nice work today!" languageTag="en" surface="IN_APP_SMALL_CARD" />,
     );
     expect(screen.getByText('Nice work today!')).toBeInTheDocument();
     expect(container.querySelector('.preview-card')).toBeTruthy();
@@ -21,7 +21,7 @@ describe('wellbeing message preview simulator', () => {
 
   it('renders Arabic text with RTL direction', () => {
     const { container } = renderWithProviders(
-      <MessagePreview text="أحسنت اليوم" languageTag="ar" surface="IN_APP_CARD" />,
+      <MessagePreview text="أحسنت اليوم" languageTag="ar" surface="IN_APP_SMALL_CARD" />,
     );
     const node = container.querySelector('[dir="rtl"]');
     expect(node).toBeTruthy();
@@ -29,7 +29,7 @@ describe('wellbeing message preview simulator', () => {
   });
 
   it('strips any embedded markup from custom message text (defense in depth, never dangerouslySetInnerHTML)', () => {
-    renderWithProviders(<MessagePreview text="<b>bold</b> hello" languageTag="en" surface="IN_APP_CARD" />);
+    renderWithProviders(<MessagePreview text="<b>bold</b> hello" languageTag="en" surface="IN_APP_SMALL_CARD" />);
     expect(screen.getByText('bold hello')).toBeInTheDocument();
     expect(document.querySelector('b')).toBeNull();
   });

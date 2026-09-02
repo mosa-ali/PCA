@@ -83,6 +83,21 @@ const SEED_EMAIL_DOMAIN = 'pca-seed.test';
 
 const manifest = { seedPassword: SEED_PASSWORD, parentAccounts: {}, adminAccounts: {}, codes: {}, invoices: {} };
 
+// Progress reporting for a human watching the seed run. It deliberately reports
+// only the purpose-key of what was seeded, never the identifiers or credential
+// material themselves (familyId / accountId / adminId / invitationId / invoiceId,
+// TOTP secrets, one-time verification and password-reset codes).
+//
+// This is a dev-only script, but its stdout is not a controlled store: it lands in
+// terminal scrollback and in the log of any harness that shells out to it. Nothing
+// downstream loses anything by the omission -- every one of those values is still
+// written to the QA seed manifest (QA_SEED_MANIFEST_PATH / qa-seed-manifest.json),
+// which is what parent-web's and platform-admin-web's e2e-qa-coordinator-b/
+// qaManifest.ts actually read. No consumer has ever parsed this stdout.
+function reportSeeded(label, detail) {
+  console.log(detail ? `Seeded ${label} (${detail}).` : `Seeded ${label}.`);
+}
+
 const authService = new AuthService(new MySqlAuthRepository());
 const emailSender = createTestSandboxEmailSender();
 const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
@@ -110,10 +125,10 @@ async function registerAndVerifyFamily(key) {
 }
 
 const familyA = await registerAndVerifyFamily('owner-a');
-console.log('Seeded Family A:', { accountId: familyA.accountId, familyId: familyA.familyId });
+reportSeeded('Family A', 'key=owner-a');
 
 const familyB = await registerAndVerifyFamily('owner-b');
-console.log('Seeded Family B:', { accountId: familyB.accountId, familyId: familyB.familyId });
+reportSeeded('Family B', 'key=owner-b');
 
 // ---------------------------------------------------------------------
 // Coordinator B: one dedicated, never-reused verified account per
@@ -124,13 +139,13 @@ console.log('Seeded Family B:', { accountId: familyB.accountId, familyId: family
 const AUTH_SPEC_KEYS = ['owner-login-ok', 'owner-deeplink', 'owner-forgot', 'owner-notpermitted'];
 for (const key of AUTH_SPEC_KEYS) {
   const outcome = await registerAndVerifyFamily(key);
-  console.log(`Seeded dedicated auth.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+  reportSeeded('dedicated auth.spec.ts account', `key=${key}`);
 }
 
 // wrong-credentials test never succeeds a login for this account -- its
 // anti-brute-force failure history must never leak onto any other test.
 await registerAndVerifyFamily('owner-wrongpass');
-console.log('Seeded dedicated wrong-credentials test account (owner-wrongpass).');
+reportSeeded('dedicated wrong-credentials test account', 'key=owner-wrongpass');
 
 const CHILDREN_POLICY_ROUTE_KEYS = [
   'owner-cp-dashboard',
@@ -145,13 +160,13 @@ const CHILDREN_POLICY_ROUTE_KEYS = [
 ];
 for (const key of CHILDREN_POLICY_ROUTE_KEYS) {
   const outcome = await registerAndVerifyFamily(key);
-  console.log(`Seeded dedicated children-policy.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+  reportSeeded('dedicated children-policy.spec.ts account', `key=${key}`);
 }
 
 const BILLING_SPEC_KEYS = ['owner-bill-sub', 'owner-bill-list', 'owner-bill-detail'];
 for (const key of BILLING_SPEC_KEYS) {
   const outcome = await registerAndVerifyFamily(key);
-  console.log(`Seeded dedicated billing.spec.ts account (${key}):`, { accountId: outcome.accountId, familyId: outcome.familyId });
+  reportSeeded('dedicated billing.spec.ts account', `key=${key}`);
 }
 
 // QA writer-2 addition: a registered-but-NEVER-verified account, so
@@ -169,14 +184,14 @@ await parentAccountService.register(pendingEmail, SEED_PASSWORD, SEED_PASSWORD);
 const pendingVerificationCode = emailSender.lastCodeFor(pendingEmail);
 manifest.parentAccounts['owner-pending'] = { email: pendingEmail };
 manifest.codes.pendingVerificationCode = pendingVerificationCode;
-console.log('Seeded PENDING (unverified) parent account:', { email: pendingEmail, pendingVerificationCode });
+reportSeeded('PENDING (unverified) parent account', 'key=owner-pending');
 
 // QA writer-2 addition: a THIRD verified family, dedicated to the
 // forgot-password/reset-password real-browser flow, with a genuine
 // already-issued (not yet consumed) reset code -- created through the
 // real requestPasswordReset() service call, not a fabricated row.
 const familyC = await registerAndVerifyFamily('owner-resettable');
-console.log('Seeded Family C (password-reset target):', { accountId: familyC.accountId, familyId: familyC.familyId });
+reportSeeded('Family C (password-reset target)', 'key=owner-resettable');
 await parentAccountService.requestPasswordReset(`owner-resettable@${SEED_EMAIL_DOMAIN}`);
 // lastCodeFor() defaults its `kind` param to 'VERIFICATION' -- this MUST be
 // 'PASSWORD_RESET' here, or it silently returns this account's earlier
@@ -185,7 +200,7 @@ await parentAccountService.requestPasswordReset(`owner-resettable@${SEED_EMAIL_D
 // docs/product-completion/PCA_QA_DEFECT_HANDOFF.md QA-B-005).
 const pendingResetCode = emailSender.lastCodeFor(`owner-resettable@${SEED_EMAIL_DOMAIN}`, 'PASSWORD_RESET');
 manifest.codes.pendingResetCode = pendingResetCode;
-console.log('Seeded pending password-reset code:', { email: `owner-resettable@${SEED_EMAIL_DOMAIN}`, pendingResetCode });
+reportSeeded('pending password-reset code', 'key=owner-resettable');
 
 // Family A: Arabic-language preference (the second seeded family, B, stays
 // on the default English preference) -- gives real browser EN/AR coverage
@@ -215,7 +230,7 @@ async function seedInvitation(familyId, childProfileId, ageUxTier, platform, req
     childProfileId,
     ageUxTier,
   });
-  console.log('Seeded invitation:', { familyId, childProfileId, ageUxTier, platform, invitationId: record.invitationId, status: record.status });
+  reportSeeded('invitation', `${ageUxTier}/${platform}, status=${record.status}`);
   return record;
 }
 
@@ -248,7 +263,7 @@ async function seedPlatformAdmin(role, key) {
   );
   const totpSecretBase32 = base32Encode(secret);
   manifest.adminAccounts[key] = { email, role, adminId: account.adminId, totpSecretBase32 };
-  console.log(`Seeded platform admin (${role}, key=${key}):`, { adminId: account.adminId, email, totpSecretBase32 });
+  reportSeeded('platform admin', `${role}, key=${key}`);
   return { ...account, email, totpSecret: secret };
 }
 
@@ -548,7 +563,7 @@ async function seedPaidAndOpenInvoice(familyId, key) {
   await getPool().query(`UPDATE billing_invoices SET status = 'OPEN' WHERE invoice_id = ?`, [openInvoice.invoiceId]);
 
   manifest.invoices[key] = { paidInvoiceId: paidInvoice.invoiceId, openInvoiceId: openInvoice.invoiceId, familyId };
-  console.log(`Seeded PAID + OPEN invoice for ${key}:`, { familyId, paidInvoiceId: paidInvoice.invoiceId, openInvoiceId: openInvoice.invoiceId });
+  reportSeeded('PAID + OPEN invoice', `key=${key}`);
 }
 
 await seedPaidAndOpenInvoice(familyA.familyId, 'owner-a');

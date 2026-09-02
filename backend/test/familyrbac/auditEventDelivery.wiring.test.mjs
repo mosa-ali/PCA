@@ -15,6 +15,12 @@ import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAudi
 import { FamilyMemberInvitationService } from '../../dist/familymembers/FamilyMemberInvitationService.js';
 import { createInMemoryFamilyMemberInvitationRepository } from '../support/inMemoryFamilyMemberInvitationRepository.mjs';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
 function fakeAuthorization(verdict = { verdict: 'ALLOW' }) {
   return { authorize: () => verdict };
 }
@@ -23,7 +29,7 @@ test('creating a family-member invitation through the real service delivers a de
   const auditRepository = new InMemoryFamilyAuditRepository();
   const familyAuditService = new FamilyAuditService(auditRepository, () => new Date('2026-01-01T00:00:00.000Z'));
 
-  const eventLedger = new InMemoryFamilyAuditEventLedger();
+  const eventLedger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const composedInputs = [];
   const composer = async (input) => {
     composedInputs.push(input);
@@ -91,7 +97,7 @@ test('when no delivery is configured, record() behaves exactly as before -- no e
 test('a delivery failure (composer throws) never blocks or reverses the mutation the audit record describes', async () => {
   const auditRepository = new InMemoryFamilyAuditRepository();
   const familyAuditService = new FamilyAuditService(auditRepository, () => new Date('2026-01-01T00:00:00.000Z'));
-  const eventLedger = new InMemoryFamilyAuditEventLedger();
+  const eventLedger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   familyAuditService.configureDelivery(
     new FamilyAuditEventProducer(
       eventLedger,

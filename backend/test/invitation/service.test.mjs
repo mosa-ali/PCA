@@ -8,6 +8,12 @@ import { createInMemoryInvitationRepository } from '../support/inMemoryInvitatio
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
+// Server-ciphertext TTL (migration 0034): the alert ledger now expires rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so fixtures dated in the past
+// would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant these fixtures use.
+const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
 const BASE_TIME = new Date('2026-01-01T00:00:00.000Z').getTime();
 const TTL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -24,7 +30,7 @@ function buildService(overrides = {}) {
 }
 
 function makeAlerting({ enabled = true } = {}) {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const producer = new ProtectionAlertProducer(
     ledger,
     async () => ({ encryptedPayloadB64: 'AQID', nonceB64: 'BAUG' }),
@@ -494,7 +500,7 @@ test('disabled alerting never invokes the composer and never blocks redemption',
 });
 
 test('an alert composer failure never blocks or reverses redemption', async () => {
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const producer = new ProtectionAlertProducer(ledger, async () => {
     throw new Error('composer unavailable');
   }, () => new Date(BASE_TIME));

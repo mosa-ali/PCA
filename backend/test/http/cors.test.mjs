@@ -38,7 +38,7 @@ test('parent-web CORS allows credentialed reads and the CSRF preflight from the 
   await app.close();
 });
 
-test('parent-web CORS preflights every method the browser clients actually send, and still nothing else', async () => {
+test('parent-web CORS preflights GET/HEAD/POST/PATCH/DELETE and refuses PUT and every other method', async () => {
   const app = Fastify({ logger: false });
   registerParentWebCors(app, 'http://localhost:4000');
   app.get('/api/parent/session', async () => ({ ok: true }));
@@ -55,10 +55,9 @@ test('parent-web CORS preflights every method the browser clients actually send,
       },
     });
 
-  // DELETE is a registered, credentialed, cross-origin parent route (safe-zone deletion), and the
-  // platform-admin settings routes are PUT; both mandate a preflight, so omitting either method
-  // from the allowlist returns 403 before the route is ever reached.
-  for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+  // DELETE is a registered, credentialed, cross-origin parent route (safe-zone deletion), so it
+  // mandates a preflight and omitting it from the allowlist would 403 before the route is reached.
+  for (const method of ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']) {
     const allowed = await preflight(method);
     assert.equal(allowed.statusCode, 204, `expected ${method} preflight to be allowed`);
     assert.equal(allowed.headers['access-control-allow-origin'], 'http://localhost:4000');
@@ -68,11 +67,19 @@ test('parent-web CORS preflights every method the browser clients actually send,
     );
   }
 
-  // The allowlist stays an allowlist: methods no client sends are still refused.
-  for (const method of ['TRACE', 'CONNECT', 'PROPFIND']) {
+  // The allowlist stays an allowlist: methods no cross-origin client sends are refused. PUT is in
+  // that set -- the only PUT routes are same-origin platform-admin settings routes, which are
+  // rejected at the origin check long before the method is inspected, so granting PUT here would
+  // widen the cross-origin surface for no client.
+  for (const method of ['PUT', 'TRACE', 'CONNECT', 'PROPFIND']) {
     const rejected = await preflight(method);
     assert.equal(rejected.statusCode, 403, `expected ${method} preflight to be rejected`);
+    assert.equal(rejected.headers['access-control-allow-methods'], undefined);
   }
+
+  // ... and PUT is not advertised either, so a browser never caches it as permitted.
+  const advertised = (await preflight('POST')).headers['access-control-allow-methods'].split(', ');
+  assert.ok(!advertised.includes('PUT'), 'PUT must not be advertised in Access-Control-Allow-Methods');
 
   await app.close();
 });

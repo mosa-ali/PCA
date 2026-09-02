@@ -3,12 +3,18 @@ import test from 'node:test';
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-08-19T12:00:00.000Z');
+
 const NOW = new Date('2026-08-19T12:00:00.000Z');
 const OPAQUE = { encryptedPayloadB64: 'AQID', nonceB64: 'BAUG' };
 
 function createProducer(composer, options = {}) {
   return new ProtectionAlertProducer(
-    options.ledger ?? new InMemoryProtectionAlertLedger(),
+    options.ledger ?? new InMemoryProtectionAlertLedger(() => LEDGER_NOW),
     composer,
     () => NOW,
     () => 'alert-generated-1',
@@ -17,7 +23,7 @@ function createProducer(composer, options = {}) {
 
 test('runtime producer composes opaque payload, generates typed event, and records it', async () => {
   const compositionInputs = [];
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const producer = createProducer(async (input) => {
     compositionInputs.push(input);
     return OPAQUE;
@@ -80,7 +86,7 @@ test('every addendum trigger reaches the concrete runtime producer', async () =>
 
 test('disabled alerting does not invoke the composer or create a ledger event', async () => {
   let composerCalls = 0;
-  const ledger = new InMemoryProtectionAlertLedger();
+  const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
   const producer = createProducer(async () => {
     composerCalls += 1;
     return OPAQUE;

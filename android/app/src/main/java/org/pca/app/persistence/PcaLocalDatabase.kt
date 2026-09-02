@@ -114,7 +114,7 @@ abstract class PcaLocalDatabase : RoomDatabase() {
     abstract fun enrollmentLifecycleAuditDao(): EnrollmentLifecycleAuditDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
         const val DATABASE_NAME = "pca_local.db"
 
         /**

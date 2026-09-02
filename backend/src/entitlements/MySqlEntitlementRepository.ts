@@ -258,12 +258,24 @@ export class MySqlEntitlementRepository implements EntitlementRepository {
   }
 
   async getEffectiveSnapshotForFamily(familyId: OpaqueFamilyId, now: Date): Promise<EffectiveEntitlementSnapshot | null> {
-    return runInTransaction(async (conn) => {
-      const entitlement = await selectForFamily(conn, familyId, false);
-      if (!entitlement) return null;
-      const base = toBaseUsage(entitlement);
-      if (!this.complimentaryGrantRepository) return baseOnlyEffectiveEntitlementSnapshot(base);
-      return computeEffectiveEntitlementSnapshot(conn, this.complimentaryGrantRepository, familyId, base, now);
-    });
+    return runInTransaction((conn) => this.getEffectiveSnapshotForFamilyOnConnection(conn, familyId, now));
+  }
+
+  /**
+   * Identical arithmetic to getEffectiveSnapshotForFamily, but on the
+   * caller's own connection so it observes a lockForFamily() taken there --
+   * see the interface's doc comment for why a seat-admission decision must
+   * never read through the self-transacting variant.
+   */
+  async getEffectiveSnapshotForFamilyOnConnection(
+    conn: PoolConnection,
+    familyId: OpaqueFamilyId,
+    now: Date,
+  ): Promise<EffectiveEntitlementSnapshot | null> {
+    const entitlement = await selectForFamily(conn, familyId, false);
+    if (!entitlement) return null;
+    const base = toBaseUsage(entitlement);
+    if (!this.complimentaryGrantRepository) return baseOnlyEffectiveEntitlementSnapshot(base);
+    return computeEffectiveEntitlementSnapshot(conn, this.complimentaryGrantRepository, familyId, base, now);
   }
 }

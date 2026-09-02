@@ -7,13 +7,17 @@ import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { MessagePreview } from '../../components/wellbeing/MessagePreview';
 import { CustomMessageForm, type DraftMessage } from './CustomMessageForm';
+import { WELLBEING_CATEGORIES } from '../../domain/wellbeing';
 import type { PreviewSurface } from '../../domain/wellbeing';
 
+// The three ordinary delivery surfaces a parent can preview (PCA-WELLCTRL-040).
+// `ARABIC_RTL`/`ENGLISH` are the SDK's locale-forcing preview variants and are
+// deliberately not offered as buttons: this simulator already renders the
+// English and Arabic previews side by side for whichever surface is selected.
 const SURFACES: { value: PreviewSurface; labelKey: string }[] = [
-  { value: 'IN_APP_CARD', labelKey: 'wellbeing.surfaceInAppCard' },
+  { value: 'IN_APP_SMALL_CARD', labelKey: 'wellbeing.surfaceInAppCard' },
   { value: 'STANDARD_NOTIFICATION', labelKey: 'wellbeing.surfaceNotification' },
   { value: 'LOCK_SCREEN_REDACTED', labelKey: 'wellbeing.surfaceLockScreen' },
-  { value: 'MOBILE_VIEWPORT', labelKey: 'wellbeing.surfaceMobile' },
 ];
 
 const BLANK_DRAFT: DraftMessage = {
@@ -22,14 +26,16 @@ const BLANK_DRAFT: DraftMessage = {
     { languageTag: 'en', text: '' },
     { languageTag: 'ar', text: '' },
   ],
-  category: 'ENCOURAGEMENT',
+  // CUSTOM is the canonical parent-authoring escape hatch (PCA-WELLCTRL-031):
+  // a blank family-authored draft has not yet declared an activity category.
+  category: 'CUSTOM',
   enabled: true,
   archived: false,
   startDate: null,
   endDate: null,
   daysOfWeek: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'],
   timeWindows: [],
-  triggers: ['APP_LAUNCH'],
+  triggers: ['AFTER_UNLOCK'],
   minimumIntervalMinutes: 60,
   maximumPerDay: 3,
   repeatCooldownMinutes: 1440,
@@ -51,7 +57,7 @@ export default function WellbeingAdmin() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<{ text: string; lang: 'en' | 'ar' } | null>(null);
-  const [previewSurface, setPreviewSurface] = useState<PreviewSurface>('IN_APP_CARD');
+  const [previewSurface, setPreviewSurface] = useState<PreviewSurface>('IN_APP_SMALL_CARD');
   const [actionError, setActionError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -138,9 +144,14 @@ export default function WellbeingAdmin() {
         <label htmlFor="cat-filter">{t('wellbeing.category')}</label>
         <select id="cat-filter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           <option value="">{t('wellbeing.allCategories')}</option>
-          <option value="ENCOURAGEMENT">{t('wellbeing.categories.ENCOURAGEMENT')}</option>
-          <option value="BREAK_REMINDER">{t('wellbeing.categories.BREAK_REMINDER')}</option>
-          <option value="SAFETY_CHECK_IN">{t('wellbeing.categories.SAFETY_CHECK_IN')}</option>
+          {/* Every canonical category, never a hand-picked subset: this dropdown
+              used to list 3 of parent-web's own 6, so curated suggestions in the
+              unlisted categories were unfilterable. */}
+          {WELLBEING_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {t(`wellbeing.categories.${c}`)}
+            </option>
+          ))}
         </select>
       </div>
       <div className="card-grid">

@@ -85,6 +85,24 @@
     <string name="child_home_call_state_enabled">متاح</string>
     <string name="child_home_call_state_unavailable">غير متاح؛ لن يتوقف مؤقت الاستراحة تلقائيًا أثناء المكالمة</string>
     <string name="child_home_call_state_enable">السماح بالوصول إلى حالة المكالمة</string>
+
+    <!-- PCA-FR-081 / doc 06: بطاقة الإفصاح عن إذن الوصول إلى بيانات الاستخدام والانتقال إلى الإعدادات.
+         نص حالة "غير ممنوح" يذكر صراحةً الإمكانات التي لا تعمل، فلا توحي الشاشة أبدًا بأن ميزة تعمل
+         بينما لا توجد أي بيانات استخدام. -->
+    <string name="child_home_usage_access_title">السماح بالوصول إلى بيانات الاستخدام</string>
+    <string name="child_home_usage_access_explanation">يحتفظ أندرويد بوقت استخدام التطبيقات خلف إذن منفصل يتم تفعيله من الإعدادات. لا يقرأ PCA سوى التطبيق الظاهر في المقدمة ومدة استخدامه — لا محتوى الرسائل ولا ما تتم كتابته ولا أي شيء داخل التطبيقات.</string>
+    <string name="child_home_usage_access_granted">متاح</string>
+    <string name="child_home_usage_access_capability_unavailable">غير مسموح به بعد. لا يجري قياس وقت الشاشة ولا تذكيرات الاستراحة ولا اقتراحات العافية ولا وقت يوتيوب على هذا الجهاز.</string>
+    <string name="child_home_usage_access_device_unsupported">لا يوفّر هذا الجهاز الوصول إلى بيانات الاستخدام، لذلك لا يمكن قياس وقت الشاشة ولا تذكيرات الاستراحة ولا اقتراحات العافية ولا وقت يوتيوب هنا.</string>
+    <string name="child_home_usage_access_enable">فتح إعدادات الوصول إلى بيانات الاستخدام</string>
+
+    <!-- PCA-WELL-012/PCA-FR-073/PCA-FR-081: بطاقة الإفصاح عن إذن الإشعارات وطلبه. نفس قاعدة الوضوح
+         المطبّقة في بطاقة الوصول إلى بيانات الاستخدام أعلاه. -->
+    <string name="child_home_notifications_title">السماح بإشعارات PCA</string>
+    <string name="child_home_notifications_explanation">يستخدم PCA الإشعارات لتذكيرات الصلاة واقتراحات العافية والتنبيهات عند توقف الحماية عن العمل. ولا يرسل أي إشعارات ترويجية.</string>
+    <string name="child_home_notifications_enabled">متاح</string>
+    <string name="child_home_notifications_capability_unavailable">الإشعارات مُعطّلة. لا يمكن عرض تذكيرات الصلاة ولا اقتراحات العافية ولا تنبيهات الحماية على هذا الجهاز.</string>
+    <string name="child_home_notifications_enable">السماح بالإشعارات</string>
     <string name="child_home_status_row_description">%1$s: %2$s</string>
 
     <string name="child_home_emergency_access">وصول الطوارئ</string>

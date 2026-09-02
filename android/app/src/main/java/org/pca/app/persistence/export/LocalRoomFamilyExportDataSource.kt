@@ -6,6 +6,7 @@ import org.json.JSONObject
 import org.pca.app.persistence.PcaLocalDatabase
 import org.pca.app.persistence.crypto.LocalRecordCipher
 import org.pca.app.persistence.entity.RetentionPolicy
+import org.pca.app.persistence.repository.InstalledAppEventRepository
 import org.pca.app.persistence.repository.LocationPointRepository
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.pca.app.persistence.repository.WebVisitRepository
@@ -45,6 +46,7 @@ class LocalRoomFamilyExportDataSource(
         val usageRepository = UsageSessionRepository(database.usageSessionDao(), localCipher)
         val webRepository = WebVisitRepository(database.webVisitDao(), localCipher)
         val locationRepository = LocationPointRepository(database.locationPointDao(), localCipher)
+        val installedAppEventRepository = InstalledAppEventRepository(database.installedAppEventDao(), localCipher)
         val locationCandidates = mutableListOf<FamilyExportRecord>()
 
         for (deviceId in deviceIds) {
@@ -170,7 +172,12 @@ class LocalRoomFamilyExportDataSource(
                     )
                 }
 
-            database.installedAppEventDao().getForDevice(deviceId)
+            // PCA-LOCAL-DB-1 Section 8: read through the repository (not the DAO) now that the
+            // package name/label are encrypted columns -- the repository is the one place
+            // ciphertext round-trips to plaintext, and this export path is exactly the "decrypted
+            // only in memory, handed to the family encryptor" case this class's doc comment
+            // describes. Same construction shape as usageRepository/webRepository above.
+            installedAppEventRepository.getForDevice(deviceId)
                 .filter { it.installedAtEpochMillis >= generalCutoff }
                 .forEach { event ->
                     records += FamilyExportRecord(

@@ -17,6 +17,13 @@ concurrency:
 
 jobs:
   contracts:
+    # This repository ships FOUR contract catalogues, each with its own validator and
+    # its own catalogue test: the top-level protocol catalogue plus child-profile-scope,
+    # runtime-sync and wellbeing-control. Until now this job ran only the top-level pair,
+    # so three validators and three test files existed but were never executed by CI --
+    # which is the mechanism by which a real taxonomy drift reached the default branch
+    # undetected. All four are wired below; a catalogue with a validator that CI does not
+    # run is not a gate.
     name: Contracts validation
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -27,6 +34,18 @@ jobs:
         run: node contracts/validate-catalogue.cjs
       - name: Test protocol catalogue
         run: node --test contracts/test/catalogue.test.cjs
+      - name: Validate child-profile-scope catalogue
+        run: node contracts/child-profile-scope/validate-catalogue.cjs
+      - name: Test child-profile-scope catalogue
+        run: node --test contracts/child-profile-scope/test/catalogue.test.cjs
+      - name: Validate runtime-sync catalogue
+        run: node contracts/runtime-sync/validate-catalogue.cjs
+      - name: Test runtime-sync catalogue
+        run: node --test contracts/runtime-sync/test/catalogue.test.cjs
+      - name: Validate wellbeing-control catalogue
+        run: node contracts/wellbeing-control/validate-catalogue.cjs
+      - name: Test wellbeing-control catalogue
+        run: node --test contracts/wellbeing-control/test/catalogue.test.cjs
 
   repository-quality:
     name: Repository quality
@@ -118,9 +137,24 @@ jobs:
     # committed package-lock.json against npm's public advisory database;
     # it does not modify the lockfile or install anything beyond what
     # `npm ci` already would. Fails the build on any HIGH or CRITICAL
-    # advisory in either Node workspace (backend, platform-admin-web) --
-    # this repository's only two npm-managed workspaces (see
-    # backend/package-lock.json / platform-admin-web/package-lock.json).
+    # advisory in ANY npm-managed workspace.
+    #
+    # Corrected: an earlier revision of this comment claimed backend and
+    # platform-admin-web were "this repository's only two npm-managed
+    # workspaces". They are not. `git ls-files '*package-lock.json'` returns
+    # SIX: backend, parent-web, platform-admin-web, and parent-sdk/
+    # {browser-runtime,runtime-sync,wellbeing-control}. parent-web is the
+    # largest dependency tree of the six and the only one carrying a
+    # production dependency on a floating range, and it was the one this
+    # gate did not look at. All six are audited below.
+    #
+    # parent-web's exclusion from the SBOM steps further down is a SEPARATE
+    # and still-valid limitation: `cyclonedx-npm` needs `npm ls
+    # --package-lock-only` to succeed there and it currently does not.
+    # `npm audit` does not use `npm ls`, so that limitation does not apply
+    # to these steps -- verified by running `npm audit --audit-level=high`
+    # in parent-web directly.
+    #
     # Android/iOS dependency scanning is out of this gate's scope (no
     # equivalent lockfile-based advisory tool is already present in this
     # toolchain for Gradle/CocoaPods; adding one is a separate, larger
@@ -138,8 +172,20 @@ jobs:
       - name: Audit backend dependencies (fails on HIGH/CRITICAL)
         working-directory: backend
         run: npm audit --audit-level=high
+      - name: Audit parent-web dependencies (fails on HIGH/CRITICAL)
+        working-directory: parent-web
+        run: npm audit --audit-level=high
       - name: Audit platform-admin-web dependencies (fails on HIGH/CRITICAL)
         working-directory: platform-admin-web
+        run: npm audit --audit-level=high
+      - name: Audit parent-sdk/browser-runtime dependencies (fails on HIGH/CRITICAL)
+        working-directory: parent-sdk/browser-runtime
+        run: npm audit --audit-level=high
+      - name: Audit parent-sdk/runtime-sync dependencies (fails on HIGH/CRITICAL)
+        working-directory: parent-sdk/runtime-sync
+        run: npm audit --audit-level=high
+      - name: Audit parent-sdk/wellbeing-control dependencies (fails on HIGH/CRITICAL)
+        working-directory: parent-sdk/wellbeing-control
         run: npm audit --audit-level=high
       - name: No-ads / no-data-broker SDK inventory check (PCA-FR-123)
         run: node backend/scripts/checkNoAdTrackingSdks.mjs

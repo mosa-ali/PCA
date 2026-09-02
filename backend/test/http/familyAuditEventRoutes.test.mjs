@@ -5,10 +5,16 @@ import { registerFamilyAuditEventRoutes } from '../../dist/http/routes/familyAud
 import { InMemoryFamilyAuditEventLedger } from '../../dist/familyrbac/FamilyAuditEventLedger.js';
 import { RuntimeSyncAuthError } from '../../dist/runtime-sync/DeviceSessionService.js';
 
+// Server-ciphertext TTL (migration 0034): these ledgers now expire rows
+// SERVER_CIPHERTEXT_TTL_MS after generatedAtUtc, so a fixture dated in the
+// past would be correctly filtered out against a real wall clock. Anchor the
+// ledger's clock to the same instant the fixtures use.
+const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
+
 const FAMILY = 'family-audit-http-1';
 const OTHER_FAMILY = 'family-audit-http-other';
 
-function buildApp({ ledger = new InMemoryFamilyAuditEventLedger() } = {}) {
+function buildApp({ ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW) } = {}) {
   const sessions = new Map([
     ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
     ['session-other-owner', { accountId: 'acct-other-owner', familyId: OTHER_FAMILY }],
@@ -43,7 +49,7 @@ function buildApp({ ledger = new InMemoryFamilyAuditEventLedger() } = {}) {
 const ownerHeaders = { cookie: 'pca_family_session=session-owner' };
 
 test('a parent device receives only its OWN family/device-scoped opaque envelopes -- never plaintext, never another device’s queue', async () => {
-  const ledger = new InMemoryFamilyAuditEventLedger();
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   await ledger.record({
     envelopeId: 'env-owner-1',
     familyId: FAMILY,

@@ -1,4 +1,11 @@
 import { buildServer } from './http/buildServer.js';
+// PCA-RUNTIME-SHUTDOWN-1: see the shutdown wiring at the end of start().
+import {
+  CONSOLE_SHUTDOWN_LOGGER,
+  createGracefulShutdownHandler,
+  registerGracefulShutdown,
+} from './runtime/gracefulShutdown.js';
+import { closePool } from './db/pool.js';
 import { AuthService } from './auth/AuthService.js';
 import { MySqlAuthRepository } from './auth/MySqlAuthRepository.js';
 import { AuthzService } from './authz/AuthzService.js';
@@ -896,8 +903,26 @@ async function start(): Promise<void> {
     });
   }, commercialMaintenanceConfig.intervalMs);
   commercialMaintenanceTimer.unref();
-  process.on('SIGTERM', () => clearInterval(commercialMaintenanceTimer));
-  process.on('SIGINT', () => clearInterval(commercialMaintenanceTimer));
+
+  // PCA-RUNTIME-SHUTDOWN-1: real termination on SIGTERM/SIGINT.
+  //
+  // These handlers previously only did `clearInterval(...)`. Attaching ANY
+  // listener replaces Node's default terminate disposition, so that version
+  // made SIGTERM a no-op: the orchestrator waited out its full grace period
+  // and then SIGKILLed the process mid-request/mid-transaction, on every
+  // deploy. Now the signal stops background work, drains the HTTP server,
+  // releases the MySQL pool (closePool() previously had no caller anywhere
+  // in src/), and exits -- idempotently, and bounded so a stalled connection
+  // cannot hold the process open. See runtime/gracefulShutdown.ts.
+  registerGracefulShutdown(
+    createGracefulShutdownHandler({
+      stopBackgroundWork: () => clearInterval(commercialMaintenanceTimer),
+      closeServer: () => app.close(),
+      closeDatabasePool: () => closePool(),
+      exit: (code) => process.exit(code),
+      log: CONSOLE_SHUTDOWN_LOGGER,
+    }),
+  );
 }
 
 void start();
