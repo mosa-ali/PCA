@@ -241,6 +241,19 @@ fail — a failure that looks like a permissions bug, not a domain bug.**
 Admin already assumes. A true split requires a `Domain=pcasafe.com` cookie change plus a security
 review of widening cookie scope.
 
+**This is an unconsidered design gap, not a violation of a stated requirement.** The governing
+requirement `PCA-ADD-IDENT-012` specifies the session transport as *"HttpOnly, Secure-in-production,
+SameSite=Strict cookie … double-submit CSRF"* — with **no cookie `Domain` and no cross-subdomain
+consideration anywhere in its text**. The split-origin case was never in scope when the transport was
+designed, which is why the source is not wrong today and why this is an owner decision rather than a
+defect. It is also why it would surface only at DNS cutover, long after the design was settled.
+
+**The domain/DNS step is untracked in *two* independent gate registries** — neither
+`external_gate_matrix.json` (33 gates) nor the second tracked register under `.agent-runtime/`
+(113 rows, the same 33 gate IDs) contains any DNS, domain, or hosting gate. That independent
+corroboration is why `DOMAIN_DNS_HOSTING` is proposed as a new registration rather than assumed to
+exist somewhere unexamined.
+
 Also required before any cutover: five mobile hostname literals have **no configuration seam** at all
 (they are hardcoded in Kotlin, the Android manifest, Swift, and an entitlements plist), and the
 enrollment link host is a fifth hostname not in the four-name model.
