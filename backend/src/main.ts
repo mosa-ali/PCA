@@ -128,8 +128,14 @@ import { MySqlReleaseRepository } from './release/MySqlReleaseRepository.js';
 // PCA-MYKIDS-BILL-2: family commercial API + the real PriceBook-backed
 // QuotePort adapter, replacing NoPriceBookQuotePort.
 import { FamilyCommercialService } from './familycommercial/FamilyCommercialService.js';
-import { SubscriptionRepository } from './billing/subscription.js';
-import { PaymentMethodRepository } from './billing/paymentMethod.js';
+import { SubscriptionRepository, SubscriptionService } from './billing/subscription.js';
+import { PaymentMethodRepository, PaymentMethodService } from './billing/paymentMethod.js';
+// Billing admin write surface (add payment method, create/cancel
+// subscription, open/resolve dispute): PaymentMethodService/
+// SubscriptionService/DisputeService were fully built and tested but had
+// zero HTTP wiring -- see http/routes/platformadmin/billingAdminRoutes.ts's
+// own doc comment.
+import { DisputeRepository, DisputeService } from './billing/dispute.js';
 import { PriceBookQuotePort } from './entitlements/quote/PriceBookQuotePort.js';
 // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025, OWNER_APPROVED_OPTION_A): the real,
 // genesis-anchored Owner-attestation chain resolver, replacing the
@@ -388,13 +394,24 @@ async function start(): Promise<void> {
   // PCA-MYKIDS-BILL-2 wiring -- composes the SAME entitlement/billing-core
   // repositories already constructed above; reuses (never duplicates)
   // Agent45A's checkout/webhook/refund routes.
+  const subscriptionRepository = new SubscriptionRepository();
+  const paymentMethodRepository = new PaymentMethodRepository();
   const familyCommercialService = new FamilyCommercialService(
     entitlementService,
     changeRequestRepository,
     changeRequestService,
-    new SubscriptionRepository(),
-    new PaymentMethodRepository(),
+    subscriptionRepository,
+    paymentMethodRepository,
   );
+  // Billing admin write surface -- the SAME repositories constructed above
+  // (never duplicated), wrapped in their RBAC-gated admin-facing service
+  // classes. See billingAdminRoutes.ts's own doc comment for why this
+  // route layer performs no second, possibly-diverging authorization
+  // check: these services already call billing/rbac.ts's
+  // requireBillingOperation internally.
+  const paymentMethodService = new PaymentMethodService(paymentMethodRepository);
+  const subscriptionService = new SubscriptionService(subscriptionRepository);
+  const disputeService = new DisputeService(new DisputeRepository());
 
   const billingCheckoutService = new CheckoutService(changeRequestRepository, changeRequestService, paymentService, paymentRepository, providerRegistry);
   const billingWebhookService = new WebhookService(
@@ -737,6 +754,11 @@ async function start(): Promise<void> {
     priceBookService,
     planService,
     releaseService,
+    // Billing admin write surface (add payment method, create/cancel
+    // subscription, open/resolve dispute).
+    paymentMethodService,
+    subscriptionService,
+    disputeService,
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.

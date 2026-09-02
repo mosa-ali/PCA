@@ -19,6 +19,7 @@ import { registerPlatformAdminEntitlementRoutes } from './entitlementRoutes.js';
 import { registerPlatformAdminPriceBookRoutes } from './priceBookRoutes.js';
 import { registerPlatformAdminPlanRoutes } from './planRoutes.js';
 import { registerPlatformAdminBillingReadRoutes } from './billingReadRoutes.js';
+import { registerPlatformAdminBillingAdminRoutes } from './billingAdminRoutes.js';
 import { registerPlatformAdminAdminUserRoutes } from './adminUserRoutes.js';
 import { registerPlatformAdminAuditRoutes } from './auditRoutes.js';
 import { registerPlatformAdminSettingsRoutes } from './settingsRoutes.js';
@@ -31,6 +32,9 @@ import type { EntitlementRepository } from '../../../entitlements/EntitlementRep
 import type { PriceBookService } from '../../../billing/priceBook.js';
 import type { PlanService } from '../../../billing/plan.js';
 import type { ReleaseService } from '../../../release/ReleaseService.js';
+import type { PaymentMethodService } from '../../../billing/paymentMethod.js';
+import type { SubscriptionService } from '../../../billing/subscription.js';
+import type { DisputeService } from '../../../billing/dispute.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminOperationalRoutesDeps {
@@ -43,6 +47,10 @@ export interface PlatformAdminOperationalRoutesDeps {
   planService: PlanService;
   /** Release management (app/model/rule package metadata) -- see releaseRoutes.ts's own doc comment. */
   releaseService: ReleaseService;
+  /** Billing admin write surface (add payment method, create/cancel subscription, open/resolve dispute) -- see billingAdminRoutes.ts's own doc comment. */
+  paymentMethodService: PaymentMethodService;
+  subscriptionService: SubscriptionService;
+  disputeService: DisputeService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
@@ -66,6 +74,13 @@ export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, dep
     rateLimiter: deps.rateLimiter,
   });
   registerPlatformAdminBillingReadRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
+  registerPlatformAdminBillingAdminRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    paymentMethodService: deps.paymentMethodService,
+    subscriptionService: deps.subscriptionService,
+    disputeService: deps.disputeService,
+    rateLimiter: deps.rateLimiter,
+  });
   registerPlatformAdminAdminUserRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     platformAdminAccountService: deps.platformAdminAccountService,
