@@ -50,7 +50,19 @@ export type PlatformAdminOperation =
   | 'VIEW_SETTLEMENT_RECORDS'
   | 'MUTATE_SETTLEMENT_ACCOUNT'
   | 'CREATE_SETTLEMENT_BATCH'
-  | 'RESOLVE_RECONCILIATION';
+  | 'RESOLVE_RECONCILIATION'
+  // Release management (app/model/rule package release metadata --
+  // ReleaseService/MySqlReleaseRepository): an operator-facing capability,
+  // never a family-authorization one -- this service holds no family data
+  // (see release/types.ts's own doc comment) and performs no cryptographic
+  // verification of its own, so this operation gates only who may publish/
+  // retire/roll back release records, not any trust/signature decision.
+  // VIEW_RELEASE is broader than ADMINISTER_RELEASE (includes SUPPORT_ADMIN
+  // and AUDITOR_READ_ONLY) since release/current-version metadata is
+  // routinely needed for support triage and audit, same rationale as
+  // VIEW_SETTLEMENT_RECORDS above.
+  | 'VIEW_RELEASE'
+  | 'ADMINISTER_RELEASE';
 
 export type PlatformAdminAuthorizationVerdict = 'ALLOW' | 'DENY';
 
@@ -224,6 +236,20 @@ const OPERATION_MATRIX: Record<PlatformAdminOperation, Record<PlatformAdminRole,
     APP_OWNER: 'ALLOW',
     PLATFORM_ADMIN: 'DENY',
     FINANCE_ADMIN: 'ALLOW',
+    SUPPORT_ADMIN: 'DENY',
+    AUDITOR_READ_ONLY: 'DENY',
+  },
+  VIEW_RELEASE: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'ALLOW',
+    FINANCE_ADMIN: 'DENY',
+    SUPPORT_ADMIN: 'ALLOW',
+    AUDITOR_READ_ONLY: 'ALLOW',
+  },
+  ADMINISTER_RELEASE: {
+    APP_OWNER: 'ALLOW',
+    PLATFORM_ADMIN: 'ALLOW',
+    FINANCE_ADMIN: 'DENY',
     SUPPORT_ADMIN: 'DENY',
     AUDITOR_READ_ONLY: 'DENY',
   },

@@ -120,6 +120,7 @@ function buildStubDeps({ withDeviceSessionService }) {
     entitlementRepository: {},
     priceBookService: {},
     planService: {},
+    releaseService: {},
     familyCommercialService: {},
     parentAccountService,
     parentPreferenceRepository: undefined,

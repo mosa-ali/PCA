@@ -123,6 +123,8 @@ import { PlatformAdminEntitlementService } from './platformadmin/entitlements/Pl
 import { SlotReservationService } from './entitlements/slots/SlotReservationService.js';
 import { MySqlSlotReservationRepository } from './entitlements/slots/MySqlSlotReservationRepository.js';
 import { PlanRepository, PlanService } from './billing/plan.js';
+import { ReleaseService } from './release/ReleaseService.js';
+import { MySqlReleaseRepository } from './release/MySqlReleaseRepository.js';
 // PCA-MYKIDS-BILL-2: family commercial API + the real PriceBook-backed
 // QuotePort adapter, replacing NoPriceBookQuotePort.
 import { FamilyCommercialService } from './familycommercial/FamilyCommercialService.js';
@@ -375,6 +377,13 @@ async function start(): Promise<void> {
   );
   const planService = new PlanService(new PlanRepository());
   const priceBookService = new PriceBookService(priceBookRepository, platformAdminAuditService);
+  // Release management (app/model/rule package metadata): ReleaseService
+  // treats `signedMetadata` as an opaque, already-externally-signed blob --
+  // it never generates or verifies signatures, so (unlike
+  // ModelLifecycleService/RecoveryService) this wiring needs no pending
+  // crypto-review gate. See release/types.ts's own doc comment: this
+  // record carries no family/child data.
+  const releaseService = new ReleaseService(new MySqlReleaseRepository());
 
   // PCA-MYKIDS-BILL-2 wiring -- composes the SAME entitlement/billing-core
   // repositories already constructed above; reuses (never duplicates)
@@ -727,6 +736,7 @@ async function start(): Promise<void> {
     entitlementRepository,
     priceBookService,
     planService,
+    releaseService,
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.

@@ -74,6 +74,7 @@ import type { ChangeRequestRepository } from '../entitlements/requests/ChangeReq
 import type { EntitlementRepository } from '../entitlements/EntitlementRepository.js';
 import type { PriceBookService } from '../billing/priceBook.js';
 import type { PlanService } from '../billing/plan.js';
+import type { ReleaseService } from '../release/ReleaseService.js';
 // PCA-MYKIDS-BILL-2: family-facing commercial read/request-workflow API --
 // composes PCA-PA-2/PCA-BILL-1 exactly like billingCheckoutRoutes.ts
 // already does; reuses the SAME FamilyCommercialAuthorityResolver.
@@ -190,6 +191,8 @@ export interface ServerDependencies {
   entitlementRepository: EntitlementRepository;
   priceBookService: PriceBookService;
   planService: PlanService;
+  /** Release management (app/model/rule package metadata, opaque pre-signed blobs -- no crypto verification here) -- see registerPlatformAdminOperationalRoutes/releaseRoutes.ts. */
+  releaseService: ReleaseService;
   /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
   familyCommercialService: FamilyCommercialService;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
@@ -420,6 +423,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     entitlementRepository: deps.entitlementRepository,
     priceBookService: deps.priceBookService,
     planService: deps.planService,
+    releaseService: deps.releaseService,
     rateLimiter,
   });
   registerFamilyCommercialRoutes(app, {

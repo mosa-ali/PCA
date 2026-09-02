@@ -22,6 +22,7 @@ import { registerPlatformAdminBillingReadRoutes } from './billingReadRoutes.js';
 import { registerPlatformAdminAdminUserRoutes } from './adminUserRoutes.js';
 import { registerPlatformAdminAuditRoutes } from './auditRoutes.js';
 import { registerPlatformAdminSettingsRoutes } from './settingsRoutes.js';
+import { registerPlatformAdminReleaseRoutes } from './releaseRoutes.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import type { PlatformAdminAccountService } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
 import type { PlatformAdminEntitlementService } from '../../../platformadmin/entitlements/PlatformAdminEntitlementService.js';
@@ -29,6 +30,7 @@ import type { ChangeRequestRepository } from '../../../entitlements/requests/Cha
 import type { EntitlementRepository } from '../../../entitlements/EntitlementRepository.js';
 import type { PriceBookService } from '../../../billing/priceBook.js';
 import type { PlanService } from '../../../billing/plan.js';
+import type { ReleaseService } from '../../../release/ReleaseService.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 
 export interface PlatformAdminOperationalRoutesDeps {
@@ -39,6 +41,8 @@ export interface PlatformAdminOperationalRoutesDeps {
   entitlementRepository: EntitlementRepository;
   priceBookService: PriceBookService;
   planService: PlanService;
+  /** Release management (app/model/rule package metadata) -- see releaseRoutes.ts's own doc comment. */
+  releaseService: ReleaseService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
@@ -72,6 +76,11 @@ export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, dep
     platformAdminAuthService: deps.platformAdminAuthService,
     platformAdminEntitlementService: deps.platformAdminEntitlementService,
     entitlementRepository: deps.entitlementRepository,
+    rateLimiter: deps.rateLimiter,
+  });
+  registerPlatformAdminReleaseRoutes(app, {
+    platformAdminAuthService: deps.platformAdminAuthService,
+    releaseService: deps.releaseService,
     rateLimiter: deps.rateLimiter,
   });
 }
