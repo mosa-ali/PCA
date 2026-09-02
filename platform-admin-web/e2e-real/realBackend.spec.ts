@@ -198,10 +198,25 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
   });
 
-  await test.step('audit log renders the real ADMIN_LOGIN + ADMIN_CREATED events this session itself just generated', async () => {
+  await test.step('audit log renders the real admin sign-in + admin-created events this session itself just generated, as human-readable labels', async () => {
     await navigateTo(/^audit log$/i);
-    await expect(page.getByRole('cell', { name: /ADMIN_LOGIN/i }).first()).toBeVisible();
-    await expect(page.getByRole('cell', { name: /ADMIN_CREATED/i }).first()).toBeVisible();
+    // These two rows are the ADMIN_LOGIN and ADMIN_CREATED events this run just
+    // produced. They are asserted by their RENDERED LABEL, not by the raw
+    // backend code: the Event type column now routes through
+    // `audit.eventTypes.*` (src/i18n/enumLabels.ts) so an operator never reads
+    // a raw enum. This assertion previously matched /ADMIN_LOGIN/i, which only
+    // passed while that leak existed -- matching the code again would
+    // re-encode the defect, so it matches the label instead.
+    await expect(page.getByRole('cell', { name: 'Admin sign-in' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Admin created' }).first()).toBeVisible();
+    // The actor role is likewise a label, never the raw APP_OWNER code.
+    await expect(page.getByRole('cell', { name: 'App Owner' }).first()).toBeVisible();
+    // Guard the property directly: no raw SCREAMING_SNAKE code may appear in
+    // the Event type or Actor role columns.
+    const rawCodeCells = await page.locator('table tbody tr td:nth-child(2), table tbody tr td:nth-child(4)')
+      .filter({ hasText: /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/ })
+      .count();
+    expect(rawCodeCells).toBe(0);
   });
 
   await test.step('settings: real currency metadata (USD/SAR/YER) renders from the live route, and saving free-starter defaults round-trips through real MySQL', async () => {
@@ -213,7 +228,11 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByLabel(/parent member limit/i).first().fill('3');
     await page.getByLabel(/managed device limit/i).first().fill('7');
     await page.getByRole('button', { name: /^save$/i }).first().click();
-    await expect(page.getByText(/saved/i)).toBeVisible();
+    // Scope to the toast region, not the whole page: settings.sensitiveSettingsMaskedNote
+    // also contains the word "saved" ("a saved value cannot be displayed back
+    // here"), so a bare /saved/i matches two elements and trips strict mode.
+    // Asserting the success toast itself is both unambiguous and stronger.
+    await expect(page.getByRole('status').filter({ hasText: /saved/i }).first()).toBeVisible();
 
     // Navigate away and back (client-side, session-preserving) to force a
     // fresh GET from the real server -- proving the PUT actually persisted

@@ -87,7 +87,9 @@ describe('platform-admin enum labels', () => {
   it('the settings tier copy interpolates the plan label instead of hardcoding the code', () => {
     for (const [name, bundle] of [['en', en], ['ar', ar]] as const) {
       for (const key of ['freeStarterTitle', 'defaultsNotConfigured', 'defaultsSaved'] as const) {
-        const value = (bundle.settings as Record<string, string>)[key];
+        // settings holds nested label maps (markets/categories) alongside
+        // strings, so it is not assignable to Record<string, string> directly.
+        const value = (bundle.settings as Record<string, unknown>)[key] as string;
         expect(value, `${name}.settings.${key}`).toContain('{{plan}}');
         expect(value, `${name}.settings.${key}`).not.toContain('FREE_STARTER');
       }
