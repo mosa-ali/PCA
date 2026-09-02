@@ -209,10 +209,22 @@ data is protected **and** recoverable" — a claim the UI already makes and no c
 **REVERSIBILITY: the least reversible decision in this document.** Data encrypted under V1's scheme
 without a recovery envelope stays unrecoverable — no later release can rescue it.
 
-**If the owner overrides to POST_V1**, the product must first be made honest:
+**ACTION REQUIRED UNDER EITHER OUTCOME — the recovery copy is wrong today.**
 `recovery.secretDisclosureTitle` ("*Before you create your Recovery Secret*") and
 `recovery.secretDisclosureBody` ("*PCA infrastructure never receives or stores this secret. Keep it
-offline…*") are shown **unconditionally, before any click**, for a secret the system never issues.
+offline and available to the family owner*") are shown **unconditionally, before any click**, for a
+secret the system never issues and instruct the owner to safeguard something they were never given.
+This is a live honesty problem now, not a consequence of the decision: if recovery is `V1_REQUIRED`
+the copy stays wrong until recovery actually ships, and if it is deferred the copy is wrong
+indefinitely. It is a one-line change either way.
+
+*Classification note:* this was recorded as an owner decision rather than a defect because the page's
+only action returns a fully honest "not available yet" message. A stricter reviewer could reasonably
+call it a defect — the misleading text is displayed unconditionally, while the honest text appears
+only after the user acts.
+
+**If the owner additionally overrides RECOVERY_V1 to POST_V1**, the product must also state plainly at
+onboarding that device loss in V1 means starting a new family enrollment.
 
 ---
 
