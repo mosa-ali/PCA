@@ -155,29 +155,38 @@ describe('getApiClients demo-mode discipline', () => {
     expect(clients.trustedBrowser).toBeInstanceOf(RealTrustedBrowserProvider);
     expect(clients.deviceStatus).toBeInstanceOf(RealDeviceStatusClient);
     expect(clients.requests).toBeInstanceOf(RealRequestClient);
-    // runtimeSync is deliberately NOT in this list -- see the dedicated
-    // describe block below for why it must stay fail-closed.
+    // runtimeSync is deliberately NOT asserted here -- see the dedicated
+    // describe block below: it is now PARTIALLY real (RealParentRuntimeSyncClient),
+    // not a plain Real*/Unavailable* dichotomy this assertion list assumes.
   });
 });
 
 /**
  * Regression guard for the parent runtime-sync relay wiring.
  *
- * buildRealClients() used to wire RealParentRuntimeSyncClient in production.
- * That client targets `/api/sync/*`, a surface this backend does not serve at
- * all -- its only runtime-sync API is `/v1/runtime-sync/*`, the DEVICE-facing
- * relay behind a device-session challenge/signature, which is a different API
- * with a different caller and not a prefix this client can be repointed at.
- * A real-browser sweep proved the consequence: every Dashboard, ChildOverview
- * and ScreenTimePage load fired real 404s at the backend.
+ * buildRealClients() used to wire a DIFFERENT RealParentRuntimeSyncClient in
+ * production that targeted `/api/sync/*`, a surface this backend never
+ * served at all -- the only runtime-sync API the backend shipped at the
+ * time was `/v1/runtime-sync/*`, the DEVICE-facing relay behind a
+ * device-session challenge/signature, a different API with a different
+ * caller. A real-browser sweep proved the consequence: every Dashboard,
+ * ChildOverview and ScreenTimePage load fired real 404s at the backend.
+ * That was fixed by wiring UnavailableParentRuntimeSyncClient instead (every
+ * method honestly rejects).
  *
- * Two properties matter and are asserted here:
- *  1. no doomed request is issued (fetch is never called), and
- *  2. the failure is CLASSIFIED as NOT_IMPLEMENTED, so i18n/errorMessages.ts
- *     renders the honest localized "not available yet" copy rather than the
- *     generic `errors.unknown` sentence a raw 404 Error produced before.
+ * Since then, backend/src/http/routes/parentRuntimeSyncRoutes.ts shipped a
+ * genuine PARENT-session-authenticated, read-only counterpart to the
+ * device-facing status route, scoped to one of the caller's own family's
+ * devices. ../../src/api/real/realParentRuntimeSyncClient.ts's
+ * RealParentRuntimeSyncClient now targets it for the 3 read-only
+ * bookkeeping methods (getConnectionStatus/getLastSuccessfulSync/
+ * getPendingDeliveryStatus) -- it extends UnavailableParentRuntimeSyncClient
+ * and inherits its fail-closed behavior for the 3 mutating envelope methods
+ * unchanged (submitCiphertextEnvelope/listQueuedForEndpoint/
+ * acknowledgeEnvelope still need the not-yet-built, crypto-review-gated
+ * parent-sdk E2EE client).
  */
-describe('parent runtime-sync client is fail-closed until the relay exists', () => {
+describe('parent runtime-sync client: read-only status is real; mutating envelope methods remain fail-closed', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -187,23 +196,37 @@ describe('parent runtime-sync client is fail-closed until the relay exists', () 
     vi.unstubAllGlobals();
   });
 
-  it('demoMode false: runtimeSync is the Unavailable stand-in, never the /api/sync real client', async () => {
+  it('demoMode false: runtimeSync is the RealParentRuntimeSyncClient wired against the new parent-facing status route', async () => {
     vi.doMock('../../src/config/env', () => ({
       config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
     }));
     const { getApiClients } = await import('../../src/api/client');
-    const { UnavailableParentRuntimeSyncClient } = await import(
-      '../../src/api/real/unavailableProviders'
-    );
     const { RealParentRuntimeSyncClient } = await import(
       '../../src/api/real/realParentRuntimeSyncClient'
     );
     const clients = getApiClients();
-    expect(clients.runtimeSync).toBeInstanceOf(UnavailableParentRuntimeSyncClient);
-    expect(clients.runtimeSync).not.toBeInstanceOf(RealParentRuntimeSyncClient);
+    expect(clients.runtimeSync).toBeInstanceOf(RealParentRuntimeSyncClient);
   });
 
-  it('every port method rejects with a NOT_IMPLEMENTED ServiceUnavailableError and issues no network request', async () => {
+  it('demoMode false: the 3 mutating envelope methods still honestly reject with NOT_IMPLEMENTED -- the parent-sdk E2EE crypto client remains unbuilt', async () => {
+    vi.doMock('../../src/config/env', () => ({
+      config: { apiBaseUrl: 'http://localhost:4001', demoMode: false },
+    }));
+    const fetchSpy = vi.fn(() => Promise.reject(new Error('no network call expected for a fail-closed mutating method')));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { getApiClients } = await import('../../src/api/client');
+    const { ServiceUnavailableError } = await import('../../src/api/unavailable');
+    const clients = getApiClients();
+
+    await expect(
+      clients.runtimeSync.submitCiphertextEnvelope({ targetEndpointId: 'device-1', policyRevision: 1, payloadCiphertextBase64: 'AA==' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    await expect(clients.runtimeSync.listQueuedForEndpoint('device-1')).rejects.toBeInstanceOf(ServiceUnavailableError);
+    await expect(clients.runtimeSync.acknowledgeEnvelope('envelope-1')).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('every UnavailableParentRuntimeSyncClient port method rejects with a NOT_IMPLEMENTED ServiceUnavailableError and issues no network request (base-class behavior, unchanged)', async () => {
     const fetchSpy = vi.fn(() => Promise.reject(new Error('no network call expected')));
     vi.stubGlobal('fetch', fetchSpy);
     const { UnavailableParentRuntimeSyncClient } = await import(

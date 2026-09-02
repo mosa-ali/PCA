@@ -24,7 +24,7 @@ function ChildOfflineSyncNotice({ deviceId }: { deviceId: string }) {
   const clients = getApiClients();
   const { data } = useAsync(async () => {
     const [lastSuccessfulSyncUtc, device, pending] = await Promise.all([
-      clients.runtimeSync.getLastSuccessfulSync(),
+      clients.runtimeSync.getLastSuccessfulSync(deviceId),
       clients.deviceStatus.getDeviceStatus(deviceId),
       clients.runtimeSync.getPendingDeliveryStatus(deviceId),
     ]);

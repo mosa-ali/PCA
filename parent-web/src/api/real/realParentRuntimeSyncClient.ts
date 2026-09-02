@@ -1,37 +1,68 @@
-// Real, HTTP-backed ParentRuntimeSyncClient. Like ../real/realServiceAuthClient.ts,
-// this is genuine networking code -- not a fixture -- safe to construct and
-// call today, but there is no live backend relay to answer it yet in this
-// repository slice (see KNOWN_BACKEND_INTEGRATION_ACTION in ../client.ts).
-// It never inspects, decrypts, or fabricates the ciphertext payloads it
-// carries -- per docs/architecture/09_SECURITY_PRIVACY_E2EE.md Section 5,
-// the relay (and this client) only ever moves opaque base64 ciphertext.
+// Real, HTTP-backed ParentRuntimeSyncClient READ-ONLY surface, against the
+// parent-facing sync-status route
+// (backend/src/http/routes/parentRuntimeSyncRoutes.ts,
+// `GET /v1/families/:familyId/runtime-sync/devices/:deviceId/status`).
 //
-// EXPECTED BACKEND CONTRACT (conventional REST, all under `${apiBaseUrl}`):
-//   POST /api/sync/envelopes                          body Omit<CiphertextEnvelope, 'envelopeId'|'createdAtUtc'>
-//                                                        -> 201 { envelopeId }
-//   GET  /api/sync/endpoints/:endpointId/queue          -> 200 QueuedEnvelopeStatus[]
-//   POST /api/sync/envelopes/:envelopeId/ack             -> 200 { acknowledged: boolean }
-//   GET  /api/sync/status                                -> 200 ConnectionStatus
-//   GET  /api/sync/last-sync                             -> 200 { lastSuccessfulSyncAtUtc: string | null }
-//   GET  /api/sync/endpoints/:endpointId/pending          -> 200 PendingDeliveryStatus
+// Extends UnavailableParentRuntimeSyncClient and overrides ONLY the 3
+// read-only bookkeeping methods (getConnectionStatus/getLastSuccessfulSync/
+// getPendingDeliveryStatus) -- mirroring RealFamilyAuthorityGateway's own
+// precedent (../real/realFamilyAuthorityGateway.ts) for a partially-real
+// implementation. submitCiphertextEnvelope/listQueuedForEndpoint/
+// acknowledgeEnvelope remain genuinely unimplemented: they require the
+// parent-sdk's E2EE envelope crypto, which stays gated on a human security
+// review (see unavailableProviders.ts's own file header) and is explicitly
+// out of scope here.
 //
-// Session model matches RealServiceAuthClient: `credentials: 'include'`,
-// relies on the backend's HttpOnly session cookie -- no bearer token is
-// ever read from or written to JS-reachable storage by this client.
-import type {
-  CiphertextEnvelope,
-  ConnectionStatus,
-  ParentRuntimeSyncClient,
-  PendingDeliveryStatus,
-  QueuedEnvelopeStatus,
-} from '../runtimeSyncClient';
+// SESSION MODEL: cookie-session-backed, identical to RealBillingClient's
+// cookieSession=true mode (../real/realBillingClient.ts) -- reuses the SAME
+// `pca_family_session` HttpOnly cookie, resolved through the SAME
+// `/api/parent/session` projection via cookieSessionFamilyId. The new route
+// is a GET-only read, so no CSRF token is required (the backend's own CSRF
+// check is scoped to mutating methods -- see
+// backend/src/auth/fastifyAuthPlugin.ts's createRequireServiceSession).
+//
+// PER-DEVICE VS. FAMILY-WIDE: getPendingDeliveryStatus(endpointId) and
+// getLastSuccessfulSync(deviceId) answer a SPECIFIC device's real status.
+// getConnectionStatus() and getLastSuccessfulSync() (no deviceId) have no
+// single device to scope to -- see this class's own method doc comments for
+// exactly what each honestly returns in that case.
+import type { ConnectionStatus, ParentRuntimeSyncClient, PendingDeliveryStatus } from '../runtimeSyncClient';
+import { UnavailableParentRuntimeSyncClient } from './unavailableProviders';
+import { cookieSessionFamilyId } from './realBillingClient';
 
-export class RuntimeSyncNetworkError extends Error {
-  constructor(cause: unknown, operation: string) {
-    const message = cause instanceof Error ? cause.message : 'Network request failed';
-    super(`Could not reach the PCA sync relay for ${operation}: ${message}`);
-    this.name = 'RuntimeSyncNetworkError';
+export type ParentRuntimeSyncApiErrorCode =
+  | 'FAMILY_CONTEXT_UNAVAILABLE'
+  | 'NOT_FOUND'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NETWORK_ERROR'
+  | 'UNKNOWN';
+
+/** Typed error for a failed device-status read. Never thrown by the two family-wide (no-deviceId) methods -- see their own doc comments for why those honestly degrade instead. */
+export class ParentRuntimeSyncApiError extends Error {
+  readonly code: ParentRuntimeSyncApiErrorCode;
+  readonly httpStatus: number | null;
+
+  constructor(code: ParentRuntimeSyncApiErrorCode, message: string, httpStatus: number | null = null) {
+    super(message);
+    this.name = 'ParentRuntimeSyncApiError';
+    this.code = code;
+    this.httpStatus = httpStatus;
   }
+}
+
+type WireConnectionState = 'OFFLINE' | 'SYNC_PENDING' | 'SYNCING' | 'LIVE' | 'STALE';
+
+interface WirePendingDelivery {
+  pendingCount: number;
+  oldestQueuedAtUtc: string | null;
+}
+
+interface WireDeviceSyncStatus {
+  deviceId: string;
+  connectionState: WireConnectionState;
+  lastSuccessfulSyncAtUtc: string | null;
+  pendingDelivery: WirePendingDelivery;
 }
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
@@ -42,101 +73,88 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   }
 }
 
-/** Real HTTP implementation of ParentRuntimeSyncClient. Not fixture-backed. */
-export class RealParentRuntimeSyncClient implements ParentRuntimeSyncClient {
-  constructor(private readonly apiBaseUrl: string) {}
+export class RealParentRuntimeSyncClient extends UnavailableParentRuntimeSyncClient implements ParentRuntimeSyncClient {
+  constructor(
+    private readonly apiBaseUrl: string,
+    private readonly getFamilyId: () => Promise<string | null> = () => cookieSessionFamilyId(apiBaseUrl),
+  ) {
+    super();
+  }
 
   private url(path: string): string {
     return `${this.apiBaseUrl.replace(/\/+$/, '')}${path}`;
   }
 
-  private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
+  private async fetchDeviceStatus(operation: string, deviceId: string): Promise<WireDeviceSyncStatus> {
+    const familyId = await this.getFamilyId();
+    if (!familyId) {
+      throw new ParentRuntimeSyncApiError(
+        'FAMILY_CONTEXT_UNAVAILABLE',
+        `${operation}: no family session is available to scope this request.`,
+      );
+    }
+    let response: Response;
     try {
-      return await fetch(this.url(path), {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        ...init,
-      });
+      response = await fetch(
+        this.url(`/v1/families/${encodeURIComponent(familyId)}/runtime-sync/devices/${encodeURIComponent(deviceId)}/status`),
+        { method: 'GET', credentials: 'include', headers: { Accept: 'application/json' } },
+      );
     } catch (err) {
-      throw new RuntimeSyncNetworkError(err, operation);
+      const message = err instanceof Error ? err.message : 'Network request failed';
+      throw new ParentRuntimeSyncApiError('NETWORK_ERROR', `${operation}: could not reach the PCA runtime-sync service: ${message}`);
     }
-  }
-
-  async submitCiphertextEnvelope(
-    envelope: Omit<CiphertextEnvelope, 'envelopeId' | 'createdAtUtc'>,
-  ): Promise<{ envelopeId: string }> {
-    const response = await this.request('submitCiphertextEnvelope', '/api/sync/envelopes', {
-      method: 'POST',
-      body: JSON.stringify(envelope),
-    });
     if (!response.ok) {
-      throw new Error(`submitCiphertextEnvelope: unexpected status ${response.status}`);
+      if (response.status === 401) throw new ParentRuntimeSyncApiError('UNAUTHORIZED', `${operation}: your session has expired or is invalid.`, 401);
+      if (response.status === 403) throw new ParentRuntimeSyncApiError('FORBIDDEN', `${operation}: this action is not permitted for your account right now.`, 403);
+      if (response.status === 404) throw new ParentRuntimeSyncApiError('NOT_FOUND', `${operation}: device not found.`, 404);
+      throw new ParentRuntimeSyncApiError('UNKNOWN', `${operation}: unexpected status ${response.status}.`, response.status);
     }
-    const body = await parseJsonSafe<{ envelopeId: string }>(response);
-    if (!body) throw new Error('submitCiphertextEnvelope: empty response body');
+    const body = await parseJsonSafe<WireDeviceSyncStatus>(response);
+    if (!body) throw new ParentRuntimeSyncApiError('UNKNOWN', `${operation}: empty response body.`);
     return body;
   }
 
-  async listQueuedForEndpoint(endpointId: string): Promise<QueuedEnvelopeStatus[]> {
-    const response = await this.request(
-      'listQueuedForEndpoint',
-      `/api/sync/endpoints/${encodeURIComponent(endpointId)}/queue`,
-      { method: 'GET' },
-    );
-    if (!response.ok) {
-      throw new Error(`listQueuedForEndpoint: unexpected status ${response.status}`);
-    }
-    return (await parseJsonSafe<QueuedEnvelopeStatus[]>(response)) ?? [];
-  }
-
-  async acknowledgeEnvelope(envelopeId: string): Promise<{ acknowledged: boolean }> {
-    const response = await this.request(
-      'acknowledgeEnvelope',
-      `/api/sync/envelopes/${encodeURIComponent(envelopeId)}/ack`,
-      { method: 'POST' },
-    );
-    if (!response.ok) return { acknowledged: false };
-    const body = await parseJsonSafe<{ acknowledged: boolean }>(response);
-    return body ?? { acknowledged: false };
-  }
-
+  /**
+   * Family-wide relay reachability, not scoped to any one device -- see
+   * ParentRuntimeSyncClient.getConnectionStatus's own doc comment
+   * (../runtimeSyncClient.ts) for why: the parent browser holds no
+   * persistent relay/device session of its own yet (that requires the same
+   * not-yet-built device-session ceremony the mutating envelope methods are
+   * also gated behind -- see ../../domain/trustedBrowser.ts's
+   * actorDeviceSessionToken doc comment). Honestly answerable today only as
+   * "can this browser reach the parent-session API at all" -- reuses the
+   * SAME `/api/parent/session` probe cookieSessionFamilyId already
+   * performs, never fabricating a per-device status this call has no
+   * device to scope to. Never throws -- an unreachable session IS the
+   * honest OFFLINE signal, not an error state.
+   */
   async getConnectionStatus(): Promise<ConnectionStatus> {
-    try {
-      const response = await this.request('getConnectionStatus', '/api/sync/status', { method: 'GET' });
-      if (!response.ok) {
-        return { state: 'UNKNOWN', checkedAtUtc: new Date().toISOString() };
-      }
-      const body = await parseJsonSafe<ConnectionStatus>(response);
-      return body ?? { state: 'UNKNOWN', checkedAtUtc: new Date().toISOString() };
-    } catch {
-      // Connection-status checks must never throw -- an unreachable relay
-      // IS the honest OFFLINE/UNKNOWN signal, not an error state.
-      return { state: 'OFFLINE', checkedAtUtc: new Date().toISOString() };
-    }
+    const familyId = await this.getFamilyId();
+    return { state: familyId ? 'ONLINE' : 'OFFLINE', checkedAtUtc: new Date().toISOString() };
   }
 
-  async getLastSuccessfulSync(): Promise<string | null> {
-    try {
-      const response = await this.request('getLastSuccessfulSync', '/api/sync/last-sync', { method: 'GET' });
-      if (!response.ok) return null;
-      const body = await parseJsonSafe<{ lastSuccessfulSyncAtUtc: string | null }>(response);
-      return body?.lastSuccessfulSyncAtUtc ?? null;
-    } catch {
-      return null;
-    }
+  /**
+   * With `deviceId`: the real per-device last-successful-sync timestamp
+   * from the parent-facing status route (throws a typed
+   * ParentRuntimeSyncApiError on a genuine failure -- family context
+   * unavailable, network error, non-2xx -- rather than silently returning
+   * null for a real problem). Without one (e.g. useReconnectSync's
+   * family-wide reconnect pass, which has no single device to scope to):
+   * honestly returns null rather than fabricating a family-wide aggregate
+   * this backend does not compute.
+   */
+  async getLastSuccessfulSync(deviceId?: string): Promise<string | null> {
+    if (!deviceId) return null;
+    const status = await this.fetchDeviceStatus('getLastSuccessfulSync', deviceId);
+    return status.lastSuccessfulSyncAtUtc;
   }
 
   async getPendingDeliveryStatus(endpointId: string): Promise<PendingDeliveryStatus> {
-    const response = await this.request(
-      'getPendingDeliveryStatus',
-      `/api/sync/endpoints/${encodeURIComponent(endpointId)}/pending`,
-      { method: 'GET' },
-    );
-    if (!response.ok) {
-      throw new Error(`getPendingDeliveryStatus: unexpected status ${response.status}`);
-    }
-    const body = await parseJsonSafe<PendingDeliveryStatus>(response);
-    if (!body) throw new Error('getPendingDeliveryStatus: empty response body');
-    return body;
+    const status = await this.fetchDeviceStatus('getPendingDeliveryStatus', endpointId);
+    return {
+      targetEndpointId: endpointId,
+      pendingCount: status.pendingDelivery.pendingCount,
+      oldestQueuedAtUtc: status.pendingDelivery.oldestQueuedAtUtc,
+    };
   }
 }

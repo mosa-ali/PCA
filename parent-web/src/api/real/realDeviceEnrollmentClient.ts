@@ -1,7 +1,7 @@
-// Real, HTTP-backed DeviceEnrollmentClient. Unlike RealServiceAuthClient /
-// RealParentRuntimeSyncClient (aspirational contracts with no live backend
-// yet in this repository slice), the routes this client calls are genuinely
-// implemented and live in this same repository slice:
+// Real, HTTP-backed DeviceEnrollmentClient. Unlike RealServiceAuthClient
+// (an aspirational contract with no live backend yet in this repository
+// slice), the routes this client calls are genuinely implemented and live
+// in this same repository slice:
 //   backend/src/http/routes/invitationRoutes.ts
 //   backend/src/http/routes/pairingRoutes.ts
 // Both are mounted behind backend/src/auth/fastifyAuthPlugin.ts's

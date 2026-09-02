@@ -45,7 +45,18 @@ export type ServiceOperation =
   // removed or renamed). Gated on the SAME "service account has an ACTIVE
   // family scope" primitive as every operation above.
   | 'VIEW_OWN_NOTIFICATIONS'
-  | 'ACKNOWLEDGE_OWN_NOTIFICATION';
+  | 'ACKNOWLEDGE_OWN_NOTIFICATION'
+  // PCA runtime-sync parent-facing read gap: a PARENT-session-authenticated
+  // equivalent of the DEVICE-authenticated `GET /v1/runtime-sync/status`
+  // (runtimeSyncRoutes.ts), scoped to one of the caller's own family's
+  // devices. Read-only (connection status/last successful sync/pending
+  // delivery bookkeeping only -- never ciphertext, never a mutation), so it
+  // is gated on the SAME "service account has an ACTIVE family scope"
+  // primitive as every read-only operation above, mirroring
+  // VIEW_OWN_BILLING_STATUS's own judgment call that a read of one's own
+  // family's already-existing state needs no additional Owner-authority
+  // gate.
+  | 'VIEW_DEVICE_SYNC_STATUS';
 
 export type ScopeStatus = 'ACTIVE' | 'REVOKED';
 

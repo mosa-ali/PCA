@@ -32,6 +32,9 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   // even while its license is lapsed/absent.
   VIEW_OWN_NOTIFICATIONS: { requiresFamilyScope: true, requiresLicense: false },
   ACKNOWLEDGE_OWN_NOTIFICATION: { requiresFamilyScope: true, requiresLicense: false },
+  // Parent-facing read of one of the caller's own family's device sync
+  // status (parentRuntimeSyncRoutes.ts) -- same shape as VIEW_OWN_BILLING_STATUS.
+  VIEW_DEVICE_SYNC_STATUS: { requiresFamilyScope: true, requiresLicense: false },
 };
 
 export function resolveRequirements(operation: ServiceOperation): OperationRequirements {

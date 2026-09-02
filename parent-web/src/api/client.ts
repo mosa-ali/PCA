@@ -9,9 +9,15 @@
 //  - "Real" implementations (src/api/real/*) -- used whenever demo mode is
 //    off. These fall into two honest-but-different categories:
 //     (a) genuinely HTTP-backed code with no live backend to answer it yet
-//         (RealServiceAuthClient, RealParentRuntimeSyncClient) -- same
-//         status as before: safe to construct/call, will fail at runtime
-//         until a backend exists.
+//         (RealServiceAuthClient) -- same status as before: safe to
+//         construct/call, will fail at runtime until a backend exists.
+//         RealParentRuntimeSyncClient is now PARTIALLY in this category and
+//         partially real: its 3 read-only bookkeeping methods are
+//         genuinely HTTP-backed against
+//         backend/src/http/routes/parentRuntimeSyncRoutes.ts, while its
+//         mutating envelope methods (inherited from
+//         UnavailableParentRuntimeSyncClient) still have no real backend
+//         counterpart -- see that class's own file header.
 //     (b) trusted-browser E2EE family-content providers
 //         (RealTrustedBrowserProvider, RealParentFamilyDataGateway,
 //         RealDeviceStatusClient, RealRequestClient) -- these perform real
@@ -87,6 +93,7 @@ import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
 import { RealSafeZoneClient } from './real/realSafeZoneClient';
 import { RealFamilyAuthorityGateway } from './real/realFamilyAuthorityGateway';
+import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient';
 import { UnavailableSafeZonePolicyAuthoring, type SafeZonePolicyAuthoring } from './safeZonePolicyAuthoring';
 import { RealSchedulePolicyClient } from './real/realSchedulePolicyClient';
 import { UnavailableSchedulePolicyAuthoring, type SchedulePolicyAuthoring } from './schedulePolicyAuthoring';
@@ -99,10 +106,7 @@ import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient
 import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
 import { RealProtectionAlertDeliveryClient } from './real/realProtectionAlertDeliveryClient';
 import { DevProtectionAlertDeliveryClient } from './dev/devProtectionAlertDeliveryClient';
-import {
-  UnavailableParentRuntimeSyncClient,
-  UnavailableWellbeingMessageAdminClient,
-} from './real/unavailableProviders';
+import { UnavailableWellbeingMessageAdminClient } from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
@@ -257,13 +261,19 @@ function buildRealClients(): PcaApiClients {
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
     webRuleAdmin: new RealWebRuleAdminClient(trustedBrowser),
     trustedBrowser,
-    // KNOWN_BACKEND_INTEGRATION_ACTION: RealParentRuntimeSyncClient targets
-    // `/api/sync/*`, which this backend does not serve at all (its only
-    // runtime-sync surface, `/v1/runtime-sync/*`, is the device-facing relay).
-    // Wiring it here made every Dashboard/ChildOverview/ScreenTimePage load
-    // fire real 404s -- proved by a Round-2 real-browser sweep. Fail closed
-    // until the parent-facing relay API exists.
-    runtimeSync: new UnavailableParentRuntimeSyncClient(),
+    // Real, HTTP-backed against the parent-facing
+    // backend/src/http/routes/parentRuntimeSyncRoutes.ts route for its 3
+    // read-only bookkeeping methods (getConnectionStatus/
+    // getLastSuccessfulSync/getPendingDeliveryStatus) -- reuses the SAME
+    // pca_family_session cookie/`/api/parent/session` family-resolution
+    // billing/commercialNotifications already rely on (cookieSessionFamilyId,
+    // ./real/realBillingClient.ts). The mutating envelope methods
+    // (submitCiphertextEnvelope/listQueuedForEndpoint/acknowledgeEnvelope)
+    // remain genuinely unimplemented -- see
+    // ./real/realParentRuntimeSyncClient.ts's own header for why (the
+    // not-yet-built, crypto-review-gated parent-sdk E2EE client) and
+    // KNOWN_BACKEND_INTEGRATION_ACTION above.
+    runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl, () => cookieSessionFamilyId(config.apiBaseUrl)),
     // KNOWN_BACKEND_INTEGRATION_ACTION: noServiceBearerTokenAvailable is a
     // placeholder -- parent-web has no browser-reachable flow yet that
     // issues this backend's Authorization: Bearer session token (see

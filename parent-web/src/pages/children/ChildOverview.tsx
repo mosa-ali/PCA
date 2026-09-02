@@ -30,7 +30,7 @@ export default function ChildOverview() {
     const deviceId = `device-${childId}`;
     const [device, lastSuccessfulSyncUtc, pendingDelivery] = await Promise.all([
       clients.deviceStatus.getDeviceStatus(deviceId),
-      clients.runtimeSync.getLastSuccessfulSync(),
+      clients.runtimeSync.getLastSuccessfulSync(deviceId),
       clients.runtimeSync.getPendingDeliveryStatus(deviceId),
     ]);
     return {

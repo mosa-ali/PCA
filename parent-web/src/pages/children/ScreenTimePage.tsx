@@ -45,7 +45,7 @@ export default function ScreenTimePage() {
       clients.parentFamilyData.getScreenTime(childId),
       clients.parentFamilyData.getDashboard(),
       clients.deviceStatus.getDeviceStatus(deviceId),
-      clients.runtimeSync.getLastSuccessfulSync(),
+      clients.runtimeSync.getLastSuccessfulSync(deviceId),
       clients.runtimeSync.getPendingDeliveryStatus(deviceId),
     ]);
     const child = dashboard.children.find((c) => c.childId === childId);

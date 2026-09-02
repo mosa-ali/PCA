@@ -17,6 +17,13 @@ import { registerPairingRoutes } from './routes/pairingRoutes.js';
 import { registerBrowserEndpointRoutes } from './routes/browserEndpointRoutes.js';
 import type { BrowserEndpointService } from '../device/BrowserEndpointService.js';
 import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext, type ProtectionStatusAlerting } from './routes/runtimeSyncRoutes.js';
+// PCA runtime-sync parent-facing read gap: PARENT-session-authenticated
+// read-only counterpart to registerRuntimeSyncRoutes' DEVICE-authenticated
+// status route -- see parentRuntimeSyncRoutes.ts's own header. Registered
+// here exactly like every other domain's registerXRoutes call.
+import { registerParentRuntimeSyncRoutes } from './routes/parentRuntimeSyncRoutes.js';
+import type { DeviceRepository } from '../device/DeviceRepository.js';
+import type { RelayService } from '../relay/RelayService.js';
 import { registerRetentionRoutes } from './routes/retentionRoutes.js';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
 import type { DeleteNowLedger } from '../retention/DeleteNowLedger.js';
@@ -145,6 +152,15 @@ export interface ServerDependencies {
   inboundReconnectService: InboundReconnectService;
   statusTracker: DeviceSyncStatusTracker;
   resolveEnvelopeContext: ResolveEnvelopeContext;
+  /**
+   * PCA runtime-sync parent-facing read gap: see
+   * registerParentRuntimeSyncRoutes below. Reuses the SAME deviceRepository/
+   * relayService instances already shared by pairingService/
+   * browserEndpointService/outboundRelayService above -- never a second,
+   * independently-constructed copy.
+   */
+  deviceRepository: DeviceRepository;
+  relayService: RelayService;
   deleteNowLedger: DeleteNowLedger;
   familyAuditService: FamilyAuditService;
   /** PCA-PA-1: independent Platform Administration auth plane -- see registerPlatformAdminAuthRoutes below. */
@@ -320,6 +336,16 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authAttemptLimiter,
     deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
     protectionStatusAlerting: deps.protectionStatusAlerting,
+  });
+  registerParentRuntimeSyncRoutes(app, {
+    authService: deps.authService,
+    authzService: deps.authzService,
+    deviceRepository: deps.deviceRepository,
+    statusTracker: deps.statusTracker,
+    relayService: deps.relayService,
+    rateLimiter,
+    authAttemptLimiter,
+    deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
   });
   registerRetentionRoutes(app, {
     authService: deps.authService,

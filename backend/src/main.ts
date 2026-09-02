@@ -653,6 +653,12 @@ async function start(): Promise<void> {
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),
     deviceSessionService,
     outboundRelayService: new OutboundRelayService(relayService, deviceRepository),
+    // PCA runtime-sync parent-facing read gap: reuses the SAME
+    // deviceRepository/relayService instances constructed above -- never a
+    // second, independently-constructed copy -- see
+    // registerParentRuntimeSyncRoutes' own doc comment.
+    deviceRepository,
+    relayService,
     // PCA product-completion Writer P0-B: reuses the SAME
     // safeZoneParentActionAuthorization instance every other consumer in
     // this file shares (see its own doc comment above) -- never a second,

@@ -14,16 +14,26 @@
 // ../real/realBillingClient.ts, and siblings) -- their Unavailable* classes
 // were removed from this file once nothing constructed them anymore, per
 // the KNOWN_BACKEND_INTEGRATION_ACTION convention in ../client.ts.
-// WellbeingMessageAdminClient and ParentRuntimeSyncClient are still
-// genuinely unimplemented in this repository slice. ParentRuntimeSyncClient
-// was briefly listed above as having a real implementation; that was wrong,
-// and a real-browser sweep caught it -- see UnavailableParentRuntimeSyncClient
-// below. FamilyAuthorityGateway is now PARTIALLY real: removeMember has a
-// genuine HTTP-backed implementation (see ../real/realFamilyAuthorityGateway.ts,
-// which extends UnavailableFamilyAuthorityGateway below and overrides only
-// that one method) -- every other method on this interface still has no real
-// backend counterpart and keeps this class's own honest rejection/denial
-// behavior.
+// WellbeingMessageAdminClient is still genuinely unimplemented in this
+// repository slice. ParentRuntimeSyncClient was briefly listed above as
+// having a real implementation; that was wrong (it targeted `/api/sync/*`,
+// a surface this backend never served), and a real-browser sweep caught it
+// -- see UnavailableParentRuntimeSyncClient below. FamilyAuthorityGateway is
+// now PARTIALLY real: removeMember has a genuine HTTP-backed implementation
+// (see ../real/realFamilyAuthorityGateway.ts, which extends
+// UnavailableFamilyAuthorityGateway below and overrides only that one
+// method) -- every other method on this interface still has no real backend
+// counterpart and keeps this class's own honest rejection/denial behavior.
+// ParentRuntimeSyncClient is now the SAME kind of PARTIALLY real:
+// ../real/realParentRuntimeSyncClient.ts's RealParentRuntimeSyncClient
+// extends UnavailableParentRuntimeSyncClient below and overrides only the 3
+// read-only bookkeeping methods (getConnectionStatus/getLastSuccessfulSync/
+// getPendingDeliveryStatus) against the new
+// backend/src/http/routes/parentRuntimeSyncRoutes.ts route -- the mutating
+// envelope methods (submitCiphertextEnvelope/listQueuedForEndpoint/
+// acknowledgeEnvelope) still have no real backend counterpart (they need
+// the not-yet-built, crypto-review-gated parent-sdk E2EE client) and keep
+// this class's own honest rejection behavior unchanged.
 import type { FamilyAuthorityGateway, WellbeingMessageAdminClient } from '../interfaces';
 import type {
   ConnectionStatus,
@@ -110,29 +120,31 @@ export class UnavailableWellbeingMessageAdminClient implements WellbeingMessageA
 }
 
 /**
- * Fail-closed placeholder for ParentRuntimeSyncClient.
+ * Fail-closed placeholder for ParentRuntimeSyncClient's mutating envelope
+ * methods (submitCiphertextEnvelope/listQueuedForEndpoint/
+ * acknowledgeEnvelope), and the base class RealParentRuntimeSyncClient
+ * (../real/realParentRuntimeSyncClient.ts) extends to inherit exactly that
+ * -- overriding only the 3 read-only bookkeeping methods
+ * (getConnectionStatus/getLastSuccessfulSync/getPendingDeliveryStatus)
+ * against the real backend/src/http/routes/parentRuntimeSyncRoutes.ts route.
  *
- * WHY THIS EXISTS AGAIN. buildRealClients() wired RealParentRuntimeSyncClient
- * in production, but that client targets `/api/sync/*` and the backend serves
- * no such surface -- `grep -rn "'/api/sync" backend/src` returns nothing. The
- * only runtime-sync API the backend ships is `/v1/runtime-sync/*`, which is the
- * DEVICE-facing relay (device challenge/session, inbound/outbound envelopes)
- * authenticated by a device session; it is a different API with a different
- * shape and a different caller, not a prefix this client could be repointed at.
- * runtimeSyncClient.ts's own header says the same thing: "the (not-yet-built)
- * backend relay ... this repo slice ships only the typed port and a
- * DEVELOPMENT_ONLY fixture".
+ * WHY THIS ONCE COVERED EVERY METHOD. buildRealClients() previously wired a
+ * DIFFERENT `RealParentRuntimeSyncClient` in production that targeted
+ * `/api/sync/*`, a surface this backend never served at all -- the only
+ * runtime-sync API the backend shipped at the time was `/v1/runtime-sync/*`,
+ * the DEVICE-facing relay (device challenge/session, inbound/outbound
+ * envelopes) authenticated by a device session, a different API with a
+ * different shape and a different caller. A Round-2 real-browser sweep
+ * proved the consequence: loading /children/:childId/screen-time fired
+ * `404 GET /api/sync/last-sync` and `404 GET /api/sync/endpoints/<id>/pending`
+ * at a real backend. That was fixed by wiring this class (rejecting every
+ * method) instead, exactly like every other not-yet-built port in this file.
  *
- * A Round-2 real-browser sweep proved the consequence: loading
- * /children/:childId/screen-time fired `404 GET /api/sync/last-sync` and
- * `404 GET /api/sync/endpoints/<id>/pending` at a real backend. Dashboard and
- * ChildOverview call the same two methods.
- *
- * Rejecting locally, as every other not-yet-built port in this file does, is
- * strictly better than issuing a doomed request: callers already handle
- * ServiceUnavailableError and render an honest unavailable state, and no
- * capability is fabricated. Replace this with a real client only when the
- * parent-facing relay API actually exists.
+ * The mutating envelope methods below still have no real backend
+ * counterpart -- they require the parent-sdk's E2EE envelope crypto, gated
+ * on a human security review -- and keep rejecting here. Callers already
+ * handle ServiceUnavailableError and render an honest unavailable state for
+ * them; no capability is fabricated.
  */
 export class UnavailableParentRuntimeSyncClient implements ParentRuntimeSyncClient {
   submitCiphertextEnvelope(
