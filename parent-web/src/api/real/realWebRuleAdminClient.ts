@@ -12,19 +12,20 @@
 // (backend/src/http/routes/webRuleRoutes.ts) stores it directly through the
 // existing WebRuleService/WebRuleStore -- the SAME repository the family's
 // live domain-decision pipeline (WebFilterEngine) already reads from -- not
-// an opaque encrypted envelope. That is why setRule/removeRule below build
-// and send a real plaintext JSON body once past the gate, rather than
-// invoking an encryption boundary the way schedulePolicyAuthoring.ts does:
-// there is no equivalent "WebRuleFamilyEncryptionBoundary" seam for this
-// data, by design (see webRuleRoutes.ts's own header comment for the full
-// rationale). What stays gated is delivering the resulting rule set down to
-// a child device for offline VPN/DNS enforcement -- that still needs the
-// same production family-envelope crypto suite as items D/E/G, which this
-// class does not attempt. A successful setRule/removeRule call therefore
-// only ever reports PENDING_DELIVERY, never DELIVERED/APPLIED (doc 36:
-// "parent saved != child applied") -- and, while requireTrustedAndCryptoReady
-// keeps failing closed today, this code path is unreachable in production
-// regardless, exactly like listRules below.
+// an opaque encrypted envelope. That is why listRules/setRule/removeRule
+// below build and send real plaintext JSON (a GET query for listRules, a
+// POST body for the mutations) once past the gate, rather than invoking an
+// encryption boundary the way schedulePolicyAuthoring.ts does: there is no
+// equivalent "WebRuleFamilyEncryptionBoundary" seam for this data, by design
+// (see webRuleRoutes.ts's own header comment for the full rationale). What
+// stays gated is delivering the resulting rule set down to a child device
+// for offline VPN/DNS enforcement -- that still needs the same production
+// family-envelope crypto suite as items D/E/G, which this class does not
+// attempt. A successful listRules/setRule/removeRule call therefore only
+// ever reports LOCAL_DRAFT/PENDING_DELIVERY, never DELIVERED/APPLIED (doc
+// 36: "parent saved != child applied") -- and, while
+// requireTrustedAndCryptoReady keeps failing closed today, this code path is
+// unreachable in production regardless.
 import type { WebRuleAdminClient } from '../interfaces';
 import type { WebRuleDeliveryStatus, WebRuleEntry, WebRuleListType } from '../../domain/webRulePolicy';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
@@ -78,7 +79,32 @@ export class RealWebRuleAdminClient implements WebRuleAdminClient {
 
   async listRules(childId: string): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus; revision: number | null }> {
     await requireTrustedAndCryptoReady(this.trustedBrowser, 'WebRuleAdminClient.listRules');
-    throw new Error(`WebRuleAdminClient.listRules: no decrypted web-rule record is cached yet for child "${childId}".`);
+    const familyId = await this.familyId('WebRuleAdminClient.listRules');
+    const response = await fetch(this.url(`/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/web-rules`), {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        ...(await this.actorHeaders()),
+        ...this.csrfHeader(),
+      },
+    });
+    if (!response.ok) throw new Error(`WebRuleAdminClient.listRules: request failed (${response.status}).`);
+    const rules = parseRules(await this.json('WebRuleAdminClient.listRules', response));
+    return {
+      rules,
+      // This class's honest production ceiling is PENDING_DELIVERY, never
+      // DELIVERED/APPLIED (see this file's own header comment) -- a
+      // non-empty result is queued for a delivery path that does not yet
+      // exist; an empty result means nothing has ever been queued for this
+      // child, mirroring DevWebRuleAdminClient's LOCAL_DRAFT-when-untouched
+      // convention.
+      status: rules.length > 0 ? 'PENDING_DELIVERY' : 'LOCAL_DRAFT',
+      // The real backend route (webRuleRoutes.ts) returns no revision
+      // counter -- WebRuleStore has no revision concept -- so never
+      // fabricate one here.
+      revision: null,
+    };
   }
 
   async setRule(childId: string, domain: string, listType: WebRuleListType): Promise<{ rules: WebRuleEntry[]; status: WebRuleDeliveryStatus }> {

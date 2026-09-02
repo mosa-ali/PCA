@@ -1,14 +1,14 @@
-// Proves RealWebRuleAdminClient.setRule/removeRule are genuinely real
-// writes once trust + crypto-review both pass (previously hardcoded
-// throws with zero payload-construction logic at all) -- they resolve the
-// current family id, send the actor-device bearer token + CSRF header, POST
-// a plain {domain, listType} JSON body to the real backend route
-// (backend/src/http/routes/webRuleRoutes.ts), and parse the returned rule
-// list -- while still only ever reporting PENDING_DELIVERY, never
-// DELIVERED/APPLIED (doc 36: "parent saved != child applied"), because
-// actual device delivery remains behind the separate, still-unresolved
-// production family-envelope crypto gate (items D/E/G) this class does not
-// attempt to solve.
+// Proves RealWebRuleAdminClient.listRules/setRule/removeRule are genuinely
+// real HTTP calls once trust + crypto-review both pass (listRules was
+// previously a hardcoded throw with zero fetch logic at all; setRule/
+// removeRule were added in commit 1a93aa0) -- they resolve the current
+// family id, send the actor-device bearer token + CSRF header, hit the real
+// backend route (backend/src/http/routes/webRuleRoutes.ts), and parse the
+// returned rule list -- while still only ever reporting LOCAL_DRAFT/
+// PENDING_DELIVERY, never DELIVERED/APPLIED (doc 36: "parent saved != child
+// applied"), because actual device delivery remains behind the separate,
+// still-unresolved production family-envelope crypto gate (items D/E/G)
+// this class does not attempt to solve.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // The crypto gate is a hardcoded, non-configurable `false` in source (see
@@ -52,6 +52,85 @@ function stubFamilySessionAndFetch(fetchImpl: (input: unknown, init?: RequestIni
 
 describe('RealWebRuleAdminClient mutations (crypto gate mocked ready)', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('listRules GETs the real backend route and reports PENDING_DELIVERY for a non-empty result, with no fabricated revision', async () => {
+    const fetchMock = stubFamilySessionAndFetch(async () => ({
+      ok: true,
+      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }] }),
+    }));
+
+    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
+    const result = await client.listRules('child-1');
+
+    expect(result).toEqual({
+      rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }],
+      status: 'PENDING_DELIVERY',
+      revision: null,
+    });
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/children/child-1/web-rules'));
+    expect(call).toBeDefined();
+    const [url, init] = call as unknown as [string, RequestInit];
+    expect(url).toBe('https://pca.example/api/parent/families/family-1/children/child-1/web-rules');
+    expect(init.method).toBe('GET');
+    expect(init.credentials).toBe('include');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer actor-device-session-token');
+  });
+
+  it('listRules reports LOCAL_DRAFT (never a fabricated delivered state) when the family has no stored rules yet', async () => {
+    stubFamilySessionAndFetch(async () => ({ ok: true, json: async () => ({ rules: [] }) }));
+    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
+    const result = await client.listRules('child-1');
+    expect(result).toEqual({ rules: [], status: 'LOCAL_DRAFT', revision: null });
+  });
+
+  it('listRules surfaces a real HTTP failure rather than pretending to succeed', async () => {
+    stubFamilySessionAndFetch(async () => ({ ok: false, status: 500, json: async () => ({ error: 'server_error' }) }));
+    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
+    await expect(client.listRules('child-1')).rejects.toThrow(/500/);
+  });
+
+  it('listRules surfaces a network-level fetch rejection rather than swallowing it', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith('/api/parent/session')) return { ok: true, json: async () => ({ familyId: 'family-1' }) };
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
+    await expect(client.listRules('child-1')).rejects.toThrow(/Failed to fetch/);
+  });
+
+  it('listRules discards a malformed rule element from the response rather than fabricating a rule', async () => {
+    stubFamilySessionAndFetch(async () => ({
+      ok: true,
+      json: async () => ({ rules: [{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }, { domain: 123, listType: 'DENY' }] }),
+    }));
+    const client = new RealWebRuleAdminClient('https://pca.example', trustedBrowser);
+    const result = await client.listRules('child-1');
+    expect(result.rules).toEqual([{ domain: 'example.com', listType: 'DENY', createdAtUtc: '2026-01-07T09:00:00.000Z' }]);
+  });
+
+  it('listRules still fails before any fetch when the browser is not trusted, even with crypto mocked ready', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const notTrustedBrowser = {
+      getSnapshot: vi.fn(async () => ({
+        state: 'BROWSER_NOT_TRUSTED' as const,
+        serviceAuthenticated: true,
+        browserEndpointId: 'endpoint-a',
+        trustSetEpoch: 5,
+        acceptedMinEpoch: 5,
+        pairingRequestedAtUtc: null,
+        lastFingerprint: null,
+        actorDeviceSessionToken: null,
+      })),
+    } as unknown as TrustedBrowserProviderType;
+    const client = new RealWebRuleAdminClient('https://pca.example', notTrustedBrowser);
+    await expect(client.listRules('child-1')).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it('setRule POSTs {domain, listType} with the actor-device bearer token, never a self-reported device id', async () => {
     const fetchMock = stubFamilySessionAndFetch(async () => ({
