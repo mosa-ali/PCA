@@ -11,9 +11,17 @@
  * Production wires the SAME shared ParentActionAuthorizationService
  * instance main.ts already constructs for Safe Zone/RemovalDecisionAuthority/
  * childRequestRoutes.ts, currently backed by UnavailableTrustSetRoleResolver
- * -- every invite/revoke/change-role call here fails closed with the
+ * -- every invite/revoke/change-role/remove call here fails closed with the
  * honest NOT_AUTHORIZED reason until a real trust-set source is wired,
  * exactly like every other consumer of that shared instance.
+ *
+ * The remove route (:accountId/remove) targets an already-ACCEPTED member
+ * by their parent_accounts.account_id, not a family_member_invitations id
+ * -- it is the one mutation in this file that acts on parent_accounts
+ * directly (via FamilyMemberInvitationService.removeMember /
+ * FamilyMemberInvitationRepository.removeMemberAtomically), atomically
+ * clearing that account's family_id and releasing the parent-member seat
+ * it consumed in the SAME transaction.
  *
  * The accept route is deliberately NOT gated by ParentActionAuthorizationService:
  * the accepting account has no role in this family yet (that's the whole
@@ -86,6 +94,8 @@ function errorStatus(code: FamilyMemberInvitationError['code']): number {
     case 'NOT_PENDING':
     case 'DUPLICATE_PENDING_INVITATION':
     case 'CAPACITY_EXCEEDED':
+    case 'CANNOT_REMOVE_SELF':
+    case 'CANNOT_REMOVE_OWNER':
       return 409;
     case 'NOT_AUTHORIZED':
       return 403;
@@ -232,6 +242,27 @@ export function registerFamilyMemberRoutes(app: FastifyInstance, deps: FamilyMem
       try {
         const updated = await familyMemberInvitationService.changeInvitationRole(session.familyId, invitationId, body.role as InvitedFamilyRole, actorDeviceId);
         return reply.code(200).send({ invitation: toInvitationDto(updated) });
+      } catch (error) {
+        return handleError(reply, error);
+      }
+    },
+  );
+
+  // ---- Parent: remove an already-ACCEPTED family member (never the Owner, never yourself) ----
+  app.post(
+    '/api/parent/families/:familyId/members/:accountId/remove',
+    { bodyLimit: MAX_BODY_BYTES },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const session = await familySession(request, reply);
+      if (!session) return;
+      if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
+      if (!actorDeviceId) return;
+
+      const { accountId } = request.params as { accountId: string };
+      try {
+        const result = await familyMemberInvitationService.removeMember(session.familyId, accountId, session.accountId, actorDeviceId);
+        return reply.code(200).send({ removed: true, auditEventId: result.auditEventId });
       } catch (error) {
         return handleError(reply, error);
       }

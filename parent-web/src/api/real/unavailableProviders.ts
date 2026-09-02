@@ -14,11 +14,16 @@
 // ../real/realBillingClient.ts, and siblings) -- their Unavailable* classes
 // were removed from this file once nothing constructed them anymore, per
 // the KNOWN_BACKEND_INTEGRATION_ACTION convention in ../client.ts.
-// FamilyAuthorityGateway, WellbeingMessageAdminClient and
-// ParentRuntimeSyncClient are still genuinely unimplemented in this
-// repository slice. ParentRuntimeSyncClient was briefly listed above as
-// having a real implementation; that was wrong, and a real-browser sweep
-// caught it -- see UnavailableParentRuntimeSyncClient below.
+// WellbeingMessageAdminClient and ParentRuntimeSyncClient are still
+// genuinely unimplemented in this repository slice. ParentRuntimeSyncClient
+// was briefly listed above as having a real implementation; that was wrong,
+// and a real-browser sweep caught it -- see UnavailableParentRuntimeSyncClient
+// below. FamilyAuthorityGateway is now PARTIALLY real: removeMember has a
+// genuine HTTP-backed implementation (see ../real/realFamilyAuthorityGateway.ts,
+// which extends UnavailableFamilyAuthorityGateway below and overrides only
+// that one method) -- every other method on this interface still has no real
+// backend counterpart and keeps this class's own honest rejection/denial
+// behavior.
 import type { FamilyAuthorityGateway, WellbeingMessageAdminClient } from '../interfaces';
 import type {
   ConnectionStatus,
@@ -39,6 +44,11 @@ import { ServiceUnavailableError } from '../unavailable';
  * needing special-case error handling -- this must never be mistaken for
  * "allowed". Every other (mutating) method throws, since there is no
  * "denied" shape for them to honestly return.
+ *
+ * Also the base class RealFamilyAuthorityGateway extends (see
+ * ../real/realFamilyAuthorityGateway.ts) to override ONLY removeMember with
+ * a genuine HTTP-backed implementation, while inheriting every other
+ * method's honest not-implemented behavior unchanged.
  */
 export class UnavailableFamilyAuthorityGateway implements FamilyAuthorityGateway {
   async checkPermission(_action: FamilyAction): Promise<PermissionResult> {
@@ -55,7 +65,7 @@ export class UnavailableFamilyAuthorityGateway implements FamilyAuthorityGateway
   inviteMember(): Promise<{ invitationId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.inviteMember'));
   }
-  removeMember(): Promise<{ auditEventId: string }> {
+  removeMember(_memberId: string): Promise<{ auditEventId: string }> {
     return Promise.reject(new ServiceUnavailableError('FamilyAuthorityGateway.removeMember'));
   }
   changeRole(_memberId: string, _newRole: FamilyRole): Promise<{ auditEventId: string }> {

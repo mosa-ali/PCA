@@ -315,6 +315,162 @@ test('invitation creation is denied with capacity_exceeded once the family\'s EF
   }
 });
 
+// ---- Member removal ----
+
+/** Seeds an ACCEPTED family_member_invitations row directly (the real HTTP invite+accept round trip would also require MySqlFamilyMemberAccountBinder to durably bind family_id, which the in-memory double never does itself -- see its own header comment) so removeMemberAtomically's owner-protection check finds it. */
+async function seedAcceptedMember(repository, { familyId = FAMILY, accountId } = {}) {
+  await repository.create({
+    invitationId: `inv-${accountId}`,
+    familyId,
+    invitedEmailHash: hashInvitedEmail(`${accountId}@example.test`),
+    role: 'VIEWER',
+    status: 'ACCEPTED',
+    invitedByAccountId: 'acct-owner',
+    createdAt: T0,
+    expiresAt: new Date(T0.getTime() + 1000),
+    acceptedAt: T0,
+    expiredAt: null,
+    revokedAt: null,
+    acceptedByAccountId: accountId,
+  });
+  repository._setAccountFamilyIdForTest(accountId, familyId);
+}
+
+/** Minimal stateful EntitlementRepository fake -- lockForFamily/adjustParentMemberUsedCount only, all this route's removeMember path needs. */
+function statefulEntitlementRepositoryFake(parentMemberUsedCount) {
+  const state = { parentMemberUsedCount };
+  return {
+    state,
+    async lockForFamily() {
+      return { parentMemberUsedCount: state.parentMemberUsedCount };
+    },
+    async adjustParentMemberUsedCount(_conn, _familyId, delta) {
+      state.parentMemberUsedCount += delta;
+      return { parentMemberUsedCount: state.parentMemberUsedCount };
+    },
+  };
+}
+
+test('an Owner can remove an already-accepted, non-owner member via the real HTTP route, releasing the seat it consumed', async () => {
+  const entitlementRepository = statefulEntitlementRepositoryFake(1);
+  const { app, repository } = buildApp({ entitlementRepository });
+  try {
+    await seedAcceptedMember(repository, { accountId: 'acct-viewer' });
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-viewer/remove`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    assert.equal(remove.statusCode, 200);
+    assert.equal(remove.json().removed, true);
+    assert.equal(typeof remove.json().auditEventId, 'string');
+    assert.ok(remove.json().auditEventId.length > 0);
+    assert.equal(entitlementRepository.state.parentMemberUsedCount, 0);
+
+    // Idempotent retry: the member is already gone -- never a second seat release.
+    const removeAgain = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-viewer/remove`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    assert.equal(removeAgain.statusCode, 404);
+    assert.equal(removeAgain.json().error, 'not_found');
+    assert.equal(entitlementRepository.state.parentMemberUsedCount, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a VIEWER cannot remove another member (ROLE_NOT_PERMITTED collapses to the same NOT_AUTHORIZED/403 as every other denial)', async () => {
+  const { app, repository } = buildApp();
+  try {
+    await seedAcceptedMember(repository, { accountId: 'acct-some-member' });
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-some-member/remove`,
+      headers: { ...viewerHeaders, authorization: 'Bearer dev-token-viewer' },
+    });
+    assert.equal(remove.statusCode, 403);
+    assert.equal(remove.json().error, 'not_authorized');
+  } finally {
+    await app.close();
+  }
+});
+
+test('an Owner cannot remove their own membership through this route (cannot_remove_self)', async () => {
+  const { app } = buildApp();
+  try {
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-owner/remove`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    assert.equal(remove.statusCode, 409);
+    assert.equal(remove.json().error, 'cannot_remove_self');
+  } finally {
+    await app.close();
+  }
+});
+
+test('removing an account with no ACCEPTED invitation into this family is refused as cannot_remove_owner, even by an otherwise-authorized Owner', async () => {
+  const { app, repository } = buildApp();
+  try {
+    // 'acct-second-owner' is bound to FAMILY but (unlike seedAcceptedMember)
+    // has no ACCEPTED family_member_invitations row -- the same structural
+    // signature a genuine genesis-bound Owner account has (see
+    // removeMemberAtomically's own doc comment). Deliberately a DIFFERENT
+    // account than the acting acct-owner, so this exercises the
+    // owner-protection guard itself rather than cannot_remove_self.
+    repository._setAccountFamilyIdForTest('acct-second-owner', FAMILY);
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-second-owner/remove`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    assert.equal(remove.statusCode, 409);
+    assert.equal(remove.json().error, 'cannot_remove_owner');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a device from a different family cannot remove a member in this family (cross-family denial via the actor-device-session check itself)', async () => {
+  const { app, repository } = buildApp();
+  try {
+    await seedAcceptedMember(repository, { accountId: 'acct-some-member' });
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-some-member/remove`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-other-owner' },
+    });
+    assert.equal(remove.statusCode, 401);
+    assert.equal(remove.json().error, 'actor_device_session_invalid');
+  } finally {
+    await app.close();
+  }
+});
+
+test('a request missing CSRF header/cookie match is rejected on the remove route too', async () => {
+  const { app, repository } = buildApp();
+  try {
+    await seedAcceptedMember(repository, { accountId: 'acct-some-member' });
+
+    const remove = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/acct-some-member/remove`,
+      headers: { cookie: ownerHeaders.cookie, authorization: 'Bearer dev-token-owner' }, // no x-pca-csrf-token header
+    });
+    assert.equal(remove.statusCode, 403);
+    assert.equal(remove.json().error, 'csrf_mismatch');
+  } finally {
+    await app.close();
+  }
+});
+
 test('registerFamilyMemberRoutes registers nothing when familyMemberInvitationService is omitted (optional-feature convention, matches registerBrowserEndpointRoutes)', async () => {
   const app = Fastify();
   registerFamilyMemberRoutes(app, {

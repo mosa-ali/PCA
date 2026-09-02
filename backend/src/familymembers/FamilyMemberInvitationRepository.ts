@@ -22,6 +22,22 @@ export type AcceptResult =
  */
 export type AcceptTransactionHook = (conn: PoolConnection, record: FamilyMemberInvitationRecord) => Promise<void>;
 
+export type RemoveMemberResult =
+  | { outcome: 'REMOVED' }
+  | { outcome: 'NOT_FOUND' }
+  | { outcome: 'NOT_A_MEMBER' }
+  | { outcome: 'CANNOT_REMOVE_OWNER' };
+
+/**
+ * Runs inside the SAME transaction as removeMemberAtomically's guarded
+ * UPDATE, after that UPDATE has succeeded and before it commits -- the
+ * exact mirror-image of AcceptTransactionHook above (there: consume a
+ * seat after ACCEPTED; here: release one after REMOVED). Throwing rolls
+ * the removal back, so the family_id clear can never drift from the seat
+ * count. `conn` is the transaction's own connection.
+ */
+export type RemoveMemberTransactionHook = (conn: PoolConnection, familyId: OpaqueFamilyId, removedAccountId: OpaqueAccountId) => Promise<void>;
+
 /**
  * Persistence port for the family-member invitation lifecycle, mirroring
  * InvitationRepository.ts's shape and its "family-scoped by design" IDOR
@@ -83,4 +99,38 @@ export interface FamilyMemberInvitationRepository {
    * other family-scoped lookup in this repository).
    */
   updateRoleForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId, newRole: InvitedFamilyRole): Promise<FamilyMemberInvitationRecord | null>;
+  /**
+   * Atomically clears the target account's membership in this family
+   * (the parent_accounts.family_id -> NULL transition -- the durable
+   * "removed" state this schema already supports, see
+   * MySqlFamilyMemberAccountBinder's own precedent for writing that same
+   * column) and, via `onRemovedInTransaction`, releases the parent-member
+   * seat it consumed, in the SAME transaction. Mirrors acceptAtomically's
+   * guarded-UPDATE + disambiguating-SELECT shape exactly, in reverse.
+   *
+   * OWNER PROTECTION: this schema has no durable OWNER-role column
+   * anywhere reachable from this domain (see FamilyMemberInvitationService
+   * .removeMember's own doc comment for the full reasoning) -- an account
+   * currently bound to `familyId` that holds no ACCEPTED
+   * family_member_invitations row for this family is, by construction,
+   * this family's Owner (the account whose OWN email verification created
+   * it -- ParentAccountService.attemptFamilyGenesis's "no join-an-
+   * existing-family path" invariant), and removal is refused
+   * (CANNOT_REMOVE_OWNER). Ownership is never revoked through this method.
+   *
+   * IDEMPOTENT / DOUBLE-FREE SAFE: an account no longer bound to
+   * `familyId` (already removed, or never a member of it) reports
+   * NOT_A_MEMBER and neither mutates parent_accounts nor invokes
+   * `onRemovedInTransaction` -- a retried removal can never double-release
+   * a seat. An unknown accountId reports NOT_FOUND. Both outcomes are
+   * family-scoped exactly like every other lookup in this repository: an
+   * account genuinely bound to a DIFFERENT family also reports
+   * NOT_A_MEMBER, never leaking which family it actually belongs to.
+   */
+  removeMemberAtomically(
+    familyId: OpaqueFamilyId,
+    targetAccountId: OpaqueAccountId,
+    removedAt: Date,
+    onRemovedInTransaction?: RemoveMemberTransactionHook,
+  ): Promise<RemoveMemberResult>;
 }

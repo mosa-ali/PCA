@@ -470,6 +470,230 @@ test('MySQL: accepting a family-member invitation consumes exactly one parent-me
   assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
 });
 
+// ---------------------------------------------------------------------
+// Family-member REMOVAL (real MySQL). Lives here for the same reason the
+// two acceptance tests immediately above do: backend/package.json's
+// test:db file list is outside this lane's ownership, and this file is
+// already on it. The property under test is the cross-domain write this
+// domain makes into parent_accounts.family_id (removeMemberAtomically),
+// which needs real, separately-registered parent_accounts rows to mean
+// anything.
+// ---------------------------------------------------------------------
+
+/** Directly sets an account's family_id, standing in for what the real MySqlFamilyMemberAccountBinder durably writes after a genuine acceptance (see FamilyMemberInvitationService.acceptInvitation's own doc comment on why that bind is a separate, best-effort step outside acceptAtomically's own transaction). */
+async function bindAccountToFamilyForTest(accountId, familyId) {
+  await runInTransaction((conn) => execute(conn, `UPDATE parent_accounts SET family_id = ? WHERE account_id = ?`, [familyId, accountId]));
+}
+
+async function readAccountFamilyId(accountId) {
+  const { rows } = await runInTransaction((conn) => execute(conn, `SELECT family_id FROM parent_accounts WHERE account_id = ?`, [accountId]));
+  return rows[0]?.family_id ?? null;
+}
+
+function acceptedInvitationRow(familyId, invitedEmailHash, acceptedByAccountId, at) {
+  return {
+    invitationId: randomUUID(),
+    familyId,
+    invitedEmailHash,
+    role: 'VIEWER',
+    status: 'ACCEPTED',
+    invitedByAccountId: randomUUID(),
+    createdAt: at,
+    expiresAt: new Date(at.getTime() + 7 * 24 * 60 * 60 * 1000),
+    acceptedAt: at,
+    expiredAt: null,
+    revokedAt: null,
+    acceptedByAccountId,
+  };
+}
+
+test('MySQL: removeMember clears the target account\'s family_id and releases exactly one parent-member seat, in the SAME transaction -- and a retried removal is a safe, non-double-releasing no-op', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const ownerEmail = uniqueEmail();
+  const memberEmail = uniqueEmail();
+  const owner = await registerAndVerifyRealAccount(service, emailSender, ownerEmail, password);
+  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const familyId = randomUUID();
+  const now = new Date();
+
+  // owner: bound to the family with NO accepted invitation -- the same
+  // structural signature a genuine genesis-anchored Owner account has.
+  await bindAccountToFamilyForTest(owner.accountId, familyId);
+  // member: bound to the family WITH an accepted invitation -- what a real
+  // acceptance + MySqlFamilyMemberAccountBinder durably produces together.
+  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberEmail), member.accountId, now));
+  await bindAccountToFamilyForTest(member.accountId, familyId);
+
+  await entitlementRepository.getOrCreateForFamily(
+    familyId,
+    'FREE_STARTER',
+    { tier: 'FREE_STARTER', parentMemberLimit: 2, managedDeviceLimit: 5, updatedAt: now, updatedByAdminId: null },
+    now,
+  );
+  await runInTransaction((conn) => entitlementRepository.adjustParentMemberUsedCount(conn, familyId, 1, now)); // simulates the member's own real acceptance having charged its seat
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
+
+  const authorization = { authorize: () => ({ verdict: 'ALLOW' }) };
+  const removalService = new FamilyMemberInvitationService(repository, authorization, () => now, undefined, undefined, entitlementRepository);
+
+  // Owner protection: the structural Owner cannot be removed.
+  await assert.rejects(
+    () => removalService.removeMember(familyId, owner.accountId, member.accountId, 'dev-actor'),
+    (err) => err.code === 'CANNOT_REMOVE_OWNER',
+  );
+  assert.equal(await readAccountFamilyId(owner.accountId), familyId, 'a refused removal must never touch family_id');
+
+  // The real removal: clears family_id, releases the seat, durably.
+  await removalService.removeMember(familyId, member.accountId, owner.accountId, 'dev-owner');
+  assert.equal(await readAccountFamilyId(member.accountId), null);
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 0);
+
+  // Idempotent retry: already removed -- NOT_FOUND, and no second release.
+  await assert.rejects(
+    () => removalService.removeMember(familyId, member.accountId, owner.accountId, 'dev-owner'),
+    (err) => err.code === 'NOT_FOUND',
+  );
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 0, 'a retried removal must never release a second seat');
+});
+
+// PCA-FAMILY-REMOVE-ROUNDTRIP: the accounting round trip end to end against
+// real MySQL -- accept consumes a seat, capacity is genuinely exhausted,
+// removal releases it, and the family can then genuinely invite again.
+test('MySQL: after a real removal frees a parent-member seat, a new invitation can be sent using the freed capacity', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService, NoopFamilyMemberAccountBinder } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { MySqlFamilyMemberAccountBinder } = await import('../../dist/familymembers/MySqlFamilyMemberAccountBinder.js');
+  const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const ownerEmail = uniqueEmail();
+  const memberEmail = uniqueEmail();
+  const owner = await registerAndVerifyRealAccount(service, emailSender, ownerEmail, password);
+  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const familyId = randomUUID();
+  const now = new Date();
+  await bindAccountToFamilyForTest(owner.accountId, familyId);
+  await entitlementRepository.getOrCreateForFamily(
+    familyId,
+    'FREE_STARTER',
+    { tier: 'FREE_STARTER', parentMemberLimit: 1, managedDeviceLimit: 5, updatedAt: now, updatedByAdminId: null },
+    now,
+  );
+
+  const authorization = { authorize: () => ({ verdict: 'ALLOW' }) };
+  // The REAL account binder this time -- acceptInvitation's own family_id
+  // write goes through the exact same production path removeMember's
+  // guarded UPDATE later reads/clears.
+  const memberService = new FamilyMemberInvitationService(repository, authorization, () => now, undefined, new MySqlFamilyMemberAccountBinder(), entitlementRepository);
+
+  const invitation = await memberService.createInvitation({
+    familyId,
+    invitedEmail: memberEmail,
+    role: 'VIEWER',
+    invitedByAccountId: owner.accountId,
+    actorDeviceId: 'dev-owner',
+  });
+  await memberService.acceptInvitation(invitation.invitationId, member.accountId);
+  assert.equal(await readAccountFamilyId(member.accountId), familyId, 'the real MySqlFamilyMemberAccountBinder must have durably bound the member');
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
+
+  // Capacity (limit 1) is now genuinely exhausted.
+  await assert.rejects(
+    () => memberService.createInvitation({ familyId, invitedEmail: uniqueEmail(), role: 'VIEWER', invitedByAccountId: owner.accountId, actorDeviceId: 'dev-owner' }),
+    (err) => err.code === 'CAPACITY_EXCEEDED',
+  );
+
+  // Remove the member through the real, MySQL-backed atomic path.
+  const removalService = new FamilyMemberInvitationService(repository, authorization, () => now, undefined, new NoopFamilyMemberAccountBinder(), entitlementRepository);
+  await removalService.removeMember(familyId, member.accountId, owner.accountId, 'dev-owner');
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 0);
+
+  // The freed seat genuinely admits a new invitation -- the round-trip proof.
+  const secondEmail = uniqueEmail();
+  const secondInvitation = await memberService.createInvitation({
+    familyId,
+    invitedEmail: secondEmail,
+    role: 'VIEWER',
+    invitedByAccountId: owner.accountId,
+    actorDeviceId: 'dev-owner',
+  });
+  assert.equal(secondInvitation.status, 'PENDING');
+
+  const secondMember = await registerAndVerifyRealAccount(service, emailSender, secondEmail, password);
+  await memberService.acceptInvitation(secondInvitation.invitationId, secondMember.accountId);
+  assert.equal(await readAccountFamilyId(secondMember.accountId), familyId);
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
+});
+
+// PCA-ADD-PA-023-style row-locking proof: two DIFFERENT members of the SAME
+// family removed concurrently must both durably decrement
+// account_entitlements.parent_member_used_count -- neither release may be
+// lost to the other. Mirrors complimentaryGrants.mysql.test.mjs's own
+// "concurrent writers to the same family row never lose either update"
+// convention (lockForFamily's SELECT ... FOR UPDATE is what serializes the
+// two competing transactions).
+test('MySQL CONCURRENCY: two concurrent removals of different members in the SAME family both durably release their seat -- no lost update under the account_entitlements row lock', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const ownerEmail = uniqueEmail();
+  const memberAEmail = uniqueEmail();
+  const memberBEmail = uniqueEmail();
+  const owner = await registerAndVerifyRealAccount(service, emailSender, ownerEmail, password);
+  const memberA = await registerAndVerifyRealAccount(service, emailSender, memberAEmail, password);
+  const memberB = await registerAndVerifyRealAccount(service, emailSender, memberBEmail, password);
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const familyId = randomUUID();
+  const now = new Date();
+
+  await bindAccountToFamilyForTest(owner.accountId, familyId);
+  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberAEmail), memberA.accountId, now));
+  await bindAccountToFamilyForTest(memberA.accountId, familyId);
+  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberBEmail), memberB.accountId, now));
+  await bindAccountToFamilyForTest(memberB.accountId, familyId);
+
+  await entitlementRepository.getOrCreateForFamily(
+    familyId,
+    'FREE_STARTER',
+    { tier: 'FREE_STARTER', parentMemberLimit: 3, managedDeviceLimit: 5, updatedAt: now, updatedByAdminId: null },
+    now,
+  );
+  await runInTransaction((conn) => entitlementRepository.adjustParentMemberUsedCount(conn, familyId, 2, now)); // both members' seats already charged
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 2);
+
+  const authorization = { authorize: () => ({ verdict: 'ALLOW' }) };
+  const removalService = new FamilyMemberInvitationService(repository, authorization, () => now, undefined, undefined, entitlementRepository);
+
+  await Promise.all([
+    removalService.removeMember(familyId, memberA.accountId, owner.accountId, 'dev-owner'),
+    removalService.removeMember(familyId, memberB.accountId, owner.accountId, 'dev-owner'),
+  ]);
+
+  assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 0, 'both concurrent releases must be durably reflected -- neither lost to the other');
+  assert.equal(await readAccountFamilyId(memberA.accountId), null);
+  assert.equal(await readAccountFamilyId(memberB.accountId), null);
+});
+
 test.after(async () => {
   await closePool();
 });

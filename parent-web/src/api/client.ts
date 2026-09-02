@@ -85,6 +85,7 @@ import { RealCommercialNotificationClient } from './real/realCommercialNotificat
 import { RealFreeAccessStatusClient } from './real/realFreeAccessStatusClient';
 import { RealParentPreferencesClient } from './real/realParentPreferencesClient';
 import { RealSafeZoneClient } from './real/realSafeZoneClient';
+import { RealFamilyAuthorityGateway } from './real/realFamilyAuthorityGateway';
 import { UnavailableSafeZonePolicyAuthoring, type SafeZonePolicyAuthoring } from './safeZonePolicyAuthoring';
 import { RealSchedulePolicyClient } from './real/realSchedulePolicyClient';
 import { UnavailableSchedulePolicyAuthoring, type SchedulePolicyAuthoring } from './schedulePolicyAuthoring';
@@ -96,13 +97,23 @@ import { RealFamilyAuditDeliveryClient } from './real/realFamilyAuditDeliveryCli
 import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient';
 import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
 import {
-  UnavailableFamilyAuthorityGateway,
   UnavailableParentRuntimeSyncClient,
   UnavailableWellbeingMessageAdminClient,
 } from './real/unavailableProviders';
 
 export interface PcaApiClients {
   serviceAuth: ServiceAuthClient;
+  /**
+   * removeMember is real, HTTP-backed against
+   * backend/src/http/routes/familyMemberRoutes.ts's remove route outside
+   * demo mode -- every other method (checkPermission/listMembers/
+   * inviteMember/changeRole/transferOwnership/listAuditTrail) is still
+   * genuinely unimplemented in this repository slice; see
+   * ./real/realFamilyAuthorityGateway.ts's own header for exactly why and
+   * for the known useFamilyAction/checkPermission pre-flight gap that
+   * currently still stands between this route and the Members.tsx UI in
+   * production.
+   */
   familyAuthority: FamilyAuthorityGateway;
   /**
    * PCA product-completion programme, Writer P0-C (family/members): real,
@@ -211,7 +222,15 @@ function buildRealClients(): PcaApiClients {
   const trustedBrowser = new RealTrustedBrowserProvider();
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
-    familyAuthority: new UnavailableFamilyAuthorityGateway(),
+    // PCA product-completion programme: removeMember is now real, HTTP-backed
+    // against backend/src/http/routes/familyMemberRoutes.ts's remove route
+    // (see ./real/realFamilyAuthorityGateway.ts's own header) -- every other
+    // method on this interface (checkPermission/listMembers/inviteMember/
+    // changeRole/transferOwnership/listAuditTrail) still has no real backend
+    // counterpart in this repository slice, so RealFamilyAuthorityGateway
+    // extends UnavailableFamilyAuthorityGateway and inherits their existing
+    // honest rejection/denial behavior unchanged.
+    familyAuthority: new RealFamilyAuthorityGateway(config.apiBaseUrl, trustedBrowser),
     familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl, trustedBrowser),
     familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, trustedBrowser, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
     parentFamilyData: new RealParentFamilyDataGateway(

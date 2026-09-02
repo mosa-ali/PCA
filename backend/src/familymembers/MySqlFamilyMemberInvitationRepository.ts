@@ -1,5 +1,11 @@
 import { execute, runInTransaction } from '../db/pool.js';
-import type { AcceptResult, AcceptTransactionHook, FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
+import type {
+  AcceptResult,
+  AcceptTransactionHook,
+  FamilyMemberInvitationRepository,
+  RemoveMemberResult,
+  RemoveMemberTransactionHook,
+} from './FamilyMemberInvitationRepository.js';
 import type { FamilyMemberInvitationId, FamilyMemberInvitationRecord, FamilyMemberInvitationStatus, InvitedFamilyRole, OpaqueAccountId, OpaqueFamilyId } from './types.js';
 
 interface FamilyMemberInvitationRow {
@@ -260,6 +266,57 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
         [invitationId],
       );
       return mapRow(reread.rows[0]!);
+    });
+  }
+
+  /**
+   * Single atomic UPDATE guarded by (a) the target actually being bound to
+   * this family right now and (b) an EXISTS check that the target IS a
+   * non-owner member -- i.e. holds an ACCEPTED family_member_invitations
+   * row into this family. An account bound to the family with NO such row
+   * (the Owner, by construction -- see removeMemberAtomically's own
+   * interface doc comment) fails this EXISTS check, so the UPDATE affects
+   * zero rows and the post-failure disambiguation below reports
+   * CANNOT_REMOVE_OWNER. Same "guarded UPDATE, disambiguating SELECT on
+   * zero rows affected" pattern as acceptAtomically above, in reverse.
+   */
+  /** `_removedAt` is unused here today -- parent_accounts has no updated_at-style column (see MySqlFamilyMemberAccountBinder's own `_now` precedent); it exists purely so the service can pass one consistent timestamp through to both this call and the entitlement adjustment's `now`. */
+  async removeMemberAtomically(
+    familyId: OpaqueFamilyId,
+    targetAccountId: OpaqueAccountId,
+    _removedAt: Date,
+    onRemovedInTransaction?: RemoveMemberTransactionHook,
+  ): Promise<RemoveMemberResult> {
+    return runInTransaction(async (conn) => {
+      const updated = await execute(
+        conn,
+        `UPDATE parent_accounts
+           SET family_id = NULL
+         WHERE account_id = ? AND family_id = ?
+           AND EXISTS (
+             SELECT 1 FROM family_member_invitations AS fmi
+              WHERE fmi.family_id = ? AND fmi.accepted_by_account_id = parent_accounts.account_id AND fmi.status = 'ACCEPTED'
+           )`,
+        [targetAccountId, familyId, familyId],
+      );
+      if (updated.rowCount > 0) {
+        if (onRemovedInTransaction) await onRemovedInTransaction(conn, familyId, targetAccountId);
+        return { outcome: 'REMOVED' };
+      }
+
+      // Disambiguate a zero-row UPDATE, mirroring acceptAtomically's own
+      // post-failure SELECT exactly: unknown account, a member of a
+      // different (or no) family, or -- the only remaining possibility
+      // given the WHERE clause above -- this family's Owner.
+      const current = await execute<{ account_id: string; family_id: string | null }>(
+        conn,
+        `SELECT account_id, family_id FROM parent_accounts WHERE account_id = ?`,
+        [targetAccountId],
+      );
+      const row = current.rows[0];
+      if (!row) return { outcome: 'NOT_FOUND' };
+      if (row.family_id !== familyId) return { outcome: 'NOT_A_MEMBER' };
+      return { outcome: 'CANNOT_REMOVE_OWNER' };
     });
   }
 }

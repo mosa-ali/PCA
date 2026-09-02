@@ -7,6 +7,7 @@ import { LoadingState, ErrorState } from '../../components/common/States';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
+import { useAuth } from '../../state/AuthContext';
 
 /**
  * Maps a FamilyMemberInvitationClient rejection to a clear, translated,
@@ -74,10 +75,12 @@ function invitationErrorKey(err: FamilyMemberInvitationError): string {
  * Preserves the existing fallback (raw Error.message) for any rejection that
  * is NOT a FamilyMemberInvitationError -- e.g. useFamilyAction's own
  * pre-flight permission/trust-epoch/step-up checks, or FamilyAuthorityGateway
- * (a separate, still-dev-only client `remove()` below calls). Only the
- * FamilyMemberInvitationClient-specific rejections this file actually
- * triggers (invite/revoke/changeRole) get the clear, translated mapping
- * above.
+ * (a separate client `remove()` below calls -- its removeMember is real and
+ * HTTP-backed, see ../../api/real/realFamilyAuthorityGateway.ts, but every
+ * other FamilyAuthorityGateway method, including checkPermission, is still
+ * genuinely unimplemented). Only the FamilyMemberInvitationClient-specific
+ * rejections this file actually triggers (invite/revoke/changeRole) get the
+ * clear, translated mapping above.
  */
 function describeInvitationError(t: (key: string) => string, err: unknown): string {
   if (err instanceof FamilyMemberInvitationError) return t(invitationErrorKey(err));
@@ -88,6 +91,7 @@ export default function Members() {
   const { t } = useTranslation();
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
+  const { session } = useAuth();
   const { data: members, loading: membersLoading, error: membersError, reload: reloadMembers } = useAsync(() => clients.familyAuthority.listMembers(), []);
   const {
     data: invitations,
@@ -257,7 +261,12 @@ export default function Members() {
                 </td>
                 <td data-label={t('family.lastAcknowledged')}>{m.lastAcknowledgedPolicyRevision ?? '--'}</td>
                 <td>
-                  {m.role !== 'OWNER' && (
+                  {/* Client-side convenience only -- never the real boundary. The
+                      server independently refuses removing the Owner
+                      (CANNOT_REMOVE_OWNER) and removing yourself
+                      (CANNOT_REMOVE_SELF); see
+                      backend/src/familymembers/FamilyMemberInvitationService.removeMember. */}
+                  {m.role !== 'OWNER' && m.memberId !== session?.accountId && (
                     <PermissionGate action="REMOVE_NON_OWNER_PARENT" showDisabledFallback>
                       <button type="button" className="btn" onClick={() => remove(m.memberId)}>
                         {t('family.removeMember')}

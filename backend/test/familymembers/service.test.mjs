@@ -496,3 +496,236 @@ test('acceptInvitation charges no seat when the family has no account_entitlemen
   assert.equal(accepted.status, 'ACCEPTED');
   assert.equal(adjustments.length, 0);
 });
+
+// ---- Member removal ----
+
+const OWNER_ACCOUNT = 'acct-owner-1';
+const MEMBER_ACCOUNT = 'acct-member-1';
+
+/** `accountFamilyIds` seeds OWNER_ACCOUNT and MEMBER_ACCOUNT as both currently bound to fam-1 -- see the double's own header comment on why this map (not acceptInvitation) is what removeMemberAtomically reads/clears. */
+function buildRemovableRepository(overrides = {}) {
+  return createInMemoryFamilyMemberInvitationRepository({
+    accountEmailHashes: seededAccountEmailHashes(),
+    accountFamilyIds: overrides.accountFamilyIds ?? new Map([
+      [OWNER_ACCOUNT, 'fam-1'],
+      [MEMBER_ACCOUNT, 'fam-1'],
+    ]),
+  });
+}
+
+/** Seeds an ACCEPTED family_member_invitations row for accountId directly (bypassing acceptInvitation, since that path does not itself populate accountFamilyIds in this double -- see the double's own header comment) so removeMemberAtomically's owner-protection NOT EXISTS check finds it, exactly like a real prior acceptance would. */
+async function seedAcceptedMember(repository, { familyId = 'fam-1', accountId = MEMBER_ACCOUNT } = {}) {
+  await repository.create({
+    invitationId: `inv-${accountId}`,
+    familyId,
+    invitedEmailHash: hashInvitedEmail(`${accountId}@example.test`),
+    role: 'VIEWER',
+    status: 'ACCEPTED',
+    invitedByAccountId: OWNER_ACCOUNT,
+    createdAt: new Date(BASE_TIME),
+    expiresAt: new Date(BASE_TIME + 1000),
+    acceptedAt: new Date(BASE_TIME),
+    expiredAt: null,
+    revokedAt: null,
+    acceptedByAccountId: accountId,
+  });
+}
+
+/** Minimal stateful EntitlementRepository fake used only by the round-trip test below -- unlike the shared support/inMemoryEntitlementRepository.mjs fixture, this implements getEffectiveSnapshotForFamily (createInvitation's capacity-check dependency), so one object can honestly drive create -> accept -> remove -> create through real capacity accounting. */
+function statefulEntitlementRepositoryFake({ parentMemberLimit, parentMemberUsedCount }) {
+  const state = { parentMemberLimit, parentMemberUsedCount };
+  return {
+    state,
+    async getEffectiveSnapshotForFamily() {
+      return {
+        baseParentMemberLimit: state.parentMemberLimit,
+        complimentaryParentMemberCapacity: 0,
+        effectiveParentMemberLimit: state.parentMemberLimit,
+        parentMemberUsed: state.parentMemberUsedCount,
+      };
+    },
+    async lockForFamily() {
+      return { parentMemberUsedCount: state.parentMemberUsedCount };
+    },
+    async adjustParentMemberUsedCount(_conn, _familyId, delta) {
+      state.parentMemberUsedCount += delta;
+      return { parentMemberUsedCount: state.parentMemberUsedCount };
+    },
+  };
+}
+
+test('removeMember releases exactly one parent-member seat, inside the same transaction that clears the member\'s family binding', async () => {
+  const adjustments = [];
+  const locks = [];
+  const entitlementRepository = {
+    async lockForFamily(_conn, familyId) { locks.push(familyId); return { familyId, parentMemberUsedCount: 2 }; },
+    async adjustParentMemberUsedCount(_conn, familyId, delta, now) { adjustments.push({ familyId, delta, now }); return { familyId, parentMemberUsedCount: 2 + delta }; },
+  };
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, entitlementRepository });
+
+  await service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner');
+  assert.deepEqual(locks, ['fam-1'], 'the family entitlement row must be locked before it is adjusted');
+  assert.equal(adjustments.length, 1);
+  assert.equal(adjustments[0].familyId, 'fam-1');
+  assert.equal(adjustments[0].delta, -1);
+});
+
+test('removeMember is idempotent/double-free safe: retrying an already-completed removal is a safe no-op, never a second seat release', async () => {
+  const adjustments = [];
+  const entitlementRepository = {
+    async lockForFamily() { return { parentMemberUsedCount: 2 }; },
+    async adjustParentMemberUsedCount(_conn, familyId, delta) { adjustments.push(delta); return { parentMemberUsedCount: 2 + delta }; },
+  };
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, entitlementRepository });
+
+  await service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner');
+  assert.equal(adjustments.length, 1);
+
+  await assert.rejects(
+    () => service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  );
+  assert.equal(adjustments.length, 1, 'a retried removal must never release a second seat');
+});
+
+test('removeMember calls authorize() with REMOVE_NON_OWNER_PARENT against a FAMILY target, and denies honestly, releasing no seat', async () => {
+  const denied = fakeAuthorization({ verdict: 'DENY', reason: 'ROLE_NOT_PERMITTED' });
+  const adjustments = [];
+  const entitlementRepository = {
+    async lockForFamily() { return { parentMemberUsedCount: 1 }; },
+    async adjustParentMemberUsedCount(_conn, _familyId, delta) { adjustments.push(delta); return {}; },
+  };
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, authorization: denied, entitlementRepository });
+
+  await assert.rejects(
+    () => service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_AUTHORIZED',
+  );
+  assert.equal(denied.calls.length, 1);
+  assert.equal(denied.calls[0].operation, 'REMOVE_NON_OWNER_PARENT');
+  assert.equal(denied.calls[0].targetScope.kind, 'FAMILY');
+  assert.equal(denied.calls[0].targetScope.id, 'fam-1');
+  assert.equal(adjustments.length, 0);
+});
+
+test('removeMember refuses self-removal before ever consulting authorize() (never a "leave this family" flow)', async () => {
+  const authorization = fakeAuthorization();
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, authorization });
+
+  await assert.rejects(
+    () => service.removeMember('fam-1', MEMBER_ACCOUNT, MEMBER_ACCOUNT, 'dev-member'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'CANNOT_REMOVE_SELF',
+  );
+  assert.equal(authorization.calls.length, 0, 'self-removal must be refused before authorize() is ever called');
+});
+
+test('removeMember refuses to remove the family owner -- the account bound to this family with no ACCEPTED invitation into it', async () => {
+  const repository = buildRemovableRepository(); // OWNER_ACCOUNT is bound to fam-1 but has no seeded ACCEPTED invitation
+  const { service } = buildService({ repository });
+
+  await assert.rejects(
+    () => service.removeMember('fam-1', OWNER_ACCOUNT, 'acct-admin-1', 'dev-admin'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'CANNOT_REMOVE_OWNER',
+  );
+});
+
+test('removeMember on an unknown account, or one bound to a different family, is honestly NOT_FOUND (never a distinguishable "exists elsewhere")', async () => {
+  const repository = buildRemovableRepository();
+  const { service } = buildService({ repository });
+
+  await assert.rejects(
+    () => service.removeMember('fam-1', 'acct-does-not-exist', OWNER_ACCOUNT, 'dev-owner'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  );
+
+  repository._setAccountFamilyIdForTest('acct-elsewhere', 'fam-OTHER');
+  await assert.rejects(
+    () => service.removeMember('fam-1', 'acct-elsewhere', OWNER_ACCOUNT, 'dev-owner'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  );
+});
+
+test('a seat-release failure rolls the whole removal back -- retrying afterwards still finds (and can remove) the same member', async () => {
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const failingEntitlementRepository = {
+    async lockForFamily() { return { parentMemberUsedCount: 2 }; },
+    async adjustParentMemberUsedCount() { throw new Error('entitlement ledger unavailable'); },
+  };
+  const { service: failingService } = buildService({ repository, entitlementRepository: failingEntitlementRepository });
+  await assert.rejects(
+    () => failingService.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner'),
+    /entitlement ledger unavailable/,
+  );
+
+  const adjustments = [];
+  const workingEntitlementRepository = {
+    async lockForFamily() { return { parentMemberUsedCount: 2 }; },
+    async adjustParentMemberUsedCount(_conn, _familyId, delta) { adjustments.push(delta); return {}; },
+  };
+  const { service: workingService } = buildService({ repository, entitlementRepository: workingEntitlementRepository });
+  // If the failed attempt had wrongly persisted the family_id clear despite
+  // the hook throwing, this would fail with NOT_FOUND instead of succeeding.
+  await workingService.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner');
+  assert.deepEqual(adjustments, [-1]);
+});
+
+test('removeMember releases no seat when no entitlementRepository is supplied, and still genuinely removes the member', async () => {
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, entitlementRepository: null });
+
+  await service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner');
+  await assert.rejects(
+    () => service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'NOT_FOUND',
+  ); // confirms it really was removed the first time
+});
+
+test('removeMember releases no seat when the family has no account_entitlements row yet (nothing to release, never a fabricated adjustment)', async () => {
+  const adjustments = [];
+  const entitlementRepository = {
+    async lockForFamily() { return null; },
+    async adjustParentMemberUsedCount(_conn, _familyId, delta) { adjustments.push(delta); return {}; },
+  };
+  const repository = buildRemovableRepository();
+  await seedAcceptedMember(repository);
+  const { service } = buildService({ repository, entitlementRepository });
+
+  await service.removeMember('fam-1', MEMBER_ACCOUNT, OWNER_ACCOUNT, 'dev-owner');
+  assert.equal(adjustments.length, 0);
+});
+
+test('round trip: accepting consumes a seat, removing releases it, and a new invitation can then reuse the freed capacity', async () => {
+  const entitlementRepository = statefulEntitlementRepositoryFake({ parentMemberLimit: 1, parentMemberUsedCount: 0 });
+  const repository = createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes: seededAccountEmailHashes() });
+  const { service } = buildService({ repository, entitlementRepository });
+
+  const first = await service.createInvitation(baseInput);
+  await service.acceptInvitation(first.invitationId, INVITED_ACCOUNT);
+  assert.equal(entitlementRepository.state.parentMemberUsedCount, 1);
+
+  await assert.rejects(
+    () => service.createInvitation({ ...baseInput, invitedEmail: 'second@example.test' }),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'CAPACITY_EXCEEDED',
+  );
+
+  // The real MySqlFamilyMemberAccountBinder durably wrote
+  // parent_accounts.family_id after acceptInvitation resolved -- this
+  // double doesn't do that itself (see its own header comment), so seed it
+  // to reflect that same post-commit state before removing.
+  repository._setAccountFamilyIdForTest(INVITED_ACCOUNT, 'fam-1');
+  await service.removeMember('fam-1', INVITED_ACCOUNT, 'acct-owner', 'dev-owner');
+  assert.equal(entitlementRepository.state.parentMemberUsedCount, 0);
+
+  const second = await service.createInvitation({ ...baseInput, invitedEmail: 'second@example.test' });
+  assert.equal(second.status, 'PENDING');
+});

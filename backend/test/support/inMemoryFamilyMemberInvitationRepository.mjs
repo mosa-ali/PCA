@@ -11,9 +11,23 @@ const TERMINAL_STATUSES = new Set(['ACCEPTED', 'EXPIRED', 'REVOKED']);
  * hash. An accepting account with no entry is treated exactly as the real
  * implementation treats a missing parent_accounts row: fail closed,
  * reported as NOT_FOUND.
+ *
+ * `accountFamilyIds` is this double's stand-in for parent_accounts'
+ * family_id column -- what removeMemberAtomically reads/clears. Map of
+ * accountId -> familyId|null. An accountId with no entry at all mirrors a
+ * row that does not exist (NOT_FOUND); an entry whose value is null or a
+ * different family mirrors "not currently a member of this family"
+ * (NOT_A_MEMBER, including "already removed"). NOTE: unlike the real
+ * schema, accepting an invitation in THIS double does not itself populate
+ * accountFamilyIds (the real FamilyMemberAccountBinder write is a
+ * best-effort step the SERVICE performs separately, outside this
+ * repository's own transaction -- see FamilyMemberInvitationService
+ * .acceptInvitation) -- tests that need a removable member seed this map
+ * directly via _setAccountFamilyIdForTest, exactly like accountEmailHashes.
  */
-export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes = new Map() } = {}) {
+export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes = new Map(), accountFamilyIds = new Map() } = {}) {
   const byId = new Map();
+  const accountFamilyId = new Map(accountFamilyIds);
 
   function isAddressee(accountId, record) {
     const hash = accountEmailHashes.get(accountId);
@@ -25,6 +39,13 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
     // interface -- registers the email hash an account is known by.
     _setAccountEmailHashForTest(accountId, emailHash) {
       accountEmailHashes.set(accountId, emailHash);
+    },
+
+    // Test-only mutator, not part of the FamilyMemberInvitationRepository
+    // interface -- registers which family (if any) an account currently
+    // belongs to, mirroring parent_accounts.family_id.
+    _setAccountFamilyIdForTest(accountId, familyId) {
+      accountFamilyId.set(accountId, familyId);
     },
 
     async create(record) {
@@ -105,6 +126,28 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
       if (!record || record.familyId !== familyId || record.status !== 'PENDING') return null;
       record.role = newRole;
       return { ...record };
+    },
+
+    // Mirrors MySqlFamilyMemberInvitationRepository.removeMemberAtomically's
+    // guarded-write + disambiguation shape, in reverse of acceptAtomically
+    // above -- see this file's own header comment on accountFamilyIds.
+    async removeMemberAtomically(familyId, targetAccountId, _removedAt, onRemovedInTransaction) {
+      if (!accountFamilyId.has(targetAccountId)) return { outcome: 'NOT_FOUND' };
+      const currentFamilyId = accountFamilyId.get(targetAccountId);
+      if (currentFamilyId !== familyId) return { outcome: 'NOT_A_MEMBER' };
+
+      const hasAcceptedInvitation = [...byId.values()].some(
+        (r) => r.familyId === familyId && r.acceptedByAccountId === targetAccountId && r.status === 'ACCEPTED',
+      );
+      if (!hasAcceptedInvitation) return { outcome: 'CANNOT_REMOVE_OWNER' };
+
+      // Hook runs BEFORE the mutation is published, mirroring
+      // acceptAtomically's own double above: a throw here must leave
+      // accountFamilyId untouched, exactly like a real rolled-back
+      // transaction.
+      if (onRemovedInTransaction) await onRemovedInTransaction(null, familyId, targetAccountId);
+      accountFamilyId.set(targetAccountId, null);
+      return { outcome: 'REMOVED' };
     },
   };
 }

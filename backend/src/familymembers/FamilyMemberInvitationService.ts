@@ -13,6 +13,7 @@ import type {
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 import type { EntitlementRepository } from '../entitlements/EntitlementRepository.js';
+import type { RemoveMemberTransactionHook } from './FamilyMemberInvitationRepository.js';
 
 export type FamilyMemberInvitationErrorCode =
   | 'INVALID_INPUT'
@@ -27,7 +28,11 @@ export type FamilyMemberInvitationErrorCode =
   /** The family's parentMemberLimit (including complimentary capacity) has no room for this invitation once already-used seats and other still-PENDING invitations are counted. */
   | 'CAPACITY_EXCEEDED'
   /** changeRole only ever applies to a still-PENDING invitation -- once accepted, role is resolved from the (not-yet-real) TrustSetRoleResolver, not this table. */
-  | 'NOT_PENDING';
+  | 'NOT_PENDING'
+  /** removeMember only ever targets ANOTHER parent's membership -- see removeMember's own doc comment for why a self-removal is refused rather than modeled as a "leave this family" flow. */
+  | 'CANNOT_REMOVE_SELF'
+  /** removeMember never revokes ownership -- see FamilyMemberInvitationRepository.removeMemberAtomically's own doc comment for exactly how the Owner is identified without a durable role column. */
+  | 'CANNOT_REMOVE_OWNER';
 
 /** Message text is always a fixed, generic string per code -- never interpolates the raw email or family data. */
 export class FamilyMemberInvitationError extends Error {
@@ -49,6 +54,8 @@ const FAMILY_MEMBER_INVITATION_ERROR_MESSAGES: Record<FamilyMemberInvitationErro
   NOT_AUTHORIZED: 'You are not authorized to perform this action.',
   CAPACITY_EXCEEDED: 'This family has reached its parent-member limit.',
   NOT_PENDING: 'This invitation is no longer pending and its role can no longer be changed.',
+  CANNOT_REMOVE_SELF: 'You cannot remove your own membership from this family.',
+  CANNOT_REMOVE_OWNER: 'The family owner cannot be removed.',
 };
 
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days -- a person-invitation is not a one-time device bootstrap link, longer-lived than enrollment_invitations' short TTL is appropriate.
@@ -273,6 +280,93 @@ export class FamilyMemberInvitationService {
       actionId: null,
     });
     return record;
+  }
+
+  /**
+   * Removes an already-ACCEPTED family member: clears the target account's
+   * own family_id binding and releases the parent-member seat it consumed,
+   * atomically, in the SAME transaction -- the mirror image of
+   * acceptInvitation's own seat consumption (see
+   * FamilyMemberInvitationRepository.removeMemberAtomically's own doc
+   * comment for the guarded-UPDATE + disambiguating-SELECT shape and the
+   * OWNER-protection reasoning: this schema has no durable OWNER-role
+   * column reachable from this domain -- genuine role resolution is
+   * TrustSetRoleResolver's job, and that source is out of this method's
+   * scope entirely -- so the Owner is identified structurally instead: the
+   * one account bound to a family that never joined it via an ACCEPTED
+   * invitation, per ParentAccountService.attemptFamilyGenesis's own "no
+   * join-an-existing-family path" invariant).
+   *
+   * `actorAccountId` is the ACTING parent's own account id (from their
+   * family session, exactly like createInvitation's invitedByAccountId) --
+   * distinct from `actorDeviceId` (used only for authorize()'s trust-set
+   * actor resolution). Removing your OWN account through this path is
+   * refused (CANNOT_REMOVE_SELF): this operation models one parent acting
+   * on ANOTHER parent's membership (doc 18's "remove non-owner parent"
+   * row), never a self-service "leave this family" flow -- this codebase
+   * defines no semantics for that (would this account's own devices lose
+   * access mid-session? no route here answers that), so it is refused
+   * rather than guessed at. Checked before authorize() so a self-targeting
+   * call never even reaches the authorization/audit layer.
+   *
+   * Resolves with the real, durable FamilyAuditRecord.eventId this removal
+   * produced (never a client-synthesized placeholder) -- the HTTP route
+   * surfaces it directly so a caller (e.g. parent-web's
+   * FamilyAuthorityGateway.removeMember, whose own return type is `{
+   * auditEventId: string }`) has a genuine correlation id, not a
+   * fabricated one.
+   */
+  async removeMember(
+    familyId: OpaqueFamilyId,
+    targetAccountId: OpaqueAccountId,
+    actorAccountId: OpaqueAccountId,
+    actorDeviceId: OpaqueAccountId,
+  ): Promise<{ auditEventId: string }> {
+    if (targetAccountId === actorAccountId) throw new FamilyMemberInvitationError('CANNOT_REMOVE_SELF');
+    this.authorizeFamilyOperation(familyId, actorDeviceId, 'REMOVE_NON_OWNER_PARENT');
+
+    const removedAt = this.now();
+    const entitlementRepository = this.entitlementRepository;
+    const releaseParentMemberSeat: RemoveMemberTransactionHook | undefined = entitlementRepository
+      ? async (conn, fId): Promise<void> => {
+          const locked = await entitlementRepository.lockForFamily(conn, fId);
+          if (!locked) return;
+          await entitlementRepository.adjustParentMemberUsedCount(conn, fId, -1, removedAt);
+        }
+      : undefined;
+
+    const result = await this.repository.removeMemberAtomically(familyId, targetAccountId, removedAt, releaseParentMemberSeat);
+    switch (result.outcome) {
+      case 'REMOVED': {
+        const auditRecord = await this.auditService.record({
+          familyId,
+          actionType: 'REMOVE_NON_OWNER_PARENT',
+          actorDeviceId,
+          actorMemberId: null,
+          targetScope: { kind: 'MEMBER', id: targetAccountId },
+          authorizationRole: null,
+          trustSetEpoch: 0,
+          policyRevision: null,
+          clientMonotonicSequence: null,
+          resultStatus: 'SUCCESS',
+          targetAcknowledgementCount: 0,
+          reasonCategory: null,
+          correlationId: targetAccountId,
+          actionId: null,
+        });
+        return { auditEventId: auditRecord.eventId };
+      }
+      case 'NOT_FOUND':
+      case 'NOT_A_MEMBER':
+        // Collapsed to the same NOT_FOUND a caller sees for a nonexistent
+        // or foreign-family invitation elsewhere in this file -- an
+        // already-removed member and a member who never existed in this
+        // family are indistinguishable to the caller, same IDOR-avoidance
+        // posture as the rest of this repository.
+        throw new FamilyMemberInvitationError('NOT_FOUND');
+      case 'CANNOT_REMOVE_OWNER':
+        throw new FamilyMemberInvitationError('CANNOT_REMOVE_OWNER');
+    }
   }
 
   /**
