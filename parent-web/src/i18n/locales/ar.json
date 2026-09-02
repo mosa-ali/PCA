@@ -320,6 +320,7 @@
     "inviteAdministrator": "دعوة مسؤول",
     "inviteViewer": "دعوة مُشاهد",
     "removeMember": "إزالة",
+    "removeMemberConfirm": "هل تريد إزالة هذا العضو من العائلة؟ سيؤدي هذا فورًا إلى إنهاء وصوله وتحرير المقعد المدفوع الذي كان يشغله -- ولا يمكن التراجع عن هذا الإجراء من هذه الشاشة.",
     "changeRole": "تغيير الدور",
     "transferOwnership": "نقل الملكية",
     "newAdministratorName": "مسؤول جديد",

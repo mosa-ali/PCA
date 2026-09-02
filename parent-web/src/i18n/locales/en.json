@@ -320,6 +320,7 @@
     "inviteAdministrator": "Invite Administrator",
     "inviteViewer": "Invite Viewer",
     "removeMember": "Remove",
+    "removeMemberConfirm": "Remove this member from the family? This immediately ends their access and frees the paid seat they occupied -- it cannot be undone from this screen.",
     "changeRole": "Change role",
     "transferOwnership": "Transfer ownership",
     "newAdministratorName": "New Admin",

@@ -219,7 +219,7 @@ function buildRealClients(): PcaApiClients {
   // gateways below (parentFamilyData/deviceStatus/requests) -- they all
   // check the SAME trust snapshot, so "trusted" can never mean something
   // different to one gateway than another.
-  const trustedBrowser = new RealTrustedBrowserProvider();
+  const trustedBrowser = new RealTrustedBrowserProvider(config.apiBaseUrl);
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     // PCA product-completion programme: removeMember is now real, HTTP-backed

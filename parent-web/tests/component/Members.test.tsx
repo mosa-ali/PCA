@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../utils/renderWithProviders';
@@ -101,5 +101,44 @@ describe('Members', () => {
     // this same disabled-fallback badge for a Viewer -- assert at least one exists
     // rather than assuming exactly one (the fixture seeds several non-owner members).
     expect(screen.getAllByText('Not permitted for your role').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * removeMember is now a real, HTTP-backed call outside demo mode
+   * (../../src/api/real/realFamilyAuthorityGateway.ts) that irreversibly
+   * frees a paid seat -- the Remove button must never invoke it without an
+   * explicit confirmation step first.
+   */
+  describe('member removal requires confirmation', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('cancelling the confirm dialog never calls removeMember: the member stays listed and no step-up prompt appears', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      renderWithProviders(<Members />, { role: 'OWNER' });
+      await screen.findByText('Sara (Administrator, DEV)');
+
+      const removeButtons = await screen.findAllByRole('button', { name: 'Remove' });
+      await userEvent.click(removeButtons[0]);
+
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: 'Re-authenticate' })).not.toBeInTheDocument();
+      // Give any (incorrect) in-flight removal a chance to resolve before asserting absence.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.getByText('Sara (Administrator, DEV)')).toBeInTheDocument();
+    });
+
+    it('confirming the dialog proceeds with the existing step-up-guarded removal flow, and the member disappears once it succeeds', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      renderWithProviders(<Members />, { role: 'OWNER' });
+      await screen.findByText('Sara (Administrator, DEV)');
+
+      const removeButtons = await screen.findAllByRole('button', { name: 'Remove' });
+      await userEvent.click(removeButtons[0]);
+      await confirmStepUp();
+
+      await waitFor(() => expect(screen.queryByText('Sara (Administrator, DEV)')).not.toBeInTheDocument());
+    }, STEP_UP_FLOW_TIMEOUT_MS);
   });
 });

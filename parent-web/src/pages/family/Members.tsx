@@ -148,6 +148,12 @@ export default function Members() {
   };
 
   const remove = async (memberId: string) => {
+    // removeMember is now a real, HTTP-backed call that irreversibly ends the
+    // member's family access and frees the paid seat they occupied (see
+    // ../../api/real/realFamilyAuthorityGateway.ts) -- require explicit
+    // confirmation before invoking it, matching this app's one existing
+    // destructive-action precedent (LocationPage.tsx's safe-zone delete).
+    if (!window.confirm(t('family.removeMemberConfirm'))) return;
     setActionError(null);
     try {
       await runFamilyAction('REMOVE_NON_OWNER_PARENT', () => clients.familyAuthority.removeMember(memberId));
