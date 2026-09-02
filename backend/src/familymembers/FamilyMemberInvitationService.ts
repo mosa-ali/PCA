@@ -13,6 +13,8 @@ import type {
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac/FamilyAuditStore.js';
 import type { ParentActionAuthorizationService } from '../familyrbac/ParentActionAuthorizationService.js';
 import type { EntitlementRepository } from '../entitlements/EntitlementRepository.js';
+import type { NewCapacityAcquisitionPolicy } from '../parentaccount/freeaccess/FreeAccessAcquisitionPolicy.js';
+import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 import type { RemoveMemberTransactionHook } from './FamilyMemberInvitationRepository.js';
 
 export type FamilyMemberInvitationErrorCode =
@@ -27,6 +29,8 @@ export type FamilyMemberInvitationErrorCode =
   | 'NOT_AUTHORIZED'
   /** The family's parentMemberLimit (including complimentary capacity) has no room for this invitation once already-used seats and other still-PENDING invitations are counted. */
   | 'CAPACITY_EXCEEDED'
+  /** FREE_ACCESS_ENFORCEMENT_V1: this account's free-access period has EXPIRED (with no overriding active complimentary COMMERCIAL_ACCESS grant), and a parent-member invite is one of the three NEW-capacity-consuming operations the frozen contract denies after expiry -- see deriveFreeAccessStatus.ts. Distinct from CAPACITY_EXCEEDED: the family may have seats to spare and still be denied. Mirrors InvitationService's and FamilyCommercialService's own identically-named codes. */
+  | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED'
   /** changeRole only ever applies to a still-PENDING invitation -- once accepted, role is resolved from the (not-yet-real) TrustSetRoleResolver, not this table. */
   | 'NOT_PENDING'
   /** removeMember only ever targets ANOTHER parent's membership -- see removeMember's own doc comment for why a self-removal is refused rather than modeled as a "leave this family" flow. */
@@ -53,6 +57,7 @@ const FAMILY_MEMBER_INVITATION_ERROR_MESSAGES: Record<FamilyMemberInvitationErro
   DUPLICATE_PENDING_INVITATION: 'A pending invitation already exists for this family member.',
   NOT_AUTHORIZED: 'You are not authorized to perform this action.',
   CAPACITY_EXCEEDED: 'This family has reached its parent-member limit.',
+  FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED: 'Free access for this account has expired, so new family members cannot be invited.',
   NOT_PENDING: 'This invitation is no longer pending and its role can no longer be changed.',
   CANNOT_REMOVE_SELF: 'You cannot remove your own membership from this family.',
   CANNOT_REMOVE_OWNER: 'The family owner cannot be removed.',
@@ -106,6 +111,7 @@ export class FamilyMemberInvitationService {
   private readonly auditService: FamilyAuditService;
   private readonly accountBinder: FamilyMemberAccountBinder;
   private readonly entitlementRepository: EntitlementRepository | null;
+  private readonly newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null;
 
   /**
    * `auditService` defaults to a private, per-instance in-memory reference
@@ -129,6 +135,18 @@ export class FamilyMemberInvitationService {
    * means some callers (e.g. lower-level unit tests of the invitation
    * lifecycle alone) legitimately don't care about billing capacity;
    * production wiring (buildServer.ts) must supply a real one.
+   *
+   * `newCapacityAcquisitionPolicy` is the FREE_ACCESS_ENFORCEMENT_V1 gate.
+   * deriveFreeAccessStatus.ts's frozen contract names exactly three
+   * new-capacity-consuming operations denied after expiry -- "device
+   * enrollment, parent-member invite, new non-billing commercial
+   * activation" -- and issuing a parent-member invitation is the second of
+   * them. Optional/`null`-defaulted for the SAME reason (and with the same
+   * `?.` call shape) as SlotReservationService's and ChangeRequestService's
+   * own constructor parameters: lower-level unit tests of the invitation
+   * lifecycle alone legitimately supply none. Production wiring (main.ts)
+   * must pass the SAME FreeAccessAcquisitionPolicy instance those two
+   * services already share.
    */
   constructor(
     repository: FamilyMemberInvitationRepository,
@@ -137,6 +155,7 @@ export class FamilyMemberInvitationService {
     auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
     accountBinder: FamilyMemberAccountBinder = new NoopFamilyMemberAccountBinder(),
     entitlementRepository: EntitlementRepository | null = null,
+    newCapacityAcquisitionPolicy: NewCapacityAcquisitionPolicy | null = null,
   ) {
     this.repository = repository;
     this.authorization = authorization;
@@ -144,6 +163,7 @@ export class FamilyMemberInvitationService {
     this.now = now;
     this.auditService = auditService;
     this.accountBinder = accountBinder;
+    this.newCapacityAcquisitionPolicy = newCapacityAcquisitionPolicy;
   }
 
   async createInvitation(input: CreateFamilyMemberInvitationInput): Promise<FamilyMemberInvitationRecord> {
@@ -167,6 +187,35 @@ export class FamilyMemberInvitationService {
       actionId: randomUUID(),
     });
     if (decision.verdict !== 'ALLOW') throw new FamilyMemberInvitationError('NOT_AUTHORIZED');
+
+    // FREE_ACCESS_ENFORCEMENT_V1 acquisition gate -- the "parent-member
+    // invite" arm of deriveFreeAccessStatus.ts's frozen "Denied after
+    // expiry" list, alongside SlotReservationService (device enrollment)
+    // and ChangeRequestService (new non-billing commercial activation).
+    //
+    // Ordered AFTER authorize() so an unauthorized caller can never use
+    // this endpoint as an oracle for another family's free-access state,
+    // and BEFORE every read/write below so no duplicate-detection or
+    // entitlement query runs for a denied acquisition. Only createInvitation
+    // is gated: revoke/changeRole/remove and acceptInvitation consume no
+    // NEW capacity (acceptance draws on the seat this invitation already
+    // counted against the limit), and the frozen contract's "Allowed after
+    // EXPIRED" arm explicitly preserves existing-protection continuity.
+    //
+    // Translated into this domain's own error code exactly as
+    // InvitationService and FamilyCommercialService already translate it --
+    // FreeAccessEnforcementError's own doc comment requires a call site to
+    // surface a coded, non-silent response, and this file's HTTP adapter
+    // (familyMemberRoutes.ts) only maps FamilyMemberInvitationError; an
+    // un-translated throw would reach the client as a bare 500.
+    if (this.newCapacityAcquisitionPolicy) {
+      try {
+        await this.newCapacityAcquisitionPolicy.assertAllowed(input.familyId, createdAt);
+      } catch (error) {
+        if (error instanceof FreeAccessEnforcementError) throw new FamilyMemberInvitationError('FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED');
+        throw error;
+      }
+    }
 
     const invitedEmailHash = hashInvitedEmail(input.invitedEmail);
 

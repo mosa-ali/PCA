@@ -14,8 +14,30 @@ import org.json.JSONObject
  * change (the Android tree has no OkHttp/Ktor dependency yet -- see doc 40
  * Section 8 / lane brief Section 8's own note that transport library
  * selection was explicitly deferred). Every call runs on `Dispatchers.IO`.
+ *
+ * [baseUrl] is validated eagerly at construction, exactly as
+ * [org.pca.app.enrollment.BootstrapEndpointConfig] validates the bootstrap
+ * endpoint: a misconfigured build must fail closed at composition time
+ * rather than silently carrying device session tokens and relay envelopes
+ * over an insecure channel. Non-HTTPS is only ever permitted for the
+ * well-known local-development hosts, and only when [allowInsecureHttp] is
+ * explicitly set -- the same "never silently downgrade" posture used
+ * throughout this codebase (see also RejectingEnvelopeSignatureVerifier).
  */
-class HttpUrlConnectionRelayHttpClient(private val baseUrl: String) : RelayHttpClient {
+class HttpUrlConnectionRelayHttpClient(
+    private val baseUrl: String,
+    allowInsecureHttp: Boolean = false,
+) : RelayHttpClient {
+
+    init {
+        val isHttps = baseUrl.startsWith("https://", ignoreCase = true)
+        val host = runCatching { URL(baseUrl).host }.getOrNull()
+        val isLocalDevHost = host != null && LOCAL_DEV_HOSTS.contains(host)
+        require(isHttps || (allowInsecureHttp && isLocalDevHost)) {
+            "Refusing to configure an insecure (non-HTTPS) relay endpoint '$baseUrl' -- " +
+                "only localhost/10.0.2.2 development hosts may use HTTP, and only with allowInsecureHttp=true."
+        }
+    }
 
     private suspend fun request(path: String, method: String, sessionToken: String?, body: JSONObject?): JSONObject =
         withContext(Dispatchers.IO) {
@@ -117,5 +139,9 @@ class HttpUrlConnectionRelayHttpClient(private val baseUrl: String) : RelayHttpC
     override suspend fun getStatus(sessionToken: String): String {
         val response = request("/v1/runtime-sync/status", "GET", sessionToken, null)
         return response.getString("connectionState")
+    }
+
+    private companion object {
+        val LOCAL_DEV_HOSTS = setOf("localhost", "127.0.0.1", "10.0.2.2")
     }
 }

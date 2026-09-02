@@ -106,7 +106,15 @@ layer wiring them together**:
 - `FamilyActivityPicker` is never presented, so no app tokens can ever be produced.
 
 Even with the Apple entitlement granted, a Mac purchased and a device in hand, **a signed build of
-this source would never shield a single app.** No Swift line in this repo has ever been compiled.
+this source would never shield a single app.**
+
+*Correction applied during the adversarial pass:* an earlier draft said "no Swift line in this repo
+has ever been compiled." That is **false** — `.github/workflows/quality-gates.yml` runs `xcodebuild
+test` on a `macos-14` runner. The accurate statement is that **no result artifact from that job is
+committed anywhere**, so its pass/fail history is unknown here. This is materially good news: build
+and simulator-unit-test evidence is obtainable today at zero hardware cost, and running it would
+immediately settle whether the hand-generated `project.pbxproj` and the SDK-recollection-written call
+sites actually compile.
 
 **REAL-WORLD COST OF (a) iOS in V1:** a Mac, ≥1 physical iPhone/iPad (the Simulator cannot exercise
 Family Controls), an Apple Developer Program membership, an entitlement application Apple may take
@@ -255,6 +263,71 @@ taking real payments is expensive. Choose D6 carefully — it is the stickiest c
 
 ---
 
+## D16 — SPLIT-ORIGIN COOKIE / DOMAIN TOPOLOGY
+
+**DECISION_REQUIRED:** Does Parent Web reach the API **same-origin behind a reverse proxy**
+(`app.pcasafe.com` proxying `/api/*` and `/v1/*`), or as a **true split** (`app.pcasafe.com` calling
+`api.pcasafe.com` cross-origin)?
+
+**WHY_IT_CANNOT_BE_DECIDED_BY_ENGINEERING:** both are implementable. The choice is a hosting and
+security-posture decision — whether to widen session-cookie scope across every `*.pcasafe.com` host.
+
+**THE FINDING THAT MAKES THIS URGENT.** A true split **breaks every Parent Web mutation**, and it
+would not be discovered until DNS cutover. The session cookie survives (same registrable domain,
+`SameSite=Strict`), but the CSRF cookie is **host-only** and is read via `document.cookie` by
+**13 client modules**. From `app.` they structurally cannot read a cookie scoped to `api.`, so every
+mutating request would omit the CSRF header and the backend would return `403 csrf_mismatch`.
+**Login would succeed and every write would fail** — a failure that presents as a permissions bug,
+not a domain bug, and would be extremely expensive to diagnose live.
+
+**This is an unconsidered design gap, not a violated requirement.** `PCA-ADD-IDENT-012` specifies the
+transport as *"HttpOnly, Secure-in-production, SameSite=Strict cookie … double-submit CSRF"* and says
+nothing about cookie `Domain` or cross-subdomain use. The case was never in scope, which is why the
+source is not wrong today and why this is a decision rather than a defect.
+
+**OPTIONS**
+
+| | Already built | Still missing |
+|---|---|---|
+| **(a) Single-origin behind a proxy** *(recommended)* | Everything. **Zero source change.** Matches the posture Platform Admin already assumes (`VITE_PCA_PLATFORM_ADMIN_API_BASE_URL` defaults to same-origin). | A reverse-proxy config, which does not exist in the repo — no nginx/Caddy/IaC of any kind. |
+| **(b) True `app.` / `api.` split** | The session-cookie half works unchanged. | A `Domain=pcasafe.com` change to `serializeCookie` plus both call sites, **and a security review of widening cookie scope to every `*.pcasafe.com` host**. CORS also accepts exactly one origin today, so Platform Admin must stay proxied regardless. |
+
+**SECURITY_IMPACT:** (b) widens cookie scope to every present and future subdomain — any XSS on any
+`*.pcasafe.com` host gains reach it does not have under (a).
+**UX_IMPACT:** none visible to families either way. **COST:** (a) is cheaper and lower-risk.
+**V1_IMPACT:** (a) needs no source change and no security review; (b) adds both to the critical path.
+
+**BLOCKS_WHAT:** every DNS/domain step. Gate `DOMAIN_DNS_HOSTING` (newly proposed — see below),
+`DEPLOYED_TLS_TERMINATION_CONFIG`, `ANDROID_APP_LINK_ASSETLINKS_HOSTING`, and `PCA-NFR-001`.
+Five mobile hostname literals additionally have **no configuration seam at all** (hardcoded in Kotlin,
+the Android manifest, Swift and an entitlements plist), and the enrollment link uses a **fifth
+hostname** not in the four-name model — both must be settled in the same pass.
+
+**RECOMMENDATION: (a) single-origin behind a reverse proxy.** Zero source change, no cookie-scope
+review, consistent with Platform Admin, and it removes the entire class of failure above.
+`api.pcasafe.com` can still exist for mobile clients, which do not use cookies.
+
+**REVERSIBILITY:** Deciding (a) now is cheap to revisit. Discovering the (b) problem *after* DNS is
+live is the expensive path — the symptom looks like broken permissions, not broken topology.
+
+---
+
+## NEWLY PROPOSED EXTERNAL GATES
+
+Three real external dependencies are referenced in source but tracked in **no register** — verified
+absent from `external_gate_matrix.json` (33 gates) **and** the `.agent-runtime` R3 register (same 33).
+They are invisible to `Invoke-ReleaseGateCheck.ps1` today. All three are carried in
+`PCA_PPR1_EXTERNAL_GATE_MATRIX.csv` with status `PROPOSED_NOT_REGISTERED` and need owner approval to
+be registered:
+
+| Gate | Why it is V1-blocking |
+|---|---|
+| **`DOMAIN_DNS_HOSTING`** | Without DNS and a served hostname no family can reach the service at all. Follows D16. |
+| **`DATABASE_BACKUP_RESTORE`** | There is no backup tooling, no restore runbook and no restore test anywhere in the repo. An untested restore is not a backup — here there is neither. Largest untracked production risk. |
+| **`EMAIL_PROVIDER_SELECTION`** | Production wires `RejectingEmailSender`, so verify-email, forgot-password and reset-password are dead end-to-end. |
+
+---
+
 ## REMAINING DECISIONS
 
 | ID | Question | Recommendation | Blocks |
@@ -264,10 +337,9 @@ taking real payments is expensive. Choose D6 carefully — it is the stickiest c
 | D11 | `RELAY_METADATA_PRIVACY` — three separable choices: delete envelopes on ack vs TTL-only; bound `family_audit_events` retention; whether a relay diagnostic may carry `familyId`. | **PCA-operated relay, keep existing bounds, and publish the 7-day ceiling** in the privacy policy so it becomes a promise. Drop `familyId` from diagnostics. | matrix `RELAY_METADATA_PRIVACY` |
 | D12 | Deployment topology — **one instance or many?** | Answer explicitly. Single-instance makes the in-memory rate limiter, device sessions, idempotency ledger and audit store **correct as written**. Multi-instance requires new durable source in seven places. Nothing in the repo records which was chosen. The background scheduler is *already* multi-instance-safe. | 7 source locations |
 | D13 | Legal data-controller role (`PCA-DEC-001`, doc 01) | **PCA joint controller for enrollment metadata, family sole controller for activity** — matches the technical E2EE boundary. Privacy policy cannot be written without this. | D11, privacy policy |
-| D14 | Register `DATABASE_BACKUP_RESTORE` as an external gate | **Yes.** All 34 gates were enumerated; **none covers server DB backup or restore**, and there is neither a backup nor a tested restore path in the repo. It is currently invisible to the release gate. | untracked risk |
-| D15 | Register `DOMAIN_DNS_HOSTING` and `EMAIL_PROVIDER_SELECTION` as gates | **Yes.** Both are real external dependencies referenced in source but tracked nowhere. Production email is `RejectingEmailSender`, which blocks verify-email/forgot-password end to end. | untracked risk |
-| D16 | Parent-Web ⇄ API origin model (see the domain section of the gaps report) | **Single-origin behind a proxy.** A true `app.` / `api.` split **breaks every Parent Web mutation** because the non-HttpOnly CSRF cookie is host-only and unreadable from `app.`. Single-origin needs **zero source change**. | all DNS work |
-| D17 | `EXTERNAL_GATE_MATRIX.md` scope | Regenerate for all 34 gates, or demote it to "the original seven, for narrative context" with the JSON declared authoritative. It currently claims to be generated and no generator exists. | doc trust |
+| D14 · D15 | Register the three missing external gates | **Yes — see NEWLY PROPOSED EXTERNAL GATES above.** `DATABASE_BACKUP_RESTORE`, `DOMAIN_DNS_HOSTING`, `EMAIL_PROVIDER_SELECTION`. All three are real dependencies tracked in no register and invisible to the release gate. | untracked risk |
+| D16 | Parent-Web ⇄ API origin model | **Single-origin behind a proxy — see the full D16 section above.** | all DNS work |
+| D17 | `EXTERNAL_GATE_MATRIX.md` scope | Regenerate for all 37 gates (33 registered + 1 matrix-only + 3 newly proposed), or demote it to "the original seven, for narrative context" with the JSON declared authoritative. It currently claims to be generated and no generator exists. | doc trust |
 | D18 | `PCA-DEC-009` battery-impact disclosure wording | **Qualitative statement** until real-device benchmarking exists. Trivially closable. | `PCA-NFR-034` |
 | D19 | Telemetry activation | **Leave off for V1** — already default-off, no ingestion route exists, and building ingestion ahead of sign-off would itself violate the requirement. | none |
 | D20 | Parental consent, privacy policy, account deletion | **All three are V1 blockers and none exists.** Registration collects email+password only — no guardianship attestation, no policy acceptance, no consent artifact. No privacy policy document or URL exists anywhere. No account-deletion path exists. Play Families requires a policy link in the listing *and* in the app. | store submission |

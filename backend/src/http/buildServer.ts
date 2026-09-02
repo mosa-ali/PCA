@@ -314,6 +314,59 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   // route's own narrower abuse budget.
   const authAttemptLimiter = rateLimiter({ windowMs: 60_000, max: 60, bucket: 'auth-attempt' });
 
+  // The five cookie-plane endpoints that establish or recover an identity
+  // BEFORE any session exists. Each already carries parentAccountRoutes.ts's
+  // own strictly narrower two-dimensional budget (per-IP AND per-email-hash,
+  // via createKeyedRateLimiter) sized individually per endpoint, so they are
+  // deliberately left out of the sweep below rather than additionally
+  // charged against -- and able to exhaust -- the shared auth-attempt
+  // bucket. Keyed by route pattern, never by the concrete request URL.
+  const SELF_LIMITED_PARENT_PLANE_ROUTES: ReadonlySet<string> = new Set([
+    '/api/parent/register',
+    '/api/parent/verify-email',
+    '/api/parent/request-password-reset',
+    '/api/parent/reset-password',
+    '/api/parent/login',
+  ]);
+
+  /**
+   * Makes authAttemptLimiter's contract above ("applied before
+   * requireServiceSession on every authenticated route") true for the
+   * `/api/parent/*` cookie plane and the two `/api/families/*` device
+   * routes as well as for `/v1/*` and `/platform-admin/*`.
+   *
+   * Those two planes were the exception: registerParentAccountRoutes,
+   * registerRemovalDecisionRoutes, registerChildRequestRoutes,
+   * registerChildPolicyRoutes, registerEyeProtectionRoutes,
+   * registerWebRuleRoutes, registerFamilyMemberRoutes,
+   * registerFamilyAuditEventRoutes, registerProtectionAlertRoutes and
+   * registerDashboardRoutes are all wired below WITHOUT a limiter, yet
+   * every one of their authenticated routes performs at least one
+   * session-validation DB round-trip (parentAccountService.readSession)
+   * plus, on most, a second device-session lookup -- before any
+   * authorization decision. Unbudgeted, a single IP could force those
+   * round-trips at line rate against the same pool `/health/db` above is
+   * careful not to starve, and could equally use them to brute-force
+   * session-cookie/bearer-token guesses.
+   *
+   * Deliberately an instance-level hook rather than ~40 individual
+   * `preHandler` entries: the defect being fixed IS that per-route
+   * attachment was silently incomplete, and a route added to either plane
+   * tomorrow inherits this automatically instead of re-opening the same
+   * gap. Fastify runs instance-level `preHandler` hooks BEFORE a route's
+   * own `preHandler` array, so the ordering the contract describes (limiter
+   * first, then the session check) holds either way. `routeOptions.url` is
+   * the matched route PATTERN and is `undefined` for an unmatched (404)
+   * request, which needs no budget of its own.
+   */
+  app.addHook('preHandler', async (request, reply) => {
+    const routePattern = request.routeOptions.url;
+    if (typeof routePattern !== 'string') return;
+    if (!routePattern.startsWith('/api/parent/') && !routePattern.startsWith('/api/families/')) return;
+    if (SELF_LIMITED_PARENT_PLANE_ROUTES.has(routePattern)) return;
+    await authAttemptLimiter(request, reply);
+  });
+
   // Every unhandled exception (a bug, a MySQL outage, an unmapped driver
   // error) must never reach the client as a raw error.message -- that can
   // carry DB hosts/ports, constraint names, or internal invariant text.
@@ -333,7 +386,17 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
 
   // Verifies DB connectivity only -- never exposes hostname, username,
   // password, connection string, or any table content in the response.
-  app.get('/health/db', async (_request, reply) => {
+  //
+  // Unauthenticated (an orchestrator's readiness probe has no session) but
+  // NOT unlimited: unlike `/health` above, every request here checks out a
+  // connection from a pool capped at DB_POOL_LIMIT (db/pool.ts, default 10)
+  // to run `SELECT 1`, so an unbudgeted caller can starve the same pool
+  // every authenticated route depends on. Its own bucket, per this
+  // codebase's "distinct budgets per route" rule (http/rateLimit.ts) --
+  // deliberately NOT authAttemptLimiter's bucket, so probe traffic can never
+  // consume the session-validation budget or vice versa. 60/min/IP leaves
+  // ample headroom for a normal 10-30s probe interval.
+  app.get('/health/db', { preHandler: rateLimiter({ windowMs: 60_000, max: 60, bucket: 'health-db' }) }, async (_request, reply) => {
     try {
       await getPool().query('SELECT 1');
       return { status: 'ok', database: 'connected' };

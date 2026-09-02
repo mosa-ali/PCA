@@ -4,6 +4,7 @@
 // register->verify->session->logout->revoke-all lifecycle over real fastify
 // `inject()` calls (no live network socket).
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import Fastify from 'fastify';
 import { AuthService } from '../../dist/auth/AuthService.js';
@@ -102,6 +103,27 @@ test('SECURITY: register+verify-email sets an HttpOnly, SameSite=Strict session 
   assert.match(sessionCookieHeader, /SameSite=Strict/i);
   assert.doesNotMatch(sessionCookieHeader, /Secure/i, 'must not be Secure outside production (NODE_ENV != production during tests)');
   assert.doesNotMatch(csrfCookieHeader, /HttpOnly/i, 'the CSRF companion cookie must be JS-readable (double-submit pattern)');
+});
+
+// The assertion above is only safe BECAUSE the shipped image genuinely runs
+// with NODE_ENV=production. cookies.ts's isProductionEnvironment() gates the
+// `Secure` attribute on that single value and, unlike every other NODE_ENV
+// gate in this codebase, an unset NODE_ENV there fails OPEN -- session and
+// CSRF cookies served over plain HTTP. backend/Dockerfile never set it, so
+// the deployed container inherited whatever the runtime handed it (npm's own
+// `npm run start` does not set NODE_ENV either). Static check, because
+// nothing at test time can observe the built image's environment.
+test('DEPLOYMENT: backend/Dockerfile sets NODE_ENV=production, and only after the build step (npm derives omit=dev from it)', async () => {
+  const dockerfile = await readFile(new URL('../../Dockerfile', import.meta.url), 'utf8');
+  assert.match(dockerfile, /^ENV NODE_ENV=production$/m, 'the image must default to production so session cookies are Secure');
+  const envIndex = dockerfile.search(/^ENV NODE_ENV=production$/m);
+  const buildIndex = dockerfile.search(/^RUN npm run build$/m);
+  const installIndex = dockerfile.search(/^RUN npm ci /m);
+  assert.ok(installIndex >= 0 && buildIndex >= 0, 'Dockerfile must still install and build');
+  assert.ok(
+    envIndex > buildIndex && envIndex > installIndex,
+    'NODE_ENV=production before `npm ci`/`npm run build` would strip typescript/@types and break the build',
+  );
 });
 
 async function registerVerifyAndCookies(app, emailSender, email = EMAIL) {

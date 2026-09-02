@@ -98,6 +98,14 @@ function errorStatus(code: FamilyMemberInvitationError['code']): number {
     case 'CANNOT_REMOVE_OWNER':
       return 409;
     case 'NOT_AUTHORIZED':
+    // FREE_ACCESS_ENFORCEMENT_V1: same 403 + explicit code every other
+    // acquisition call site returns for this denial (invitationRoutes.ts's
+    // enrollment-invitation branch, familyCommercialRoutes.ts's
+    // familyCommercialErrorToHttpStatus) -- never a bare 409 that would
+    // read as "out of seats". `handleError` below sends the lowercased code
+    // as the body's `error`, so the caller still gets the distinguishing
+    // free_access_expired_new_capacity_denied string.
+    case 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED':
       return 403;
     default:
       return 400;

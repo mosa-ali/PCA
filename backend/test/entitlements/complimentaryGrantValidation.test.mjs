@@ -6,6 +6,7 @@
 // these accidentally reach the repository, the test fails loudly with a
 // TypeError rather than silently passing.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { ComplimentaryEntitlementService, ComplimentaryGrantError } from '../../dist/entitlements/complimentary/ComplimentaryEntitlementService.js';
 
@@ -68,4 +69,35 @@ test('accepts a well-formed request without touching the (never-called) reposito
   // validation ran first (a TypeError/thrown-Error from the stub, not a
   // ComplimentaryGrantError, confirms the request was well-formed).
   await assert.rejects(() => service.createGrant(baseRequest(), new Date()), /transaction runner must not be invoked/);
+});
+
+// ---------------------------------------------------------------------------
+// Production wiring: complimentary capacity was consumable but invisible.
+// main.ts constructed ComplimentaryEntitlementService for the Platform
+// Administration grant surface but never handed it to buildServer, so
+// familyCommercialRoutes.ts's entitlement read hit its
+// `if (!deps.complimentaryEntitlementService) return json;` short-circuit and
+// a family holding an ACTIVE grant was shown the base entitlement only
+// (availableDeviceSlots: 0) while enrollment genuinely honoured the grant.
+// Static source checks: main.ts cannot be imported without a live database.
+// ---------------------------------------------------------------------------
+
+test('PRODUCTION WIRING: main.ts hands the SAME ComplimentaryEntitlementService instance to buildServer', async () => {
+  const mainTs = await readFile(new URL('../../src/main.ts', import.meta.url), 'utf8');
+  assert.equal(
+    (mainTs.match(/new ComplimentaryEntitlementService\(/g) ?? []).length,
+    1,
+    'one shared instance -- never a second, independently-constructed copy',
+  );
+  assert.match(mainTs, /^\s*complimentaryEntitlementService,$/m, 'must be passed into the buildServer({...}) dependency object');
+});
+
+test('PRODUCTION WIRING: buildServer threads complimentaryEntitlementService into the family commercial routes', async () => {
+  const buildServerTs = await readFile(new URL('../../src/http/buildServer.ts', import.meta.url), 'utf8');
+  assert.match(buildServerTs, /complimentaryEntitlementService:\s*deps\.complimentaryEntitlementService/);
+  const routesTs = await readFile(new URL('../../src/http/routes/familyCommercialRoutes.ts', import.meta.url), 'utf8');
+  // The short-circuit itself is correct and must stay (a caller that
+  // genuinely has no complimentary service must not fabricate a DTO) -- the
+  // defect was only ever that production took it.
+  assert.match(routesTs, /if \(!deps\.complimentaryEntitlementService\) return json;/);
 });

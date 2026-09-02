@@ -41,9 +41,9 @@ Several of the most severe are one-line omissions.
 | **AND-5** | No production writer for `SchedulePolicyStore`; the only `save` calls sit in a class with zero production call sites. Combined with the offline sync port default, **no parent-authored policy of any kind can reach a device in production.** | grep-verified | OPEN — gated behind D5 crypto |
 | **AND-6** | Prayer reminder subsystem is completely inert — `scheduleReminder` is never invoked from any production file, so the manifest-registered receiver can never fire. `SCHEDULE_EXACT_ALARM` is a declared Play-restricted permission with no caller. | grep-verified | OPEN |
 | **AND-7** | Four fully-built user-facing composables have zero references anywhere (dead UI code). | grep-verified | OPEN — owner scope call |
-| **AND-8** | Hardcoded English string in a shipped screen, breaking the en/ar bilingual requirement every neighbouring label honours. | `AdminSecurityActivity.kt:198` | OPEN — trivial |
+| **AND-8** | Hardcoded English string in a shipped screen, breaking the en/ar bilingual requirement every neighbouring label honours. | `AdminSecurityActivity.kt:198` | **FIXED** — moved to resources with a real Arabic translation; key parity 312/312 both directions |
 | **AND-9** | Device tamper state never reaches the backend. The route exists and is correct; the Android relay client implements six paths and **not this one**. Detection works, alerting is stranded — the child dismisses a local notification and the parent never learns. **Not crypto-gated** — the payload is a plain enum. | route vs client grep | OPEN — repo-solvable |
-| **AND-10** | Relay transport accepts any URL scheme; its sibling bootstrap client explicitly refuses non-HTTPS. Currently unexploitable (no production construction site) but must be guarded before wiring. | transport classes | OPEN — latent |
+| **AND-10** | Relay transport accepts any URL scheme; its sibling bootstrap client explicitly refuses non-HTTPS. Currently unexploitable (no production construction site) but must be guarded before wiring. | transport classes | **FIXED** — mirrors the bootstrap client's guard exactly; new test added (not Gradle-compiled here) |
 
 ### 2.2 Backend
 
@@ -52,19 +52,19 @@ Several of the most severe are one-line omissions.
 | **BE-1** | **CORS `ALLOWED_METHODS` omits `DELETE` and `PUT`.** Live-reproduced: DELETE→403, PUT→403, POST→204, PATCH→204. A shipped, tested safe-zone deletion route is unreachable from its only client. Masked because tests use `app.inject` (no `Origin`) and the CORS test only ever preflighted POST. | **FIXED + regression test added** |
 | **BE-2** | `family_member_invitations` has no `UNIQUE(family_id, invited_email_hash)`; the duplicate-pending and seat-capacity invariants are check-then-act across **three separate transactions** with no `FOR UPDATE`. Concurrent requests can produce duplicate PENDING invitations and **seats beyond the paid entitlement**. Latent behind the crypto gate today. | OPEN |
 | **BE-3** | **No graceful shutdown.** `SIGTERM`/`SIGINT` handlers only `clearInterval`; `app.close()` is never called and `closePool()` has zero callers in `src/`. Installing the handler *removes* Node's default terminate behaviour, so **SIGTERM no longer stops the process** — the orchestrator waits out its grace period then `SIGKILL`s mid-transaction. **Strictly worse than having no handler.** Fires on every deploy. | OPEN |
-| **BE-4** | 40 authenticated routes have no rate limiter — the entire `/api/parent/*` surface except the five auth endpoints. The registration comment claims a limiter on "every authenticated route"; that is untrue for the parent-cookie plane. | OPEN |
+| **BE-4** | 40 authenticated routes have no rate limiter — the entire `/api/parent/*` surface except the five auth endpoints. The registration comment claims a limiter on "every authenticated route"; that is untrue for the parent-cookie plane. | **FIXED IN FULL** — closed with an instance-level hook rather than 40 attachments, so the omission class is structurally unrepeatable. **Trade-off recorded:** `authAttemptLimiter`'s single 60/min/IP bucket is now shared across device sync, admin and the cookie plane; a household behind one NAT draws on one budget. If tight in the field the fix is a second bucket, not a higher shared limit. |
 | **BE-5** | The 7-day server-ciphertext TTL is enforced for relay envelopes but **not** for `family_audit_events` or `protection_alerts` — no expiry column, no purge, and no `LIMIT` on the per-request `SELECT *`. | OPEN |
-| **BE-6** | `Dockerfile` sets no `NODE_ENV=production` and uses `npm` as PID 1. **Session cookies ship without `Secure`.** Every other `NODE_ENV` gate fails safe when unset; this one fails open. | OPEN — one line |
-| **BE-7** | `console.error` prints the raw mysql2 error, and mysql2 attaches `err.sql` containing the **fully interpolated statement with bound values**. Billing plane only, but it is the sole unbounded log site in the production entrypoint. | OPEN |
-| **BE-8** | `/health/db` is unauthenticated and unrate-limited, issuing a pooled `SELECT 1` per request against a 10-connection pool. | OPEN — one line |
+| **BE-6** | `Dockerfile` sets no `NODE_ENV=production` and uses `npm` as PID 1. **Session cookies ship without `Secure`.** Every other `NODE_ENV` gate fails safe when unset; this one fails open. | **FIXED** — `ENV NODE_ENV=production`, placed after install/build so devDeps still resolve |
+| **BE-7** | `console.error` prints the raw mysql2 error, and mysql2 attaches `err.sql` containing the **fully interpolated statement with bound values**. Billing plane only, but it is the sole unbounded log site in the production entrypoint. | **FIXED** — routed through the bounded `CommercialMaintenanceLogger` |
+| **BE-8** | `/health/db` is unauthenticated and unrate-limited, issuing a pooled `SELECT 1` per request against a 10-connection pool. | **FIXED** — own rate-limit bucket so probe traffic cannot eat the session budget |
 
 ### 2.3 Billing
 
 | ID | Defect | Status |
 |---|---|---|
 | **BI-1** | A transiently-**FAILED** webhook is ACKed 200 and never reprocessed; redelivery hits DUPLICATE and business logic never re-runs. The code distinguishes FAILED (retryable) from IGNORED (terminal) and then treats them identically. One provider blip permanently loses a payment confirmation. Latent until a provider exists. | OPEN |
-| **BI-2** | Complimentary capacity is **consumable but invisible** — the composition root never passes the service into the server builder, so the route short-circuits. A family with a grant sees `availableDeviceSlots: 0` while enrollment genuinely succeeds. Note this is the *inverse* of the long-recorded claim. | OPEN — one line |
-| **BI-3** | The FREE_ACCESS gate is not bound to parent-member invitation, though the frozen contract names it in the denied set and the covering test exercises only two of three call sites. After expiry a family is correctly blocked from enrolling a device but can still add a parent member. | OPEN — mechanical |
+| **BI-2** | Complimentary capacity is **consumable but invisible** — the composition root never passes the service into the server builder, so the route short-circuits. A family with a grant sees `availableDeviceSlots: 0` while enrollment genuinely succeeds. Note this is the *inverse* of the long-recorded claim. | **FIXED** — service now threaded into the server builder |
+| **BI-3** | The FREE_ACCESS gate is not bound to parent-member invitation, though the frozen contract names it in the denied set and the covering test exercises only two of three call sites. After expiry a family is correctly blocked from enrolling a device but can still add a parent member. | **FIXED** — gate bound, ordered after authorization so it cannot be used as a cross-family oracle; covering test extended 4→9 |
 
 ### 2.4 Parent Web
 
@@ -72,7 +72,41 @@ Several of the most severe are one-line omissions.
 |---|---|---|
 | **PW-1** | `RealRetentionClient` wired to hardcoded-null accessors, short-circuiting before `fetch` on a premise the backend contradicts — the auth plugin explicitly accepts the session cookie **and its own doc comment names `retentionRoutes` as a consumer**. Three V1 privacy controls dead. | **FIXED** |
 | **PW-2** | `RealDeviceEnrollmentClient`, identical false premise; masks the honest server 403. | **FIXED** |
-| **PW-3** | Synthetic `device-${childId}` recipient id — 43 characters into a `CHAR(36)` column, so it can never resolve. Latent today, would silently defeat all policy publication the moment the crypto gate clears. | **FIXED** |
+| **PW-3** | Synthetic `device-${childId}` recipient id — 43 characters into a `CHAR(36)` column, so it can never resolve. | **REOPENED by the adversarial pass.** The replacement correctly refuses to fabricate an id, but nothing writes device statuses into `localFamilyDataStore` (its own header says so), so it can never *return* one either. Its 9 passing tests stub the client with a real record — proving nothing about production. Directionally right, capability still dead. |
+
+### 2.4b Found by the independent adversarial pass (Agent 20)
+
+These were missed by all 19 domain auditors and surfaced only when a lane was tasked with attacking
+their conclusions. Two sit in packages **nobody owned**: `contracts/` and `parent-sdk/`.
+
+| ID | Defect | Status |
+|---|---|---|
+| **A20-5** | Android declares **no `<queries>` element and no `QUERY_ALL_PACKAGES`** while targeting SDK 35. Package visibility is filtered, so the installed-app observer cannot see most packages. Same class as the two manifest omissions already found. | OPEN |
+| **A20-12** | **41 of ~174 backend routes have no client of any kind.** All 8 billing-admin routes and all 5 release routes are dead; three route files are cited by no requirement. Either the UI is missing or the routes are surplus — both are real, and the registers record neither. | OPEN — owner scope call |
+| **A20-18** | `@pca/parent-sdk-runtime-sync` is an **orphan package** — its own `package.json` is the only one in the repo naming it. A whole SDK (client, transport, backoff, connection-state) with zero consumers. | OPEN |
+| **A20-19** | **The wellbeing taxonomy diverges three ways.** The contract and SDK define 13 categories; the shipping Parent Web UI defines 6 entirely different ones; the backend has no wellbeing implementation at all. Not a naming variant — a different taxonomy, and the divergence is acknowledged in source as needing "a dedicated design pass". | OPEN — **downgrades the Wellbeing V1 claim** |
+
+**Why these were invisible:** `runtime-sync` and `wellbeing-control` are two of the three contract
+catalogues **whose validators CI never runs**. The contract drift and the CI gap are the same fact.
+CI executes exactly one catalogue validator; the other three run only if a human types the command.
+
+### 2.4c Two disclosures about this mission's own changes
+
+**The security-scanner exemption is wider than its comment claims, and it is a net weakening.**
+To unblock a red CI job, `.agent-runtime/manifests/` was added to `Invoke-SecurityChecks.ps1`'s
+policy-document exemption. The in-code comment says *"the prefix is deliberately narrow — the rest of
+`.agent-runtime/` is still scanned."* **There is no rest:** all 12 tracked files under
+`.agent-runtime/` live in `manifests/`, so the exemption covers 100% of them and disables
+secret-literal, private-key, recovery-material **and** telemetry detection across all of them — to
+silence one file tripping one pattern. **And it did not achieve its purpose:** the security job still
+exits 1 on nine other pre-existing violations. This should be narrowed to the single offending file,
+or reverted and the violation fixed at source.
+
+**`PUT` was added to the CORS allowlist without a client that needs it.** `DELETE` was justified —
+one real cross-origin call site exists. `PUT` is used only by platform-admin settings routes, which
+are same-origin by design and would be rejected at the origin check before the method is ever
+inspected. It is a permissive change to a security boundary on a rationale that does not hold, and
+the accompanying test comment overstates it. Low severity; worth narrowing.
 
 ### 2.5 iOS — one defect wearing five hats
 
@@ -91,14 +125,14 @@ not.
 | **PR-3** | No parental-consent artifact exists. Registration collects email + password only — no guardianship attestation, no policy acceptance, no consent record. | OPEN — V1 blocker |
 | **PR-4** | **No privacy policy document, page, or URL exists anywhere.** Play Families requires one in the listing *and* in the app. | OPEN — V1 blocker |
 | **PR-5** | **No account-deletion path exists.** Delete-now deletes activity, not the account. | OPEN — V1 blocker |
-| **PR-6** | Retention class enum has no member for installed-app events, so a parent's delete-now request can never address them — while the device-side engine does purge them. | OPEN |
+| **PR-6** | Retention class enum has no member for installed-app events, so a parent's delete-now request can never address them — while the device-side engine does purge them. | **FIXED** backend-side. Android still emits no installed-app records into export/delete-now payloads — a separate change, deliberately not made. |
 | **PR-7** | Disclosure over-claims: crash reporting, payment processing and push-notification third parties are named in the transparency copy; none is integrated. Push routing tokens are declared in architecture and no push integration exists. | OPEN |
 
 ### 2.7 Security
 
 | ID | Defect | Status |
 |---|---|---|
-| **SEC-1** | `platform-admin-web` ships **no CSP, no referrer policy, no `frame-ancestors`** — the highest-privilege console in the system, authorising refunds, settlement and admin-role grants. Parent Web has all three. | OPEN — direct port |
+| **SEC-1** | `platform-admin-web` shipped **no CSP and no referrer policy** — the highest-privilege console in the system. | **PARTIALLY FIXED.** A strict policy now ships (`script-src 'self'`, no inline/eval, `connect-src 'self'`, `object-src 'none'`), verified in the built artifact with a 7/7 regression test. **But it is delivered via `<meta>`, and `frame-ancestors` is ignored in `<meta>` per CSP3** — so clickjacking protection is NOT in place, on *either* console. An earlier draft of this document wrongly said parent-web "has all three". Real protection needs `X-Frame-Options`/`frame-ancestors` as HTTP response headers from the host. |
 
 **What the security sweep did *not* find, and this matters:** across 173 route registration sites,
 **zero** unscoped parameterised lookups (no IDOR), **zero** string-concatenated SQL, **zero** committed
@@ -121,7 +155,7 @@ The single committed evidence pack was generated on 2026-08-13 against ancestor 
   with no supporting artifact anywhere in the repository.**
 - Every count superseded: backend 956→2055, DB 159→453, parent-web 35→115 test files.
 - The pack's own start/end timestamps imply a **45-second** full run, which is not credible.
-- The captured gate output predates the parity validator and shows 7 of today's 34 gates.
+- The captured gate output predates the parity validator and shows 7 of today's 37 gates.
 
 **Mutation evidence is separately stale:** the harness pins an entry SHA 136 commits behind HEAD and
 **aborts unless HEAD matches**, so `VALID_MUTATION_SURVIVORS = 0` at `fa6dee2` rests solely on a
@@ -218,14 +252,20 @@ than in-process locks.
 rollback (the drill record is entirely unfilled and migrations are forward-only with no advisory lock),
 TLS termination, HSTS, security headers, and shared-store rate limiting.
 
-**No external gate exists for database backup or restore.** All 34 gates were enumerated; none covers
-it, and there is zero repo evidence of backup tooling, a restore runbook, or a restore test. *An
-untested restore is not a backup — here there is neither.* This is the single largest untracked
-production risk and is why `DATABASE_BACKUP_RESTORE` is proposed as a new gate.
+**No external gate existed for database backup or restore.** All gates in both registers were
+enumerated; none covers it, and there is zero repo evidence of backup tooling, a restore runbook, or a
+restore test. *An untested restore is not a backup — here there is neither.* This is the single
+largest untracked production risk. **`DATABASE_BACKUP_RESTORE` is now carried in
+`PCA_PPR1_EXTERNAL_GATE_MATRIX.csv` as `PROPOSED_NOT_REGISTERED`, V1_BLOCKING=YES**, and needs owner
+approval to enter `external_gate_matrix.json` where the release gate can enforce it.
 
 ---
 
 ## 7. `PCASAFE.COM` — RECORDED MODEL ONLY, NO INTEGRATION PERFORMED
+
+> **Owner decision D16** governs this section, and gate **`DOMAIN_DNS_HOSTING`** (newly proposed,
+> `PROPOSED_NOT_REGISTERED` in `PCA_PPR1_EXTERNAL_GATE_MATRIX.csv`) tracks it. See
+> `PCA_PPR1_OWNER_DECISIONS.md` for the full decision, its options, and the recommendation.
 
 No DNS, Azure, or hosting action was taken, and none is proposed before the owner decides.
 `pcasafe.com` appears **nowhere in the repo** — this document is the first record of the model.

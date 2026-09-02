@@ -15,7 +15,20 @@ export type RetentionWindow = '14_DAYS' | '1_MONTH' | '3_MONTHS' | '6_MONTHS' | 
  * WebVisit (4.2), `CONTENT_BLOCK_EVENT` = ContentBlockEvent (4.3),
  * `USAGE_SESSION` = UsageSession (4.1), `BREAK_SESSION` = BreakSession
  * (4.5), `PROXIMITY_EVENT` = ProximityEvent (4.6), `LOCATION_POINT` =
- * LocationPoint (4.4), `PRAYER_REMINDER_EVENT` = PrayerReminderEvent (4.7).
+ * LocationPoint (4.4), `PRAYER_REMINDER_EVENT` = PrayerReminderEvent (4.7),
+ * `INSTALLED_APP_EVENT` = InstalledAppEvent (PCA-FR-045/PCA-FR-131's
+ * install/uninstall observation record). The device-side engine already
+ * purges that table on the ordinary general window
+ * (android RetentionEngine.runGeneralWindowCleanup's
+ * `record("InstalledAppEvent", ...)` line, alongside UsageSession/WebVisit/
+ * ContentBlockEvent/BreakSession/ProximityEvent/PrayerReminderEvent), so
+ * omitting it here made it the one general-retention class a parent's
+ * Section 6 "Delete now" request could never name: retentionRoutes.ts's
+ * parseDeleteNowRecords validates every caller-supplied entityClass against
+ * ALL_RETENTION_ENTITY_CLASSES below and rejected it as unknown. It is a
+ * Section 3.1 general entity, NOT a Section 3.2-protected one, so it takes
+ * the ordinary generalWindow like its siblings (resolveEffectiveWindow's
+ * default arm) -- no engine/policy change is needed or wanted.
  * `SYNC_RECEIPT` covers PolicyReceipt/RetentionReceipt-shaped local status
  * records (doc 10 Section 5) -- non-sensitive completion metadata, not the
  * family-control message itself. `CHILD_REQUEST_DECISION` and
@@ -36,6 +49,7 @@ export type GeneralRetentionEntityClass =
   | 'PROXIMITY_EVENT'
   | 'LOCATION_POINT'
   | 'PRAYER_REMINDER_EVENT'
+  | 'INSTALLED_APP_EVENT'
   | 'ROUTINE_ACTIVITY'
   | 'CHILD_REQUEST_DECISION'
   | 'SYNC_RECEIPT'
@@ -68,6 +82,7 @@ export const ALL_RETENTION_ENTITY_CLASSES: readonly RetentionEntityClass[] = [
   'PROXIMITY_EVENT',
   'LOCATION_POINT',
   'PRAYER_REMINDER_EVENT',
+  'INSTALLED_APP_EVENT',
   'ROUTINE_ACTIVITY',
   'CHILD_REQUEST_DECISION',
   'SYNC_RECEIPT',

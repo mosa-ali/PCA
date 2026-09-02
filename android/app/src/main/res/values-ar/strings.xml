@@ -389,6 +389,8 @@
     <string name="eye_distance_camera_permission_not_now_button">ليس الآن</string>
     <string name="eye_distance_camera_permission_denied_notice">لم يُمنح إذن الكاميرا، لذا فإن فحص مسافة الشاشة متوقف. لا يتم الوصول إلى أي صور دون هذا الإذن أبدًا.</string>
     <string name="eye_distance_camera_unavailable_notice">ميزة اكتشاف المسافة على الجهاز غير متاحة بعد في هذا الإصدار.</string>
+    <!-- مدخل إعدادات الوالدين الذي يفتح شاشة الإفصاح أعلاه (AdminSecurityActivity). -->
+    <string name="eye_distance_camera_permission_entry_button">إذن الكاميرا لفحص مسافة العين</string>
 
     <!-- PCA-NFR-044: استراحة العين لمدة دقيقة واحدة. المفاتيح الأساسية هي نسخة المستوى
          الواضح/الفئة الأكبر سنًا (جمل أكثر اكتمالًا)، ولاحقة "_simple" هي نسخة الطفل الصغير

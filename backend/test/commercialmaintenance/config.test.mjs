@@ -1,6 +1,7 @@
 // PCA-COMMERCIAL-RUNTIME-1: no DB -- loadCommercialMaintenanceConfig's
 // bounds-validation and fail-safe (never-silently-clamp) behavior.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   loadCommercialMaintenanceConfig,
@@ -96,4 +97,29 @@ test('loadCommercialMaintenanceConfig defaults to process.env when no argument i
     if (previous === undefined) delete process.env[COMMERCIAL_MAINTENANCE_ENV_KEYS.quoteExpiryBatchSize];
     else process.env[COMMERCIAL_MAINTENANCE_ENV_KEYS.quoteExpiryBatchSize] = previous;
   }
+});
+
+/**
+ * PRIVACY: main.ts's interval-timer catch block used to
+ * `console.error('[commercial-maintenance] runOnce failed', error)`. Every
+ * failure this runner produces originates in mysql2, which interpolates
+ * client-side and hangs the FULLY BOUND statement off `err.sql` --
+ * console.error inspects the error object and prints its own enumerable
+ * properties, so real quote ids, subscription ids and account refs went
+ * straight into the operational log. Only `error.message` may cross that
+ * boundary, through this lane's own bounded logger seam
+ * (CommercialMaintenanceLogger, types.ts) -- exactly what
+ * CommercialMaintenanceRunner's publishOne/publishRenewalUpcoming catch
+ * blocks already do. Static source check: main.ts cannot be imported
+ * without a live database.
+ */
+test('PRIVACY WIRING: main.ts logs a failed maintenance pass through the bounded logger, never console.error with the raw mysql2 error', async () => {
+  const mainTs = await readFile(new URL('../../src/main.ts', import.meta.url), 'utf8');
+  const runOnceCatch = /commercialMaintenanceRunner\.runOnce\(\)\.catch\(\(error\) => \{([\s\S]*?)\n {4}\}\);/.exec(mainTs);
+  assert.ok(runOnceCatch, 'the runOnce().catch block must still exist');
+  const body = runOnceCatch[1];
+  assert.doesNotMatch(body, /console\.(error|warn|log)\s*\(/, 'the raw error object must never reach console.*');
+  assert.match(body, /CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER\.warn\(/);
+  assert.match(body, /error: error instanceof Error \? error\.message : String\(error\)/);
+  assert.match(mainTs, /import \{[^}]*CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER[^}]*\} from '\.\/commercialmaintenance\/index\.js'/);
 });

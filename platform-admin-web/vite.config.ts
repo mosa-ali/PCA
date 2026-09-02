@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { securityHeadersPlugin } from './vite/securityHeadersPlugin';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -20,7 +21,12 @@ export default defineConfig(({ mode }) => {
   const e2eRealProxyTarget = env.VITE_E2E_REAL_PROXY_TARGET;
 
   return {
-    plugins: [react()],
+    // Build-time CSP + referrer policy meta tags (build only -- see
+    // vite/securityHeadersPlugin.ts). connect-src is derived from the SAME
+    // env var src/config/env.ts reads, resolved through loadEnv above so a
+    // .env file counts, not just a shell variable; unset (the documented
+    // normal case) means a same-origin-only policy.
+    plugins: [securityHeadersPlugin(env.VITE_PCA_PLATFORM_ADMIN_API_BASE_URL), react()],
     server: {
       port: 4100,
       strictPort: true,

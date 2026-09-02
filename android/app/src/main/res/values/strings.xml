@@ -408,6 +408,10 @@
     <string name="eye_distance_camera_permission_not_now_button">Not now</string>
     <string name="eye_distance_camera_permission_denied_notice">Camera permission was not granted, so the screen-distance check is off. No images are ever accessed without this permission.</string>
     <string name="eye_distance_camera_unavailable_notice">The on-device distance-detection feature isn\'t available on this build yet.</string>
+    <!-- The parent-settings entry point that opens the disclosure screen above
+         (AdminSecurityActivity). Same wording it shipped with; it is a resource now so the
+         Arabic/RTL locale no longer falls back to English for this one label. -->
+    <string name="eye_distance_camera_permission_entry_button">Eye-distance camera permission</string>
 
     <!-- PCA-NFR-044: the one-minute eye-rest action shown when the eye-distance engine reaches
          REST_ACTIVE. No medical/measurement claims per PCA-FR-023, in either tier. Base keys are

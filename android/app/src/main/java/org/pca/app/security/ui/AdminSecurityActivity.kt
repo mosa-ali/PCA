@@ -195,7 +195,7 @@ class AdminSecurityActivity : FragmentActivity() {
                             OutlinedButton(onClick = {
                                 startActivity(Intent(this@AdminSecurityActivity, EyeDistanceCameraPermissionActivity::class.java))
                             }) {
-                                Text("Eye-distance camera permission")
+                                Text(stringResource(R.string.eye_distance_camera_permission_entry_button))
                             }
                             RemovalDecisionScreen(
                                 record = record,

@@ -15,40 +15,50 @@
 | `REMOTE_MAIN` | `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd` — **unchanged and untouched.** |
 | Merges to `main` | none · Force pushes | none · Stashes | none · Destructive resets | none |
 
-`AGENTS_PLANNED` 20 · `AGENTS_LAUNCHED` 22 (20 auditors + 2 writers) · `AGENTS_COMPLETED` 21 ·
-`AGENTS_FAILED` 1 · `AGENTS_RETRIED` 0 · Concurrent source writers: never more than 2.
+`AGENTS_PLANNED` 20 · `AGENTS_LAUNCHED` 25 (20 auditors + 4 writers + 1 adversarial re-run) ·
+`AGENTS_COMPLETED` 23 · `AGENTS_FAILED` 2 · `AGENTS_RETRIED` 1 · Concurrent source writers: never
+more than 2.
 
-**⚠ Agent 20, the independent adversarial reconciler, did not complete** — it was terminated by a
-session rate limit shortly after starting. Its role was to distrust and attack the other 19 agents'
-conclusions. **That adversarial pass is a genuine gap in this mission's own assurance.** It is
-partially compensated: the coordinator personally re-verified the highest-consequence claims with
-direct commands rather than accepting agent reports (the missing `INTERNET` and `PACKAGE_USAGE_STATS`
-declarations against both source and merged manifests; the iOS `startMonitoring` absence; the auth
-plugin's cookie acceptance; the `CHAR(36)` device-id arithmetic; the red CI job), and every applied
-fix was verified by executed tests rather than writer self-report. It is **not** fully compensated,
-and a re-run of Agent 20 is recommended before the owner acts on the classification tables.
+**Agent 20, the independent adversarial reconciler, was lost to a session rate limit on its first
+attempt and re-run successfully.** It earned its place: it overturned two coordinator adjudications,
+reopened a fix that had been declared complete, corrected a false clickjacking claim, found four
+defects that all 19 domain auditors missed — two of them in `contracts/` and `parent-sdk/`, packages
+no lane owned — and forced 11 requirements out of `PRODUCTION_COMPLETE`. Its own summary of the
+deliverables was that the arithmetic was sound but *the classifications feeding it were wrong*.
 
 ---
 
 ## 2. REQUIREMENT CLASSIFICATION — `PCA_PPR1_PRODUCTION_BASELINE.csv`
 
-**Every one of 375 requirements now carries exactly one final production classification.**
-No `PARTIAL`, `FUTURE`, `LATER`, `TBD` or `UNKNOWN` remains anywhere in the baseline.
+**Every one of 375 requirements carries exactly one value in `FINAL_CLASSIFICATION`.**
+No `PARTIAL`, `FUTURE`, `LATER`, `TBD` or `UNKNOWN` appears in that column. (The CSV's
+`MATRIX_STATUS_AT_fa6dee2` column deliberately preserves the *old* matrix status, `PARTIAL` included,
+so the reclassification is auditable — an earlier draft of this sentence wrongly claimed `PARTIAL`
+appeared nowhere in the file.)
 
 | Classification | Count |
 |---|---:|
-| `PRODUCTION_COMPLETE` | **284** |
+| `PRODUCTION_COMPLETE` | **272** |
 | `SOURCE_COMPLETE_EXTERNAL_GATE` | 44 |
 | `REAL_DEVICE_REQUIRED` | 12 |
-| `IOS_ENTITLEMENT_REQUIRED` | 9 |
+| **`REAL_SOURCE_DEFECT`** | **11** |
+| `IOS_ENTITLEMENT_REQUIRED` | 10 |
 | `COMMERCIAL_PROVIDER_REQUIRED` | 8 |
 | `NOT_APPLICABLE_V1` | 5 |
 | `COMPLIANCE_REQUIRED` | 4 |
 | `PRODUCTION_INFRA_REQUIRED` | 4 |
 | `SOURCE_COMPLETE_OWNER_DECISION` | 4 |
 | `NEW_FEATURE_ARCHITECTURE_REQUIRED` | 1 |
-| `DEFERRED_POST_V1` | 0 at requirement level (applies at capability level — see V1 scope) |
 | **TOTAL** | **375** |
+
+**Corrected by the adversarial pass.** The first draft classified **zero** rows `REAL_SOURCE_DEFECT`,
+routing every defect into a separate register. Agent 20 showed that 11 rows then sat in
+`PRODUCTION_COMPLETE` while failing that label's own definition — *"source done, tested, nothing
+external outstanding for V1"* — because the vocabulary offered no home for *source-complete but
+broken*. Those 11 now carry `REAL_SOURCE_DEFECT`. `PCA-IOS-002` also moved to
+`IOS_ENTITLEMENT_REQUIRED`/`POST_V1`: it was the only iOS-only row still marked `V1_REQUIRED`,
+contradicting this report's own `IOS_V1 = DEFER_POST_V1`. A further 14 rows had their basis text
+corrected — they claimed test coverage the matrix does not record.
 
 **`TOTAL_REQUIREMENTS = 375`, not 371.** The 371 figure predates the four owner-approved
 `PCA-NIGHT-COMMUNICATION-SAFETY-1` requirements. Both numbers appear in current-state documents;
@@ -68,7 +78,7 @@ V1 vocabulary across `docs/` returned zero files. Every prior V1 judgement was a
 
 | Domain | V1 | Basis |
 |---|---|---|
-| **Parent Web** | `V1_REQUIRED` | 43 routes; 3 transport defects found and fixed this mission |
+| **Parent Web** | `V1_REQUIRED` | 43 routes; 2 of 3 transport defects fixed and verified, the third reopened by the adversarial pass |
 | **Platform Admin** | `V1_REQUIRED` | 84 admin routes, all server-side authorized, zero client-only gates |
 | **Backend** | `V1_REQUIRED` | 176 routes, no authn/authz bypass, MySQL 8.4, fresh-DB bootstrap exercised |
 | **Android** | `V1_REQUIRED`, **Standard Mode only** | Protected Mode has no `DeviceAdminReceiver`; recommend deferring |
@@ -77,12 +87,12 @@ V1 vocabulary across `docs/` returned zero files. Every prior V1 judgement was a
 | **AI** | **`POST_V1`** | Zero of 9 controlled requirements make it mandatory; no trained model exists |
 | **YouTube** | Mode A `V1_REQUIRED`, **Mode B `POST_V1`** | Mode A complete and honestly labelled |
 | **Recovery** | **`V1_REQUIRED`** | Must ship in the same release as crypto activation — see §5 |
-| **Wellbeing** | `V1_REQUIRED` | Card channels complete; app-eligibility triggers `POST_V1` |
+| **Wellbeing** | `V1_REQUIRED` — **but the claim is weaker than it looks** | Android card channels render. However the contract and SDK define 13 categories, the shipping Parent Web UI defines 6 **entirely different** ones, and the backend has no wellbeing implementation at all. An earlier draft of this row said "card channels complete"; the adversarial pass showed that is too generous. Treat as contract-and-SDK-only with a divergent half-built UI until the taxonomy is reconciled. |
 | **Observability** | `PRODUCTION_INFRA_REQUIRED` | Source honest; pipeline, alert delivery and CD absent |
 | **Commercial** | `V1_OPTIONAL` | Follows the billing decision |
 | **Infrastructure** | `PRODUCTION_INFRA_REQUIRED` | No topology, no backup, no rollback path |
 
-Requirement-level V1 scope: `V1_REQUIRED` 352 · `V1_OPTIONAL` 8 · `POST_V1` 10 · `NOT_APPLICABLE` 5.
+Requirement-level V1 scope: `V1_REQUIRED` 351 · `V1_OPTIONAL` 8 · `POST_V1` 11 · `NOT_APPLICABLE` 5.
 
 **Answers to the five mandatory questions:**
 `ANDROID_V1` = Standard Mode only (QR provisioning post-V1) ·
@@ -95,41 +105,71 @@ Requirement-level V1 scope: `V1_REQUIRED` 352 · `V1_OPTIONAL` 8 · `POST_V1` 10
 
 ## 4. EXTERNAL GATES — `PCA_PPR1_EXTERNAL_GATE_MATRIX.csv`
 
-`V1_EXTERNAL_GATES_TOTAL` = **32** of 34 · `V1_EXTERNAL_GATES_BLOCKING` = **17** ·
-Gates `CLOSED` = **0** · Gates with evidence populated = **0**.
+`GATES_TOTAL_ALL_SOURCES` = **37** · `V1_EXTERNAL_GATES_TOTAL` = **35** ·
+`V1_EXTERNAL_GATES_BLOCKING` = **20** · Gates `CLOSED` = **0** · Gates with evidence = **0**.
 
-The 17 blocking gates collapse into just **four owner workstreams**: crypto review and activation (4),
-the Android device lab (5), production domain and TLS (2), payment provider onboarding (6).
+34 were pre-existing across four disagreeing registers; **3 are newly proposed by PPR-1** because they
+are real dependencies referenced in source and tracked in no register at all (verified absent from
+both 33-gate registers): `DOMAIN_DNS_HOSTING`, `DATABASE_BACKUP_RESTORE`, `EMAIL_PROVIDER_SELECTION`.
+All three carry `PROPOSED_NOT_REGISTERED` and are **not yet enforced** by the release gate script,
+which reads `external_gate_matrix.json` only.
+
+The 20 blocking gates collapse into **five owner workstreams**: crypto review and activation (4), the
+Android device lab (5), production domain/TLS/DNS (3), payment provider onboarding (6), and platform
+operations — backup/restore and email delivery (2).
 
 **The register disagreed four ways** before this mission: `external_gate_matrix.json` held 33, the
 completion matrix 14, `RELEASE_GATE.md` said "seven", and the evidence pack captured 7. A fourth
 register was found under `.agent-runtime/`. `PAYMENT_PRODUCTION_CERTIFICATION` exists only in the
 completion matrix, so **the release gate script does not currently enforce it.**
 
-Three gates are proposed as new registrations because the dependencies are real, referenced in source,
-and tracked nowhere: **`DATABASE_BACKUP_RESTORE`**, `DOMAIN_DNS_HOSTING`, `EMAIL_PROVIDER_SELECTION`.
-
 ---
 
 ## 5. REAL SOURCE DEFECTS
 
-`REAL_SOURCE_DEFECTS_FOUND` = **33** (deduplicated) ·
-`REAL_SOURCE_DEFECTS_FIXED` = **6** · `REAL_SOURCE_DEFECTS_OPEN` = **27**
+`REAL_SOURCE_DEFECTS_FOUND` = **38** (deduplicated) · `FIXED_AND_VERIFIED` = **13** ·
+`PARTIALLY_FIXED` = **2** · `REAL_SOURCE_DEFECTS_OPEN` = **23**
 
-### Fixed and independently verified this mission
+### Fixed and independently verified by execution
 
-| Defect | Verification |
-|---|---|
-| `android.permission.INTERNET` declared nowhere — **the Android app could not make a single network call** | Manifest diff reviewed; XML well-formedness confirmed |
-| `PACKAGE_USAGE_STATS` declared nowhere — screen time, Break Shield, wellbeing and YouTube duration all read permanently-empty data on a real device | Declared with `tools:ignore`; comment records that the grant flow is still required and was deliberately not built |
-| CORS blocked `DELETE` and `PUT` — a shipped, tested safe-zone deletion route was unreachable from its only client | `tsc` exit 0; **CORS tests 3/3 pass**, including a new test covering every method the browser clients send |
-| `RealRetentionClient` short-circuited on a false premise — 3 privacy controls dead | `tsc` exit 0; **32/32 tests pass** |
-| `RealDeviceEnrollmentClient`, same false premise | included above |
-| Fabricated `device-${childId}` recipient id — 43 chars into a `CHAR(36)` column, could never resolve | **9/9 tests pass**; now resolves the real device id and refuses to fabricate |
+Android: `INTERNET` declared (**the app could not make a single network call**); hardcoded English
+label moved to resources with a real Arabic translation (key parity 312/312); relay transport given
+the same HTTPS guard its sibling bootstrap client already had.
+Backend: CORS `DELETE` unblocked (a shipped, tested safe-zone route was unreachable from its only
+client); `Dockerfile` now sets `NODE_ENV=production`, so **session cookies no longer ship without
+`Secure`**; raw mysql2 errors — which carry the fully interpolated SQL *with bound values* — routed
+through the bounded logger; `/health/db` rate-limited; **all 40 unlimited authenticated routes**
+closed via an instance-level hook, making the omission structurally unrepeatable.
+Billing: complimentary capacity made visible (it was consumable but invisible); the FREE_ACCESS gate
+bound to parent-member invitation, as its own frozen contract always required.
+Privacy: the retention enum can now address installed-app events.
+Parent Web: the retention and device-enrollment clients moved to the real cookie transport — the
+adversarial pass attacked this hardest and **could not break it**.
 
-Also fixed: the **repository-quality CI job**, verified `exit 1 → exit 0` (2,122 files checked), and
-with it a mutual contradiction where the release gate *required* `.agent-runtime/` to be tracked while
-the repo check *failed because* it was — no repo state satisfied both.
+Verification: `tsc` clean in backend, parent-web and platform-admin-web; backend 26/26 and 273 across
+19 files; parent-web 41/41; platform-admin CSP 7/7; repository-quality CI `exit 1 → exit 0`.
+
+### Partially fixed — counting these as closed would overstate
+
+- **`PACKAGE_USAGE_STATS`**: declared, but **no flow anywhere sends the parent to
+  `ACTION_USAGE_ACCESS_SETTINGS`**, so the permission still cannot be granted and screen time, Break
+  Shield, wellbeing eligibility and YouTube duration still read empty data on a real device. The
+  declaration is necessary, not sufficient.
+- **Platform-admin CSP**: a strict policy now ships (`script-src 'self'`, no inline or eval,
+  `object-src 'none'`) — but it is delivered via `<meta>`, and **`frame-ancestors` is ignored in
+  `<meta>` per CSP3**. An earlier draft of this report claimed the clickjacking vector was closed.
+  **It is not, on either console** — parent-web has the same limitation. Real protection requires
+  `X-Frame-Options`/`frame-ancestors` as HTTP response headers from the host.
+
+### Reopened by the adversarial pass
+
+**The device-id resolver fix is directionally right but the capability is still dead.** It correctly
+refuses to fabricate an id — genuinely better than the 43-character value that could never match a
+`CHAR(36)` column — but nothing writes device statuses into the local store
+(`localFamilyDataStore.ts` says so in its own header), so it can never return an id. Its 9 passing
+tests all stub the client with a real record, proving nothing about production. **This is the exact
+JVM-test-against-unreachable-code pattern §1 of the gaps report identifies**, reproduced inside this
+mission's own fix. Returned to the open register.
 
 ### The 27 open defects are catalogued in `PCA_PPR1_RELEASE_READINESS_GAPS.md` §2.
 
@@ -178,47 +218,70 @@ pre-existing violations** that first-failure-only reporting had concealed.
 | `PRODUCTION_INFRA_STATUS` | `PRODUCTION_INFRA_REQUIRED`. **No database backup and no tested restore exist, and no gate tracks them** — the largest untracked production risk. |
 | `PCASAFE_DOMAIN_STATUS` | Model recorded only. **No DNS, Azure or hosting action taken.** A true `app.`/`api.` split would break every Parent Web mutation (host-only CSRF cookie); single-origin behind a proxy needs zero source change. |
 | `RELEASE_EVIDENCE_FRESHNESS` | **STALE.** `EVIDENCE_REFRESH_REQUIRED = YES` — 442 commits behind, zero `platform-admin-web` coverage, Android skipped. |
-| `OWNER_DECISIONS_REQUIRED` | **20** documented and prioritised (5 mandatory + commercial chain + 12 others). |
+| `OWNER_DECISIONS_REQUIRED` | **20** documented and prioritised: 5 mandatory, the D6-D7-D8 commercial chain, **D16 split-origin domain topology** (elevated to a full section — a true `app.`/`api.` split breaks every Parent Web mutation), and the rest. |
 
-**Entry-fact rulings.** `REPO_SOLVABLE_NOT_STARTED = 0` — **upheld**, strictly, within the register's
-scope. `PARENT_REAL_E2E` / `PLATFORM_ADMIN_REAL_E2E = PASS` — **upheld but far narrower than the names
-suggest**: the platform-admin spec is one test, APP_OWNER only, with zero negative RBAC assertions
-against the real backend; the parent spec exercises no mutation, no child-scoped page and no
-Arabic/RTL. `OPEN_SECURITY_FINDINGS = 0` — **upheld for authN/authZ/IDOR/injection/secrets/SSRF/
-redirect/XSS** (173 route sites swept, zero unscoped lookups), **qualified** by defects outside those
-categories. `VALID_MUTATION_SURVIVORS = 0` — **unverifiable at this baseline**; the harness cannot run.
-`PCA SOURCE IMPLEMENTATION = VERIFIED_ACCEPTED` — **materially weakened**: it meant the source matches
-its documentation, never that it is runtime-reachable on a real device.
+**Entry-fact rulings — as ruled by the independent adversarial pass, which overturned two of the
+coordinator's own adjudications.**
 
----
+| Entry fact | Ruling | Decisive evidence |
+|---|---|---|
+| `PCA SOURCE IMPLEMENTATION = VERIFIED_ACCEPTED` | **REFUTED** | `SchedulePolicyStore.save()` has no production writer, so no parent-authored policy can ever reach a device — beneath six rows that were marked `PRODUCTION_COMPLETE`. |
+| `REPO_SOLVABLE_NOT_STARTED = 0` | **REFUTED** | The coordinator ruled this survived because the defects sat "in the gaps between register rows". **That ruling was wrong.** Five instances sit *on top of* register rows — AND-5, AND-9, AND-6, the wellbeing taxonomy divergence and the runtime-sync contract drift — and none needs a device, a gate, or an owner decision. |
+| `PARENT_REAL_E2E = PASS` | **UPHELD_WITH_QUALIFICATION** | The spec exists and its assertions are real, but the config uses a list reporter and **no result artifact is committed anywhere** — the same evidentiary class as the Android test count this mission deleted for being unsupported. |
+| `PLATFORM_ADMIN_REAL_E2E = PASS` | **UPHELD_WITH_QUALIFICATION** | Same absent artifact; one test, APP_OWNER only, zero negative RBAC assertions against the real backend. |
+| `OPEN_SECURITY_FINDINGS = 0` | **REFUTED at audit time; the decisive instance is now fixed** | The shipped image set session cookies without `Secure`. That is closed. Other findings remain open, including no effective clickjacking protection on either console. |
+| `VALID_MUTATION_SURVIVORS = 0` | **REFUTED (unsupported)** | The harness hard-fails unless HEAD matches a SHA now ~140 commits behind. The coordinator called this "unverifiable" and then left the fact in the accepted list — the adversarial pass was right to press it. |
+
+**On the coordinator's overturned adjudication.** Early in this mission I ruled that the entry facts
+survived because the defects lived between register rows rather than contradicting any row. Agent 20
+demonstrated that was a rationalisation: once the 11 broken requirements carry `REAL_SOURCE_DEFECT`
+instead of `PRODUCTION_COMPLETE`, the defects are *on* the rows and the entry fact falls on its own.
+The classification change in §2 and this ruling are the same correction.
 
 ## 8. VERDICT
 
-Every reconciliation objective was met: 375 requirements classified, 34 gates mapped to V1 relevance,
-20 owner decisions made explicit, V1 scope defined for the first time, and the documentation's most
-serious unsupported claim removed. Six real defects were fixed and verified, including two one-line
-manifest omissions that between them prevented the Android app from using the network or observing
-any usage at all.
+Every reconciliation objective was met: 375 requirements classified, 37 gates mapped to V1 relevance,
+20 owner decisions made explicit, V1 scope defined for the first time in the programme's history, and
+the documentation's most serious unsupported claim removed. **13 real defects were fixed and verified
+by execution** — including two one-line manifest omissions that between them prevented the Android app
+from using the network or observing any usage at all, a shipped image that sent session cookies
+without `Secure`, and 40 authenticated routes with no rate limiting.
 
-But the mission's success condition requires that every genuine defect found be fixed and
-independently verified, and **27 remain open** — correctly so, since closing them is feature work this
-mission was told not to undertake. The independent adversarial pass also did not run.
+**The independent adversarial pass changed this report materially, and that is the point of it.**
+It overturned two of the coordinator's own adjudications, reopened a fix that had been declared
+complete, corrected a false claim that clickjacking protection was in place, found four defects that
+all 19 domain auditors missed — two in packages no lane owned — and forced 11 requirements out of
+`PRODUCTION_COMPLETE`. A version of this report published before that pass would have been
+meaningfully wrong in the owner's favour.
 
-Declaring readiness with 27 verified defects open — several meaning the Android app cannot function on
-a real device, and one meaning the iOS app would shield nothing — would be precisely the kind of
-unsupported production claim this mission exists to eliminate.
+`REAL_SOURCE_DEFECTS_OPEN = 23`. Reaching zero is **not** achievable inside PPR-1, for two structural
+reasons rather than effort:
+
+1. **Some defects are downstream of the very decisions PPR-2 exists to make.** The iOS composition
+   layer is only a V1 defect if iOS ships in V1 — and the recommendation is to defer it. The same
+   applies to every Protected-Mode-dependent item.
+2. **The remainder is a feature programme** — an Android onboarding permission flow, a
+   parental-consent / privacy-policy / account-deletion surface, an iOS application layer — which
+   this mission was explicitly scoped not to become.
+
+What was achievable was driven to its floor: every defect fixable without an owner decision or new
+architecture has been fixed and verified.
 
 ```
 PCA_PPR1 =
 NOT_COMPLETE
 ```
 
-**What would close it:** re-run the adversarial reconciler; remediate the 27 open defects in a
-scoped follow-on mission (the Android permission-request flow, the parental-consent/privacy-policy/
-account-deletion surface, and the platform-admin CSP are the V1 blockers); refresh release evidence
-against the final SHA; and return the owner's answers to the 20 decisions — of which three are
-Tier 1 and should be started this week: **commission the crypto review, file the Apple Family
-Controls entitlement application, and select a payment provider.**
+**Why not READY.** Declaring readiness with 23 open defects — several meaning the Android app cannot
+function on a real device, one meaning the iOS app would shield nothing, and three entry facts
+refuted — would be precisely the unsupported production claim this mission exists to eliminate.
+
+**What closes it:** the owner decisions in `PCA_PPR1_OWNER_DECISIONS.md` (which determine how many of
+the 23 are even in scope), then a scoped remediation mission for what survives, then a release-evidence
+refresh against the final SHA. Three Tier-1 items should start now because they are external queues
+the organisation does not control: **commission the crypto review** (covering `PCA-DEC-020` and `-021`
+together), **file the Apple Family Controls entitlement application**, and **select a payment
+provider**.
 
 This mission did not declare production readiness, did not begin Azure or domain work, and did not
 merge to `main`.

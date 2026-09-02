@@ -184,7 +184,7 @@ import { PlatformAdminComplimentaryGrantService } from './platformadmin/complime
 // expireDueQuotes conditional transition. Interval timer + graceful
 // shutdown hook are this lane's own explicitly Coordinator-owned wiring
 // (see commercialmaintenance/index.ts's header).
-import { MySqlCommercialMaintenanceRunner, loadCommercialMaintenanceConfig } from './commercialmaintenance/index.js';
+import { CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER, MySqlCommercialMaintenanceRunner, loadCommercialMaintenanceConfig } from './commercialmaintenance/index.js';
 // PCA-FREE-ACCESS-1 (Round6): real backend enforcement/admin surface for
 // the Round5 FreeAccessSnapshot.
 import { MySqlFreeAccessAccountRepository } from './parentaccount/freeaccess/MySqlFreeAccessAccountRepository.js';
@@ -578,6 +578,11 @@ async function start(): Promise<void> {
   // billing/entitlements routes already use, so the capacity check inside
   // FamilyMemberInvitationService.createInvitation reads live, durable
   // family entitlement state, not a second independently-tracked count.
+  // freeAccessAcquisitionPolicy is the SAME instance slotReservationService
+  // and changeRequestService already share above -- FREE_ACCESS_ENFORCEMENT_V1's
+  // frozen contract denies "device enrollment, parent-member invite, new
+  // non-billing commercial activation" after expiry, and this is the
+  // parent-member-invite arm of that same gate.
   const familyMemberInvitationService = new FamilyMemberInvitationService(
     new MySqlFamilyMemberInvitationRepository(),
     safeZoneParentActionAuthorization,
@@ -585,6 +590,7 @@ async function start(): Promise<void> {
     familyAuditService,
     new MySqlFamilyMemberAccountBinder(),
     entitlementRepository,
+    freeAccessAcquisitionPolicy,
   );
   // PCA-ADD-ENR-016/PCA-FR-145: single shared instance -- both
   // registerRuntimeSyncRoutes' protection-status write endpoint and
@@ -808,6 +814,15 @@ async function start(): Promise<void> {
     safeZonePolicyAuthorizer,
     // PCA-COMPLIMENTARY-ENTITLEMENTS-1: complimentary entitlement grants.
     platformAdminComplimentaryGrantService,
+    // Same single ComplimentaryEntitlementService instance the Platform
+    // Administration grant surface above already shares -- never a second,
+    // independently-constructed copy. Without it here,
+    // registerFamilyCommercialRoutes' entitlement read short-circuits before
+    // buildEffectiveEntitlementDto (familyCommercialRoutes.ts's
+    // `if (!deps.complimentaryEntitlementService) return json;`) and a family
+    // holding an ACTIVE complimentary grant is shown availableDeviceSlots: 0
+    // for capacity that enrollment genuinely honours.
+    complimentaryEntitlementService,
     // PCA-FREE-ACCESS-1: real backend enforcement/admin surface.
     freeAccessAccountRepository,
     freeAccessAdminService,
@@ -866,7 +881,18 @@ async function start(): Promise<void> {
       // transition (quote expiry, notification publish, retention prune)
       // is independently idempotent/DB-conditional, so a partial pass is
       // always safe to repeat.
-      console.error('[commercial-maintenance] runOnce failed', error);
+      //
+      // Routed through the lane's own CommercialMaintenanceLogger (a
+      // "bounded identifiers/error text" seam -- see types.ts) with only
+      // `error.message`, NEVER the raw error object. mysql2 interpolates
+      // client-side and hangs the fully-bound statement off `err.sql`, so
+      // printing the error itself would emit real quote/subscription rows
+      // and account refs into the operational log. Exactly the shape
+      // CommercialMaintenanceRunner's own publishOne/publishRenewalUpcoming
+      // catch blocks already use.
+      CONSOLE_COMMERCIAL_MAINTENANCE_LOGGER.warn('commercial_maintenance.run_once_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   }, commercialMaintenanceConfig.intervalMs);
   commercialMaintenanceTimer.unref();
