@@ -107,7 +107,12 @@ export class PaymentMethodService {
   constructor(private readonly repository: PaymentMethodRepository) {}
 
   async addPaymentMethod(input: AddPaymentMethodInput, roles: readonly PlatformAdminRole[], now: Date = new Date()): Promise<PaymentMethodRow> {
-    requireBillingOperation(roles, 'VIEW_PAYMENT_INSTRUMENTS');
+    // Security fix (adversarial review, 2026-09-02): this is a write, and must be gated on
+    // ADMINISTER_BILLING_RECORDS (APP_OWNER/FINANCE_ADMIN only), not VIEW_PAYMENT_INSTRUMENTS
+    // (which also allows AUDITOR_READ_ONLY) -- the read-scoped operation was previously used here
+    // by mistake, letting a read-only auditor create billing_payment_methods rows once a real
+    // HTTP route was wired to this method.
+    requireBillingOperation(roles, 'ADMINISTER_BILLING_RECORDS');
     return runInTransaction((conn) => this.repository.insert(conn, input, now));
   }
 

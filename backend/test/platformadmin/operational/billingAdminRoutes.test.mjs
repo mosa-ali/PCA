@@ -150,7 +150,7 @@ test('POST /platform-admin/billing/disputes with no Authorization header -> 401'
 
 // ---- RBAC boundary (403): VIEW_PAYMENT_INSTRUMENTS ----
 
-test('POST /platform-admin/billing/payment-methods: SUPPORT_ADMIN session is 403 (VIEW_PAYMENT_INSTRUMENTS deny)', async () => {
+test('POST /platform-admin/billing/payment-methods: SUPPORT_ADMIN session is 403 (ADMINISTER_BILLING_RECORDS deny)', async () => {
   const sessions = new Map();
   const token = registerSession(sessions, ['SUPPORT_ADMIN']);
   const app = buildApp(sessions);
@@ -165,7 +165,7 @@ test('POST /platform-admin/billing/payment-methods: SUPPORT_ADMIN session is 403
   await app.close();
 });
 
-test('POST /platform-admin/billing/payment-methods: PLATFORM_ADMIN session is 403 (VIEW_PAYMENT_INSTRUMENTS deny)', async () => {
+test('POST /platform-admin/billing/payment-methods: PLATFORM_ADMIN session is 403 (ADMINISTER_BILLING_RECORDS deny)', async () => {
   const sessions = new Map();
   const token = registerSession(sessions, ['PLATFORM_ADMIN']);
   const app = buildApp(sessions);
@@ -176,6 +176,21 @@ test('POST /platform-admin/billing/payment-methods: PLATFORM_ADMIN session is 40
     payload: addPaymentMethodBody(),
   });
   assert.equal(response.statusCode, 403);
+  await app.close();
+});
+
+test('POST /platform-admin/billing/payment-methods: AUDITOR_READ_ONLY session is 403 (ADMINISTER_BILLING_RECORDS deny -- view access does not imply mutate access; security-review regression test, this role must NEVER be able to create a payment method through this route)', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['AUDITOR_READ_ONLY']);
+  const app = buildApp(sessions);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/platform-admin/billing/payment-methods',
+    headers: { authorization: `Bearer ${token}` },
+    payload: addPaymentMethodBody(),
+  });
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
   await app.close();
 });
 
