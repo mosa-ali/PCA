@@ -21,8 +21,8 @@
 // placeholder wiring.
 //
 // FAMILY-OWNER AUTHORITY: every mutation route (create request, cancel
-// request, checkout-CREATE) is gated server-side by
-// FamilyCommercialAuthorityResolver, stubbed in production to
+// request, checkout-CREATE, cancel/resume auto-renew) is gated server-side
+// by FamilyCommercialAuthorityResolver, stubbed in production to
 // UnavailableFamilyCommercialAuthorityResolver -- ALWAYS AUTHORITY_UNAVAILABLE
 // today. This client treats ANY 403 on these routes identically ("cannot
 // proceed") regardless of whether the body carries a `code` -- per the
@@ -303,8 +303,8 @@ function toSubscription(wire: WireSubscription): SubscriptionSnapshot {
     // label rather than fabricating plan copy the backend never sent.
     planLabel: wire.planId ?? 'FREE_STARTER',
     currentPeriodEndUtc: wire.currentPeriodEndUtc,
-    // Hardcoded false server-side always -- never build cancel-renewal UI on
-    // this (contract note). Passed through verbatim, not overridden.
+    // The real billing_subscriptions.auto_renew column (migrations/0031),
+    // passed through verbatim -- no longer server-hardcoded false.
     autoRenew: wire.autoRenew,
   };
 }
@@ -586,13 +586,32 @@ export class RealBillingClient implements BillingClient {
   }
 
   /**
-   * No route exists on MYKIDS_COMMERCIAL_API_V1 to cancel auto-renewal (the
-   * subscription surface is read-only, and `autoRenew` is hardcoded `false`
-   * server-side always -- contract section F). Honestly rejects.
+   * `POST .../commercial/subscription/auto-renew/cancel` (migrations/0031_
+   * billing_subscription_auto_renew.sql). Owner-gated server-side exactly
+   * like `cancelRequest`/`requestLimitIncrease` (family-commercial
+   * authorization.ts's OWNER-gated-mutations discipline) -- hence the same
+   * `actorDeviceId` requirement. Never itself cancels the subscription or
+   * touches a payment provider; flag/state only.
    */
-  cancelAutoRenew(): Promise<{ auditEventId: string }> {
-    return Promise.reject(
-      new BillingApiError('NOT_FOUND', 'cancelAutoRenew: no subscription-mutation route exists on MYKIDS_COMMERCIAL_API_V1 (read-only subscription surface).'),
-    );
+  async cancelAutoRenew(): Promise<{ auditEventId: string }> {
+    return this.postAutoRenew('cancelAutoRenew', 'cancel');
+  }
+
+  /** Symmetric counterpart -- `POST .../commercial/subscription/auto-renew/resume`. Same Owner gate/actorDeviceId requirement as `cancelAutoRenew`. */
+  async resumeAutoRenew(): Promise<{ auditEventId: string }> {
+    return this.postAutoRenew('resumeAutoRenew', 'resume');
+  }
+
+  private async postAutoRenew(operation: string, action: 'cancel' | 'resume'): Promise<{ auditEventId: string }> {
+    const familyId = await this.familyId(operation);
+    const actorDeviceId = await this.actorDeviceId(operation);
+    const response = await this.request(operation, `/v1/families/${encodeURIComponent(familyId)}/commercial/subscription/auto-renew/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ actorDeviceId }),
+    });
+    if (!response.ok) return this.fail(operation, response);
+    const body = await parseJsonSafe<{ auditEventId: string }>(response);
+    if (!body) throw new BillingApiError('UNKNOWN', `${operation}: empty response body.`);
+    return body;
   }
 }

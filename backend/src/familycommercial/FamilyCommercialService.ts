@@ -163,6 +163,31 @@ export class FamilyCommercialService {
     return this.runQuery((conn) => this.subscriptionRepository.findActiveForAccount(conn, familyId));
   }
 
+  /**
+   * Parent-initiated auto-renew toggle (migrations/0031_billing_subscription
+   * _auto_renew.sql). Flag/state only -- this never itself charges a
+   * payment provider either way; that remains explicitly out of scope (see
+   * that migration's header). Re-resolves the caller's OWN active
+   * subscription by familyId inside the same transaction rather than
+   * trusting a caller-supplied subscriptionId -- the identical IDOR
+   * defense-in-depth every other method in this class applies (see file
+   * header). No FREE_STARTER/no-subscription family has anything to
+   * toggle, so that case is NOT_FOUND, matching cancelRequest's/
+   * getInvoice's existing "absent or foreign record" mapping. Transactional
+   * (find + update share the one connection `runQuery` hands the
+   * callback) and idempotent (SubscriptionRepository.updateAutoRenew's own
+   * unconditional-UPDATE contract) -- setting the same value twice is a
+   * safe no-op, never an error.
+   */
+  async updateAutoRenew(familyId: string, autoRenew: boolean): Promise<SubscriptionRow> {
+    return this.runQuery(async (conn) => {
+      const subscription = await this.subscriptionRepository.findActiveForAccount(conn, familyId);
+      if (!subscription) throw new FamilyCommercialError('NOT_FOUND');
+      await this.subscriptionRepository.updateAutoRenew(conn, subscription.subscriptionId, autoRenew);
+      return { ...subscription, autoRenew };
+    });
+  }
+
   // -- G. Invoice read ---------------------------------------------------------
   async listInvoices(familyId: string): Promise<FamilyInvoiceRow[]> {
     return this.invoiceReadRepository.listForFamily(familyId);

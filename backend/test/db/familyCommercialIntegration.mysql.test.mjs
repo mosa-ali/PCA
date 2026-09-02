@@ -29,6 +29,8 @@ import { ChangeRequestService } from '../../dist/entitlements/requests/ChangeReq
 import { FamilyCommercialService, FamilyCommercialError } from '../../dist/familycommercial/FamilyCommercialService.js';
 import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
 import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
+import { PlanService, PlanRepository } from '../../dist/billing/plan.js';
+import { SubscriptionService, SubscriptionRepository } from '../../dist/billing/subscription.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -104,6 +106,70 @@ test('cross-family cancel is rejected as NOT_FOUND before ChangeRequestService.c
   );
   const cancelled = await service.cancelRequest(familyA, created.requestId);
   assert.equal(cancelled.state, 'CANCELLED');
+});
+
+// ---------------------------------------------------------------------------
+// updateAutoRenew (migrations/0031_billing_subscription_auto_renew.sql) --
+// unlike buildService() above, this exercises the REAL
+// billing/subscription.js SubscriptionRepository against real MySQL, not
+// the `{ findActiveForAccount() { return null; } }` stub -- the
+// authoritative proof this mutation actually persists through the real
+// column/query, not just through FamilyCommercialService's own in-process
+// logic (already covered DB-free in test/familycommercial/
+// familyCommercialService.test.mjs).
+// ---------------------------------------------------------------------------
+
+async function createActiveSubscriptionFor(familyId) {
+  const roles = ['APP_OWNER'];
+  const planService = new PlanService(new PlanRepository());
+  const subscriptionService = new SubscriptionService(new SubscriptionRepository());
+  const plan = await planService.createNewVersion(
+    { planCode: `FAMCOMM_AUTORENEW_PLAN_${randomUUID()}`, status: 'ACTIVE', billingCadence: 'MONTHLY', defaultParentMemberLimit: 1, defaultManagedDeviceLimit: 1, priceBookId: null },
+    roles,
+  );
+  const now = new Date();
+  const period = { currentPeriodStart: now, currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 3600_000) };
+  return subscriptionService.createSubscription({ accountRef: familyId, planId: plan.planId, status: 'ACTIVE', paymentMethodId: null, ...period }, roles);
+}
+
+function buildServiceWithRealSubscriptions() {
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
+  const commercialNotificationPublisher = new MySqlCommercialNotificationPublisher(new CommercialNotificationRepository());
+  const changeRequestService = new ChangeRequestService(changeRequestRepository, entitlementRepository, entitlementService, new SpyQuotePort(), commercialNotificationPublisher);
+  const paymentMethodRepository = { async listForAccount() { return []; } };
+  const invoiceReadRepository = { async listForFamily() { return []; }, async findForFamily() { return null; }, async listLines() { return []; } };
+  return new FamilyCommercialService(entitlementService, changeRequestRepository, changeRequestService, new SubscriptionRepository(), paymentMethodRepository, invoiceReadRepository);
+}
+
+test('updateAutoRenew persists through the real SubscriptionRepository/MySQL column, and is idempotent against a real connection', async () => {
+  const familyId = uniqueFamilyId('auto-renew');
+  const created = await createActiveSubscriptionFor(familyId);
+  assert.equal(created.autoRenew, true, 'a fresh subscription defaults to auto_renew = 1');
+
+  const service = buildServiceWithRealSubscriptions();
+  const cancelled = await service.updateAutoRenew(familyId, false);
+  assert.equal(cancelled.autoRenew, false);
+  assert.equal((await service.getSubscription(familyId)).autoRenew, false, 'a fresh read must reflect the persisted column, not a cached value');
+
+  // Idempotent: the same value again is a safe no-op, not an error.
+  await assert.doesNotReject(() => service.updateAutoRenew(familyId, false));
+
+  const resumed = await service.updateAutoRenew(familyId, true);
+  assert.equal(resumed.autoRenew, true, 'resume is symmetric with cancel, not a one-way terminal transition');
+});
+
+test('updateAutoRenew: cross-family IDOR -- family B has no active subscription of its own, so toggling it is NOT_FOUND, never family A\'s row', async () => {
+  const familyA = uniqueFamilyId('auto-renew-idor-a');
+  const familyB = uniqueFamilyId('auto-renew-idor-b');
+  await createActiveSubscriptionFor(familyA);
+  const service = buildServiceWithRealSubscriptions();
+  await assert.rejects(
+    () => service.updateAutoRenew(familyB, false),
+    (err) => err instanceof FamilyCommercialError && err.code === 'NOT_FOUND',
+  );
+  assert.equal((await service.getSubscription(familyA)).autoRenew, true, 'family A\'s subscription must be untouched by a rejected family-B call');
 });
 
 test.after(async () => {

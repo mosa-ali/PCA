@@ -231,10 +231,39 @@ describe('RealBillingClient (PCA-MYKIDS-BILL-3, MYKIDS_COMMERCIAL_API_V1)', () =
       await expect(client().getInvoice('inv-1')).rejects.toThrow(/Unsupported currency/);
     });
 
-    it('beginAddPaymentMethod and cancelAutoRenew honestly reject -- no such route exists on MYKIDS_COMMERCIAL_API_V1', async () => {
+    it('beginAddPaymentMethod honestly rejects -- no such route exists on MYKIDS_COMMERCIAL_API_V1 (payment-method surface is read-only)', async () => {
       await expect(client().beginAddPaymentMethod()).rejects.toMatchObject({ code: 'NOT_FOUND' });
-      await expect(client().cancelAutoRenew()).rejects.toMatchObject({ code: 'NOT_FOUND' });
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('cancelAutoRenew POSTs .../commercial/subscription/auto-renew/cancel with actorDeviceId (Owner-authority gate requirement) and returns the server auditEventId', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { auditEventId: 'audit-1' }));
+      const result = await client().cancelAutoRenew();
+      expect(result).toEqual({ auditEventId: 'audit-1' });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/subscription/auto-renew/cancel`);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ actorDeviceId: 'device-1' });
+    });
+
+    it('resumeAutoRenew POSTs .../commercial/subscription/auto-renew/resume with actorDeviceId and returns the server auditEventId', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { auditEventId: 'audit-2' }));
+      const result = await client().resumeAutoRenew();
+      expect(result).toEqual({ auditEventId: 'audit-2' });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/commercial/subscription/auto-renew/resume`);
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ actorDeviceId: 'device-1' });
+    });
+
+    it('cancelAutoRenew fails fast with DEVICE_IDENTITY_UNAVAILABLE when no actorDeviceId is available, without ever calling fetch', async () => {
+      await expect(client({ deviceId: null }).cancelAutoRenew()).rejects.toMatchObject({ code: 'DEVICE_IDENTITY_UNAVAILABLE' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('cancelAutoRenew maps a 404 (no active subscription for this family) to NOT_FOUND', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: 'not_found' }));
+      await expect(client().cancelAutoRenew()).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
   });
 });

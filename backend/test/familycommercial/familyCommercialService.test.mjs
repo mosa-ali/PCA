@@ -37,7 +37,14 @@ function buildService() {
   const stubChangeRequestService = createStubChangeRequestService(changeRequestRepository, () => FIXED_NOW);
 
   const subscriptionsByFamily = new Map();
-  const subscriptionRepository = { async findActiveForAccount(_conn, accountRef) { return subscriptionsByFamily.get(accountRef) ?? null; } };
+  const subscriptionRepository = {
+    async findActiveForAccount(_conn, accountRef) { return subscriptionsByFamily.get(accountRef) ?? null; },
+    async updateAutoRenew(_conn, subscriptionId, autoRenew) {
+      for (const [accountRef, row] of subscriptionsByFamily) {
+        if (row.subscriptionId === subscriptionId) subscriptionsByFamily.set(accountRef, { ...row, autoRenew });
+      }
+    },
+  };
   const paymentMethodsByFamily = new Map();
   const paymentMethodRepository = { async listForAccount(_conn, accountRef) { return paymentMethodsByFamily.get(accountRef) ?? []; } };
   const invoiceReadRepository = { async listForFamily() { return []; }, async findForFamily() { return null; }, async listLines() { return []; } };
@@ -144,10 +151,51 @@ test('subscription read: no billing_subscriptions row => null (mapped to FREE_ST
 
 test('subscription read: an active row for a DIFFERENT family is never returned for this family (family-scoped by accountRef)', async () => {
   const { service, subscriptionsByFamily } = buildService();
-  subscriptionsByFamily.set('family-B', { subscriptionId: 'sub-1', accountRef: 'family-B', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null });
+  subscriptionsByFamily.set('family-B', { subscriptionId: 'sub-1', accountRef: 'family-B', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null, autoRenew: true });
   assert.equal(await service.getSubscription('family-A'), null);
   const subscriptionB = await service.getSubscription('family-B');
   assert.equal(subscriptionB.subscriptionId, 'sub-1');
+});
+
+// ---------------------------------------------------------------------------
+// updateAutoRenew (migrations/0031_billing_subscription_auto_renew.sql)
+// ---------------------------------------------------------------------------
+
+test('updateAutoRenew: turns auto-renew off for the family\'s own active subscription and returns the updated row', async () => {
+  const { service, subscriptionsByFamily } = buildService();
+  subscriptionsByFamily.set('family-A', { subscriptionId: 'sub-a', accountRef: 'family-A', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null, autoRenew: true });
+  const updated = await service.updateAutoRenew('family-A', false);
+  assert.equal(updated.autoRenew, false);
+  assert.equal(updated.subscriptionId, 'sub-a');
+  // Persisted, not just returned -- a fresh read reflects the same value.
+  assert.equal((await service.getSubscription('family-A')).autoRenew, false);
+});
+
+test('updateAutoRenew: idempotent -- setting the same value twice in a row is a safe no-op, never an error', async () => {
+  const { service, subscriptionsByFamily } = buildService();
+  subscriptionsByFamily.set('family-A', { subscriptionId: 'sub-a', accountRef: 'family-A', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null, autoRenew: true });
+  await service.updateAutoRenew('family-A', false);
+  await assert.doesNotReject(() => service.updateAutoRenew('family-A', false));
+  assert.equal((await service.getSubscription('family-A')).autoRenew, false);
+  // And resuming afterward still works (cancel/resume are symmetric, not a one-way terminal transition).
+  const resumed = await service.updateAutoRenew('family-A', true);
+  assert.equal(resumed.autoRenew, true);
+});
+
+test('updateAutoRenew: a FREE_STARTER family with no active subscription row has nothing to toggle -- NOT_FOUND, never fabricated', async () => {
+  const { service } = buildService();
+  await assert.rejects(
+    () => service.updateAutoRenew('family-A', false),
+    (err) => err instanceof FamilyCommercialError && err.code === 'NOT_FOUND',
+  );
+});
+
+test('updateAutoRenew: cross-family IDOR -- toggling family A never touches family B\'s subscription row', async () => {
+  const { service, subscriptionsByFamily } = buildService();
+  subscriptionsByFamily.set('family-A', { subscriptionId: 'sub-a', accountRef: 'family-A', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null, autoRenew: true });
+  subscriptionsByFamily.set('family-B', { subscriptionId: 'sub-b', accountRef: 'family-B', planId: 'plan-1', status: 'ACTIVE', currentPeriodStart: new Date(), currentPeriodEnd: new Date(), paymentMethodId: null, createdAt: new Date(), canceledAt: null, autoRenew: true });
+  await service.updateAutoRenew('family-A', false);
+  assert.equal((await service.getSubscription('family-B')).autoRenew, true, 'family B\'s auto-renew must be untouched by a family-A mutation');
 });
 
 test('payment method read returns only this family\'s methods', async () => {

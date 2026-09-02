@@ -95,7 +95,7 @@ test('subscriptionToJson: no active subscription -> FREE_STARTER posture, never 
   assert.equal(json.autoRenew, false);
 });
 
-test('subscriptionToJson: an active subscription row maps status/planId/period end exactly, autoRenew always false (no such column yet)', () => {
+test('subscriptionToJson: an active subscription row maps status/planId/period end/autoRenew exactly (migrations/0031_billing_subscription_auto_renew.sql)', () => {
   const json = subscriptionToJson({
     subscriptionId: 'sub-1',
     accountRef: 'fam-1',
@@ -106,10 +106,28 @@ test('subscriptionToJson: an active subscription row maps status/planId/period e
     paymentMethodId: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     canceledAt: null,
+    autoRenew: true,
   });
   assert.equal(json.status, 'ACTIVE');
   assert.equal(json.planId, 'plan-1');
   assert.equal(json.currentPeriodEndUtc, '2026-02-01T00:00:00.000Z');
+  assert.equal(json.autoRenew, true);
+});
+
+test('subscriptionToJson: an active subscription row with auto_renew turned off maps autoRenew=false -- passed through verbatim, never re-derived from status', () => {
+  const json = subscriptionToJson({
+    subscriptionId: 'sub-2',
+    accountRef: 'fam-1',
+    planId: 'plan-1',
+    status: 'ACTIVE',
+    currentPeriodStart: new Date('2026-01-01T00:00:00Z'),
+    currentPeriodEnd: new Date('2026-02-01T00:00:00Z'),
+    paymentMethodId: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    canceledAt: null,
+    autoRenew: false,
+  });
+  assert.equal(json.status, 'ACTIVE');
   assert.equal(json.autoRenew, false);
 });
 

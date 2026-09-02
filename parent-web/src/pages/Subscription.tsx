@@ -49,6 +49,18 @@ export default function Subscription() {
     }
   };
 
+  const resumeAutoRenew = async () => {
+    setActionError(null);
+    try {
+      const granted = await requestStepUp('MANAGE_PAYMENT_METHOD');
+      if (!granted) return;
+      await clients.billing.resumeAutoRenew();
+      reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : t('common.errorGeneric'));
+    }
+  };
+
   return (
     <section aria-labelledby="subscription-title">
       <h1 id="subscription-title">{t('nav.subscription')}</h1>
@@ -76,12 +88,24 @@ export default function Subscription() {
                   : t('subscription.expiresOn', { date: new Date(subscription.currentPeriodEndUtc).toLocaleDateString(i18n.language) })}
               </p>
             )}
-            {subscription.autoRenew && (
-              <PermissionGate action="MANAGE_PAYMENT_METHOD" showDisabledFallback>
-                <button type="button" className="btn" onClick={cancelAutoRenew}>
-                  {t('subscription.cancelAutoRenew')}
-                </button>
-              </PermissionGate>
+            {subscription.autoRenew ? (
+              <>
+                <p style={{ color: 'var(--color-text-muted)' }}>{t('subscription.cancelAutoRenewExplain')}</p>
+                <PermissionGate action="MANAGE_PAYMENT_METHOD" showDisabledFallback>
+                  <button type="button" className="btn" onClick={cancelAutoRenew}>
+                    {t('subscription.cancelAutoRenew')}
+                  </button>
+                </PermissionGate>
+              </>
+            ) : (
+              <>
+                <p style={{ color: 'var(--color-text-muted)' }}>{t('subscription.resumeAutoRenewExplain')}</p>
+                <PermissionGate action="MANAGE_PAYMENT_METHOD" showDisabledFallback>
+                  <button type="button" className="btn" onClick={resumeAutoRenew}>
+                    {t('subscription.resumeAutoRenew')}
+                  </button>
+                </PermissionGate>
+              </>
             )}
           </>
         )}

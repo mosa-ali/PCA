@@ -32,7 +32,7 @@ function fakeReply() {
 // ---------------------------------------------------------------------------
 
 test('resolveFamilyCommercialRequirements: every known operation requires family scope; only MUTATE_REQUESTS route decides license separately (never at this layer)', () => {
-  for (const op of ['VIEW_ENTITLEMENT', 'MUTATE_REQUESTS', 'VIEW_BILLING_RECORDS']) {
+  for (const op of ['VIEW_ENTITLEMENT', 'MUTATE_REQUESTS', 'VIEW_BILLING_RECORDS', 'MUTATE_SUBSCRIPTION']) {
     const req = resolveFamilyCommercialRequirements(op);
     assert.equal(req.requiresFamilyScope, true);
   }
@@ -68,7 +68,7 @@ test('preHandler: no scope row / REVOKED scope -> 403 forbidden, indistinguishab
 test('preHandler: ACTIVE scope for VIEW_ENTITLEMENT/VIEW_BILLING_RECORDS passes with no license required', async () => {
   const authzRepository = createInMemoryAuthzRepository();
   authzRepository._grantScope('acct-3', 'fam-1', 'ACTIVE');
-  for (const op of ['VIEW_ENTITLEMENT', 'VIEW_BILLING_RECORDS', 'MUTATE_REQUESTS']) {
+  for (const op of ['VIEW_ENTITLEMENT', 'VIEW_BILLING_RECORDS', 'MUTATE_REQUESTS', 'MUTATE_SUBSCRIPTION']) {
     const handler = createRequireFamilyCommercialAuthorization(authzRepository, op);
     const reply = fakeReply();
     await handler({ params: { familyId: 'fam-1' }, accountId: 'acct-3' }, reply);

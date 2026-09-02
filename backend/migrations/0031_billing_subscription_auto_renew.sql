@@ -1,0 +1,31 @@
+-- PCA-MYKIDS-BILL-2 follow-up: adds the `auto_renew` flag
+-- `billing_subscriptions` (migration 0007) never carried. Until this
+-- migration, `familycommercial/dto.ts`'s `subscriptionToJson` hardcoded
+-- `autoRenew: false` on the wire (there was no column to read), and
+-- `RealBillingClient.cancelAutoRenew()` always rejected with NOT_FOUND
+-- (there was no mutation route to call) -- both honestly documented gaps,
+-- never a fabricated capability. This migration adds ONLY the flag/state
+-- column; it introduces no job, scheduler, or payment-provider integration
+-- that would actually re-charge anyone -- real recurring-billing execution
+-- remains explicitly out of scope for this lane, same as every other
+-- billing-core migration to date.
+--
+-- BOOLEAN CONVENTION: TINYINT(1) NOT NULL, matching every existing
+-- boolean-shaped column in this schema (`billing_currencies.enabled` in
+-- migration 0007 itself, `over_limit_parent_member`/`awaiting_admin_quote`
+-- in 0006, `is_sensitive` in 0017, etc.) -- never a MySQL native BOOLEAN
+-- alias used inconsistently with the rest of the schema.
+--
+-- DEFAULT 1 (opted in): every subscription created before this column
+-- existed was, in practice, on an auto-renewing plan (there was no way to
+-- turn it off) -- DEFAULT 1 preserves that as the honest historical
+-- posture for any pre-migration row and is also the correct default for
+-- every future INSERT that does not explicitly set it (SubscriptionRepository
+-- .create's INSERT statement does not list this column, so it relies on
+-- this DEFAULT).
+--
+-- ADDITIVE AND BACKWARD-COMPATIBLE: adds exactly one NOT NULL DEFAULT
+-- column to an existing table; no other table/column/constraint in this
+-- schema is touched.
+ALTER TABLE billing_subscriptions
+  ADD COLUMN auto_renew TINYINT(1) NOT NULL DEFAULT 1 AFTER canceled_at;

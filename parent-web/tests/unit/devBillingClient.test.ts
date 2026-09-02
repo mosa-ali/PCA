@@ -23,6 +23,16 @@ describe('DevBillingClient -- entitlement state machine (PCA-MYKIDS-BILL-1)', ()
     expect(subscription.status).toBe('FREE_STARTER');
   });
 
+  it('cancelAutoRenew/resumeAutoRenew toggle the fixture subscription state and each return an auditEventId', async () => {
+    const cancelResult = await client.cancelAutoRenew();
+    expect(typeof cancelResult.auditEventId).toBe('string');
+    expect((await client.getSubscription()).autoRenew).toBe(false);
+
+    const resumeResult = await client.resumeAutoRenew();
+    expect(typeof resumeResult.auditEventId).toBe('string');
+    expect((await client.getSubscription()).autoRenew).toBe(true);
+  });
+
   it('rejects a target at or below the current limit', async () => {
     await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 1)).rejects.toThrow(/greater than the current limit/);
     await expect(client.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 0)).rejects.toThrow();

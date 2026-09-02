@@ -24,6 +24,8 @@ export interface SubscriptionRow {
   readonly paymentMethodId: string | null;
   readonly createdAt: Date;
   readonly canceledAt: Date | null;
+  /** migrations/0031_billing_subscription_auto_renew.sql. Whether this subscription is set to renew automatically at `currentPeriodEnd` -- a flag/state field only; no job here actually re-charges a payment provider when a period ends (out of scope, see that migration's own header). */
+  readonly autoRenew: boolean;
 }
 
 export interface CreateSubscriptionInput {
@@ -45,6 +47,7 @@ interface SubscriptionSqlRow {
   payment_method_id: string | null;
   created_at: Date;
   canceled_at: Date | null;
+  auto_renew: number;
 }
 
 function toDomain(row: SubscriptionSqlRow): SubscriptionRow {
@@ -58,6 +61,11 @@ function toDomain(row: SubscriptionSqlRow): SubscriptionRow {
     paymentMethodId: row.payment_method_id,
     createdAt: row.created_at,
     canceledAt: row.canceled_at,
+    // Same TINYINT(1)-as-number-then-strict-equality convention as
+    // MySqlEntitlementRepository's over_limit_parent_member/
+    // MySqlChangeRequestRepository's awaiting_admin_quote -- never a truthy
+    // coercion of an arbitrary integer.
+    autoRenew: row.auto_renew === 1,
   };
 }
 
@@ -97,6 +105,17 @@ export class SubscriptionRepository {
       canceledAt,
       subscriptionId,
     ]);
+  }
+
+  /**
+   * migrations/0031_billing_subscription_auto_renew.sql. Idempotent: an
+   * unconditional UPDATE to the target value, never a toggle/increment and
+   * never guarded on the row's current value -- setting the same value
+   * twice in a row is a safe no-op (the second call still succeeds and
+   * still leaves `auto_renew` at the requested value), not an error.
+   */
+  async updateAutoRenew(conn: PoolConnection, subscriptionId: string, autoRenew: boolean): Promise<void> {
+    await execute(conn, `UPDATE billing_subscriptions SET auto_renew = ? WHERE subscription_id = ?`, [autoRenew ? 1 : 0, subscriptionId]);
   }
 }
 

@@ -33,15 +33,15 @@
  *      itself reads from, rather than an edit to that helper's own closed
  *      `ServiceOperation` union (authz/types.ts) / `OPERATION_MATRIX`
  *      (authz/policy.ts) -- both outside this lane's ownership boundary.
- *   3. FOR MUTATIONS ONLY (create/cancel a request): the SAME
- *      FamilyCommercialAuthorityResolver OWNER gate billingCheckoutRoutes.ts
- *      established (FIX 4) -- resolved BEFORE any service call.
- *      ROLE_DENIED and AUTHORITY_UNAVAILABLE both 403 (distinguishably),
- *      and NEITHER is ever treated as "is Owner." Reads (entitlement/
- *      requests list+detail/subscription/invoices/payment methods) do NOT
- *      require the OWNER gate -- viewing one's own family's already-
- *      existing commercial state is not itself a new commercial
- *      commitment, mirroring billingCheckoutRoutes.ts's own
+ *   3. FOR MUTATIONS ONLY (create/cancel a request; cancel/resume
+ *      auto-renew): the SAME FamilyCommercialAuthorityResolver OWNER gate
+ *      billingCheckoutRoutes.ts established (FIX 4) -- resolved BEFORE any
+ *      service call. ROLE_DENIED and AUTHORITY_UNAVAILABLE both 403
+ *      (distinguishably), and NEITHER is ever treated as "is Owner." Reads
+ *      (entitlement/requests list+detail/subscription/invoices/payment
+ *      methods) do NOT require the OWNER gate -- viewing one's own
+ *      family's already-existing commercial state is not itself a new
+ *      commercial commitment, mirroring billingCheckoutRoutes.ts's own
  *      VIEW_OWN_BILLING_STATUS judgment call.
  *   4. A device-limit (billable) increase request additionally requires an
  *      active license -- both limit types share ONE create route
@@ -52,6 +52,7 @@
  *      requirement shape (authz/policy.ts) for the identical underlying
  *      reason.
  */
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
 import type { AuthService } from '../../auth/AuthService.js';
@@ -125,6 +126,7 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
   const requireViewEntitlement = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'VIEW_ENTITLEMENT');
   const requireMutateRequests = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'MUTATE_REQUESTS');
   const requireViewBillingRecords = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'VIEW_BILLING_RECORDS');
+  const requireMutateSubscription = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'MUTATE_SUBSCRIPTION');
 
   /** Shared inline Owner-authority gate for every mutation route -- see this file's header. */
   async function resolveOwnerOrReject(reply: FastifyReply, familyId: string, actorDeviceId: unknown): Promise<boolean> {
@@ -282,6 +284,63 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
       const subscription = await svc.getSubscription(familyId);
       return subscriptionToJson(subscription);
     },
+  );
+
+  // -- F2. Subscription auto-renew cancel/resume (migrations/0031_billing_
+  // subscription_auto_renew.sql) ----------------------------------------------
+  // Flag/state mutation only -- neither route here, nor anything they call,
+  // ever itself charges a payment provider (that stays explicitly out of
+  // scope). Shares one handler: both routes resolve the OWNER gate, then
+  // delegate to the identical FamilyCommercialService.updateAutoRenew,
+  // differing only in the boolean they pass -- mirroring how
+  // billing_subscriptions itself models this as one flag, not two opposed
+  // states.
+  async function handleAutoRenewToggle(request: FastifyRequest, reply: FastifyReply, autoRenew: boolean): Promise<unknown> {
+    const { familyId } = request.params as { familyId: string };
+    const body = request.body;
+    const actorDeviceId = isPlainObject(body) ? body.actorDeviceId : undefined;
+    if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
+    try {
+      await svc.updateAutoRenew(familyId, autoRenew);
+      // No persisted, queryable audit-log entry is written for this
+      // parent-initiated mutation -- mirroring cancelRequest's own existing
+      // precedent (this file's sibling mutation, immediately above,
+      // performs no audit-event write either). This codebase's Billing
+      // audit-event system (billing/audit.ts, PlatformAdminAuditEvent) is
+      // reserved for platform-admin/system-triggered billing actions (price
+      // publish, quote issuance, payment confirm/refund -- see that file's
+      // own header) and requires a PlatformAdminId this parent-facing
+      // caller never holds; inventing a family-commercial audit ledger
+      // entry here would be new scope, not a mirrored convention. The
+      // frozen parent-web contract (BillingClient.cancelAutoRenew/
+      // resumeAutoRenew, interfaces.ts) still requires an `auditEventId` in
+      // the response -- honestly satisfied with a fresh per-call
+      // correlation id (same randomUUID()-as-correlationId shape
+      // buildBillingAuditEvent already uses), not a claim that a browsable
+      // audit trail exists for this action.
+      return { auditEventId: randomUUID() };
+    } catch (error) {
+      if (error instanceof FamilyCommercialError) return reply.code(familyCommercialErrorToHttpStatus(error.code)).send({ error: 'not_found' });
+      throw error;
+    }
+  }
+
+  app.post(
+    '/v1/families/:familyId/commercial/subscription/auto-renew/cancel',
+    {
+      bodyLimit: MAX_BODY_BYTES,
+      preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'family-commercial-auto-renew' }), requireMutateSubscription],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => handleAutoRenewToggle(request, reply, false),
+  );
+
+  app.post(
+    '/v1/families/:familyId/commercial/subscription/auto-renew/resume',
+    {
+      bodyLimit: MAX_BODY_BYTES,
+      preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'family-commercial-auto-renew' }), requireMutateSubscription],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => handleAutoRenewToggle(request, reply, true),
   );
 
   // -- G. Invoice read ----------------------------------------------------------

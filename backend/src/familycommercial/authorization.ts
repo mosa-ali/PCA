@@ -24,7 +24,7 @@
  * authorization layer, scoped to this lane's own routes only.
  *
  * OWNER-GATED MUTATIONS: every family-commercial MUTATION (device-limit
- * increase request, cancel request, cancel auto-renew) additionally
+ * increase request, cancel request, cancel/resume auto-renew) additionally
  * requires `FamilyCommercialAuthorityResolver.resolveOwnerAuthority` to
  * return OWNER_AUTHORIZED -- resolved by the route handler itself (not this
  * preHandler), mirroring billingCheckoutRoutes.ts's own FIX 4 pattern
@@ -59,7 +59,20 @@ export type FamilyCommercialOperation =
    */
   | 'MUTATE_REQUESTS'
   /** Subscription + invoice + payment-method reads. */
-  | 'VIEW_BILLING_RECORDS';
+  | 'VIEW_BILLING_RECORDS'
+  /**
+   * Toggle the caller's own family subscription's auto-renew flag
+   * (migrations/0031_billing_subscription_auto_renew.sql). Deliberately its
+   * own operation rather than folded into `MUTATE_REQUESTS` -- that
+   * operation's own doc comment (above) and requirement shape are about
+   * the increase-request lifecycle specifically; reusing it here would be
+   * exactly the "misusing an existing, semantically-unrelated
+   * ServiceOperation member just because its requirement SHAPE happens to
+   * match" this file's header already rejects as a design choice. Also
+   * Owner-gated at the route handler (see file header) -- same as every
+   * other family-commercial mutation.
+   */
+  | 'MUTATE_SUBSCRIPTION';
 
 export interface FamilyCommercialOperationRequirements {
   /** Every operation in this module requires an ACTIVE family scope -- there is no family-commercial read/write that a caller with no scope for the target family may ever reach. */
@@ -71,6 +84,7 @@ const OPERATION_MATRIX: Record<FamilyCommercialOperation, FamilyCommercialOperat
   VIEW_ENTITLEMENT: { requiresFamilyScope: true, requiresLicense: false },
   MUTATE_REQUESTS: { requiresFamilyScope: true, requiresLicense: false },
   VIEW_BILLING_RECORDS: { requiresFamilyScope: true, requiresLicense: false },
+  MUTATE_SUBSCRIPTION: { requiresFamilyScope: true, requiresLicense: false },
 };
 
 export function resolveFamilyCommercialRequirements(operation: FamilyCommercialOperation): FamilyCommercialOperationRequirements {

@@ -138,6 +138,61 @@ test('MySQL: at most one ACTIVE subscription per account -- a genuine DB-level c
   await assert.doesNotReject(() => subscriptionService.createSubscription({ accountRef, planId: plan.planId, status: 'ACTIVE', paymentMethodId: null, ...period }, roles));
 });
 
+// ---------------------------------------------------------------------------
+// migrations/0031_billing_subscription_auto_renew.sql
+// ---------------------------------------------------------------------------
+
+test('MySQL: billing_subscriptions.auto_renew has the documented schema shape -- TINYINT(1) NOT NULL DEFAULT 1', async () => {
+  const [rows] = await getPool().query(
+    `SELECT column_type AS column_type, is_nullable AS is_nullable, column_default AS column_default
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = 'billing_subscriptions' AND column_name = 'auto_renew'`,
+  );
+  assert.equal(rows.length, 1, 'billing_subscriptions.auto_renew must exist');
+  assert.equal(rows[0].column_type, 'tinyint(1)');
+  assert.equal(rows[0].is_nullable, 'NO');
+  assert.equal(String(rows[0].column_default), '1');
+});
+
+test('MySQL: a newly created subscription defaults to auto_renew = 1 (opted in) with no caller input required', async () => {
+  const roles = ['APP_OWNER'];
+  const { planService, subscriptionService } = buildServices();
+  const plan = await planService.createNewVersion(
+    { planCode: `AUTORENEW_DEFAULT_PLAN_${randomUUID()}`, status: 'ACTIVE', billingCadence: 'MONTHLY', defaultParentMemberLimit: 1, defaultManagedDeviceLimit: 1, priceBookId: null },
+    roles,
+  );
+  const accountRef = `account-${randomUUID()}`;
+  const now = new Date();
+  const period = { currentPeriodStart: now, currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 3600_000) };
+  await subscriptionService.createSubscription({ accountRef, planId: plan.planId, status: 'ACTIVE', paymentMethodId: null, ...period }, roles);
+  const [rows] = await getPool().query(`SELECT auto_renew FROM billing_subscriptions WHERE account_ref = ?`, [accountRef]);
+  assert.equal(rows[0].auto_renew, 1);
+});
+
+test('MySQL: SubscriptionRepository.updateAutoRenew is transactional and idempotent against a real connection -- repeat calls with the same value never error', async () => {
+  const roles = ['APP_OWNER'];
+  const { planService, subscriptionService } = buildServices();
+  const subscriptionRepository = new SubscriptionRepository();
+  const plan = await planService.createNewVersion(
+    { planCode: `AUTORENEW_TOGGLE_PLAN_${randomUUID()}`, status: 'ACTIVE', billingCadence: 'MONTHLY', defaultParentMemberLimit: 1, defaultManagedDeviceLimit: 1, priceBookId: null },
+    roles,
+  );
+  const accountRef = `account-${randomUUID()}`;
+  const now = new Date();
+  const period = { currentPeriodStart: now, currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 3600_000) };
+  const subscription = await subscriptionService.createSubscription({ accountRef, planId: plan.planId, status: 'ACTIVE', paymentMethodId: null, ...period }, roles);
+  assert.equal(subscription.autoRenew, true, 'toDomain must map the TINYINT(1) default to a real boolean, not a truthy 1');
+
+  await runInTransaction((conn) => subscriptionRepository.updateAutoRenew(conn, subscription.subscriptionId, false));
+  await assert.doesNotReject(() => runInTransaction((conn) => subscriptionRepository.updateAutoRenew(conn, subscription.subscriptionId, false)));
+  const afterCancel = await runInTransaction((conn) => subscriptionRepository.findById(conn, subscription.subscriptionId));
+  assert.equal(afterCancel.autoRenew, false);
+
+  await runInTransaction((conn) => subscriptionRepository.updateAutoRenew(conn, subscription.subscriptionId, true));
+  const afterResume = await runInTransaction((conn) => subscriptionRepository.findById(conn, subscription.subscriptionId));
+  assert.equal(afterResume.autoRenew, true, 'cancel/resume are symmetric -- toggling back on must work, not just off');
+});
+
 test('MySQL: Invoice totals are computed via exact integer arithmetic across multiple InvoiceLines', async () => {
   const roles = ['APP_OWNER'];
   const { invoiceService } = buildServices();

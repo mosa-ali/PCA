@@ -119,7 +119,7 @@ export interface SubscriptionSnapshotJson {
   readonly autoRenew: boolean;
 }
 
-/** No active subscription row => the family is on the (unbilled, no-subscription-row) FREE_STARTER posture -- never fabricated as if a real billing_subscriptions row existed. */
+/** No active subscription row => the family is on the (unbilled, no-subscription-row) FREE_STARTER posture -- never fabricated as if a real billing_subscriptions row existed. FREE_STARTER has nothing to auto-renew, so autoRenew is honestly false here, never the (always-1) column default. */
 export function subscriptionToJson(subscription: SubscriptionRow | null): SubscriptionSnapshotJson {
   if (!subscription) {
     return { status: 'FREE_STARTER', planId: null, currentPeriodEndUtc: null, autoRenew: false };
@@ -128,11 +128,9 @@ export function subscriptionToJson(subscription: SubscriptionRow | null): Subscr
     status: subscription.status,
     planId: subscription.planId,
     currentPeriodEndUtc: subscription.currentPeriodEnd.toISOString(),
-    // PCA-BILL-1's SubscriptionRow carries no auto-renew column today (see
-    // this lane's final report CANCEL_RENEWAL field) -- reported false
-    // rather than fabricated, matching "never invent renewal semantics that
-    // don't exist in Billing Core."
-    autoRenew: false,
+    // migrations/0031_billing_subscription_auto_renew.sql: the real
+    // per-subscription column, mapped verbatim -- no longer hardcoded.
+    autoRenew: subscription.autoRenew,
   };
 }
 

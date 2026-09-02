@@ -111,6 +111,33 @@ export function __resetDevBillingStateForTests(): void {
   pendingWebhookTimers.clear();
 }
 
+/**
+ * Test-only: overrides the in-memory fixture subscription (e.g. to a
+ * non-FREE_STARTER ACTIVE plan with a currentPeriodEndUtc/autoRenew
+ * combination), so Subscription.tsx's plan/renewal/auto-renew branches --
+ * otherwise unreachable from the FREE_STARTER-only default fixture -- can
+ * be exercised in a component test. Not imported by any production file
+ * (see tests/unit/noDevOnlyImportsInProduction.test.ts) -- only test files
+ * under tests/** call this, same convention as
+ * __resetDevBillingStateForTests above.
+ */
+export function __setDevSubscriptionForTests(overrides: Partial<SubscriptionSnapshot>): void {
+  subscription = { ...subscription, ...overrides };
+}
+
+/**
+ * Test-only counterpart to __setDevSubscriptionForTests: Subscription.tsx
+ * branches on `entitlement.tier === FREE_STARTER_TIER`
+ * (isFreeStarter), NOT on the subscription snapshot, so a test exercising
+ * the non-FREE_STARTER plan/renewal/auto-renew UI must move the tier here
+ * too, or the page stays on the FREE_STARTER branch regardless of what
+ * __setDevSubscriptionForTests set. Same "test files under tests/** only"
+ * convention as the other __*ForTests exports in this module.
+ */
+export function __setDevEntitlementTierForTests(tier: string): void {
+  entitlement = { ...entitlement, tier };
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -399,6 +426,13 @@ export class DevBillingClient implements BillingClient {
   async cancelAutoRenew(): Promise<{ auditEventId: string }> {
     await delay();
     subscription = { ...subscription, autoRenew: false };
+    notify();
+    return { auditEventId: `dev-audit-${Date.now()}` };
+  }
+
+  async resumeAutoRenew(): Promise<{ auditEventId: string }> {
+    await delay();
+    subscription = { ...subscription, autoRenew: true };
     notify();
     return { auditEventId: `dev-audit-${Date.now()}` };
   }

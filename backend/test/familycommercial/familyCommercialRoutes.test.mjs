@@ -42,7 +42,15 @@ function buildHarness({ resolver } = {}) {
   const changeRequestRepository = createInMemoryChangeRequestRepository();
   const entitlementService = new EntitlementService(entitlementRepository, changeRequestRepository);
   const changeRequestService = createStubChangeRequestService(changeRequestRepository, () => FIXED_NOW);
-  const subscriptionRepository = { async findActiveForAccount() { return null; } };
+  const subscriptionsByFamily = new Map();
+  const subscriptionRepository = {
+    async findActiveForAccount(_conn, accountRef) { return subscriptionsByFamily.get(accountRef) ?? null; },
+    async updateAutoRenew(_conn, subscriptionId, autoRenew) {
+      for (const [accountRef, row] of subscriptionsByFamily) {
+        if (row.subscriptionId === subscriptionId) subscriptionsByFamily.set(accountRef, { ...row, autoRenew });
+      }
+    },
+  };
   const paymentMethodRepository = {
     async listForAccount(_conn, accountRef) {
       if (accountRef !== 'family-A') return [];
@@ -66,7 +74,7 @@ function buildHarness({ resolver } = {}) {
     rateLimiter,
     authAttemptLimiter: rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' }),
   });
-  return { app, authService, authzRepository, changeRequestRepository };
+  return { app, authService, authzRepository, changeRequestRepository, subscriptionsByFamily };
 }
 
 async function issueToken(authService, subject) {
@@ -238,6 +246,145 @@ test('cross-family IDOR on cancel: family B cannot cancel family A\'s request', 
   // the ownership check inside FamilyCommercialService.cancelRequest maps
   // this to NOT_FOUND (404), same as a made-up id.
   assert.equal(cancelResponse.statusCode, 404);
+});
+
+// ---------------------------------------------------------------------------
+// Subscription auto-renew cancel/resume (migrations/0031_billing_
+// subscription_auto_renew.sql) -- same Owner-gate + family-scope discipline
+// as the increase-request mutations above.
+// ---------------------------------------------------------------------------
+
+function seedActiveSubscription(subscriptionsByFamily, familyId, subscriptionId, autoRenew) {
+  subscriptionsByFamily.set(familyId, {
+    subscriptionId,
+    accountRef: familyId,
+    planId: 'plan-1',
+    status: 'ACTIVE',
+    currentPeriodStart: new Date('2026-06-01T00:00:00Z'),
+    currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    paymentMethodId: null,
+    createdAt: new Date('2026-06-01T00:00:00Z'),
+    canceledAt: null,
+    autoRenew,
+  });
+}
+
+test('auto-renew cancel: Owner authorized turns auto_renew off and returns an auditEventId; a subsequent subscription read reflects it', async () => {
+  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { actorDeviceId: 'dev-owner' },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(typeof response.json().auditEventId, 'string');
+  assert.ok(response.json().auditEventId.length > 0);
+
+  const readResponse = await app.inject({
+    method: 'GET',
+    url: '/v1/families/family-A/commercial/subscription',
+    headers: { authorization: `Bearer ${rawToken}` },
+  });
+  assert.equal(readResponse.json().autoRenew, false);
+});
+
+test('auto-renew resume: Owner authorized turns auto_renew back on -- cancel and resume are symmetric, not a one-way terminal transition', async () => {
+  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', false);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/subscription/auto-renew/resume',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { actorDeviceId: 'dev-owner' },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(typeof response.json().auditEventId, 'string');
+
+  const readResponse = await app.inject({
+    method: 'GET',
+    url: '/v1/families/family-A/commercial/subscription',
+    headers: { authorization: `Bearer ${rawToken}` },
+  });
+  assert.equal(readResponse.json().autoRenew, true);
+});
+
+test('auto-renew cancel: idempotent -- calling it twice in a row both succeed (200) and the final state is still autoRenew=false', async () => {
+  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+
+  for (let i = 0; i < 2; i++) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: { actorDeviceId: 'dev-owner' },
+    });
+    assert.equal(response.statusCode, 200, `call ${i + 1} must succeed, never error on a repeat`);
+  }
+  assert.equal(subscriptionsByFamily.get('family-A').autoRenew, false);
+});
+
+test('auto-renew cancel: AUTHORITY_UNAVAILABLE is never treated as authorized (distinguishable 403, no mutation applied)', async () => {
+  const resolver = buildResolver(new Map()); // empty map => every lookup is AUTHORITY_UNAVAILABLE
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  seedActiveSubscription(subscriptionsByFamily, 'family-A', 'sub-a', true);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { actorDeviceId: 'dev-owner' },
+  });
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.json().code, 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE');
+  assert.equal(subscriptionsByFamily.get('family-A').autoRenew, true, 'a denied request must never mutate the subscription');
+});
+
+test('auto-renew cancel: a FREE_STARTER family with no active subscription row gets 404, never a fabricated success', async () => {
+  const resolver = buildResolver(new Map([['family-A:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
+  const { app, authService, authzRepository } = buildHarness({ resolver });
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE');
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { actorDeviceId: 'dev-owner' },
+  });
+  assert.equal(response.statusCode, 404);
+});
+
+test('cross-family IDOR on auto-renew: a caller scoped to family A cannot toggle family B\'s subscription by supplying familyId=family-B', async () => {
+  const resolver = buildResolver(new Map([['family-B:dev-owner', { status: 'OWNER_AUTHORIZED' }]]));
+  const { app, authService, authzRepository, subscriptionsByFamily } = buildHarness({ resolver });
+  seedActiveSubscription(subscriptionsByFamily, 'family-B', 'sub-b', true);
+  const { rawToken, accountId } = await issueToken(authService, 'owner-1');
+  authzRepository._grantScope(accountId, 'family-A', 'ACTIVE'); // scoped to A only, never B
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/families/family-B/commercial/subscription/auto-renew/cancel',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { actorDeviceId: 'dev-owner' },
+  });
+  assert.equal(response.statusCode, 403, 'no ACTIVE family-scope row for family-B -- rejected before the Owner gate or the service is ever reached');
+  assert.equal(subscriptionsByFamily.get('family-B').autoRenew, true, 'family B\'s subscription must be untouched');
 });
 
 // ---------------------------------------------------------------------------
