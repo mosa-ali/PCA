@@ -86,6 +86,18 @@ export interface DisputeListRow {
   readonly updatedAt: Date;
 }
 
+export interface PlanListRow {
+  readonly planId: string;
+  readonly planCode: string;
+  readonly planVersion: number;
+  readonly status: string;
+  readonly billingCadence: string;
+  readonly defaultParentMemberLimit: number;
+  readonly defaultManagedDeviceLimit: number;
+  readonly priceBookId: string | null;
+  readonly createdAt: Date;
+}
+
 export interface PendingCustomQuoteRow {
   readonly requestId: string;
   readonly familyId: string;
@@ -315,6 +327,53 @@ export class BillingReadModel {
           evidenceDueAt: r.evidence_due_at,
           createdAt: r.created_at,
           updatedAt: r.updated_at,
+        })),
+        total: Number(countRows[0]?.total ?? 0),
+        limit: page.limit,
+        offset: page.offset,
+      };
+    });
+  }
+
+  /**
+   * "Browse all billing plans" -- `billing/plan.ts`'s `PlanRepository` is
+   * keyed-lookup only (`findById`, `listVersions(planCode)`): there is no
+   * way to discover a plan code without already knowing one. Same gap this
+   * module's other 7 lists were built to close (see file header), so this
+   * follows the identical shape rather than adding a parallel "list all"
+   * primitive on `PlanRepository` itself -- `billing_plans` is read here
+   * exactly as read-only/composed as every other table this module lists.
+   */
+  async listPlans(page: PageRequest, filter: { planCode?: string; status?: string; billingCadence?: string }): Promise<PageResult<PlanListRow>> {
+    return runInTransaction(async (conn) => {
+      const { clause, params } = buildFilterClause([
+        ['plan_code', filter.planCode],
+        ['status', filter.status],
+        ['billing_cadence', filter.billingCadence],
+      ]);
+      const { rows: countRows } = await execute<{ total: number }>(conn, `SELECT COUNT(*) AS total FROM billing_plans ${clause}`, params);
+      const { rows } = await execute<{
+        plan_id: string;
+        plan_code: string;
+        plan_version: number;
+        status: string;
+        billing_cadence: string;
+        default_parent_member_limit: number;
+        default_managed_device_limit: number;
+        price_book_id: string | null;
+        created_at: Date;
+      }>(conn, `SELECT * FROM billing_plans ${clause} ORDER BY created_at DESC, plan_id DESC LIMIT ? OFFSET ?`, [...params, page.limit, page.offset]);
+      return {
+        items: rows.map((r) => ({
+          planId: r.plan_id,
+          planCode: r.plan_code,
+          planVersion: r.plan_version,
+          status: r.status,
+          billingCadence: r.billing_cadence,
+          defaultParentMemberLimit: r.default_parent_member_limit,
+          defaultManagedDeviceLimit: r.default_managed_device_limit,
+          priceBookId: r.price_book_id,
+          createdAt: r.created_at,
         })),
         total: Number(countRows[0]?.total ?? 0),
         limit: page.limit,

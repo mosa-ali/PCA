@@ -1,6 +1,6 @@
 /**
  * PCA-PA-3B -- Platform Administration safe billing READ views (mission
- * Section 15): subscriptions, invoices, payment attempts/transactions,
+ * Section 15): plans, subscriptions, invoices, payment attempts/transactions,
  * refunds, disputes, plus the pending-custom-quote review queue (mission
  * Section 14's "list pending custom-quote requests"). Every list is bounded
  * and stably ordered (`platformadmin/api/pagination.ts`). RBAC reuses
@@ -56,6 +56,33 @@ export function registerPlatformAdminBillingReadRoutes(app: FastifyInstance, dep
       throw error;
     }
   }
+
+  app.get('/platform-admin/billing/plans', { preHandler: [readLimiter, requirePlatformAdminSession] }, async (request, reply) => {
+    if (!requireBillingRead(request, reply)) return;
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const page = parsePageRequest(query);
+    const result = await readModel.listPlans(page, {
+      planCode: typeof query.planCode === 'string' ? query.planCode : undefined,
+      status: typeof query.status === 'string' ? query.status : undefined,
+      billingCadence: typeof query.billingCadence === 'string' ? query.billingCadence : undefined,
+    });
+    return reply.code(200).send({
+      items: result.items.map((r) => ({
+        planId: r.planId,
+        planCode: r.planCode,
+        planVersion: r.planVersion,
+        status: r.status,
+        billingCadence: r.billingCadence,
+        defaultParentMemberLimit: r.defaultParentMemberLimit,
+        defaultManagedDeviceLimit: r.defaultManagedDeviceLimit,
+        priceBookId: r.priceBookId,
+        createdAt: dateToJson(r.createdAt),
+      })),
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+    });
+  });
 
   app.get('/platform-admin/billing/subscriptions', { preHandler: [readLimiter, requirePlatformAdminSession] }, async (request, reply) => {
     if (!requireBillingRead(request, reply)) return;

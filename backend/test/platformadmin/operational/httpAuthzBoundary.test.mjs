@@ -73,6 +73,73 @@ test('GET /platform-admin/dashboard with an unknown/invalid token -> 401', async
   await app.close();
 });
 
+test('GET /platform-admin/billing/plans (bare, browse-all) with no Authorization header -> 401', async () => {
+  const app = buildApp(new Map());
+  const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans' });
+  assert.equal(response.statusCode, 401);
+  await app.close();
+});
+
+test('GET /platform-admin/billing/plans (bare, browse-all): SUPPORT_ADMIN session is 403 (no billing-record read access)', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['SUPPORT_ADMIN']);
+  const app = buildApp(sessions);
+  const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans', headers: { authorization: `Bearer ${token}` } });
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  await app.close();
+});
+
+test('GET /platform-admin/billing/plans (bare, browse-all): PLATFORM_ADMIN session is 403 (no billing-record read access, price-book-view only)', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['PLATFORM_ADMIN']);
+  const app = buildApp(sessions);
+  const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans', headers: { authorization: `Bearer ${token}` } });
+  assert.equal(response.statusCode, 403);
+  await app.close();
+});
+
+test('GET /platform-admin/billing/plans (bare, browse-all) with a valid session and role clears the RBAC gate (further failure, if any, is the expected DB-unavailable error in this sandbox, not an authorization rejection)', async () => {
+  for (const role of ['APP_OWNER', 'FINANCE_ADMIN', 'AUDITOR_READ_ONLY']) {
+    const sessions = new Map();
+    const token = registerSession(sessions, [role]);
+    const app = buildApp(sessions);
+    const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans', headers: { authorization: `Bearer ${token}` } });
+    assert.notEqual(response.statusCode, 401, `role ${role} should not be 401`);
+    assert.notEqual(response.statusCode, 403, `role ${role} should not be 403`);
+    await app.close();
+  }
+});
+
+test('GET /platform-admin/billing/plans (bare, browse-all) with a malformed pagination query does not 401/403 (bounded fallback, not rejection)', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['APP_OWNER']);
+  const app = buildApp(sessions);
+  const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans?limit=not-a-number&offset=-99', headers: { authorization: `Bearer ${token}` } });
+  assert.notEqual(response.statusCode, 401);
+  assert.notEqual(response.statusCode, 403);
+  await app.close();
+});
+
+test('GET /platform-admin/billing/plans/:planCode (existing exact-code route) is unaffected by the new bare route: SUPPORT_ADMIN is still 403', async () => {
+  const sessions = new Map();
+  const token = registerSession(sessions, ['SUPPORT_ADMIN']);
+  const app = Fastify({ logger: false });
+  const authService = buildFakeAuthService(sessions);
+  const rateLimiter = createRateLimiter();
+  const { registerPlatformAdminPlanRoutes } = await import('../../../dist/http/routes/platformadmin/planRoutes.js');
+  const { PlanService } = await import('../../../dist/billing/plan.js');
+  // RBAC (`requireBillingOperation`) runs BEFORE the repository is ever
+  // touched, so a repository stub that is never called is sufficient here --
+  // same no-DB-needed reasoning as this file's other 403 tests.
+  const planService = new PlanService({});
+  registerPlatformAdminBillingReadRoutes(app, { platformAdminAuthService: authService, rateLimiter });
+  registerPlatformAdminPlanRoutes(app, { platformAdminAuthService: authService, planService, rateLimiter });
+  const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans/SOME_CODE', headers: { authorization: `Bearer ${token}` } });
+  assert.equal(response.statusCode, 403);
+  await app.close();
+});
+
 test('GET /platform-admin/billing/subscriptions: SUPPORT_ADMIN session is 403 (no billing-record read access)', async () => {
   const sessions = new Map();
   const token = registerSession(sessions, ['SUPPORT_ADMIN']);
