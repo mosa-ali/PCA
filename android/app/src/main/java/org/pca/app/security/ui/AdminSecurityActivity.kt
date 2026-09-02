@@ -3,6 +3,7 @@ package org.pca.app.security.ui
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -18,7 +19,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.pca.app.PcaApplication
 import org.pca.app.R
 import org.pca.app.accessibility.PcaAccessibilityContent
@@ -33,6 +36,8 @@ import org.pca.app.feature.removaldecision.ui.RemovalDecisionScreen
 import org.pca.app.feature.settings.data.DeleteNowResult
 import org.pca.app.feature.settings.data.DeleteNowScope
 import org.pca.app.feature.settings.data.DeleteNowUseCase
+import org.pca.app.feature.settings.ui.AuditExportScreen
+import org.pca.app.feature.settings.ui.AuditExportUiResult
 import org.pca.app.feature.settings.ui.DeleteNowScopeOption
 import org.pca.app.feature.settings.ui.DeleteNowScreen
 import org.pca.app.feature.settings.ui.DeleteNowUiResult
@@ -97,6 +102,37 @@ class AdminSecurityActivity : FragmentActivity() {
         // RemovalDecisionScreen below, following this Activity's own documented pattern for
         // screens that have no shared NavHost to attach to.
         val deleteNowUseCase = DeleteNowUseCase(DeleteNowCoordinator(PcaLocalPersistence.getInstance(applicationContext).database))
+
+        // PCA-FR-124 closure: the reachable entry point for AuditRecordExportService.exportFamily,
+        // which previously had no real production caller anywhere in the app (compiled and
+        // unit-tested, but never rendered) -- same PIN/biometric-gated admin surface, following
+        // this Activity's own documented pattern for screens with no shared NavHost to attach to.
+        // registerForActivityResult must be called unconditionally before this Activity reaches
+        // STARTED (i.e. here in onCreate, not inside the authenticated Composable branch below) --
+        // the launch() call itself only ever happens from the post-authentication UI.
+        val auditExportResultState = mutableStateOf<AuditExportUiResult?>(null)
+        var pendingAuditExportFamilyId: String? = null
+        val auditExportDocumentLauncher = registerForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            val familyId = pendingAuditExportFamilyId
+            if (uri == null || familyId == null) return@registerForActivityResult
+            lifecycleScope.launch {
+                auditExportResultState.value = try {
+                    val json = PcaLocalPersistence.getInstance(applicationContext).auditRecordExportService
+                        .exportFamily(familyId, System.currentTimeMillis())
+                    withContext(Dispatchers.IO) {
+                        contentResolver.openOutputStream(uri)?.use { output ->
+                            output.write(json.toByteArray(Charsets.UTF_8))
+                        } ?: throw IllegalStateException("no writable output stream for export destination")
+                    }
+                    AuditExportUiResult.Success
+                } catch (e: Exception) {
+                    AuditExportUiResult.Failure(e.message ?: "unknown_error")
+                }
+            }
+        }
+
         val coordinator = RemovalDecisionCoordinator(
             repository = removalDecisionRepository,
             stateMachine = RemovalDecisionStateMachine(),
@@ -197,6 +233,18 @@ class AdminSecurityActivity : FragmentActivity() {
                                     },
                                     result = deleteNowResult,
                                     onDismissResult = { deleteNowResult = null },
+                                )
+                            }
+
+                            if (currentFamilyId != null) {
+                                val auditExportResult by auditExportResultState
+                                AuditExportScreen(
+                                    onExportRequested = {
+                                        pendingAuditExportFamilyId = currentFamilyId
+                                        auditExportDocumentLauncher.launch("pca-audit-export-${System.currentTimeMillis()}.json")
+                                    },
+                                    result = auditExportResult,
+                                    onDismissResult = { auditExportResultState.value = null },
                                 )
                             }
                         }

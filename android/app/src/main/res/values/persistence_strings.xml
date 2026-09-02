@@ -25,4 +25,15 @@
 
     <string name="delete_now_error_title">Delete Now failed</string>
     <string name="delete_now_error_message">The deletion could not be completed. No partial deletion was applied.</string>
+
+    <!-- PCA-FR-124: Settings > Export audit records (local, unencrypted export). -->
+    <string name="audit_export_title">Export audit records</string>
+    <string name="audit_export_description">Saves a local record of this family\'s policy, role, retention, and deletion actions and tamper events as a JSON file you choose where to save. This file is not encrypted.</string>
+
+    <string name="audit_export_result_title">Export complete</string>
+    <string name="audit_export_result_message">The audit record was saved to the location you chose.</string>
+    <string name="audit_export_close_button">Close</string>
+
+    <string name="audit_export_error_title">Export failed</string>
+    <string name="audit_export_error_message">The audit record could not be saved. No file was written.</string>
 </resources>

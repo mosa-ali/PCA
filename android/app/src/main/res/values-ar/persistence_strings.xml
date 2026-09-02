@@ -25,4 +25,15 @@
 
     <string name="delete_now_error_title">فشل الحذف الآن</string>
     <string name="delete_now_error_message">تعذّر إتمام الحذف. لم يتم تطبيق أي حذف جزئي.</string>
+
+    <!-- PCA-FR-124: Settings > Export audit records (local, unencrypted export). -->
+    <string name="audit_export_title">تصدير سجلات التدقيق</string>
+    <string name="audit_export_description">يحفظ سجلًا محليًا لإجراءات السياسة والأدوار والاحتفاظ والحذف وأحداث محاولات العبث الخاصة بهذه العائلة كملف JSON تختار مكان حفظه. هذا الملف غير مشفّر.</string>
+
+    <string name="audit_export_result_title">اكتمل التصدير</string>
+    <string name="audit_export_result_message">تم حفظ سجل التدقيق في الموقع الذي اخترته.</string>
+    <string name="audit_export_close_button">إغلاق</string>
+
+    <string name="audit_export_error_title">فشل التصدير</string>
+    <string name="audit_export_error_message">تعذّر حفظ سجل التدقيق. لم يتم كتابة أي ملف.</string>
 </resources>
