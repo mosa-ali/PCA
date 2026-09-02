@@ -72,6 +72,16 @@ Sub-decisions, needed only under (a)/(b): **`PCA-DEC-014`** multi-user/work-prof
 recommend *(a) unsupported, detect and disclose*; **`PCA-DEC-015`** root-detection alert threshold —
 recommend *(b) combined-signal threshold*, matching the existing debounced monitor design.
 
+**BLOCKS_WHAT — the exact requirements this decision releases:**
+`PCA-ADD-ENR-009` (managed enrollment) · `PCA-FR-082` (Protected-Mode uninstall/app controls) ·
+`PCA-FR-145` and `PCA-FR-084` (removal-decision platform-authority release — only the local
+audit-record half exists in source today) · `PCA-ADD-ENR-019`.
+Tracked under gate token `PENDING_OWNER_DECISION`, and as `DEVICE_OWNER_DPC_MODE` in the recovery
+gate register. **All four trace to the same single root cause — the absent `DeviceAdminReceiver` —
+so they are one blocker, not four independent gaps.** Prior audit lanes recorded this in their own
+registers as *"unreachable by design pending unresolved product decisions. Correctly self-gated, not
+a silent gap"*, which is why it is classified an owner decision here and not a defect.
+
 **REVERSIBILITY:** High. (c)→(a) later is a contained change plus a clearance; no data migration and
 no re-enrolment. The painful direction is (a)→(c) after launch, which withdraws a protection claim
 customers paid for.

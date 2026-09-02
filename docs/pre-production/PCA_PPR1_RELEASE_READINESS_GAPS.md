@@ -170,6 +170,13 @@ instrumented tests, real-device UAT, and every external sign-off.
   directory **silently skips** the strongest no-URL/no-TLS-MITM guards rather than failing.
 - 33 test assets are unreachable from any runner (qa-r2 specs, qaB configs, contracts sub-catalogues,
   `parent-sdk` tests).
+- **`.agent-runtime/worktrees/` holds ~50 full second checkouts of the repo inside the repo tree.**
+  Four independent audit lanes tripped over this: a repo-wide `find`/`grep` traverses them, times
+  out, and returns duplicate hits **at wrong line numbers** (one copy has the Android architecture
+  doc's decision rows at lines 123-124 rather than the canonical 125-126). An auditor who cites a
+  worktree path produces unverifiable evidence. **Scope searches with `git ls-files`, not raw
+  recursive traversal.** Note these paths are simultaneously *required* to be tracked by the release
+  gate's parity validator — so the fix is curation, not deletion.
 
 ---
 
