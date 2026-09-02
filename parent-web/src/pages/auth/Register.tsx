@@ -87,11 +87,14 @@ export default function Register() {
             autoComplete="new-password"
             required
             minLength={10}
-            aria-describedby={error ? 'register-error' : undefined}
+            aria-describedby={error ? 'register-password-hint register-error' : 'register-password-hint'}
             aria-invalid={passwordMismatch || undefined}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <p id="register-password-hint" className="field-hint">
+            {t('auth.passwordRequirements')}
+          </p>
         </div>
 
         <div className="field">

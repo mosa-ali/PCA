@@ -512,6 +512,15 @@ table.data-table td {
   background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
 }
 
+/* Static, non-alert helper text under a field (e.g. Register's password
+   requirement) -- same typography as `.field label`, so it reads as part of
+   the field rather than new visual chrome. */
+.field-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 /* ---------- Web protection allow/deny-list authoring (WebProtectionPage.tsx) ---------- */
 
 .field-row {

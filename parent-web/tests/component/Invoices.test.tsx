@@ -45,6 +45,18 @@ describe('Invoices and receipts', () => {
     expect(await screen.findByText('This invoice could not be found.')).toBeInTheDocument();
   });
 
+  it('shows an explicit "showing X of Y" pagination status even when every row already fits on one page (B094)', async () => {
+    const clients = getApiClients();
+    const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);
+    await clients.billing.beginCheckout(quoted.requestId, 'https://example.test/return');
+    await simulateServerPaymentConfirmation(quoted.requestId);
+
+    renderWithProviders(<TestApp />, { route: '/subscription/invoices', role: 'OWNER' });
+    expect(await screen.findByText('Showing 1 of 1 invoices')).toBeInTheDocument();
+    // With only one invoice, there is nothing further to page to.
+    expect(screen.queryByRole('button', { name: /Show \d+ more/ })).not.toBeInTheDocument();
+  });
+
   it('filters invoices by date range client-side, and shows an honest empty state when the range excludes everything', async () => {
     const clients = getApiClients();
     const quoted = await clients.billing.requestLimitIncrease('MANAGED_DEVICE_LIMIT', 2);

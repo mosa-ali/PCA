@@ -85,8 +85,57 @@ export type DenialReasonCode =
   | 'OWNER_ONLY_BILLING'
   | 'UNRECOGNISED_ACTION';
 
+const DENIAL_REASON_KEY_PREFIX = 'rbac.denialReason.';
+
 export function denialReasonKey(code: DenialReasonCode): string {
-  return `rbac.denialReason.${code}`;
+  return `${DENIAL_REASON_KEY_PREFIX}${code}`;
+}
+
+/**
+ * Reverses denialReasonKey. A consumer that only has the PermissionResult
+ * (e.g. NotPermitted, re-evaluating the forwarded (role, action) pair) can
+ * use this to recover the structured DenialReasonCode and look up
+ * actionable "what to do next" guidance via nextStepKey below, without
+ * NotPermitted needing its own second copy of the denial switch. Returns
+ * null for anything that isn't one of this module's own denial keys (e.g.
+ * there was no reasonKey to re-derive from at all).
+ */
+export function denialReasonCodeFromKey(reasonKey: string): DenialReasonCode | null {
+  if (!reasonKey.startsWith(DENIAL_REASON_KEY_PREFIX)) return null;
+  return reasonKey.slice(DENIAL_REASON_KEY_PREFIX.length) as DenialReasonCode;
+}
+
+/**
+ * Buckets every DenialReasonCode into the actionable "what to do next"
+ * guidance NotPermitted shows under the denial reason (rbac.nextStep.* i18n
+ * keys) -- several codes share the same real-world next step (e.g. every
+ * "only the Owner" denial has the same answer: ask the Owner), so this is a
+ * many-to-one map rather than per-code copy. Exhaustive over
+ * DenialReasonCode: a TS error here if a new code is ever added without
+ * also deciding its bucket.
+ */
+const NEXT_STEP_BUCKET: Record<DenialReasonCode, 'ownerOnly' | 'notDelegated' | 'ownerOrAdmin' | 'askAParent' | 'other'> = {
+  CHILD_ONLY_REQUEST_ACTION: 'other',
+  ROLE_NOT_RECOGNISED: 'other',
+  VIEWER_READ_ONLY_POLICY: 'askAParent',
+  CHILD_CANNOT_EDIT_POLICY: 'askAParent',
+  VIEWER_MANAGEMENT_NOT_DELEGATED: 'notDelegated',
+  OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS: 'ownerOrAdmin',
+  OWNER_ONLY_STEP_UP: 'ownerOnly',
+  OWNER_ONLY_RETENTION_DELETE_EXPORT: 'ownerOnly',
+  DEVICE_REVOCATION_NOT_DELEGATED: 'notDelegated',
+  OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES: 'ownerOrAdmin',
+  ENROLLMENT_NOT_FOR_CHILD: 'askAParent',
+  OWNER_OR_ADMIN_ONLY_INVITE_DEVICE: 'ownerOrAdmin',
+  INVITATION_REVOCATION_NOT_DELEGATED: 'notDelegated',
+  OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION: 'ownerOrAdmin',
+  OWNER_ONLY_BILLING: 'ownerOnly',
+  UNRECOGNISED_ACTION: 'other',
+};
+
+/** i18n key (under `rbac.nextStep.*`) for the actionable "what to do next" line NotPermitted shows for a given denial reason. */
+export function nextStepKey(code: DenialReasonCode): string {
+  return `rbac.nextStep.${NEXT_STEP_BUCKET[code]}`;
 }
 
 /**

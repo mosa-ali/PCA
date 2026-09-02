@@ -44,9 +44,12 @@ describe('auth page error presentation and field association', () => {
     const error = await screen.findByRole('alert');
     expect(error.id).toBe('register-error');
 
-    for (const label of ['Email address', 'Password', 'Confirm password']) {
+    for (const label of ['Email address', 'Confirm password']) {
       expect(screen.getByLabelText(label)).toHaveAttribute('aria-describedby', 'register-error');
     }
+    // Password also carries its always-on requirements hint, so the error is
+    // appended to that id rather than replacing it.
+    expect(screen.getByLabelText('Password')).toHaveAttribute('aria-describedby', 'register-password-hint register-error');
     // The mismatch is genuinely a password-field error -- the email is not invalid.
     expect(screen.getByLabelText('Password')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Confirm password')).toHaveAttribute('aria-invalid', 'true');

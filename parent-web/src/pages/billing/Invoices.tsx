@@ -79,6 +79,14 @@ export default function Invoices() {
         <EmptyState message={t('subscription.invoices.emptyForFilter')} />
       ) : (
         <>
+          {/* Explicit pagination status -- previously the only pagination
+              affordance was the "Show more" button below, which renders
+              nothing at all once every row is already visible (e.g. a
+              family with only 1-2 invoices), leaving no indication
+              pagination exists or how many rows there are in total. */}
+          <p aria-live="polite" style={{ color: 'var(--color-text-muted)' }}>
+            {t('subscription.invoices.showingCount', { shown: visible.length, total: filtered.length })}
+          </p>
           <div className="table-scroll">
             <table className="data-table responsive-cards">
               <thead>

@@ -43,6 +43,7 @@ export default function Login() {
   return (
     <section aria-labelledby="login-title" className="auth-page">
       <h1 id="login-title">{t('auth.loginTitle')}</h1>
+      <p>{t('auth.loginBody')}</p>
       <form onSubmit={handleSubmit} noValidate>
         <div className="field">
           <label htmlFor="login-email">{t('auth.emailLabel')}</label>

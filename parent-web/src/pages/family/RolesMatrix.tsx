@@ -34,7 +34,16 @@ function Cell({ role, action }: { role: FamilyRole; action: FamilyAction }) {
   const { t } = useTranslation();
   const result = evaluatePermission(role, action);
   if (!result.allowed) {
-    return <span aria-label={t('rbac.denied')}>—</span>;
+    // The specific "why" (result.reasonKey, localized) surfaces as a native
+    // tooltip and in the accessible name -- previously only the generic
+    // "Not permitted for your role" was exposed, so hovering/reading a "—"
+    // cell couldn't tell a parent WHY that role can't do that action.
+    const reasonText = result.reasonKey ? t(result.reasonKey) : t('rbac.denied');
+    return (
+      <span aria-label={`${t('rbac.denied')}: ${reasonText}`} title={reasonText}>
+        —
+      </span>
+    );
   }
   return (
     <span>
@@ -53,6 +62,19 @@ export default function RolesMatrix() {
       <h1 id="matrix-title">{t('rbac.matrixTitle')}</h1>
       <p>{t('shell.role', { role: t(`roles.${currentRole.toLowerCase()}`) })}</p>
       <p style={{ color: 'var(--color-text-muted)' }}>{t('rbac.deviceActionsHeuristicNotice')}</p>
+
+      <ul
+        className="plain-list"
+        aria-label={t('rbac.legendTitle')}
+        style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', color: 'var(--color-text-muted)' }}
+      >
+        <li>
+          <strong aria-hidden="true">—</strong> {t('rbac.legendDenied')}
+        </li>
+        <li>
+          <strong aria-hidden="true">({t('rbac.stepUpRequired')})</strong> {t('rbac.legendStepUp')}
+        </li>
+      </ul>
 
       <div className="card-grid" style={{ marginBlockEnd: '1rem' }}>
         {ROLES.map((role) => (

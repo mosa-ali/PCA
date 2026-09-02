@@ -102,9 +102,6 @@ export default function VerifyEmail() {
           {t('auth.resendCodeLink')}
         </Link>
       </p>
-      <p>
-        <Link to="/register">{t('auth.registerTitle')}</Link>
-      </p>
     </section>
   );
 }
