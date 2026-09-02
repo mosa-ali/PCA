@@ -46,6 +46,8 @@ internal object SchedulePolicyJson {
         put("issuedAt", policy.issuedAt.toString())
         put("effectiveFrom", policy.effectiveFrom.toString())
         put("expiresAt", policy.expiresAt?.toString() ?: JSONObject.NULL)
+        put("continuousUseLimitMinutes", policy.continuousUseLimitMinutes ?: JSONObject.NULL)
+        put("breakDurationMinutes", policy.breakDurationMinutes ?: JSONObject.NULL)
     }
 
     private fun decodePolicy(json: JSONObject): SchedulePolicyV1 = SchedulePolicyV1(
@@ -64,6 +66,8 @@ internal object SchedulePolicyJson {
         issuedAt = Instant.parse(json.getString("issuedAt")),
         effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
         expiresAt = json.optString("expiresAt", null)?.let { Instant.parse(it) },
+        continuousUseLimitMinutes = if (json.isNull("continuousUseLimitMinutes")) null else json.getInt("continuousUseLimitMinutes"),
+        breakDurationMinutes = if (json.isNull("breakDurationMinutes")) null else json.getInt("breakDurationMinutes"),
     )
 
     private fun encodeAppScope(scope: AppScope): JSONObject = when (scope) {

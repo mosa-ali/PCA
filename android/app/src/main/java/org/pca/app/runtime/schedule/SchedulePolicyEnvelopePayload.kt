@@ -52,6 +52,8 @@ object SchedulePolicyEnvelopePayload {
         put("issuedAt", policy.issuedAt.toString())
         put("effectiveFrom", policy.effectiveFrom.toString())
         put("expiresAt", policy.expiresAt?.toString())
+        put("continuousUseLimitMinutes", policy.continuousUseLimitMinutes)
+        put("breakDurationMinutes", policy.breakDurationMinutes)
     }
 
     private fun decodePolicy(json: JSONObject): SchedulePolicyV1 = SchedulePolicyV1(
@@ -70,7 +72,16 @@ object SchedulePolicyEnvelopePayload {
         issuedAt = Instant.parse(json.getString("issuedAt")),
         effectiveFrom = Instant.parse(json.getString("effectiveFrom")),
         expiresAt = json.optString("expiresAt", "").takeIf { it.isNotEmpty() }?.let { Instant.parse(it) },
+        continuousUseLimitMinutes = decodeOptionalInt(json, "continuousUseLimitMinutes"),
+        breakDurationMinutes = decodeOptionalInt(json, "breakDurationMinutes"),
     )
+
+    /** Absent key and an explicit JSON `null` both decode to Kotlin `null` -- [JSONObject.isNull]
+     * already treats "no such key" and "value is the NULL sentinel" identically, so a plaintext
+     * payload authored before this field existed (key absent entirely) round-trips the same way
+     * as one that explicitly nulls it out. */
+    private fun decodeOptionalInt(json: JSONObject, key: String): Int? =
+        if (json.isNull(key)) null else json.getInt(key)
 
     private fun encodeAppScope(scope: AppScope): Any = when (scope) {
         is AppScope.All -> "ALL"

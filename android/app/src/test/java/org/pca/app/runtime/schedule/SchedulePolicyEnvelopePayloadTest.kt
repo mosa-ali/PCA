@@ -64,6 +64,43 @@ class SchedulePolicyEnvelopePayloadTest {
     }
 
     @Test
+    fun `round-trips continuousUseLimitMinutes and breakDurationMinutes when present`() {
+        val original = samplePolicy().copy(continuousUseLimitMinutes = 45, breakDurationMinutes = 40)
+        val decoded = SchedulePolicyEnvelopePayload.decode(SchedulePolicyEnvelopePayload.encode(original))
+        assertEquals(original, decoded)
+        assertEquals(45, decoded.continuousUseLimitMinutes)
+        assertEquals(40, decoded.breakDurationMinutes)
+    }
+
+    @Test
+    fun `round-trips a policy that omits continuousUseLimitMinutes and breakDurationMinutes`() {
+        // samplePolicy() does not set either field -- both default to null on the container.
+        val original = samplePolicy()
+        val decoded = SchedulePolicyEnvelopePayload.decode(SchedulePolicyEnvelopePayload.encode(original))
+        assertEquals(original, decoded)
+        assertEquals(null, decoded.continuousUseLimitMinutes)
+        assertEquals(null, decoded.breakDurationMinutes)
+    }
+
+    @Test
+    fun `decoding a legacy plaintext payload predating this field defaults both to null`() {
+        // A real payload authored before continuousUseLimitMinutes/breakDurationMinutes existed
+        // -- the "policy" object simply has no such keys at all, not even a null placeholder.
+        val legacyPlaintext = """
+            {"kind":"SCHEDULE_POLICY_V1","policy":{
+              "version":"1","policyId":"policy-1","policyRevision":1,"familyId":"family-1",
+              "childProfileId":"child-1","timezone":"Asia/Riyadh",
+              "windows":[],"bonusGrants":[],"parentExceptions":[],"dailyLimits":[],
+              "trustSetEpoch":1,"keyEpoch":1,
+              "issuedAt":"2026-01-07T00:00:00Z","effectiveFrom":"2026-01-07T00:00:00Z"
+            }}
+        """.trimIndent()
+        val decoded = SchedulePolicyEnvelopePayload.decode(legacyPlaintext)
+        assertEquals(null, decoded.continuousUseLimitMinutes)
+        assertEquals(null, decoded.breakDurationMinutes)
+    }
+
+    @Test
     fun `a payload with a different kind is rejected rather than force-parsed as a schedule policy`() {
         val wrongKind = """{"kind":"SOME_OTHER_POLICY_UPDATE","policy":{}}"""
         assertThrows(IllegalArgumentException::class.java) { SchedulePolicyEnvelopePayload.decode(wrongKind) }

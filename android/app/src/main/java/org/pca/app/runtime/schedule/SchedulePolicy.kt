@@ -162,6 +162,21 @@ data class SchedulePolicyV1(
     val issuedAt: Instant,
     val effectiveFrom: Instant,
     val expiresAt: Instant? = null,
+    /**
+     * PCA-SCREEN-BASELINE-1 continuous-use / mandatory-break-shield limits (parent-web
+     * `screenTimePolicy.ts`'s `continuousUseLimitMinutes`/`breakDurationMinutes`, 15-60 /
+     * 30-120 minutes). Optional and nullable -- exactly like [expiresAt] above -- for backward
+     * compatibility with every existing [SchedulePolicyV1] producer/consumer that predates this
+     * field: a policy that omits (or nulls) both simply carries no continuous-use/break-shield
+     * update, and nothing downstream is invoked for it, same as today. This container performs
+     * no range validation of its own when the fields are present -- that stays the sole
+     * responsibility of [org.pca.app.feature.screentime.policy.ScreenTimeBaselinePolicy] (via
+     * [org.pca.app.feature.screentime.policy.ScreenTimePolicyApplier]), so the 60/30 anti-gaming
+     * bounds keep exactly one declaration on this side, matching parent-web's own
+     * single-source-of-truth discipline.
+     */
+    val continuousUseLimitMinutes: Int? = null,
+    val breakDurationMinutes: Int? = null,
 ) {
     /** PCA-FR-043B: the owner-approved baseline is always present. Parent-authored BEDTIME
      * windows are additive, so they can strengthen coverage but can never replace or weaken the
