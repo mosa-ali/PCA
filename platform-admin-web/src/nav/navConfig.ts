@@ -46,7 +46,13 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { path: '/admin-users', labelKey: 'nav.adminUsers', operation: 'VIEW_ADMIN_ACCOUNTS' },
       { path: '/audit', labelKey: 'nav.audit', operation: 'VIEW_AUDIT_LOG_OWN' },
-      { path: '/settings', labelKey: 'nav.settings', operation: 'ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS' },
+      // VIEW_SUPPORT_ACCOUNT_METADATA, not ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS:
+      // the page's reads are gated backend-side by VIEW_SUPPORT_ACCOUNT_METADATA
+      // (ALLOW for every role -- see App.tsx's /settings route guard), so
+      // hiding the nav link behind the stricter mutate-only operation would
+      // leave the fixed route guard undiscoverable for the roles it now lets
+      // through.
+      { path: '/settings', labelKey: 'nav.settings', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
     ],
   },
 ];

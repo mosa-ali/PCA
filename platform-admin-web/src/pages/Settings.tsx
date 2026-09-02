@@ -28,9 +28,11 @@ import { useToast } from '../state/ToastContext';
  * (GET /platform-admin/settings/category/:category, PUT /settings/key/:settingKey).
  *
  * RBAC is reused VERBATIM from that backend, never widened here: reads are
- * VIEW_SUPPORT_ACCOUNT_METADATA (this whole page already sits behind the
- * stricter ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS route guard, so only
- * APP_OWNER/PLATFORM_ADMIN reach it at all), writes are
+ * VIEW_SUPPORT_ACCOUNT_METADATA (ALLOW for every role; the page's own
+ * App.tsx route guard now uses this same operation -- it used to require
+ * the stricter ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS, which blocked
+ * FINANCE_ADMIN/SUPPORT_ADMIN/AUDITOR_READ_ONLY from reads the backend
+ * would legitimately serve them), writes are
  * ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS for every ordinary category and
  * ADMINISTER_SENSITIVE_PLATFORM_SETTINGS (APP_OWNER only) for the sensitive
  * PAYMENT_PROVIDER category -- exactly the split

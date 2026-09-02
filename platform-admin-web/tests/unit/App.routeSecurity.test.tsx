@@ -11,6 +11,31 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
+/**
+ * Answers every request the Settings page issues on mount (whoami plus the
+ * five independent reads: free-starter defaults, currencies, market
+ * mapping, and each named settings category), not just whoami -- a bare
+ * `mockResolvedValue(whoamiBody)` would make every one of those additional
+ * GETs resolve with the whoami shape instead, which Settings.tsx can't
+ * parse and would surface as a page-level error state, not the redirect-vs-
+ * render outcome these tests actually care about.
+ */
+function settingsFetchMock(roles: string[]) {
+  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles }));
+    if (url.includes('/platform-admin/settings/category/')) return Promise.resolve(jsonResponse(200, { items: [] }));
+    if (url.includes('/platform-admin/settings/free-starter-defaults')) {
+      return Promise.resolve(
+        jsonResponse(200, { tier: 'FREE_STARTER', parentMemberLimit: 2, managedDeviceLimit: 3, updatedAt: '2026-01-01T00:00:00.000Z', updatedByAdminId: 'admin-1' }),
+      );
+    }
+    if (url.includes('/platform-admin/settings/currencies')) return Promise.resolve(jsonResponse(200, { items: [] }));
+    if (url.includes('/platform-admin/settings/market-mapping')) return Promise.resolve(jsonResponse(200, { items: [] }));
+    return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
+  });
+}
+
 function renderAppAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -54,15 +79,6 @@ describe('route security (mission Section 24)', () => {
       secureSession.set('tok-ok', new Date(Date.now() + 60_000).toISOString());
     });
 
-    it('AUDITOR_READ_ONLY is redirected away from admin-account management (a mutation-capable area)', async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue(jsonResponse(200, { adminId: 'auditor-1', roles: ['AUDITOR_READ_ONLY'] })),
-      );
-      renderAppAt('/settings');
-      expect(await screen.findByRole('heading', { name: /not permitted/i })).toBeInTheDocument();
-    });
-
     it('AUDITOR_READ_ONLY CAN view billing/plans (VIEW_BILLING_RECORDS ALLOW per billing/rbac.ts) but is not redirected', async () => {
       vi.stubGlobal(
         'fetch',
@@ -70,7 +86,9 @@ describe('route security (mission Section 24)', () => {
       );
       renderAppAt('/billing/plans');
       await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
-      expect(await screen.findByRole('heading', { name: /plans/i })).toBeInTheDocument();
+      // level: 1 disambiguates the page's own <h1> from the "All plans"
+      // browse-table <h2> BillingPlans.tsx also renders (both match /plans/i).
+      expect(await screen.findByRole('heading', { name: /plans/i, level: 1 })).toBeInTheDocument();
     });
 
     it('SUPPORT_ADMIN is redirected away from finance/billing access', async () => {
@@ -117,6 +135,50 @@ describe('route security (mission Section 24)', () => {
       );
       renderAppAt('/dashboard');
       expect(await screen.findByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+    });
+
+    // B159: the /settings route guard used to require
+    // ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS (APP_OWNER/PLATFORM_ADMIN
+    // only), stricter than the backend's actual read gate on every GET this
+    // page issues -- VIEW_SUPPORT_ACCOUNT_METADATA, ALLOW for all five roles
+    // (backend/src/http/routes/platformadmin/settingsRoutes.ts's
+    // requireView, PlatformAdminSettingsService.requireRead). The route
+    // guard now uses VIEW_SUPPORT_ACCOUNT_METADATA too. These tests pin both
+    // sides of that boundary: every role the backend serves reads to must
+    // reach the page (and see no write controls it isn't entitled to), and
+    // a role the backend would still reject must stay blocked.
+    describe('the /settings route (B159: route guard aligned with the backend read gate)', () => {
+      it.each([
+        ['AUDITOR_READ_ONLY'],
+        ['FINANCE_ADMIN'],
+        ['SUPPORT_ADMIN'],
+      ])('%s reaches /settings (VIEW_SUPPORT_ACCOUNT_METADATA ALLOW) but sees no write controls (ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS DENY)', async (role) => {
+        vi.stubGlobal('fetch', settingsFetchMock([role]));
+        renderAppAt('/settings');
+
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
+        expect(await screen.findByRole('heading', { name: /settings/i, level: 1 })).toBeInTheDocument();
+
+        // The mutation gate is unchanged and must still hide every write
+        // form -- the fix widens read access only, never write access.
+        expect(screen.queryByLabelText('Setting key')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+      });
+
+      it('PLATFORM_ADMIN still reaches /settings and still sees write controls (ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS ALLOW, unchanged by the fix)', async () => {
+        vi.stubGlobal('fetch', settingsFetchMock(['PLATFORM_ADMIN']));
+        renderAppAt('/settings');
+
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
+        expect(await screen.findByRole('heading', { name: /settings/i, level: 1 })).toBeInTheDocument();
+        expect((await screen.findAllByLabelText('Setting key')).length).toBeGreaterThan(0);
+      });
+
+      it('an admin with no active platform-admin roles is still redirected away from /settings (VIEW_SUPPORT_ACCOUNT_METADATA DENY on an empty role set, matching the backend)', async () => {
+        vi.stubGlobal('fetch', settingsFetchMock([]));
+        renderAppAt('/settings');
+        expect(await screen.findByRole('heading', { name: /not permitted/i })).toBeInTheDocument();
+      });
     });
   });
 });
