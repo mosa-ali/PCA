@@ -219,3 +219,37 @@ test('family-commercial-authority migration has no foreign key to 0012_commercia
   const executableSql = familyAuthorityMigration.replace(/--[^\n]*/g, '');
   assert.equal(/commercial_notification/i.test(executableSql), false);
 });
+
+// PCA eye-protection reminders: 0032_eye_protection_settings.sql adds the
+// single per-child enable/disable preference table (see that migration's
+// own header). Same static gate, same prohibited-term list, applied
+// independently of every earlier migration's.
+const eyeProtectionMigration = await readFile(new URL('../migrations/0032_eye_protection_settings.sql', import.meta.url), 'utf8');
+
+test('eye-protection-settings migration contains exactly the approved single settings table', () => {
+  assert.match(eyeProtectionMigration, /CREATE TABLE eye_protection_settings \(/);
+  assert.equal((eyeProtectionMigration.match(/CREATE TABLE/g) ?? []).length, 1);
+});
+
+test('eye-protection-settings migration does not introduce prohibited readable or secret fields', () => {
+  const schema = eyeProtectionMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+});
+
+test('eye-protection-settings migration stores only the parent reminders-enabled preference -- no sensor reading, distance value, or camera/proximity column of any kind', () => {
+  const schema = eyeProtectionMigration.replace(/--[^\n]*/g, '');
+  assert.match(schema, /reminders_enabled TINYINT\(1\) NOT NULL DEFAULT 0/);
+  assert.equal(/distance|proximity|sensor|reading|classification/i.test(schema), false);
+  // Exactly the four expected data columns -- child_profile_id, family_id,
+  // reminders_enabled, updated_at -- and nothing else (PRIMARY KEY/KEY/
+  // CONSTRAINT lines are structural, not data columns).
+  const body = schema.match(/CREATE TABLE eye_protection_settings \(([\s\S]*?)\n\);/)[1];
+  const columnLines = body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^(PRIMARY KEY|KEY |CONSTRAINT )/.test(line));
+  assert.deepEqual(
+    columnLines.map((line) => line.split(/\s+/)[0]),
+    ['child_profile_id', 'family_id', 'reminders_enabled', 'updated_at'],
+  );
+});

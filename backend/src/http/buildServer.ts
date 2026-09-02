@@ -118,6 +118,12 @@ import type { ParentActionAuthorizationService } from '../familyrbac/ParentActio
 import { registerChildRequestRoutes } from './routes/childRequestRoutes.js';
 import { registerChildPolicyRoutes } from './routes/childPolicyRoutes.js';
 import type { ChildRequestService } from '../childrequests/ChildRequestService.js';
+// PCA eye-protection reminders: a per-child, plaintext (never E2EE)
+// enable/disable preference -- see eyeProtectionRoutes.ts's own header
+// comment for why this is a reviewed exception to childPolicyRoutes.ts's
+// "no new plaintext policy store" posture.
+import { registerEyeProtectionRoutes } from './routes/eyeProtectionRoutes.js';
+import type { EyeProtectionSettingsService } from '../eyeprotection/EyeProtectionSettingsService.js';
 import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
 import { registerFamilyAuditEventRoutes } from './routes/familyAuditEventRoutes.js';
 import type { FamilyMemberInvitationService } from '../familymembers/FamilyMemberInvitationService.js';
@@ -209,6 +215,14 @@ export interface ServerDependencies {
    * this is omitted, never a silent allow.
    */
   childPolicyAuthorization?: Pick<ParentActionAuthorizationService, 'authorize'>;
+  /**
+   * PCA eye-protection reminders: see registerEyeProtectionRoutes' own doc
+   * comment. Optional purely so existing buildServer() test callers that
+   * don't exercise this route need no change; registerEyeProtectionRoutes
+   * itself fails the route closed with 503 when this is omitted, never a
+   * silent allow.
+   */
+  eyeProtectionSettingsService?: EyeProtectionSettingsService;
   /** PCA product-completion programme, Writer P0-C (family/members): see registerFamilyMemberRoutes below. Optional so existing buildServer() test callers that don't exercise family/members routes need no change. */
   familyMemberInvitationService?: FamilyMemberInvitationService;
   /** PCA product-completion programme, Writer P0-D (/security/audit): see registerFamilyAuditEventRoutes below. Optional so existing buildServer() test callers that don't exercise the audit-events route need no change. */
@@ -412,6 +426,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     deviceSessionService: deps.deviceSessionService,
     parentActionAuthorization: deps.childPolicyAuthorization,
     outboundRelayService: deps.outboundRelayService,
+  });
+  registerEyeProtectionRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    deviceSessionService: deps.deviceSessionService,
+    eyeProtectionSettingsService: deps.eyeProtectionSettingsService,
   });
   registerFamilyMemberRoutes(app, {
     parentAccountService: deps.parentAccountService,

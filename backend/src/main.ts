@@ -50,6 +50,8 @@ import { RemovalDecisionAuthority } from './familyrbac/RemovalDecisionAuthority.
 // ledger are in-memory reference implementations.
 import { InMemoryChildRequestRepository } from './childrequests/ChildRequestRepository.js';
 import { ChildRequestService } from './childrequests/ChildRequestService.js';
+import { MySqlEyeProtectionSettingsRepository } from './eyeprotection/MySqlEyeProtectionSettingsRepository.js';
+import { EyeProtectionSettingsService } from './eyeprotection/EyeProtectionSettingsService.js';
 import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
 import { MySqlFamilyMemberAccountBinder } from './familymembers/MySqlFamilyMemberAccountBinder.js';
 import { FamilyMemberInvitationService } from './familymembers/FamilyMemberInvitationService.js';
@@ -493,6 +495,16 @@ async function start(): Promise<void> {
   const childRequestRepository = new InMemoryChildRequestRepository();
   const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
   const bonusGrantLedger = new BonusGrantLedger();
+  // PCA eye-protection reminders: reuses the SAME safeZoneParentActionAuthorization
+  // instance (a ParentActionAuthorizationService is generic across every
+  // ParentOperation, including EDIT_CHILD_POLICY) every other consumer in
+  // this file shares -- never a second, independently-constructed copy.
+  // Unlike childRequestRepository above, this setting is a bounded
+  // operational preference (not "family/child policy content"), so it is a
+  // real, durable MySQL-backed repository -- see
+  // eyeprotection/EyeProtectionSettingsRepository.ts's own doc comment.
+  const eyeProtectionSettingsRepository = new MySqlEyeProtectionSettingsRepository();
+  const eyeProtectionSettingsService = new EyeProtectionSettingsService(eyeProtectionSettingsRepository, safeZoneParentActionAuthorization);
   // PCA product-completion programme, Writer P0-C (family/members): reuses
   // the SAME safeZoneParentActionAuthorization instance (a
   // ParentActionAuthorizationService is generic across every ParentOperation,
@@ -723,6 +735,9 @@ async function start(): Promise<void> {
     childProfileMembership: childProfileMembershipResolver,
     familyMemberInvitationService,
     familyAuditEventLedger,
+    // PCA eye-protection reminders: see the wiring block above (near
+    // childRequestRepository) for construction/rationale.
+    eyeProtectionSettingsService,
   });
   await app.listen({ host, port });
 

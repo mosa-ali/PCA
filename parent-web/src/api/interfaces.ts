@@ -303,6 +303,8 @@ export interface ParentFamilyDataGateway {
   getYouTubeStatus(childId: string): Promise<YouTubeStatus>;
   getLocationStatus(childId: string): Promise<LocationStatus>;
   getEyeProtectionStatus(childId: string): Promise<EyeProtectionStatus>;
+  /** Enable/disable the on-device, reminder-only eye-protection prompt for one child -- no dimming, blocking overlay, or forced break; see EyeProtectionPage.tsx's own doc comment. */
+  updateEyeProtection(childId: string, remindersEnabled: boolean): Promise<{ remindersEnabled: boolean }>;
   getPrayerSettings(childId: string): Promise<PrayerSettings>;
   /** PCA-FR-092: consolidated, category-level activity timeline for one child -- see ../domain/activityTimeline.ts's file header for what this is (and deliberately is not). Most-recent-first; `limit` caps the returned count. */
   getActivityTimeline(childId: string, limit?: number): Promise<ActivityTimelineEntry[]>;
@@ -394,7 +396,10 @@ export interface BillingClient {
 
   /** Provider-hosted/tokenized payment-method entry point (PCA-ADD-BILL-024) -- MyKids itself never collects raw card fields. */
   beginAddPaymentMethod(): Promise<PaymentMethodSummary>;
+  /** Turns off auto-renew for the family's own active subscription (`POST .../commercial/subscription/auto-renew/cancel`). Never itself cancels the subscription or charges/refunds anything -- flag/state only. */
   cancelAutoRenew(): Promise<{ auditEventId: string }>;
+  /** Symmetric counterpart to `cancelAutoRenew` -- turns auto-renew back on (`POST .../commercial/subscription/auto-renew/resume`). */
+  resumeAutoRenew(): Promise<{ auditEventId: string }>;
 }
 
 /**

@@ -36,6 +36,13 @@ export function __devFailNextUpdateAppRule(message: string): void {
   nextUpdateAppRuleFailure = message;
 }
 
+let nextUpdateEyeProtectionFailure: string | null = null;
+
+/** Dev-only hook so EyeProtectionPage.tsx's error-surfacing path is exercisable without a real backend failure. */
+export function __devFailNextUpdateEyeProtection(message: string): void {
+  nextUpdateEyeProtectionFailure = message;
+}
+
 /**
  * PCA-FR-092: illustrative, in-memory, category-level activity entries --
  * NOT a claim about real event shapes/volume, only enough variety to
@@ -132,6 +139,18 @@ export class DevParentFamilyDataGateway implements ParentFamilyDataGateway {
   async getEyeProtectionStatus(childId: string): Promise<EyeProtectionStatus> {
     await delay();
     return requireFixture(DEV_EYE, childId, 'eye protection');
+  }
+
+  async updateEyeProtection(childId: string, remindersEnabled: boolean): Promise<{ remindersEnabled: boolean }> {
+    await delay();
+    if (nextUpdateEyeProtectionFailure) {
+      const message = nextUpdateEyeProtectionFailure;
+      nextUpdateEyeProtectionFailure = null;
+      throw new Error(message);
+    }
+    const current = requireFixture(DEV_EYE, childId, 'eye protection');
+    DEV_EYE[childId] = { ...current, remindersEnabled };
+    return { remindersEnabled };
   }
 
   async getPrayerSettings(childId: string): Promise<PrayerSettings> {

@@ -49,6 +49,15 @@ function recipientDeviceIdFor(childId: string): string {
   return `device-${childId}`;
 }
 
+const CSRF_COOKIE_NAME = 'pca_family_csrf';
+const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
+
+function readCsrfCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const entry = document.cookie.split('; ').find((value) => value.startsWith(`${CSRF_COOKIE_NAME}=`));
+  return entry ? decodeURIComponent(entry.slice(CSRF_COOKIE_NAME.length + 1)) : null;
+}
+
 export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   constructor(
     private readonly trustedBrowser: TrustedBrowserProvider,
@@ -127,6 +136,55 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   }
   getEyeProtectionStatus(childId: string): Promise<EyeProtectionStatus> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getEyeProtectionStatus', `eyeProtection:${childId}`);
+  }
+
+  /**
+   * Genuinely real write (not a stub), like updateScreenTime/updateAppRule
+   * above -- but unlike them, this does NOT go through
+   * schedulePolicyAuthoring.ts's encrypted-envelope relay: the reminders-
+   * enabled preference is a plain, non-E2EE boolean (see backend
+   * migrations/0032_eye_protection_settings.sql's own header for why that
+   * is the reviewed posture for this specific field), so this calls the
+   * real backend/src/http/routes/eyeProtectionRoutes.ts endpoint directly,
+   * using the SAME actor-device-bound session+CSRF pattern
+   * RealRequestClient.decide() already established (HttpOnly family
+   * session cookie, double-submit CSRF header, and an
+   * `Authorization: Bearer <actorDeviceSessionToken>` header sourced from
+   * TrustedBrowserProvider.getSnapshot(), never a self-asserted id).
+   * Production currently wires UnavailableTrustSetRoleResolver under the
+   * shared ParentActionAuthorizationService (see main.ts), so even a fully
+   * authenticated real call fails closed with a 403 today -- an honest,
+   * by-design external gate, not a reason to leave this stubbed.
+   */
+  async updateEyeProtection(childId: string, remindersEnabled: boolean): Promise<{ remindersEnabled: boolean }> {
+    await requireTrustedAndCryptoReady(this.trustedBrowser, 'ParentFamilyDataGateway.updateEyeProtection');
+    const snapshot = await this.trustedBrowser.getSnapshot();
+    if (snapshot.state !== 'TRUSTED') throw new Error('TRUSTED_BROWSER_REQUIRED');
+    if (!snapshot.actorDeviceSessionToken) throw new Error('ACTOR_DEVICE_SESSION_UNAVAILABLE');
+
+    const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
+    if (!familyId) throw new Error('ParentFamilyDataGateway.updateEyeProtection: no authenticated family session available.');
+
+    const csrf = readCsrfCookie();
+    const url = `${this.apiBaseUrl.replace(/\/+$/, '')}/api/parent/families/${encodeURIComponent(familyId)}/children/${encodeURIComponent(childId)}/eye-protection`;
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${snapshot.actorDeviceSessionToken}`,
+        ...(csrf ? { [CSRF_HEADER_NAME]: csrf } : {}),
+      },
+      body: JSON.stringify({ remindersEnabled }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      const code = body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : null;
+      throw new Error(`ParentFamilyDataGateway.updateEyeProtection: request failed (${response.status}${code ? `: ${code}` : ''}).`);
+    }
+    const body = (await response.json()) as { eyeProtection?: { remindersEnabled?: unknown } };
+    return { remindersEnabled: typeof body.eyeProtection?.remindersEnabled === 'boolean' ? body.eyeProtection.remindersEnabled : remindersEnabled };
   }
   getPrayerSettings(childId: string): Promise<PrayerSettings> {
     return this.readOrExplainUnavailable('ParentFamilyDataGateway.getPrayerSettings', `prayer:${childId}`);
