@@ -156,6 +156,7 @@
   },
   "accounts": {
     "includeDeleted": "تضمين الحسابات المحذوفة",
+    "familyIdSearchLabel": "البحث بمعرّف الأسرة",
     "familyId": "معرّف الأسرة",
     "createdAt": "تاريخ الإنشاء",
     "status": "الحالة",
@@ -175,6 +176,7 @@
     "viewRequests": "عرض طلبات الاستحقاق",
     "subscription": "آخر اشتراك",
     "subscriptionId": "معرّف الاشتراك",
+    "subscriptionPlanId": "معرّف خطة الاشتراك",
     "subscriptionStatus": "حالة الاشتراك",
     "currentPeriod": "الفترة الحالية",
     "noSubscription": "لا يوجد سجل اشتراك لهذا الحساب.",
@@ -206,6 +208,7 @@
     "requestId": "معرّف الطلب",
     "limitType": "نوع الحد",
     "state": "الحالة",
+    "currentLimit": "الحد الحالي",
     "targetLimit": "الحد المستهدف",
     "limitTypes": {
       "PARENT_MEMBER_LIMIT": "حد أعضاء الوالدين",
@@ -503,6 +506,9 @@
       "EXPIRED": "منتهٍ"
     },
     "anyStatus": "أي حالة",
+    "anyCadence": "أي دورية",
+    "browseAllPlans": "جميع الخطط",
+    "exactCodeSearch": "البحث برمز خطة دقيق",
     "invalidTargetLimit": "أدخل رقمًا صحيحًا موجبًا لحد الأجهزة المستهدف.",
     "invalidAmount": "أدخل مبلغًا صالحًا غير سالب، مثل 19.99.",
     "pricePublished": "تم نشر السعر.",

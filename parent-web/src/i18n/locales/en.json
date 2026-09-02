@@ -73,6 +73,7 @@
     "notPermitted": "Not permitted"
   },
   "settings": {
+    "languageSectionTitle": "Language preferences",
     "loadPreferencesFailed": "We could not load your saved settings.",
     "saveLanguageFailed": "We could not save your language preference. It is applied on this browser only."
   },
@@ -191,6 +192,16 @@
       "OWNER_ONLY_BILLING": "Billing and subscription self-service is Family-Owner-only by default and is not delegable to Administrators.",
       "UNRECOGNISED_ACTION": "This action is not recognised."
     },
+    "nextStep": {
+      "ownerOnly": "Only the family Owner can do this. Ask them directly.",
+      "notDelegated": "The Owner has not turned this on for Administrators. Ask the Owner to do it themselves, or to enable it for Administrators.",
+      "ownerOrAdmin": "Ask the family Owner or an Administrator to do this for you.",
+      "askAParent": "Ask a parent on this family (an Owner or Administrator) for help.",
+      "other": "If this looks wrong, try signing out and back in. If it continues, contact support."
+    },
+    "legendTitle": "Legend",
+    "legendDenied": "not permitted for that role. Hover or focus a cell for the specific reason.",
+    "legendStepUp": "allowed, but requires step-up authentication first.",
     "actions": {
       "EDIT_CHILD_POLICY": "Edit child policy",
       "APPROVE_REQUEST": "Approve request",
@@ -627,6 +638,9 @@
     "renewsOn": "Renews on {{date}}",
     "expiresOn": "Expires on {{date}} (auto-renew is off)",
     "cancelAutoRenew": "Cancel auto-renew",
+    "cancelAutoRenewExplain": "Canceling auto-renew keeps your plan active until it expires -- you won't be charged again after that, and you can turn auto-renew back on any time before then.",
+    "resumeAutoRenew": "Resume auto-renew",
+    "resumeAutoRenewExplain": "Auto-renew is off, so your plan will not renew automatically when it expires. Turn it back on to keep your protection active without interruption.",
     "deviceAllowanceTitle": "Managed device allowance",
     "devicesActive": "Active devices",
     "devicesReserved": "Pending invitations (reserved)",
@@ -698,6 +712,7 @@
       "emptyForFilter": "No invoices in this date range.",
       "fromDate": "From date",
       "toDate": "To date",
+      "showingCount": "Showing {{shown}} of {{total}} invoices",
       "showMore": "Show {{count}} more",
       "date": "Date",
       "statusLabel": "Status",
@@ -875,6 +890,7 @@
     "safeZoneInvalidDefinition": "Check the label, coordinates, and radius -- one of these values is not valid."
   },
   "eyeProtection": {
+    "toggleLabel": "Enable eye-protection reminders",
     "reminders": "Reminders: {{status}}",
     "lastReminder": "Last reminder shown: {{time}}",
     "noReminderYet": "No reminder has been shown yet.",
@@ -1090,6 +1106,7 @@
     "emailLabel": "Email address",
     "passwordLabel": "Password",
     "passwordConfirmationLabel": "Confirm password",
+    "passwordRequirements": "Must be at least 10 characters.",
     "registerSubmit": "Create account",
     "registerSuccess": "Check your email for a verification code.",
     "passwordMismatch": "Passwords do not match.",
@@ -1103,6 +1120,7 @@
     "resendCodeLink": "Request a new one",
     "verifySuccess": "Your email is verified. Setting up your children's protection...",
     "loginTitle": "Sign in to PCA",
+    "loginBody": "Sign in with your email and password to access your PCA parent console.",
     "loginSubmit": "Sign in",
     "needAccount": "Need an account?",
     "registerLink": "Create one",

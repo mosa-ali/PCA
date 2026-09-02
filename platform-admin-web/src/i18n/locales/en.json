@@ -156,6 +156,7 @@
   },
   "accounts": {
     "includeDeleted": "Include deleted accounts",
+    "familyIdSearchLabel": "Search by family ID",
     "familyId": "Family ID",
     "createdAt": "Created",
     "status": "Status",
@@ -175,6 +176,7 @@
     "viewRequests": "View entitlement requests",
     "subscription": "Latest subscription",
     "subscriptionId": "Subscription ID",
+    "subscriptionPlanId": "Subscription plan ID",
     "subscriptionStatus": "Subscription status",
     "currentPeriod": "Current period",
     "noSubscription": "No subscription record exists for this account.",
@@ -206,6 +208,7 @@
     "requestId": "Request ID",
     "limitType": "Limit type",
     "state": "State",
+    "currentLimit": "Current limit",
     "targetLimit": "Target limit",
     "limitTypes": {
       "PARENT_MEMBER_LIMIT": "Parent member limit",
@@ -503,6 +506,9 @@
       "EXPIRED": "Expired"
     },
     "anyStatus": "Any status",
+    "anyCadence": "Any cadence",
+    "browseAllPlans": "All plans",
+    "exactCodeSearch": "Search by exact plan code",
     "invalidTargetLimit": "Enter a positive whole number for the target device limit.",
     "invalidAmount": "Enter a valid non-negative amount, e.g. 19.99.",
     "pricePublished": "Price published.",
