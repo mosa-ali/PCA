@@ -33,6 +33,7 @@ import org.pca.app.enrollment.AgeUxTier
 import org.pca.app.enrollment.ReadingLevel
 import org.pca.app.enrollment.readingLevel
 import org.pca.app.feature.screentime.engine.ScreenTimeMode
+import org.pca.app.feature.wellbeing.ui.GiveMeAnIdeaButton
 import org.pca.app.platform.LocationCapabilityLevel
 import org.pca.app.platform.ProtectionMode
 import org.pca.app.platform.UsageAccessState
@@ -60,6 +61,7 @@ fun ChildHomeScreen(
     onOpenAdminSecurity: () -> Unit = {},
     onOpenYouTubeMode: () -> Unit = {},
     onRequestCallStatePermission: () -> Unit = {},
+    onRequestWellbeingIdea: () -> Unit = {},
 ) {
     val rows = statusRows(status)
     // PCA-NFR-044: the real, currently-enrolled age tier is read from the same persisted
@@ -91,6 +93,7 @@ fun ChildHomeScreen(
             }
             item { SafeBrowserEntryCard(copy = copy, onClick = onOpenSafeBrowser) }
             item { YouTubeModeEntryCard(onClick = onOpenYouTubeMode) }
+            item { GiveMeAnIdeaButton(onClick = onRequestWellbeingIdea) }
             item { EmergencyAccessCard(copy = copy, isActive = status.isEmergencyExceptionActive, onClick = onEmergencyAccess) }
             item { ParentContactCard(pendingCount = status.pendingChildRequestCount, onClick = onRequestParentContact) }
             item { BonusTimeRequestCard(onClick = onRequestBonusTime) }

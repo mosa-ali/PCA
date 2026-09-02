@@ -79,6 +79,12 @@ class MainActivity : ComponentActivity() {
                     onOpenYouTubeMode = {
                         startActivity(Intent(this@MainActivity, YouTubeModeActivity::class.java))
                     },
+                    onRequestWellbeingIdea = {
+                        // PCA-WELL-012/023: the one real UI entry point for the child-initiated
+                        // GIVE_ME_AN_IDEA trigger -- PcaRuntime.requestWellbeingIdea() was a
+                        // documented public entry point with zero callers until this wiring.
+                        runtime.requestWellbeingIdea()
+                    },
                     onRequestCallStatePermission = {
                         val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
                             this@MainActivity,

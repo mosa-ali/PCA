@@ -9,6 +9,7 @@ import org.pca.app.feature.wellbeing.model.DailyMissionResponse
 import org.pca.app.feature.wellbeing.model.DurationBucket
 import org.pca.app.feature.wellbeing.model.NudgeRateState
 import org.pca.app.feature.wellbeing.model.WellbeingCategory
+import org.pca.app.feature.wellbeing.model.WellbeingNudgeDelivery
 import org.pca.app.feature.wellbeing.model.WellbeingNudgePolicy
 import org.pca.app.foundation.InMemoryPersistentStateStore
 
@@ -88,6 +89,34 @@ class WellbeingPersistenceRoundTripTest {
 
         store.setReviewState(added.entry.suggestion.suggestionId, CustomSuggestionReviewState.APPROVED)
         assertEquals(1, store.approvedSuggestions().size)
+    }
+
+    @Test
+    fun `pending wellbeing card store round-trips`() {
+        val store = PendingWellbeingCardStore(InMemoryPersistentStateStore())
+        val card = PendingWellbeingCard(
+            delivery = WellbeingNudgeDelivery.NEXT_UNLOCK_CARD,
+            suggestionIds = listOf("well.reading.1", "well.gratitude.2"),
+            queuedAtMonotonicNanos = 42L,
+        )
+        store.save(card)
+        assertEquals(card, store.load())
+    }
+
+    @Test
+    fun `pending wellbeing card store returns null when nothing saved`() {
+        val store = PendingWellbeingCardStore(InMemoryPersistentStateStore())
+        assertNull(store.load())
+    }
+
+    @Test
+    fun `pending wellbeing card store clear removes the pending card`() {
+        val store = PendingWellbeingCardStore(InMemoryPersistentStateStore())
+        store.save(PendingWellbeingCard(WellbeingNudgeDelivery.IN_APP_CARD, listOf("well.reading.1"), 1L))
+
+        store.clear()
+
+        assertNull(store.load())
     }
 
     @Test

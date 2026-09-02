@@ -44,9 +44,15 @@ import org.pca.app.platform.StandardVpnCapabilitySource
 import org.pca.app.feature.youtube.engine.ModeAAndroidUsageAdapter
 import org.pca.app.feature.youtube.policy.ModeBFeatureFlagLocalStore
 import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
+import org.pca.app.feature.wellbeing.delivery.WellbeingCardDelivery
 import org.pca.app.feature.wellbeing.delivery.WellbeingMessageResolver
 import org.pca.app.feature.wellbeing.delivery.WellbeingNotificationDelivery
 import org.pca.app.feature.wellbeing.engine.WellbeingTriggerDispatcher
+import org.pca.app.feature.wellbeing.model.NudgeFeedbackType
+import org.pca.app.feature.wellbeing.model.WellbeingNudgeDelivery
+import org.pca.app.feature.wellbeing.persistence.PendingWellbeingCardStore
+import org.pca.app.feature.wellbeing.policy.WellbeingFeedbackLogStore
+import org.pca.app.feature.wellbeing.ui.WellbeingCardActivity
 import org.pca.app.enrollment.BootstrapEndpointConfig
 import org.pca.app.enrollment.DeviceBootstrapApiClient
 import org.pca.app.enrollment.EnrollmentCoordinator
@@ -138,6 +144,7 @@ import org.pca.app.storage.PersistentPendingEnrollmentAttemptStore
 import org.pca.app.enrollment.ContentFilterDefault
 import org.pca.app.enrollment.contentFilterDefaultForEnrollmentProfile
 import org.pca.app.runtime.wellbeing.RuntimeBreakStateSource
+import org.pca.app.runtime.wellbeing.WellbeingFeedbackRecorder
 import org.pca.app.runtime.wellbeing.RuntimeEligibleAppSignalSource
 import org.pca.app.runtime.wellbeing.RuntimeSuppressionContextSource
 import org.pca.app.runtime.wellbeing.RuntimeWellbeingScheduleContextSource
@@ -568,10 +575,43 @@ class PcaAppGraph private constructor(
     // screen-time/eye-distance snapshots (PCA-WELL-011/019's own durable-storage requirement),
     // and the existing accepted WellbeingNotificationDelivery/WellbeingContentCatalogue rather
     // than reimplementing delivery or content selection here.
-    private val wellbeingPolicyStore = WellbeingPolicyStore(runtimeStateStore)
-    private val wellbeingRateStateStore = WellbeingRateStateStore(runtimeStateStore)
+    // wellbeingPolicyStore is intentionally NOT private: WellbeingCardActivity reads it directly
+    // off the graph (the same "read state off the graph, not an Intent payload" pattern
+    // BreakShieldActivity/EyeRestShieldActivity already use for their own state) to build the
+    // canSnooze/canMarkNotHelpful bits of WellbeingCardViewState.
+    val wellbeingPolicyStore = WellbeingPolicyStore(runtimeStateStore)
+    // internal (not private), same "test-access only" discipline as launchEyeRestShieldActivity/
+    // launchBreakShieldActivity below -- PcaAppGraphTest reads this directly to prove
+    // recordWellbeingFeedback really persists into the SAME store wellbeingCoordinator itself reads.
+    internal val wellbeingRateStateStore = WellbeingRateStateStore(runtimeStateStore)
     private val wellbeingMessageResolver = WellbeingMessageResolver(context)
     private val wellbeingNotificationDelivery = WellbeingNotificationDelivery(context, wellbeingMessageResolver)
+    private val wellbeingFeedbackLogStore = WellbeingFeedbackLogStore(runtimeStateStore)
+
+    /** PCA-WELL-012 closure: durable handoff for a queued card-shaped nudge -- see
+     * [PendingWellbeingCardStore]'s own doc comment for why this is reused across all three card
+     * channels, not only NEXT_UNLOCK_CARD. Public for the same reason [wellbeingPolicyStore] is:
+     * [WellbeingCardActivity] reads it directly off the graph. */
+    val pendingWellbeingCardStore = PendingWellbeingCardStore(runtimeStateStore)
+
+    /** The real delivery adapter for IN_APP_CARD/BREAK_SHIELD_CARD/NEXT_UNLOCK_CARD -- see
+     * [WellbeingCardDelivery]'s own doc comment. [launchWellbeingCardActivity] below is the same
+     * "build an Intent with FLAG_ACTIVITY_NEW_TASK and startActivity" shape
+     * [launchEyeRestShieldActivity]/[launchBreakShieldActivity] already use. */
+    private val wellbeingCardDelivery = WellbeingCardDelivery(
+        pendingCardStore = pendingWellbeingCardStore,
+        launchCardActivity = ::launchWellbeingCardActivity,
+    )
+
+    /** See [WellbeingFeedbackRecorder]'s own doc comment: the real production caller of
+     * [WellbeingFeedbackLogStore.append] and [NudgeSelectionEngine.applyFeedback], both real and
+     * unit-tested but previously called from nowhere in `src/main`. */
+    private val wellbeingFeedbackRecorder = WellbeingFeedbackRecorder(
+        feedbackLogStore = wellbeingFeedbackLogStore,
+        policyStore = wellbeingPolicyStore,
+        rateStateStore = wellbeingRateStateStore,
+        monotonicTimeSource = monotonicTimeSource,
+    )
 
     val wellbeingCoordinator = WellbeingRuntimeCoordinator(
         dispatcherProvider = { buildWellbeingDispatcher() },
@@ -580,9 +620,27 @@ class PcaAppGraph private constructor(
         monotonicTimeSource = monotonicTimeSource,
         catalogueEntries = WellbeingContentCatalogue.entries,
         deliver = { delivery, suggestions, nowMonotonicNanos ->
-            wellbeingNotificationDelivery.deliver(delivery, suggestions, nowMonotonicNanos)
+            // PCA-WELL-012 closure: card-shaped channels route to the real WellbeingCardActivity
+            // surface (WellbeingCardDelivery) instead of falling through to
+            // wellbeingNotificationDelivery.deliver's SUPPRESSED_CAPABILITY_UNAVAILABLE default,
+            // which previously silently dropped every one of these three channels.
+            // PARENT_PANEL_PREVIEW (the one remaining channel neither adapter handles) is
+            // deliberately left on the notification adapter's own SUPPRESSED_CAPABILITY_UNAVAILABLE
+            // path, unchanged from before -- out of scope of this closure.
+            when (delivery) {
+                WellbeingNudgeDelivery.IN_APP_CARD,
+                WellbeingNudgeDelivery.BREAK_SHIELD_CARD,
+                WellbeingNudgeDelivery.NEXT_UNLOCK_CARD,
+                -> wellbeingCardDelivery.deliver(delivery, suggestions, nowMonotonicNanos)
+                else -> wellbeingNotificationDelivery.deliver(delivery, suggestions, nowMonotonicNanos)
+            }
         },
     )
+
+    /** The single real caller (via [WellbeingCardActivity]) of [wellbeingFeedbackRecorder]. */
+    fun recordWellbeingFeedback(suggestionId: String, feedback: NudgeFeedbackType) {
+        wellbeingFeedbackRecorder.record(suggestionId, feedback)
+    }
 
     val coroutineScope: CoroutineScope = CoroutineScope(SupervisorJob())
 
@@ -674,6 +732,47 @@ class PcaAppGraph private constructor(
         )
     }
 
+    /**
+     * PCA-WELL-012 closure: fired by [wellbeingCardDelivery] for IN_APP_CARD/BREAK_SHIELD_CARD
+     * (synchronously with the trigger that selected the content), and by
+     * [startPendingWellbeingCardUnlockObserver] below for a previously-queued NEXT_UNLOCK_CARD once
+     * the next real unlock actually happens. See [launchEyeRestShieldActivity]'s own doc comment for
+     * why `FLAG_ACTIVITY_NEW_TASK` is required and why this is `internal` rather than `private`
+     * (identical reasoning, identical test-access need in
+     * [PcaAppGraphTest][org.pca.app.runtime.graph.PcaAppGraphTest]).
+     */
+    internal fun launchWellbeingCardActivity() {
+        context.startActivity(
+            Intent(context, WellbeingCardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /**
+     * PCA-WELL-012 NEXT_UNLOCK_CARD closure: a card queued into [pendingWellbeingCardStore] by
+     * [wellbeingCardDelivery] does not launch [WellbeingCardActivity] synchronously with the
+     * trigger that selected it -- the whole point of this channel is that the real unlock it must
+     * survive until can be a different process or moment entirely. This observes the SAME real
+     * [screenStateObserver] instance [runtime] itself already subscribes to (never a second,
+     * independently-constructed observer -- same discipline as
+     * [startCameraForegroundEligibilityTracking] below), and launches the Activity on the next
+     * `true` (unlock) emission, but ONLY if what is currently pending is genuinely a
+     * NEXT_UNLOCK_CARD -- an IN_APP_CARD/BREAK_SHIELD_CARD entry (already shown immediately by
+     * [wellbeingCardDelivery] itself) is deliberately never re-launched from here. Mirrors
+     * [startCameraForegroundEligibilityTracking]'s own plain-`collect`, no-dedicated-Job shape
+     * (cancelled the same way, via [coroutineScope.cancel] in [shutdownForTest]) rather than a
+     * third bespoke Trigger class, since this is a single conditional check on an already-real
+     * signal, not a derived-view-state computation like the two shield triggers have.
+     */
+    private fun startPendingWellbeingCardUnlockObserver() {
+        coroutineScope.launch {
+            screenStateObserver.observe().collect { active ->
+                if (active && pendingWellbeingCardStore.load()?.delivery == WellbeingNudgeDelivery.NEXT_UNLOCK_CARD) {
+                    launchWellbeingCardActivity()
+                }
+            }
+        }
+    }
+
     private fun buildWellbeingDispatcher(): WellbeingTriggerDispatcher = WellbeingTriggerDispatcher(
         monotonicTimeSource = monotonicTimeSource,
         eligibleAppSignalSource = eligibleAppSignalSource,
@@ -716,6 +815,7 @@ class PcaAppGraph private constructor(
     fun start() {
         hardwareProximitySource.start()
         startCameraForegroundEligibilityTracking()
+        startPendingWellbeingCardUnlockObserver()
         runtime.start()
         eyeRestShieldTrigger.start()
         breakShieldTrigger.start()

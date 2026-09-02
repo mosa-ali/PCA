@@ -26,6 +26,9 @@ import org.pca.app.feature.screentime.engine.ScreenTimeMode
 import org.pca.app.feature.screentime.engine.ScreenTimeState
 import org.pca.app.feature.screentime.persistence.PersistentScreenTimeSnapshotStore
 import org.pca.app.feature.screentime.persistence.ScreenTimeSnapshot
+import org.pca.app.feature.wellbeing.catalogue.WellbeingContentCatalogue
+import org.pca.app.feature.wellbeing.model.NudgeFeedbackType
+import org.pca.app.feature.wellbeing.ui.WellbeingCardActivity
 import org.pca.app.foundation.InMemoryPersistentStateStore
 import org.pca.app.platform.StandardPowerSaveModeSource
 import org.pca.app.runtime.identity.DeviceIdentityState
@@ -337,6 +340,61 @@ class PcaAppGraphTest {
             // this class that calls the real graph.start() outside the process-wide singleton.
             graph.shutdownForTest()
         }
+    }
+
+    // --- PCA-WELL-012 closure: WellbeingCardActivity launch + feedback-recording wiring -----
+    //
+    // Mirrors the EyeRestShieldActivity/BreakShieldActivity sections above for the launch-shape
+    // proof. Unlike those two, the async "next real unlock" half of this wiring
+    // (startPendingWellbeingCardUnlockObserver, driven by the same screenStateObserver instance)
+    // is deliberately NOT exercised here via a real Robolectric broadcast -- see
+    // AndroidScreenStateObserverTest's own doc comment, which already documents that driving this
+    // exact observer deterministically under Robolectric + kotlinx-coroutines-test proved
+    // unreliable (intermittent hangs) in this environment, and that its consequences are instead
+    // covered at the ScreenStateObserver-interface level. The store-gating logic that observer
+    // depends on (only launch when a NEXT_UNLOCK_CARD is genuinely pending) is fully covered,
+    // deterministically, by WellbeingCardDeliveryTest and WellbeingPersistenceRoundTripTest.
+
+    @Test
+    fun `launchWellbeingCardActivity starts the real WellbeingCardActivity with FLAG_ACTIVITY_NEW_TASK`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+
+        graph.launchWellbeingCardActivity()
+
+        val started = shadowOf(context as Application).nextStartedActivity
+        assertNotNull("expected a startActivity(...) call", started)
+        assertEquals(WellbeingCardActivity::class.java.name, started!!.component?.className)
+        assertTrue(
+            "application-context launches must set FLAG_ACTIVITY_NEW_TASK",
+            (started.flags and Intent.FLAG_ACTIVITY_NEW_TASK) != 0,
+        )
+    }
+
+    /**
+     * Proves [PcaAppGraph.recordWellbeingFeedback] -- the single real caller of
+     * [org.pca.app.runtime.wellbeing.WellbeingFeedbackRecorder] -- is genuinely wired into the
+     * graph's own durable stores, not a stub: a NOT_FOR_ME feedback call must actually suppress
+     * that suggestion in the SAME [org.pca.app.feature.wellbeing.persistence.WellbeingRateStateStore]
+     * [wellbeingCoordinator] itself reads on the next trigger. The pure routing/engine logic
+     * ([org.pca.app.feature.wellbeing.engine.NudgeSelectionEngine.applyFeedback]) is already
+     * covered by that engine's own tests; this test's job is only to prove the graph composition
+     * itself is real.
+     */
+    @Test
+    fun `recordWellbeingFeedback suppresses that suggestion in the real durable rate state`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val graph = PcaAppGraph.createForTest(context)
+        val suggestionId = WellbeingContentCatalogue.entries.first().suggestionId
+
+        graph.recordWellbeingFeedback(suggestionId, NudgeFeedbackType.NOT_FOR_ME)
+
+        val rateState = graph.wellbeingRateStateStore.load()
+        assertNotNull("recordWellbeingFeedback must persist a rate state, not just log", rateState)
+        assertTrue(
+            "NOT_FOR_ME must record a cooldown for the real suggestionId in the graph's own durable store",
+            rateState!!.notForMeUntilBySuggestionId.containsKey(suggestionId),
+        )
     }
 
     // --- PCA-DATA-024/PCA-FR-105 closure: runRetentionMaintenanceCycle wiring ----------------

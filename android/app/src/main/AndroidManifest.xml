@@ -164,6 +164,19 @@
             android:name=".feature.breakshield.ui.BreakShieldActivity"
             android:exported="false" />
 
+        <!-- PCA-WELL-012 closure: the real host Activity for WellbeingCardScreen (IN_APP_CARD,
+             NEXT_UNLOCK_CARD, BREAK_SHIELD_CARD), launched by
+             org.pca.app.runtime.graph.PcaAppGraph's launchWellbeingCardActivity(): immediately
+             from WellbeingCardDelivery for the first two channels, and from the graph's own
+             next-unlock observer once a queued NEXT_UNLOCK_CARD is finally due. Not exported and
+             declares no intent-filter, same pattern as EyeRestShieldActivity/BreakShieldActivity
+             above; launched only from within this app. The launch call uses
+             FLAG_ACTIVITY_NEW_TASK since it is fired from the application Context PcaAppGraph
+             holds, not from an Activity context. -->
+        <activity
+            android:name=".feature.wellbeing.ui.WellbeingCardActivity"
+            android:exported="false" />
+
         <!-- PCA-5 (doc 14 layer 2): real, user-consented device-wide DNS-only web-filtering VPN.
              android:permission restricts binding to the system (standard VpnService contract);
              exported="true" is required for the system to bind it, but the intent-filter's action
