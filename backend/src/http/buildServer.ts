@@ -126,8 +126,10 @@ import { registerEyeProtectionRoutes } from './routes/eyeProtectionRoutes.js';
 import type { EyeProtectionSettingsService } from '../eyeprotection/EyeProtectionSettingsService.js';
 import { registerFamilyMemberRoutes } from './routes/familyMemberRoutes.js';
 import { registerFamilyAuditEventRoutes } from './routes/familyAuditEventRoutes.js';
+import { registerProtectionAlertRoutes } from './routes/protectionAlertRoutes.js';
 import type { FamilyMemberInvitationService } from '../familymembers/FamilyMemberInvitationService.js';
 import type { FamilyAuditEventLedger } from '../familyrbac/FamilyAuditEventLedger.js';
+import type { ProtectionAlertLedger } from '../alerts/ProtectionAlertLedger.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
 
@@ -227,6 +229,8 @@ export interface ServerDependencies {
   familyMemberInvitationService?: FamilyMemberInvitationService;
   /** PCA product-completion programme, Writer P0-D (/security/audit): see registerFamilyAuditEventRoutes below. Optional so existing buildServer() test callers that don't exercise the audit-events route need no change. */
   familyAuditEventLedger?: FamilyAuditEventLedger;
+  /** PCA product-completion programme (/security/status): see registerProtectionAlertRoutes below. Optional so existing buildServer() test callers that don't exercise the protection-alerts route need no change. */
+  protectionAlertLedger?: ProtectionAlertLedger;
 }
 
 /**
@@ -441,6 +445,11 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     deviceSessionService: deps.deviceSessionService,
     familyAuditEventLedger: deps.familyAuditEventLedger,
+  });
+  registerProtectionAlertRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    deviceSessionService: deps.deviceSessionService,
+    protectionAlertLedger: deps.protectionAlertLedger,
   });
 
   return app;

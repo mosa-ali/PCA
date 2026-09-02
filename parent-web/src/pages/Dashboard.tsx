@@ -96,7 +96,13 @@ function ChildCard({ child }: { child: ChildSummary }) {
           )}
         </dd>
         <dt>{t('dashboard.importantAlerts')}</dt>
-        <dd>{child.importantAlertCount}</dd>
+        <dd>
+          {child.importantAlertCount > 0 ? (
+            <Link to="/security/status">{child.importantAlertCount}</Link>
+          ) : (
+            child.importantAlertCount
+          )}
+        </dd>
       </dl>
     </article>
   );

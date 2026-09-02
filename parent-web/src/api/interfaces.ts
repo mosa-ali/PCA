@@ -25,6 +25,7 @@ import type {
   AppRule,
 } from '../domain/types';
 import type { FamilyAction, FamilyRole, PermissionResult } from '../domain/roles';
+import type { ParentProtectionAlert } from '../pages/security/ProtectionAlertPanel';
 import type {
   CuratedSuggestion,
   WellbeingCustomMessage,
@@ -290,6 +291,30 @@ export type AuditTrailFeedResult =
 
 export interface FamilyAuditDeliveryClient {
   list(): Promise<AuditTrailFeedResult>;
+}
+
+/**
+ * PCA product-completion programme (/security/status): genuinely separate
+ * from `familyAuditDelivery` above -- this client fetches a family's
+ * protection-alert envelopes from
+ * backend/src/http/routes/protectionAlertRoutes.ts. Unlike the audit-trail
+ * feed, `trigger`/`deviceId`/`generatedAtUtc` are already-safe routing
+ * metadata (a closed event-category vocabulary, never a readable
+ * family-data description -- see backend/src/alerts/types.ts's own doc
+ * comment), so this client renders them directly with no decryption
+ * boundary of its own; the envelope's `encryptedPayloadB64`/`nonceB64`
+ * payload itself stays fully opaque and is never surfaced to the UI. Same
+ * PENDING_TRUSTED_DECRYPTION honest-pending convention as
+ * AuditTrailFeedResult -- it covers "no actor-device-session available yet"
+ * (this route cannot even be reached without one), never a fabricated
+ * empty list.
+ */
+export type ProtectionAlertFeedResult =
+  | { status: 'PENDING_TRUSTED_DECRYPTION' }
+  | { status: 'READY'; alerts: ParentProtectionAlert[] };
+
+export interface ProtectionAlertDeliveryClient {
+  list(): Promise<ProtectionAlertFeedResult>;
 }
 
 /** Read/administer decrypted (client-side) family child data. */

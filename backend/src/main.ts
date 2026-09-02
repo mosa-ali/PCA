@@ -549,8 +549,14 @@ async function start(): Promise<void> {
   // parent roles today (see that resolver's own doc comment for the full
   // investigation). A family with no verified Owner resolves to zero
   // recipients, never a fabricated or guessed one.
+  // PCA product-completion programme (/security/status): the SAME ledger
+  // instance is written by protectionAlertProducer below and read by
+  // registerProtectionAlertRoutes further down this file -- never two
+  // independently-constructed copies (same discipline as
+  // familyAuditEventLedger just below).
+  const protectionAlertLedger = new MySqlProtectionAlertLedger();
   const protectionAlertProducer = new ProtectionAlertProducer(
-    new MySqlProtectionAlertLedger(),
+    protectionAlertLedger,
     createRejectingOpaqueProtectionAlertComposer(),
   );
   const protectionAlertParentDeviceResolver = new MySqlOwnerParentDeviceResolver(familyAuthorityAttestationChainStore);
@@ -735,6 +741,7 @@ async function start(): Promise<void> {
     childProfileMembership: childProfileMembershipResolver,
     familyMemberInvitationService,
     familyAuditEventLedger,
+    protectionAlertLedger,
     // PCA eye-protection reminders: see the wiring block above (near
     // childRequestRepository) for construction/rationale.
     eyeProtectionSettingsService,

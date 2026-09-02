@@ -43,6 +43,7 @@ import type {
   CommercialNotificationClient,
   DeviceStatusClient,
   FamilyAuditDeliveryClient,
+  ProtectionAlertDeliveryClient,
   FamilyAuthorityGateway,
   FamilyMemberInvitationClient,
   FreeAccessStatusClient,
@@ -96,6 +97,8 @@ import { DevFamilyMemberInvitationClient } from './dev/devFamilyMemberInvitation
 import { RealFamilyAuditDeliveryClient } from './real/realFamilyAuditDeliveryClient';
 import { DevFamilyAuditDeliveryClient } from './dev/devFamilyAuditDeliveryClient';
 import { UnavailableFamilyAuditEnvelopeDecryptionBoundary } from './familyAuditDecryption';
+import { RealProtectionAlertDeliveryClient } from './real/realProtectionAlertDeliveryClient';
+import { DevProtectionAlertDeliveryClient } from './dev/devProtectionAlertDeliveryClient';
 import {
   UnavailableParentRuntimeSyncClient,
   UnavailableWellbeingMessageAdminClient,
@@ -133,6 +136,14 @@ export interface PcaApiClients {
    * see AuditTrailFeedResult's own doc comment in interfaces.ts.
    */
   familyAuditDelivery: FamilyAuditDeliveryClient;
+  /**
+   * PCA product-completion programme (/security/status): real, HTTP-backed
+   * against backend/src/http/routes/protectionAlertRoutes.ts outside demo
+   * mode -- same actor-device-session-token external gate as
+   * `familyAuditDelivery` above. Genuinely separate from that interface --
+   * see ProtectionAlertFeedResult's own doc comment in interfaces.ts.
+   */
+  protectionAlertDelivery: ProtectionAlertDeliveryClient;
   parentFamilyData: ParentFamilyDataGateway;
   deviceStatus: DeviceStatusClient;
   requests: RequestClient;
@@ -182,6 +193,7 @@ function buildDevClients(): PcaApiClients {
     familyAuthority: new DevFamilyAuthorityGateway(),
     familyMemberInvitations: new DevFamilyMemberInvitationClient(),
     familyAuditDelivery: new DevFamilyAuditDeliveryClient(),
+    protectionAlertDelivery: new DevProtectionAlertDeliveryClient(),
     parentFamilyData: new DevParentFamilyDataGateway(),
     deviceStatus: new DevDeviceStatusClient(),
     requests: new DevRequestClient(),
@@ -233,6 +245,7 @@ function buildRealClients(): PcaApiClients {
     familyAuthority: new RealFamilyAuthorityGateway(config.apiBaseUrl, trustedBrowser),
     familyMemberInvitations: new RealFamilyMemberInvitationClient(config.apiBaseUrl, trustedBrowser),
     familyAuditDelivery: new RealFamilyAuditDeliveryClient(config.apiBaseUrl, trustedBrowser, new UnavailableFamilyAuditEnvelopeDecryptionBoundary()),
+    protectionAlertDelivery: new RealProtectionAlertDeliveryClient(config.apiBaseUrl, trustedBrowser),
     parentFamilyData: new RealParentFamilyDataGateway(
       trustedBrowser,
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),

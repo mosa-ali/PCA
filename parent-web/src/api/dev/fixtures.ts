@@ -21,6 +21,7 @@ import type {
   YouTubeStatus,
 } from '../../domain/types';
 import type { CuratedSuggestion, WellbeingMessageControlV1 } from '../../domain/wellbeing';
+import type { ParentProtectionAlert } from '../../pages/security/ProtectionAlertPanel';
 
 export const DEV_CHILDREN: ChildSummary[] = [
   {
@@ -336,6 +337,28 @@ export const DEV_AUDIT: AuditEntrySummary[] = [
     resultStatus: 'DENIED',
     reasonCategory: 'INSUFFICIENT_ROLE',
     correlationId: 'corr-audit-2',
+  },
+];
+
+/**
+ * PCA product-completion programme (/security/status): the same closed
+ * trigger vocabulary ProtectionAlertPanel.tsx already renders through
+ * protectionStatus.triggers.* i18n labels -- see DEV_AUDIT's own doc
+ * comment above for why this fixture uses only real, translatable enum
+ * members, never a raw ad hoc string.
+ */
+export const DEV_PROTECTION_ALERTS: ParentProtectionAlert[] = [
+  {
+    alertId: 'protection-alert-1',
+    deviceId: 'child-yousef',
+    trigger: 'PROTECTION_DEGRADED',
+    generatedAtUtc: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  },
+  {
+    alertId: 'protection-alert-2',
+    deviceId: 'child-yousef',
+    trigger: 'UNEXPECTED_OFFLINE',
+    generatedAtUtc: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
   },
 ];
 

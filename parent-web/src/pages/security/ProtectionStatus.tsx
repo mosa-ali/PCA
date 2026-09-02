@@ -9,6 +9,12 @@ export default function ProtectionStatus() {
   const { t } = useTranslation();
   const clients = getApiClients();
   const { data, loading, error, reload } = useAsync(() => clients.parentFamilyData.getDashboard(), []);
+  // Genuinely separate fetch from the dashboard snapshot above -- see
+  // ProtectionAlertFeedResult's own doc comment in api/interfaces.ts. While
+  // this hasn't resolved yet, `alertFeed` is null, which is rendered as the
+  // same honest PENDING_TRUSTED_DECRYPTION state as an explicit pending
+  // result -- never a fabricated empty list.
+  const { data: alertFeed } = useAsync(() => clients.protectionAlertDelivery.list(), []);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -31,7 +37,10 @@ export default function ProtectionStatus() {
           </article>
         ))}
       </div>
-      <ProtectionAlertPanel alerts={[]} feedState="PENDING_TRUSTED_DECRYPTION" />
+      <ProtectionAlertPanel
+        alerts={alertFeed?.status === 'READY' ? alertFeed.alerts : []}
+        feedState={alertFeed?.status === 'READY' ? 'READY' : 'PENDING_TRUSTED_DECRYPTION'}
+      />
     </section>
   );
 }
