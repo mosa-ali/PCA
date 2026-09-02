@@ -33,11 +33,12 @@ import type {
 } from '../../domain/types';
 import type { ActivityTimelineEntry } from '../../domain/activityTimeline';
 type ScreenTimePatch = Partial<Pick<ScreenTimeStatus, 'continuousUseLimitMinutes' | 'breakDurationMinutes'>>;
-import type { ParentFamilyDataGateway } from '../interfaces';
+import type { DeviceStatusClient, ParentFamilyDataGateway } from '../interfaces';
 import type { TrustedBrowserProvider } from '../../domain/trustedBrowser';
 import { localFamilyDataStore, type LocalFamilyDataStore } from '../../security/localFamilyDataStore';
 import { requireTrustedAndCryptoReady } from './familyDataGate';
 import { cookieSessionFamilyId } from './realBillingClient';
+import { RealDeviceStatusClient } from './realDeviceStatusClient';
 import {
   VerifiedFamilySchedulePolicyPublisher,
   type SchedulePolicyAuthoring,
@@ -45,8 +46,32 @@ import {
   type SchedulePolicyTransport,
 } from '../schedulePolicyAuthoring';
 
-function recipientDeviceIdFor(childId: string): string {
-  return `device-${childId}`;
+/**
+ * The ONE place this app turns a childId into the device id a policy
+ * envelope / sync lookup is addressed to.
+ *
+ * This used to be `\`device-${childId}\``, a fabricated id: backend
+ * migrations/0001_mysql_baseline.sql declares `device_id CHAR(36)` (a
+ * UUID), so a 'device-' prefix plus a 36-character child id is 43
+ * characters and could never match a real device row -- every real-mode
+ * call built on it was addressed to a device that cannot exist. The real
+ * value is DeviceProtectionStatus.deviceId (../../domain/types.ts), served
+ * by DeviceStatusClient, so it is read from there.
+ *
+ * When no device id resolves, this throws. It must never fall back to a
+ * synthesized or empty id: backend/src/http/routes/childPolicyRoutes.ts
+ * rejects a spoofed recipient by design, and a fabricated id would turn
+ * that honest server rejection into a silent client-side lie.
+ */
+export async function resolveChildDeviceId(deviceStatus: DeviceStatusClient, childId: string): Promise<string> {
+  const devices = await deviceStatus.listDeviceStatuses(childId);
+  const deviceId = devices.find((device) => device.childId === childId && device.deviceId.length > 0)?.deviceId;
+  if (!deviceId) {
+    throw new Error(
+      `resolveChildDeviceId: no enrolled device is known for child "${childId}", so there is no real recipient device id to address. Refusing to fabricate one.`,
+    );
+  }
+  return deviceId;
 }
 
 const CSRF_COOKIE_NAME = 'pca_family_csrf';
@@ -65,6 +90,13 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
     private readonly schedulePolicyTransport: SchedulePolicyTransport,
     private readonly apiBaseUrl: string,
     private readonly store: LocalFamilyDataStore = localFamilyDataStore,
+    /**
+     * Source of the REAL recipient device id (see resolveChildDeviceId
+     * above). ../client.ts passes the same instance it exposes as
+     * `clients.deviceStatus`, so "which device is this child's" can never
+     * mean one thing to this gateway and another to the UI.
+     */
+    private readonly deviceStatus: DeviceStatusClient = new RealDeviceStatusClient(trustedBrowser, store),
   ) {}
 
   private async readOrExplainUnavailable<T>(operation: string, storeKey: string): Promise<T> {
@@ -121,8 +153,9 @@ export class RealParentFamilyDataGateway implements ParentFamilyDataGateway {
   ): Promise<{ messageId: string }> {
     const familyId = await cookieSessionFamilyId(this.apiBaseUrl);
     if (!familyId) throw new Error('ParentFamilyDataGateway: no authenticated family session available.');
+    const recipientDeviceId = await resolveChildDeviceId(this.deviceStatus, childId);
     const publisher = new VerifiedFamilySchedulePolicyPublisher(this.schedulePolicyAuthoring, this.schedulePolicyTransport);
-    const result = await publisher.publish(familyId, recipientDeviceIdFor(childId), definition);
+    const result = await publisher.publish(familyId, recipientDeviceId, definition);
     return { messageId: result.messageId };
   }
   getWebProtection(childId: string): Promise<WebProtectionStatus> {

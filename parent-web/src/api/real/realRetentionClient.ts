@@ -3,16 +3,34 @@
 // verified against that route file's actual paths/methods/bodies/status
 // codes under this same worktree.
 //
-// SESSION MODEL: identical gap to ../real/realBillingClient.ts -- these
-// routes sit behind `requireServiceSession`, which parses ONLY
-// `Authorization: Bearer <opaque-token>`, and no browser-reachable flow in
-// this repository slice issues one of those tokens yet (see
-// realBillingClient.ts's file header for the full explanation, reused
-// verbatim here rather than re-litigated). This client fails fast with a
-// distinct SERVICE_SESSION_UNAVAILABLE error before ever calling fetch
-// when no token accessor is wired -- the HTTP plumbing itself is genuine
-// and will work end-to-end the moment a real token/familyId accessor
-// exists (see ../client.ts's construction of this class).
+// SESSION MODEL: these routes sit behind
+// backend/src/auth/fastifyAuthPlugin.ts's `createRequireServiceSession`,
+// which accepts EITHER `Authorization: Bearer <opaque-token>` OR the
+// FAMILY_SERVICE_SESSION_V1 `pca_family_session` HttpOnly cookie the
+// browser already holds after sign-in -- both carry the same opaque token
+// and are validated through the SAME `authService.validateSession` (that
+// function's own doc comment names retentionRoutes as a consumer). For a
+// non-GET request over the cookie transport the server additionally
+// requires the double-submit CSRF header, so this client sends it: header
+// `x-pca-csrf-token` (case-insensitive on the wire) whose value must equal
+// the browser-readable `pca_family_csrf` cookie -- both names taken from
+// backend/src/parentaccount/cookies.ts's CSRF_HEADER_NAME/CSRF_COOKIE_NAME,
+// not guessed.
+//
+// So the browser DOES have a reachable session transport for this client.
+// Constructed with `cookieSession = true` (see ../client.ts) it sends
+// `credentials: 'include'` and, on mutations, the CSRF header -- exactly
+// the pattern ./realBillingClient.ts already proves. The explicit bearer
+// mode is kept for non-browser callers, and when NEITHER transport is
+// configured this client still fails fast with a distinct
+// SERVICE_SESSION_UNAVAILABLE error before ever calling fetch rather than
+// silently omitting credentials.
+//
+// AUTHORITY: retentionRoutes deliberately stops at "authenticated account
+// with ACTIVE family scope" and performs NO server-side role check (see
+// its own `createRequireActiveFamilyScope` doc comment for the
+// architectural reason). This client asserts no authority of its own and
+// never infers one from a response.
 import type { RetentionClient } from '../interfaces';
 import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, RetentionPolicySettings, RetentionPolicySubmitResult } from '../../domain/retention';
 
@@ -29,14 +47,46 @@ export class RetentionApiError extends Error {
   }
 }
 
-/** Placeholder accessor -- see file header. Reused-by-reference identity check in ../client.ts (isPaymentProviderAvailable-style pattern) is unnecessary here since this client has no "is available" query, but the exported symbol still lets ../client.ts wire it in explicitly rather than inlining `async () => null`. */
+/** Bearer-mode placeholder for a caller that has no opaque service token (a non-browser integration). The browser does not use this path -- see file header's SESSION MODEL. */
 export async function noServiceBearerTokenAvailable(): Promise<string | null> {
   return null;
 }
 
-/** No browser-reachable flow resolves the caller's own familyId against this backend yet -- see file header. */
+/** Placeholder family-context accessor for a caller that cannot resolve one. The browser wires `cookieSessionFamilyId` instead -- see ../client.ts. */
 export async function noFamilyContextAvailable(): Promise<string | null> {
   return null;
+}
+
+/**
+ * Verbatim from backend/src/parentaccount/cookies.ts (CSRF_COOKIE_NAME /
+ * CSRF_HEADER_NAME). Header names are case-insensitive on the wire, and
+ * fastify lowercases them before the `x-pca-csrf-token` comparison in
+ * fastifyAuthPlugin.ts, so the conventional capitalisation used by the
+ * sibling real clients is sent here too.
+ */
+const CSRF_COOKIE_NAME = 'pca_family_csrf';
+const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
+
+function readBrowserCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.slice(prefix.length));
+  } catch {
+    // A malformed client-readable cookie must never turn into an invented
+    // CSRF value. Send none and let the server's double-submit check fail
+    // closed with 403.
+    return null;
+  }
+}
+
+function isMutationMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
 }
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
@@ -52,6 +102,8 @@ export class RealRetentionClient implements RetentionClient {
     private readonly apiBaseUrl: string,
     private readonly getBearerToken: () => Promise<string | null> = noServiceBearerTokenAvailable,
     private readonly getFamilyId: () => Promise<string | null> = noFamilyContextAvailable,
+    /** True for the browser: authenticate with the existing `pca_family_session` HttpOnly cookie instead of a bearer token -- see file header. */
+    private readonly cookieSession = false,
   ) {}
 
   private url(path: string): string {
@@ -63,27 +115,31 @@ export class RealRetentionClient implements RetentionClient {
     if (!familyId) {
       throw new RetentionApiError(
         'FAMILY_CONTEXT_UNAVAILABLE',
-        `${operation}: no family context is available to scope this request. This is a genuine backend-integration gap (no browser-reachable family-context resolution flow yet), not a network failure.`,
+        `${operation}: no family context is available to scope this request -- the caller is not signed in to a family session (GET /api/parent/session returned no familyId). Not a network failure.`,
       );
     }
     return familyId;
   }
 
   private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
-    const token = await this.getBearerToken();
-    if (!token) {
+    const token = this.cookieSession ? null : await this.getBearerToken();
+    if (!this.cookieSession && !token) {
       throw new RetentionApiError(
         'SERVICE_SESSION_UNAVAILABLE',
-        `${operation}: no service-session bearer token is available to authenticate this request. This is a genuine backend-integration gap (no browser-reachable token-issuance flow yet), not a network failure.`,
+        `${operation}: no service session is available to authenticate this request (neither an opaque bearer token nor the browser cookie transport is configured on this client). This is a genuine session gap, not a network failure.`,
       );
     }
     try {
       return await fetch(this.url(path), {
         ...init,
+        ...(this.cookieSession ? { credentials: 'include' as const } : {}),
         headers: {
           Accept: 'application/json',
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(this.cookieSession && isMutationMethod(init?.method ?? 'GET')
+            ? { [CSRF_HEADER_NAME]: readBrowserCookie(CSRF_COOKIE_NAME) ?? '' }
+            : {}),
           ...(init?.headers ?? {}),
         },
       });

@@ -97,7 +97,7 @@ import { RealParentRuntimeSyncClient } from './real/realParentRuntimeSyncClient'
 import { UnavailableSafeZonePolicyAuthoring, type SafeZonePolicyAuthoring } from './safeZonePolicyAuthoring';
 import { RealSchedulePolicyClient } from './real/realSchedulePolicyClient';
 import { UnavailableSchedulePolicyAuthoring, type SchedulePolicyAuthoring } from './schedulePolicyAuthoring';
-import { RealRetentionClient, noFamilyContextAvailable as noRetentionFamilyContextAvailable, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
+import { RealRetentionClient, noServiceBearerTokenAvailable as noRetentionBearerTokenAvailable } from './real/realRetentionClient';
 import { DevRetentionClient } from './dev/devRetentionClient';
 import { RealFamilyMemberInvitationClient } from './real/realFamilyMemberInvitationClient';
 import { DevFamilyMemberInvitationClient } from './dev/devFamilyMemberInvitationClient';
@@ -159,21 +159,20 @@ export interface PcaApiClients {
   /**
    * PCA-MYKIDS-BILL-3: real, HTTP-backed against MYKIDS_COMMERCIAL_API_V1
    * (backend/src/http/routes/familyCommercialRoutes.ts +
-   * billingCheckoutRoutes.ts) outside demo mode -- see
-   * ./real/realBillingClient.ts's header for the one remaining, honestly
-   * surfaced integration gap (no browser-reachable bearer-token/family-
-   * context issuance flow yet in this repository slice, identical in kind
-   * to ./real/realDeviceEnrollmentClient.ts's own documented gap).
+   * billingCheckoutRoutes.ts) outside demo mode, over the browser's
+   * existing `pca_family_session` HttpOnly cookie with a double-submit CSRF
+   * header on mutations. Its remaining honestly-surfaced gap is
+   * actorDeviceId (DEVICE_IDENTITY_UNAVAILABLE until requestPairing() has
+   * run), not the session transport.
    */
   billing: BillingClient;
-  /** PCA-MYKIDS-BILL-3: real, HTTP-backed against the family-facing commercial-notification routes outside demo mode. Same session-transport gap as `billing` above. */
+  /** PCA-MYKIDS-BILL-3: real, HTTP-backed against the family-facing commercial-notification routes outside demo mode. Same cookie-session transport as `billing` above. */
   commercialNotifications: CommercialNotificationClient;
   /**
    * FREE_ACCESS_ENFORCEMENT_V1 (Round6, Writer61): real, cookie-session-
    * backed against GET /api/parent/free-access-status outside demo mode --
-   * no bearer-token/family-context gap like `billing`/`deviceEnrollment`
-   * above, since this route reuses the SAME `pca_family_session` cookie
-   * `serviceAuth` already relies on.
+   * the same `pca_family_session` cookie `serviceAuth`, `billing`,
+   * `deviceEnrollment` and `retention` all rely on.
    */
   freeAccessStatus: FreeAccessStatusClient;
   parentPreferences: ParentPreferencesClient;
@@ -182,9 +181,13 @@ export interface PcaApiClients {
   schedulePolicyAuthoring: SchedulePolicyAuthoring;
   /**
    * PCA-FR-093: real, HTTP-backed against
-   * backend/src/http/routes/retentionRoutes.ts outside demo mode. Same
-   * session-transport gap as `billing` above -- see
-   * ./real/realRetentionClient.ts's header.
+   * backend/src/http/routes/retentionRoutes.ts outside demo mode, over the
+   * same cookie-session transport as `billing` above -- see
+   * ./real/realRetentionClient.ts's header. Reads (getDefaults) work for
+   * any signed-in family session; writes additionally pass through the
+   * client-side ../rbac/useFamilyAction pre-gate, which is the only WHO
+   * control for these operations because retentionRoutes deliberately
+   * performs no server-side role check.
    */
   retention: RetentionClient;
   /** True only when DEVELOPMENT_ONLY fixtures are actually in use (config.demoMode === true). Never true as a side effect of a real-client construction failure. */
@@ -236,6 +239,12 @@ function buildRealClients(): PcaApiClients {
   // check the SAME trust snapshot, so "trusted" can never mean something
   // different to one gateway than another.
   const trustedBrowser = new RealTrustedBrowserProvider(config.apiBaseUrl);
+  // Constructed once and shared with parentFamilyData below: it is the
+  // single source of the REAL recipient device id
+  // (DeviceProtectionStatus.deviceId) that the gateway addresses policy
+  // envelopes to and that the UI passes to runtimeSync -- see
+  // ./real/realParentFamilyDataGateway.ts's resolveChildDeviceId.
+  const deviceStatus = new RealDeviceStatusClient(trustedBrowser);
   return {
     serviceAuth: new RealServiceAuthClient(config.apiBaseUrl),
     // PCA product-completion programme: removeMember is now real, HTTP-backed
@@ -255,8 +264,10 @@ function buildRealClients(): PcaApiClients {
       new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
       new RealSchedulePolicyClient(config.apiBaseUrl, trustedBrowser),
       config.apiBaseUrl,
+      undefined,
+      deviceStatus,
     ),
-    deviceStatus: new RealDeviceStatusClient(trustedBrowser),
+    deviceStatus,
     requests: new RealRequestClient(config.apiBaseUrl, trustedBrowser),
     wellbeingMessages: new UnavailableWellbeingMessageAdminClient(),
     webRuleAdmin: new RealWebRuleAdminClient(config.apiBaseUrl, trustedBrowser),
@@ -274,14 +285,18 @@ function buildRealClients(): PcaApiClients {
     // not-yet-built, crypto-review-gated parent-sdk E2EE client) and
     // KNOWN_BACKEND_INTEGRATION_ACTION above.
     runtimeSync: new RealParentRuntimeSyncClient(config.apiBaseUrl, () => cookieSessionFamilyId(config.apiBaseUrl)),
-    // KNOWN_BACKEND_INTEGRATION_ACTION: noServiceBearerTokenAvailable is a
-    // placeholder -- parent-web has no browser-reachable flow yet that
-    // issues this backend's Authorization: Bearer session token (see
-    // ../real/realDeviceEnrollmentClient.ts file header). The HTTP
-    // plumbing itself is genuine and verified against
-    // backend/src/http/routes/{invitationRoutes,pairingRoutes}.ts; replace
-    // this accessor with a real one once a token-issuance flow exists.
-    deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noDeviceEnrollmentBearerTokenAvailable),
+    // Browser device enrollment authenticates with the SAME
+    // `pca_family_session` HttpOnly cookie `serviceAuth` already relies on:
+    // backend/src/auth/fastifyAuthPlugin.ts's requireServiceSession accepts
+    // either that cookie or an `Authorization: Bearer` header, and
+    // invitationRoutes/pairingRoutes sit behind it (see
+    // ./real/realDeviceEnrollmentClient.ts's header). Mutations carry the
+    // double-submit CSRF header. The bearer accessor stays wired as the
+    // explicit non-browser fallback and is never consulted in cookie mode.
+    // invitationRoutes additionally enforces family authorization, so a
+    // caller without it now receives that route's own honest 403 instead of
+    // a client-side excuse the server never issued.
+    deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noDeviceEnrollmentBearerTokenAvailable, true),
     // Browser billing uses the existing HttpOnly family-session cookie and
     // resolves family scope through /api/parent/session. Mutations carry the
     // non-HttpOnly CSRF token; actorDeviceId reuses
@@ -302,9 +317,19 @@ function buildRealClients(): PcaApiClients {
     safeZones: new RealSafeZoneClient(config.apiBaseUrl, trustedBrowser),
     safeZonePolicyAuthoring: new UnavailableSafeZonePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
     schedulePolicyAuthoring: new UnavailableSchedulePolicyAuthoring('CRYPTO_REVIEW_REQUIRED'),
-    // KNOWN_BACKEND_INTEGRATION_ACTION: same session-transport gap as
-    // billing above -- see ./real/realRetentionClient.ts's header.
-    retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, noRetentionFamilyContextAvailable),
+    // Browser retention uses the same cookie transport as billing above:
+    // backend/src/http/routes/retentionRoutes.ts sits behind the same
+    // requireServiceSession that accepts the `pca_family_session` cookie,
+    // and family scope resolves through /api/parent/session
+    // (cookieSessionFamilyId), not a second mechanism. Mutations carry the
+    // double-submit CSRF header. The bearer/no-family placeholders stay
+    // wired as the explicit non-browser fallbacks and are never consulted in
+    // cookie mode. NOTE: retentionRoutes performs NO server-side role check
+    // (deliberately -- see its own createRequireActiveFamilyScope doc
+    // comment), so the client-side ../rbac/useFamilyAction pre-gate remains
+    // the only control over WHO may perform retention writes and must not be
+    // relaxed; retention READS (getDefaults) do not go through it.
+    retention: new RealRetentionClient(config.apiBaseUrl, noRetentionBearerTokenAvailable, () => cookieSessionFamilyId(config.apiBaseUrl), true),
     isFixtureBacked: false,
   };
 }

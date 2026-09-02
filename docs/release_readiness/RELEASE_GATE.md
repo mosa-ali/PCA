@@ -50,8 +50,12 @@ As of this lane's work (git SHA recorded in the evidence pack):
   correctly, completely non-functional in production today.
 - `REAL_UAT = NOT_EXECUTED` — `uat_execution_log.json` has never been
   updated by a human tester; `casesLogged: 0` of `50`.
-- All seven external gates in `EXTERNAL_GATE_MATRIX.md` are `BLOCKED` or
-  `EXTERNAL`.
+- All 34 registered external gates are `BLOCKED` or `EXTERNAL`; none is
+  `CLOSED` and none has evidence populated. `external_gate_matrix.json` is
+  authoritative and holds 33; `PAYMENT_PRODUCTION_CERTIFICATION` is
+  registered in the completion matrix but not yet in that JSON, so the gate
+  script does not currently enforce it. `EXTERNAL_GATE_MATRIX.md` documents
+  only the original 7 and is not exhaustive.
 
 **Therefore the release gate correctly reports NOT READY.** This is the
 honest, expected state — do not "fix" the gate script to pass; fix the

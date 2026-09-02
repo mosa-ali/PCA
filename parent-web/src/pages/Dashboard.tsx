@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { getApiClients } from '../api/client';
+import { resolveChildDeviceId } from '../api/real/realParentFamilyDataGateway';
 import { useAsync } from '../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../components/common/States';
 import { StatusBadge } from '../components/common/StatusBadge';
@@ -19,10 +20,21 @@ function relativeTime(iso: string | null, locale: string): string {
   return rtf.format(-days, 'day');
 }
 
-/** Fetches and shows the child-offline notice for a specific device. Kept separate from the main dashboard fetch so one offline child does not delay the others. */
-function ChildOfflineSyncNotice({ deviceId }: { deviceId: string }) {
+/**
+ * Fetches and shows the child-offline notice for a child's device. Kept
+ * separate from the main dashboard fetch so one offline child does not
+ * delay the others.
+ *
+ * Takes the childId, not a device id: the caller used to synthesize
+ * `device-${childId}`, which can never match a real device row. The real
+ * id is resolved here from DeviceStatusClient, and when none resolves the
+ * failure is shown rather than papered over with a synthetic id (see
+ * resolveChildDeviceId).
+ */
+function ChildOfflineSyncNotice({ childId }: { childId: string }) {
   const clients = getApiClients();
-  const { data } = useAsync(async () => {
+  const { data, error } = useAsync(async () => {
+    const deviceId = await resolveChildDeviceId(clients.deviceStatus, childId);
     const [lastSuccessfulSyncUtc, device, pending] = await Promise.all([
       clients.runtimeSync.getLastSuccessfulSync(deviceId),
       clients.deviceStatus.getDeviceStatus(deviceId),
@@ -33,7 +45,8 @@ function ChildOfflineSyncNotice({ deviceId }: { deviceId: string }) {
       lastAppliedPolicyRevision: device?.lastAcknowledgedPolicyRevision ?? null,
       hasPendingPolicyDelivery: pending.pendingCount > 0,
     };
-  }, [deviceId]);
+  }, [childId]);
+  if (error) return <ErrorState message={error} />;
   if (!data) return null;
   return (
     <DeviceOfflineNotice
@@ -51,7 +64,7 @@ function ChildCard({ child }: { child: ChildSummary }) {
       <h2>
         <Link to={`/children/${child.childId}/overview`}>{child.displayName}</Link>
       </h2>
-      {child.deviceState === 'OFFLINE' && <ChildOfflineSyncNotice deviceId={`device-${child.childId}`} />}
+      {child.deviceState === 'OFFLINE' && <ChildOfflineSyncNotice childId={child.childId} />}
       <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '0.4rem', margin: 0 }}>
         <dt>{t('dashboard.deviceState')}</dt>
         <dd><StatusBadge state={child.deviceState} /></dd>

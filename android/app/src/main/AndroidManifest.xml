@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- PCA-7 location capability (org.pca.app.platform.LocationCapabilitySource):
          foreground location, checked at runtime via ContextCompat.checkSelfPermission.
@@ -26,6 +27,16 @@
          enforcement engine; see Section 0/10 of the runtime brief. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Doc 40 Section 8/PCA-16: the normal (install-time, non-runtime-prompted) permission every
+         outbound socket in this app depends on: device enrollment
+         (org.pca.app.enrollment.HttpDeviceBootstrapApiClient), family-sync relay transport
+         (org.pca.app.runtime.sync.transport.HttpUrlConnectionRelayHttpClient), and
+         org.pca.app.runtime.sync.connectivity.AndroidConnectivityMonitor, whose own class doc
+         records this dependency as unresolved because that lane could not edit this file. Without
+         it every HttpURLConnection here throws on a real device, while the local enforcement
+         engines keep working offline exactly as doc 40 requires. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- PCA-FR-043C/PCA-FR-015A: minimum public telephony state capability for observing only
          RINGING/OFFHOOK/IDLE. The adapter never reads numbers, contacts, content, or audio; when
          this dangerous permission is unavailable, call-exception timing remains unavailable
@@ -37,6 +48,24 @@
          alarms are the only reliable way to fire a prayer-time reminder at its real wall-clock
          moment. Special access granted via Settings on API 31+, not a runtime permission dialog. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Doc 06 (org.pca.app.platform.StandardUsageObservationSource): usage stats is
+         REQUIRES_USER_PERMISSION in both Standard and Protected Mode, and the declaration below is
+         what makes this app appear at all in Settings > Special app access > Usage access. Without
+         it the AppOps check ("android:get_usage_stats") can never return MODE_ALLOWED, so
+         queryEventsSince() returns an empty list forever and screen time, Break Shield, wellbeing
+         eligibility and YouTube Mode A duration all read permanently-empty data on a real device.
+         tools:ignore="ProtectedPermissions" is required because this is a signature/privileged
+         permission that an ordinary app may only declare, never be granted directly: the actual
+         grant is a manual per-user toggle in that Settings screen.
+         STILL REQUIRED, NOT DONE HERE: no user-facing flow sends the parent to
+         Settings.ACTION_USAGE_ACCESS_SETTINGS anywhere in this app, so on a fresh install nothing
+         ever prompts for or explains this grant. This declaration is necessary but NOT sufficient;
+         building that disclosure + hand-off screen is deliberately outside this change's scope and
+         must be picked up by the lane that owns the parent-facing setup surface. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- PCA-5 (org.pca.app.feature.webprotection.vpn.WebProtectionVpnService): user consent for the
          VPN itself is obtained at runtime via VpnService.prepare() (see

@@ -5,25 +5,31 @@
 //   backend/src/http/routes/invitationRoutes.ts
 //   backend/src/http/routes/pairingRoutes.ts
 // Both are mounted behind backend/src/auth/fastifyAuthPlugin.ts's
-// requireServiceSession, which parses ONLY `Authorization: Bearer
-// <opaque-token>` -- it does not accept a session cookie at all. That is a
-// genuinely different session-transport model from RealServiceAuthClient's
-// `credentials: 'include'` HttpOnly-cookie model.
+// requireServiceSession, which accepts EITHER `Authorization: Bearer
+// <opaque-token>` OR the FAMILY_SERVICE_SESSION_V1 `pca_family_session`
+// HttpOnly cookie the browser already holds after sign-in -- both carry the
+// same opaque token and are validated through the SAME
+// `authService.validateSession` (see that function's own doc comment, which
+// names invitationRoutes/pairingRoutes as consumers). Non-GET requests over
+// the cookie transport additionally require the double-submit CSRF header
+// `x-pca-csrf-token`, whose value must equal the browser-readable
+// `pca_family_csrf` cookie -- both names taken verbatim from
+// backend/src/parentaccount/cookies.ts, not guessed.
 //
-// KNOWN INTEGRATION GAP (see final report / KNOWN_BACKEND_INTEGRATION_ACTION
-// in ../client.ts): parent-web has no browser-reachable flow today that
-// issues one of this backend's bearer tokens. AuthService.issueSession
-// exists (backend/src/auth/AuthService.ts) but is invoked by a device/CLI
-// bootstrap path, not by any `/api/auth/login`-shaped browser route in this
-// repository slice -- backend/src/http/routes contains no auth/login route
-// at all. Rather than silently omitting the Authorization header (which
-// would produce a misleading generic 401 indistinguishable from "the server
-// rejected a real token"), this client takes an explicit `getBearerToken`
-// accessor and fails fast with a distinct SERVICE_SESSION_UNAVAILABLE error
-// when no token is available, before ever calling fetch. The HTTP plumbing
-// itself (paths, methods, headers, status-code mapping, body shapes) is
-// genuine and verified against the routes above, and will work end-to-end
-// the moment a real token accessor is wired in.
+// So the browser DOES have a reachable session transport for these routes.
+// Constructed with `cookieSession = true` (see ../client.ts) this client
+// sends `credentials: 'include'` and, on mutations, the CSRF header --
+// exactly the pattern ./realBillingClient.ts already proves. The explicit
+// bearer mode is kept for non-browser callers, and when NEITHER transport
+// is configured this client still fails fast with a distinct
+// SERVICE_SESSION_UNAVAILABLE error before ever calling fetch rather than
+// silently omitting credentials.
+//
+// AUTHORITY: invitationRoutes independently requires family authorization
+// behind this auth boundary, so a caller whose session is valid but whose
+// family authority is not can now receive an honest server-issued 403
+// (mapped to DeviceEnrollmentError('FORBIDDEN'), with the body's own `code`
+// forwarded) instead of a client-side excuse the server never gave.
 import type {
   CreateInvitationInput,
   DeviceEnrollmentClient,
@@ -41,16 +47,50 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
   }
 }
 
-/** No browser-reachable session flow issues this backend's bearer token yet -- see file header. */
+/** Bearer-mode placeholder for a caller that has no opaque service token (a non-browser integration). The browser uses the cookie transport instead -- see file header. */
 export async function noServiceBearerTokenAvailable(): Promise<string | null> {
   return null;
+}
+
+/**
+ * Verbatim from backend/src/parentaccount/cookies.ts (CSRF_COOKIE_NAME /
+ * CSRF_HEADER_NAME). Header names are case-insensitive on the wire and
+ * fastify lowercases them before the `x-pca-csrf-token` comparison in
+ * fastifyAuthPlugin.ts, so the conventional capitalisation used by the
+ * sibling real clients is sent here too.
+ */
+const CSRF_COOKIE_NAME = 'pca_family_csrf';
+const CSRF_HEADER_NAME = 'X-PCA-CSRF-Token';
+
+function readBrowserCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.slice(prefix.length));
+  } catch {
+    // A malformed client-readable cookie must never turn into an invented
+    // CSRF value. Send none and let the server's double-submit check fail
+    // closed with 403.
+    return null;
+  }
+}
+
+function isMutationMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
 }
 
 export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
   constructor(
     private readonly apiBaseUrl: string,
-    /** Returns the current opaque service-session bearer token, or null if none is available. */
+    /** Returns the current opaque service-session bearer token, or null if none is available. Never consulted in cookie-session mode. */
     private readonly getBearerToken: () => Promise<string | null> = noServiceBearerTokenAvailable,
+    /** True for the browser: authenticate with the existing `pca_family_session` HttpOnly cookie instead of a bearer token -- see file header. */
+    private readonly cookieSession = false,
   ) {}
 
   private url(path: string): string {
@@ -58,21 +98,25 @@ export class RealDeviceEnrollmentClient implements DeviceEnrollmentClient {
   }
 
   private async request(operation: string, path: string, init?: RequestInit): Promise<Response> {
-    const token = await this.getBearerToken();
-    if (!token) {
+    const token = this.cookieSession ? null : await this.getBearerToken();
+    if (!this.cookieSession && !token) {
       throw new DeviceEnrollmentError(
         'SERVICE_SESSION_UNAVAILABLE',
-        `${operation}: no service-session bearer token is available to authenticate this request. ` +
-          'This is a genuine backend-integration gap (no browser-reachable token-issuance flow yet), not a network failure.',
+        `${operation}: no service session is available to authenticate this request ` +
+          '(neither an opaque bearer token nor the browser cookie transport is configured on this client). This is a genuine session gap, not a network failure.',
       );
     }
     try {
       return await fetch(this.url(path), {
         ...init,
+        ...(this.cookieSession ? { credentials: 'include' as const } : {}),
         headers: {
           Accept: 'application/json',
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-          Authorization: `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(this.cookieSession && isMutationMethod(init?.method ?? 'GET')
+            ? { [CSRF_HEADER_NAME]: readBrowserCookie(CSRF_COOKIE_NAME) ?? '' }
+            : {}),
           ...(init?.headers ?? {}),
         },
       });

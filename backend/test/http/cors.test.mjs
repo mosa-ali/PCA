@@ -37,3 +37,42 @@ test('parent-web CORS allows credentialed reads and the CSRF preflight from the 
   assert.equal(wrongOrigin.statusCode, 403);
   await app.close();
 });
+
+test('parent-web CORS preflights every method the browser clients actually send, and still nothing else', async () => {
+  const app = Fastify({ logger: false });
+  registerParentWebCors(app, 'http://localhost:4000');
+  app.get('/api/parent/session', async () => ({ ok: true }));
+  await app.ready();
+
+  const preflight = async (requestedMethod) =>
+    app.inject({
+      method: 'OPTIONS',
+      url: '/api/parent/session',
+      headers: {
+        origin: 'http://localhost:4000',
+        'access-control-request-method': requestedMethod,
+        'access-control-request-headers': 'content-type, x-pca-csrf-token',
+      },
+    });
+
+  // DELETE is a registered, credentialed, cross-origin parent route (safe-zone deletion), and the
+  // platform-admin settings routes are PUT; both mandate a preflight, so omitting either method
+  // from the allowlist returns 403 before the route is ever reached.
+  for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+    const allowed = await preflight(method);
+    assert.equal(allowed.statusCode, 204, `expected ${method} preflight to be allowed`);
+    assert.equal(allowed.headers['access-control-allow-origin'], 'http://localhost:4000');
+    assert.ok(
+      allowed.headers['access-control-allow-methods'].split(', ').includes(method),
+      `expected ${method} to be advertised in Access-Control-Allow-Methods`,
+    );
+  }
+
+  // The allowlist stays an allowlist: methods no client sends are still refused.
+  for (const method of ['TRACE', 'CONNECT', 'PROPFIND']) {
+    const rejected = await preflight(method);
+    assert.equal(rejected.statusCode, 403, `expected ${method} preflight to be rejected`);
+  }
+
+  await app.close();
+});

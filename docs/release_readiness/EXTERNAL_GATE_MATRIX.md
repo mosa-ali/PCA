@@ -4,9 +4,12 @@ These are gates this repository-editing lane cannot close by writing code
 or docs — each requires a real human decision, real hardware, or a real
 external review outside the source tree. Machine-readable state lives in
 [`external_gate_matrix.json`](./external_gate_matrix.json); this file is
-the human-readable explanation and is generated to stay consistent with it
-(see `tooling/release/Invoke-ReleaseEvidenceCollection.ps1`, which prints
-both).
+a hand-maintained human-readable summary of the ORIGINAL SEVEN gates only.
+It is NOT generated and NOT exhaustive: the JSON now holds 33 gates and no
+generator for this file exists. Read the JSON for the authoritative list --
+`tooling/release/Invoke-ReleaseGateCheck.ps1` evaluates that JSON, not this
+table, and treats any status other than `CLOSED` as blocking for every gate
+in it with no release-scope filter.
 
 | Gate ID | Status | What closes it |
 |---|---|---|

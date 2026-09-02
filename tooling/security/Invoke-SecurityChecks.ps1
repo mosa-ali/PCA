@@ -81,7 +81,10 @@ foreach ($TrackedPath in $TrackedFiles) {
   if ($null -eq $Content) { continue }
 
   # Tool implementations and architecture prose legitimately describe denied patterns.
-  $IsPolicyOrFixture = $NormalPath -match '^(docs/|tooling/(security|quality|test-fixtures)/)'
+  # .agent-runtime/manifests/ is audit prose in the same category as docs/ (requirement registers
+  # that quote the behaviour they audit, e.g. "log (PCA-FR-124) ... MUST trigger the parent"); the
+  # prefix is deliberately narrow -- the rest of .agent-runtime/ is still scanned.
+  $IsPolicyOrFixture = $NormalPath -match '^(docs/|\.agent-runtime/manifests/|tooling/(security|quality|test-fixtures)/)'
   if (-not $IsPolicyOrFixture) {
     foreach ($Pattern in $SecretPatterns + $RecoveryPatterns) {
       if ($Content -match $Pattern) {

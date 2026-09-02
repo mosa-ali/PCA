@@ -3,6 +3,12 @@
 // crypto-review both pass (previously hardcoded throws) -- they construct
 // the right SchedulePolicyPlaintextDefinition and submit it through the
 // authoring -> transport chain, returning a PENDING-only result.
+//
+// Also covers the recipient-device-id fix: the gateway used to address
+// every envelope to a fabricated `device-${childId}` id (impossible against
+// backend/migrations/0001_mysql_baseline.sql:157's `device_id CHAR(36)`).
+// It now resolves the REAL DeviceProtectionStatus.deviceId through
+// DeviceStatusClient, and refuses to publish at all when none exists.
 import { describe, expect, it, vi } from 'vitest';
 
 // The crypto gate is a hardcoded, non-configurable `false` in source (see
@@ -20,6 +26,8 @@ const { RealParentFamilyDataGateway } = await import('../../src/api/real/realPar
 const { createLocalFamilyDataStore } = await import('../../src/security/localFamilyDataStore');
 type TrustedBrowserProvider = import('../../src/domain/trustedBrowser').TrustedBrowserProvider;
 type TrustedBrowserSnapshot = import('../../src/domain/trustedBrowser').TrustedBrowserSnapshot;
+type DeviceStatusClient = import('../../src/api/interfaces').DeviceStatusClient;
+type DeviceProtectionStatus = import('../../src/domain/types').DeviceProtectionStatus;
 type SchedulePolicyAuthoring = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyAuthoring;
 type SchedulePolicyEnvelopeInput = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyEnvelopeInput;
 type SchedulePolicyPlaintextDefinition = import('../../src/api/schedulePolicyAuthoring').SchedulePolicyPlaintextDefinition;
@@ -60,16 +68,53 @@ class StubTrustedBrowserProvider implements TrustedBrowserProvider {
   }
 }
 
+/**
+ * A real device id shape: 36 characters, exactly what
+ * backend/migrations/0001_mysql_baseline.sql:157 declares
+ * (`device_id CHAR(36)`). The old fabricated `device-child-1` was 14
+ * characters of a shape no real row can ever hold.
+ */
+const REAL_DEVICE_ID = '3f2b9c1e-8a44-4d6f-9b21-5c7e0a1d2f83';
+
+function deviceRecord(childId: string, deviceId: string): DeviceProtectionStatus {
+  return {
+    childId,
+    deviceId,
+    deviceLabel: 'Test phone',
+    osFamily: 'ANDROID',
+    appVersion: '1.4.0',
+    protectionState: 'PROTECTED',
+    lastAcknowledgedPolicyRevision: 14,
+    trustSetEpoch: 4,
+    keyEpoch: 4,
+  };
+}
+
+function stubDeviceStatus(records: DeviceProtectionStatus[]): DeviceStatusClient {
+  return {
+    async listDeviceStatuses(childId?: string) {
+      return childId ? records.filter((record) => record.childId === childId) : records;
+    },
+    async getDeviceStatus(deviceId: string) {
+      return records.find((record) => record.deviceId === deviceId) ?? null;
+    },
+  };
+}
+
 const OPAQUE_ENVELOPE: SchedulePolicyEnvelopeInput = {
-  recipientDeviceId: 'device-child-1',
+  recipientDeviceId: REAL_DEVICE_ID,
   ciphertextB64: 'YWJjZGVmZ2g',
   nonceB64: 'MDEyMzQ1Njc4OTAxMjM0NQ',
   keyEpoch: 3,
 };
 
-function fakeAuthoring(capturedDefinitions: SchedulePolicyPlaintextDefinition[]): SchedulePolicyAuthoring {
+function fakeAuthoring(
+  capturedDefinitions: SchedulePolicyPlaintextDefinition[],
+  capturedRecipients: string[] = [],
+): SchedulePolicyAuthoring {
   return {
-    async encrypt(_familyId, _recipientDeviceId, definition) {
+    async encrypt(_familyId, recipientDeviceId, definition) {
+      capturedRecipients.push(recipientDeviceId);
       capturedDefinitions.push(definition);
       return OPAQUE_ENVELOPE;
     },
@@ -100,6 +145,7 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
         fakeTransport(submissions),
         'http://localhost',
         createLocalFamilyDataStore(),
+        stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID)]),
       );
 
       const result = await gateway.updateScreenTime('child-1', { continuousUseLimitMinutes: 45, breakDurationMinutes: 30 });
@@ -128,6 +174,7 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
         fakeTransport(submissions),
         'http://localhost',
         createLocalFamilyDataStore(),
+        stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID)]),
       );
 
       const result = await gateway.updateAppRule('child-1', 'app-games', { allowed: false, dailyLimitMinutes: 15 });
@@ -148,6 +195,7 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
       fakeTransport([]),
       'http://localhost',
       createLocalFamilyDataStore(),
+      stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID)]),
     );
     await expect(gateway.updateScreenTime('child-1', { continuousUseLimitMinutes: 45 })).rejects.toThrow(/both continuousUseLimitMinutes and breakDurationMinutes/);
   });
@@ -169,10 +217,91 @@ describe('RealParentFamilyDataGateway schedule-policy writes (Writer P0-B)', () 
         fakeTransport([]),
         'http://localhost',
         createLocalFamilyDataStore(),
+        stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID)]),
       );
       await expect(gateway.updateScreenTime('child-1', { continuousUseLimitMinutes: 45, breakDurationMinutes: 30 })).rejects.toThrow('CRYPTO_REVIEW_REQUIRED');
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('RealParentFamilyDataGateway recipient device id is real, never fabricated', () => {
+  it('addresses the envelope to the REAL DeviceProtectionStatus.deviceId, never a `device-${childId}` synthetic id', async () => {
+    const definitions: SchedulePolicyPlaintextDefinition[] = [];
+    const recipients: string[] = [];
+    const submissions: Array<{ familyId: string; childProfileId: string; envelope: SchedulePolicyEnvelopeInput }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ familyId: 'family-1' }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    try {
+      const gateway = new RealParentFamilyDataGateway(
+        new StubTrustedBrowserProvider(),
+        fakeAuthoring(definitions, recipients),
+        fakeTransport(submissions),
+        'http://localhost',
+        createLocalFamilyDataStore(),
+        stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID)]),
+      );
+
+      await gateway.updateScreenTime('child-1', { continuousUseLimitMinutes: 45, breakDurationMinutes: 30 });
+
+      expect(recipients).toEqual([REAL_DEVICE_ID]);
+      expect(recipients[0]).not.toMatch(/^device-/);
+      // 36 characters exactly -- what `device_id CHAR(36)` can actually hold.
+      expect(recipients[0]).toHaveLength(36);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('refuses to publish at all when no real device id resolves for the child -- never an empty or synthesized recipient', async () => {
+    const definitions: SchedulePolicyPlaintextDefinition[] = [];
+    const recipients: string[] = [];
+    const submissions: Array<{ familyId: string; childProfileId: string; envelope: SchedulePolicyEnvelopeInput }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ familyId: 'family-1' }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    try {
+      const gateway = new RealParentFamilyDataGateway(
+        new StubTrustedBrowserProvider(),
+        fakeAuthoring(definitions, recipients),
+        fakeTransport(submissions),
+        'http://localhost',
+        createLocalFamilyDataStore(),
+        // A device belonging to a DIFFERENT child: this child has none.
+        stubDeviceStatus([deviceRecord('child-other', REAL_DEVICE_ID)]),
+      );
+
+      await expect(gateway.updateScreenTime('child-1', { continuousUseLimitMinutes: 45, breakDurationMinutes: 30 })).rejects.toThrow(
+        /no enrolled device is known for child "child-1"/,
+      );
+      expect(recipients).toEqual([]);
+      expect(submissions).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('resolveChildDeviceId', () => {
+  it('returns the real device id for the requested child only', async () => {
+    const { resolveChildDeviceId } = await import('../../src/api/real/realParentFamilyDataGateway');
+    const deviceStatus = stubDeviceStatus([deviceRecord('child-1', REAL_DEVICE_ID), deviceRecord('child-2', '11111111-2222-3333-4444-555555555555')]);
+    await expect(resolveChildDeviceId(deviceStatus, 'child-2')).resolves.toBe('11111111-2222-3333-4444-555555555555');
+  });
+
+  it('throws honestly rather than returning a fabricated or empty id when the child has no device', async () => {
+    const { resolveChildDeviceId } = await import('../../src/api/real/realParentFamilyDataGateway');
+    await expect(resolveChildDeviceId(stubDeviceStatus([]), 'child-1')).rejects.toThrow(/Refusing to fabricate one/);
+  });
+
+  it('ignores a record carrying an empty device id rather than passing "" on as a recipient', async () => {
+    const { resolveChildDeviceId } = await import('../../src/api/real/realParentFamilyDataGateway');
+    await expect(resolveChildDeviceId(stubDeviceStatus([deviceRecord('child-1', '')]), 'child-1')).rejects.toThrow(
+      /no enrolled device is known for child "child-1"/,
+    );
   });
 });

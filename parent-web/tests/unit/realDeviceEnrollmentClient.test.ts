@@ -57,10 +57,78 @@ describe('RealDeviceEnrollmentClient', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('the default constructor (no token accessor supplied) also honestly rejects rather than silently omitting the header', async () => {
+    it('the default constructor (no token accessor, no cookie mode) also honestly rejects rather than silently omitting the header', async () => {
       const client = new RealDeviceEnrollmentClient(apiBaseUrl);
       await expect(client.listInvitations('fam-1')).rejects.toMatchObject({ code: 'SERVICE_SESSION_UNAVAILABLE' });
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // backend/src/auth/fastifyAuthPlugin.ts's createRequireServiceSession
+  // accepts EITHER the Bearer header OR the `pca_family_session` HttpOnly
+  // cookie (and, for non-GET, the double-submit CSRF header named in
+  // backend/src/parentaccount/cookies.ts). This client used to short-circuit
+  // every browser call before fetch on the false premise that only Bearer
+  // was accepted.
+  describe('cookie-session transport (the browser wiring)', () => {
+    const cookieClient = () => new RealDeviceEnrollmentClient(apiBaseUrl, undefined, true);
+
+    beforeEach(() => {
+      document.cookie = 'pca_family_csrf=; Max-Age=0; path=/';
+    });
+
+    afterEach(() => {
+      document.cookie = 'pca_family_csrf=; Max-Age=0; path=/';
+    });
+
+    it('listInvitations genuinely calls the route with browser credentials and no bearer header', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, []));
+
+      await cookieClient().listInvitations('fam-1');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${apiBaseUrl}/v1/families/fam-1/invitations`);
+      expect(init.credentials).toBe('include');
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
+      expect(headers['X-PCA-CSRF-Token']).toBeUndefined();
+    });
+
+    it('a mutating call sends the double-submit CSRF header carrying the pca_family_csrf cookie value', async () => {
+      document.cookie = 'pca_family_csrf=csrf-token-value; path=/';
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(201, {
+          invitationId: 'inv-1',
+          familyId: 'fam-1',
+          platform: 'ANDROID',
+          requestedProtectionMode: 'ANDROID_STANDARD',
+          status: 'PENDING',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-01T00:15:00.000Z',
+          openedAt: null,
+          redeemedAt: null,
+          revokedAt: null,
+          rawInvitationToken: 'raw-invite-token-xyz',
+        }),
+      );
+
+      await cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.method).toBe('POST');
+      expect(init.credentials).toBe('include');
+      expect((init.headers as Record<string, string>)['X-PCA-CSRF-Token']).toBe('csrf-token-value');
+    });
+
+    it('an authenticated-but-unauthorized caller now receives the server\'s own honest 403, not a client-side excuse', async () => {
+      document.cookie = 'pca_family_csrf=csrf-token-value; path=/';
+      fetchMock.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden', code: 'MANAGED_DEVICE_LIMIT_REACHED' }));
+
+      await expect(
+        cookieClient().createInvitation('fam-1', { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', serverCode: 'MANAGED_DEVICE_LIMIT_REACHED', httpStatus: 403 });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 

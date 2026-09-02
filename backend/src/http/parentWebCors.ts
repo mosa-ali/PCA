@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export const DEFAULT_PARENT_WEB_ORIGIN = 'http://localhost:4000';
 
-const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'POST', 'PATCH', 'OPTIONS']);
+const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
 const ALLOWED_HEADERS = new Set(['accept', 'content-type', 'authorization', 'x-pca-csrf-token', 'x-pca-actor-device-id']);
 
 function normalizeOrigin(value: string): string {

@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { config } from '../../config/env';
 import { cookieSessionFamilyId } from '../../api/real/realBillingClient';
+import { resolveChildDeviceId } from '../../api/real/realParentFamilyDataGateway';
 import type { SafeZone } from '../../api/interfaces';
 import {
   SafeZonePolicyAuthoringError,
@@ -34,7 +35,17 @@ function SafeZoneAuthoring({ childId }: { childId: string }) {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
-  const recipientEndpointId = `device-${childId}`;
+
+  // The child's REAL device id, resolved from DeviceStatusClient. This was
+  // `device-${childId}`, a synthetic id that can never match a real device
+  // row -- so every safe zone was both filtered by and addressed to a
+  // recipient that cannot exist. When no device resolves, resolveChildDeviceId
+  // throws and that failure is surfaced below rather than substituting an
+  // invented or empty recipient.
+  const { data: recipientEndpointId, error: recipientDeviceError } = useAsync(
+    () => resolveChildDeviceId(clients.deviceStatus, childId),
+    [childId],
+  );
 
   // Demo/dev mode has no authenticated family-session cookie to resolve a
   // real family id from -- same honest posture as Devices.tsx's
@@ -48,7 +59,7 @@ function SafeZoneAuthoring({ childId }: { childId: string }) {
     [clients.isFixtureBacked],
   );
   const { data: zones, loading, error, reload } = useAsync(async (): Promise<SafeZone[] | null> => {
-    if (!familyId) return null;
+    if (!familyId || !recipientEndpointId) return null;
     const all = await clients.safeZones.list(familyId);
     return all.filter((zone) => zone.recipientEndpointId === recipientEndpointId);
   }, [familyId, recipientEndpointId]);
@@ -83,8 +94,13 @@ function SafeZoneAuthoring({ childId }: { childId: string }) {
     }
     setSaving(true);
     try {
+      // Re-resolved here (rather than reusing a possibly-unsettled render
+      // value) so a save is never addressed to a synthesized or empty
+      // recipient; resolveChildDeviceId throws honestly when no real device
+      // id exists, and that surfaces as safeZoneSaveFailed below.
+      const recipientDeviceId = recipientEndpointId ?? (await resolveChildDeviceId(clients.deviceStatus, childId));
       const publisher = new VerifiedFamilySafeZonePolicyPublisher(clients.safeZonePolicyAuthoring, clients.safeZones);
-      await runFamilyAction('EDIT_CHILD_POLICY', () => publisher.publish(familyId, recipientEndpointId, definition));
+      await runFamilyAction('EDIT_CHILD_POLICY', () => publisher.publish(familyId, recipientDeviceId, definition));
       setLabel('');
       setLatitude('');
       setLongitude('');
@@ -122,8 +138,9 @@ function SafeZoneAuthoring({ childId }: { childId: string }) {
       <h3>{t('location.safeZoneList')}</h3>
       <p>{t('location.safeZoneContentEncrypted')}</p>
       {loading && <LoadingState />}
+      {recipientDeviceError && <ErrorState message={recipientDeviceError} />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {!loading && !error && (!zones || zones.length === 0) && <p role="status">{t('location.safeZoneEmpty')}</p>}
+      {!loading && !error && !recipientDeviceError && (!zones || zones.length === 0) && <p role="status">{t('location.safeZoneEmpty')}</p>}
       {!loading && !error && zones && zones.length > 0 && (
         <ul className="plain-list">
           {zones.map((zone) => (

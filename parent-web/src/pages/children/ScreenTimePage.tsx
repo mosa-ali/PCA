@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
+import { resolveChildDeviceId } from '../../api/real/realParentFamilyDataGateway';
 import { useAsync } from '../../hooks/useAsync';
 import { useIsOnline } from '../../hooks/useIsOnline';
 import { usePolicyStatus } from '../../hooks/usePolicyStatus';
@@ -40,7 +41,11 @@ export default function ScreenTimePage() {
   const online = useIsOnline();
   const policyStatus = usePolicyStatus();
   const { data, loading, error, reload } = useAsync<ScreenTimePageData>(async () => {
-    const deviceId = `device-${childId}`;
+    // The child's REAL device id, never a `device-${childId}` synthetic one
+    // -- throws honestly when no device is enrolled (see
+    // resolveChildDeviceId) rather than reporting sync/delivery state for a
+    // device that cannot exist.
+    const deviceId = await resolveChildDeviceId(clients.deviceStatus, childId);
     const [screenTime, dashboard, device, lastSuccessfulSyncUtc, pendingDelivery] = await Promise.all([
       clients.parentFamilyData.getScreenTime(childId),
       clients.parentFamilyData.getDashboard(),
