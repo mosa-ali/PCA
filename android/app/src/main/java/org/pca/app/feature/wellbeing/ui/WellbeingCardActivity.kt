@@ -50,6 +50,14 @@ class WellbeingCardActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val graph = (application as PcaApplication).graph
         val pending = graph.pendingWellbeingCardStore.load()
+        // Consumption happens HERE, at load time, not in onDismiss below: a NEXT_UNLOCK_CARD
+        // entry's whole job is to survive until this Activity is actually shown, and it has now
+        // been shown -- gating the clear on the user later pressing the in-app Dismiss button
+        // specifically would leave a stale entry (and this Activity re-launching on every future
+        // unlock) if the child instead presses system-back or Home without touching Dismiss.
+        if (pending?.delivery == WellbeingNudgeDelivery.NEXT_UNLOCK_CARD) {
+            graph.pendingWellbeingCardStore.clear()
+        }
         val policy = graph.wellbeingPolicyStore.load()
         val resolver = WellbeingMessageResolver(this)
 
@@ -70,15 +78,12 @@ class WellbeingCardActivity : ComponentActivity() {
                         graph.recordWellbeingFeedback(suggestion.suggestionId, feedback)
                     },
                     onDismiss = {
-                        // Only a NEXT_UNLOCK_CARD entry was ever meant to persist beyond this
-                        // single showing (WELL-12: it survives specifically until the next real
-                        // unlock) -- clearing it here, gated on that being what this card actually
-                        // was, matches PCA-WELL-1's own dismiss-is-never-penalized contract without
-                        // silently discarding an IN_APP_CARD/BREAK_SHIELD_CARD entry's record for
-                        // reasons unrelated to the child's own dismissal.
-                        if (pending?.delivery == WellbeingNudgeDelivery.NEXT_UNLOCK_CARD) {
-                            graph.pendingWellbeingCardStore.clear()
-                        }
+                        // Consumption (clearing a NEXT_UNLOCK_CARD entry) already happened above,
+                        // at load time -- not gated here, so a child pressing system-back/Home
+                        // instead of this in-app Dismiss button still gets the same one-time
+                        // showing rather than a stale entry re-launching this Activity on every
+                        // future unlock (PCA-WELL-1's dismiss-is-never-penalized contract: leaving
+                        // without pressing Dismiss must never behave worse than pressing it).
                         finish()
                     },
                 )
