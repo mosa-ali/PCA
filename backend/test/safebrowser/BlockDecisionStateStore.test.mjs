@@ -65,3 +65,46 @@ test('record rejects an implausible URL', async () => {
     (err) => err instanceof SafeBrowserError && err.code === 'INVALID_URL',
   );
 });
+
+test('listRecentForFamily returns only the requesting family\'s decisions, newest first', async () => {
+  const repository = new InMemoryBlockDecisionStateRepository();
+  const service = new BlockDecisionStateService(repository, () => new Date('2026-01-01T00:00:00Z'));
+  await service.record('fam-1', 'prof-1', 'https://a.example/', null, decision({ domain: 'a.example' }));
+  const service2 = new BlockDecisionStateService(repository, () => new Date('2026-01-02T00:00:00Z'));
+  await service2.record('fam-1', 'prof-1', 'https://b.example/', null, decision({ domain: 'b.example' }));
+  const otherFamilyService = new BlockDecisionStateService(repository, () => new Date('2026-01-03T00:00:00Z'));
+  await otherFamilyService.record('fam-2', 'prof-9', 'https://c.example/', null, decision({ domain: 'c.example' }));
+
+  const recent = await repository.listRecentForFamily('fam-1', null, 10);
+  assert.equal(recent.length, 2);
+  assert.equal(recent[0].domain, 'b.example');
+  assert.equal(recent[1].domain, 'a.example');
+});
+
+test('listRecentForFamily narrows to one child when profileId is supplied', async () => {
+  const repository = new InMemoryBlockDecisionStateRepository();
+  const service = new BlockDecisionStateService(repository);
+  await service.record('fam-1', 'prof-1', 'https://a.example/', null, decision({ domain: 'a.example' }));
+  await service.record('fam-1', 'prof-2', 'https://b.example/', null, decision({ domain: 'b.example' }));
+
+  const recent = await repository.listRecentForFamily('fam-1', 'prof-2', 10);
+  assert.equal(recent.length, 1);
+  assert.equal(recent[0].domain, 'b.example');
+});
+
+test('listRecentForFamily caps results at the supplied limit', async () => {
+  const repository = new InMemoryBlockDecisionStateRepository();
+  const service = new BlockDecisionStateService(repository);
+  for (let i = 0; i < 5; i += 1) {
+    await service.record('fam-1', 'prof-1', `https://site${i}.example/`, null, decision({ domain: `site${i}.example` }));
+  }
+
+  const recent = await repository.listRecentForFamily('fam-1', null, 2);
+  assert.equal(recent.length, 2);
+});
+
+test('listRecentForFamily returns an empty array for a family with no recorded decisions', async () => {
+  const repository = new InMemoryBlockDecisionStateRepository();
+  const recent = await repository.listRecentForFamily('fam-empty', null, 10);
+  assert.deepEqual(recent, []);
+});

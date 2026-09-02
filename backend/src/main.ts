@@ -194,6 +194,28 @@ import { FreeAccessAcquisitionPolicy } from './parentaccount/freeaccess/FreeAcce
 import { MySqlSettlementRepository } from './billing/settlement/MySqlSettlementRepository.js';
 import { SettlementService } from './billing/settlement/SettlementService.js';
 import { PlatformAdminSettlementService } from './platformadmin/settlement/PlatformAdminSettlementService.js';
+// PCA product-completion programme: parentpanel family dashboard wiring.
+// DashboardCardProvider previously had ZERO concrete implementations
+// anywhere in this codebase, and DashboardAggregatorService (fully built
+// and tested) had zero real callers -- both safebrowser's
+// BlockDecisionStateService and youtube's ModeTransitionService/
+// ModeAUsageReportService were themselves also unwired to any route. This
+// closes all three together: WebFilteringDashboardCardProvider adapts
+// BlockDecisionStateService's already-recorded block/review decisions;
+// YouTubeDashboardCardProvider adapts ModeTransitionService's real,
+// persisted per-profile mode state (Mode B stays out of scope -- see that
+// provider's own doc comment). Both repositories are in-memory reference
+// implementations, matching this codebase's existing posture for
+// device-local/no-durable-store-yet domains (see BlockDecisionStateStore.ts's
+// and ModeTransitionService.ts's own doc comments) -- never a new MySQL
+// table invented here.
+import { InMemoryBlockDecisionStateRepository } from './safebrowser/BlockDecisionStateStore.js';
+import { InMemoryProfileModeRepository, ModeTransitionService } from './youtube/ModeTransitionService.js';
+import { InMemoryModeBFeatureFlagRepository } from './youtube/ModeBFeatureFlagStore.js';
+import { ModeAUsageReportService } from './youtube/ModeAUsageReportService.js';
+import { DashboardAggregatorService } from './parentpanel/DashboardAggregatorService.js';
+import { WebFilteringDashboardCardProvider } from './parentpanel/WebFilteringDashboardCardProvider.js';
+import { YouTubeDashboardCardProvider } from './parentpanel/YouTubeDashboardCardProvider.js';
 
 /**
  * PCA-ADD-IDENT-005: no real production email provider is selected this
@@ -684,7 +706,25 @@ async function start(): Promise<void> {
   // constructed copy.
   const deviceSessionService = new DeviceSessionService(deviceAuthService, new InMemoryDeviceSessionRepository(), () => new Date(), familyAuditService);
 
+  // parentpanel family dashboard (doc 18 Section 6): see this file's own
+  // import-block comment above for the full rationale. blockDecisionStateRepository
+  // is the SAME kind of Safe Browser store a future BlockDecisionStateService
+  // (SafeBrowserNavigationPolicy's own recording dependency) would write
+  // through once THAT surface is itself wired to a route (a separate,
+  // still-open gap this task does not close, per this task's own scope) --
+  // this dashboard card only ever reads it.
+  const blockDecisionStateRepository = new InMemoryBlockDecisionStateRepository();
+  const profileModeRepository = new InMemoryProfileModeRepository();
+  const modeBFeatureFlagRepository = new InMemoryModeBFeatureFlagRepository();
+  const modeTransitionService = new ModeTransitionService(profileModeRepository, modeBFeatureFlagRepository);
+  const modeAUsageReportService = new ModeAUsageReportService();
+  const dashboardAggregatorService = new DashboardAggregatorService([
+    new WebFilteringDashboardCardProvider(blockDecisionStateRepository),
+    new YouTubeDashboardCardProvider(modeTransitionService, modeAUsageReportService),
+  ]);
+
   const app = buildServer({
+    dashboardAggregatorService,
     authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,

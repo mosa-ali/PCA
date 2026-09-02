@@ -149,6 +149,13 @@ import type { FamilyAuditEventLedger } from '../familyrbac/FamilyAuditEventLedge
 import type { ProtectionAlertLedger } from '../alerts/ProtectionAlertLedger.js';
 import type { BonusGrantLedger } from '../childrequests/BonusGrantLedger.js';
 import type { ChildProfileMembershipResolver } from '../childprofiles/ChildProfileMembershipResolver.js';
+// parentpanel family dashboard: a ninth structurally independent surface,
+// registered exactly like every other domain's registerXRoutes call --
+// see dashboardRoutes.ts's own header for why this is a plain
+// parent-session read (no actor-device binding) unlike
+// familyAuditEventRoutes.ts/protectionAlertRoutes.ts above.
+import { registerDashboardRoutes } from './routes/dashboardRoutes.js';
+import type { DashboardAggregatorService } from '../parentpanel/DashboardAggregatorService.js';
 
 export interface ServerDependencies {
   authService: AuthService;
@@ -280,6 +287,8 @@ export interface ServerDependencies {
   familyAuditEventLedger?: FamilyAuditEventLedger;
   /** PCA product-completion programme (/security/status): see registerProtectionAlertRoutes below. Optional so existing buildServer() test callers that don't exercise the protection-alerts route need no change. */
   protectionAlertLedger?: ProtectionAlertLedger;
+  /** parentpanel family dashboard: see registerDashboardRoutes below. Optional so existing buildServer() test callers that don't exercise the dashboard route need no change; registerDashboardRoutes itself registers nothing when this is omitted, never a silent empty-card response. */
+  dashboardAggregatorService?: Pick<DashboardAggregatorService, 'getDashboard'>;
 }
 
 /**
@@ -519,6 +528,10 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     parentAccountService: deps.parentAccountService,
     deviceSessionService: deps.deviceSessionService,
     protectionAlertLedger: deps.protectionAlertLedger,
+  });
+  registerDashboardRoutes(app, {
+    parentAccountService: deps.parentAccountService,
+    dashboardAggregatorService: deps.dashboardAggregatorService,
   });
 
   return app;

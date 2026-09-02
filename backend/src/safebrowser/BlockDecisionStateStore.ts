@@ -14,6 +14,21 @@ import type { WebDecision } from '../web/types.js';
 export interface BlockDecisionStateRepository {
   put(state: BlockDecisionState): Promise<void>;
   get(id: BlockDecisionId): Promise<BlockDecisionState | null>;
+  /**
+   * parentpanel dashboard support (doc 18 Section 6, WEB_FILTERING card):
+   * the most recent decisions for a family, newest first, capped at
+   * `limit`. `profileId === null` aggregates every child in the family --
+   * there is no readable central child-profile directory anywhere in this
+   * codebase to enumerate children by (see
+   * childprofiles/ChildProfileMembershipResolver.ts's own doc comment), so
+   * a family-wide caller filters on `familyId` alone rather than fanning
+   * out one call per child; `profileId` supplied narrows to one child.
+   * Every persisted BlockDecisionState is already a BLOCK/REVIEW outcome
+   * only (BlockDecisionStateService.record's own doc comment: an ALLOW
+   * outcome is never persisted here), so this never needs its own outcome
+   * filter.
+   */
+  listRecentForFamily(familyId: OpaqueFamilyId, profileId: OpaqueProfileId | null, limit: number): Promise<BlockDecisionState[]>;
 }
 
 export class InMemoryBlockDecisionStateRepository implements BlockDecisionStateRepository {
@@ -25,6 +40,14 @@ export class InMemoryBlockDecisionStateRepository implements BlockDecisionStateR
 
   async get(id: BlockDecisionId): Promise<BlockDecisionState | null> {
     return this.states.get(id) ?? null;
+  }
+
+  async listRecentForFamily(familyId: OpaqueFamilyId, profileId: OpaqueProfileId | null, limit: number): Promise<BlockDecisionState[]> {
+    const matches = [...this.states.values()].filter(
+      (state) => state.familyId === familyId && (profileId === null || state.profileId === profileId),
+    );
+    matches.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return matches.slice(0, Math.max(0, limit));
   }
 }
 
