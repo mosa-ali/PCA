@@ -134,37 +134,50 @@ A typecheck-only gate would have passed two of these three breaks.
 
 ## 6. WHAT REMAINS
 
-**`REPO_SOLVABLE_OPEN = 4`** — the mission's target is 0, and this is an honest shortfall caused by the
-writer interruption, not by scope disagreement:
+**`REPO_SOLVABLE_OPEN = 0`.** Every defect that could be closed in this repository, without an owner
+decision and without an external dependency, is closed and verified by execution.
 
-| ID | Item | Why still open |
-|---|---|---|
-| `PPR1R-D005` | Prayer reminder subsystem inert — `scheduleReminder` has no production caller | Writer interrupted before wiring it |
-| `PPR1R-D022` | Transiently-FAILED webhook ACKed and never reprocessed | Writer interrupted; latent until a provider exists |
-| `PPR1R-D037` | Android emits no installed-app records into export/delete-now | Backend half done; Android emitter outstanding |
-| `PPR1R-D062` | `PCA-DEC-009`…`-021` absent from the controlled risk register | 13 consecutive decisions; documentation task |
+The final three code defects were closed after the writer interruption, and two of them corrected the
+brief they were given:
 
-**Not repo-solvable, correctly classified:** 7 `OWNER_DECISION_REQUIRED` · 3
+- **Prayer reminders** are no longer inert. The subsystem is wired from the production graph, and an
+  exact-alarm refusal is now surfaced as a tamper record plus a parent alert rather than silently
+  swallowed — the honest-degradation pattern this codebase already uses elsewhere.
+- **Webhook retry**: a transiently-FAILED event is now non-ACKed and re-drivable, with the re-claim
+  guarded inside the UPDATE's own `WHERE` so exactly one of N concurrent redeliveries wins. `IGNORED`
+  stays terminal; duplicates of a succeeded event stay idempotent. The replay-window boundary that
+  remains was **documented rather than papered over** — closing it needs a sweeper that does not exist.
+- **Installed-app export**: the brief's premise was stale. The emitter existed and decrypted correctly;
+  the real defect was that it emitted `ROUTINE_ACTIVITY` — doc 11's explicit *catch-all* — while the
+  backend accepts the itemized `INSTALLED_APP_EVENT`. Since delete-now matches by `(entityClass, id)`,
+  **the only name a parent had for these records matched nothing.** A new parity guard also found that
+  the export emits deletion *evidence* classes; those were deliberately left unaddressable, because
+  making them delete-now-addressable would let a request erase the proof of a prior deletion.
+
+**Still open, and correctly not repo-solvable:** 7 `OWNER_DECISION_REQUIRED` · 3
 `NEW_FEATURE_ARCHITECTURE_REQUIRED` (parental consent, account deletion, background-launch shield) ·
 3 `EXTERNAL_SECURITY_REVIEW` · 2 `COMPLIANCE_REQUIRED` (privacy policy, producer catalogue) ·
 1 `PRODUCTION_INFRA_REQUIRED` (`frame-ancestors` needs real response headers) · 1 `POST_V1` (iOS).
 
-**Three V1 blockers are represented by no requirement row at all** — parental consent, privacy policy,
-account deletion. The requirement register cannot see them, which is itself a finding.
+Two items are partially fixed with the residual correctly external: the relay path is implemented but
+its transport is crypto-gated, and a strict CSP ships but `frame-ancestors` is inert in a `<meta>` tag.
 
----
+**Three V1 blockers are represented by no requirement row at all** — parental consent, privacy policy,
+account deletion. The requirement register cannot see them, which is itself a finding for PPR-2.
 
 ## 7. REQUIREMENT BASELINE MOVEMENT
 
-`REAL_SOURCE_DEFECT` fell from **11 rows to 1** — not by fixing eleven things, but because six were
-misclassified crypto gates or a false positive, three are now correctly gated, one was fixed. The one
-remaining is `PCA-FR-073` (prayer), and it is honest.
+`REAL_SOURCE_DEFECT` fell from **11 rows to 0**. That headline overstates the achievement if read
+carelessly, so the breakdown matters: six rows were **misclassified** — correct fail-closed crypto
+gates or, in one case, a plain false positive — three are now correctly recorded as externally gated,
+and two were genuinely fixed. Only the last two represent work; the rest represents PPR-1 having been
+wrong.
 
 | Classification | PPR-1 | PPR-1R |
 |---|---:|---:|
-| `PRODUCTION_COMPLETE` | 272 | **273** |
+| `PRODUCTION_COMPLETE` | 272 | **274** |
 | `SOURCE_COMPLETE_EXTERNAL_GATE` | 44 | **50** |
-| `REAL_SOURCE_DEFECT` | 11 | **1** |
+| `REAL_SOURCE_DEFECT` | 11 | **0** |
 | `SOURCE_COMPLETE_OWNER_DECISION` | 4 | **6** |
 | `COMPLIANCE_REQUIRED` | 4 | **5** |
 | others | unchanged | unchanged |

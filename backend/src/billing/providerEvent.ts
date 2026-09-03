@@ -80,6 +80,33 @@ export class ProviderEventRepository {
   async updateProcessingStatus(providerEventRowId: string, status: ProviderEventProcessingStatus): Promise<void> {
     await runInTransaction((conn) => execute(conn, `UPDATE billing_provider_events SET processing_status = ? WHERE provider_event_row_id = ?`, [status, providerEventRowId]));
   }
+
+  /**
+   * PPR1R-D022: atomically re-claims a transiently-FAILED event row for
+   * reprocessing, returning true ONLY for the single caller that won the
+   * claim.
+   *
+   * `FAILED` is the pipeline's *retryable* terminal-for-now status (a
+   * provider query threw, the DB blipped) as opposed to `IGNORED`, which is
+   * genuinely terminal. A provider redelivery of that same event id hits
+   * the DUPLICATE path, so without this the business logic could never
+   * re-run and one network blip permanently lost a payment confirmation.
+   *
+   * The guard is in the UPDATE's own WHERE clause, never a
+   * SELECT-then-UPDATE (TOCTOU) pattern -- the same discipline
+   * `recordIfNew` above uses for the initial claim. Two concurrent
+   * redeliveries of the same failed event therefore produce exactly one
+   * `true`: the loser sees zero affected rows and must not re-run anything.
+   * `PROCESSED` and `IGNORED` rows are never matched by this statement, so
+   * a duplicate of a succeeded event stays idempotent and an IGNORED event
+   * stays terminal.
+   */
+  async claimFailedForReprocessing(providerEventRowId: string): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `UPDATE billing_provider_events SET processing_status = 'RECEIVED' WHERE provider_event_row_id = ? AND processing_status = 'FAILED'`, [providerEventRowId]),
+    );
+    return rowCount === 1;
+  }
 }
 
 /** Thin service wrapper -- ProviderEvent persistence has no RBAC gate of its own (it is written by an internal provider-adapter integration point, not directly by a Platform Administration operator action), consistent with `PCA-ADD-BILL-011`'s "foundation" scope. */

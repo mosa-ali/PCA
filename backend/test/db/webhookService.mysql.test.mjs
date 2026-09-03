@@ -281,6 +281,182 @@ test('MySQL: matching amount AND currency confirms the attempt exactly once, wit
   assert.equal(Number(txRows[0].n), 1);
 });
 
+// --- PPR1R-D022: a transiently-FAILED event must stay re-drivable ---
+//
+// Before this fix, a transient failure (e.g. provider.queryPayment throwing
+// on a network blip) was recorded FAILED and then ACKed 200. The provider's
+// redelivery of that same event id hit the DUPLICATE idempotency path,
+// which returned a stable ACK without ever re-running the business logic --
+// so one blip permanently lost a payment confirmation and its entitlement
+// activation. These tests pin all three halves of the corrected boundary:
+// FAILED is re-drivable, IGNORED stays terminal, PROCESSED stays idempotent.
+
+/**
+ * A fake provider that counts queryPayment calls -- the call count is the
+ * direct observable for "did the business logic actually re-run?", which a
+ * row-count assertion alone cannot distinguish from "re-ran and was
+ * idempotent".
+ */
+function countingProvider(providerName, providerEventId, queryPayment) {
+  const state = { queryCalls: 0 };
+  return {
+    state,
+    provider: {
+      providerName,
+      async createCheckout() {
+        throw new Error('not used in this test file');
+      },
+      async verifyWebhook() {
+        return { verified: true, providerEventId };
+      },
+      async queryPayment(ref) {
+        state.queryCalls += 1;
+        return queryPayment(state.queryCalls, ref);
+      },
+    },
+  };
+}
+
+async function processingStatusOf(providerName, providerEventId) {
+  const [rows] = await getPool().query(`SELECT processing_status FROM billing_provider_events WHERE provider = ? AND provider_event_id = ?`, [providerName, providerEventId]);
+  return rows.length === 0 ? null : rows[0].processing_status;
+}
+
+async function attemptStatusOf(paymentAttemptId) {
+  const [rows] = await getPool().query(`SELECT status FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  return rows[0].status;
+}
+
+async function transactionCountFor(paymentAttemptId) {
+  const [rows] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_transactions WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  return Number(rows[0].n);
+}
+
+test('MySQL: PPR1R-D022 -- a transiently-FAILED event is NOT ACKed, and the provider redelivery re-runs the business logic to success', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerEventId = randomUUID();
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 1500n, 'USD');
+
+  const { state, provider } = countingProvider(providerName, providerEventId, (call) => {
+    // The first delivery blips; every later one answers authoritatively.
+    if (call === 1) throw new Error('simulated transient provider-query failure');
+    return { providerPaymentRef, status: 'CONFIRMED', amountMinor: 1500n, currencyCode: 'USD' };
+  });
+  const service = buildWebhookService(provider);
+  const payload = Buffer.from(JSON.stringify({ providerPaymentRef }));
+
+  const first = await service.processWebhook(providerName, payload, 'sig');
+  assert.equal(first.outcome, 'RETRY', 'a transient failure must never be ACKed -- an ACK makes it unrecoverable');
+  assert.equal(first.httpStatus, 503);
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'FAILED');
+  assert.equal(await attemptStatusOf(paymentAttemptId), 'PENDING', 'a failed provider query must never confirm anything');
+
+  // The provider redelivers the SAME event id -- the exact case that used
+  // to be swallowed by the DUPLICATE path.
+  const second = await service.processWebhook(providerName, payload, 'sig');
+  assert.equal(second.outcome, 'ACK');
+  assert.equal(second.httpStatus, 200);
+  assert.equal(state.queryCalls, 2, 'the redelivery of a FAILED event MUST re-run the business logic');
+  assert.equal(await attemptStatusOf(paymentAttemptId), 'CONFIRMED', 'the redelivery must recover the payment confirmation the blip lost');
+  assert.equal(await transactionCountFor(paymentAttemptId), 1);
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'PROCESSED');
+
+  // ...and once it has succeeded, further redeliveries are plain duplicates again.
+  const third = await service.processWebhook(providerName, payload, 'sig');
+  assert.equal(third.outcome, 'ACK');
+  assert.equal(third.httpStatus, 200);
+  assert.equal(state.queryCalls, 2, 'a duplicate of a now-PROCESSED event must not re-run business logic');
+  assert.equal(await transactionCountFor(paymentAttemptId), 1);
+});
+
+test('MySQL: PPR1R-D022 -- an IGNORED event stays terminal: redelivery is ACKed and never re-runs business logic', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerEventId = randomUUID();
+  const unknownRef = `unknown-${randomUUID()}`;
+
+  const { state, provider } = countingProvider(providerName, providerEventId, () => ({
+    providerPaymentRef: unknownRef,
+    status: 'CONFIRMED',
+    amountMinor: 1000n,
+    currencyCode: 'USD',
+  }));
+  const service = buildWebhookService(provider);
+  const payload = Buffer.from(JSON.stringify({ providerPaymentRef: unknownRef }));
+
+  const first = await service.processWebhook(providerName, payload, 'sig');
+  assert.equal(first.outcome, 'ACK', 'an unknown reference is a terminal business anomaly, not a delivery failure');
+  assert.equal(first.httpStatus, 200);
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'IGNORED');
+  assert.equal(state.queryCalls, 1);
+
+  const second = await service.processWebhook(providerName, payload, 'sig');
+  assert.equal(second.outcome, 'ACK');
+  assert.equal(second.httpStatus, 200);
+  assert.equal(state.queryCalls, 1, 'an IGNORED event must stay terminal -- redelivery must NOT re-run business logic');
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'IGNORED');
+});
+
+test('MySQL: PPR1R-D022 -- a duplicate of a SUCCEEDED event stays fully idempotent (no re-query, no second transaction)', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerEventId = randomUUID();
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 3000n, 'SAR');
+
+  const { state, provider } = countingProvider(providerName, providerEventId, () => ({
+    providerPaymentRef,
+    status: 'CONFIRMED',
+    amountMinor: 3000n,
+    currencyCode: 'SAR',
+  }));
+  const service = buildWebhookService(provider);
+  const payload = Buffer.from(JSON.stringify({ providerPaymentRef }));
+
+  assert.equal((await service.processWebhook(providerName, payload, 'sig')).outcome, 'ACK');
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'PROCESSED');
+
+  for (let i = 0; i < 3; i += 1) {
+    const redelivery = await service.processWebhook(providerName, payload, 'sig');
+    assert.equal(redelivery.outcome, 'ACK');
+    assert.equal(redelivery.httpStatus, 200);
+  }
+  assert.equal(state.queryCalls, 1, 'a duplicate of a SUCCEEDED event must never re-enter the business logic');
+  assert.equal(await transactionCountFor(paymentAttemptId), 1);
+  assert.equal(await attemptStatusOf(paymentAttemptId), 'CONFIRMED');
+});
+
+test('MySQL: PPR1R-D022 -- concurrent redeliveries of a FAILED event re-drive it exactly once (atomic re-claim)', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerEventId = randomUUID();
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 750n, 'USD');
+
+  const { state, provider } = countingProvider(providerName, providerEventId, (call) => {
+    if (call === 1) throw new Error('simulated transient provider-query failure');
+    return { providerPaymentRef, status: 'CONFIRMED', amountMinor: 750n, currencyCode: 'USD' };
+  });
+  const service = buildWebhookService(provider);
+  const payload = Buffer.from(JSON.stringify({ providerPaymentRef }));
+
+  assert.equal((await service.processWebhook(providerName, payload, 'sig')).outcome, 'RETRY');
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'FAILED');
+
+  const results = await Promise.all([
+    service.processWebhook(providerName, payload, 'sig'),
+    service.processWebhook(providerName, payload, 'sig'),
+    service.processWebhook(providerName, payload, 'sig'),
+    service.processWebhook(providerName, payload, 'sig'),
+  ]);
+  assert.ok(
+    results.every((result) => result.outcome === 'ACK'),
+    'once one concurrent redelivery has re-driven the event, every one of them is answered stably',
+  );
+  assert.equal(state.queryCalls, 2, 'exactly one of N concurrent redeliveries may win the re-claim');
+  assert.equal(await transactionCountFor(paymentAttemptId), 1);
+  assert.equal(await attemptStatusOf(paymentAttemptId), 'CONFIRMED');
+  assert.equal(await processingStatusOf(providerName, providerEventId), 'PROCESSED');
+});
+
 test.after(async () => {
   await closePool();
 });

@@ -56,6 +56,10 @@
     <string name="capability_alert_vpn_degraded_body">لم يعد لدى PCA دليل على أن VPN لتصفية الويب، الذي وافق عليه المستخدم، يفرض الحماية.</string>
     <string name="capability_alert_clock_rollback_title">تم إرجاع ساعة الجهاز إلى الوراء</string>
     <string name="capability_alert_clock_rollback_body">تحرّكت ساعة هذا الجهاز إلى الوراء. الحدود الزمنية لا تتأثر (فهي تعتمد على ساعة مقاومة للتلاعب)، لكن هذا سُجِّل كإشارة تلاعب.</string>
+    <string name="capability_alert_prayer_exact_alarm_title">تذكيرات الصلاة غير مجدولة</string>
+    <string name="capability_alert_prayer_exact_alarm_body">لا يسمح Android لتطبيق PCA بضبط منبهات دقيقة، لذلك لن تظهر تذكيرات الصلاة. اسمح بالمنبهات والتذكيرات لتطبيق PCA من إعدادات Android لإعادة تفعيلها.</string>
+    <string name="capability_alert_prayer_alarm_unavailable_title">تذكيرات الصلاة غير متاحة</string>
+    <string name="capability_alert_prayer_alarm_unavailable_body">لم يوفّر Android خدمة منبهات على هذا الجهاز، لذلك لا يستطيع PCA جدولة تذكيرات الصلاة هنا.</string>
 
     <!-- تنبيه جهة الاتصال الموثوقة عند استخدام الاتصال الطارئ (PCA-FR-132, Writer73) -->
     <string name="emergency_dial_alert_notification_channel_name">تنبيهات الوصول الطارئ</string>

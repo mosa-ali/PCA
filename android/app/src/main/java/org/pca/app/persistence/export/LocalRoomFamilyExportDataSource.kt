@@ -172,16 +172,28 @@ class LocalRoomFamilyExportDataSource(
                     )
                 }
 
-            // PCA-LOCAL-DB-1 Section 8: read through the repository (not the DAO) now that the
+            // PCA-LOCAL-DB-1 Section 8: read through the repository (not the DAO) because the
             // package name/label are encrypted columns -- the repository is the one place
             // ciphertext round-trips to plaintext, and this export path is exactly the "decrypted
             // only in memory, handed to the family encryptor" case this class's doc comment
             // describes. Same construction shape as usageRepository/webRepository above.
+            //
+            // PPR1R-D037: emitted as `INSTALLED_APP_EVENT`, the itemized doc 11 Section 3.1 class
+            // for this entity (backend/src/retention/types.ts). It was previously emitted as
+            // `ROUTINE_ACTIVITY` -- that union member is explicitly the CATCH-ALL for "routine
+            // device activity not otherwise itemized", so every installed-app record left this
+            // device disguised as an unnamed record of another class. The consequence was not
+            // cosmetic: retentionRoutes.ts's parseDeleteNowRecords matches a parent's Section 6
+            // "Delete now" request by (entityClass, id), so a request naming INSTALLED_APP_EVENT
+            // -- the only name a parent has for these records -- matched nothing at all, while
+            // the device-side RetentionEngine was already purging the same table on the ordinary
+            // general window. Both windows resolve identically (both are general classes), so
+            // this changes which records a parent can NAME, never how long anything is kept.
             installedAppEventRepository.getForDevice(deviceId)
                 .filter { it.installedAtEpochMillis >= generalCutoff }
                 .forEach { event ->
                     records += FamilyExportRecord(
-                        entityClass = "ROUTINE_ACTIVITY",
+                        entityClass = "INSTALLED_APP_EVENT",
                         id = event.id,
                         eventTimestampEpochMillis = event.installedAtEpochMillis,
                         deviceId = event.deviceId,

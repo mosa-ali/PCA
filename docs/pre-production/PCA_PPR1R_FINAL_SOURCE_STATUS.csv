@@ -80,7 +80,7 @@ PCA-FR-065,PCA-7,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complet
 PCA-FR-070,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complete, test-covered, no external gate"
 PCA-FR-071,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complete, test-covered, no external gate"
 PCA-FR-072,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complete, test-covered, no external gate"
-PCA-FR-073,PCA-9,REAL_SOURCE_DEFECT,V1_REQUIRED,OPEN_DEFECT,PPR-1R: still OPEN. scheduleReminder has no production caller; writer was interrupted before wiring it.
+PCA-FR-073,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,PPR-1R: prayer reminders now scheduled from production (PcaAppGraph); exact-alarm refusal surfaced as a tamper row + parent alert. Android 1345/1345.
 PCA-FR-074,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complete, test-covered, no external gate"
 PCA-FR-074A,PCA-9,PRODUCTION_COMPLETE,V1_REQUIRED,SOURCE_COMPLETE,"Source complete, test-covered, no external gate"
 PCA-FR-080,PCA-13,REAL_DEVICE_REQUIRED,V1_REQUIRED,BLOCKED_EXTERNAL,Needs real Android hardware; UAT 0/50 executed (A05)

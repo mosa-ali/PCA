@@ -56,6 +56,12 @@ export function registerBillingWebhookRoutes(app: FastifyInstance, deps: Billing
         // Never log rawPayload/signatureHeader -- this route has no
         // logging statement of its own for exactly that reason (see
         // WebhookService's own header note on the same discipline).
+        //
+        // PPR1R-D022: `result.httpStatus` is passed through verbatim,
+        // including the 503 that a transiently-FAILED event now produces
+        // (outcome 'RETRY'). That non-2xx is the request for redelivery --
+        // never normalise it to a 200 here, or the event becomes
+        // unrecoverable at the provider.
         const result = await deps.webhookService.processWebhook(provider, rawPayload, signatureHeader);
         return reply.code(result.httpStatus).send({ received: result.outcome === 'ACK' });
       },

@@ -22,6 +22,31 @@ Open decisions are visible and classified: **PRE-IMPLEMENTATION BLOCKER** must b
 | PCA-DEC-006 | Recovery material custody UX | PRE-IMPLEMENTATION BLOCKER | Approve before PCA-1; no support master key; lost sole recovery secret means new family. |
 | PCA-DEC-007 | Adult/child legal and regional onboarding disclosures | PRODUCT DEFAULT DECISION | Legal copy review before PCA-17; no hidden monitoring regardless. |
 | PCA-DEC-008 | Any safety/security ambiguity in recovery or trust model | A-100 BLOCKER | None currently recorded as unresolved: docs 08–11 specify the protocol. |
+| PCA-DEC-009 | Battery-impact disclosure number (PCA-NFR-034) -- benchmarked percentage vs qualitative statement | OPEN -- PROPOSED | Defined in doc 04. Gated behind real-device benchmarking (ANDROID_REAL_DEVICE_UAT). Gate token `PCA_DEC_009_DISCLOSURE_TEXT`. |
+| PCA-DEC-010 | Default-uncertain classification timeout (PCA-NFR-032) | OPEN -- PROPOSED | Defined in doc 04. Moot while AI is deferred POST_V1. |
+| PCA-DEC-011 | Minimum TLS version floor (PCA-NFR-001) | OPEN -- PROPOSED | Defined in doc 04. Device-support matrix decision; interacts with `DEPLOYED_TLS_TERMINATION_CONFIG`. |
+| PCA-DEC-012 | Sync-overdue / policy-stale warning threshold | OPEN -- PROPOSED | Defined in doc 05, which carries a literal REQUIRES_FURTHER_OWNER_DECISION marker. |
+| PCA-DEC-013 | Whether Relay operation may be delegated to a third-party managed-relay subprocessor | OPEN -- PROPOSED | Defined in doc 05. Merges into the RELAY_METADATA_PRIVACY and data-controller decisions. |
+| PCA-DEC-014 | Multi-user / work-profile Android devices | OPEN -- PROPOSED | Defined in doc 06. Sub-decision of the Android provisioning question; only needed if Protected Mode ships. |
+| PCA-DEC-015 | Root/compromise-indicator threshold for parent notification | OPEN -- PROPOSED | Defined in doc 06. Sub-decision of the Android provisioning question. |
+| PCA-DEC-016 | iOS support scope for a child device without a configured Apple child account | OPEN -- PROPOSED | Defined in doc 07. Doc 07 makes resolving it a precondition for the iOS implementation phase. Tracked in NO gate register before PPR-1R. |
+| PCA-DEC-017 | Custom `ManagedSettingsUI` shield branding at launch vs Apple's default shield | OPEN -- PROPOSED | Defined in doc 07. Note: the capability matrix records this as already decided; doc 07 still says PROPOSED. One of the two is wrong. |
+| PCA-DEC-018 | Family Owner role transfer / succession | OPEN -- PROPOSED | Defined in doc 08. Doc recommends (a) not supported in v1. |
+| PCA-DEC-019 | Whether a new parent-device invite requires identity verification beyond email/account confirmation | OPEN -- PROPOSED | Defined in doc 08. Largely settled in practice by the approved PCA-DEC-026 Option C. |
+| PCA-DEC-020 | Forward-secrecy construction for message/session keys | OPEN -- PROPOSED | Defined in doc 09. THE critical-path decision: gates device sessions, policy delivery and all family sync. ~44 requirements depend on it. |
+| PCA-DEC-021 | Exact RS encoding / recovery KDF, and whether a threshold recovery option is offered | OPEN -- PROPOSED | Defined in doc 09. Gates recovery only. PPR-1 recommends scoping it into the SAME reviewer engagement as PCA-DEC-020. |
+> **PPR-1R correction — this register had a 13-row hole and an ambiguous namespace.**
+>
+> `PCA-DEC-009` through `PCA-DEC-021` were defined in their owning documents (04, 05, 06, 07, 08, 09)
+> but appeared nowhere in this register, which jumped straight from `008` to `022`. They are added
+> below with the subjects their owning documents give them.
+>
+> **Separately, and NOT yet resolved:** the `PCA-DEC-001`..`PCA-DEC-008` rows ABOVE use subjects that
+> disagree with the canonical per-document definitions — the block is shifted, so `PCA-DEC-002`,
+> `-004` and `-006` mean different things here than in docs 01, 02 and 03. Source code follows BOTH
+> schemes. **Do not sign off any decision by number until that collision is reconciled;** the rows
+> added below deliberately use the owning-document meaning, which is what the source and the
+> capability matrix use.
 | PCA-DEC-022 | FREE_STARTER entry-tier default (`parentMemberLimit = 1`, `managedDeviceLimit = 1`, price = FREE) for new registrations, introduced by Addendum 002 | PRODUCT DEFAULT DECISION | `OWNER_APPROVED`. Does not contradict/delete `PCA-FR-004A`'s base-family-tier requirement (2+ parents, 2+ children with ≥1 device each) — FREE_STARTER is a narrower on-ramp tier below the paid/standard base tier, not a redefinition of it. Any increase above `managedDeviceLimit = 1` is potentially billable per the Addendum 002 price-book model. Configure in PCA-PA-2 (Addendum 002). |
 | PCA-DEC-023 | Entitlement-count separation: `parentMemberLimit` and `managedDeviceLimit` modeled as two independent counters, never a combined "user/phone" count (Addendum 002 Section 6) | PRE-IMPLEMENTATION BLOCKER | `OWNER_APPROVED`. Approve before PCA-PA-2 (Addendum 002) entitlement-write implementation; fallback if ever revisited would require a recorded architecture change, not a silent implementation shortcut. |
 | PCA-DEC-024 | Commercial pricing/currency/quote model for device-entitlement increases (Addendum 002 Sections 7, 9, 10, 18): App-Owner-maintained versioned price book keyed by commercial market × currency × target device limit; standard-priced vs. custom-quote upgrade paths; initial currencies USD/SAR/YER (EUR explicitly out of initial scope); no automatic FX conversion required for initial release; quote snapshot (`targetDeviceLimit`/`amountMinor`/`currencyCode`/`priceBookVersion`) immutable once attached to a request; `managedDeviceLimit` always server/admin-authoritative, never parent-writable; entitlement increase only on authoritative server-side/webhook payment confirmation, idempotent per payment/provider event ID | PRE-IMPLEMENTATION BLOCKER | `OWNER_APPROVED`, issued as a coordinator amendment during Addendum 002's authoring (2026-08-14), superseding an earlier internal draft that had used an illustrative four-currency (USD/YER/EUR/SAR) list. Approve before PCA-BILL-1/PCA-BILL-2 (Addendum 002) implementation; fallback is no billable entitlement increase (FREE_STARTER-only operation) until the price-book and payment-confirmation mechanism exist. |

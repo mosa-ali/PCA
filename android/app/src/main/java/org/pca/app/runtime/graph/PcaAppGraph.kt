@@ -20,6 +20,7 @@ import org.pca.app.feature.eyedistance.persistence.EyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.persistence.PersistentEyeDistanceSnapshotStore
 import org.pca.app.feature.eyedistance.shield.EyeRestShieldTrigger
 import org.pca.app.feature.eyedistance.ui.EyeRestShieldActivity
+import org.pca.app.feature.prayer.model.Coordinates
 import org.pca.app.feature.prayer.model.PrayerName
 import org.pca.app.feature.prayer.location.PrayerLocationStalenessDetector
 import org.pca.app.feature.screentime.engine.ScreenTimeConfig
@@ -124,6 +125,7 @@ import org.pca.app.runtime.port.ScheduleRuntimePort
 import org.pca.app.runtime.location.LocationSampleRecorder
 import org.pca.app.runtime.prayer.AlarmManagerPrayerScheduler
 import org.pca.app.runtime.prayer.PrayerReminderIntents
+import org.pca.app.runtime.prayer.PrayerReminderScheduleCoordinator
 import org.pca.app.runtime.prayer.PrayerLocationStalenessNotificationDelivery
 import org.pca.app.runtime.schedule.PersistentSchedulePolicyStore
 import org.pca.app.runtime.schedule.ProductionScheduleRuntimePort
@@ -553,6 +555,27 @@ class PcaAppGraph private constructor(
 
     val prayerAlarmScheduler = AlarmManagerPrayerScheduler(context) { prayer -> prayerReminderIntent(prayer) }
 
+    /**
+     * PPR1R-D005: the real production caller of [prayerAlarmScheduler]. Until this existed,
+     * [AlarmManagerPrayerScheduler] was constructed here and then never asked to schedule
+     * anything, so [org.pca.app.runtime.prayer.PrayerReminderReceiver] could never fire and the
+     * whole prayer-reminder subsystem was inert despite every individual part of it being correct.
+     *
+     * Driven from [runUsageLocationIngestionCycle] below, off the same live location fix that
+     * cycle already reads -- see [PrayerReminderScheduleCoordinator]'s own doc comment for why it
+     * reuses that cadence instead of adding a second scheduler, and for how a refused exact alarm
+     * is surfaced rather than swallowed. [notifyParent] is bound to the SAME
+     * [capabilityTamperAlertNotificationDelivery] every degradation monitor in this graph uses.
+     */
+    val prayerReminderScheduleCoordinator = PrayerReminderScheduleCoordinator(
+        scheduler = prayerAlarmScheduler,
+        deviceIdProvider = { enrolledDeviceIdOrNull() },
+        wallClockTimeSource = wallClockTimeSource,
+        prayerReminderEventRepository = persistence.prayerReminderEventRepository,
+        tamperEventRepository = persistence.tamperEventRepository,
+        notifyParent = { condition -> capabilityTamperAlertNotificationDelivery.deliver(condition) },
+    )
+
     // Wellbeing production ports (Section 4/5/6/7): closes the exact gap
     // `feature/wellbeing/ports/WellbeingPorts.kt` documents as Coordinator-owned.
     private val notificationCapabilitySource = StandardNotificationCapabilitySource(context)
@@ -905,6 +928,18 @@ class PcaAppGraph private constructor(
                                     prayerLocationStalenessDetector.markDelivered(deviceId)
                                 }
                                 geofenceMonitor.evaluateSample(sample, monotonicTimeSource.elapsedRealtimeNanos())
+                                // PPR1R-D005: arm the next prayer reminder for each of the five
+                                // prayers off this SAME real platform fix. Its own `runCatching`
+                                // (rather than riding the enclosing one) so a rejected coordinate
+                                // or an alarm failure can never skip geofence evaluation or the
+                                // staleness notice above it -- the same "one failure never skips
+                                // the others" discipline this cycle already applies step by step.
+                                runCatching {
+                                    prayerReminderScheduleCoordinator.scheduleUpcomingReminders(
+                                        coordinates = Coordinates(latitudeDegrees = sample.latitude, longitudeDegrees = sample.longitude),
+                                        zoneId = ZoneId.systemDefault(),
+                                    )
+                                }
                             }
                         }
                     }

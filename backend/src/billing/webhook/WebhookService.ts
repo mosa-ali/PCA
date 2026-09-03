@@ -22,7 +22,7 @@
  */
 import type { PaymentProvider } from '../providerContract.js';
 import type { PaymentProviderRegistry } from '../provider/providerRegistry.js';
-import type { ProviderEventRepository, ProviderEventRow, ProviderEventService } from '../providerEvent.js';
+import type { ProviderEventProcessingStatus, ProviderEventRepository, ProviderEventRow, ProviderEventService } from '../providerEvent.js';
 import type { PaymentService } from '../payment.js';
 import { findPaymentAttemptByProviderReference } from '../shared/paymentAttemptLookup.js';
 import { buildBillingAuditEvent } from '../audit.js';
@@ -54,12 +54,45 @@ import type { CommercialNotificationPublisher } from '../../commercialnotificati
  */
 export const WEBHOOK_FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
 
-export type WebhookOutcome = 'ACK' | 'REJECTED';
+/**
+ * `RETRY` (PPR1R-D022) is deliberately NOT an ACK: it is the outcome for an
+ * event whose processing failed *transiently* (a provider query threw, a
+ * dependency blipped). ACKing such an event told the provider "delivered
+ * and handled", and because a redelivery of the same event id then hits the
+ * DUPLICATE idempotency path, the business logic could never re-run -- one
+ * network blip permanently lost a payment confirmation and its entitlement
+ * activation. A non-2xx response is the ONLY signal this pipeline has that
+ * asks for redelivery, and the DUPLICATE path below re-drives a FAILED row
+ * when that redelivery arrives.
+ *
+ * KNOWN BOUNDARY, stated rather than papered over: this depends on the
+ * provider's redelivery being FRESH -- if a provider resends a byte-identical
+ * envelope still carrying the original `timestamp`, the freshness/replay check
+ * above rejects it (401) before the duplicate path is ever reached, and the
+ * FAILED row waits for a redelivery that never comes. That window is NOT
+ * widened here to accommodate a hypothetical provider: `WEBHOOK_FRESHNESS_WINDOW_MS`
+ * is a replay defence (PCA-ADD-BILL-032) and weakening it would trade a real
+ * security property for a guess about behaviour no live provider has yet
+ * demonstrated. The pre-existing design already assumes fresh redelivery --
+ * see the freshness check's own comment on why it deliberately rejects BEFORE
+ * claiming the event id. A provider that redelivers stale envelopes would need
+ * a sweeper over FAILED rows instead; that is new architecture with no caller
+ * today, not something to fake here.
+ */
+export type WebhookOutcome = 'ACK' | 'REJECTED' | 'RETRY';
 
 export interface WebhookProcessResult {
   readonly outcome: WebhookOutcome;
   readonly httpStatus: number;
 }
+
+/**
+ * 503 Service Unavailable -- "we could not process this yet, send it
+ * again". Distinct from the 4xx REJECTED codes above, which mean "never
+ * send this again, it is not acceptable".
+ */
+const RETRY_RESULT: WebhookProcessResult = { outcome: 'RETRY', httpStatus: 503 };
+const ACK_RESULT: WebhookProcessResult = { outcome: 'ACK', httpStatus: 200 };
 
 /**
  * Reused, already-reserved platformadmin audit event type
@@ -154,15 +187,82 @@ export class WebhookService {
 
     const recordOutcome = await this.providerEventService.record(providerName, providerEventId, providerPaymentRef, this.now());
     if (recordOutcome.outcome === 'DUPLICATE') {
-      // Idempotent, stable response -- NEVER re-run any business logic for
-      // a duplicate/out-of-order-redelivered event id.
-      return { outcome: 'ACK', httpStatus: 200 };
+      return this.handleDuplicate(providerName, provider, providerEventId, providerPaymentRef);
     }
 
-    const eventRow = recordOutcome.row;
-    const processingStatus = await this.processRecordedEvent(providerName, provider, providerEventId, providerPaymentRef, eventRow);
+    return this.driveRecordedEvent(providerName, provider, providerEventId, providerPaymentRef, recordOutcome.row);
+  }
+
+  /**
+   * PPR1R-D022 -- the redelivery half of the transient-failure fix.
+   *
+   * A duplicate of a `PROCESSED` (succeeded) or `IGNORED` (terminal:
+   * malformed payload, unknown reference, amount/currency mismatch, not-yet
+   * actionable) event is answered with the SAME stable ACK as before and
+   * NEVER re-runs any business logic -- idempotency and terminality are
+   * both preserved exactly as they were.
+   *
+   * A duplicate of a `FAILED` (transiently failed) event is different: that
+   * row's business logic never ran to completion, so this is the provider's
+   * redelivery doing precisely what the non-ACK above asked it to do.
+   * `claimFailedForReprocessing` re-claims the row atomically (exactly one
+   * of N concurrent redeliveries wins) and the event is driven again.
+   *
+   * A `RECEIVED` row is left alone: it is either genuinely in flight on
+   * another connection right now, or it was interrupted mid-processing.
+   * Re-running it here would risk concurrent double-processing, which is a
+   * worse failure than the retry this pipeline already gets from the
+   * FAILED status that `driveRecordedEvent` records on an unexpected throw.
+   */
+  private async handleDuplicate(
+    providerName: string,
+    provider: PaymentProvider,
+    providerEventId: string,
+    providerPaymentRef: string | null,
+  ): Promise<WebhookProcessResult> {
+    const existing = await this.providerEventRepository.findByProviderEventId(providerName, providerEventId);
+    if (existing !== null && existing.processingStatus === 'FAILED') {
+      const claimed = await this.providerEventRepository.claimFailedForReprocessing(existing.providerEventRowId);
+      if (claimed) {
+        return this.driveRecordedEvent(providerName, provider, providerEventId, providerPaymentRef, existing);
+      }
+    }
+    return ACK_RESULT;
+  }
+
+  /**
+   * Runs the business logic for a freshly-claimed (or, on a redelivery,
+   * re-claimed) event row, records the resulting processing status, and
+   * maps that status onto the ACK boundary.
+   *
+   * PPR1R-D022: `FAILED` -- and ONLY `FAILED` -- refuses the ACK, because
+   * `FAILED` is the one status this pipeline assigns to something that
+   * could still succeed on a later attempt. An unexpected throw is likewise
+   * recorded as `FAILED` (best effort) before being rethrown, so the
+   * resulting 5xx redelivery finds a re-drivable row rather than a row
+   * stuck at `RECEIVED` forever.
+   */
+  private async driveRecordedEvent(
+    providerName: string,
+    provider: PaymentProvider,
+    providerEventId: string,
+    providerPaymentRef: string | null,
+    eventRow: ProviderEventRow,
+  ): Promise<WebhookProcessResult> {
+    let processingStatus: ProviderEventProcessingStatus;
+    try {
+      processingStatus = await this.processRecordedEvent(providerName, provider, providerEventId, providerPaymentRef, eventRow);
+    } catch (error) {
+      try {
+        await this.providerEventRepository.updateProcessingStatus(eventRow.providerEventRowId, 'FAILED');
+      } catch {
+        // Best effort only -- the original failure below is the one that
+        // matters and is never swallowed.
+      }
+      throw error;
+    }
     await this.providerEventRepository.updateProcessingStatus(eventRow.providerEventRowId, processingStatus);
-    return { outcome: 'ACK', httpStatus: 200 };
+    return processingStatus === 'FAILED' ? RETRY_RESULT : ACK_RESULT;
   }
 
   private async processRecordedEvent(

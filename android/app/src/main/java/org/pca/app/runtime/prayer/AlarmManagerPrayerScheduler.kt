@@ -8,6 +8,7 @@ import android.os.Build
 import org.pca.app.feature.prayer.model.PrayerName
 import org.pca.app.feature.prayer.reminder.PrayerAlarmScheduler
 import org.pca.app.feature.prayer.reminder.ReminderPlan
+import org.pca.app.feature.prayer.reminder.ReminderScheduleOutcome
 
 /**
  * Real, production [PrayerAlarmScheduler] binding -- doc `reminder/PrayerReminderContract.kt`
@@ -33,19 +34,31 @@ class AlarmManagerPrayerScheduler(
      * the `SCHEDULE_EXACT_ALARM` manifest entry) and additionally guards the call itself against
      * [SecurityException] -- the permission can be revoked by the user between the check and the
      * call, and this must degrade to "reminder not scheduled" rather than crash the app (Section
-     * 16: no crash-prone hidden behavior). A denied/unavailable exact-alarm capability is a silent
-     * no-op here; surfacing that state to the user is a separate feature slice's responsibility
-     * (the reminder UI this class explicitly does not own, see class doc).
+     * 16: no crash-prone hidden behavior).
+     *
+     * PPR1R-D005: it still never crashes, but it is no longer SILENT. This used to return `Unit`,
+     * so "armed a real alarm" and "the OS refused, nothing will ever fire" were the same
+     * observable outcome and the refusal could not be surfaced by anyone. It now reports a
+     * [ReminderScheduleOutcome], and
+     * [org.pca.app.runtime.prayer.PrayerReminderScheduleCoordinator] -- the production caller --
+     * turns a refusal into a real tamper-event row plus the same capability alert every other
+     * lost-capability signal in this app uses. This class still does not own reminder UI (see
+     * class doc); it only stops hiding the failure from the layer that does.
      */
-    override fun scheduleReminder(plan: ReminderPlan) {
-        val manager = alarmManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) return
+    override fun scheduleReminder(plan: ReminderPlan): ReminderScheduleOutcome {
+        val manager = alarmManager ?: return ReminderScheduleOutcome.ALARM_SERVICE_UNAVAILABLE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) {
+            return ReminderScheduleOutcome.EXACT_ALARMS_NOT_PERMITTED
+        }
         val pendingIntent = pendingIntentFor(plan.prayer)
         val triggerAtMillis = plan.remindAt.toInstant().toEpochMilli()
-        try {
+        return try {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            ReminderScheduleOutcome.SCHEDULED
         } catch (_: SecurityException) {
-            // Permission revoked between the check above and this call -- fail safe, no crash.
+            // Permission revoked between the check above and this call -- fail safe, no crash,
+            // and reported as the same recoverable not-permitted state the check itself reports.
+            ReminderScheduleOutcome.EXACT_ALARMS_NOT_PERMITTED
         }
     }
 

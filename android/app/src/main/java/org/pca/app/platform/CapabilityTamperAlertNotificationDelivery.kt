@@ -29,6 +29,10 @@ class CapabilityTamperAlertNotificationDelivery(private val context: Context) {
                 R.string.capability_alert_vpn_degraded_title to R.string.capability_alert_vpn_degraded_body
             CONDITION_CLOCK_ROLLBACK ->
                 R.string.capability_alert_clock_rollback_title to R.string.capability_alert_clock_rollback_body
+            CONDITION_PRAYER_EXACT_ALARMS_NOT_PERMITTED ->
+                R.string.capability_alert_prayer_exact_alarm_title to R.string.capability_alert_prayer_exact_alarm_body
+            CONDITION_PRAYER_ALARM_SERVICE_UNAVAILABLE ->
+                R.string.capability_alert_prayer_alarm_unavailable_title to R.string.capability_alert_prayer_alarm_unavailable_body
             else -> return false
         }
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
@@ -67,6 +71,15 @@ class CapabilityTamperAlertNotificationDelivery(private val context: Context) {
         // direct reference, matching this class's existing pattern of not depending on the
         // runtime.tamper package for its other conditions either.
         private const val CONDITION_CLOCK_ROLLBACK = "WALL_CLOCK_ROLLBACK_DETECTED"
+
+        // PPR1R-D005. Same literal values as
+        // PrayerReminderScheduleCoordinator.CONDITION_EXACT_ALARMS_NOT_PERMITTED /
+        // CONDITION_ALARM_SERVICE_UNAVAILABLE -- not a direct reference, matching this class's
+        // existing pattern of not depending on the runtime packages for its other conditions
+        // either. Unlike the conditions above, a not-permitted exact alarm is user-recoverable in
+        // Settings, and the body copy says so rather than implying a dead end.
+        private const val CONDITION_PRAYER_EXACT_ALARMS_NOT_PERMITTED = "PRAYER_EXACT_ALARMS_NOT_PERMITTED"
+        private const val CONDITION_PRAYER_ALARM_SERVICE_UNAVAILABLE = "PRAYER_ALARM_SERVICE_UNAVAILABLE"
         private const val CHANNEL_ID = "capability_tamper_alerts"
         private const val NOTIFICATION_ID = 6_201
     }

@@ -29,6 +29,7 @@ import org.pca.app.persistence.entity.ParentActionAuditEntity
 import org.pca.app.persistence.entity.ParentActionType
 import org.pca.app.persistence.entity.RetentionPolicy
 import org.pca.app.persistence.entity.SourceConfidence
+import org.pca.app.persistence.repository.InstalledAppEventRepository
 import org.pca.app.persistence.repository.UsageSessionRepository
 import org.robolectric.RobolectricTestRunner
 
@@ -134,6 +135,66 @@ class FamilyExportContractTest {
         assertFalse("other family audit is excluded", "audit-other-family" in ids)
         assertTrue("latest location is retained", "location-fresh" in ids)
         assertFalse("CURRENT_LAST_ONLY does not export superseded points", "location-old" in ids)
+    }
+
+    /**
+     * PPR1R-D037: installed-app records used to leave this device tagged `ROUTINE_ACTIVITY` --
+     * doc 11 Section 3.1's explicit catch-all for "routine device activity not otherwise
+     * itemized" -- even though `INSTALLED_APP_EVENT` is that entity's own itemized class. The
+     * backend matches a parent's Section 6 "Delete now" request by (entityClass, id), so the only
+     * name a parent has for these records matched nothing in an export, while the device-side
+     * retention engine was already purging the same table.
+     */
+    @Test
+    fun `installed app events export under the itemized INSTALLED_APP_EVENT class, decrypted, family scoped and retention bounded`() = runTest {
+        val installedAppEventRepository = InstalledAppEventRepository(database.installedAppEventDao(), cipher)
+        installedAppEventRepository.record(
+            id = "install-recent",
+            deviceId = "device-a",
+            packageName = "com.example.game",
+            appLabel = "Example Game",
+            installedAtEpochMillis = now.minusSeconds(60).toEpochMilli(),
+            observedAtEpochMillis = now.toEpochMilli(),
+        )
+        installedAppEventRepository.record(
+            id = "install-expired",
+            deviceId = "device-a",
+            packageName = "com.example.old",
+            appLabel = null,
+            installedAtEpochMillis = now.minusSeconds(20L * 24 * 60 * 60).toEpochMilli(),
+            observedAtEpochMillis = now.minusSeconds(20L * 24 * 60 * 60).toEpochMilli(),
+        )
+        installedAppEventRepository.record(
+            id = "install-other-family",
+            deviceId = "device-b",
+            packageName = "com.example.other",
+            appLabel = "Other App",
+            installedAtEpochMillis = now.minusSeconds(60).toEpochMilli(),
+            observedAtEpochMillis = now.toEpochMilli(),
+        )
+
+        val records = LocalRoomFamilyExportDataSource(database, cipher).collect("family-a", scope, now)
+
+        val installed = records.filter { it.entityClass == "INSTALLED_APP_EVENT" }
+        assertEquals("exactly the one in-scope installed-app record is addressable", 1, installed.size)
+        val record = installed.single()
+        assertEquals("install-recent", record.id)
+        assertEquals("device-a", record.deviceId)
+        assertEquals(now.minusSeconds(60).toEpochMilli(), record.eventTimestampEpochMillis)
+        // Decrypted through the SAME LocalRecordCipher the repository owns -- this export path
+        // never sees packageNameEnc/packageNameIv, and authors no crypto of its own.
+        assertEquals("com.example.game", record.payload.getString("packageName"))
+        assertEquals("Example Game", record.payload.getString("appLabel"))
+        assertEquals(now.toEpochMilli(), record.payload.getLong("observedAtEpochMillis"))
+
+        assertFalse(
+            "an installed-app record must never hide inside the ROUTINE_ACTIVITY catch-all -- a Delete now " +
+                "request naming INSTALLED_APP_EVENT would then match nothing",
+            records.any { it.entityClass == "ROUTINE_ACTIVITY" },
+        )
+        val ids = records.map { it.id }.toSet()
+        assertFalse("an installed-app record past the general cutoff is excluded", "install-expired" in ids)
+        assertFalse("another family's installed-app record is excluded", "install-other-family" in ids)
     }
 
     @Test
