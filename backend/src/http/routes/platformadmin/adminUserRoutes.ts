@@ -58,6 +58,15 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'platform-admin-adminusers-mutate' });
   const readModel = new AdminUsersReadModel();
 
+  /**
+   * PCA-STEPUP-ORDER-1: consuming a step-up is DESTRUCTIVE and single-use
+   * (PlatformAdminAuthService.consumeStepUp marks the grant consumed
+   * irreversibly). Every caller below therefore runs input validation AND
+   * the operation's RBAC check FIRST, and only calls this once the request
+   * is known to be both well-formed and authorized -- otherwise a 400/403
+   * burns a grant the caller was never going to be allowed to spend, and
+   * the retry needs a whole fresh TOTP code from the operator's device.
+   */
   function requireStepUp(request: FastifyRequest, reply: FastifyReply, stepUpId: unknown): Promise<boolean> {
     if (typeof stepUpId !== 'string' || stepUpId.length === 0) {
       reply.code(403).send({ error: 'forbidden' });
@@ -128,9 +137,16 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
     if (typeof email !== 'string' || email.length === 0 || email.length > EMAIL_MAX_LENGTH || !email.includes('@')) return reply.code(400).send({ error: 'invalid_request' });
     if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
     if (typeof role !== 'string' || !(PLATFORM_ADMIN_ROLES as readonly string[]).includes(role)) return reply.code(400).send({ error: 'invalid_request' });
+
+    // PCA-STEPUP-ORDER-1: the SAME operation PlatformAdminAccountService.createAccount
+    // gates on internally, re-checked here purely so an unauthorized caller
+    // is refused BEFORE their single-use step-up grant is consumed. The
+    // service's own check remains the authoritative one (defense in depth,
+    // exactly as its header describes) -- this never widens authority.
+    const roles = request.platformAdminRoles ?? [];
+    if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
     if (!(await requireStepUp(request, reply, stepUpId))) return;
 
-    const roles = request.platformAdminRoles ?? [];
     const adminId = request.platformAdminId as string;
     try {
       const created = await deps.platformAdminAccountService.createAccount(displayName, hashAdminEmail(email), password, role as PlatformAdminRole, { adminId, roles });
@@ -152,9 +168,13 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
       const { role, action, stepUpId } = body;
       if (typeof role !== 'string' || !(PLATFORM_ADMIN_ROLES as readonly string[]).includes(role)) return reply.code(400).send({ error: 'invalid_request' });
       if (action !== 'GRANT' && action !== 'REVOKE') return reply.code(400).send({ error: 'invalid_request' });
+
+      // PCA-STEPUP-ORDER-1: mirrors PlatformAdminAccountService.assignRole/
+      // revokeRole's own ASSIGN_ADMIN_ROLE gate so a 403 never burns the grant.
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'ASSIGN_ADMIN_ROLE') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
       if (!(await requireStepUp(request, reply, stepUpId))) return;
 
-      const roles = request.platformAdminRoles ?? [];
       const callerAdminId = request.platformAdminId as string;
       try {
         if (action === 'GRANT') {
@@ -177,8 +197,11 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
       const { adminId } = request.params as { adminId?: string };
       if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       const body = isPlainObject(request.body) ? request.body : {};
-      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+      // PCA-STEPUP-ORDER-1: mirrors PlatformAdminAccountService.disableAccount's
+      // own MANAGE_ADMIN_ACCOUNTS gate so a 403 never burns the grant.
       const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
       const callerAdminId = request.platformAdminId as string;
       try {
         const result = await deps.platformAdminAccountService.disableAccount(adminId, { adminId: callerAdminId, roles });
@@ -197,8 +220,11 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
       const { adminId } = request.params as { adminId?: string };
       if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       const body = isPlainObject(request.body) ? request.body : {};
-      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+      // PCA-STEPUP-ORDER-1: mirrors PlatformAdminAccountService.reactivateAccount's
+      // own MANAGE_ADMIN_ACCOUNTS gate so a 403 never burns the grant.
       const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
       const callerAdminId = request.platformAdminId as string;
       try {
         await deps.platformAdminAccountService.reactivateAccount(adminId, { adminId: callerAdminId, roles });
@@ -217,9 +243,13 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
       const { adminId } = request.params as { adminId?: string };
       if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       const body = isPlainObject(request.body) ? request.body : {};
-      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+      // PCA-STEPUP-ORDER-1: RBAC BEFORE the step-up is consumed. A step-up
+      // grant is single-use, so consuming it and only then returning 403
+      // destroyed a grant the caller could never have used, forcing a fresh
+      // TOTP code for the documented retry. See requireStepUp's header.
       const roles = request.platformAdminRoles ?? [];
       if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
       const callerAdminId = request.platformAdminId as string;
       const result = await deps.platformAdminAuthService.revokeAllSessions(adminId as string, { adminId: callerAdminId, roles });
       return reply.code(200).send({ revokedSessionCount: result.revokedSessionCount });

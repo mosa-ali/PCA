@@ -96,13 +96,15 @@ export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingR
       const adminId = request.platformAdminId as string;
       const sessionId = request.platformAdminSessionId as string;
 
-      try {
-        await deps.platformAdminAuthService.consumeStepUp(stepUpId, adminId, sessionId, 'REFUND');
-      } catch (error) {
-        if (error instanceof PlatformAdminAuthError) return reply.code(403).send({ error: 'forbidden' });
-        throw error;
-      }
-
+      // PCA-STEPUP-ORDER-1: every rejection that does NOT depend on the
+      // step-up runs BEFORE the step-up is consumed. `consumeStepUp` is
+      // destructive and single-use, so consuming it and only then returning
+      // 404 (unknown transaction) or 400 (unknown provider / unparseable or
+      // non-positive amount) destroyed a grant the request could never have
+      // spent -- and the idempotency-key retry this route documents as the
+      // safe recovery path then needed a whole fresh TOTP code from the
+      // operator's device. ISSUE_REFUND RBAC (above) and body validation
+      // already ran before this point; these three checks now do too.
       const transaction = await runInTransaction((conn) => deps.paymentRepository.findTransactionById(conn, paymentTransactionId));
       if (!transaction) return reply.code(404).send({ error: 'not_found' });
 
@@ -119,6 +121,16 @@ export function registerBillingRefundRoutes(app: FastifyInstance, deps: BillingR
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (amount <= 0n) return reply.code(400).send({ error: 'invalid_request' });
+
+      // Step-up is consumed LAST, immediately before the money-moving call
+      // -- still strictly before `initiateRefund`, so the refund remains
+      // impossible without a valid, unexpired, correctly-bound REFUND grant.
+      try {
+        await deps.platformAdminAuthService.consumeStepUp(stepUpId, adminId, sessionId, 'REFUND');
+      } catch (error) {
+        if (error instanceof PlatformAdminAuthError) return reply.code(403).send({ error: 'forbidden' });
+        throw error;
+      }
 
       const actor = { adminId, role: roles[0] ?? null };
 

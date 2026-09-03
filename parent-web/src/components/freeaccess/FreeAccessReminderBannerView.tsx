@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { formatDate, NO_VALUE } from '../../i18n/formatters';
 import { Link } from 'react-router-dom';
 import type { FreeAccessStatus } from '../../domain/freeAccess';
 
@@ -22,12 +23,18 @@ export interface FreeAccessReminderBannerViewProps {
  * ended, and that existing child protection keeps running.
  */
 export function FreeAccessReminderBannerView({ status, onDismiss }: FreeAccessReminderBannerViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   if (status.status === 'PERPETUAL') return null;
 
-  const expiresAtDate = status.expiresAt ? new Date(status.expiresAt) : null;
-  const expiresAtDisplay = expiresAtDate && !Number.isNaN(expiresAtDate.getTime()) ? expiresAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
+  // Was toLocaleDateString(undefined, ...). Passing `undefined` selects the HOST
+  // locale, not the app's, so an Arabic UI rendered an English month --
+  // observed live as: "ينتهي بتاريخ October 3, 2026". PCA-FR-113 forbids a
+  // mixed-language fallback. formatDate() takes the active i18n language
+  // explicitly and returns NO_VALUE for a null or unparseable instant, so the
+  // existing "render nothing rather than something wrong" behaviour is kept.
+  const formattedExpiresAt = formatDate(status.expiresAt, i18n.language);
+  const expiresAtDisplay = formattedExpiresAt === NO_VALUE ? null : formattedExpiresAt;
 
   if (status.status === 'EXPIRED') {
     return (

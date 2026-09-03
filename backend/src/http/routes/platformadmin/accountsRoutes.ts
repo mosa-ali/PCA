@@ -15,6 +15,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequirePlatformAdminSession } from '../../../platformadmin/auth/fastifyPlatformAdminAuthPlugin.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
+import { authorizeBillingOperation } from '../../../billing/rbac.js';
 import { AccountsReadModel } from '../../../platformadmin/readmodels/AccountsReadModel.js';
 import type { AccountSummary } from '../../../platformadmin/readmodels/AccountsReadModel.js';
 import { FamilyAccountStatusService, FamilyAccountStatusError } from '../../../platformadmin/accounts/FamilyAccountStatusService.js';
@@ -60,7 +61,30 @@ function mapFamilyAccountStatusError(error: unknown, reply: FastifyReply): boole
   return false;
 }
 
-function toAccountDto(account: AccountSummary) {
+/**
+ * PCA-BILLING-READ-SPLIT-1 (security fix): this route is gated on
+ * VIEW_SUPPORT_ACCOUNT_METADATA, which is ALLOW for all five roles
+ * (rbacPolicy.ts). `latestSubscription` however carries
+ * `billing_subscriptions` fields -- subscriptionId, planId, status,
+ * currentPeriodStart, currentPeriodEnd -- which are exactly what
+ * GET /platform-admin/billing/subscriptions 403s a SUPPORT_ADMIN for, and
+ * VIEW_BILLING_RECORDS is DENY for both PLATFORM_ADMIN and SUPPORT_ADMIN
+ * (billing/rbac.ts, whose header states SUPPORT_ADMIN has "no billing read
+ * of any kind"). Before this fix a SUPPORT_ADMIN token could read every
+ * family's plan, status and billing period straight off
+ * GET /platform-admin/accounts?limit=100.
+ *
+ * The response OMITS the billing-bearing field for roles that lack
+ * VIEW_BILLING_RECORDS rather than 403ing the whole route -- the
+ * account/entitlement metadata here is legitimately support-facing. That
+ * follows the precedent GET /platform-admin/quotes/pending already sets
+ * (billingReadRoutes.ts: same VIEW_SUPPORT_ACCOUNT_METADATA gate,
+ * deliberately omits the quote amount from its items). The key is absent,
+ * not null: `null` is already the meaningful "this family has no
+ * subscription" value and must stay distinguishable from "you may not see
+ * it".
+ */
+function toAccountDto(account: AccountSummary, canViewBilling: boolean) {
   return {
     familyId: account.familyId,
     createdAt: dateToJson(account.createdAt),
@@ -81,15 +105,19 @@ function toAccountDto(account: AccountSummary) {
           overLimitManagedDevice: account.entitlement.overLimitManagedDevice,
         }
       : null,
-    latestSubscription: account.latestSubscription
+    ...(canViewBilling
       ? {
-          subscriptionId: account.latestSubscription.subscriptionId,
-          planId: account.latestSubscription.planId,
-          status: account.latestSubscription.status,
-          currentPeriodStart: dateToJson(account.latestSubscription.currentPeriodStart),
-          currentPeriodEnd: dateToJson(account.latestSubscription.currentPeriodEnd),
+          latestSubscription: account.latestSubscription
+            ? {
+                subscriptionId: account.latestSubscription.subscriptionId,
+                planId: account.latestSubscription.planId,
+                status: account.latestSubscription.status,
+                currentPeriodStart: dateToJson(account.latestSubscription.currentPeriodStart),
+                currentPeriodEnd: dateToJson(account.latestSubscription.currentPeriodEnd),
+              }
+            : null,
         }
-      : null,
+      : {}),
   };
 }
 
@@ -119,9 +147,10 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       const familyId = typeof query.familyId === 'string' && query.familyId.length > 0 && query.familyId.length <= FAMILY_ID_MAX_LENGTH ? query.familyId : undefined;
       const sortBy = query.sortBy === 'familyId' ? 'familyId' : 'createdAt';
       const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
+      const canViewBilling = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
       const result = await readModel.list(page, includeDeleted, { familyId, sortBy, sortDir });
       return reply.code(200).send({
-        items: result.items.map(toAccountDto),
+        items: result.items.map((account) => toAccountDto(account, canViewBilling)),
         total: result.total,
         limit: result.limit,
         offset: result.offset,
@@ -143,7 +172,7 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       }
       const account = await readModel.getById(accountId);
       if (!account) return reply.code(404).send({ error: 'not_found' });
-      return reply.code(200).send(toAccountDto(account));
+      return reply.code(200).send(toAccountDto(account, authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW'));
     },
   );
 

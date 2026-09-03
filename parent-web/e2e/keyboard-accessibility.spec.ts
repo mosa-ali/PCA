@@ -69,10 +69,40 @@ test.describe('keyboard navigation and modal focus management', () => {
 
   test('all primary sidebar links are reachable by keyboard alone (visible focus outline)', async ({ page }) => {
     await page.goto('/dashboard');
-    const requestsLink = page.getByRole('link', { name: 'Requests' });
+    // Scoped to the sidebar: the dashboard also carries a "Pending requests"
+    // KPI tile and per-child "N requests" badges pointing at /requests, so an
+    // unscoped lookup resolves to several links once they have loaded and
+    // trips strict mode. This test is about the SIDEBAR link.
+    const requestsLink = page.locator('#app-sidebar').getByRole('link', { name: 'Requests', exact: true });
     await requestsLink.focus();
     await expect(requestsLink).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: 'Requests' })).toBeVisible();
+  });
+});
+
+test.describe('header controls are keyboard-operable', () => {
+  test('the account control opens and closes with the keyboard and restores focus', async ({ page }) => {
+    await page.goto('/dashboard');
+    const trigger = page.getByRole('button', { name: /Open account menu/ });
+    await trigger.focus();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('Enter');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#header-profile-panel')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#header-profile-panel')).toHaveCount(0);
+    // Escape must not strand focus on a panel that just disappeared.
+    await expect(trigger).toBeFocused();
+  });
+
+  test('the language control is reachable and activatable by keyboard alone', async ({ page }) => {
+    await page.goto('/dashboard');
+    const arabic = page.getByRole('button', { name: 'العربية' });
+    await arabic.focus();
+    await expect(arabic).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   });
 });

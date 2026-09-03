@@ -16,6 +16,13 @@
 //
 // Keep this list in sync with test:db's own file list only in spirit: DB-
 // backed *.mysql.test.mjs files belong in test:db (package.json), never here.
+//
+// You do not have to remember to update this list. test/meta/
+// testSuiteRegistration.test.mjs -- itself registered below -- fails the suite
+// whenever a non-DB *.test.mjs exists on disk but is missing from here, so an
+// unregistered test file is a RED build rather than a silently-skipped file.
+// It also fails on entries here that no longer exist on disk, on DB-backed
+// paths that wandered in, and on files that would run twice.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -25,6 +32,7 @@ const backendRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const files = [
   "test/invitation/token.test.mjs",
   "test/invitation/service.test.mjs",
+  "test/invitation/iosEnrollmentUnavailable.test.mjs",
   "test/device/publicKey.test.mjs",
   "test/device/service.test.mjs",
   "test/relay/policy.test.mjs",
@@ -231,6 +239,10 @@ const files = [
   "test/tamper/TrustedTimeTamperBridge.test.mjs",
   "test/telemetry/consent.test.mjs",
   "test/youtube/SafeContentCapability.test.mjs",
+  // Guards this very list: fails if any non-DB *.test.mjs exists on disk but is
+  // absent from it (see test/meta/testSuiteRegistration.test.mjs for why the
+  // list stayed hand-maintained instead of becoming a glob).
+  "test/meta/testSuiteRegistration.test.mjs",
 ];
 
 const result = spawnSync(process.execPath, ['--test', ...files], {

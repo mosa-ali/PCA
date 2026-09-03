@@ -465,3 +465,208 @@ test('TOTP replay: claimTotpCounter concurrency -- of N simultaneous claims of t
   assert.equal(results.filter((r) => r === true).length, 1);
   assert.equal(results.filter((r) => r === false).length, 9);
 });
+
+// ---------------------------------------------------------------------------
+// PCA-STEPUP-LOCKOUT-1 regression suite.
+//
+// Before this fix, `assertStepUp` recorded ONE ADMIN_STEP_UP_DENIED audit row
+// on failure and nothing else: no lockout check, no
+// platform_admin_login_attempts row, no PCA-ADD-PA-020 alert, no session
+// consequence. `login` has had all four since PCA-ADD-PA-020. That asymmetry
+// is exactly backwards relative to the threat model step-up exists for -- an
+// attacker holding a STOLEN 12-hour admin session token but NOT the TOTP
+// device -- because `verifyTotp` accepts a +/-1 step window (3 valid codes per
+// 10^6 per window) and the only remaining ceiling was a 30/min/IP in-process
+// bucket on trivially-multipliable source IPs. Success yields a REFUND-scoped
+// stepUpId, i.e. money movement.
+//
+// Every test below fails on pre-fix code.
+// ---------------------------------------------------------------------------
+
+/** Fresh, never-yet-claimed TOTP code: advancing a whole step guarantees a new absolute HOTP counter (TOTP-REPLAY-1's shared watermark). */
+function nextLiveTotpCode(harness, admin) {
+  harness.clock.advance(30_000);
+  return computeTotp(admin.secret, harness.now().getTime());
+}
+
+test('step-up lockout: 5 denied step-ups inside the window lock out a 6th attempt that presents a CORRECT, unclaimed live code', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const sessionId = randomUUID();
+
+  for (let i = 0; i < 5; i++) {
+    await harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+    harness.clock.advance(1000);
+  }
+
+  const goodCode = nextLiveTotpCode(harness, admin);
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', goodCode, 'APP_OWNER'),
+    PlatformAdminAuthError,
+  );
+  // The locked-out attempt is itself ledgered, exactly as login's is.
+  assert.equal(harness.repository._loginAttempts.filter((a) => a.outcome === 'LOCKED_OUT').length, 1);
+});
+
+test('step-up denial writes a real FAILED_MFA attempt row (the lockout ledger), not only an audit row', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const sessionId = randomUUID();
+
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', '000000', 'APP_OWNER'),
+    PlatformAdminAuthError,
+  );
+
+  // THE regression assertion: pre-fix this count was 0 -- a denied step-up was
+  // invisible to `recentFailedLoginTimestampsDescending`, so an attacker had an
+  // unlimited guessing budget.
+  const failedMfa = harness.repository._loginAttempts.filter((a) => a.outcome === 'FAILED_MFA');
+  assert.equal(failedMfa.length, 1);
+  // Written against the SAME email_hash key login uses -- one shared budget.
+  assert.equal(failedMfa[0].emailHash.toString('hex'), hashAdminEmail(admin.email).toString('hex'));
+
+  // Still exactly one audit row, still ADMIN_STEP_UP_DENIED with its scope
+  // context intact (never downgraded to a misleading ADMIN_LOGIN_FAILED).
+  const denied = harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_STEP_UP_DENIED');
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].result, 'DENIED');
+  assert.equal(denied[0].metadata.scope, 'REFUND');
+  assert.equal(denied[0].targetRef, `session:${sessionId}`);
+  assert.equal(harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_LOGIN_FAILED').length, 0);
+});
+
+test('step-up and login share ONE failure budget: 4 failed logins + 1 denied step-up lock out a subsequent correct login', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+
+  for (let i = 0; i < 4; i++) {
+    await harness.authService.login(admin.email, 'wrong password', '000000').catch(() => {});
+    harness.clock.advance(1000);
+  }
+  await harness.authService.assertStepUp(admin.adminId, randomUUID(), 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+
+  const goodCode = nextLiveTotpCode(harness, admin);
+  await assert.rejects(() => harness.authService.login(admin.email, admin.password, goodCode), PlatformAdminAuthError);
+});
+
+test('step-up and login share ONE failure budget in the other direction too: 4 denied step-ups + 1 failed login lock out a subsequent step-up', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const sessionId = randomUUID();
+
+  for (let i = 0; i < 4; i++) {
+    await harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+    harness.clock.advance(1000);
+  }
+  await harness.authService.login(admin.email, 'wrong password', '000000').catch(() => {});
+
+  const goodCode = nextLiveTotpCode(harness, admin);
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', goodCode, 'APP_OWNER'),
+    PlatformAdminAuthError,
+  );
+});
+
+test('step-up denial on an APP_OWNER account fires the PCA-ADD-PA-020 alert; a SUPPORT_ADMIN denial does not', async () => {
+  const harness = buildHarness();
+  const owner = await createLoginableAdmin(harness, { role: 'APP_OWNER' });
+  await harness.authService.assertStepUp(owner.adminId, randomUUID(), 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+  assert.equal(harness.alertPort.events.length, 1);
+  assert.equal(harness.alertPort.events[0].kind, 'LOGIN_FAILED');
+  assert.equal(harness.alertPort.events[0].sourceAdminId, owner.adminId);
+
+  const support = await createLoginableAdmin(harness, { role: 'SUPPORT_ADMIN' });
+  await harness.authService.assertStepUp(support.adminId, randomUUID(), 'REFUND', '000000', 'SUPPORT_ADMIN').catch(() => {});
+  assert.equal(harness.alertPort.events.length, 1); // unchanged
+});
+
+test('step-up denial on a FINANCE_ADMIN account (the other refund-capable role) also fires the alert', async () => {
+  const harness = buildHarness();
+  const finance = await createLoginableAdmin(harness, { role: 'FINANCE_ADMIN' });
+  await harness.authService.assertStepUp(finance.adminId, randomUUID(), 'REFUND', '000000', 'FINANCE_ADMIN').catch(() => {});
+  assert.equal(harness.alertPort.events.length, 1);
+});
+
+test('step-up lockout revokes the session the attacker is riding: a previously-valid token stops validating after N denials', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const loginCode = computeTotp(admin.secret, harness.now().getTime());
+  const { rawToken } = await harness.authService.login(admin.email, admin.password, loginCode);
+  const identity = await harness.authService.validateSession(rawToken); // valid before the attack
+
+  for (let i = 0; i < 5; i++) {
+    await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+    harness.clock.advance(1000);
+  }
+
+  await assert.rejects(() => harness.authService.validateSession(rawToken), PlatformAdminAuthError);
+  const revoked = harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_SESSION_REVOKED');
+  assert.equal(revoked.length, 1);
+  assert.equal(revoked[0].metadata.reason, 'STEP_UP_DENIAL_LOCKOUT');
+});
+
+test('step-up below the lockout threshold does NOT revoke the session (4 denials leave a valid token working)', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const loginCode = computeTotp(admin.secret, harness.now().getTime());
+  const { rawToken } = await harness.authService.login(admin.email, admin.password, loginCode);
+  const identity = await harness.authService.validateSession(rawToken);
+
+  for (let i = 0; i < 4; i++) {
+    await harness.authService.assertStepUp(admin.adminId, identity.sessionId, 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+    harness.clock.advance(1000);
+  }
+
+  await assert.doesNotReject(() => harness.authService.validateSession(rawToken));
+  assert.equal(harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_SESSION_REVOKED').length, 0);
+});
+
+test('step-up lockout is evaluated BEFORE any TOTP work: a locked-out attempt never claims (burns) the shared HOTP counter', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const sessionId = randomUUID();
+
+  for (let i = 0; i < 5; i++) {
+    await harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', '000000', 'APP_OWNER').catch(() => {});
+    harness.clock.advance(1000);
+  }
+  const counterBefore = (await harness.repository.getMfaState(admin.adminId)).lastAcceptedTotpCounter ?? null;
+
+  const goodCode = nextLiveTotpCode(harness, admin);
+  await assert.rejects(
+    () => harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', goodCode, 'APP_OWNER'),
+    PlatformAdminAuthError,
+  );
+  const counterAfter = (await harness.repository.getMfaState(admin.adminId)).lastAcceptedTotpCounter ?? null;
+  assert.equal(counterAfter, counterBefore, 'a locked-out step-up must not consume the live TOTP counter');
+});
+
+test('step-up denial never records the submitted code, and a successful step-up records no failure at all', async () => {
+  const harness = buildHarness();
+  const admin = await createLoginableAdmin(harness);
+  const sessionId = randomUUID();
+  const guessed = '424242';
+
+  await harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', guessed, 'APP_OWNER').catch(() => {});
+  for (const event of harness.repository._auditEvents) {
+    assert.equal(JSON.stringify(event).includes(guessed), false);
+  }
+
+  const goodCode = nextLiveTotpCode(harness, admin);
+  const attemptsBefore = harness.repository._loginAttempts.length;
+  await harness.authService.assertStepUp(admin.adminId, sessionId, 'REFUND', goodCode, 'APP_OWNER');
+  assert.equal(harness.repository._loginAttempts.length, attemptsBefore, 'a granted step-up must not write an attempt row');
+});
+
+test('step-up fails closed when the admin account cannot be resolved, and still audits the denial', async () => {
+  const harness = buildHarness();
+  const unknownAdminId = randomUUID();
+  await assert.rejects(
+    () => harness.authService.assertStepUp(unknownAdminId, randomUUID(), 'REFUND', '000000', null),
+    PlatformAdminAuthError,
+  );
+  const denied = harness.repository._auditEvents.filter((e) => e.eventType === 'ADMIN_STEP_UP_DENIED');
+  assert.equal(denied.length, 1);
+  assert.equal(denied[0].metadata.reason, 'UNKNOWN_ACCOUNT');
+});

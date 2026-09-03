@@ -48,8 +48,58 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
       accountFamilyId.set(accountId, familyId);
     },
 
+    // Test-only seeding helper, NOT part of the
+    // FamilyMemberInvitationRepository interface (the interface's own
+    // create() was replaced by createAtomically below). Writes a row
+    // verbatim, bypassing every lifecycle decision -- how a test stands up
+    // an already-ACCEPTED/EXPIRED/REVOKED row that a real prior request
+    // would have produced.
     async create(record) {
       byId.set(record.invitationId, { ...record });
+    },
+
+    /**
+     * Mirrors MySqlFamilyMemberInvitationRepository.createAtomically's own
+     * transaction step for step, in the SAME order (which is load-bearing:
+     * the real implementation deliberately takes the invitation-side lock,
+     * then the entitlement row, so a concurrent create and accept cannot
+     * invert on each other):
+     *   1. capacityGuard.lock -- the serialization point.
+     *   2. persist the due PENDING -> EXPIRED transitions, so a stale
+     *      pending invitation neither blocks a re-invite nor holds a seat.
+     *   3. authoritative read of what is still live, then the
+     *      duplicate-pending decision, then the capacity verdict against
+     *      that live count (which EXCLUDES this record -- it is not
+     *      inserted yet, exactly like the real SELECT).
+     *   4. insert.
+     * `capacityGuard` is optional: undefined when no entitlement repository
+     * is wired, in which case there is no configured limit to enforce.
+     * `null` stands in for the transaction connection this double doesn't
+     * have -- the same sentinel acceptAtomically and removeMemberAtomically
+     * already pass to their own hooks.
+     */
+    async createAtomically(record, now, capacityGuard) {
+      if (capacityGuard) await capacityGuard.lock(null, record.familyId);
+
+      for (const stored of byId.values()) {
+        if (stored.familyId === record.familyId && stored.status === 'PENDING' && stored.expiresAt.getTime() <= now.getTime()) {
+          stored.status = 'EXPIRED';
+          stored.expiredAt = now;
+        }
+      }
+
+      const livePending = [...byId.values()].filter((r) => r.familyId === record.familyId && r.status === 'PENDING');
+      if (livePending.some((r) => Buffer.compare(r.invitedEmailHash, record.invitedEmailHash) === 0)) {
+        return { outcome: 'DUPLICATE_PENDING_INVITATION' };
+      }
+
+      if (capacityGuard) {
+        const verdict = await capacityGuard.evaluate(null, record.familyId, livePending.length);
+        if (verdict === 'CAPACITY_EXCEEDED') return { outcome: 'CAPACITY_EXCEEDED' };
+      }
+
+      byId.set(record.invitationId, { ...record });
+      return { outcome: 'CREATED' };
     },
 
     async findByIdForFamily(familyId, invitationId) {
@@ -87,14 +137,24 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
       // by only publishing the mutation once the hook has resolved. `null`
       // stands in for the transaction connection this double doesn't have.
       // SEAT IS PER MEMBER, NOT PER ACCEPTANCE -- mirrors the MySQL
-      // implementation's prior-acceptance check so both honour one contract.
-      const alreadyAMember = [...byId.values()].some(
-        (other) =>
-          other.invitationId !== invitationId &&
-          other.familyId === record.familyId &&
-          other.status === 'ACCEPTED' &&
-          other.acceptedByAccountId === acceptedByAccountId,
-      );
+      // implementation's prior-acceptance check so both honour one contract,
+      // INCLUDING its `pa.family_id = fmi.family_id` scoping: a prior
+      // ACCEPTED row only proves this account is already holding a seat
+      // while the account is STILL BOUND to that family. removeMember
+      // clears parent_accounts.family_id and releases the seat but never
+      // retires the ACCEPTED invitation row, so an unscoped count let a
+      // remove -> re-invite -> re-accept cycle rejoin a member for free,
+      // driving used_count to zero while membership grew without bound.
+      const stillBoundToThisFamily = accountFamilyId.get(acceptedByAccountId) === record.familyId;
+      const alreadyAMember =
+        stillBoundToThisFamily &&
+        [...byId.values()].some(
+          (other) =>
+            other.invitationId !== invitationId &&
+            other.familyId === record.familyId &&
+            other.status === 'ACCEPTED' &&
+            other.acceptedByAccountId === acceptedByAccountId,
+        );
       if (onAcceptedInTransaction && !alreadyAMember) await onAcceptedInTransaction(null, { ...accepted });
       byId.set(invitationId, accepted);
       return { outcome: 'ACCEPTED', record: { ...accepted } };

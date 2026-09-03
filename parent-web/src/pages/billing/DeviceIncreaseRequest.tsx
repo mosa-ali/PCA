@@ -21,6 +21,14 @@ import { RequestStateBadge } from '../../components/billing/RequestStateBadge';
 import { formatMoney, isQuoteExpired, isSameOriginRedirect, suggestedDeviceTargets } from '../../domain/billing';
 import { storePaymentAttemptId } from '../../domain/checkoutCorrelation';
 
+// A same-origin verdict is not on its own enough to hand a value to the
+// router. `startsWith('/')` also accepts the protocol-relative `//host`
+// and the backslash form `/\\host`: react-router calls history.pushState,
+// which throws a cross-origin SecurityError, and its own catch falls back
+// to window.location.assign -- so a naive check reaches the identical open
+// redirect it was meant to prevent. Require exactly one leading slash.
+const SAFE_IN_APP_PATH = /^\/(?![/\\])/;
+
 export default function DeviceIncreaseRequest() {
   const { t, i18n } = useTranslation();
   const clients = getApiClients();
@@ -89,7 +97,7 @@ export default function DeviceIncreaseRequest() {
       if (isSameOriginRedirect(session.redirectUrl, window.location.origin)) {
         // DevBillingClient fixture (or any same-origin redirect target):
         // stay in-app via the router, exactly as before.
-        navigate(session.redirectUrl.startsWith('/') ? session.redirectUrl : `/subscription/checkout-return?requestId=${id}`);
+        navigate(SAFE_IN_APP_PATH.test(session.redirectUrl) ? session.redirectUrl : `/subscription/checkout-return?requestId=${id}`);
       } else {
         // A genuine different-origin payment-provider handoff -- this is a
         // real, full-page browser navigation. PCA-ADD-BILL-035: this is

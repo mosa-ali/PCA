@@ -7,13 +7,24 @@ import type { Plugin } from 'vite';
  * X-Content-Type-Options and Permissions-Policy CANNOT be set via <meta>
  * per spec -- those still need to be set as real HTTP response headers by
  * whatever serves this build in production (deployment config, not
- * something this SPA slice can enforce on its own). frame-ancestors 'none'
- * below covers the same clickjacking risk X-Frame-Options addresses, in
- * browsers that honor CSP -- which matters more here than anywhere else in
- * the product: this console authorises refunds, settlement batches,
+ * something this SPA slice can enforce on its own).
+ *
+ * CLICKJACKING IS NOT COVERED HERE, AND THAT MATTERS MORE IN THIS CONSOLE
+ * THAN ANYWHERE ELSE IN THE PRODUCT. Per CSP Level 3, frame-ancestors
+ * (along with sandbox and report-uri) is IGNORED when a policy is delivered
+ * in a <meta http-equiv> element -- it is only honoured in a real
+ * Content-Security-Policy response header. The frame-ancestors 'none'
+ * directive in buildCspContent below is therefore INERT as shipped; it is
+ * kept in the string only so the policy is already correct on the day
+ * something serves it as a real header. Nothing in this repository sets
+ * X-Frame-Options either. So this console is framable by any site today,
+ * and stays framable until a reverse proxy / CDN in front of the built
+ * assets sets a real Content-Security-Policy (or X-Frame-Options) response
+ * header -- deployment work that no change to this plugin can do. The
+ * exposure is real: this console authorises refunds, settlement batches,
  * entitlement overrides and admin-user role grants, and every one of those
  * mutations is confirmed behind a step-up prompt that a framing attacker
- * would otherwise be able to bait a click onto.
+ * can currently bait a click onto.
  *
  * DELIBERATELY NOT A COPY OF parent-web/vite/securityHeadersPlugin.ts's
  * connect-src FALLBACK. parent-web talks to an absolute API origin and so

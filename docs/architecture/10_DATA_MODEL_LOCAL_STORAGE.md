@@ -136,7 +136,8 @@ Central service (Enrollment/Licensing Service + Relay, doc 05 Section 3.3/3.4) h
 | Central entity | Fields (illustrative, not exhaustive DDL) | Corresponds to |
 |---|---|---|
 | Account/license | account ID, subscription/plan state, billing reference (out of this document's scope beyond existence) | doc 05 Section 3.3 |
-| Family (opaque) | `familyId` only — no name, no member list beyond count if needed for licensing tiers | Section 3.1's `familyId`, opaque per PCA-DATA-012 |
+| Family (opaque) | `familyId` only — no name, no member list beyond count if needed for licensing tiers (this prohibition is unchanged; the child-profile membership row below is an opaque id-to-id edge set, **not** a readable member list — see Section 7.1) | Section 3.1's `familyId`, opaque per PCA-DATA-012 |
+| Child-profile membership (opaque) | a server-minted, opaque `childProfileId` bound to its owning `familyId`, plus a created-at timestamp and an operational idempotency value — **existence and family ownership only**, no readable child content of any kind | Section 3.2's `FamilyMember` with role `CHILD` — its **identity binding only**, never its readable fields; doc 39 Section 11 |
 | Device registration | `deviceId`, DSK/DEK public key IDs, platform, last-seen (coarse), trust/key epoch, enrollment state (coarse: pending/active/revoked) | Section 3.3 |
 | Enrollment invitation | token hash, issued-at, expires-at, redeemed (bool) — doc 03 PCA-SEC-001 | doc 08 Section 4 |
 | Push routing metadata | opaque push token per device | doc 09 Section 6 |
@@ -145,6 +146,26 @@ Central service (Enrollment/Licensing Service + Relay, doc 05 Section 3.3/3.4) h
 | Short-lived encrypted relay envelopes | ciphertext blob, opaque sender/recipient device ID, size class, TTL expiry | Section 6, doc 09 Section 5.1 |
 
 **No central `web_visits`, `locations`, `usage_sessions`, `content_block_events`, `prayer_events`, or any other readable family-activity-history table is allowed under any name** — this is the schema-level restatement of doc 05 PCA-FR-136 and doc 09 PCA-SEC-023; a table matching this description appearing anywhere in an implementation is a release-blocking architecture violation, not a normal schema addition.
+
+### 7.1 Boundary note: the child-profile membership row is an existence authority, not a child-profile record
+
+Owner-approved scope, quoted exactly and constituting the entire permission (change `CHG-2026-09-04-01`, Section 9 of doc 00):
+
+> "The central service may maintain an opaque child-profile membership registry consisting of a server-minted `childProfileId` bound to `familyId`. No readable child-profile content is permitted in the central service."
+
+This admits **one fact and no more**: *an opaque child-profile identifier exists, and it belongs to this opaque family.* It is a membership/existence authority. It is **not** a `ChildProfile` record, and it does not create one.
+
+**The authoritative readable child entity is unchanged.** `FamilyMember` (Section 3.2), with `role = CHILD`, remains the system of record for everything a person would recognise as a child's profile, and its `displayName` remains *(sensitive — local plaintext only; never included in any central-service-visible field, consistent with doc 09 Section 5.2)*. The central membership row carries the child's **identifier**; the child's **content** stays parent-device-local/child-device-local and E2EE, exactly as before this change.
+
+**Closed field list — none of the following may ever appear in the central child-profile membership registry, in any table, column, index, log field, request body, response DTO, or API contract, under any name, spelling, encoding, abbreviation, or hash:**
+
+`displayName` · nickname · `dateOfBirth` · age (including `ageTier`/`ageUxTier` and any age band or birth year) · gender · school · avatar/photo · wellbeing · location · usage/activity.
+
+That list is illustrative of a rule, not a loophole: the rule is that the registry holds **only** opaque identifiers, an operational idempotency value, and a timestamp. `ageTier` and the initial policy profile are owned by the enrollment invitation (doc 08 Section 4) and by the E2EE `Policy` (Section 3.4); duplicating either onto a central child row would fork the model and is prohibited on both counts.
+
+**This approval is not precedent.** It permits an edge, not a directory. Any later proposal to add a readable child field to this registry, to add a lookup that returns more than existence/ownership, or to make "this identifier belongs to another family" distinguishable from "this identifier does not exist" (doc 39 Section 5's error-oracle rule) is a **new** change requiring its own doc 00 Section 9 entry and its own owner approval; `CHG-2026-09-04-01` may not be cited in support of it. Section 9's failure-mode table records the detection and the consequence.
+
+**Why the design is shaped this way, stated so a later reader does not have to reconstruct it:** a full compromise of the central database must not yield a family directory — never *"Family 123: Ahmed 11, Sara 14, Mohammed 8."* It must yield only opaque relationships, from which an attacker learns that a family with an opaque identifier has some number of child profiles with opaque identifiers, and nothing else. Every field prohibited above is prohibited because holding it would make that sentence false.
 
 ## 7A. Canonical privacy and data-flow inventory
 
@@ -166,6 +187,7 @@ This is the package's single canonical data-flow inventory. `Child`/`Parent` mea
 | Recovery envelope | Owner device | Opaque copy only | Opaque copy only | Yes (RS-protected) | Opaque blob/metadata / ACCOUNT or recovery lifecycle | None beyond routing | No by default | Replace on recovery/RS rotation; PCA never has RS/plaintext |
 | Audit event, crash log, diagnostic log | Device/app | Audit yes; diagnostics minimized | Audit yes | Audit sync if configured | No activity plaintext; crash/diagnostic may expose only approved OPS metadata / OPS | Push none | Audit limited; diagnostics no | Audit floor per doc 11; diagnostics bounded OPS; redact URLs/locations/keys/secrets |
 | Encrypted export | Parent device | Optional local file | Yes at creation | Family-key encrypted | No unless family independently uploads it / NONE | Any chosen external provider metadata is outside PCA control | It is the export | `EXPORT_EXISTS_EXTERNALLY`; app deletion cannot delete external copies |
+| Child-profile membership (opaque ids only — an opaque `childProfileId` and its owning `familyId`) | Enrollment Service (the `childProfileId` is server-minted, opaque per PCA-DATA-012, never derived from a name or any human-meaningful value); the create is requested by the parent device | Identifier only, no content | Identifier only, no content | No — there is no family payload to encrypt; the identifier and the family edge are the whole record, and the child's readable profile stays in the E2EE `FamilyMember`/`Policy` classes above | Opaque `childProfileId`, owning `familyId`, created-at, operational idempotency value / ACCOUNT — **no name, nickname, DOB, age/age tier, gender, school, avatar/photo, wellbeing, location or usage/activity, now or later (Section 7.1)** | None beyond routing; no push, email or payment provider sees this class | Limited — the opaque identifier list only, never a name or an age; a parent-device export (doc 09 Section 9 PCA-SEC-026) supplies any readable labelling from local plaintext | ACCOUNT lifecycle. Doc 11 Section 3.2-protected current family relationship: never retention-cycled, and "delete now" does not touch it (doc 11 Section 6 clears activity content and preserves the family relationship). No `RetentionEntityClass` variant may be added for it (doc 11 PCA-DATA-020). Removal belongs to doc 08 Section 8's family/device removal flow, which is a separate, currently unimplemented surface — recorded as residual, not invented here |
 
 Any new field or flow must add a row here before implementation. Docs 09 and 11 are normative for crypto and deletion respectively; docs 19 and 27 must reference this matrix for notification and observability boundaries.
 
@@ -201,10 +223,13 @@ All entities above are child-device-local or parent-device-local (Section 2's de
 | `Device.enrollmentState` diverges from doc 08's state machine (a second, ad hoc status field introduced during implementation) | Doc 32 traceability cross-check | Implementation defect; this document's PCA-DATA-010-adjacent rule (Section 3.3) is the single source of truth for the enum |
 | `LocationPoint` retention accidentally inherits the general `defaultRetentionPolicy` instead of its own shorter policy | Retention-config review (doc 11 Section 3) | Structural fix required: `LocationPoint` must reference its own `retentionPolicy`, not fall back silently |
 | A `displayName`-class *(sensitive — local plaintext only)* field is accidentally included in an outbound envelope's cleartext metadata | Envelope-structure review (doc 09 Section 4) | Implementation defect; doc 09 Section 4's envelope field list is exhaustive and does not include arbitrary entity fields |
+| The central child-profile membership registry (Section 7) gains a readable child field — `displayName`, nickname, `dateOfBirth`, age/`ageTier`, gender, school, avatar/photo, wellbeing, location, or usage/activity — or gains a lookup returning anything beyond existence/family-ownership, or is cited as precedent for either | Schema-review gate (doc 05 PCA-FR-136, doc 28), against Section 7.1's closed field list; doc 09 Section 5.1's matching row | Release-blocked; treated as a doc 00 Section 9 conflict, not a normal migration. `CHG-2026-09-04-01` approved an opaque identifier-to-family edge **only** and confers no permission for any readable field; a new owner approval and a new Section 9 entry are required |
+| The registry makes "this `childProfileId` belongs to another family" distinguishable from "this `childProfileId` does not exist" (a cross-family existence oracle) | Doc 39 Section 5's error-oracle rule; doc 28 authorization tests | Security defect and an architecture violation of doc 39 — every non-member outcome must collapse to one indistinguishable refusal |
 
 ## 10. Security/privacy implications
 
-- Section 7's central-service table is the schema-level ground truth for doc 09 Section 5.1's "what PCA infrastructure MAY know" list — the two MUST be kept in sync; a Section 7 addition without a corresponding doc 09 Section 5.1 update (or vice versa) is a doc 00 Section 9 conflict.
+- Section 7's central-service table is the schema-level ground truth for doc 09 Section 5.1's "what PCA infrastructure MAY know" list — the two MUST be kept in sync; a Section 7 addition without a corresponding doc 09 Section 5.1 update (or vice versa) is a doc 00 Section 9 conflict. The Section 7 child-profile membership row's counterpart is the doc 09 Section 5.1 "child-profile membership" row added under the same change, `CHG-2026-09-04-01`.
+- Section 7.1's closed field list is the precedent control for the child-profile membership registry. The registry is deliberately shaped so that reading the entire central database yields opaque relationships and no family directory; a future change that would make *"Family 123: Ahmed 11, Sara 14, Mohammed 8"* reconstructible from central data is the exact outcome Section 7.1 exists to prevent, whatever it is called.
 - *(sensitive — local plaintext only)* field tags throughout Sections 3–5 are this document's mechanism for making doc 09 Section 5.2's "MUST NOT know, readable" list checkable against specific fields rather than only against category names.
 - The `ContentBlockEvent`/`ProximityEvent` "no raw media / no face data" notes (Sections 4.3, 4.6) are the data-model-level enforcement of doc 01 Section 5's no-covert-surveillance principle and doc 03 PCA-FR-126's testable requirement.
 

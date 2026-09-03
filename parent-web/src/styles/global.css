@@ -1,31 +1,264 @@
+/* ============================================================================
+   PCA Parent Console -- design system (PPR-2, spec sections 1-3).
+
+   TWO LAYERS, ON PURPOSE.
+
+   Layer 1 (`--pca-*`) is a set of hand-picked raw ramp steps. No component
+   ever references one directly. Layer 2 is the semantic alias set every rule
+   below uses. A future dark theme redefines ONLY Layer 2 -- it re-points each
+   alias at a DIFFERENT existing Layer-1 step. Nothing is inverted, no
+   `filter: invert`, no per-component override, and no hand-picked colour is
+   recomputed. That is why no component rule below may ever define its colour
+   only inside a media/attribute block.
+
+   Light is the production default and the only theme shipped in PPR-2. Dark is
+   deliberately NOT wired to `prefers-color-scheme`: it would return later as an
+   explicit `:root[data-theme='dark']` opt-in only. The block is omitted rather
+   than shipped half-mapped, because a partially remapped dark theme is less
+   legible than no dark theme at all.
+
+   RTL is first class: anything that must mirror uses logical properties
+   (`margin-inline-*`, `padding-inline-*`, `inset-inline-*`, `border-inline-*`,
+   `text-align: start/end`). `left`/`right` appear in exactly one place -- the
+   `<select>` chevron background-position, where a physical side is unavoidable
+   and both directions are therefore written out explicitly.
+   ============================================================================ */
+
 :root {
-  --color-bg: #0b1220;
-  --color-surface: #121c2e;
-  --color-surface-raised: #182640;
-  --color-border: #263a5c;
-  --color-text: #e8f5f3;
-  --color-text-muted: #a9c4c0;
-  --color-brand: #2fae9e;
-  --color-brand-strong: #1d4f4a;
-  --color-focus: #7fd9c9;
-  --color-danger: #e2685a;
-  --color-warning: #e0b24b;
-  --color-success: #59c088;
-  --color-offline: #6c7a94;
+  /* --- Layer 1: raw ramps. Never referenced by a component rule. --- */
+
+  /* neutrals (cool, family-friendly, not clinical) */
+  --pca-white: #ffffff;
+  --pca-slate-25: #fafbfd;
+  --pca-slate-50: #f4f7fa;
+  --pca-slate-100: #e9eef4;
+  --pca-slate-150: #eef1f5;
+  --pca-slate-200: #d7e0ea;
+  --pca-slate-300: #b9c6d6;
+  --pca-slate-350: #76889f;
+  --pca-slate-400: #647287;
+  --pca-slate-600: #4a5a6e;
+  --pca-slate-700: #33455a;
+  --pca-slate-800: #1f2f42;
+  --pca-slate-900: #132030;
+  --pca-slate-950: #0b1522;
+
+  /* brand teal -- the EXISTING #2FAE9E is kept verbatim as teal-400; the
+     darker steps are added so the accent reaches AA on a light surface. */
+  --pca-teal-50: #e8f6f3;
+  --pca-teal-100: #c9eae4;
+  --pca-teal-200: #94d8cc;
+  --pca-teal-300: #5cc2b2;
+  --pca-teal-400: #2fae9e;
+  --pca-teal-500: #17907f;
+  --pca-teal-600: #0f766a;
+  --pca-teal-700: #0b5c53;
+  --pca-teal-800: #08453e;
+
+  /* status hues -- seven distinct families, so no two states share a colour */
+  --pca-green-50: #e7f6ee;
+  --pca-green-100: #c4e9d6;
+  --pca-green-600: #12704b;
+  --pca-amber-50: #fef6e0;
+  --pca-amber-100: #fae7b4;
+  --pca-amber-600: #7a5600;
+  --pca-orange-50: #feeee2;
+  --pca-orange-100: #fbd5b8;
+  --pca-orange-600: #92400e;
+  --pca-blue-50: #e8f0fe;
+  --pca-blue-100: #c6dafb;
+  --pca-blue-600: #1552b8;
+  --pca-violet-50: #f1edfd;
+  --pca-violet-100: #dcd2fa;
+  --pca-violet-600: #5b32c4;
+  --pca-red-50: #fdedec;
+  --pca-red-100: #f9cfcb;
+  --pca-red-600: #b42318;
+  --pca-red-700: #8f1c13; /* 8.96:1 on white -- the destructive-button hover */
+
+  /* focus is deliberately NOT the brand hue, so a focused brand-coloured
+     button is unmistakably focused rather than merely slightly different. */
+  --pca-focus-blue: #0b57d0;
+}
+
+:root {
+  /* --- Layer 2: semantic aliases (light = default). --- */
+  color-scheme: light;
+
+  /* surfaces */
+  --surface-canvas: var(--pca-slate-50);
+  --surface: var(--pca-white);
+  --surface-raised: var(--pca-slate-100);
+  --surface-sunken: var(--pca-slate-25);
+  --surface-overlay: rgba(19, 32, 48, 0.45);
+
+  /* borders. `--border` is 1.33:1 on white -- decorative separation only,
+     never the sole boundary of an interactive control. */
+  --border: var(--pca-slate-200);
+  --border-interactive: var(--pca-slate-350); /* 3.63:1 on --surface */
+  --border-strong: var(--pca-slate-300);
+
+  /* text */
+  --text-primary: var(--pca-slate-900); /* 16.45:1 on --surface */
+  --text-secondary: var(--pca-slate-600); /* 7.05:1 */
+  --text-tertiary: var(--pca-slate-400); /* 4.89:1 -- smallest permitted body colour.
+                                            4.54:1 on --surface-canvas, so it is
+                                            deliberately NOT used on --surface-raised. */
+  --text-on-accent: var(--pca-white);
+
+  /* accent */
+  --accent: var(--pca-teal-600); /* 5.50:1 on --surface */
+  --accent-hover: var(--pca-teal-700);
+  --accent-active: var(--pca-teal-800);
+  --accent-soft: var(--pca-teal-50);
+  --accent-on-soft: var(--pca-teal-600); /* 4.95:1 on --accent-soft */
+
+  /* focus */
+  --focus-ring: var(--pca-focus-blue); /* 6.39:1 on --surface, 5.75:1 on --accent-soft */
+  --focus-ring-offset: var(--surface);
+
+  /* elevation. Light theme uses shadow; a later dark theme uses borders. */
+  --shadow-xs: 0 1px 2px rgba(19, 32, 48, 0.06);
+  --shadow-sm: 0 1px 3px rgba(19, 32, 48, 0.08), 0 1px 2px rgba(19, 32, 48, 0.04);
+  --shadow-md: 0 4px 12px rgba(19, 32, 48, 0.08);
+  --shadow-lg: 0 12px 28px rgba(19, 32, 48, 0.12);
+
+  /* --- The seven-state status ramp. ---------------------------------------
+
+     Every state is a first-class citizen. Same pill height, same border width,
+     same font-size, same font-weight, same icon slot. There is deliberately NO
+     `opacity` anywhere in the pill rules: fading "pending delivery" / "limited"
+     / "offline" / "cached" / "not verified" is what made the honest states read
+     as decorative next to the good one. Each foreground clears 5.4:1 on its own
+     fill AND on both page surfaces (see spec section 1.7). */
+
+  /* ok -- verified good */
+  --status-ok-fg: var(--pca-green-600);
+  --status-ok-bg: var(--pca-green-50);
+  --status-ok-border: var(--pca-green-100);
+  /* limited -- works, but with reduced capability */
+  --status-limited-fg: var(--pca-amber-600);
+  --status-limited-bg: var(--pca-amber-50);
+  --status-limited-border: var(--pca-amber-100);
+  /* attention -- a parent must act */
+  --status-attention-fg: var(--pca-orange-600);
+  --status-attention-bg: var(--pca-orange-50);
+  --status-attention-border: var(--pca-orange-100);
+  /* pending -- in flight, not yet confirmed on the device */
+  --status-pending-fg: var(--pca-blue-600);
+  --status-pending-bg: var(--pca-blue-50);
+  --status-pending-border: var(--pca-blue-100);
+  /* offline -- device unreachable; last known values only */
+  --status-offline-fg: var(--pca-slate-600);
+  --status-offline-bg: var(--pca-slate-150);
+  --status-offline-border: var(--pca-slate-200);
+  /* unverified -- we CANNOT confirm this right now */
+  --status-unverified-fg: var(--pca-violet-600);
+  --status-unverified-bg: var(--pca-violet-50);
+  --status-unverified-border: var(--pca-violet-100);
+  /* error -- a genuine failure or revocation */
+  --status-error-fg: var(--pca-red-600);
+  --status-error-bg: var(--pca-red-50);
+  --status-error-border: var(--pca-red-100);
+
+  /* Data freshness is a SEPARATE axis from status: it says how fresh a number
+     is, not what the number says. Conflating them is how a product lies, so
+     freshness renders as a small outlined marker on the timestamp, never as a
+     status pill. LIVE draws no marker at all -- absence means verified. */
+  --freshness-live-fg: var(--text-tertiary);
+  --freshness-cached-fg: var(--pca-amber-600);
+  --freshness-cached-border: var(--pca-amber-100);
+  --freshness-unavailable-fg: var(--pca-violet-600);
+  --freshness-unavailable-border: var(--pca-violet-100);
+
+  /* --- Type ------------------------------------------------------------- */
+
+  /* No webfont, on purpose: this console is PWA-cached for parents on mobile,
+     an Arabic + Latin self-hosted pair is ~200-400KB, and a font origin would
+     have to be added to the CSP in vite/securityHeadersPlugin.ts. `Dubai` and
+     `Tahoma` are Arabic-legible faces already present on Windows. */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans Arabic',
+    'Dubai', Tahoma, Arial, sans-serif;
+  /* Required, not cosmetic: enrollment tokens, fingerprints and fallback codes
+     are compared character-by-character by a parent reading them aloud. */
+  --font-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+
+  --text-2xs: 0.6875rem; /* 11px -- uppercase eyebrow ONLY, never body copy */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base-sm: 0.875rem; /* 14px */
+  --text-base: 1rem; /* 16px -- default body */
+  --text-lg: 1.125rem; /* 18px -- card title */
+  --text-xl: 1.375rem; /* 22px -- section title */
+  --text-2xl: 1.75rem; /* 28px -- page title */
+  --text-kpi: 2.125rem; /* 34px */
+  --text-kpi-sm: 1.625rem; /* 26px -- KPI numeral below 900px */
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55; /* Arabic needs the extra leading for diacritics */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700; /* nothing heavier -- synthetic bold degrades Arabic */
+
+  /* Harmless when the locale renders Arabic-Indic digits; stops figures
+     jittering in KPIs, durations and table columns. */
+  --numeric-tabular: tabular-nums;
+
+  /* --- Space / radius / layout ------------------------------------------
+     --space-1..6 are load-bearing across every existing page and are kept
+     byte-identical. The scale is EXTENDED, never renumbered. */
+  --space-0: 0;
+  --space-05: 0.125rem;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-9: 4rem;
+
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
+  --radius-pill: 999px;
+
   --sidebar-width: 15.5rem;
   --sidebar-width-collapsed: 4rem;
-  --header-height: 3.75rem;
+  /* 3.75rem left no vertical room for a 44px-touch-target bell, a Download App
+     control, a language control and a profile control on one row. */
+  --header-height: 4rem;
   --touch-target: 44px;
+  --content-max: 90rem;
+
+  /* --- Legacy alias shim ------------------------------------------------
+     Twenty-plus source files reference `var(--color-*)` inline. Every legacy
+     name is KEPT and re-pointed at the semantic layer, so no page needs a
+     same-day sweep and nothing silently loses its colour. New code uses the
+     semantic names above. */
+  --color-bg: var(--surface-canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-text: var(--text-primary);
+  /* NOT --text-tertiary: muted text in this app also sits on raised surfaces,
+     where tertiary would fall under AA. */
+  --color-text-muted: var(--text-secondary);
+  --color-brand: var(--accent);
+  --color-brand-strong: var(--accent-hover);
+  --color-focus: var(--focus-ring);
+  --color-danger: var(--status-error-fg);
+  --color-warning: var(--status-attention-fg);
+  --color-success: var(--status-ok-fg);
+  --color-offline: var(--status-offline-fg);
 }
+
+/* ---------- Base ---------- */
 
 * {
   box-sizing: border-box;
@@ -39,9 +272,11 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans Arabic', sans-serif;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   overflow-x: hidden;
 }
 
@@ -57,13 +292,33 @@ body {
 }
 
 a {
-  color: var(--color-brand);
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-hover);
 }
 
 h1,
 h2,
 h3 {
-  line-height: 1.25;
+  line-height: var(--leading-tight);
+  color: var(--text-primary);
+}
+
+h1 {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+}
+
+h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+}
+
+h3 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
 }
 
 button,
@@ -74,12 +329,19 @@ textarea {
   color: inherit;
 }
 
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
 .skip-link {
   position: absolute;
   inset-inline-start: -999px;
   top: auto;
-  background: var(--color-brand-strong);
-  color: #fff;
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
   padding: var(--space-3) var(--space-4);
   z-index: 1000;
   border-radius: var(--radius-sm);
@@ -91,7 +353,7 @@ textarea {
 }
 
 :focus-visible {
-  outline: 3px solid var(--color-focus);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -101,6 +363,7 @@ textarea {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100vh;
+  background: var(--surface-canvas);
 }
 
 .app-shell.sidebar-collapsed {
@@ -115,8 +378,8 @@ textarea {
 }
 
 .sidebar {
-  background: var(--color-surface);
-  border-inline-end: 1px solid var(--color-border);
+  background: var(--surface);
+  border-inline-end: 1px solid var(--border);
   padding: var(--space-4) var(--space-2);
   overflow-y: auto;
 }
@@ -137,6 +400,7 @@ textarea {
     visibility: hidden;
     transition: transform 0.2s ease, visibility 0s linear 0.2s;
     z-index: 60;
+    box-shadow: var(--shadow-lg);
   }
   [dir='rtl'] .sidebar {
     transform: translateX(100%);
@@ -149,7 +413,7 @@ textarea {
   .drawer-scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--surface-overlay);
     z-index: 50;
   }
 }
@@ -160,11 +424,19 @@ textarea {
   margin-block-end: var(--space-2);
 }
 
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-05);
+  margin-block-end: var(--space-3);
+}
+
 .sidebar-section-title {
-  font-size: 0.7rem;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-muted);
+  font-weight: var(--weight-semibold);
+  color: var(--text-tertiary);
   margin: var(--space-4) var(--space-3) var(--space-1);
 }
 
@@ -175,19 +447,45 @@ textarea {
   padding: var(--space-2) var(--space-3);
   min-height: var(--touch-target);
   border-radius: var(--radius-sm);
-  color: var(--color-text);
+  color: var(--text-secondary);
+  background: transparent;
   text-decoration: none;
-  font-size: 0.92rem;
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  /* The active row grows a 3px inline-start bar; reserving it up front keeps
+     the label from shifting when a row becomes current. */
+  border-inline-start: 3px solid transparent;
 }
 
 .nav-link:hover,
 .nav-link:focus-visible {
-  background: var(--color-surface-raised);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 
+/* Colour is never the only signal that a row is current: the weight change and
+   the inline-start bar carry it too, and `aria-current="page"` carries it for
+   assistive tech. `border-inline-start` mirrors on its own in RTL. */
 .nav-link[aria-current='page'] {
-  background: var(--color-brand-strong);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent-on-soft);
+  font-weight: var(--weight-semibold);
+  border-inline-start-color: var(--accent);
+}
+
+/* Reserved even when a writer ships without icons, so adding them later is not
+   a re-layout. Any chevron/arrow placed here must mirror in RTL. */
+.nav-link-icon {
+  inline-size: 18px;
+  block-size: 18px;
+  flex: none;
+  color: currentColor;
+}
+
+.nav-link-icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
 }
 
 .main-column {
@@ -200,10 +498,11 @@ textarea {
   height: var(--header-height);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding-inline: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   position: sticky;
   top: 0;
   z-index: 40;
@@ -213,6 +512,167 @@ textarea {
   flex: 1;
 }
 
+.app-brand {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Icon-only header controls (bell, profile). Every one of them must carry an
+   `aria-label`; a bare icon has no accessible name. */
+.header-action {
+  min-inline-size: var(--touch-target);
+  min-block-size: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.header-action:hover {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* Unread count on the bell. Positioned with logical insets so it sits on the
+   correct corner in RTL. When the unread-count call fails, render NO badge --
+   never a `0`, never a stale number. */
+.header-badge {
+  position: absolute;
+  inset-inline-end: 0.25rem;
+  inset-block-start: 0.25rem;
+  min-inline-size: 1.125rem;
+  padding-inline: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--status-error-fg);
+  color: var(--text-on-accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.125rem;
+  text-align: center;
+  font-variant-numeric: var(--numeric-tabular);
+}
+
+.header-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--touch-target);
+  padding-inline: var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  max-inline-size: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-profile:hover {
+  background: var(--surface-raised);
+  border-color: var(--border);
+}
+
+/* The demo-role `<select>` and any other header-hosted select. Before this
+   rule existed the language `<select>` had NO styling at all: it inherited
+   `color: inherit` onto browser-default chrome, which is why it was present
+   but effectively invisible. The shared chevron/appearance rule lives with the
+   other `<select>` rules further down, after the form rules that would
+   otherwise reset its `background-image` and `padding-inline-end`.
+
+   `.app-header select` is matched as well as `.header-select`, deliberately:
+   the header's language and demo-role controls carry NO class today, and there
+   was no `.app-header select` rule anywhere, so they rendered as bare
+   browser-default chrome inheriting `color: inherit`. That is the whole reason
+   the language control read as "present but invisible". Styling the element
+   selector makes it legible now, without waiting for the markup to grow a
+   class -- and the class is matched too, so nothing changes when it does. */
+.header-select,
+.app-header select {
+  min-block-size: 36px;
+  border: 1px solid var(--border-interactive);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  color: var(--text-primary);
+  font-size: var(--text-base-sm);
+}
+
+.app-header label {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Two-option segmented language control. A native `<select>` inherits OS
+   chrome that fights any theme and needs two taps for two options; a segmented
+   pair shows both languages at once and is trivially AA-contrastable.
+   Content order (EN, then العربية) is deliberately source order in both
+   directions -- these are two proper nouns, not a directional sequence. */
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.lang-switch-option {
+  min-block-size: 36px;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.lang-switch-option:hover {
+  color: var(--text-primary);
+}
+
+.lang-switch-option[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-xs);
+}
+
+@media (max-width: 480px) {
+  .lang-switch-option {
+    padding-inline: var(--space-2);
+  }
+}
+
+/* The download control's href comes from config.androidAppDownloadUrl. When
+   that is unset the control is NOT rendered at all -- a dead link or an
+   invented store URL is forbidden. The arrow is vertical and does not mirror. */
+.btn-download-app {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .btn-download-app {
+    padding-inline: var(--space-3);
+  }
+}
+
 .icon-btn {
   min-width: var(--touch-target);
   min-height: var(--touch-target);
@@ -220,36 +680,49 @@ textarea {
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid var(--color-border);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
+.icon-btn:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
 .breadcrumb {
   padding: var(--space-3) var(--space-4) 0;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
 }
 
 .main-content {
   padding: var(--space-4);
-  max-width: 90rem;
+  max-width: var(--content-max);
   width: 100%;
   margin-inline: auto;
+}
+
+@media (min-width: 901px) {
+  .main-content {
+    padding: var(--space-6);
+  }
 }
 
 /* ---------- Demo banner ---------- */
 
 .demo-banner {
-  background: #4a3411;
-  color: #ffe6a8;
-  border-bottom: 1px solid #7a5a1c;
+  background: var(--status-limited-bg);
+  color: var(--status-limited-fg);
+  border-bottom: 1px solid var(--status-limited-border);
   padding: var(--space-2) var(--space-4);
-  font-size: 0.85rem;
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
   text-align: center;
 }
 
-/* ---------- FREE_ACCESS reminder banner (Round6, Writer61) ---------- */
+/* ---------- FREE_ACCESS reminder banner ---------- */
 
 .free-access-banner {
   display: flex;
@@ -257,13 +730,13 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  font-size: 0.85rem;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-base-sm);
 }
 
 .free-access-banner-headline {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin: 0;
 }
 
@@ -280,16 +753,22 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+  margin-inline-start: auto;
 }
 
+/* These two were `color-mix(... , var(--color-surface))` against a near-black
+   surface. Mixed against white the same expression produces a washed, almost
+   invisible tint, so they now use the explicit ramp fills. */
 .free-access-banner-active {
-  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
-  border-color: var(--color-warning);
+  background: var(--status-attention-bg);
+  border-bottom-color: var(--status-attention-border);
+  color: var(--text-primary);
 }
 
 .free-access-banner-expired {
-  background: color-mix(in srgb, var(--color-danger) 14%, var(--color-surface));
-  border-color: var(--color-danger);
+  background: var(--status-error-bg);
+  border-bottom-color: var(--status-error-border);
+  color: var(--text-primary);
 }
 
 /* ---------- Cards / grid ---------- */
@@ -300,94 +779,817 @@ textarea {
   gap: var(--space-4);
 }
 
+.card-grid > * {
+  min-width: 0;
+}
+
 .card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
+@media (min-width: 901px) {
+  .card {
+    padding: var(--space-5);
+  }
+}
+
+/* `.card h2/h3 { font-size: 1rem }` used to flatten every card heading to body
+   size, which is a direct cause of the "no hierarchy" finding. */
 .card h2,
-.card h3 {
+.card h3,
+.card-title {
   margin-block: 0 var(--space-2);
-  font-size: 1rem;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--text-primary);
 }
 
-/* ---------- Status badges (never color-only) ---------- */
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+  min-width: 0;
+}
 
+/* flex handles the mirroring; `margin-inline-start: auto` is what pins the
+   action to the logical end in both directions. */
+.card-header-action {
+  margin-inline-start: auto;
+  flex: none;
+}
+
+.card-body {
+  min-width: 0;
+}
+
+.card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+
+/* A card that is itself a link target (the child card). Static cards have no
+   hover at all -- a hover on a non-interactive card is a false affordance. */
+.card-interactive {
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+
+.card-interactive:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+
+.card-interactive:focus-within {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* For a card whose body is a full-bleed table. */
+.card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-flush > .card-header {
+  padding: var(--space-4) var(--space-4) 0;
+  margin-block-end: var(--space-3);
+}
+
+/* ---------- KPI tiles ---------- */
+
+/* The row WRAPS; it never scrolls horizontally. Every item is floored at
+   min-width 0 so a long label cannot push the page wider than the viewport. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-block-end: var(--space-5);
+}
+
+.kpi-row > * {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .kpi-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .kpi-row {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.kpi-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-height: 6.5rem;
+  min-width: 0;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* Severity accent. `border-inline-start` mirrors automatically -- never use
+     `border-left` here. A zero/neutral tile leaves --kpi-accent unset. */
+  border-inline-start: 3px solid var(--kpi-accent, transparent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Only a tile that actually links somewhere is an `<a>`; a zero-count tile is
+   deliberately plain text, so this hover only ever applies to a real link. */
+a.kpi-tile:hover {
+  background: var(--surface-raised);
+}
+
+.kpi-icon {
+  inline-size: 20px;
+  block-size: 20px;
+  color: var(--kpi-accent, var(--text-tertiary));
+}
+
+.kpi-icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+}
+
+.kpi-value {
+  font-size: var(--text-kpi-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--text-primary);
+  font-variant-numeric: var(--numeric-tabular);
+}
+
+@media (min-width: 901px) {
+  .kpi-value {
+    font-size: var(--text-kpi);
+  }
+}
+
+/* `0` may only ever mean "we counted zero". When the underlying read threw,
+   the tile renders this em-dash plus `dashboard.kpi.cannotVerify` -- never a
+   zero standing in for "we could not read". */
+.kpi-value-unknown {
+  color: var(--status-unverified-fg);
+}
+
+.kpi-label {
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+}
+
+.kpi-meta {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* ---------- Dashboard layout ---------- */
+
+/* 12 columns at desktop. A card sets its width with `--span` (e.g.
+   `style={{ ['--span']: 5 }}`) rather than a per-card class, so the grid needs
+   no new class names to change proportions. */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.dashboard-grid > * {
+  min-width: 0;
+}
+
+@media (min-width: 901px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+  .dashboard-grid > * {
+    grid-column: span var(--span, 12);
+  }
+}
+
+.dashboard-section {
+  margin-block-end: var(--space-7);
+}
+
+.dashboard-section-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin-block: 0 var(--space-3);
+}
+
+.children-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.children-grid > * {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .children-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .children-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Compact child card ---------- */
+
+.child-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.child-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.child-avatar {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-on-soft);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.child-name {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  text-decoration: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.child-name:hover {
+  text-decoration: underline;
+}
+
+/* The single headline pill. Pinned to the logical end of the head row. */
+.child-headline-status {
+  margin-inline-start: auto;
+  flex: none;
+}
+
+.child-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+
+.child-metric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.child-metric-label {
+  flex: 0 0 8rem;
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+}
+
+.child-metric-value {
+  flex: 1 1 8rem;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base-sm);
+  color: var(--text-primary);
+  font-variant-numeric: var(--numeric-tabular);
+}
+
+.child-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+
+/* Rendered only when the count is > 0, and always as a link. */
+.child-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: 32px;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+}
+
+.child-badge:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ---------- Freshness markers (a separate axis from status) ---------- */
+
+/* LIVE renders NOTHING. Absence of a marker is the "verified" signal, so a
+   `.freshness-marker` on screen always means "not verified right now". */
+.freshness-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.0625rem 0.4rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid currentColor;
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.freshness-cached {
+  color: var(--freshness-cached-fg);
+  border-color: var(--freshness-cached-border);
+}
+
+.freshness-unavailable {
+  color: var(--freshness-unavailable-fg);
+  border-color: var(--freshness-unavailable-border);
+}
+
+/* ---------- Status pills (never colour alone) ---------- */
+
+/* The class contract is `status-badge status-<ENUM>` verbatim -- component
+   tests assert `status-EPOCH_STALE` and not-`status-ACTIVE`. Every state below
+   shares the SAME height, border width, font size and font weight; the amber /
+   blue / grey / violet states are not lighter, smaller or lower-opacity than
+   the green one. There is no `opacity` in this section, deliberately. */
 .status-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  border: 1px solid transparent;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
   white-space: nowrap;
+  /* Neutral default for vocabularies that have no ramp mapping (e.g. the
+     billing entitlement-request states). */
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
+/* The icon slot. `.dot` is kept as an alias so existing call sites that render
+   a bare decorative dot (billing/RequestStateBadge.tsx) still work; `:empty`
+   is what keeps the dot rules from painting a circle behind a real icon. */
+.status-icon,
 .status-badge .dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 14px;
+  block-size: 14px;
+  color: currentColor;
+}
+
+.status-icon svg,
+.status-badge .dot svg {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+}
+
+.status-badge .dot:empty {
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* Larger modifier for a child card's headline pill. Same weight and border,
+   only the type size and padding change. */
+.status-badge-lg {
+  font-size: var(--text-base-sm);
+  padding: 0.375rem 0.75rem;
+}
+
+.status-badge-lg .status-icon,
+.status-badge-lg .dot {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* -- the ramp, one rule per state -- */
+
+.status-ok,
+.status-ACTIVE,
+.status-STANDARD,
+.status-PROTECTED,
+.status-ENFORCED,
+.policy-status-APPLIED {
+  color: var(--status-ok-fg);
+  background: var(--status-ok-bg);
+  border-color: var(--status-ok-border);
+}
+
+/* REQUEST_ONLY and PARTIALLY_APPLIED are `limited`, never `ok`: an honest
+   "cannot actually block this", not a lesser-but-still-good outcome. */
+.status-limited,
+.status-LIMITED,
+.status-PARTIALLY_APPLIED,
+.status-REQUEST_ONLY {
+  color: var(--status-limited-fg);
+  background: var(--status-limited-bg);
+  border-color: var(--status-limited-border);
+}
+
+.status-attention,
+.status-NEEDS_ATTENTION,
+.status-EPOCH_STALE,
+.status-AUTHORIZATION_REQUIRED,
+.policy-status-EXPIRED,
+.policy-status-STALE {
+  color: var(--status-attention-fg);
+  background: var(--status-attention-bg);
+  border-color: var(--status-attention-border);
+}
+
+.status-pending,
+.status-PENDING_DELIVERY,
+.policy-status-PENDING_SYNC,
+.policy-status-PENDING_DELIVERY,
+.policy-status-DELIVERED {
+  color: var(--status-pending-fg);
+  background: var(--status-pending-bg);
+  border-color: var(--status-pending-border);
+}
+
+.status-offline,
+.status-OFFLINE,
+.policy-status-LOCAL_DRAFT {
+  color: var(--status-offline-fg);
+  background: var(--status-offline-bg);
+  border-color: var(--status-offline-border);
+}
+
+.status-unverified,
+.status-UNAVAILABLE,
+.status-NOT_SUPPORTED,
+.status-PLATFORM_LIMITED {
+  color: var(--status-unverified-fg);
+  background: var(--status-unverified-bg);
+  border-color: var(--status-unverified-border);
+}
+
+.status-error,
+.status-REVOKED,
+.policy-status-FAILED {
+  color: var(--status-error-fg);
+  background: var(--status-error-bg);
+  border-color: var(--status-error-border);
+}
+
+/* ---------- Banners ---------- */
+
+/* One component, five tones. Full-bleed inside the main column.
+   `role` is chosen by the call site: genuine failures `alert`, informational
+   `status`, the free-access notice keeps `role="note"`. A note is never
+   upgraded to an alert. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-base-sm);
+}
+
+.banner-icon {
+  inline-size: 20px;
+  block-size: 20px;
+  flex: none;
+  margin-block-start: 0.125rem;
+}
+
+.banner-icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+}
+
+.banner-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.banner-headline {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+.banner-text {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+}
+
+.banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.banner-info {
+  background: var(--status-pending-bg);
+  border-block-end-color: var(--status-pending-border);
+}
+
+.banner-info .banner-icon {
+  color: var(--status-pending-fg);
+}
+
+.banner-attention {
+  background: var(--status-attention-bg);
+  border-block-end-color: var(--status-attention-border);
+}
+
+.banner-attention .banner-icon {
+  color: var(--status-attention-fg);
+}
+
+.banner-limited {
+  background: var(--status-limited-bg);
+  border-block-end-color: var(--status-limited-border);
+}
+
+.banner-limited .banner-icon {
+  color: var(--status-limited-fg);
+}
+
+.banner-error {
+  background: var(--status-error-bg);
+  border-block-end-color: var(--status-error-border);
+}
+
+.banner-error .banner-icon {
+  color: var(--status-error-fg);
+}
+
+.banner-neutral {
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-block-end-color: var(--border);
+}
+
+.banner-neutral .banner-icon {
+  color: var(--text-tertiary);
+}
+
+/* App-shell connection notices. These were referenced by
+   ConnectionStatusBanner.tsx with no rule anywhere, so both rendered as bare
+   unstyled text at the top of the page. */
+.connection-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-block-end: 1px solid var(--border);
+  font-size: var(--text-base-sm);
+}
+
+.connection-banner-offline {
+  background: var(--status-offline-bg);
+  color: var(--status-offline-fg);
+  border-block-end-color: var(--status-offline-border);
+}
+
+.connection-banner-reconnected {
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
+  border-block-end-color: var(--status-ok-border);
+}
+
+/* Device-offline / offline-draft notices. Both also carry `.card`, so this
+   only adds the tone; `role="status"` is on the markup. Offline must never
+   read as "protection is off" -- on-device policy keeps enforcing. */
+.offline-notice,
+.offline-draft-notice {
+  border-color: var(--status-offline-border);
+  background: var(--status-offline-bg);
+  color: var(--text-primary);
+}
+
+.offline-notice p:first-child,
+.offline-draft-notice p:first-child {
+  margin-block-start: 0;
+}
+
+.offline-notice dl,
+.offline-draft-notice dl {
+  margin-block-end: 0;
+}
+
+.offline-notice dd {
+  margin-inline-start: 0;
+  margin-block-end: var(--space-2);
+  color: var(--text-secondary);
+}
+
+/* ---------- Charts (hand-rolled inline SVG, no library) ---------- */
+
+.chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.chart-title {
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin-block-end: var(--space-2);
+}
+
+.chart-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  overflow: visible;
+}
+
+/* Every chart ships a tabular equivalent. It is `visually-hidden` at the call
+   site, so this only styles it for the case where a writer chooses to reveal
+   it; it is never optional markup. */
+.chart-data {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.chart-legend {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Colour is never the only encoding: each entry carries its own swatch AND
+   its label text. */
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chart-legend-item::before {
+  content: '';
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  border-radius: var(--radius-xs);
+  background: currentColor;
   flex: none;
 }
 
-.status-ACTIVE .dot { background: var(--color-success); }
-.status-LIMITED .dot { background: var(--color-warning); }
-.status-UNAVAILABLE .dot { background: var(--color-offline); }
-.status-NEEDS_ATTENTION .dot { background: var(--color-danger); }
-.status-OFFLINE .dot { background: var(--color-offline); }
-.status-PENDING_DELIVERY .dot { background: var(--color-warning); }
-.status-PARTIALLY_APPLIED .dot { background: var(--color-warning); }
-.status-EPOCH_STALE .dot { background: var(--color-danger); }
-.status-REVOKED .dot { background: var(--color-danger); }
-.status-STANDARD .dot { background: var(--color-success); }
-.status-PROTECTED .dot { background: var(--color-success); }
-.status-AUTHORIZATION_REQUIRED .dot { background: var(--color-warning); }
-.status-NOT_SUPPORTED .dot { background: var(--color-offline); }
-/* PCA-FR-131 (CAPABILITY_HONEST_INSTALL_APPROVAL): ENFORCED/REQUEST_ONLY/PLATFORM_LIMITED are the
-   three install-approval-specific capability states not already covered by the rows above (which
-   AUTHORIZATION_REQUIRED/NOT_SUPPORTED already reuse verbatim). REQUEST_ONLY is deliberately the
-   SAME warning color as AUTHORIZATION_REQUIRED, never the success green ENFORCED uses -- it is an
-   honest "cannot actually block this," not a lesser-but-still-good outcome. */
-.status-ENFORCED .dot { background: var(--color-success); }
-.status-REQUEST_ONLY .dot { background: var(--color-warning); }
-.status-PLATFORM_LIMITED .dot { background: var(--color-offline); }
+/* A chart with no data renders the action-needed treatment INSIDE the figure,
+   at the chart's own height, so the grid does not jump. It must never draw a
+   zero-value baseline: a flat line at zero is a claim that usage was zero. */
+.chart-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-2);
+  min-block-size: 9rem;
+  padding: var(--space-4);
+  border: 1px dashed var(--status-unverified-border);
+  border-radius: var(--radius-md);
+  background: var(--status-unverified-bg);
+  color: var(--text-primary);
+}
 
-.policy-status-LOCAL_DRAFT .dot { background: var(--color-offline); }
-.policy-status-PENDING_SYNC .dot { background: var(--color-warning); }
-.policy-status-PENDING_DELIVERY .dot { background: var(--color-warning); }
-.policy-status-DELIVERED .dot { background: var(--color-warning); }
-.policy-status-APPLIED .dot { background: var(--color-success); }
-.policy-status-FAILED .dot { background: var(--color-danger); }
-.policy-status-EXPIRED .dot { background: var(--color-danger); }
-.policy-status-STALE .dot { background: var(--color-danger); }
+/* Ring gauge: the sweep is clockwise in BOTH directions. Clockwise is a clock
+   convention, not a reading direction -- mirroring it would show an Arabic
+   parent a gauge running backwards. */
+.chart-ring {
+  display: block;
+  margin-inline: auto;
+}
 
-.status-badge {
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+/* Bar meter: the fill grows from the INLINE-START edge, so it mirrors by
+   itself. Never implement this with `transform: scaleX(-1)` -- that would also
+   mirror the numerals and labels drawn inside. */
+.chart-meter {
+  inline-size: 100%;
+  block-size: 0.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.chart-meter > span {
+  display: block;
+  block-size: 100%;
+  inline-size: var(--meter-fill, 0%);
+  background: var(--meter-color, var(--accent));
+  border-radius: inherit;
+}
+
+/* Column series: the time axis stays oldest -> newest left-to-right in BOTH
+   locales. Localise the weekday labels; never reverse them, or time appears to
+   run backwards. */
+.chart-columns {
+  display: block;
+  inline-size: 100%;
 }
 
 /* ---------- Tables -> responsive ---------- */
 
 .table-scroll {
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  background: var(--surface);
 }
 
 table.data-table {
   width: 100%;
   border-collapse: collapse;
   min-width: 32rem;
+  font-size: var(--text-base-sm);
+}
+
+table.data-table thead {
+  background: var(--surface-raised);
+}
+
+table.data-table th {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 table.data-table th,
 table.data-table td {
   text-align: start;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
@@ -405,7 +1607,7 @@ table.data-table td {
     display: none;
   }
   table.data-table.responsive-cards tr {
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--border);
     border-radius: var(--radius-md);
     margin-block-end: var(--space-3);
     padding: var(--space-2);
@@ -422,46 +1624,156 @@ table.data-table td {
   table.data-table.responsive-cards td[data-label]::before {
     content: attr(data-label);
     display: block;
-    font-size: 0.72rem;
-    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
     text-transform: uppercase;
   }
 }
 
-/* ---------- Buttons / forms ---------- */
+/* ---------- Buttons ---------- */
 
 .btn {
   min-height: var(--touch-target);
   padding-inline: var(--space-4);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  /* The reduced-motion block above already neutralises this. */
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+.btn:hover {
+  background: var(--pca-slate-200);
+  color: var(--text-primary);
+}
+
+/* A `.btn` that is the CURRENT page in a link row -- `pages/children/ChildLayout.tsx`
+   renders its child sub-nav that way, filling the active link with
+   `var(--color-brand-strong)` from an inline style. An inline background beats
+   any rule here, so the readable pairing has to be made from the text side:
+   white on the dark-teal fill is 7.87:1, where the default `--text-primary`
+   would have been 2.26:1. `aria-current="page"` is what `NavLink` sets, so this
+   also keeps the state from being carried by colour alone. */
+.btn[aria-current='page'] {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--text-on-accent);
+  font-weight: var(--weight-semibold);
 }
 
 .btn-primary {
-  background: var(--color-brand);
-  color: #04201c;
-  border-color: var(--color-brand);
-  font-weight: 600;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
 }
 
-.btn:disabled {
-  opacity: 0.5;
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+.btn-primary:active {
+  background: var(--accent-active);
+  border-color: var(--accent-active);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border-interactive);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-raised);
+}
+
+.btn-secondary:active {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+}
+
+.btn-danger {
+  background: var(--status-error-fg);
+  color: var(--text-on-accent);
+  border-color: var(--status-error-fg);
+}
+
+.btn-danger:hover {
+  background: var(--pca-red-700);
+  border-color: var(--pca-red-700);
+  color: var(--text-on-accent);
+}
+
+/* A text-weight action inside a sentence or a banner. */
+.btn-inline {
+  min-height: auto;
+  padding-inline: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.btn-inline:hover {
+  background: transparent;
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.btn-inline:disabled {
+  color: var(--text-tertiary);
+  background: transparent;
+}
+
+/* Modifier for table rows and card headers only -- never a primary page
+   action, whose target must stay at --touch-target. */
+.btn-sm {
+  min-height: 36px;
+  padding-inline: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* `opacity: 0.5` on a light background produces an unpredictable washed
+   contrast that can fall below 3:1, and it fades any status colour inside the
+   control as well. Explicit disabled tokens instead.
+
+   Measured: --pca-slate-600 on --pca-slate-300 is 4.07:1. WCAG 1.4.3 exempts
+   an inactive control from the 4.5:1 minimum, and this is a large improvement
+   on the ~2.3:1 the old `opacity: 0.5` produced -- but it is written down here
+   so the number is known rather than assumed. Do not raise it by reaching for
+   `opacity` again. */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  background: var(--pca-slate-300);
+  color: var(--pca-slate-600);
+  border-color: var(--pca-slate-300);
   cursor: not-allowed;
 }
+
+/* ---------- Forms ---------- */
 
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   margin-block-end: var(--space-3);
+  min-width: 0;
 }
 
 .field label {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
 }
 
 .field input[type='text'],
@@ -475,9 +1787,69 @@ table.data-table td {
   min-height: var(--touch-target);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
+  /* This is the change that makes an input visible on a light page: the
+     decorative `--border` is only 1.33:1 on white. */
+  border: 1px solid var(--border-interactive);
+  /* `background-color`, not the `background` shorthand: the shared select
+     chevron below is a `background-image`, and a shorthand here would reset
+     it depending on rule order. */
+  background-color: var(--surface-sunken);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+
+.field input:hover,
+.field select:hover,
+.field textarea:hover {
+  border-color: var(--border-strong);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background-color: var(--surface-raised);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* A native `<select>`'s OS chrome is what made the header language control
+   unreadable, so every select in the app gets the same hand-drawn chevron.
+   This rule sits AFTER the `.field`/`.field-row` rules on purpose: their
+   `background`/`padding` shorthands would otherwise reset the image and the
+   chevron gutter. The chevron is the one place a physical direction is
+   unavoidable, so both directions are written out explicitly. */
+.header-select,
+.app-header select,
+.field select,
+.field-row select {
+  appearance: none;
+  padding-inline: var(--space-3) 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
+    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  background-position: right 1rem center, right 0.7rem center;
+}
+
+[dir='rtl'] .header-select,
+[dir='rtl'] .app-header select,
+[dir='rtl'] .field select,
+[dir='rtl'] .field-row select {
+  background-position: left 0.7rem center, left 1rem center;
+}
+
+/* Never border colour alone: the call site must also render the ✕-led
+   `.field-error` block below. */
+.field input[aria-invalid='true'],
+.field select[aria-invalid='true'],
+.field textarea[aria-invalid='true'] {
+  border-color: var(--status-error-fg);
 }
 
 .checkbox-row {
@@ -487,41 +1859,57 @@ table.data-table td {
   min-height: var(--touch-target);
 }
 
-/* Inline field-level status text (`<p role="alert|status" className="field-error|field-warning">`),
-   used across Requests/WellbeingAdmin/LocationPage/ScreenTimePage/WebProtectionPage -- these two
-   classes had no matching rule anywhere, so every one of those pages rendered its error/warning
-   copy as plain unstyled text. */
+/* Inline field-level status text (`<p role="alert|status">`), used across
+   Requests / WellbeingAdmin / LocationPage / ScreenTimePage / WebProtectionPage. */
 .field-error,
 .field-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
   margin-block: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   border: 1px solid;
-  font-size: 0.9rem;
+  font-size: var(--text-base-sm);
 }
 
+/* The `color-mix(..., var(--color-surface))` these used to carry was tuned
+   against a near-black surface; mixed with white it reads washed out. Explicit
+   ramp fills instead. The leading glyph is what keeps the meaning from being
+   carried by colour alone in a plain-text context. */
 .field-error {
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+  color: var(--status-error-fg);
+  border-color: var(--status-error-border);
+  background: var(--status-error-bg);
+}
+
+.field-error::before {
+  content: '\2715';
+  flex: none;
+  font-weight: var(--weight-bold);
 }
 
 .field-warning {
-  color: var(--color-warning);
-  border-color: var(--color-warning);
-  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+  color: var(--status-attention-fg);
+  border-color: var(--status-attention-border);
+  background: var(--status-attention-bg);
 }
 
-/* Static, non-alert helper text under a field (e.g. Register's password
-   requirement) -- same typography as `.field label`, so it reads as part of
-   the field rather than new visual chrome. */
+.field-warning::before {
+  content: '\26A0';
+  flex: none;
+  font-weight: var(--weight-bold);
+}
+
+/* Static, non-alert helper text under a field -- same typography as
+   `.field label`, so it reads as part of the field rather than new chrome. */
 .field-hint {
   margin: 0;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
 }
 
-/* ---------- Web protection allow/deny-list authoring (WebProtectionPage.tsx) ---------- */
+/* ---------- Web protection allow/deny-list authoring ---------- */
 
 .field-row {
   display: flex;
@@ -532,8 +1920,9 @@ table.data-table td {
 }
 
 .field-row label {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
 }
 
 .field-row input[type='text'],
@@ -541,9 +1930,10 @@ table.data-table td {
   min-height: var(--touch-target);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
+  border: 1px solid var(--border-interactive);
+  background-color: var(--surface-sunken);
+  color: var(--text-primary);
+  font-size: var(--text-base);
 }
 
 .web-rule-list {
@@ -555,12 +1945,9 @@ table.data-table td {
   gap: var(--space-2);
 }
 
-/* The generic sibling of .web-rule-list above, used by 8 lists across 7 pages
-   (Notifications, Subscription, InvoiceDetail, ActivityTimelinePage,
-   EyeProtectionPage, LocationPage, ProtectionAlertPanel). It had no rule at
-   all, so every one of those lists rendered with default browser bullets and
-   the default list indent instead of the flat card-content list it was
-   written for. */
+/* The generic sibling of .web-rule-list above, used by 8 lists across 7 pages.
+   It had no rule at all, so every one of those lists rendered with default
+   browser bullets and the default list indent. */
 .plain-list {
   list-style: none;
   padding: 0;
@@ -576,34 +1963,34 @@ table.data-table td {
   justify-content: space-between;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
-/* Matches WebRuleDeliveryStatus's real values (webRulePolicy.ts), lowercased by the component. */
+/* Matches WebRuleDeliveryStatus's real values, lowercased by the component. */
 .web-rule-status {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .web-rule-status-delivered,
 .web-rule-status-applied {
-  color: var(--color-success);
+  color: var(--status-ok-fg);
 }
 
 .web-rule-status-local_draft,
 .web-rule-status-pending_delivery,
 .web-rule-status-stale {
-  color: var(--color-warning);
+  color: var(--status-attention-fg);
 }
 
 .web-rule-status-failed {
-  color: var(--color-danger);
+  color: var(--status-error-fg);
 }
 
 .web-rule-revision {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-size: var(--text-base-sm);
 }
 
 /* ---------- Auth shell (register / login / verify-email) ---------- */
@@ -616,11 +2003,12 @@ table.data-table td {
 }
 
 .auth-page > form {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  padding: var(--space-5);
   margin-block: var(--space-4);
+  box-shadow: var(--shadow-sm);
 }
 
 .auth-page > form button[type='submit'] {
@@ -628,7 +2016,20 @@ table.data-table td {
   margin-block-start: var(--space-2);
 }
 
-/* ---------- Loading / error / empty ---------- */
+/* ---------- Loading / empty / action-needed / error states ----------
+
+   THREE THINGS, THREE TREATMENTS. This separation is the point of the whole
+   block, not a styling detail:
+
+     nothing here            -> `.state-empty`, dashed neutral, NO role.
+     you need to do something
+       / not available yet   -> `.state-action-needed`, BLUE, role="status",
+                                mandatory single next step.
+     it broke                -> `.state-error`, red, role="alert", retry.
+
+   Before this, a designed fail-closed trust state (BROWSER_NOT_TRUSTED) was
+   rendered under "Something went wrong", which tells a parent the product is
+   broken when in fact it is working exactly as specified. */
 
 .state-block {
   display: flex;
@@ -638,7 +2039,351 @@ table.data-table td {
   text-align: center;
   padding: var(--space-6) var(--space-4);
   gap: var(--space-2);
-  color: var(--color-text-muted);
+  color: var(--text-secondary);
+}
+
+.state-icon {
+  inline-size: 48px;
+  block-size: 48px;
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.state-icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+}
+
+.state-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.state-text {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
+
+.state-action {
+  margin-block-start: var(--space-2);
+}
+
+.state-reassurance {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+}
+
+/* The read succeeded and the answer is genuinely "nothing here". */
+.state-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-9) var(--space-4);
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+/* The system is working correctly and has DELIBERATELY declined to show data
+   or claim a capability. Blue/pending, never red, never a warning triangle --
+   this is not an error and must not look like one. */
+.state-action-needed {
+  background: var(--status-pending-bg);
+  border: 1px solid var(--status-pending-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-4);
+  color: var(--text-primary);
+}
+
+.state-action-needed .state-icon {
+  color: var(--status-pending-fg);
+}
+
+.state-action-needed .state-text,
+.state-action-needed .state-reassurance {
+  color: var(--text-secondary);
+}
+
+/* Something genuinely failed and retrying may help. */
+.state-error {
+  background: var(--status-error-bg);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-4);
+  color: var(--text-primary);
+}
+
+.state-error .state-icon {
+  color: var(--status-error-fg);
+}
+
+.state-error .state-text {
+  color: var(--text-secondary);
+}
+
+/* ---------- Tabs ---------- */
+
+/* Real `role="tablist"/"tab"/"tabpanel"` with roving tabindex. Arrow-key
+   direction must follow the RESOLVED document direction: in RTL, ArrowLeft
+   moves to the NEXT tab. That is a component concern; this only styles it. */
+.tabs {
+  min-width: 0;
+}
+
+.tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-block-end: 1px solid var(--border);
+  margin-block-end: var(--space-4);
+}
+
+.tab {
+  min-block-size: var(--touch-target);
+  padding-inline: var(--space-4);
+  border: 0;
+  border-block-end: 3px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+/* Weight + underline, not colour alone. */
+.tab[aria-selected='true'] {
+  color: var(--accent);
+  border-block-end-color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.tab-panel {
+  min-width: 0;
+}
+
+/* ---------- Section panels ---------- */
+
+.section-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-block-end: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.section-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+}
+
+.section-panel-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+/* ---------- Devices page sections ---------- */
+
+.device-section {
+  margin-block-end: var(--space-5);
+  min-width: 0;
+}
+
+.device-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .device-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.device-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: var(--numeric-tabular);
+}
+
+/* ---------- Guided wizard ---------- */
+
+.wizard {
+  min-width: 0;
+}
+
+.wizard-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+}
+
+.wizard-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* `aria-current="step"` carries this for assistive tech; the weight and the
+   accent colour carry it visually. */
+.wizard-step-current {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.wizard-step-done {
+  color: var(--status-ok-fg);
+}
+
+.wizard-body {
+  min-width: 0;
+}
+
+/* Back is always available, so the actions row is a wrapping flex rather than
+   a single end-aligned button. */
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+/* ---------- Invitation / setup-code panel ---------- */
+
+.invite-code-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  padding: var(--space-4);
+  margin-block-end: var(--space-4);
+  min-width: 0;
+}
+
+/* The fallback code is the PRIMARY artefact for a parent reading it aloud, so
+   it is monospaced, large and letter-spaced. */
+.invite-code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.invite-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.invite-expiry {
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: var(--numeric-tabular);
+}
+
+.invite-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+}
+
+/* A QR code is an opaque square and does NOT mirror in RTL. */
+.invitation-qr-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.invitation-qr-code img {
+  max-width: 100%;
+  height: auto;
+  background: var(--pca-white);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Disclosure / technical details ---------- */
+
+.disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  margin-block: var(--space-3);
+  min-width: 0;
+}
+
+.disclosure-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--touch-target);
+  padding-inline: var(--space-3);
+  font-size: var(--text-base-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.disclosure-body {
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--text-base-sm);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+/* Trust epoch / key epoch / policy revision / device id are DEMOTED from the
+   consumer surface, never deleted. They live here and on the advanced tab. */
+.technical-details {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  min-width: 0;
 }
 
 /* ---------- Modal ---------- */
@@ -646,7 +2391,7 @@ table.data-table td {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--surface-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -655,12 +2400,13 @@ table.data-table td {
 }
 
 .modal {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   max-width: 28rem;
   width: 100%;
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-actions {
@@ -670,25 +2416,53 @@ table.data-table td {
   margin-top: var(--space-4);
 }
 
-/* ---------- Permission-disabled ---------- */
+/* ---------- Permission-disabled (RBAC) ---------- */
 
+/* `opacity: 0.6` faded the "you don't have permission" affordance itself until
+   it was hard to read. A hidden or faded control is never authorization
+   anyway -- the gate is server-side; this is only the explanation. */
 .permission-disabled {
-  opacity: 0.6;
+  color: var(--text-tertiary);
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
 }
 
 .permission-disabled-badge {
-  font-size: 0.75rem;
-  border: 1px dashed var(--color-border);
+  font-size: var(--text-xs);
+  border: 1px dashed var(--border-interactive);
+  color: var(--text-secondary);
   padding: 0.1rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
+}
+
+/* ---------- App-level configuration error ---------- */
+
+/* AppErrorBoundary's last-resort surface. This one IS a genuine failure, so it
+   keeps the error tone and `role="alert"`. */
+.app-config-error {
+  max-width: 40rem;
+  margin: var(--space-8) auto;
+  border-color: var(--status-error-border);
+  background: var(--status-error-bg);
+}
+
+.app-config-error-detail {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* ---------- Utility ---------- */
 
 /* `.sr-only` is the same affordance under its other common name.
    ProtectionAlertPanel.tsx uses it for screen-reader-only text; with no rule
-   for it that text was rendered VISIBLE on the page, so this is an
-   accessibility/presentation fix, not a cosmetic one. */
+   for it that text was rendered VISIBLE on the page. */
 .visually-hidden,
 .sr-only {
   position: absolute;
@@ -702,8 +2476,6 @@ table.data-table td {
   border: 0;
 }
 
-/* Muted secondary text (CheckoutReturn.tsx). Uses the same token every other
-   muted surface in this stylesheet already uses. */
 .text-muted {
   color: var(--color-text-muted);
 }
@@ -734,27 +2506,30 @@ bdi.iso {
 /* ---------- Preview simulator ---------- */
 
 .preview-frame {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-3);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .preview-card {
-  background: var(--color-surface-raised);
+  background: var(--surface-raised);
   border-radius: var(--radius-md);
   padding: var(--space-3);
   max-width: 20rem;
 }
 
 .preview-notification {
-  background: #1c2438;
+  background: var(--surface-raised);
   border-radius: var(--radius-md);
   padding: var(--space-3);
   max-width: 22rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
 }
 
+/* The lock screen is a simulation of the CHILD DEVICE's own dark lock screen,
+   not app chrome, so it deliberately keeps its dark rendering under the light
+   theme. Both values are explicit rather than token-derived for that reason. */
 .preview-lockscreen {
   background: #05070c;
   color: #cfd8e3;
@@ -802,13 +2577,13 @@ bdi.iso {
   align-items: flex-start;
   gap: var(--space-1);
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .permission-entry-name {
   /* The human-readable label is the primary text a parent reads; the manifest
      identifier below it is deliberately secondary. */
-  color: var(--color-text);
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
@@ -820,12 +2595,12 @@ bdi.iso {
      second permits the break inside the token itself. Both are needed. */
   overflow-wrap: anywhere;
   word-break: break-all;
-  background: var(--color-surface-raised);
+  background: var(--surface-raised);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  color: var(--text-secondary);
 }
 
 .permission-entry dd {
@@ -837,11 +2612,13 @@ bdi.iso {
 /* ---------- Device enrollment (invitations / pairing) ---------- */
 
 .enrollment-panel {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-3);
+  padding: var(--space-4);
   margin-block-end: var(--space-4);
-  background: var(--color-surface);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 /* Long opaque strings (tokens, links, fingerprints) must wrap or be
@@ -860,17 +2637,19 @@ bdi.iso {
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-all;
-  background: var(--color-surface-raised);
+  background: var(--surface-raised);
+  color: var(--text-primary);
   padding: var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-base-sm);
 }
 
 .token-reveal-once {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--status-attention-border);
   border-radius: var(--radius-md);
   padding: var(--space-3);
-  background: var(--color-surface-raised);
+  background: var(--status-attention-bg);
   margin-block-end: var(--space-3);
 }
 
@@ -880,9 +2659,8 @@ bdi.iso {
   margin-block: var(--space-2);
 }
 
-/* InvoiceDetail's browser-native print affordance (P2 finding: no
-   download/print/PDF action) -- hides app chrome so a printed invoice
-   shows only its own content, not the sidebar/nav/back-link. */
+/* InvoiceDetail's browser-native print affordance -- hides app chrome so a
+   printed invoice shows only its own content, not the sidebar/nav/back-link. */
 @media print {
   .sidebar,
   .app-header,

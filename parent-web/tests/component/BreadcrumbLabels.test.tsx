@@ -51,3 +51,36 @@ describe('Breadcrumb labels', () => {
     expect(nav).not.toHaveTextContent('Screen Time');
   });
 });
+
+// PPR-2 IA: the new routes bring new static URL segments. A segment missing
+// from SEGMENT_LABEL_KEYS silently renders the raw URL word -- in English, to
+// an Arabic parent -- so each one is pinned here.
+describe('Breadcrumb labels for the new information architecture', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+    applyDocumentDirection('en');
+  });
+
+  it.each([
+    ['/privacy', ['nav.dataPrivacy']],
+    ['/safety/alerts', ['nav.groupSafetyPrivacy', 'nav.alerts']],
+    ['/protection/screen-time', ['nav.groupProtection', 'nav.screenTime']],
+    ['/protection/apps-web', ['nav.groupProtection', 'nav.appsWeb']],
+    ['/protection/schedules', ['nav.groupProtection', 'nav.schedules']],
+    ['/wellbeing-messages', ['nav.wellbeingMessages']],
+  ] as const)('translates every segment of %s in Arabic rather than leaving the URL word', async (route, keys) => {
+    await i18n.changeLanguage('ar');
+    applyDocumentDirection('ar');
+
+    renderWithProviders(<Breadcrumb />, { route });
+    const nav = await screen.findByRole('navigation', { name: i18n.t('shell.breadcrumbNav') });
+
+    for (const key of keys) {
+      expect(nav).toHaveTextContent(i18n.t(key));
+    }
+    // No raw URL word survived into the trail.
+    for (const segment of route.split('/').filter(Boolean)) {
+      expect(nav).not.toHaveTextContent(segment);
+    }
+  });
+});

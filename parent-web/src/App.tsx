@@ -16,6 +16,7 @@ import Requests from './pages/Requests';
 import Members from './pages/family/Members';
 import RolesMatrix from './pages/family/RolesMatrix';
 import Devices from './pages/family/Devices';
+import PrivacyHub from './pages/privacy/PrivacyHub';
 import Retention from './pages/privacy/Retention';
 import Export from './pages/privacy/Export';
 import DeleteNow from './pages/privacy/DeleteNow';
@@ -26,6 +27,8 @@ import ProtectionStatus from './pages/security/ProtectionStatus';
 import Recovery from './pages/security/Recovery';
 import Audit from './pages/security/Audit';
 import TrustedBrowser from './pages/security/TrustedBrowser';
+import Alerts from './pages/safety/Alerts';
+import { ChildPickerIndex } from './pages/protection/ChildPickerIndex';
 import WellbeingAdmin from './pages/wellbeing/WellbeingAdmin';
 import Notifications from './pages/Notifications';
 import Subscription from './pages/Subscription';
@@ -34,6 +37,7 @@ import ParentMemberIncreaseRequest from './pages/billing/ParentMemberIncreaseReq
 import Invoices from './pages/billing/Invoices';
 import InvoiceDetail from './pages/billing/InvoiceDetail';
 import CheckoutReturn from './pages/billing/CheckoutReturn';
+import DownloadApp from './pages/download/DownloadApp';
 import Settings from './pages/Settings';
 import NotPermitted from './pages/NotPermitted';
 import NotFound from './pages/NotFound';
@@ -95,6 +99,12 @@ export default function App() {
         <Route path="family/roles" element={<RolesMatrix />} />
         <Route path="family/devices" element={<Devices />} />
 
+        {/* The Data & Privacy hub. It replaces five first-level sidebar rows
+            with one entry point; the five routes below are UNCHANGED, keep
+            their own RouteGuards, and stay directly linkable and breadcrumbed.
+            Regrouping a controlled capability is allowed; removing one is
+            not. */}
+        <Route path="privacy" element={<PrivacyHub />} />
         <Route
           path="privacy/retention"
           element={
@@ -133,6 +143,47 @@ export default function App() {
           }
         />
         <Route path="security/audit" element={<Audit />} />
+
+        {/* Security and protection alerts, previously reachable only by
+            scrolling to the bottom of /security/status. */}
+        <Route path="safety/alerts" element={<Alerts />} />
+
+        {/* Family-level ways in to three per-child settings. No RouteGuard
+            here: these pages only list children and link onward -- the guard
+            that matters is the one already on each per-child destination
+            (EDIT_CHILD_POLICY on children/:childId/screen-time and /apps). */}
+        <Route
+          path="protection/screen-time"
+          element={
+            <ChildPickerIndex
+              titleKey="nav.screenTime"
+              introKey="protectionIndex.screenTimeIntro"
+              childHref={(childId) => `/children/${childId}/screen-time`}
+            />
+          }
+        />
+        <Route
+          path="protection/apps-web"
+          element={
+            <ChildPickerIndex
+              titleKey="nav.appsWeb"
+              introKey="protectionIndex.appsWebIntro"
+              childHref={(childId) => `/children/${childId}/apps`}
+            />
+          }
+        />
+        <Route
+          path="protection/schedules"
+          element={
+            <ChildPickerIndex
+              titleKey="nav.schedules"
+              introKey="protectionIndex.schedulesIntro"
+              // Night protection / quiet hours live on the child's screen-time
+              // page; there is no separate schedules route to send them to.
+              childHref={(childId) => `/children/${childId}/screen-time`}
+            />
+          }
+        />
 
         <Route
           path="wellbeing-messages"
@@ -192,6 +243,12 @@ export default function App() {
             </RouteGuard>
           }
         />
+        {/* Where the header's always-visible "Download App" action lands. No
+            RouteGuard: getting the child app is not a controlled capability,
+            and the action itself is global to every signed-in role, so gating
+            the destination would only produce a "Not permitted" page for a
+            control the same person can see. */}
+        <Route path="download" element={<DownloadApp />} />
         <Route path="settings" element={<Settings />} />
         <Route path="not-permitted" element={<NotPermitted />} />
         <Route path="*" element={<NotFound />} />

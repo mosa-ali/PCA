@@ -7,9 +7,20 @@ import type { Plugin } from 'vite';
  * CANNOT be set via <meta> per spec -- those still need to be set as real
  * HTTP response headers by whatever serves this build in production
  * (KNOWN_BACKEND_INTEGRATION_ACTION / deployment config, not something this
- * SPA slice can enforce on its own). frame-ancestors 'none' below covers
- * the same clickjacking risk X-Frame-Options addresses, in browsers that
- * honor CSP.
+ * SPA slice can enforce on its own).
+ *
+ * CLICKJACKING IS NOT COVERED HERE. Per CSP Level 3, frame-ancestors (along
+ * with sandbox and report-uri) is IGNORED when a policy is delivered in a
+ * <meta http-equiv> element -- it is only honoured in a real
+ * Content-Security-Policy response header. The frame-ancestors 'none'
+ * directive in CSP_CONTENT below is therefore INERT as shipped; it is kept
+ * in the string only so the policy is already correct on the day something
+ * serves it as a real header. Nothing in this repository sets
+ * X-Frame-Options either. The practical consequence: this console is
+ * framable by any site today, and stays framable until a reverse proxy /
+ * CDN in front of the built assets sets a real Content-Security-Policy (or
+ * X-Frame-Options) response header. That is deployment work; no change to
+ * this plugin can close it.
  *
  * connect-src includes the exact configured API origin (or the local backend
  * default) so the checked-in local parent-web/backend configuration is

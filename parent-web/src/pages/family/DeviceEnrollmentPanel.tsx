@@ -1,490 +1,188 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getApiClients } from '../../api/client';
-import { config } from '../../config/env';
-import { useAsync } from '../../hooks/useAsync';
-import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
-import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
+import { AsyncStates } from '../../components/common/States';
+import { StatusRampIcon } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
-import { useAuth } from '../../state/AuthContext';
-import { DeviceEnrollmentError } from '../../api/deviceEnrollmentClient';
-import InvitationQrCode from './InvitationQrCode';
-import { deriveInvitationFallbackCode } from './invitationFallbackCode';
-import type {
-  InvitationDto,
-  InvitationPlatform,
-  PairingRequestDto,
-  RequestedProtectionMode,
-  AgeUxTier,
-  InitialPolicyProfile,
-} from '../../api/deviceEnrollmentClient';
+import { copyToClipboard, pairingStatusRamp, usePairing } from './devices/enrollmentState';
+import type { RampState } from '../../domain/dashboardStatus';
 
-const HINT_STYLE = { color: 'var(--color-text-muted)', fontSize: '0.85rem' } as const;
+/**
+ * Shared device-enrollment UI pieces for the `/family/devices` sections.
+ *
+ * This file used to BE the enrollment page: six workflows (create invitation,
+ * invitations list, pairing lookup, pairing confirmation, plus the protection
+ * PIN and parent-decision panels rendered directly beneath it) stacked in one
+ * scroll. It is now the shared-component layer the sectioned page is built
+ * from -- `pages/family/devices/AddDeviceWizard.tsx`, `PendingSetupSection.tsx`
+ * and `AdvancedSecuritySection.tsx` each render exactly one workflow. The state
+ * these components sit on lives in `./devices/enrollmentState.tsx`.
+ *
+ * SECURITY INVARIANTS PRESERVED ACROSS THE RE-SECTIONING (see
+ * api/deviceEnrollmentClient.ts and api/real/realDeviceEnrollmentClient.ts for
+ * the server-side contract they mirror). Every one of them survived verbatim:
+ *  1. The raw invitation token/link is held only in `useInvitationCreation`'s
+ *     local React state (never localStorage/sessionStorage), is shown only
+ *     immediately after creation, and nothing anywhere attempts to refetch it
+ *     after navigating away or reloading.
+ *  2. `confirmPairing` is never invoked automatically; it requires the
+ *     explicit button click below.
+ *  3. That button is disabled unless BOTH fingerprints are present on a
+ *     PAIRING_PENDING request (`canConfirm`).
+ *  4. Confirmation results are rendered from the server's own `status` field,
+ *     which can only ever be PAIRED (or REVOKED/etc. via other endpoints) --
+ *     there is no code path here that renders "ACTIVE".
+ *  5. No iOS enrollment path exists, in the UI or in the copy: the backend
+ *     refuses `platform=IOS` with `PLATFORM_ENROLLMENT_UNAVAILABLE`
+ *     (backend/src/http/routes/invitationRoutes.ts). The `platformIos` /
+ *     `mode.IOS_STANDARD` labels stay in the locale files because EXISTING
+ *     invitation rows may legitimately carry IOS and the pending-setup list
+ *     still renders them.
+ */
 
-function errorMessageKey(err: unknown): string {
-  if (err instanceof DeviceEnrollmentError) {
-    switch (err.code) {
-      case 'UNAUTHORIZED':
-        return 'deviceEnrollment.errors.unauthorized';
-      case 'FORBIDDEN':
-        // MANAGED_DEVICE_LIMIT_REACHED is a real, actionable entitlement
-        // state (see backend InvitationService.ts), not a genuine authority
-        // rejection -- surface it distinctly so the family is pointed at
-        // the increase-devices flow instead of told they lack permission.
-        if (err.serverCode === 'MANAGED_DEVICE_LIMIT_REACHED') return 'deviceEnrollment.errors.deviceLimitReached';
-        return 'deviceEnrollment.errors.forbidden';
-      case 'NOT_FOUND':
-        return 'deviceEnrollment.errors.notFound';
-      case 'CONFLICT':
-        return 'deviceEnrollment.errors.conflict';
-      case 'RATE_LIMITED':
-        return 'deviceEnrollment.errors.rateLimited';
-      case 'NETWORK_ERROR':
-        return 'deviceEnrollment.errors.network';
-      case 'SERVICE_SESSION_UNAVAILABLE':
-        return 'deviceEnrollment.errors.sessionUnavailable';
-      case 'INVALID_REQUEST':
-        return 'deviceEnrollment.errors.invalidRequest';
-      default:
-        return 'deviceEnrollment.errors.unknown';
-    }
-  }
-  return 'deviceEnrollment.errors.unknown';
+/**
+ * A status pill for a vocabulary `StatusBadge` does not cover (invitation and
+ * pairing lifecycles). Same class contract, same glyphs, same weight -- the
+ * label is the caller's already-translated text.
+ */
+export function RampPill({ ramp, label }: { ramp: RampState; label: string }) {
+  return (
+    <span className={`status-badge status-${ramp}`}>
+      <StatusRampIcon ramp={ramp} />
+      {label}
+    </span>
+  );
 }
 
 /**
- * Extends the Family -> Devices surface with child-device enrollment:
- * invitation creation/list/revoke and pairing-request lookup/confirm. This
- * is intentionally NOT a new IA branch -- it renders inside the existing
- * family/devices route (see ../Devices.tsx).
- *
- * Security invariants enforced here (see api/deviceEnrollmentClient.ts and
- * api/real/realDeviceEnrollmentClient.ts for the server-side contract this
- * mirrors):
- *  - The raw invitation token/link is held only in this component's local
- *    `justCreated` state (never localStorage/sessionStorage), is shown only
- *    immediately after creation, and this component never attempts to
- *    refetch it after navigating away or reloading.
- *  - confirmPairing is never invoked automatically; it requires an explicit
- *    button click, and the button is disabled unless BOTH fingerprints are
- *    present on a PAIRING_PENDING request.
- *  - Confirmation results are rendered from the server's own `status`
- *    field, which can only ever be PAIRED (or REVOKED/etc. via other
- *    endpoints) -- this component never has any code path that renders
- *    "ACTIVE".
+ * A long opaque string (token, link, fingerprint) with a copy button.
+ * `.copyable-value` is what keeps a 200-character token from forcing the page
+ * to scroll horizontally at 375px.
  */
-export default function DeviceEnrollmentPanel() {
-  const { t } = useTranslation();
-  const clients = getApiClients();
-  const { session } = useAuth();
-  const familyId = session?.familyId ?? '';
-
-  const {
-    data: invitations,
-    loading: invitationsLoading,
-    error: invitationsError,
-    reload: reloadInvitations,
-  } = useAsync(() => clients.deviceEnrollment.listInvitations(familyId), [familyId]);
-  const { data: dashboard } = useAsync(() => clients.parentFamilyData.getDashboard(), [familyId]);
-
-  const [platform, setPlatform] = useState<InvitationPlatform>('ANDROID');
-  const [protectionMode, setProtectionMode] = useState<RequestedProtectionMode>('ANDROID_STANDARD');
-  const [childProfileId, setChildProfileId] = useState('');
-  const [initialPolicyProfile, setInitialPolicyProfile] = useState<InitialPolicyProfile>('BALANCED');
-  const [creating, setCreating] = useState(false);
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [justCreated, setJustCreated] = useState<{ invitation: InvitationDto; rawInvitationToken: string } | null>(
-    null,
+export function CopyableValue({
+  label,
+  value,
+  copyLabel,
+  testId,
+  technicalName,
+}: {
+  label?: string;
+  value: string;
+  copyLabel?: string;
+  testId?: string;
+  /** The engineer-facing name, kept as small secondary text for support calls. */
+  technicalName?: string;
+}) {
+  return (
+    <div className="copyable-value">
+      {label && <span>{label}</span>}
+      {/* An opaque Latin identifier must not be reordered by an RTL paragraph. */}
+      <code data-testid={testId} dir="ltr">{value}</code>
+      {technicalName && <span className="technical-details">{technicalName}</span>}
+      {copyLabel && (
+        <button type="button" className="btn btn-sm" onClick={() => void copyToClipboard(value)}>
+          {copyLabel}
+        </button>
+      )}
+    </div>
   );
-  const [fallbackCode, setFallbackCode] = useState<string | null>(null);
+}
 
-  // Same modal-dialog behaviour as every other role="dialog" surface in this
-  // app (privacy/DeleteNow.tsx, state/StepUpContext.tsx,
-  // wellbeing/CustomMessageForm.tsx): initial focus into the dialog, a Tab
-  // focus trap, and focus restored to the trigger on close.
-  const consentDialogRef = useRef<HTMLDivElement>(null);
-  const consentContinueRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (consentOpen) consentContinueRef.current?.focus();
-  }, [consentOpen]);
-
-  useModalFocusTrap(consentDialogRef, consentOpen);
-
-  useEffect(() => {
-    let cancelled = false;
-    setFallbackCode(null);
-    if (!justCreated?.rawInvitationToken) return () => { cancelled = true; };
-
-    void deriveInvitationFallbackCode(justCreated.rawInvitationToken).then((code) => {
-      if (!cancelled) setFallbackCode(code);
-    });
-    return () => { cancelled = true; };
-  }, [justCreated]);
-
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const [lookupDeviceId, setLookupDeviceId] = useState('');
-  const [pairing, setPairing] = useState<PairingRequestDto | null>(null);
-  const [pairingError, setPairingError] = useState<string | null>(null);
-  const [pairingLoading, setPairingLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-
-  const protectionModeOptions: RequestedProtectionMode[] =
-    platform === 'ANDROID' ? ['ANDROID_STANDARD', 'ANDROID_PROTECTED'] : ['IOS_STANDARD'];
-  const children = useMemo(() => dashboard?.children ?? [], [dashboard?.children]);
-  const selectedChild = children.find((child) => child.childId === childProfileId) ?? children[0];
-  const ageUxTier: AgeUxTier = selectedChild?.ageProfile === 'TEEN' ? 'TEEN' : 'YOUNG_CHILD';
-
-  useEffect(() => {
-    if (!childProfileId && children[0]) setChildProfileId(children[0].childId);
-  }, [childProfileId, children]);
-
-  const handlePlatformChange = (next: InvitationPlatform) => {
-    setPlatform(next);
-    setProtectionMode(next === 'ANDROID' ? 'ANDROID_STANDARD' : 'IOS_STANDARD');
-  };
-
-  const [createErrorServerCode, setCreateErrorServerCode] = useState<string | null>(null);
-
-  const create = async () => {
-    setCreateError(null);
-    setCreateErrorServerCode(null);
-    setCreating(true);
-    try {
-      const created = await clients.deviceEnrollment.createInvitation(familyId, {
-        platform,
-        requestedProtectionMode: protectionMode,
-        childProfileId: selectedChild?.childId,
-        ageUxTier,
-        initialPolicyProfile,
-      });
-      const { rawInvitationToken, ...invitation } = created;
-      setJustCreated({ invitation, rawInvitationToken });
-      reloadInvitations();
-    } catch (e) {
-      setCreateError(t(errorMessageKey(e)));
-      setCreateErrorServerCode(e instanceof DeviceEnrollmentError ? e.serverCode : null);
-    } finally {
-      setCreating(false);
-      setConsentOpen(false);
-    }
-  };
-
-  const revoke = async (invitationId: string) => {
-    setActionError(null);
-    try {
-      await clients.deviceEnrollment.revokeInvitation(familyId, invitationId);
-      reloadInvitations();
-    } catch (e) {
-      setActionError(t(errorMessageKey(e)));
-    }
-  };
-
-  const lookupPairing = async () => {
-    const deviceId = lookupDeviceId.trim();
-    if (!deviceId) return;
-    setPairingError(null);
-    setPairingLoading(true);
-    setPairing(null);
-    try {
-      const view = await clients.deviceEnrollment.getPairingRequest(familyId, deviceId);
-      setPairing(view);
-    } catch (e) {
-      setPairingError(t(errorMessageKey(e)));
-    } finally {
-      setPairingLoading(false);
-    }
-  };
-
-  const confirmPairing = async () => {
-    if (!pairing) return;
-    setPairingError(null);
-    setConfirming(true);
-    try {
-      const result = await clients.deviceEnrollment.confirmPairing(familyId, pairing.deviceId);
-      setPairing(result);
-    } catch (e) {
-      setPairingError(t(errorMessageKey(e)));
-    } finally {
-      setConfirming(false);
-    }
-  };
-
-  const copy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Clipboard API unavailable in this context -- the value remains
-      // visible/selectable in the <code> element as a fallback.
-    }
-  };
-
-  const enrollmentLink = justCreated
-    ? `${config.deviceEnrollmentLinkBaseUrl.replace(/\/+$/, '')}/${encodeURIComponent(justCreated.rawInvitationToken)}`
-    : null;
-
-  const canConfirmPairing =
-    !!pairing && pairing.status === 'PAIRING_PENDING' && !!pairing.dskFingerprint && !!pairing.dekFingerprint;
+/**
+ * The fingerprint comparison and the confirm button.
+ *
+ * The two key fingerprints are presented to a parent as "Setup code A" and
+ * "Setup code B" -- what they actually do at the kitchen table is read two
+ * codes off the child's screen and check they match. The engineer-facing names
+ * (DSK / DEK fingerprint) are RETAINED as small secondary text so a support
+ * call can still name the exact field.
+ *
+ * `deviceEnrollment.pairingSecurityNotice` is a controlled honesty notice and
+ * is rendered in full, unmodified, right at the point of confirmation: its
+ * second and third sentences ("Confirm only after both fingerprints match
+ * exactly; do not treat a requested protection mode as proof that managed
+ * provisioning succeeded") are the guarantee, not decoration.
+ *
+ * PRODUCT GAP (raised, not designed around): there is no API that maps an
+ * invitation to the device id its pairing request will carry, so even a
+ * row-scoped confirmation has to ask for the id the CHILD DEVICE shows on its
+ * own setup screen. That is honest -- it is where the number comes from -- but
+ * it is not automatic, and it cannot be until such a mapping exists.
+ */
+export function PairingConfirmation({
+  familyId,
+  idSuffix,
+  describedBy,
+}: {
+  familyId: string;
+  idSuffix: string;
+  describedBy?: string;
+}) {
+  const { t } = useTranslation();
+  const [deviceIdDraft, setDeviceIdDraft] = useState('');
+  const { pairing, pairingError, pairingLoading, confirming, canConfirm, lookup, confirm } = usePairing(familyId);
+  const inputId = `pairing-device-id-${idSuffix}`;
 
   return (
-    <section className="enrollment-panel" aria-labelledby="device-enrollment-title">
-      <h2 id="device-enrollment-title">{t('deviceEnrollment.title')}</h2>
-
-      <PermissionGate action="CREATE_DEVICE_INVITATION" showDisabledFallback>
-        <div className="field">
-          <label htmlFor="enrollment-child-profile">{t('deviceEnrollment.childProfile')}</label>
-          <select
-            id="enrollment-child-profile"
-            value={selectedChild?.childId ?? ''}
-            onChange={(e) => setChildProfileId(e.target.value)}
-            disabled={children.length === 0}
-          >
-            {children.length === 0 && <option value="">{t('deviceEnrollment.noChildProfiles')}</option>}
-            {children.map((child) => (
-              <option key={child.childId} value={child.childId}>{child.displayName}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="enrollment-age-tier">{t('deviceEnrollment.ageUxTier')}</label>
-          <select id="enrollment-age-tier" value={ageUxTier} disabled>
-            <option value="YOUNG_CHILD">{t('deviceEnrollment.ageTierYoungChild')}</option>
-            <option value="TEEN">{t('deviceEnrollment.ageTierTeen')}</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="enrollment-initial-policy">{t('deviceEnrollment.initialPolicyProfile')}</label>
-          <select
-            id="enrollment-initial-policy"
-            value={initialPolicyProfile}
-            onChange={(e) => setInitialPolicyProfile(e.target.value as InitialPolicyProfile)}
-          >
-            <option value="BALANCED">{t('deviceEnrollment.policyProfileBalanced')}</option>
-            <option value="STRICT">{t('deviceEnrollment.policyProfileStrict')}</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="enrollment-platform">{t('deviceEnrollment.platform')}</label>
-          <select
-            id="enrollment-platform"
-            value={platform}
-            onChange={(e) => handlePlatformChange(e.target.value as InvitationPlatform)}
-          >
-            <option value="ANDROID">{t('deviceEnrollment.platformAndroid')}</option>
-            {/*
-              No IOS option: iOS is deferred POST_V1 and no iOS host app exists on the
-              App Store. Offering it here made the backend mint a real, scannable
-              enrollment token + QR for an app a parent can never install -- a promise
-              the product cannot keep. The IOS/IOS_STANDARD branches above and the
-              `platformIos` / `mode.IOS_STANDARD` copy are deliberately RETAINED (existing
-              invitation rows may legitimately carry IOS, and Devices.tsx still renders
-              those labels), so re-enabling this is restoring this one <option> when the
-              iOS app actually ships.
-            */}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="enrollment-protection-mode">{t('deviceEnrollment.protectionMode')}</label>
-          <select
-            id="enrollment-protection-mode"
-            value={protectionMode}
-            onChange={(e) => setProtectionMode(e.target.value as RequestedProtectionMode)}
-          >
-            {protectionModeOptions.map((mode) => (
-              <option key={mode} value={mode}>
-                {t(`deviceEnrollment.mode.${mode}`)}
-              </option>
-            ))}
-          </select>
-        </div>
-        {protectionMode === 'ANDROID_PROTECTED' && <p style={HINT_STYLE}>{t('deviceEnrollment.protectedModeNote')}</p>}
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setConsentOpen(true)}
-          disabled={creating || !familyId || !selectedChild}
-        >
-          {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.createInvitation')}
-        </button>
-        {createError && (
-          <>
-            <ErrorState message={createError} />
-            {createErrorServerCode === 'MANAGED_DEVICE_LIMIT_REACHED' && (
-              <p>
-                <Link to="/subscription/increase-devices">{t('deviceEnrollment.errors.deviceLimitReachedAction')}</Link>
-              </p>
-            )}
-          </>
-        )}
-      </PermissionGate>
-
-      {consentOpen && (
-        <div
-          className="modal-overlay"
-          role="presentation"
-          onKeyDown={(e) => e.key === 'Escape' && !creating && setConsentOpen(false)}
-        >
-          <div
-            ref={consentDialogRef}
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="enrollment-consent-title"
-          >
-            <h2 id="enrollment-consent-title">{t('deviceEnrollment.consentTitle')}</h2>
-            <p>{t('deviceEnrollment.consentBody')}</p>
-            <p>{t('deviceEnrollment.consentMonitored')}</p>
-            <p>{t('deviceEnrollment.consentNotMonitored')}</p>
-            <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setConsentOpen(false)} disabled={creating}>
-                {t('deviceEnrollment.consentCancel')}
-              </button>
-              <button
-                ref={consentContinueRef}
-                type="button"
-                className="btn btn-primary"
-                onClick={create}
-                disabled={creating}
-              >
-                {creating ? t('deviceEnrollment.creating') : t('deviceEnrollment.consentContinue')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {justCreated && enrollmentLink && (
-        <div className="token-reveal-once" role="region" aria-labelledby="token-reveal-title">
-          <h3 id="token-reveal-title">{t('deviceEnrollment.tokenRevealTitle')}</h3>
-          <p>{t('deviceEnrollment.tokenRevealBody')}</p>
-          <p style={HINT_STYLE}>{t('deviceEnrollment.invitationSecurityNotice')}</p>
-          <InvitationQrCode value={enrollmentLink} />
-          <div className="copyable-value">
-            <code data-testid="enrollment-link">{enrollmentLink}</code>
-            <button type="button" className="btn" onClick={() => copy(enrollmentLink)}>
-              {t('deviceEnrollment.copyLink')}
-            </button>
-          </div>
-          <div className="copyable-value">
-            <code data-testid="raw-invitation-token">{justCreated.rawInvitationToken}</code>
-            <button type="button" className="btn" onClick={() => copy(justCreated.rawInvitationToken)}>
-              {t('deviceEnrollment.copyToken')}
-            </button>
-          </div>
-          {fallbackCode && (
-            <div className="copyable-value">
-              <span>{t('deviceEnrollment.fallbackCodeLabel')}</span>
-              <code data-testid="invitation-fallback-code">{fallbackCode}</code>
-              <button type="button" className="btn" onClick={() => copy(fallbackCode)}>
-                {t('deviceEnrollment.copyFallbackCode')}
-              </button>
-            </div>
-          )}
-          <p style={HINT_STYLE}>{t('deviceEnrollment.fallbackCodeBody')}</p>
-          <p style={HINT_STYLE}>{t('deviceEnrollment.tokenNeverAgain')}</p>
-          <button type="button" className="btn" onClick={() => setJustCreated(null)}>
-            {t('common.close')}
-          </button>
-        </div>
-      )}
-
-      <h3>{t('deviceEnrollment.invitationsListTitle')}</h3>
-      {invitationsLoading && <LoadingState />}
-      {invitationsError && <ErrorState message={invitationsError} onRetry={reloadInvitations} />}
-      {!invitationsLoading && !invitationsError && (!invitations || invitations.length === 0) && <EmptyState />}
-      {!invitationsLoading && !invitationsError && invitations && invitations.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table responsive-cards">
-            <thead>
-              <tr>
-                <th scope="col">{t('deviceEnrollment.platform')}</th>
-                <th scope="col">{t('deviceEnrollment.protectionMode')}</th>
-                <th scope="col">{t('family.status')}</th>
-                <th scope="col">{t('deviceEnrollment.expiresAt')}</th>
-                <th scope="col" aria-label={t('common.actions')} />
-              </tr>
-            </thead>
-            <tbody>
-              {invitations.map((inv) => (
-                <tr key={inv.invitationId}>
-                  <td data-label={t('deviceEnrollment.platform')}>
-                    {inv.platform === 'ANDROID' ? t('deviceEnrollment.platformAndroid') : t('deviceEnrollment.platformIos')}
-                  </td>
-                  <td data-label={t('deviceEnrollment.protectionMode')}>
-                    {t(`deviceEnrollment.mode.${inv.requestedProtectionMode}`)}
-                  </td>
-                  <td data-label={t('family.status')}>
-                    {t(`deviceEnrollment.invitationStatuses.${inv.status}`, { defaultValue: inv.status })}
-                  </td>
-                  <td data-label={t('deviceEnrollment.expiresAt')}>{new Date(inv.expiresAt).toLocaleString()}</td>
-                  <td>
-                    {inv.status !== 'REVOKED' && (
-                      <PermissionGate action="REVOKE_DEVICE_INVITATION" showDisabledFallback>
-                        <button type="button" className="btn" onClick={() => revoke(inv.invitationId)}>
-                          {t('deviceEnrollment.revoke')}
-                        </button>
-                      </PermissionGate>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {actionError && <ErrorState message={actionError} />}
-
-      <h3>{t('deviceEnrollment.pairingTitle')}</h3>
-      <p style={HINT_STYLE}>{t('deviceEnrollment.pairingSecurityNotice')}</p>
+    <div className="device-section">
       <div className="field">
-        <label htmlFor="pairing-device-id">{t('deviceEnrollment.deviceId')}</label>
+        <label htmlFor={inputId}>{t('deviceEnrollment.deviceId')}</label>
+        {/* An opaque Latin identifier keeps LTR order even inside an RTL page. */}
         <input
-          id="pairing-device-id"
+          id={inputId}
           type="text"
-          value={lookupDeviceId}
-          onChange={(e) => setLookupDeviceId(e.target.value)}
+          dir="ltr"
+          aria-describedby={describedBy}
+          value={deviceIdDraft}
+          onChange={(e) => setDeviceIdDraft(e.target.value)}
         />
       </div>
-      <button type="button" className="btn" onClick={lookupPairing} disabled={pairingLoading || !lookupDeviceId.trim()}>
+      <button
+        type="button"
+        className="btn btn-secondary"
+        onClick={() => void lookup(deviceIdDraft)}
+        disabled={pairingLoading || !deviceIdDraft.trim()}
+      >
         {t('deviceEnrollment.lookupPairing')}
       </button>
-      {pairingLoading && <LoadingState />}
-      {pairingError && <ErrorState message={pairingError} />}
-      {pairing && (
-        <div className="enrollment-panel">
-          <p>
-            {t('deviceEnrollment.devicePlatformLabel')}: {pairing.platform}
-          </p>
-          <p>
-            {t('family.status')}: {t(`deviceEnrollment.pairingStatuses.${pairing.status}`, { defaultValue: pairing.status })}
-          </p>
-          <div className="fingerprint-grid">
-            <div className="copyable-value">
-              <span>{t('deviceEnrollment.dskFingerprint')}:</span>
-              <code>{pairing.dskFingerprint ?? t('deviceEnrollment.fingerprintPending')}</code>
+
+      <AsyncStates loading={pairingLoading} error={pairingError}>
+        {pairing && (
+          <div className="section-panel">
+            <div className="section-panel-head">
+              <h4 className="section-panel-title">{t('deviceEnrollment.pairingTitle')}</h4>
+              <RampPill
+                ramp={pairingStatusRamp(pairing.status)}
+                label={t(`deviceEnrollment.pairingStatuses.${pairing.status}`, { defaultValue: pairing.status })}
+              />
             </div>
-            <div className="copyable-value">
-              <span>{t('deviceEnrollment.dekFingerprint')}:</span>
-              <code>{pairing.dekFingerprint ?? t('deviceEnrollment.fingerprintPending')}</code>
+            <div className="fingerprint-grid">
+              <CopyableValue
+                label={t('deviceEnrollment.setupCodeA')}
+                technicalName={t('deviceEnrollment.dskFingerprint')}
+                value={pairing.dskFingerprint ?? t('deviceEnrollment.fingerprintPending')}
+              />
+              <CopyableValue
+                label={t('deviceEnrollment.setupCodeB')}
+                technicalName={t('deviceEnrollment.dekFingerprint')}
+                value={pairing.dekFingerprint ?? t('deviceEnrollment.fingerprintPending')}
+              />
             </div>
+            <p>{t('deviceEnrollment.fingerprintCompareInstruction')}</p>
+            <p className="field-hint">{t('deviceEnrollment.pairingSecurityNotice')}</p>
+            <PermissionGate action="CONFIRM_DEVICE_PAIRING" showDisabledFallback>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void confirm()}
+                disabled={!canConfirm || confirming}
+              >
+                {confirming ? t('deviceEnrollment.confirming') : t('deviceEnrollment.confirmPairing')}
+              </button>
+            </PermissionGate>
+            {pairing.status === 'PAIRED' && <p role="status">{t('deviceEnrollment.paired')}</p>}
           </div>
-          <p style={HINT_STYLE}>{t('deviceEnrollment.fingerprintCompareInstruction')}</p>
-          <PermissionGate action="CONFIRM_DEVICE_PAIRING" showDisabledFallback>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={confirmPairing}
-              disabled={!canConfirmPairing || confirming}
-            >
-              {confirming ? t('deviceEnrollment.confirming') : t('deviceEnrollment.confirmPairing')}
-            </button>
-          </PermissionGate>
-          {pairing.status === 'PAIRED' && <p role="status">{t('deviceEnrollment.paired')}</p>}
-        </div>
-      )}
-    </section>
+        )}
+      </AsyncStates>
+    </div>
   );
 }

@@ -28,6 +28,31 @@ function seededAccountEmailHashes(extra = []) {
   return new Map([[INVITED_ACCOUNT, hashInvitedEmail(INVITED_EMAIL)], ...extra]);
 }
 
+/**
+ * Fills in the two EntitlementRepository methods createInvitation's
+ * seat-capacity guard reaches for INSIDE createAtomically's own transaction,
+ * for the deliberately minimal fakes below that only declare the ones their
+ * own assertions care about:
+ *   - `lockForFamily` is the serialization point the guard takes before it
+ *     evaluates anything (a fake that asserts on locking supplies its own);
+ *   - `getEffectiveSnapshotForFamilyOnConnection` is, in the real
+ *     MySqlEntitlementRepository, the SAME query as
+ *     getEffectiveSnapshotForFamily run on the caller's own connection
+ *     instead of a fresh one -- so delegating to the fake's own
+ *     getEffectiveSnapshotForFamily is the faithful stand-in, not a shortcut.
+ * A fake that supplies either method keeps its own; nothing is overridden.
+ */
+function withCapacityGuardMethods(entitlementRepository) {
+  return {
+    ...entitlementRepository,
+    lockForFamily: entitlementRepository.lockForFamily ?? (async () => null),
+    getEffectiveSnapshotForFamilyOnConnection:
+      entitlementRepository.getEffectiveSnapshotForFamilyOnConnection ??
+      (async (_conn, familyId, now) =>
+        entitlementRepository.getEffectiveSnapshotForFamily ? entitlementRepository.getEffectiveSnapshotForFamily(familyId, now) : null),
+  };
+}
+
 function buildService(overrides = {}) {
   const repository =
     overrides.repository ?? createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes: seededAccountEmailHashes() });
@@ -43,7 +68,7 @@ function buildService(overrides = {}) {
     clock.now,
     undefined,
     overrides.accountBinder,
-    overrides.entitlementRepository ?? null,
+    overrides.entitlementRepository ? withCapacityGuardMethods(overrides.entitlementRepository) : null,
   );
   return { service, repository, clock, authorization };
 }
@@ -375,9 +400,17 @@ test('createInvitation passes the decision time through to getEffectiveSnapshotF
   };
   const { service } = buildService({ entitlementRepository });
   await service.createInvitation(baseInput);
-  assert.equal(asOfCalls.length, 1);
-  assert.equal(asOfCalls[0].familyId, 'fam-1');
-  assert.equal(asOfCalls[0].now.getTime(), BASE_TIME);
+  // Read twice by design, and BOTH reads must carry the same decision time:
+  // once as the cheap pre-transaction fast path, once as the authoritative
+  // re-read inside createAtomically's own locked transaction (via
+  // getEffectiveSnapshotForFamilyOnConnection, which is the same query on
+  // the locked connection). A grant that expired at `now` must be excluded
+  // from both, or the two paths could disagree about the same seat.
+  assert.equal(asOfCalls.length, 2);
+  for (const call of asOfCalls) {
+    assert.equal(call.familyId, 'fam-1');
+    assert.equal(call.now.getTime(), BASE_TIME);
+  }
 });
 
 // ---- Parent-member seat consumption ----
@@ -400,6 +433,12 @@ test('acceptInvitation consumes exactly one parent-member seat, inside the same 
   };
   const { service } = buildService({ entitlementRepository });
   const created = await service.createInvitation(baseInput);
+  // createInvitation legitimately locks the same row too (createAtomically's
+  // own seat-admission serialization point) -- that is asserted by the
+  // capacity tests above, not here. Clear it so what follows measures the
+  // ACCEPTANCE path's own locking alone.
+  assert.deepEqual(locks, ['fam-1'], 'createAtomically must lock the entitlement row before it admits a seat');
+  locks.length = 0;
   await service.acceptInvitation(created.invitationId, INVITED_ACCOUNT);
 
   assert.deepEqual(locks, ['fam-1'], 'the family entitlement row must be locked before it is adjusted');
@@ -430,11 +469,17 @@ test('re-inviting someone who is already a member charges no second seat (seat i
       return { familyId, parentMemberUsedCount: delta };
     },
   };
-  const { service } = buildService({ entitlementRepository });
+  const { service, repository } = buildService({ entitlementRepository });
 
   const first = await service.createInvitation(baseInput);
   await service.acceptInvitation(first.invitationId, INVITED_ACCOUNT);
   assert.equal(adjustments.length, 1, 'the first acceptance charges the seat');
+  // What the real MySqlFamilyMemberAccountBinder durably wrote to
+  // parent_accounts.family_id once that acceptance resolved -- this double
+  // does not do it itself (see its own header comment). It is exactly what
+  // makes this account a CURRENT member, which is what the prior-acceptance
+  // skip is scoped to.
+  repository._setAccountFamilyIdForTest(INVITED_ACCOUNT, 'fam-1');
 
   // Same person, invited again (nothing PENDING, so this is allowed) and
   // accepting again.
@@ -442,6 +487,41 @@ test('re-inviting someone who is already a member charges no second seat (seat i
   await service.acceptInvitation(second.invitationId, INVITED_ACCOUNT);
 
   assert.equal(adjustments.length, 1, 'the same account accepting twice must never charge two seats');
+});
+
+test('a REMOVED member who is re-invited and re-accepts is charged a seat again -- a remove/re-invite cycle can never grow membership for free', async () => {
+  // The prior-acceptance skip above must be scoped to accounts STILL BOUND
+  // to the family. removeMember clears parent_accounts.family_id and
+  // releases the seat but deliberately never retires the ACCEPTED
+  // invitation row, so an unscoped count saw that stale row on the rejoin,
+  // skipped the seat hook, and let the member back in for free while
+  // MySqlFamilyMemberAccountBinder re-bound them on `family_id IS NULL`.
+  // Repeated per member that drives used_count to 0 (clamped by
+  // GREATEST(...,0)) while real membership grows past
+  // effectiveParentMemberLimit without bound -- exactly the invariant
+  // migration 0035 and createAtomically exist to enforce.
+  const entitlementRepository = statefulEntitlementRepositoryFake({ parentMemberLimit: 2, parentMemberUsedCount: 0 });
+  const repository = createInMemoryFamilyMemberInvitationRepository({ accountEmailHashes: seededAccountEmailHashes() });
+  const { service } = buildService({ repository, entitlementRepository });
+
+  const first = await service.createInvitation(baseInput);
+  await service.acceptInvitation(first.invitationId, INVITED_ACCOUNT);
+  repository._setAccountFamilyIdForTest(INVITED_ACCOUNT, 'fam-1'); // the binder's durable write
+  assert.equal(entitlementRepository.state.parentMemberUsedCount, 1);
+
+  await service.removeMember('fam-1', INVITED_ACCOUNT, 'acct-owner', 'dev-owner');
+  assert.equal(entitlementRepository.state.parentMemberUsedCount, 0, 'removal releases the seat');
+  const survivingAccepted = (await repository.listForFamily('fam-1')).filter((r) => r.status === 'ACCEPTED');
+  assert.equal(survivingAccepted.length, 1, 'the ACCEPTED row survives removal -- that is what made the bypass reachable');
+
+  const second = await service.createInvitation(baseInput);
+  await service.acceptInvitation(second.invitationId, INVITED_ACCOUNT);
+  repository._setAccountFamilyIdForTest(INVITED_ACCOUNT, 'fam-1');
+  assert.equal(
+    entitlementRepository.state.parentMemberUsedCount,
+    1,
+    'rejoining after removal must consume a seat again, never ride the removed membership\'s stale ACCEPTED row',
+  );
 });
 
 test('a refused acceptance consumes no seat at all', async () => {

@@ -181,15 +181,19 @@ export default function Dashboard() {
             <GroupedBadges byKey={snapshot.entitlementRequestsByState.byKey} />
           </section>
 
-          <section className="card">
-            <h2 className="section-title">{t('dashboard.subscriptionsByStatus')}</h2>
-            <GroupedBadges byKey={snapshot.subscriptionsByStatus.byKey} />
-          </section>
+          {canViewBilling && (
+            <section className="card">
+              <h2 className="section-title">{t('dashboard.subscriptionsByStatus')}</h2>
+              <GroupedBadges byKey={snapshot.subscriptionsByStatus!.byKey} />
+            </section>
+          )}
 
-          <section className="card">
-            <h2 className="section-title">{t('dashboard.quotesByStatus')}</h2>
-            <GroupedBadges byKey={snapshot.quotesByStatus.byKey} />
-          </section>
+          {canViewBilling && (
+            <section className="card">
+              <h2 className="section-title">{t('dashboard.quotesByStatus')}</h2>
+              <GroupedBadges byKey={snapshot.quotesByStatus!.byKey} />
+            </section>
+          )}
 
           {canViewBilling && (
             <section className="card">

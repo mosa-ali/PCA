@@ -34,41 +34,50 @@ export function Sidebar({ collapsed, drawerOpen, onNavigate, onClose, closeButto
           <span aria-hidden="true">&times;</span>
         </button>
       )}
-      {NAV_SECTIONS.map((section, idx) => (
-        <div key={section.titleKey ?? `section-${idx}`}>
-          {section.titleKey && !collapsed && (
-            <p className="sidebar-section-title">{t(section.titleKey)}</p>
-          )}
-          {section.items.map((item) => {
-            const label = t(item.labelKey);
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className="nav-link"
-                onClick={onNavigate}
-                title={collapsed ? label : undefined}
-              >
-                {/*
-                  Collapsed, the rail shows a single character. That character
-                  must NOT be the link's accessible name: in Arabic 10 of the 18
-                  nav labels start with the definite article "ا", so ten links
-                  were all announced as "ا" and were indistinguishable to a
-                  screen-reader or voice-control user. The initial is decorative
-                  (aria-hidden) and the full label is always present for
-                  assistive technology, collapsed or not.
-                */}
-                {collapsed ? (
-                  <>
-                    <span aria-hidden="true">{label.slice(0, 1)}</span>
-                    <span className="visually-hidden">{label}</span>
-                  </>
-                ) : (
-                  <span>{label}</span>
-                )}
-              </NavLink>
-            );
-          })}
+      {NAV_SECTIONS.map((section) => (
+        // Every first-level group now has a title (the five consumer groups in
+        // navConfig.ts), so there is no untitled section left to key by index.
+        <div key={section.titleKey}>
+          {!collapsed && <p className="sidebar-section-title">{t(section.titleKey)}</p>}
+          <div className="nav-group">
+            {section.items.map((item) => {
+              const label = t(item.labelKey);
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className="nav-link"
+                  onClick={onNavigate}
+                  title={collapsed ? label : undefined}
+                >
+                  {/*
+                    Collapsed, the rail shows a single character. That character
+                    must NOT be the link's accessible name: in Arabic 10 of the
+                    nav labels start with the definite article "ا", so ten links
+                    were all announced as "ا" and were indistinguishable to a
+                    screen-reader or voice-control user. The initial is decorative
+                    (aria-hidden) and the full label is always present for
+                    assistive technology, collapsed or not.
+                  */}
+                  {collapsed ? (
+                    <>
+                      <span aria-hidden="true">{label.slice(0, 1)}</span>
+                      <span className="visually-hidden">{label}</span>
+                    </>
+                  ) : (
+                    <>
+                      {item.icon && (
+                        <span className="nav-link-icon" aria-hidden="true">
+                          {item.icon}
+                        </span>
+                      )}
+                      <span>{label}</span>
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
+          </div>
         </div>
       ))}
     </nav>

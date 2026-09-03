@@ -1,53 +1,74 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../utils/renderWithProviders';
-import DeviceEnrollmentPanel from '../../src/pages/family/DeviceEnrollmentPanel';
+import Devices from '../../src/pages/family/Devices';
 import { __resetDevDeviceEnrollmentState } from '../../src/api/dev/devDeviceEnrollmentClient';
 
 /**
- * Enrollment honesty: the platform selector must not offer iOS.
+ * Enrollment honesty: the Add-device journey must not offer iOS -- at all.
  *
- * Selecting iOS used to be reachable here, and the create path mints a REAL
- * enrollment token plus a scannable QR code -- for an app that does not exist
- * on the App Store (iOS host-app composition is deferred POST_V1). That is a
- * promise the product cannot keep, so the option is removed at the source of
- * the promise: the parent can no longer ask for an iOS invitation at all.
+ * The create path mints a REAL enrollment token plus a scannable QR code, and
+ * the backend now refuses `platform=IOS` outright with
+ * `PLATFORM_ENROLLMENT_UNAVAILABLE` (iOS host-app composition is deferred
+ * POST_V1, and no iOS app exists on the App Store). So iOS is not a selectable
+ * control, and it is not a DISABLED control either: a greyed-out option still
+ * reads as "a thing I could try". One sentence states it plainly instead.
  *
  * Deliberately NOT asserted here (each is correct and must stay):
- *  - the IOS/IOS_STANDARD branches inside the component (dead else-branches
- *    kept so re-enablement is a one-line revert),
- *  - the invitations table rendering `inv.platform` for EXISTING rows, which
- *    may legitimately be IOS,
- *  - the `deviceEnrollment.platformIos` / `deviceEnrollment.mode.IOS_STANDARD`
- *    i18n keys, still used by that table and by Devices.tsx.
+ *  - the `deviceEnrollment.platformIos` / `mode.IOS_STANDARD` i18n keys, still
+ *    used by the pending-setup list, which may render EXISTING invitation rows
+ *    that legitimately carry IOS,
+ *  - `devicesTable.osFamily.IOS`, used by the device table for the same reason.
  */
-describe('DeviceEnrollmentPanel platform selector', () => {
+describe('Add device -- platform step', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
     localStorage.clear();
     sessionStorage.clear();
   });
 
-  it('offers Android only -- no iOS option while the iOS app does not exist', async () => {
-    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+  it('offers Android only, and states plainly that iPhone/iPad are not supported yet', async () => {
+    renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
 
-    const platformSelect = await screen.findByLabelText('Platform');
-    const options = within(platformSelect).getAllByRole('option') as HTMLOptionElement[];
+    await userEvent.click(await screen.findByRole('button', { name: 'What kind of device?' }));
 
-    expect(options.map((o) => o.value)).toEqual(['ANDROID']);
-    expect(within(platformSelect).queryByRole('option', { name: 'iOS' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Android' })).toBeInTheDocument();
+    expect(
+      screen.getByText('PCA supports Android phones and tablets today. iPhone and iPad are not supported yet.'),
+    ).toBeInTheDocument();
+
+    // No control of any kind offers iOS -- not enabled, not disabled.
+    for (const control of [
+      ...screen.queryAllByRole('radio'),
+      ...screen.queryAllByRole('option'),
+      ...screen.queryAllByRole('button'),
+    ]) {
+      expect((control as HTMLElement).textContent ?? '').not.toMatch(/iOS|iPhone|iPad/);
+      expect((control as HTMLInputElement).value ?? '').not.toMatch(/^IOS/);
+    }
   });
 
-  it('cannot be left holding a non-Android platform value', async () => {
-    renderWithProviders(<DeviceEnrollmentPanel />, { role: 'OWNER' });
+  it('the protection step never presents the iOS-only mode', async () => {
+    renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
 
-    const platformSelect = (await screen.findByLabelText('Platform')) as HTMLSelectElement;
-    expect(platformSelect.value).toBe('ANDROID');
+    await userEvent.click(await screen.findByRole('button', { name: 'What kind of device?' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'How much protection?' }));
 
-    // The protection-mode selector is derived from the platform, so it must
-    // likewise never present the iOS-only mode.
-    const modeSelect = await screen.findByLabelText('Protection mode');
-    const modeValues = (within(modeSelect).getAllByRole('option') as HTMLOptionElement[]).map((o) => o.value);
-    expect(modeValues).not.toContain('IOS_STANDARD');
+    const modes = screen.getAllByRole('radio', { name: /Android/ }) as HTMLInputElement[];
+    expect(modes.map((input) => input.value)).toEqual(['ANDROID_STANDARD', 'ANDROID_PROTECTED']);
+    expect(screen.queryByRole('radio', { name: /iOS/ })).toBeNull();
+    expect(document.body.textContent).not.toContain('IOS_STANDARD');
+  });
+
+  it('selecting Protected always shows the "request only" honesty notice', async () => {
+    renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'What kind of device?' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'How much protection?' }));
+
+    expect(screen.queryByText(/Protected mode is only a REQUEST/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('radio', { name: 'Android -- Protected (requested)' }));
+    expect(screen.getByText(/Protected mode is only a REQUEST/)).toBeInTheDocument();
   });
 });

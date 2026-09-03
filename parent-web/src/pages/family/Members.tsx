@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useFamilyAction } from '../../rbac/useFamilyAction';
 import { useAuth } from '../../state/AuthContext';
+import { formatDateTime } from '../../i18n/formatters';
 
 /**
  * Maps a FamilyMemberInvitationClient rejection to a clear, translated,
@@ -88,7 +89,7 @@ function describeInvitationError(t: (key: string) => string, err: unknown): stri
 }
 
 export default function Members() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const clients = getApiClients();
   const runFamilyAction = useFamilyAction();
   const { session } = useAuth();
@@ -215,7 +216,11 @@ export default function Members() {
                   <td data-label={t('family.role')}>{t(`roles.${invitation.role.toLowerCase()}`)}</td>
                   <td data-label={t('family.status')}>{t(`family.invitations.statuses.${invitation.status}`)}</td>
                   <td data-label={t('family.invitations.expiresAt')}>
-                    <bdi className="iso">{new Date(invitation.expiresAt).toLocaleString()}</bdi>
+                    {/* Was `toLocaleString()` with no locale argument, so an
+                        Arabic parent read an English date inside an Arabic
+                        table. All formatting goes through i18n/formatters.ts,
+                        which takes the language explicitly. */}
+                    <bdi className="iso">{formatDateTime(invitation.expiresAt, i18n.language)}</bdi>
                   </td>
                   <td>
                     {invitation.status === 'PENDING' && (

@@ -21,6 +21,7 @@ import { PlatformAdminAuthError } from '../../../platformadmin/auth/PlatformAdmi
 import { PlatformAdminEntitlementError } from '../../../platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import type { PlatformAdminEntitlementService } from '../../../platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
+import { authorizeBillingOperation } from '../../../billing/rbac.js';
 import type { ChangeRequestRepository } from '../../../entitlements/requests/ChangeRequestRepository.js';
 import { EntitlementRequestsReadModel } from '../../../platformadmin/readmodels/EntitlementRequestsReadModel.js';
 import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
@@ -45,6 +46,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * PCA-BILLING-READ-SPLIT-1 (security fix): every read route in this file is
+ * gated on VIEW_SUPPORT_ACCOUNT_METADATA, ALLOW for all five roles
+ * (rbacPolicy.ts) -- but the `quote` block carries the negotiated money
+ * amount and currency for a family's limit increase. VIEW_BILLING_RECORDS
+ * is DENY for PLATFORM_ADMIN and SUPPORT_ADMIN (billing/rbac.ts), so those
+ * roles must not receive it. `canViewBilling` omits `amountMinor` /
+ * `currencyCode` (the monetary payload) for them while keeping the
+ * non-monetary quote facts -- kind, opaque ref, price-book version, and
+ * timing -- that support triage legitimately needs, exactly the split
+ * GET /platform-admin/quotes/pending already established (same gate, quote
+ * amount deliberately omitted from its items).
+ */
 function requestToDto(record: {
   requestId: string;
   familyId: string;
@@ -59,7 +73,7 @@ function requestToDto(record: {
   decisionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
-}) {
+}, canViewBilling: boolean) {
   return {
     requestId: record.requestId,
     familyId: record.familyId,
@@ -73,8 +87,9 @@ function requestToDto(record: {
       ? {
           quoteKind: record.quote.quoteKind,
           quoteRef: record.quote.quoteRef,
-          amountMinor: bigintAmountToJson(record.quote.amountMinor),
-          currencyCode: record.quote.currencyCode,
+          ...(canViewBilling
+            ? { amountMinor: bigintAmountToJson(record.quote.amountMinor), currencyCode: record.quote.currencyCode }
+            : {}),
           priceBookVersion: record.quote.priceBookVersion,
           quotedAt: dateToJson(record.quote.quotedAt),
           expiresAt: dateToJson(record.quote.expiresAt),
@@ -115,6 +130,11 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       roles: request.platformAdminRoles ?? [],
       sessionId: request.platformAdminSessionId as string,
     };
+  }
+
+  /** PCA-BILLING-READ-SPLIT-1: single source of the billing-read verdict for every response shaped in this file. */
+  function canViewBilling(request: FastifyRequest): boolean {
+    return authorizeBillingOperation(request.platformAdminRoles ?? [], 'VIEW_BILLING_RECORDS') === 'ALLOW';
   }
 
   // ---- Per-family reads ----
@@ -183,7 +203,8 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       if (typeof familyId !== 'string' || familyId.length === 0 || familyId.length > FAMILY_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       try {
         const requests = await deps.platformAdminEntitlementService.readRequests(actor(request), familyId);
-        return reply.code(200).send({ items: requests.map(requestToDto) });
+        const billingVisible = canViewBilling(request);
+        return reply.code(200).send({ items: requests.map((r) => requestToDto(r, billingVisible)) });
       } catch (error) {
         if (mapEntitlementError(error, reply)) return;
         throw error;
@@ -230,6 +251,14 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       const page = parsePageRequest(query);
       const state = typeof query.state === 'string' ? query.state : undefined;
       const familyId = typeof query.familyId === 'string' ? query.familyId : undefined;
+      // PCA-BILLING-READ-SPLIT-1: quoteAmountMinor/quoteCurrencyCode are
+      // billing records; this route's VIEW_SUPPORT_ACCOUNT_METADATA gate is
+      // ALLOW for all five roles, so they are omitted for the roles
+      // VIEW_BILLING_RECORDS denies (PLATFORM_ADMIN, SUPPORT_ADMIN).
+      // quoteExpiresAt stays: a date, not a money value, and the same
+      // non-monetary quote timing GET /platform-admin/quotes/pending
+      // already exposes under this identical gate.
+      const billingVisible = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
       const result = await requestsReadModel.list(page, { state, familyId });
       return reply.code(200).send({
         items: result.items.map((r) => ({
@@ -241,8 +270,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
           state: r.state,
           awaitingAdminQuote: r.awaitingAdminQuote,
           noChargeOverride: r.noChargeOverride,
-          quoteAmountMinor: r.quoteAmountMinor,
-          quoteCurrencyCode: r.quoteCurrencyCode,
+          ...(billingVisible ? { quoteAmountMinor: r.quoteAmountMinor, quoteCurrencyCode: r.quoteCurrencyCode } : {}),
           quoteExpiresAt: dateToJson(r.quoteExpiresAt),
           createdAt: dateToJson(r.createdAt),
           updatedAt: dateToJson(r.updatedAt),
@@ -264,7 +292,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       if (typeof requestId !== 'string' || requestId.length === 0) return reply.code(400).send({ error: 'invalid_request' });
       const record = await deps.changeRequestRepository.getById(requestId);
       if (!record) return reply.code(404).send({ error: 'not_found' });
-      return reply.code(200).send(requestToDto(record));
+      return reply.code(200).send(requestToDto(record, canViewBilling(request)));
     },
   );
 
@@ -277,7 +305,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       if (typeof requestId !== 'string' || requestId.length === 0) return reply.code(400).send({ error: 'invalid_request' });
       try {
         const updated = await deps.platformAdminEntitlementService.approveParentMemberRequest(actor(request), requestId);
-        return reply.code(200).send(requestToDto(updated));
+        return reply.code(200).send(requestToDto(updated, canViewBilling(request)));
       } catch (error) {
         if (mapEntitlementError(error, reply)) return;
         throw error;
@@ -297,7 +325,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       if (typeof reason !== 'string' || reason.length === 0 || reason.length > REASON_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
       try {
         const updated = await deps.platformAdminEntitlementService.denyRequest(actor(request), requestId, reason);
-        return reply.code(200).send(requestToDto(updated));
+        return reply.code(200).send(requestToDto(updated, canViewBilling(request)));
       } catch (error) {
         if (mapEntitlementError(error, reply)) return;
         throw error;
@@ -324,7 +352,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       }
       try {
         const updated = await deps.platformAdminEntitlementService.issueCustomQuote(actor(request), requestId, amount, currencyCode);
-        return reply.code(200).send(requestToDto(updated));
+        return reply.code(200).send(requestToDto(updated, canViewBilling(request)));
       } catch (error) {
         if (mapEntitlementError(error, reply)) return;
         throw error;
@@ -346,7 +374,7 @@ export function registerPlatformAdminEntitlementRoutes(app: FastifyInstance, dep
       if (typeof stepUpId !== 'string' || stepUpId.length === 0) return reply.code(403).send({ error: 'forbidden' });
       try {
         const updated = await deps.platformAdminEntitlementService.noChargeDeviceOverride(actor(request), familyId, targetLimit, reason, stepUpId);
-        return reply.code(200).send(requestToDto(updated));
+        return reply.code(200).send(requestToDto(updated, canViewBilling(request)));
       } catch (error) {
         if (mapEntitlementError(error, reply)) return;
         throw error;

@@ -31,12 +31,23 @@ export interface FamilyEntitlement {
   pendingRequestSummary: PendingRequestSummary[];
 }
 
-/** Normalized quote shape used internally by the UI -- amountMinor is always the wire decimal string, never coerced through Number(). */
+/**
+ * Normalized quote shape used internally by the UI -- amountMinor is always the wire decimal string, never coerced through Number().
+ *
+ * `amountMinor`/`currencyCode` are optional because the nested wire quote
+ * (EntitlementRequestDto below) OMITS the monetary pair entirely -- key
+ * absent, not null -- for a role without VIEW_BILLING_RECORDS
+ * (PLATFORM_ADMIN, SUPPORT_ADMIN), per requestToDto in
+ * backend/src/http/routes/platformadmin/entitlementRoutes.ts. The
+ * non-monetary quote facts (kind, ref, price-book version, timing) are
+ * still sent, so the quote object itself is present and must not be
+ * assumed to carry an amount.
+ */
 export interface NormalizedQuote {
   quoteKind: string | null;
   quoteRef: string | null;
-  amountMinor: string | null;
-  currencyCode: string | null;
+  amountMinor?: string | null;
+  currencyCode?: string | null;
   priceBookVersion: number | null;
   quotedAt: string | null;
   expiresAt: string | null;
@@ -69,8 +80,12 @@ export interface FlatEntitlementRequestListItem {
   state: EntitlementChangeRequestState;
   awaitingAdminQuote: boolean;
   noChargeOverride: boolean;
-  quoteAmountMinor: string | null;
-  quoteCurrencyCode: string | null;
+  // Omitted entirely from the wire response (absent key, not null) for a
+  // role without VIEW_BILLING_RECORDS -- PLATFORM_ADMIN and SUPPORT_ADMIN,
+  // per GET /platform-admin/entitlement-requests in entitlementRoutes.ts.
+  // `quoteExpiresAt` is NOT omitted: it is a date, not a money value.
+  quoteAmountMinor?: string | null;
+  quoteCurrencyCode?: string | null;
   quoteExpiresAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -117,8 +132,13 @@ export function normalizeFromFlatListItem(item: FlatEntitlementRequestListItem):
     state: item.state,
     awaitingAdminQuote: item.awaitingAdminQuote,
     noChargeOverride: item.noChargeOverride,
+    // `!=` (loose), NOT `!==`: for a role without VIEW_BILLING_RECORDS the
+    // wire response omits these keys entirely, so they read back as
+    // `undefined`, which `!== null` would wrongly accept -- building a
+    // quote object whose amountMinor is undefined. Loose `!= null` rejects
+    // both null and undefined, so such a row normalizes to no quote at all.
     quote:
-      item.quoteAmountMinor !== null && item.quoteCurrencyCode !== null
+      item.quoteAmountMinor != null && item.quoteCurrencyCode != null
         ? { quoteKind: null, quoteRef: null, amountMinor: item.quoteAmountMinor, currencyCode: item.quoteCurrencyCode, priceBookVersion: null, quotedAt: null, expiresAt: item.quoteExpiresAt }
         : null,
     createdAt: item.createdAt,

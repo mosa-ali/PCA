@@ -59,6 +59,112 @@ export function userFacingErrorKey(error: unknown): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Presentation: is this a FAILURE, or is it the system working as designed?
+//
+// The three codes above are not breakages. `ENDPOINT_NOT_TRUSTED` means the
+// trust gate did its job; `NOT_READY_CRYPTO_REVIEW` means an unreviewed crypto
+// suite was correctly refused; `NOT_IMPLEMENTED` means a capability is honestly
+// not connected yet. Every one of them is a deliberate fail-closed decision.
+//
+// Until now all three rendered through `ErrorState`, under the headline
+// "Something went wrong" with `role="alert"` -- which tells a parent the
+// product is broken at the exact moment it is behaving correctly, and (in real
+// mode, where `getDashboard()` always throws by design) makes the console look
+// permanently broken.
+//
+// The honest sentences already existed; only the framing was wrong. This
+// splits the routing decision out so `States.tsx` can pick between three
+// treatments -- action-needed, genuine error, empty -- instead of two.
+// ---------------------------------------------------------------------------
+
+/** How a thrown value should be PRESENTED, as opposed to what it says. */
+export type ErrorPresentation = 'ACTION_NEEDED' | 'ERROR';
+
+/**
+ * The one next step for an `ACTION_NEEDED` condition. A state with no next
+ * step is a dead end, so every entry names a route; `null` route means the
+ * condition genuinely has no action a parent can take yet (text only).
+ */
+export interface ActionNeededPlan {
+  /** i18n key for the headline. Never "Something went wrong". */
+  titleKey: string;
+  /** i18n key for the plain-language reason. These are the existing, honest sentences. */
+  bodyKey: string;
+  /** i18n key for the primary action's label, or null when there is no action. */
+  actionLabelKey: string | null;
+  /** In-app route the primary action goes to, or null. Never an external URL. */
+  actionTo: string | null;
+}
+
+const ACTION_NEEDED_PLANS: Readonly<Record<string, ActionNeededPlan>> = {
+  // The trust gate refused this browser. The next step is real and specific.
+  'errors.endpointNotTrusted': {
+    titleKey: 'states.browserSetupNeededTitle',
+    bodyKey: 'errors.endpointNotTrusted',
+    actionLabelKey: 'states.browserSetupNeededAction',
+    actionTo: '/security/trusted-browser',
+  },
+  // The production crypto suite has not been security-reviewed. A parent
+  // cannot fix that, but they can read exactly what it means for them.
+  'errors.cryptoReviewRequired': {
+    titleKey: 'states.notAvailableYetTitle',
+    bodyKey: 'errors.cryptoReviewRequired',
+    actionLabelKey: 'states.learnWhat',
+    actionTo: '/privacy/transparency',
+  },
+  // Not connected to the service yet. There is deliberately nothing to click.
+  'errors.serviceUnavailable': {
+    titleKey: 'states.notConnectedYetTitle',
+    bodyKey: 'errors.serviceUnavailable',
+    actionLabelKey: null,
+    actionTo: null,
+  },
+};
+
+/**
+ * `ACTION_NEEDED` for exactly the three fail-closed conditions above (matched
+ * by `code`, or by class `name` for an error that lost its discriminant across
+ * a module realm). `ERROR` for everything else -- including an unrecognised
+ * throw, which must stay a genuine error rather than be softened into
+ * reassuring copy.
+ */
+export function errorPresentation(error: unknown): ErrorPresentation {
+  return userFacingErrorKey(error) === null ? 'ERROR' : 'ACTION_NEEDED';
+}
+
+/**
+ * The headline / reason / next-step triple for an `ACTION_NEEDED` condition,
+ * or `null` when `error` is a genuine failure and belongs in `ErrorState`.
+ */
+export function actionNeededPlan(error: unknown): ActionNeededPlan | null {
+  const key = userFacingErrorKey(error);
+  if (key === null) return null;
+  return ACTION_NEEDED_PLANS[key] ?? null;
+}
+
+/**
+ * The same decision, made from the already-localized sentence instead of the
+ * cause.
+ *
+ * `hooks/useAsync.ts` deliberately hands its callers `describeUserFacingError`
+ * output rather than the thrown value, so the ~30 pages that render
+ * `<ErrorState message={error} />` never see the cause at all. Rather than
+ * change that hook's contract (and every page with it) just to reframe three
+ * conditions, the sentence is matched back to its key here: all three come out
+ * of the same bundle as `t(key)`, so the comparison is exact, and an
+ * unrecognised sentence correctly falls through to the genuine-error path.
+ *
+ * A page that DOES hold the thrown value should call `actionNeededPlan`
+ * instead -- it is the direct route and does not depend on copy.
+ */
+export function actionNeededPlanForMessage(message: string, t: TFunction): ActionNeededPlan | null {
+  for (const [key, plan] of Object.entries(ACTION_NEEDED_PLANS)) {
+    if (t(key) === message) return plan;
+  }
+  return null;
+}
+
 /**
  * Localized, user-appropriate copy for `error`. Falls back to a localized
  * generic sentence for anything this app cannot describe precisely -- never

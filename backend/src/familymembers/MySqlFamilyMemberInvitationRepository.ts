@@ -262,10 +262,31 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
           // changes no membership at all, permanently burning a seat the
           // family paid for. Counted on the transaction's own connection so
           // it sees the row this statement just flipped.
+          //
+          // SCOPED TO ACCOUNTS STILL BOUND TO THIS FAMILY (the
+          // parent_accounts JOIN below), and that scoping is load-bearing in
+          // BOTH directions. removeMemberAtomically clears
+          // parent_accounts.family_id and releases the seat but deliberately
+          // never retires the ACCEPTED invitation row, so an unscoped count
+          // still saw a removed member's stale ACCEPTED row: re-inviting
+          // them (allowed -- no PENDING row survives a removal) and
+          // re-accepting skipped the seat hook while
+          // MySqlFamilyMemberAccountBinder re-bound them on
+          // `family_id IS NULL`, so a remove -> re-invite -> re-accept cycle
+          // rejoined members for free and drove used_count to zero (clamped
+          // by GREATEST(...,0)) while membership grew past
+          // effectiveParentMemberLimit without bound. With the join:
+          //   - a re-invited EXISTING member still has family_id = familyId,
+          //     so the count is >= 1 and the seat is not charged twice (the
+          //     documented intent of the skip is preserved);
+          //   - a REMOVED member has family_id NULL, so the count is 0 and
+          //     rejoining correctly consumes a seat again.
           const priorAcceptances = await execute<{ prior: number }>(
             conn,
-            `SELECT COUNT(*) AS prior FROM family_member_invitations
-              WHERE family_id = ? AND accepted_by_account_id = ? AND status = 'ACCEPTED' AND invitation_id <> ?`,
+            `SELECT COUNT(*) AS prior FROM family_member_invitations AS fmi
+               JOIN parent_accounts AS pa ON pa.account_id = fmi.accepted_by_account_id
+              WHERE fmi.family_id = ? AND fmi.accepted_by_account_id = ? AND fmi.status = 'ACCEPTED'
+                AND fmi.invitation_id <> ? AND pa.family_id = fmi.family_id`,
             [record.familyId, acceptedByAccountId, invitationId],
           );
           if (Number(priorAcceptances.rows[0]?.prior ?? 0) === 0) {

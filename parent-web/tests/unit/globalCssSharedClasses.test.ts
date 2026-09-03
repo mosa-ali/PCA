@@ -64,28 +64,25 @@ describe('shared CSS classes referenced from TSX', () => {
     expect(CSS).toMatch(/\.text-muted\s*\{[^}]*var\(--color-text-muted\)/);
   });
 
-  // The remaining unmatched classes are reported here rather than silently
-  // ignored. Each one is a genuinely ambiguous visual intent (which colours?
-  // which size?) that needs a design decision, not a guess, so they are pinned
-  // as a known list: adding a NEW unstyled class fails this test.
-  const KNOWN_UNSTYLED = [
-    'app-config-error',
-    'app-config-error-detail',
-    'btn-inline',
-    'btn-secondary',
-    'btn-sm',
-    'connection-banner',
-    'connection-banner-offline',
-    'connection-banner-reconnected',
-    'invitation-qr-code',
-    'offline-draft-notice',
-    'offline-notice',
-    // 'permission-entry' was pinned here as design-decision-pending. It is now
-    // genuinely styled: being unstyled was the root cause of the /privacy/permissions
-    // horizontal overflow at 375x812 (its 49-character manifest identifier had no
-    // break opportunity). See the .permission-entry* block in global.css and
-    // tests/responsive/permissionsPolicyLayout.test.tsx.
-  ];
+  // Unmatched classes are reported here rather than silently ignored. This
+  // list is now EMPTY, and keeping it empty is the point: adding a class to
+  // TSX without a rule in global.css fails this test immediately.
+  //
+  // It used to pin eleven classes as "design decision pending" -- the two
+  // connection banners, the three offline notices, the four button variants,
+  // the invitation QR block and the app-config error surface. All eleven were
+  // rendering as unstyled markup with no visible error anywhere. The PPR-2
+  // design system defines every one of them (see the `.banner`, `.btn-*`,
+  // `.invitation-qr-code` and `.app-config-error` blocks in global.css), and
+  // it also defines, ahead of use, every class name in the design spec's
+  // component manifest so a page writer never has to add a rule here.
+  //
+  // 'permission-entry' was likewise pinned here once. Being unstyled was the
+  // root cause of the /privacy/permissions horizontal overflow at 375x812 (its
+  // 49-character manifest identifier had no break opportunity). See the
+  // .permission-entry* block in global.css and
+  // tests/responsive/permissionsPolicyLayout.test.tsx.
+  const KNOWN_UNSTYLED: string[] = [];
 
   it('has no unstyled class beyond the known, design-decision-pending list', () => {
     const defined = definedClasses(CSS);

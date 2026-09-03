@@ -36,7 +36,13 @@ export interface AccountSummaryDto {
   suspendedAt: string | null;
   suspensionReason: string | null;
   entitlement: AccountEntitlementSummary | null;
-  latestSubscription: AccountLatestSubscription | null;
+  // Omitted entirely from the wire response (not sent as null) for a role
+  // without VIEW_BILLING_RECORDS -- PLATFORM_ADMIN and SUPPORT_ADMIN, per
+  // toAccountDto in backend/src/http/routes/platformadmin/accountsRoutes.ts.
+  // `null` already means "this family has no subscription", so absence is
+  // the only unambiguous "you may not see it" signal; optional here so a
+  // consumer must truthiness-check rather than assume presence.
+  latestSubscription?: AccountLatestSubscription | null;
 }
 
 /** Response shape of POST .../suspend and POST .../reactivate (accountsRoutes.ts). */

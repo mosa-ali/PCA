@@ -28,8 +28,8 @@ export default defineConfig(({ mode }) => {
           short_name: 'PCA Parent',
           description:
             'Parental Control App - Parent Web Console (offline app shell; family data stays E2EE, decrypted only in a trusted parent browser context).',
-          theme_color: '#1d4f4a',
-          background_color: '#0b1220',
+          theme_color: '#ffffff',
+          background_color: '#ffffff',
           display: 'standalone',
           start_url: '/',
           scope: '/',

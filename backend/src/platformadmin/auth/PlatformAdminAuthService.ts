@@ -18,7 +18,7 @@ import type {
   PlatformAdminStepUpId,
   PlatformAdminStepUpScope,
 } from './types.js';
-import type { PlatformAdminAuditEvent } from '../audit/types.js';
+import type { PlatformAdminAuditEvent, PlatformAdminAuditEventType, PlatformAdminAuditResult } from '../audit/types.js';
 
 export type PlatformAdminAuthErrorCode = 'UNAUTHORIZED';
 
@@ -181,14 +181,47 @@ export class PlatformAdminAuthService {
     return { rawToken, adminId: account.adminId, expiresAt };
   }
 
+  /**
+   * The ONE failed-attempt ledger + alert path for this whole service.
+   *
+   * PCA-STEPUP-LOCKOUT-1: `assertStepUp` now calls this too, via
+   * `auditOverride` -- deliberately the SAME method, the SAME
+   * `platform_admin_login_attempts` row shape and the SAME
+   * `PCA-ADD-PA-020` alert rule login has always used, rather than a
+   * parallel step-up-only mechanism. The override exists ONLY so the audit
+   * row a step-up denial writes keeps its accurate
+   * `ADMIN_STEP_UP_DENIED`/`session:<id>`/`{ scope }` shape (the closed
+   * audit vocabulary in ../audit/types.ts already has that event type;
+   * nothing new is introduced here). `outcome` is still one of the four
+   * values migration 0005's `platform_admin_login_attempts_outcome_check`
+   * permits, and `kind` still one of the two values migration 0021's
+   * `platform_admin_security_alerts_kind_check` permits -- this change
+   * requires no migration.
+   *
+   * Because the attempt row is keyed by `email_hash` and carries a
+   * FAILED_MFA outcome, a denied step-up counts toward -- and is counted by
+   * -- exactly the same rolling 15-minute / 5-failure lockout window as a
+   * failed login (`recentFailedLoginTimestampsDescending` selects
+   * FAILED_CREDENTIALS + FAILED_MFA). One shared budget across both
+   * factors-verifying entry points is the point: an attacker holding a
+   * stolen session token cannot get a fresh TOTP-guessing budget just by
+   * switching from /login to /step-up.
+   */
   private async recordFailureAndMaybeAlert(
     emailHash: Buffer,
     outcome: 'FAILED_CREDENTIALS' | 'FAILED_MFA' | 'LOCKED_OUT',
     now: Date,
     correlationId: string,
     adminId: PlatformAdminId | null,
+    auditOverride?: {
+      eventType: PlatformAdminAuditEventType;
+      targetRef: string;
+      result: PlatformAdminAuditResult;
+      metadata: Record<string, unknown>;
+    },
   ): Promise<void> {
-    const eventType = outcome === 'LOCKED_OUT' ? 'ADMIN_LOGIN_LOCKED_OUT' : 'ADMIN_LOGIN_FAILED';
+    const eventType: PlatformAdminAuditEventType =
+      auditOverride?.eventType ?? (outcome === 'LOCKED_OUT' ? 'ADMIN_LOGIN_LOCKED_OUT' : 'ADMIN_LOGIN_FAILED');
     const roles = adminId ? await this.repository.findActiveRoles(adminId) : [];
     await this.repository.recordLoginAttempt({
       attemptId: randomUUID(),
@@ -200,11 +233,11 @@ export class PlatformAdminAuthService {
         eventType,
         actorAdminId: adminId,
         actorRole: roles[0] ?? null,
-        targetRef: adminId ? `admin:${adminId}` : null,
-        result: outcome === 'LOCKED_OUT' ? 'DENIED' : 'FAILURE',
+        targetRef: auditOverride?.targetRef ?? (adminId ? `admin:${adminId}` : null),
+        result: auditOverride?.result ?? (outcome === 'LOCKED_OUT' ? 'DENIED' : 'FAILURE'),
         occurredAt: now,
         correlationId,
-        metadata: null,
+        metadata: auditOverride?.metadata ?? null,
       },
     });
 
@@ -276,6 +309,46 @@ export class PlatformAdminAuthService {
    * Re-verifies the LIVE TOTP code -- fresh re-authentication, never reuse
    * of login's factor state -- bound to this exact (adminId, sessionId,
    * scope) triple. PCA-ADD-PA-017.
+   *
+   * PCA-STEPUP-LOCKOUT-1 (security fix): this method used to record a
+   * single ADMIN_STEP_UP_DENIED audit row on failure and NOTHING else --
+   * no lockout check, no failed-attempt row, no PCA-ADD-PA-020 alert, no
+   * session consequence. `login` has had all four since PCA-ADD-PA-020.
+   * That asymmetry made step-up the cheap way in: step-up exists precisely
+   * to stop an attacker who holds a stolen (12-hour) admin session token
+   * but NOT the TOTP device, and `verifyTotp` accepts a +/-1 step window
+   * (3 valid codes out of 10^6 per window), so unlimited step-up attempts
+   * against a stolen session were a pure brute-force race with no
+   * detection and no ceiling -- and success yields a REFUND-scoped
+   * stepUpId, i.e. money movement.
+   *
+   * The fix reuses login's existing, already-reviewed machinery verbatim,
+   * in the same order login applies it:
+   *   1. resolve the account so the SAME email_hash-keyed attempt ledger
+   *      login reads/writes is addressable from here (no new table, no new
+   *      key);
+   *   2. `recentFailedLoginTimestampsDescending` + `isLockedOut` BEFORE any
+   *      TOTP work -- a locked-out admin cannot even present a code;
+   *   3. `recordFailureAndMaybeAlert` on every denial -- one attempt row
+   *      (FAILED_MFA / LOCKED_OUT) plus the APP_OWNER alert for
+   *      APP_OWNER/FINANCE_ADMIN accounts;
+   *   4. once the denial crosses the lockout threshold, force-revoke every
+   *      active session for the admin, which is what actually kills the
+   *      stolen token the attacker is riding on (the one consequence login
+   *      has no need of, because a failed login never holds a session).
+   *
+   * Deliberately NOT a new mechanism, a new table, a new alert kind, or a
+   * new audit event type: every constant, query, alert kind and audit event
+   * type used here already existed and is already covered by migrations
+   * 0005/0021's CHECK constraints.
+   *
+   * KNOWN GAP, deliberately NOT addressed here: this method still applies
+   * no RBAC check to `scope` -- any authenticated admin can obtain a
+   * REFUND-scoped grant. It is not directly exploitable today because every
+   * sensitive route re-checks its own operation authorization around
+   * `consumeStepUp` (e.g. billingRefundRoutes.ts requires ISSUE_REFUND),
+   * so an unauthorized grant is unusable. Reported rather than fixed: a
+   * scope -> operation map is a cross-lane interface change.
    */
   async assertStepUp(
     adminId: PlatformAdminId,
@@ -286,6 +359,32 @@ export class PlatformAdminAuthService {
   ): Promise<PlatformAdminStepUpResult> {
     const now = this.now();
     const correlationId = randomUUID();
+
+    // The attempt ledger and the lockout window are keyed by email_hash
+    // (that is the identifier login rate-limits on), so the account row is
+    // what makes the shared budget addressable from an adminId-keyed call.
+    // Fail CLOSED if it cannot be resolved: never mint a step-up grant for
+    // an admin whose account row we cannot read. Unreachable in practice
+    // (validateSession already required an ACTIVE account for this session)
+    // except as a delete/disable race, which should deny anyway.
+    const account = await this.repository.findAccountById(adminId);
+    if (!account) {
+      await this.repository.recordDeniedStepUp(
+        this.buildStepUpDeniedEvent(adminId, actorRole, sessionId, scope, now, correlationId, 'UNKNOWN_ACCOUNT'),
+      );
+      throw new PlatformAdminAuthError();
+    }
+    const emailHash = account.emailHash;
+
+    const recentFailures = await this.repository.recentFailedLoginTimestampsDescending(
+      emailHash,
+      PLATFORM_ADMIN_LOGIN_ATTEMPT_LOOKBACK_LIMIT,
+    );
+    if (isLockedOut(recentFailures, now)) {
+      await this.denyStepUp(emailHash, 'LOCKED_OUT', adminId, actorRole, sessionId, scope, now, correlationId);
+      throw new PlatformAdminAuthError();
+    }
+
     const mfaState = await this.repository.getMfaState(adminId);
     let matchedCounter: number | null = null;
     if (mfaState && mfaState.status === 'ACTIVE' && mfaState.totpSecretCiphertext && mfaState.totpSecretNonce) {
@@ -302,17 +401,7 @@ export class PlatformAdminAuthService {
     const verified = matchedCounter !== null && (await this.repository.claimTotpCounter(adminId, matchedCounter));
 
     if (!verified) {
-      await this.repository.recordDeniedStepUp({
-        eventId: randomUUID(),
-        eventType: 'ADMIN_STEP_UP_DENIED',
-        actorAdminId: adminId,
-        actorRole,
-        targetRef: `session:${sessionId}`,
-        result: 'DENIED',
-        occurredAt: now,
-        correlationId,
-        metadata: { scope },
-      });
+      await this.denyStepUp(emailHash, 'FAILED_MFA', adminId, actorRole, sessionId, scope, now, correlationId);
       throw new PlatformAdminAuthError();
     }
 
@@ -337,6 +426,96 @@ export class PlatformAdminAuthService {
       },
     });
     return { stepUpId: stepUp.stepUpId, expiresAt: stepUp.expiresAt };
+  }
+
+  private buildStepUpDeniedEvent(
+    adminId: PlatformAdminId,
+    actorRole: PlatformAdminRole | null,
+    sessionId: PlatformAdminSessionId,
+    scope: PlatformAdminStepUpScope,
+    now: Date,
+    correlationId: string,
+    reason: string,
+  ): PlatformAdminAuditEvent {
+    return {
+      eventId: randomUUID(),
+      eventType: 'ADMIN_STEP_UP_DENIED',
+      actorAdminId: adminId,
+      actorRole,
+      targetRef: `session:${sessionId}`,
+      result: 'DENIED',
+      occurredAt: now,
+      correlationId,
+      // Non-secret operational metadata only: the requested scope and a
+      // coarse reason code. Never the submitted code, never any factor
+      // state -- same discipline the login path's audit rows follow.
+      metadata: { scope, reason },
+    };
+  }
+
+  /**
+   * PCA-STEPUP-LOCKOUT-1: the single denial path for `assertStepUp`.
+   * Writes exactly ONE audit row (still ADMIN_STEP_UP_DENIED, with its
+   * scope/session context intact) and ONE platform_admin_login_attempts
+   * row, atomically together via `recordLoginAttempt` -- strictly better
+   * than the pre-fix behaviour, which wrote the audit row on its own with
+   * no attempt row at all -- then fires the PCA-ADD-PA-020 alert under the
+   * exact same APP_OWNER/FINANCE_ADMIN rule login uses.
+   *
+   * Finally, if this denial has taken the admin over the lockout threshold,
+   * every active session for that admin is force-revoked. This is the part
+   * login has no analogue for and step-up genuinely needs: the attack this
+   * defends against is someone RIDING a stolen, still-valid session token,
+   * so locking the identifier out is not enough on its own -- the token has
+   * to die. Revoking ALL sessions rather than just `sessionId` is
+   * deliberate: the platform cannot tell the attacker's session from the
+   * legitimate operator's, so it revokes both and makes the operator
+   * re-authenticate with their real second factor. Reuses
+   * `revokeAllActiveSessions`, the same repository method
+   * `revokeAllSessions`/role-revocation/account-disable already cascade
+   * through, so the ADMIN_SESSION_REVOKED audit trail is identical.
+   */
+  private async denyStepUp(
+    emailHash: Buffer,
+    outcome: 'FAILED_MFA' | 'LOCKED_OUT',
+    adminId: PlatformAdminId,
+    actorRole: PlatformAdminRole | null,
+    sessionId: PlatformAdminSessionId,
+    scope: PlatformAdminStepUpScope,
+    now: Date,
+    correlationId: string,
+  ): Promise<void> {
+    await this.recordFailureAndMaybeAlert(emailHash, outcome, now, correlationId, adminId, {
+      eventType: 'ADMIN_STEP_UP_DENIED',
+      targetRef: `session:${sessionId}`,
+      result: 'DENIED',
+      metadata: { scope, reason: outcome },
+    });
+
+    // Re-read the ledger AFTER the row above landed, so the failure just
+    // recorded is counted. A LOCKED_OUT row is not itself a countable
+    // failure (recentFailedLoginTimestampsDescending selects only
+    // FAILED_CREDENTIALS/FAILED_MFA), exactly as on the login path -- so on
+    // the already-locked-out branch this simply re-confirms the standing
+    // lockout and the revocation below is idempotent (no active sessions
+    // remain to revoke after the first time).
+    const failuresIncludingThisOne = await this.repository.recentFailedLoginTimestampsDescending(
+      emailHash,
+      PLATFORM_ADMIN_LOGIN_ATTEMPT_LOOKBACK_LIMIT,
+    );
+    if (!isLockedOut(failuresIncludingThisOne, now)) return;
+
+    await this.repository.revokeAllActiveSessions(adminId, now, (revokedSessionId): PlatformAdminAuditEvent => ({
+      eventId: randomUUID(),
+      eventType: 'ADMIN_SESSION_REVOKED',
+      actorAdminId: adminId,
+      actorRole,
+      targetRef: `session:${revokedSessionId}`,
+      result: 'SUCCESS',
+      occurredAt: now,
+      correlationId,
+      metadata: { reason: 'STEP_UP_DENIAL_LOCKOUT' },
+    }));
   }
 
   /**

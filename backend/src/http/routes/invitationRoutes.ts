@@ -9,6 +9,23 @@ import type { AuthzService } from '../../authz/AuthzService.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const VALID_PLATFORMS = new Set(['ANDROID', 'IOS']);
+/**
+ * The API half of the same decision parent-web already applied in its UI:
+ * DeviceEnrollmentPanel.tsx removed the `<option value="IOS">` because iOS
+ * is deferred POST_V1 and no iOS host app exists on any store. Removing
+ * only the picker left this route still minting a REAL, redeemable
+ * enrollment token + QR for platform=IOS to any authenticated caller --
+ * a credential for an app nobody can install. So enrollment is refused
+ * here too, for the whole time no iOS app ships.
+ *
+ * `IOS` deliberately stays in VALID_PLATFORMS above: the shape of the
+ * request is still well-formed and the persistence/DTO layers still model
+ * the platform. This is an availability refusal, not a schema change.
+ *
+ * REVERSIBLE IN ONE LINE: when an iOS host app actually ships, add 'IOS'
+ * back to this set. Nothing else in this file needs to change.
+ */
+const ENROLLABLE_PLATFORMS = new Set(['ANDROID']);
 const VALID_PROTECTION_MODES = new Set(['ANDROID_STANDARD', 'ANDROID_PROTECTED', 'IOS_STANDARD']);
 const VALID_AGE_UX_TIERS = new Set(['YOUNG_CHILD', 'TEEN']);
 const VALID_INITIAL_POLICY_PROFILES = new Set(['BALANCED', 'STRICT']);
@@ -59,6 +76,14 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
       const { platform, requestedProtectionMode, childProfileId, ageUxTier, initialPolicyProfile, ttlMs } = body;
       if (typeof platform !== 'string' || !VALID_PLATFORMS.has(platform)) {
         return reply.code(400).send({ error: 'invalid_request' });
+      }
+      // See ENROLLABLE_PLATFORMS: a well-formed platform that no shipping
+      // host app can redeem is refused before a token is ever minted. The
+      // `code` sub-field matches this file's own FREE_ACCESS_EXPIRED_NEW_
+      // CAPACITY_DENIED / MANAGED_DEVICE_LIMIT_REACHED convention so the
+      // caller can tell "unavailable" from "malformed".
+      if (!ENROLLABLE_PLATFORMS.has(platform)) {
+        return reply.code(400).send({ error: 'invalid_request', code: 'PLATFORM_ENROLLMENT_UNAVAILABLE' });
       }
       if (typeof requestedProtectionMode !== 'string' || !VALID_PROTECTION_MODES.has(requestedProtectionMode)) {
         return reply.code(400).send({ error: 'invalid_request' });

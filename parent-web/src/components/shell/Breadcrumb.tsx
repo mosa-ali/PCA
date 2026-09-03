@@ -27,10 +27,19 @@ const SEGMENT_LABEL_KEYS: Readonly<Record<string, string>> = {
   activity: 'nav.activityTimeline',
   requests: 'nav.requests',
   family: 'nav.family',
+  // `nav.usersMembers`, not the sidebar's newer `nav.familyMembers`: the last
+  // crumb names the page you are standing on, and this page's own <h1> is
+  // t('nav.usersMembers') ("Users & Members", pages/family/Members.tsx:168).
+  // A crumb that disagreed with the heading directly beneath it would be worse
+  // than one that disagrees with the sidebar row that led here. Same reasoning
+  // for `audit` below.
   members: 'nav.usersMembers',
   roles: 'nav.rolesPermissions',
   devices: 'nav.devices',
-  privacy: 'nav.privacyData',
+  // The /privacy hub's own label, so the breadcrumb crumb and the nav row read
+  // identically. Its five child segments below are unchanged: each privacy
+  // capability keeps its own route and is still breadcrumbed in full.
+  privacy: 'nav.dataPrivacy',
   retention: 'nav.retention',
   export: 'nav.export',
   delete: 'nav.deleteNow',
@@ -41,6 +50,15 @@ const SEGMENT_LABEL_KEYS: Readonly<Record<string, string>> = {
   'trusted-browser': 'nav.trustedBrowser',
   recovery: 'nav.recovery',
   audit: 'nav.audit',
+  // First-level groups that are also URL segments of the pages introduced with
+  // the new information architecture. A segment missing from this map renders
+  // the raw URL word -- in English, to an Arabic parent -- so every new static
+  // segment has to be added here in the same change that registers its route.
+  protection: 'nav.groupProtection',
+  'apps-web': 'nav.appsWeb',
+  schedules: 'nav.schedules',
+  safety: 'nav.groupSafetyPrivacy',
+  alerts: 'nav.alerts',
   notifications: 'nav.notifications',
   subscription: 'nav.subscription',
   'increase-devices': 'subscription.increaseDevices.title',

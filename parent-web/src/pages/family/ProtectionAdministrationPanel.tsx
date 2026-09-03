@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PermissionGate } from '../../rbac/PermissionGate';
+import { Disclosure } from '../../components/common/Disclosure';
+import { formatDateTime } from '../../i18n/formatters';
 
 export type ProtectionApprovalState = 'PARENT_APPROVAL_REQUIRED' | 'KEEP_ACTIVE' | 'TEMPORARILY_DISABLE' | 'ALLOW_REMOVAL';
 export type ProtectionDecision = Exclude<ProtectionApprovalState, 'PARENT_APPROVAL_REQUIRED'>;
@@ -59,16 +61,26 @@ export interface ProtectionAdministrationActions {
   }): Promise<ProtectionApprovalView>;
 }
 
+/**
+ * Which half of this panel to render.
+ *
+ * `advanced` is the Administration PIN and nothing else. `protection` is the
+ * parent-decision request plus the pending/decided list. They used to render
+ * back-to-back inside one `PermissionGate` directly beneath the "Add a child
+ * device" form, which is what put a security PIN in the middle of a new
+ * parent's first device setup.
+ */
+export type ProtectionAdministrationSection = 'protection' | 'advanced';
+
 interface ProtectionAdministrationPanelProps {
+  section: ProtectionAdministrationSection;
   targets: ProtectionTargetOption[];
   /** Omitted until the coordinator binds the authenticated family routes. */
   actions?: ProtectionAdministrationActions;
 }
 
-const FALLBACK_PIN_EXPLANATION = 'Use this local PIN only as an offline fallback when an approved parent-device decision is unavailable. It is never an invitation secret or a server-readable activity credential.';
-
-export default function ProtectionAdministrationPanel({ targets, actions }: ProtectionAdministrationPanelProps) {
-  const { t } = useTranslation();
+export default function ProtectionAdministrationPanel({ section, targets, actions }: ProtectionAdministrationPanelProps) {
+  const { t, i18n } = useTranslation();
   const [pinStatus, setPinStatus] = useState<ProtectionPinStatus | null>(null);
   const [approvals, setApprovals] = useState<ProtectionApprovalView[]>([]);
   const [pinDraft, setPinDraft] = useState('');
@@ -180,46 +192,90 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
     }
   };
 
-  return (
-    <section aria-labelledby="protection-administration-title" style={{ marginBlock: '1.5rem' }}>
-      <h2 id="protection-administration-title">
-        {t('protectionAdministration.title')}
-      </h2>
-      <p>
-        {t('protectionAdministration.intro')}
-      </p>
-      <p style={{ color: 'var(--color-text-muted)' }}>
-        {pinStatus?.offlineFallbackExplanation ?? FALLBACK_PIN_EXPLANATION}
-      </p>
-
+  const announcements = (
+    <>
       {!actions && (
         <p role="status">
           {t('protectionAdministration.bindingPending')}
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && <p className="field-error" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
+    </>
+  );
 
-      <PermissionGate action="DISABLE_PROTECTION_POLICY" showDisabledFallback>
-        <fieldset disabled={!actions || busy}>
-          <legend>{t('protectionAdministration.pinTitle')}</legend>
+  // ------------------------------------------------------------ the PIN ----
+  // Owner requirement: the Administration PIN belongs in advanced/security,
+  // NOT in the primary new-device flow.
+  //
+  // Its real security properties are neither overstated nor understated here.
+  // The parent-readable summary says what it IS -- a local backup code used
+  // only when a parent's decision cannot reach the device. The precise
+  // wording, including the server's own verbatim explanation of the stored
+  // verifier, is one click away and unmodified: `offlineFallbackExplanation`
+  // arrives from the server and is NOT rewritten. Its previous English-only
+  // hardcoded fallback is now an i18n key, so an Arabic parent no longer reads
+  // an untranslatable English sentence.
+  if (section === 'advanced') {
+    // A plain `div`, not a labelled `<section>`: this is a sub-panel inside a
+    // section that already carries the landmark name, and a nested region
+    // repeating "Administration PIN" only adds landmark noise for a screen
+    // reader walking the page.
+    return (
+      <div className="section-panel">
+        <div className="section-panel-head">
+          <h3 className="section-panel-title" id="administration-pin-title">
+            {t('protectionAdministration.pinTitle')}
+          </h3>
+        </div>
+        <p>{t('protectionAdministration.pinPlainSummary')}</p>
+        <Disclosure summary={t('protectionAdministration.pinHowProtected')}>
           <p>{t('protectionAdministration.pinBody')}</p>
-          <div className="field">
-            <label htmlFor="administration-pin">{t('protectionAdministration.pin')}</label>
-            <input id="administration-pin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinDraft} onChange={(event) => setPinDraft(event.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="administration-pin-confirm">{t('protectionAdministration.pinConfirm')}</label>
-            <input id="administration-pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinConfirmation} onChange={(event) => setPinConfirmation(event.target.value)} />
-          </div>
-          <button type="button" className="btn btn-primary" onClick={() => void configurePin()}>
-            {t('protectionAdministration.savePin')}
-          </button>
-        </fieldset>
-      </PermissionGate>
+          <p>{pinStatus?.offlineFallbackExplanation ?? t('protectionAdministration.pinFallbackExplanation')}</p>
+        </Disclosure>
+
+        {announcements}
+
+        <PermissionGate action="DISABLE_PROTECTION_POLICY" showDisabledFallback>
+          {/* `min-inline-size: 0` overrides a `<fieldset>`'s UA-default
+              `min-inline-size: min-content`, which otherwise refuses to shrink
+              below the widest `<option>` and pushed this form 8px past a 320px
+              content column. Inline because it is a layout primitive, not a
+              design token -- adding a class would mean editing global.css. */}
+          <fieldset style={{ minInlineSize: 0 }} disabled={!actions || busy}>
+            <legend>{t('protectionAdministration.pinTitle')}</legend>
+            <div className="field">
+              <label htmlFor="administration-pin">{t('protectionAdministration.pin')}</label>
+              <input id="administration-pin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinDraft} onChange={(event) => setPinDraft(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="administration-pin-confirm">{t('protectionAdministration.pinConfirm')}</label>
+              <input id="administration-pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" maxLength={64} value={pinConfirmation} onChange={(event) => setPinConfirmation(event.target.value)} />
+            </div>
+            <button type="button" className="btn btn-primary" onClick={() => void configurePin()}>
+              {t('protectionAdministration.savePin')}
+            </button>
+          </fieldset>
+        </PermissionGate>
+      </div>
+    );
+  }
+
+  return (
+    <div className="section-panel">
+      <div className="section-panel-head">
+        <h3 className="section-panel-title" id="protection-administration-title">
+          {t('protectionAdministration.title')}
+        </h3>
+      </div>
+      <p>
+        {t('protectionAdministration.intro')}
+      </p>
+
+      {announcements}
 
       <PermissionGate action="DISABLE_PROTECTION_POLICY" showDisabledFallback>
-        <fieldset disabled={!actions || busy || targets.length === 0}>
+        <fieldset style={{ minInlineSize: 0 }} disabled={!actions || busy || targets.length === 0}>
           <legend>{t('protectionAdministration.requestTitle')}</legend>
           <div className="field">
             <label htmlFor="protection-target">{t('protectionAdministration.target')}</label>
@@ -252,7 +308,7 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
         </fieldset>
       </PermissionGate>
 
-      <h3>{t('protectionAdministration.pendingTitle')}</h3>
+      <h4>{t('protectionAdministration.pendingTitle')}</h4>
       {approvals.length === 0 ? (
         <p>{t('protectionAdministration.noRequests')}</p>
       ) : (
@@ -274,7 +330,12 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
                 <tr key={approval.requestId}>
                   <td data-label={t('protectionAdministration.child')}>{approval.childLabel}</td>
                   <td data-label={t('protectionAdministration.device')}>{approval.deviceLabel}</td>
-                  <td data-label={t('protectionAdministration.requestedAt')}>{new Date(approval.requestedAtUtc).toLocaleString()}</td>
+                  <td data-label={t('protectionAdministration.requestedAt')}>
+                    {/* Was `toLocaleString()` with no locale: an Arabic parent
+                        got an English date. Formatting now goes through the one
+                        module that takes an explicit language. */}
+                    <bdi className="iso">{formatDateTime(approval.requestedAtUtc, i18n.language)}</bdi>
+                  </td>
                   <td data-label={t('protectionAdministration.protection')}>{approval.protectionLevel}</td>
                   <td data-label={t('protectionAdministration.reason')}>{approval.reasonCategory ?? '—'}</td>
                   <td data-label={t('protectionAdministration.state')}>{approval.state}</td>
@@ -312,6 +373,6 @@ export default function ProtectionAdministrationPanel({ targets, actions }: Prot
           </table>
         </div>
       )}
-    </section>
+    </div>
   );
 }

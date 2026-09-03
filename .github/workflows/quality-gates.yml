@@ -64,10 +64,155 @@ jobs:
         shell: pwsh
         run: ./tooling/quality/Invoke-QualityToolingTests.ps1
 
+  backend-tests:
+    # PPR-2 (W6). Before this job existed, this workflow ran ZERO backend tests
+    # and never compiled the backend at all: `backend/package.json`'s `build`
+    # (== `tsc`) is only ever invoked by `test`/`test:db`, and CI ran neither.
+    # A type error or a failing unit test could reach the default branch with a
+    # fully green "Quality gates" run.
+    #
+    # `npm test` covers all three of those in one command: `npm run build`
+    # (tsc), then the two direct-execution suites (test/schema-privacy.test.mjs,
+    # test/server.test.mjs), then the full non-DB suite via
+    # scripts/run-tests.mjs -- 2145 tests as of this commit.
+    #
+    # The MySQL-backed `test:db` suite is deliberately NOT wired here: it needs
+    # a provisioned MySQL instance and credentials, and this workflow is
+    # read-only and credential-free by design (see the `permissions:` block).
+    # That remains a KNOWN, DOCUMENTED gap rather than a silent one -- and
+    # test/meta/testSuiteRegistration.test.mjs, which does run in this job,
+    # still proves that test:db's own hand-maintained file list has not drifted
+    # away from the DB test files actually on disk.
+    #
+    # Deliberately no `continue-on-error` and no `if:`. A suite that cannot fail
+    # the build is not a gate; it would turn "CI does not run the tests" into
+    # the permanently worse "CI runs the tests and ignores them".
+    name: Backend build and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # backend/package.json declares engines.node ">=22 <23"; the Node 20
+          # used by the web-facing jobs below would violate it.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Build and run the full non-DB backend suite
+        working-directory: backend
+        run: npm test
+
+  parent-web-unit-tests:
+    # PPR-2 (W6): parent-web's 120-file Vitest suite has never been run by CI.
+    #
+    # WHY SHARDED RATHER THAN ONE `npm test`
+    # --------------------------------------
+    # A single monolithic run of these jsdom suites is not reproducible under
+    # memory pressure. Measured on the authoring host (7.5 GB RAM, 16 logical
+    # CPUs, ~0.5-1.0 GB free), on IDENTICAL back-to-back invocations:
+    #
+    #   platform-admin-web, whole suite, default pool : 3 failed / 153, then
+    #                                                   0 failed / 153
+    #   parent-web, --shard=1/4 (30 files)            : 1 failed / 228, then
+    #                                                   0 failed / 228
+    #
+    # Every one of those failures passed when the same file was re-run alone,
+    # i.e. TEST_INFRASTRUCTURE_INSTABILITY, not a product defect. A gate that
+    # reports a different answer each time it is asked is not a gate.
+    #
+    # The two knobs that made it reproducible, both applied below:
+    #   * `--maxWorkers=2` bounds concurrent jsdom worker processes. This is the
+    #     dominant lever: the default (cpus/2, so 8 forks on the authoring host)
+    #     is what exhausts memory. GitHub's standard runners have 4 cores, so
+    #     vitest would pick 2 there anyway -- pinning it makes CI behave the same
+    #     on any runner size instead of silently scaling with the host.
+    #   * `--shard=i/8` caps each job at 15 files, the largest size that proved
+    #     REPEATABLE here. 30 files/shard did not (see the divergence above).
+    #
+    # Evidence for 8 shards: all 8 shards were run TWICE, and all 8 produced
+    # byte-identical file counts, test counts and failures on both attempts
+    # (156/72/94/52/124/78/75/97 tests; 15 files each; 120 files and 748 tests
+    # total, which is the whole suite -- sharding loses nothing).
+    #
+    # HONEST CAVEAT: the instability above is very likely LOCAL-ONLY -- a
+    # 16 GB GitHub runner with nothing else resident is unlikely to reproduce
+    # it. This bounded shape is kept anyway because a configuration proven
+    # repeatable on a memory-starved host is repeatable on a roomy one, and
+    # because it means an actual regression is never dismissed as "probably the
+    # machine". Per the owner's standing rule, a batch-only failure that
+    # disappears when the same file runs alone is TEST_INFRASTRUCTURE_INSTABILITY
+    # and must NEVER be "fixed" by editing production source.
+    name: parent-web unit tests (shard ${{ matrix.shard }}/8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      # One failing shard must not cancel the other seven; losing the other
+      # shards' results is how a single flake gets mistaken for a broad break.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: parent-web/package-lock.json
+      - name: Install parent-web dependencies
+        working-directory: parent-web
+        run: npm ci
+      - name: Run unit tests (shard ${{ matrix.shard }} of 8)
+        working-directory: parent-web
+        run: npm test -- --shard=${{ matrix.shard }}/8 --maxWorkers=2
+
+  platform-admin-web-unit-tests:
+    # PPR-2 (W6): platform-admin-web's 31-file Vitest suite, likewise never run
+    # by CI. Same design and the same reasoning as parent-web-unit-tests above;
+    # the suite is a quarter the size, so 4 shards give the same ~8-file bound.
+    #
+    # Evidence: all 4 shards run TWICE, identical both times --
+    # 8/8/8/7 files and 32/35/52/34 tests, zero failures. Those sum to 31 files
+    # and 153 tests, exactly matching a whole-suite run, so nothing is dropped
+    # by sharding. (The unsharded run of the same 31 files reported 3 failures
+    # on one attempt and 0 on the next -- that is what this shape fixes.)
+    name: platform-admin-web unit tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: platform-admin-web/package-lock.json
+      - name: Install platform-admin-web dependencies
+        working-directory: platform-admin-web
+        run: npm ci
+      - name: Run unit tests (shard ${{ matrix.shard }} of 4)
+        working-directory: platform-admin-web
+        run: npm test -- --shard=${{ matrix.shard }}/4 --maxWorkers=2
+
   android:
     name: Android build, lint, and unit tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Raised from 15 to 25 (PPR-2/W6): this suite takes ~16 minutes locally, so
+    # a 15-minute cap could abort a healthy run. A timeout-induced red is
+    # indistinguishable from a real red, which corrodes trust in the gate.
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -266,12 +411,25 @@ jobs:
       - name: Install parent-web dependencies
         working-directory: parent-web
         run: npm ci
+      # PPR-2 (W6): both web apps define a `lint` script that CI had never run.
+      # These two steps live in THIS job rather than in a job of their own
+      # purely because this job is already paying for `npm ci` in both
+      # workspaces -- a separate lint job would duplicate the two heaviest
+      # installs in the repository for two ~30-second commands. They run
+      # unconditionally (no `if:`, no matrix), so there is no path on which a
+      # lint failure is skipped rather than reported.
+      - name: Lint parent-web
+        working-directory: parent-web
+        run: npm run lint
       - name: parent-web production demo-mode gate + negative control
         working-directory: parent-web
         run: npm run gate:demo-mode:both
       - name: Install platform-admin-web dependencies
         working-directory: platform-admin-web
         run: npm ci
+      - name: Lint platform-admin-web
+        working-directory: platform-admin-web
+        run: npm run lint
       - name: platform-admin-web production demo-mode gate + negative control
         working-directory: platform-admin-web
         run: npm run gate:demo-mode:both

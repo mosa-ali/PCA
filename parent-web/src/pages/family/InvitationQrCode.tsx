@@ -50,7 +50,9 @@ export default function InvitationQrCode({ value }: { value: string }) {
       ) : (
         <div aria-hidden="true" style={{ width: 220, height: 220 }} />
       )}
-      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{t('deviceEnrollment.qrCodeHint')}</p>
+      {/* A QR code is an opaque square: it does NOT mirror under `dir="rtl"`.
+          The hint below it is text, so it follows the paragraph direction. */}
+      <p className="field-hint">{t('deviceEnrollment.qrCodeHint')}</p>
     </div>
   );
 }

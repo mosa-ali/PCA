@@ -36,6 +36,18 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
       const snapshot = await readModel.build();
       const canViewBilling = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
       const canViewSettlement = authorizePlatformAdminOperation(roles, 'VIEW_SETTLEMENT_RECORDS') === 'ALLOW';
+      // PCA-BILLING-READ-SPLIT-1 (security fix): `subscriptionsByStatus`,
+      // `subscriptionsByPlanAndStatus` and `quotesByStatus` are aggregates
+      // over `billing_subscriptions`/`billing_plans`/`billing_quotes` (see
+      // DashboardReadModel's own SQL) -- billing records, not operational
+      // metadata. They were previously left in the base object and so
+      // reached PLATFORM_ADMIN and SUPPORT_ADMIN, for whom
+      // VIEW_BILLING_RECORDS is DENY (billing/rbac.ts), contradicting this
+      // route's own header ("PLATFORM_ADMIN/SUPPORT_ADMIN receive only the
+      // non-financial operational/support subset"). They are now stripped
+      // with the other restricted fields and re-added only on the
+      // canViewBilling branch, exactly like the invoice/payment/refund
+      // aggregates already were.
       const {
         settlementSummary: _settlementSummary,
         serviceHealth: _serviceHealth,
@@ -44,6 +56,9 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
         refundsByCurrency: _refundsByCurrency,
         paymentSummaryByCurrency: _paymentSummaryByCurrency,
         openDisputes: _openDisputes,
+        subscriptionsByStatus: _subscriptionsByStatus,
+        subscriptionsByPlanAndStatus: _subscriptionsByPlanAndStatus,
+        quotesByStatus: _quotesByStatus,
         ...dashboardWithoutRestrictedFields
       } = snapshot;
       const dashboardSubset = canViewBilling
@@ -54,6 +69,9 @@ export function registerPlatformAdminDashboardRoutes(app: FastifyInstance, deps:
             refundsByCurrency: snapshot.refundsByCurrency,
             paymentSummaryByCurrency: snapshot.paymentSummaryByCurrency,
             openDisputes: snapshot.openDisputes,
+            subscriptionsByStatus: snapshot.subscriptionsByStatus,
+            subscriptionsByPlanAndStatus: snapshot.subscriptionsByPlanAndStatus,
+            quotesByStatus: snapshot.quotesByStatus,
           }
         : (() => {
             const { stuckPaymentAttempts: _stuckPaymentAttempts, ...supportExceptionQueues } = snapshot.exceptionQueues;
