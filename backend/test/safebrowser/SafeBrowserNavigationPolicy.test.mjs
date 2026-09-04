@@ -76,7 +76,7 @@ test('AR ROUTE: evaluateNavigation with locale "ar" returns an Arabic reasonCode
   const outcome = await policy.evaluateNavigation('fam-1', 'prof-1', 'https://bad.example/page', {}, 'ar');
   assert.equal(outcome.status, 'BLOCK');
   assert.equal(outcome.blockDecision.reasonId, 'PARENT_DENYLIST');
-  assert.equal(outcome.blockDecision.reasonCode, 'محظور بواسطة قائمة الحظر الخاصة بعائلتك');
+  assert.equal(outcome.blockDecision.reasonCode, 'محظور بواسطة قائمة الحظر الخاصة بولي أمرك');
   // Sanity: this is genuinely Arabic script, not a byte-identical English fallback string.
   assert.ok(/[؀-ۿ]/.test(outcome.blockDecision.reasonCode));
 });
@@ -97,10 +97,10 @@ test('EN ROUTE (regression): evaluateNavigation with no locale argument (or expl
   await new WebRuleService(rules).setParentRule('fam-1', 'bad.example', 'DENY', 'PARENT_DENYLIST');
 
   const defaulted = await policy.evaluateNavigation('fam-1', 'prof-1', 'https://bad.example/page');
-  assert.equal(defaulted.blockDecision.reasonCode, "blocked by your family's block list");
+  assert.equal(defaulted.blockDecision.reasonCode, "blocked by your parent's block list");
 
   const explicit = await policy.evaluateNavigation('fam-1', 'prof-1', 'https://bad.example/page2', {}, 'en');
-  assert.equal(explicit.blockDecision.reasonCode, "blocked by your family's block list");
+  assert.equal(explicit.blockDecision.reasonCode, "blocked by your parent's block list");
 });
 
 test('reasonId (stable machine key) is identical across locales -- policy/audit code never depends on translated prose', async () => {

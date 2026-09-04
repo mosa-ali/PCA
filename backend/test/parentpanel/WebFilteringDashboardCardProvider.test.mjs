@@ -8,7 +8,7 @@ function decision(overrides = {}) {
     domain: 'blocked.example',
     outcome: 'BLOCK',
     source: 'PARENT_DENYLIST',
-    reasonCode: "blocked by your family's block list",
+    reasonCode: "blocked by your parent's block list",
     reasonId: 'PARENT_DENYLIST',
     coverage: 'DOMAIN_ONLY',
     ...overrides,

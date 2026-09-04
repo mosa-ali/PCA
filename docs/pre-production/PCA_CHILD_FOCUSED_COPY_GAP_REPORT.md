@@ -138,3 +138,53 @@ for a mission that intentionally did not write anything. This number will change
 two lanes land.
 
 `PCA_CHILD_FOCUSED_COPY_AUDIT = NOT_COMPLETE` (by design — `COPY_MISSION_MODE = READ_ONLY` this pass).
+
+---
+
+## ADDENDUM — PPR-2 STEP 3 REMEDIATION PASS (2026-09-04)
+
+`COPY_MISSION_MODE = WRITE` this pass. Re-ran the handoff sequence above against the current tree
+(now well past `cc5ae10`, with the child-registry/opaque-profile work from PPR-2 Steps 1–2 also
+in-flight uncommitted) rather than waiting for a clean tree, per the owner's Step 3 instruction to
+audit "against the current tree."
+
+**`writer82a` branch (`2364b78`) was NOT merged.** Checked first: its merge-base with `pca-dev` is
+`abbb2f3`, several PPR-1/PPR-1R/PPR-2 commits behind current `pca-dev` — merging it now risked
+conflicts or reintroducing since-superseded copy. Instead, each of the 8 rows this report flagged as
+`(already implemented — text shown in CURRENT_TEXT is the corrected wording)` (COPY-016, 019, 021,
+039, 042, 044, 073, 082) was independently re-verified directly against the current working tree
+(`grep` against the live `en.json`/`ar.json`/`strings.xml`), not against the branch. All 8 hold. No
+merge was needed or performed.
+
+**All 28 `COPY_DEFECT_REMAINING` + 2 `NOT_COVERED_BY_PPR2` rows (30 total) were fixed directly on the
+current tree.** Highest priority first, per owner instruction: the child-facing Safe Browser wording
+(COPY-218–227 in `WebReasonCodes.kt`, COPY-241–246 + COPY-250 in `backend/src/i18n/messages/{en,ar}.ts`)
+now reads "your parent's [allow list / block list / …]" in both locations, matching the underlying
+`WebReasonId`/`MessageId` semantics exactly. The in-flight dashboard rewrite's new family-framed keys
+(COPY-207–209, 212), the two static HTML files (COPY-200, 201), and the remaining Android translation
+drift (COPY-213–217) followed. Full row-by-row detail — old text, new text, and file/line — is in
+`PCA_CHILD_FOCUSED_COPY_AUDIT.csv`; every fixed row's `STATUS` is now `FIXED_PPR2_STEP3`.
+
+**Verification, not just edits:** every backend string here is exercised by a real assertion, not just
+present in the catalogue — `test/i18n/translate.test.mjs`, `test/safebrowser/SafeBrowserNavigationPolicy.test.mjs`
+(both EN and AR routes through the real decision path), `test/export/pipeline.test.mjs`, plus 3 fixture
+files that embedded the old string as mock data (`WebFilteringDashboardCardProvider`,
+`BlockDecisionStateStore`, `ParentUnblockRequestService` test files) were all updated and re-run:
+2183/2183 backend non-DB tests pass. Parent Web: full `tsc --noEmit` and `eslint . --max-warnings=0`
+clean; `tests/i18n/` (15 files, 61 tests, including the strict EN/AR leaf-key-parity check) and every
+Dashboard-surface component test (7 files, 32 tests) pass. No test in either repo hardcoded the old
+Android XML strings, so no Kotlin test needed updating; both edited `wellbeing_control_strings.xml`
+files and the edited `persistence_strings.xml` were confirmed well-formed XML.
+
+**One dead-code finding, noted but out of Step 3's scope to act on:** `deviceEnrollment.familyDataUnavailableTitle`
+(COPY-209) is no longer referenced anywhere in Parent Web source — PPR-2 Step 2's child-registry
+rewrite of `AddDeviceWizard.tsx` removed the `getDashboard()`-sourced fail-closed path this key used
+to serve. Its wording was still corrected (harmless, and correct if anything ever reactivates it), but
+whether to delete the now-orphaned key is a separate cleanup decision, not a copy-correctness one.
+
+`OPEN_COPY_FINDINGS` (after this pass) `= 0`. `COPY_AUDIT_REMAINING_OPEN = 0`.
+
+`PCA_CHILD_FOCUSED_COPY_AUDIT = COMPLETE` for the 134 rows this audit covered. This is not a claim that
+no other family/child terminology exists anywhere in the app outside the surfaces this audit's original
+pass scoped itself to (Parent Web, Android, iOS, Platform Admin, backend-generated user text) — see the
+original audit's own methodology for that scope.

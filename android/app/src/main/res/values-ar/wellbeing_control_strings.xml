@@ -9,12 +9,12 @@
 <resources>
     <string name="wellbeing_category_parent_custom_other">فكرة عائلية</string>
 
-    <string name="wellbeing_policy_sync_state_active">إعدادات الرفاهية الحالية لعائلتك مفعّلة.</string>
+    <string name="wellbeing_policy_sync_state_active">إعداداتك الحالية للرفاهية مفعّلة.</string>
     <string name="wellbeing_policy_sync_state_pending_delivery">هناك تحديث جديد للرفاهية من أحد الوالدين في طريقه، وسيتم تطبيقه تلقائيًا عند وصوله.</string>
     <string name="wellbeing_policy_sync_stale_update_ignored">تم تجاهل تحديث قديم للرفاهية لأن تحديثًا أحدث مفعّل بالفعل.</string>
     <string name="wellbeing_policy_sync_duplicate_update_ignored">تم تطبيق هذا التحديث من قبل.</string>
 
-    <string name="wellbeing_custom_message_not_available_in_language">هذه الرسالة العائلية غير متوفرة بلغتك الحالية بعد.</string>
+    <string name="wellbeing_custom_message_not_available_in_language">هذه الرسالة المخصّصة غير متوفرة بلغتك الحالية بعد.</string>
 
     <string name="wellbeing_movement_guard_rejected_calorie_weight_language">لا يمكن أن تتضمن اقتراحات الحركة السعرات الحرارية أو الوزن أو أهداف شكل الجسم.</string>
     <string name="wellbeing_movement_guard_rejected_punitive_language">لا يمكن أن تستخدم اقتراحات الحركة لغة عقابية أو لغة \"للتعويض عن\" وقت الشاشة.</string>

@@ -97,6 +97,13 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // opaque references (never a raw secret, PCA-ADD-BILL-025), masked on
   // every read by PlatformAdminSettingsService -- see that file's header.
   'setting_key',
+  // creation_request_key (family_child_memberships, PPR-2 doc 00 Section 9
+  // CHG-2026-09-04-01) is the SAME class as idempotency_key above: an
+  // OPTIONAL, caller-supplied, operational retry-safety string scoped per
+  // (family_id, creation_request_key) via a UNIQUE index -- never child
+  // content, never key material. See that migration's own header and
+  // ChildProfileRegistryRepository.ts's doc comment for the full rationale.
+  'creation_request_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {

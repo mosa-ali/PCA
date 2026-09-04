@@ -65,6 +65,7 @@ import type {
 import type { ParentRuntimeSyncClient } from './runtimeSyncClient';
 import type { TrustedBrowserProvider } from '../domain/trustedBrowser';
 import type { DeviceEnrollmentClient } from './deviceEnrollmentClient';
+import type { ChildProfileClient } from './childProfileClient';
 import { DevServiceAuthClient } from './dev/devServiceAuthClient';
 import { DevFamilyAuthorityGateway } from './dev/devFamilyAuthorityGateway';
 import { DevParentFamilyDataGateway } from './dev/devParentFamilyDataGateway';
@@ -75,6 +76,8 @@ import { DevWebRuleAdminClient } from './dev/devWebRuleAdminClient';
 import { DevTrustedBrowserProvider } from './dev/devTrustedBrowserProvider';
 import { DevRuntimeSyncClient } from './dev/devRuntimeSyncClient';
 import { DevDeviceEnrollmentClient } from './dev/devDeviceEnrollmentClient';
+import { DevChildProfileClient } from './dev/devChildProfileClient';
+import { setChildLabel } from '../domain/childLabels';
 import { DevBillingClient } from './dev/devBillingClient';
 import { DevCommercialNotificationClient } from './dev/devCommercialNotificationClient';
 import { DevFreeAccessStatusClient } from './dev/devFreeAccessStatusClient';
@@ -86,6 +89,7 @@ import { RealParentFamilyDataGateway } from './real/realParentFamilyDataGateway'
 import { RealDeviceStatusClient } from './real/realDeviceStatusClient';
 import { RealRequestClient } from './real/realRequestClient';
 import { RealDeviceEnrollmentClient, noServiceBearerTokenAvailable as noDeviceEnrollmentBearerTokenAvailable } from './real/realDeviceEnrollmentClient';
+import { RealChildProfileClient, noServiceBearerTokenAvailable as noChildProfileBearerTokenAvailable } from './real/realChildProfileClient';
 import { RealWebRuleAdminClient } from './real/realWebRuleAdminClient';
 import { RealBillingClient, cookieSessionFamilyId } from './real/realBillingClient';
 import { RealCommercialNotificationClient } from './real/realCommercialNotificationClient';
@@ -156,6 +160,8 @@ export interface PcaApiClients {
   trustedBrowser: TrustedBrowserProvider;
   runtimeSync: ParentRuntimeSyncClient;
   deviceEnrollment: DeviceEnrollmentClient;
+  /** PPR-2 opaque child-profile membership registry -- see ./childProfileClient.ts header for the privacy invariants this port exists to enforce. */
+  childProfiles: ChildProfileClient;
   /**
    * PCA-MYKIDS-BILL-3: real, HTTP-backed against MYKIDS_COMMERCIAL_API_V1
    * (backend/src/http/routes/familyCommercialRoutes.ts +
@@ -195,6 +201,12 @@ export interface PcaApiClients {
 }
 
 function buildDevClients(): PcaApiClients {
+  // Readable labels for DevChildProfileClient's own default-seeded demo
+  // children (child-amir/child-lina, dev-family-1) -- session-local by
+  // design (../domain/childLabels.ts's own header), so a fresh demo page
+  // load must set them itself rather than expect them to already exist.
+  setChildLabel('child-amir', 'Amir (DEV)');
+  setChildLabel('child-lina', 'Lina (DEV)');
   return {
     serviceAuth: new DevServiceAuthClient(),
     familyAuthority: new DevFamilyAuthorityGateway(),
@@ -209,6 +221,7 @@ function buildDevClients(): PcaApiClients {
     trustedBrowser: new DevTrustedBrowserProvider(),
     runtimeSync: new DevRuntimeSyncClient(),
     deviceEnrollment: new DevDeviceEnrollmentClient(),
+    childProfiles: new DevChildProfileClient(),
     billing: new DevBillingClient(),
     commercialNotifications: new DevCommercialNotificationClient(),
     freeAccessStatus: new DevFreeAccessStatusClient(),
@@ -297,6 +310,7 @@ function buildRealClients(): PcaApiClients {
     // caller without it now receives that route's own honest 403 instead of
     // a client-side excuse the server never issued.
     deviceEnrollment: new RealDeviceEnrollmentClient(config.apiBaseUrl, noDeviceEnrollmentBearerTokenAvailable, true),
+    childProfiles: new RealChildProfileClient(config.apiBaseUrl, noChildProfileBearerTokenAvailable, true),
     // Browser billing uses the existing HttpOnly family-session cookie and
     // resolves family scope through /api/parent/session. Mutations carry the
     // non-HttpOnly CSRF token; actorDeviceId reuses

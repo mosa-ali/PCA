@@ -32,6 +32,10 @@ const backendRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const files = [
   "test/invitation/token.test.mjs",
   "test/invitation/service.test.mjs",
+  "test/childprofiles/registryRepository.test.mjs",
+  "test/childprofiles/service.test.mjs",
+  "test/childprofiles/noReadableChildFieldsRegression.test.mjs",
+  "test/http/childProfileRoutes.test.mjs",
   "test/invitation/iosEnrollmentUnavailable.test.mjs",
   "test/device/publicKey.test.mjs",
   "test/device/service.test.mjs",

@@ -64,3 +64,48 @@ Membership is checked before the role/step-up matrix runs. A wrong-family `CHILD
 ## 10. Residual scope
 
 Runtime wiring of a real, trustworthy `ChildProfileMembershipResolver` backed by verified local family state or a trusted endpoint remains a separate Coordinator-owned binding (lane brief Section 13) — this document defines the contract and the fail-closed default a production deployment falls back to until that binding lands, not the binding itself.
+
+## 11. The central child-profile membership registry, and why Section 3's prohibition survives it
+
+Change `CHG-2026-09-04-01` (doc 00 Section 9) admits one central artifact, under exactly this
+owner-approved sentence and no broader reading:
+
+> "The central service may maintain an opaque child-profile membership registry consisting of a
+> server-minted `childProfileId` bound to `familyId`. No readable child-profile content is
+> permitted in the central service."
+
+**Section 3's prohibition is unchanged and still binding.** This document forbids shipping a
+*readable central child-profile directory* merely to make a pre-check convenient. The registry
+approved here is not that directory, and the distinction is substantive rather than a matter of
+naming:
+
+| Section 3 forbids | This registry is |
+|---|---|
+| A directory of child **profiles** - readable content about children | An edge set of opaque **identifiers**: this id exists, and it belongs to this family |
+| A convenience surface making the membership pre-check cheap to run | An existence authority making it possible for a child to exist **before** a device, which doc 08 Section 4's Owner-local "Create child profile" step otherwise could not durably record |
+| Something that leaks who a child is | Something from which an attacker learns only that some opaque family has some number of opaque child identifiers |
+
+**Nothing readable moves.** The authoritative readable child entity remains `FamilyMember`
+(doc 10 Section 3.2), and its `displayName` remains local plaintext only, never present in any
+central-service-visible field. The readable label a parent sees is held in the trusted parent
+context. The central row carries the child's identifier; the child's content does not move.
+
+**The fact itself is not new centrally.** A `(familyId, childProfileId)` pair is already held by
+`enrollment_invitations` and by `eye_protection_settings`. What changes is that the pair
+becomes a first-class opaque edge rather than a side effect of one invitation, and that the
+identifier becomes **server-minted** - which removes a real defect: a client-minted identifier under
+a globally unique constraint turns a duplicate-entry error into a cross-family existence oracle, the
+precise failure Section 5 already prohibits.
+
+**Section 5's error-oracle rule governs this registry too.** "This identifier belongs to another
+family" must remain indistinguishable from "this identifier does not exist". A lookup may confirm
+existence and ownership to an authorized caller and must reveal nothing to anyone else.
+
+**`ChildProfileMembershipResolver` is unaffected.** Its interface and its synchronous, actor-derived
+contract are unchanged by this section; the registry does not become its backing store, and no
+resolver behaviour is altered by `CHG-2026-09-04-01`.
+
+**This is not precedent.** The approval permits an edge, not a directory. Adding a readable child
+field, a lookup returning more than existence and ownership, or a distinguishable other-family
+outcome each require a **new** doc 00 Section 9 entry and their own owner approval.
+`CHG-2026-09-04-01` may not be cited in support of any of them.

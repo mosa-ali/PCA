@@ -194,7 +194,7 @@
     "cachedShort": "Cached",
     "sections": {
       "today": "Today",
-      "family": "Your family"
+      "family": "Your children"
     },
     "screenTimeToday": "Screen time today",
     "screenTimeOfLimit": "{{used}} of {{limit}} minutes",
@@ -202,7 +202,7 @@
     "weeklyTrendUnavailable": "Weekly history isn't available yet. We only show what a device has actually reported.",
     "protectionOverview": "Protection overview",
     "deviceHealth": "Device health",
-    "recentActivity": "Recent family activity",
+    "recentActivity": "Recent activity",
     "scheduleTitle": "Bedtime and schedules",
     "scheduleNotConfirmed": "Set, but not yet confirmed on the device",
     "requestsAndAlerts": "Requests and alerts",
@@ -459,6 +459,7 @@
     "consentContinue": "I understand, create invitation",
     "createInvitation": "Create invitation",
     "creating": "Creating invitation...",
+    "creatingChild": "Adding child...",
     "tokenRevealTitle": "Enrollment link -- copy it now",
     "tokenRevealBody": "This link and token are shown only once. They will not be shown again after you close this panel or reload the page -- if you need it again, create a new invitation.",
     "qrCodeAlt": "QR code for the child device's enrollment link",
@@ -513,6 +514,7 @@
       "network": "Could not reach the PCA service. Check your connection and try again.",
       "sessionUnavailable": "Device enrollment is temporarily unavailable (no service session available).",
       "invalidRequest": "That request was invalid.",
+      "createChildFailed": "We could not add this child right now. Please try again.",
       "unknown": "Something went wrong. Please try again."
     },
     "stepChild": "Who is this device for?",
@@ -526,9 +528,11 @@
     "androidOnlyNote": "PCA supports Android phones and tablets today. iPhone and iPad are not supported yet.",
     "addNewChild": "Someone new",
     "childName": "Child's name",
+    "childNameLocalOnly": "This name stays on your device. PCA never sends it to our servers.",
+    "childLabelUnresolved": "Child profile -- finish browser setup to view details",
     "noChildYetTitle": "Add your first child",
     "noChildYetBody": "Give your child a name to start setting up their device.",
-    "familyDataUnavailableTitle": "We can't read your family profiles on this browser yet",
+    "familyDataUnavailableTitle": "We can't read your children's profiles on this browser yet",
     "ageTierExplain": "Set automatically from your child's age profile.",
     "instructionsTitle": "On your child's device",
     "instruction1": "Install the PCA app.",
@@ -1257,7 +1261,7 @@
     "title": "Data & Privacy",
     "intro": "Everything about what PCA keeps, what you can see, and how to remove it.",
     "retentionDesc": "How long activity is kept before it is deleted.",
-    "exportDesc": "Get a copy of your family's data.",
+    "exportDesc": "Get a copy of your children's data.",
     "deleteDesc": "Delete stored activity now.",
     "transparencyDesc": "Exactly what a parent can and cannot see.",
     "permissionsDesc": "Which device permissions the app asks for, and why."
@@ -1296,6 +1300,10 @@
     "honestyNotice": "PCA never sends you to an app-store page that does not exist yet. If a platform above offers no download, the app is not available for it yet -- it is not being hidden from you."
   },
   "_arReviewPending": [
+    "deviceEnrollment.creatingChild",
+    "deviceEnrollment.childNameLocalOnly",
+    "deviceEnrollment.childLabelUnresolved",
+    "deviceEnrollment.errors.createChildFailed",
     "downloadApp.title",
     "downloadApp.intro",
     "downloadApp.androidTitle",

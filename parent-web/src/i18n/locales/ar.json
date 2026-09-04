@@ -194,7 +194,7 @@
     "cachedShort": "مخزَّن مؤقتًا",
     "sections": {
       "today": "اليوم",
-      "family": "عائلتك"
+      "family": "أطفالك"
     },
     "screenTimeToday": "وقت الشاشة اليوم",
     "screenTimeOfLimit": "{{used}} من {{limit}} دقيقة",
@@ -202,7 +202,7 @@
     "weeklyTrendUnavailable": "السجل الأسبوعي غير متاح بعد. نعرض فقط ما أبلغ عنه الجهاز فعليًا.",
     "protectionOverview": "نظرة عامة على الحماية",
     "deviceHealth": "حالة الأجهزة",
-    "recentActivity": "نشاط العائلة الأخير",
+    "recentActivity": "النشاط الأخير",
     "scheduleTitle": "وقت النوم والجداول",
     "scheduleNotConfirmed": "مُعيَّن، لكن لم يُؤكَّد على الجهاز بعد",
     "requestsAndAlerts": "الطلبات والتنبيهات",
@@ -459,6 +459,7 @@
     "consentContinue": "فهمت، إنشاء الدعوة",
     "createInvitation": "إنشاء دعوة",
     "creating": "جارٍ إنشاء الدعوة...",
+    "creatingChild": "جارٍ إضافة الطفل...",
     "tokenRevealTitle": "رابط التسجيل -- انسخه الآن",
     "tokenRevealBody": "يُعرض هذا الرابط والرمز مرة واحدة فقط. لن يظهرا مرة أخرى بعد إغلاق هذه اللوحة أو إعادة تحميل الصفحة -- إذا احتجت إليه مرة أخرى، أنشئ دعوة جديدة.",
     "qrCodeAlt": "رمز الاستجابة السريعة (QR) لرابط تسجيل جهاز الطفل",
@@ -513,6 +514,7 @@
       "network": "تعذّر الوصول إلى خدمة PCA. تحقق من اتصالك وحاول مرة أخرى.",
       "sessionUnavailable": "تسجيل الأجهزة غير متاح مؤقتاً (لا تتوفر جلسة خدمة).",
       "invalidRequest": "كان هذا الطلب غير صالح.",
+      "createChildFailed": "تعذّر إضافة الطفل الآن. يرجى المحاولة مرة أخرى.",
       "unknown": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
     },
     "stepChild": "لمن هذا الجهاز؟",
@@ -526,9 +528,11 @@
     "androidOnlyNote": "يدعم PCA حاليًا هواتف وأجهزة أندرويد اللوحية. لا يدعم iPhone وiPad بعد.",
     "addNewChild": "شخص جديد",
     "childName": "اسم الطفل",
+    "childNameLocalOnly": "يبقى هذا الاسم على جهازك فقط. لا يرسله PCA أبدًا إلى خوادمنا.",
+    "childLabelUnresolved": "ملف الطفل -- أكمل إعداد المتصفح لعرض التفاصيل",
     "noChildYetTitle": "أضف طفلك الأول",
     "noChildYetBody": "امنح طفلك اسمًا لبدء إعداد جهازه.",
-    "familyDataUnavailableTitle": "لا يمكننا قراءة ملفات عائلتك على هذا المتصفح بعد",
+    "familyDataUnavailableTitle": "لا يمكننا قراءة ملفات أطفالك على هذا المتصفح بعد",
     "ageTierExplain": "يُضبط تلقائيًا من الملف العمري لطفلك.",
     "instructionsTitle": "على جهاز طفلك",
     "instruction1": "ثبِّت تطبيق PCA.",
@@ -1257,7 +1261,7 @@
     "title": "البيانات والخصوصية",
     "intro": "كل ما يتعلق بما يحتفظ به PCA، وما يمكنك رؤيته، وكيفية إزالته.",
     "retentionDesc": "مدة الاحتفاظ بالنشاط قبل حذفه.",
-    "exportDesc": "احصل على نسخة من بيانات عائلتك.",
+    "exportDesc": "احصل على نسخة من بيانات أطفالك.",
     "deleteDesc": "احذف النشاط المخزَّن الآن.",
     "transparencyDesc": "ما يمكن للوالد رؤيته وما لا يمكنه رؤيته بالضبط.",
     "permissionsDesc": "أذونات الجهاز التي يطلبها التطبيق، ولماذا."
@@ -1296,6 +1300,10 @@
     "honestyNotice": "لا يوجّهك PCA أبداً إلى صفحة متجر تطبيقات غير موجودة. إذا لم يظهر تنزيل لأحد الأنظمة أعلاه، فالتطبيق غير متاح له بعد -- وليس مخفياً عنك."
   },
   "_arReviewPending": [
+    "deviceEnrollment.creatingChild",
+    "deviceEnrollment.childNameLocalOnly",
+    "deviceEnrollment.childLabelUnresolved",
+    "deviceEnrollment.errors.createChildFailed",
     "downloadApp.title",
     "downloadApp.intro",
     "downloadApp.androidTitle",

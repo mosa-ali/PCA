@@ -35,6 +35,23 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   // Parent-facing read of one of the caller's own family's device sync
   // status (parentRuntimeSyncRoutes.ts) -- same shape as VIEW_OWN_BILLING_STATUS.
   VIEW_DEVICE_SYNC_STATUS: { requiresFamilyScope: true, requiresLicense: false },
+  // PPR-2 opaque child-profile membership registry. Neither requires a
+  // license -- DELIBERATELY DIFFERENT from CREATE_INVITATION, and the
+  // reason is a real, independently-verified finding: the `licenses` table
+  // (migration 0001) has ZERO writers anywhere in this codebase, in any
+  // environment, including seed-local.mjs. hasActiveLicense() therefore
+  // returns false for every account today, which means CREATE_INVITATION
+  // is UNREACHABLE end to end in the current real seeded stack -- a
+  // pre-existing gap, orthogonal to this change, not introduced or fixed
+  // here (see docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md). Gating
+  // child-profile creation on the same never-populated table would make
+  // the owner-mandated "new family -> create first child -> select child
+  // for enrollment" acceptance flow unreachable too, for a reason that has
+  // nothing to do with child profiles. LIST additionally matches
+  // LIST_OWN_INVITATIONS's own precedent: a family must always be able to
+  // see who is already there even while a license has lapsed.
+  CREATE_CHILD_PROFILE: { requiresFamilyScope: true, requiresLicense: false },
+  LIST_CHILD_PROFILES: { requiresFamilyScope: true, requiresLicense: false },
 };
 
 export function resolveRequirements(operation: ServiceOperation): OperationRequirements {

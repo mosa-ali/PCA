@@ -10,6 +10,8 @@ import {
   __devDenyNextCreateInvitation,
 } from '../../src/api/dev/devDeviceEnrollmentClient';
 import type { DevDeviceEnrollmentClient } from '../../src/api/dev/devDeviceEnrollmentClient';
+import { __resetDevChildProfileState, __seedDevChildProfile } from '../../src/api/dev/devChildProfileClient';
+import { __resetChildLabelsForTest, setChildLabel } from '../../src/domain/childLabels';
 import { openDeviceSection, runAddDeviceWizard } from '../utils/deviceEnrollmentTestHelpers';
 
 /**
@@ -27,8 +29,17 @@ const ADD_SECTION = '/family/devices?section=add';
 describe('Device enrollment -- Add device section', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
     localStorage.clear();
     sessionStorage.clear();
+    // Every test in this file drives the wizard PAST step 0 via an ALREADY
+    // selected child (runAddDeviceWizard's first click assumes the child
+    // step's Next is already enabled) -- this suite is about invitation
+    // creation/lifecycle and pairing, not child creation, which has its own
+    // dedicated coverage.
+    __seedDevChildProfile('dev-family-1', 'child-existing-1');
+    setChildLabel('child-existing-1', 'Existing Child (DEV)');
   });
 
   it('does not create anything until the parent confirms the monitoring scope', async () => {
@@ -206,8 +217,17 @@ describe('Device enrollment -- Add device section', () => {
 describe('Device enrollment -- pairing confirmation', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
     localStorage.clear();
     sessionStorage.clear();
+    // Every test in this file drives the wizard PAST step 0 via an ALREADY
+    // selected child (runAddDeviceWizard's first click assumes the child
+    // step's Next is already enabled) -- this suite is about invitation
+    // creation/lifecycle and pairing, not child creation, which has its own
+    // dedicated coverage.
+    __seedDevChildProfile('dev-family-1', 'child-existing-1');
+    setChildLabel('child-existing-1', 'Existing Child (DEV)');
   });
 
   it('pairing confirm is disabled until both fingerprints are present, and never renders ACTIVE', async () => {

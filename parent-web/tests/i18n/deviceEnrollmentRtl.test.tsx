@@ -5,10 +5,16 @@ import i18n, { applyDocumentDirection } from '../../src/i18n';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import Devices from '../../src/pages/family/Devices';
 import { __resetDevDeviceEnrollmentState } from '../../src/api/dev/devDeviceEnrollmentClient';
+import { __resetDevChildProfileState, __seedDevChildProfile } from '../../src/api/dev/devChildProfileClient';
+import { __resetChildLabelsForTest, setChildLabel } from '../../src/domain/childLabels';
 
 describe('Devices page Arabic/RTL', () => {
   beforeEach(async () => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
+    __seedDevChildProfile('dev-family-1', 'child-existing-1');
+    setChildLabel('child-existing-1', 'الطفل الحالي (تجريبي)');
     await i18n.changeLanguage('ar');
     applyDocumentDirection('ar');
   });

@@ -1,4 +1,4 @@
-// V5 -- Recent family activity.
+// V5 -- Recent activity.
 //
 // PRIVACY BOUNDARY, and it is a hard one. Only `entry.summary` and the coarse
 // `entry.detail` bucket are rendered. Never a URL, never a coordinate, never a

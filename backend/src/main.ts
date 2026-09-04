@@ -12,6 +12,9 @@ import { AuthzService } from './authz/AuthzService.js';
 import { MySqlAuthzRepository } from './authz/MySqlAuthzRepository.js';
 import { InvitationService } from './invitation/InvitationService.js';
 import { MySqlInvitationRepository } from './invitation/MySqlInvitationRepository.js';
+import { ChildProfileService } from './childprofiles/ChildProfileService.js';
+import { MySqlChildProfileRegistryRepository } from './childprofiles/MySqlChildProfileRegistryRepository.js';
+import { registerChildProfileRoutes } from './http/routes/childProfileRoutes.js';
 import { EnrollmentCoordinator } from './enrollment/EnrollmentCoordinator.js';
 import { MySqlEnrollmentCoordinatorRepository } from './enrollment/MySqlEnrollmentCoordinatorRepository.js';
 import { PairingService } from './pairing/PairingService.js';
@@ -736,12 +739,20 @@ async function start(): Promise<void> {
     new YouTubeDashboardCardProvider(modeTransitionService, modeAUsageReportService),
   ]);
 
+  // PPR-2 opaque child-profile membership registry (doc 00 Section 9 change
+  // CHG-2026-09-04-01). ONE shared instance -- InvitationService's
+  // childProfileMembership check and childProfileRoutes' ChildProfileService
+  // must observe the SAME rows, never two independently-constructed copies.
+  const childProfileRegistryRepository = new MySqlChildProfileRegistryRepository();
+  const childProfileService = new ChildProfileService(childProfileRegistryRepository);
+
   const app = buildServer({
     dashboardAggregatorService,
     authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,
-    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService, protectionAlerting),
+    invitationService: new InvitationService(new MySqlInvitationRepository(), () => new Date(), familyAuditService, slotReservationService, protectionAlerting, childProfileRegistryRepository),
+    childProfileService,
     enrollmentCoordinator: new EnrollmentCoordinator(new MySqlEnrollmentCoordinatorRepository(), () => new Date(), familyAuditService, slotReservationService),
     pairingService: new PairingService(deviceRepository, () => new Date(), familyAuditService),
     browserEndpointService: new BrowserEndpointService(deviceRepository, () => new Date(), familyAuditService),

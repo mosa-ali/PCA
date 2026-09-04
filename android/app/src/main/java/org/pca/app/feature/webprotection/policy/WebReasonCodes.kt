@@ -9,22 +9,22 @@ package org.pca.app.feature.webprotection.policy
  */
 private val EN: Map<WebReasonId, String> = mapOf(
     WebReasonId.SECURITY_DENYLIST to "blocked by a security threat rule",
-    WebReasonId.PARENT_ALLOWLIST to "allowed by your family's allow list",
-    WebReasonId.PARENT_DENYLIST to "blocked by your family's block list",
-    WebReasonId.CATEGORY_RULE to "blocked by your family's content category rule",
-    WebReasonId.SCHEDULE_RULE to "blocked by your family's schedule rule",
-    WebReasonId.CLASSIFIER to "blocked by your family's explicit-content rule",
+    WebReasonId.PARENT_ALLOWLIST to "allowed by your parent's allow list",
+    WebReasonId.PARENT_DENYLIST to "blocked by your parent's block list",
+    WebReasonId.CATEGORY_RULE to "blocked by your parent's content category rule",
+    WebReasonId.SCHEDULE_RULE to "blocked by your parent's schedule rule",
+    WebReasonId.CLASSIFIER to "blocked by your parent's explicit-content rule",
     WebReasonId.DEFAULT to "no matching rule; allowed by default",
     WebReasonId.VPN_UNAVAILABLE to "network filtering capability was unavailable for this request",
 )
 
 private val AR: Map<WebReasonId, String> = mapOf(
     WebReasonId.SECURITY_DENYLIST to "محظور بواسطة قاعدة تهديد أمني",
-    WebReasonId.PARENT_ALLOWLIST to "مسموح به بواسطة قائمة السماح الخاصة بعائلتك",
-    WebReasonId.PARENT_DENYLIST to "محظور بواسطة قائمة الحظر الخاصة بعائلتك",
-    WebReasonId.CATEGORY_RULE to "محظور بواسطة قاعدة تصنيف المحتوى الخاصة بعائلتك",
-    WebReasonId.SCHEDULE_RULE to "محظور بواسطة قاعدة الجدول الزمني الخاصة بعائلتك",
-    WebReasonId.CLASSIFIER to "محظور بواسطة قاعدة المحتوى الصريح الخاصة بعائلتك",
+    WebReasonId.PARENT_ALLOWLIST to "مسموح به بواسطة قائمة السماح الخاصة بولي أمرك",
+    WebReasonId.PARENT_DENYLIST to "محظور بواسطة قائمة الحظر الخاصة بولي أمرك",
+    WebReasonId.CATEGORY_RULE to "محظور بواسطة قاعدة تصنيف المحتوى الخاصة بولي أمرك",
+    WebReasonId.SCHEDULE_RULE to "محظور بواسطة قاعدة الجدول الزمني الخاصة بولي أمرك",
+    WebReasonId.CLASSIFIER to "محظور بواسطة قاعدة المحتوى الصريح الخاصة بولي أمرك",
     WebReasonId.DEFAULT to "لا توجد قاعدة مطابقة؛ مسموح به افتراضيًا",
     WebReasonId.VPN_UNAVAILABLE to "كانت إمكانية تصفية الشبكة غير متاحة لهذا الطلب",
 )

@@ -321,3 +321,295 @@ cross-family enumeration denied · Parent RBAC pass · Platform Admin cross-real
 references an existing child · new-family flow (create child → readable local label → select child →
 Android invitation) passes · fresh-DB migration passes · backend, Parent Web and real E2E green ·
 Chrome seeded-stack flow reported honestly as PASS or PARTIAL.
+
+---
+
+## PART G · STEP 1 COMPLETE — OPAQUE CHILD REGISTRY BACKEND
+
+Delivered solo, through direct tooling (subagent auth remained down throughout). Migration `0036`,
+`backend/src/childprofiles/{ChildProfileRegistryRepository,MySqlChildProfileRegistryRepository,
+ChildProfileService}.ts`, `backend/src/http/routes/childProfileRoutes.ts`, wired in `buildServer.ts`/
+`main.ts`. `InvitationService.createInvitation` now checks an injected, optional membership resolver
+before persisting — existing callers without one keep the pre-PPR-2 format-only behaviour unchanged.
+
+**A real schema defect was found and fixed before it could reach a shared environment.** The
+migration's first draft FK'd `family_child_memberships.family_id` to `families.family_id`. Applying
+migrations from zero against a genuinely fresh disposable MySQL container (not the stale, 19-hour-old
+QA container from an earlier session) failed outright: *"Referencing column 'family_id' and referenced
+column 'family_id' in foreign key constraint … are incompatible."* `families.family_id` is
+`CHAR(36) ascii_bin`; every other family-scoped table in this schema — `enrollment_invitations`,
+`devices`, `device_challenges`, `relay_envelopes`, `recovery_envelopes`, `eye_protection_settings` —
+uses `VARCHAR(128) utf8mb4_bin` and **none of them FKs to `families` either**. This repository's
+established, consistent mechanism for a family-scoped column is an index, with family-scope
+enforcement done at the application layer (`AuthzService.requiresFamilyScope`). The migration was
+corrected to match that convention exactly; a corresponding test (`the schema layer does NOT reject an
+unknown family_id`) now pins the real, verified behaviour instead of the behaviour I first assumed.
+
+**No production data exists yet, so no backfill migration was performed** for the pre-PPR-2
+`enrollment_invitations.child_profile_id` values (client-minted, some via a non-cryptographic fallback
+format with no uniqueness guarantee). Documented in the migration's own header.
+
+**A second deliberate, documented decision:** `CREATE_CHILD_PROFILE`/`LIST_CHILD_PROFILES` do **not**
+require an active license, unlike `CREATE_INVITATION`. Independently verified: the `licenses` table
+(migration `0001`) has **zero writers anywhere in this codebase**, in any environment, including
+`seed-local.mjs` — `hasActiveLicense()` returns false for every account today, making
+`CREATE_INVITATION` itself unreachable end to end in the real seeded stack. This is a **pre-existing
+gap, orthogonal to this change**, not introduced or fixed here. Gating child-profile creation on the
+same never-populated table would have made the owner-mandated new-family acceptance flow unreachable
+for a reason that has nothing to do with child profiles.
+
+**Verified by execution:** backend `tsc` clean · **2183/2183** non-DB tests (2145 baseline + 38 new,
+zero regressions) · **9/9** DB integration tests against a genuinely fresh MySQL container, 36/36
+migrations applied from zero · the mandatory readable-child-field regression guard **watched failing**
+with an injected `displayName` field before being trusted, then watched passing again after the
+revert · a real 8-way concurrent-create race against MySQL resolving to exactly one row, proving the
+idempotency guarantee is the database's unique index, not application-layer logic.
+
+`OPAQUE_CHILD_REGISTRY_CREATE = PASS` · `OPAQUE_CHILD_REGISTRY_LIST = PASS` ·
+`CENTRAL_READABLE_CHILD_FIELDS = 0` · `INVITATION_REQUIRES_EXISTING_CHILD = PASS` (wired; not yet
+exercised end-to-end through the real HTTP route in this step — that is Step 2/5).
+
+---
+
+## PART H · TRACKED — STEP 1 FOLLOW-UP ITEMS (owner-mandated, not yet resolved)
+
+**H1 · `INVITATION_LICENSE_PATH = PRE_EXISTING_REPO_SOLVABLE_OR_OWNER_DECISION`.** `hasActiveLicense()`
+returns false for every account in the real seeded stack (`licenses` has zero writers in source or
+seed). `CREATE_INVITATION` is therefore unreachable end-to-end today — independent of and predating
+this wave's child-registry work. Parent Web must not work around this and must not fake an active
+license in production logic. **Before PPR-2 final closure**, an owner decision is required between:
+(A) `CREATE_INVITATION` must not require an active paid license for the free tier, or (B) a real
+license/entitlement bootstrap writer must exist for new/seeded accounts. `NEW_FAMILY_TO_DEVICE_ENROLLMENT
+= PASS` cannot be claimed until this is resolved — invitation generation may remain blocked in Step 2/5
+evidence, but only if reported as this explicit, separately-classified blocker, never silently.
+
+**H2 · Step 2 session-local label rule (binding on the implementation about to start).** Parent Web may:
+collect the readable label locally; call CREATE with no readable name; map the returned opaque
+`childProfileId` to a current-session local label; show that label immediately. Parent Web must NOT:
+send `displayName` to the backend; write plaintext `localStorage`/`sessionStorage`; persist trust
+across reload; expose the raw UUID as primary UI. Expected reload behaviour remains
+`SETUP_REQUIRED_EXPECTED`.
+
+**H3 · Step 1 evidence retained verbatim, not summarized down:** 36/36 migrations from zero · 9/9 DB
+integration · 2183/2183 backend non-DB · one real 8-way concurrent-create race resolving to exactly one
+row · the readable-field regression guard watched failing (injected `displayName`) then watched passing.
+
+**H4 · Step 2 must not be finalized on mock data.** Acceptance must exercise the real backend route
+against the fresh seeded stack: no child → Add first child → local readable label → child appears →
+Add Device → child selectable. Invitation generation may be reported blocked only under H1's explicit
+classification — never presented as a full pass while `CREATE_INVITATION` is unreachable.
+
+## PART I · STEP 2 COMPLETE (DEV-FIXTURE / COMPONENT-TEST LAYER) — REAL BACKEND ACCEPTANCE STILL PENDING STEP 5
+
+**Scope of this claim, precisely:** implementation + component/unit-test verification of the Parent
+Web child flow is done and clean. This is NOT a claim that H4's real-backend/fresh-seeded-stack
+acceptance has run — that is Step 5's job and has not started. Nothing here should be read as
+`NEW_FAMILY_TO_DEVICE_ENROLLMENT = PASS`.
+
+**H2 compliance, verified, not asserted:** `tests/component/AddChildFlow.test.tsx` spies on the real
+`createChildProfile` call arguments and asserts the request body has no `displayName` property and its
+JSON serialization never contains the typed name; the resolved label is confirmed present in the
+session-local store (`src/domain/childLabels.ts`) only AFTER the server-minted id returns, never
+before/guessed. `childLabels.ts` is backed by a plain in-memory `Map`, never `localStorage`/
+`sessionStorage` — see that file's own header for why this deliberately does not survive reload
+(mirrors `trustedEndpointKeyStore.ts`'s own tab-lifetime design, per this Part's H2 ruling above).
+
+**A real product bug was found and fixed while writing this flow's tests, not papered over in the
+test:** `AddDeviceWizard.tsx`'s step-0 gate (`childProfilesLoading` / `childProfilesError` /
+"no children yet") was unconditional — it fired on every render regardless of which wizard step the
+parent was actually on. Because `advanceFromChildStep()` calls `reloadChildProfiles()` (a real network
+round-trip) every time step 0 is left, a slow or merely-in-flight reload while the parent had already
+moved on to platform/protection/review would flash the ENTIRE wizard back to a loading spinner or "Add
+your first child" over content that had nothing to do with the child list anymore. Fix: the gate is now
+scoped to `stepIndex === 0`, and the "no children yet" branch additionally excludes the moment right
+after this family's first child was created (`justCreatedChild`, set synchronously from the CREATE
+response) so a registry-list reload that hasn't caught up yet cannot contradict what the session already
+knows to be true. Both changes are in `src/pages/family/devices/AddDeviceWizard.tsx`.
+
+**A second issue was found and correctly classified as TEST-INFRASTRUCTURE-ONLY, not a product defect:**
+`tests/utils/renderWithProviders.tsx` mounts `AuthProvider` directly, without `AppLayout`'s own
+`if (loading) return null` gate (`src/components/shell/AppLayout.tsx:71`) that real routing always
+applies before any `/family/devices` route can render (see `src/App.tsx`'s route tree — `Devices` is
+nested under `<Route element={<AppLayout />}>`). Real routing therefore NEVER lets `DevicesTabs.tsx`
+read `session?.familyId ?? ''` before that gate clears, so `familyId` is never `''` in production. In
+this test harness it briefly is, which raced `AddChildFlow.test.tsx`'s interactions against a background
+registry refetch. Fixed by awaiting the same two async calls (`getSession()`, then `listChildProfiles`)
+the app itself is already mid-flight on, before the test ever queries the DOM — no production code
+changed for this half of the fix, and no other existing test file needed it (they all start from an
+already-populated child list, which never takes the empty-registry code path this race lived in).
+
+**Regression sweep after both fixes, run twice each (individually, then in `--maxWorkers=2` batches per
+[[A4 · WEB_TEST_BATCH_FAILURE_RULE]]):** discovered along the way, 3 PRE-EXISTING test files were
+already broken by this wave's `getDashboard()` → `listChildProfiles()` data-source swap and had not yet
+been caught (`DeviceEnrollmentConsentStepFocus.test.tsx`, `DeviceEnrollmentPlatformOptions.test.tsx`,
+`tests/i18n/deviceEnrollmentRtl.test.tsx` — all fixed with the same `__seedDevChildProfile` dev-fixture
+pattern already used elsewhere). Final state, verified clean on repeat runs:
+- `AddChildFlow.test.tsx`: 5/5, confirmed stable across 5 consecutive full-file runs.
+- Full device-enrollment surface (7 files): 61 tests, stable across 3 consecutive runs.
+- Full parent-web suite: 137/137 test files, run individually where regression-relevant and in 8
+  `--maxWorkers=2` shards of ≤15 files for the rest — all green, no untouched-file failures, no
+  failure-count drift between identical reruns (the two discriminators [[A4]] names for a real defect
+  vs. memory-pressure noise).
+- `tsc --noEmit`: clean. `eslint . --max-warnings=0`: clean, whole project.
+
+**H1 remains explicitly OPEN and unresolved by this Part.** No attempt was made to work around it;
+`CREATE_INVITATION` is still unreachable end-to-end pending the owner's (A)/(B) decision above.
+
+**Files touched, Parent Web (beyond what Part G/earlier Step 2 work already listed):**
+`src/pages/family/devices/AddDeviceWizard.tsx` (step-0 gate scope fix), `tests/component/AddChildFlow.test.tsx`
+(race fix + assertion fix), `tests/component/DeviceEnrollmentConsentStepFocus.test.tsx`,
+`tests/component/DeviceEnrollmentPlatformOptions.test.tsx`, `tests/i18n/deviceEnrollmentRtl.test.tsx`
+(dev-fixture seeding added to each).
+
+## PART J · STEP 3 COMPLETE — COPY / TERMINOLOGY REMEDIATION
+
+**Source audit:** `docs/pre-production/PCA_CHILD_FOCUSED_COPY_AUDIT.csv` +
+`PCA_CHILD_FOCUSED_COPY_GAP_REPORT.md` (committed at `5e0b62d`, a prior read-only-mode mission — 134
+rows across Parent Web, Android, iOS, Platform Admin, backend-generated text). Re-ran the report's own
+handoff sequence against the **current** tree, per this Part's instruction, rather than waiting for a
+clean worktree (Step 2's child-registry work was still in-flight uncommitted at the time, which is
+exactly the "in-flight dashboard rewrite" the original audit already anticipated and scoped 4 of its
+open rows around).
+
+**`writer82a` (`2364b78`, the unmerged 81-row semantic pass) was not merged and did not need to be.**
+Its merge-base with `pca-dev` is `abbb2f3` — several PPR-1/PPR-1R/PPR-2 commits stale. Instead, each of
+the 8 rows the audit flagged as "already implemented" was independently re-verified against the live
+`en.json`/`ar.json`/`strings.xml` (not the branch) — all 8 hold. The other 73 of the 81
+`PPR2_ALREADY_OWNS` rows were always `(no change)` — legitimate account/authority/billing terminology,
+never defects. No branch merge occurred; none was needed.
+
+**All 30 open rows (28 `COPY_DEFECT_REMAINING` + 2 `NOT_COVERED_BY_PPR2`) fixed directly, highest
+priority first per owner instruction:**
+
+1. **Child-facing Safe Browser wording — the priority item.** `android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebReasonCodes.kt`
+   (5 EN + 5 AR strings) and `backend/src/i18n/messages/{en,ar}.ts` (`web.PARENT_ALLOWLIST`/`PARENT_DENYLIST`/
+   `CATEGORY_RULE`/`SCHEDULE_RULE`/`CLASSIFIER`, `ai.CATEGORY_RULE_MATCHED`, `DOMAIN_BLOCKED_NOTICE` — 7
+   EN+AR pairs) now say "your **parent's** [allow list / block list / rule]" instead of "your family's,"
+   matching what `WebReasonId`/`MessageId` actually mean: a parent-set rule shown on the child's own
+   block screen, not a family-wide one. Both locations changed together so client and backend stay in
+   sync, as the original audit flagged they must.
+2. **In-flight dashboard rewrite's new family-framed keys** (`dashboard.sections.family`,
+   `dashboard.recentActivity`, `deviceEnrollment.familyDataUnavailableTitle`,
+   `privacyHub.exportDesc`) and the matching backend `export.COMPLETED` — reworded to children-specific
+   language in both `en.json`/`ar.json` and `backend/src/i18n/messages/{en,ar}.ts`.
+3. **Two static HTML files that no locale-file audit would ever reach:** `parent-web/index.html`'s meta
+   description and `parent-web/public/offline.html`'s cached-data reassurance.
+4. **Android translation drift:** `persistence_strings.xml` (AR) `delete_now_description` now matches
+   its own EN sibling's "children's" wording instead of "عائلية" (familial); two
+   `wellbeing_control_strings.xml` entries (EN+AR) that said "family" now say "custom"/"your," matching
+   the same file's neighboring strings.
+
+**Verification:** every backend string here is exercised by a real assertion, not just present in the
+catalogue. `test/i18n/translate.test.mjs` and `test/safebrowser/SafeBrowserNavigationPolicy.test.mjs`
+(both EN and AR routes through the *real* decision path, not a stub) were updated and re-run, plus 3
+fixture files that had embedded the old string as mock input data
+(`WebFilteringDashboardCardProvider`/`BlockDecisionStateStore`/`ParentUnblockRequestService` test
+files). Full backend regression: **2183/2183 non-DB tests pass** (unchanged from Step 1's number — no
+regression). Parent Web: `tsc --noEmit` clean, `eslint . --max-warnings=0` clean, `tests/i18n/` (15
+files/61 tests, including the strict EN/AR leaf-key-parity check) and every Dashboard-surface component
+test (7 files/32 tests) pass. Android: no Kotlin test hardcoded the old strings (none needed updating);
+all 3 edited XML resource files confirmed well-formed.
+
+**One dead-code finding, correctly left out of scope:** `deviceEnrollment.familyDataUnavailableTitle`
+is no longer referenced anywhere in Parent Web source — Step 2's `AddDeviceWizard.tsx` rewrite removed
+the `getDashboard()`-sourced fail-closed path this key used to serve. Wording was still corrected
+(harmless either way), but whether to delete the now-orphaned key is a separate cleanup call, not a
+copy-correctness one — not acted on here.
+
+**Full row-by-row detail** (old text, new text, exact file/line, per-row test evidence) is in
+`PCA_CHILD_FOCUSED_COPY_AUDIT.csv`, `STATUS = FIXED_PPR2_STEP3` for all 30; narrative addendum in
+`PCA_CHILD_FOCUSED_COPY_GAP_REPORT.md`.
+
+`COPY_AUDIT_REMAINING_OPEN = 0`. `PCA_CHILD_FOCUSED_COPY_AUDIT = COMPLETE` for the 134 rows this audit
+covers (Parent Web, Android, iOS, Platform Admin, backend-generated text) — not a claim of exhaustive
+coverage of every family/child word in the whole codebase outside that scope.
+
+**Files touched beyond Part I's list:** `backend/src/i18n/messages/{en,ar}.ts`,
+`backend/test/i18n/translate.test.mjs`, `backend/test/export/pipeline.test.mjs`,
+`backend/test/safebrowser/{SafeBrowserNavigationPolicy,BlockDecisionStateStore,ParentUnblockRequestService}.test.mjs`,
+`backend/test/parentpanel/WebFilteringDashboardCardProvider.test.mjs`,
+`android/app/src/main/java/org/pca/app/feature/webprotection/policy/WebReasonCodes.kt`,
+`android/app/src/main/res/values{,-ar}/wellbeing_control_strings.xml`,
+`android/app/src/main/res/values-ar/persistence_strings.xml`, `parent-web/index.html`,
+`parent-web/public/offline.html`, `parent-web/src/i18n/locales/{en,ar}.json`,
+`docs/pre-production/PCA_CHILD_FOCUSED_COPY_AUDIT.csv`, `docs/pre-production/PCA_CHILD_FOCUSED_COPY_GAP_REPORT.md`.
+
+## PART K · STEP 4 COMPLETE — SECURITY + MUTATION RE-DERIVATION
+
+**Full detail:** `docs/pre-production/PCA_PPR2_SECURITY_AND_MUTATION_REPORT.md`. Everything
+in it was re-derived against the current tree this Step, not inherited from PPR-1R, earlier
+PPR-2 runs, or writer reports, per the owner's explicit instruction.
+
+**Headline result:** `STEP4_SECURITY_MUTATION = COMPLETE`. `OPEN_SECURITY_FINDINGS = 0`,
+`VALID_MUTATION_SURVIVORS = 0` (5/5 mutants killed, 0 equivalent, 0 invalid),
+`CENTRAL_READABLE_CHILD_FIELDS = 0`, `VIEW_DEVICE_ENROLLMENT_SCOPE = PASS`,
+`INVITATION_REQUIRES_EXISTING_CHILD = PASS`, `PLAINTEXT_CHILD_LABEL_PERSISTENCE = 0`.
+
+**A real, previously-unproven coverage gap was found and closed, not assumed covered:**
+`backend/test/db/http.mysql.test.mjs` constructs `InvitationService` with one argument, so
+its own passing invitation-creation tests never exercised the PPR-2 existing-child check at
+all despite running against a real database. A new file,
+`backend/test/db/childProfileInvitationBindingHttp.mysql.test.mjs`, wires `InvitationService`
+exactly as `main.ts` does in production and proves the full nonexistent-child / foreign-family-child
+/ real-child flow end to end against a real, freshly-migrated MySQL instance — mutation-killed
+and restored, not merely written and trusted.
+
+**A real, previously-unproven false-negative was found and fixed in the ONE new
+render-based frontend test written this Step, not shipped as-is:** a first draft of a
+`VIEW_DEVICE_ENROLLMENT` DOM-level test (added because the only existing coverage was a
+string-position scan, exactly what the owner said not to rely on) seeded an existing child,
+which meant `AddDeviceWizard`'s own inner `CREATE_DEVICE_INVITATION` gate masked the outer
+gate's removal — the test kept passing even with `VIEW_DEVICE_ENROLLMENT` deleted from
+`DevicesTabs.tsx`. Caught by actually removing the gate and watching the test not fail;
+fixed by rendering an empty registry instead (exposes the one path — "Add your first
+child" — with no inner gate at all); reconfirmed failing with the gate removed, passing
+with it restored.
+
+**Two genuine, pre-existing Step-1 gaps in this wave's OWN DB verification tooling were
+found and fixed** (both caught only because this Step ran the full, from-zero `npm run
+test:db` — no earlier PPR-2 pass had): `scripts/verify-mysql.mjs`'s hardcoded expected-table
+list never included `family_child_memberships` (migration 0036), so `npm run test:db`
+could not complete its own first step since Step 1 landed; `schema-privacy.mysql.test.mjs`'s
+"*key*"-column allowlist never included `creation_request_key` (same class as the
+already-allowlisted `idempotency_key`). Both fixed with one line each, review comments
+matching each file's existing documentation convention, re-verified against a fresh
+database afterward.
+
+**Two mutation attempts on the most central, most widely-shared authentication/authorization
+primitives were blocked by the harness's own safety classifier** (disabling
+`requireServiceSession`'s missing-token rejection, and disabling
+`AuthzService.authorize()`'s family-scope status check) — both reverted immediately, `git
+diff` confirmed clean, a full rebuild against restored source succeeded. Not reported as
+survivors (never ran to a result); their correctness rests on zero lines of either file
+being touched by Steps 1–3, plus passing pre-existing coverage
+(`crossRealm.test.mjs`, `authz/service.test.mjs`, `http.mysql.test.mjs`'s
+revoked/disabled-account tests) and passing tests specific to the new child-profile routes.
+
+**`LICENSE_ENTITLEMENT_STATUS = OWNER_DECISION_REQUIRED`, re-derived independently, same
+conclusion as Part H's original finding:** zero writers to `licenses` anywhere in `src/`
+(re-confirmed by fresh grep), no alternate/bootstrap path exists in the separate
+entitlements/complimentary-grant subsystem, `CREATE_INVITATION` confirmed unreachable
+end-to-end on a genuinely new account. The smallest concrete choice remains: (A)
+`requiresLicense: false` for `CREATE_INVITATION` (free tier needs no license), or (B) build
+a real bootstrap license writer (itself needing an owner decision on its trigger). Not
+decided here; not silently worked around.
+
+**Four findings discovered this Step and explicitly classified as pre-existing, unrelated
+to PPR-2 Steps 1–3 (not fixed, not hidden inside `OPEN_SECURITY_FINDINGS`):** two
+host-timezone-dependent test artifacts in unrelated session/challenge-expiry tests (an
+existing, widespread `NOW(3)`-vs-driver-UTC pattern affecting ~18 pre-existing test files,
+none touched by this wave); a `repository.create` vs `createAtomically` method-name drift
+in `parentAccount.mysql.test.mjs` (4 failing tests, all about family-*member* invitations,
+a file and repository never touched by this wave); and one architectural observation
+(role-based UX restriction has no backend-enforced equivalent — a pre-existing,
+self-documented, intentional design already symmetric between `CREATE_INVITATION` and this
+wave's `CREATE_CHILD_PROFILE`/`LIST_CHILD_PROFILES`, not a new gap).
+
+**Regression evidence:** backend non-DB suite 2183/2183 (unchanged from Step 1's number);
+full `npm run test:db` from a genuinely fresh MySQL instance, migrated from zero, 473/479 —
+the 6 failures are the pre-existing, unrelated findings above, none touching PPR-2 code;
+`tsc --noEmit` clean on both `backend` and `parent-web`; `eslint . --max-warnings=0` clean
+on `parent-web` (backend has no lint script configured); the three device-enrollment
+component-test files stable across 2 consecutive runs (45/45 both times).
+
+**Files touched, full list in the security report's own closing section.**

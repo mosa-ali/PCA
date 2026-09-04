@@ -203,14 +203,14 @@ test('a successful export defaults to an English outcomeMessage when no locale i
   const manifest = buildManifest();
   const outcome = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink());
   assert.equal(outcome.kind, 'COMPLETED');
-  assert.equal(outcome.outcomeMessage, 'Your family data export completed successfully.');
+  assert.equal(outcome.outcomeMessage, "Your children's data export completed successfully.");
 });
 
 test('a successful export produces a genuine Arabic outcomeMessage when locale=ar is requested, with no English fallback leaking in', async () => {
   const manifest = buildManifest();
   const outcome = await runExport(manifest, Buffer.from('plaintext-payload'), createTestOnlyExportEncryptor(), inMemorySink(), { locale: 'ar' });
   assert.equal(outcome.kind, 'COMPLETED');
-  assert.equal(outcome.outcomeMessage, 'اكتمل تصدير بيانات عائلتك بنجاح.');
+  assert.equal(outcome.outcomeMessage, 'اكتمل تصدير بيانات أطفالك بنجاح.');
   assert.equal(/[A-Za-z]/.test(outcome.outcomeMessage), false);
 });
 

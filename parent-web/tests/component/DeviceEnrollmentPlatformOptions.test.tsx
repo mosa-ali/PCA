@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import Devices from '../../src/pages/family/Devices';
 import { __resetDevDeviceEnrollmentState } from '../../src/api/dev/devDeviceEnrollmentClient';
+import { __resetDevChildProfileState, __seedDevChildProfile } from '../../src/api/dev/devChildProfileClient';
+import { __resetChildLabelsForTest, setChildLabel } from '../../src/domain/childLabels';
 
 /**
  * Enrollment honesty: the Add-device journey must not offer iOS -- at all.
@@ -24,8 +26,12 @@ import { __resetDevDeviceEnrollmentState } from '../../src/api/dev/devDeviceEnro
 describe('Add device -- platform step', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
     localStorage.clear();
     sessionStorage.clear();
+    __seedDevChildProfile('dev-family-1', 'child-existing-1');
+    setChildLabel('child-existing-1', 'Existing Child (DEV)');
   });
 
   it('offers Android only, and states plainly that iPhone/iPad are not supported yet', async () => {

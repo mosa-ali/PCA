@@ -5,6 +5,7 @@ import { SlotReservationService, SlotReservationError } from '../../dist/entitle
 import { hashInvitationToken } from '../../dist/invitation/token.js';
 import { DEFAULT_INVITATION_TTL_MS, MAX_INVITATION_TTL_MS } from '../../dist/invitation/policy.js';
 import { createInMemoryInvitationRepository } from '../support/inMemoryInvitationRepository.mjs';
+import { InMemoryChildProfileRegistryRepository } from '../../dist/childprofiles/ChildProfileRegistryRepository.js';
 import { ProtectionAlertProducer } from '../../dist/alerts/ProtectionAlertProducer.js';
 import { InMemoryProtectionAlertLedger } from '../../dist/alerts/ProtectionAlertLedger.js';
 
@@ -515,4 +516,85 @@ test('an alert composer failure never blocks or reverses redemption', async () =
   const { rawToken } = await service.createInvitation(baseInput);
   const redeemed = await service.redeemInvitation(rawToken);
   assert.equal(redeemed.status, 'REDEEMED');
+});
+
+// -----------------------------------------------------------------------
+// PPR-2: invitation creation must reference an EXISTING, authorized child
+// profile when a membership checker is wired -- it must never be what
+// implicitly mints the child identity as a side effect.
+// -----------------------------------------------------------------------
+
+function buildServiceWithChildProfileCheck(overrides = {}) {
+  const repository = overrides.repository ?? createInMemoryInvitationRepository();
+  const childRegistry = overrides.childRegistry ?? new InMemoryChildProfileRegistryRepository();
+  let currentTime = overrides.startTime ?? BASE_TIME;
+  const clock = { now: () => new Date(currentTime) };
+  const service = new InvitationService(
+    repository,
+    clock.now,
+    undefined,
+    undefined,
+    overrides.alerting ?? null,
+    childRegistry,
+  );
+  return { service, repository, childRegistry, clock };
+}
+
+test('PPR-2: an existing childProfileId belonging to this family is accepted', async () => {
+  const { service, childRegistry } = buildServiceWithChildProfileCheck();
+  const { row } = await childRegistry.create(baseInput.familyId, null, new Date(BASE_TIME));
+  const { record } = await service.createInvitation({ ...baseInput, childProfileId: row.childProfileId });
+  assert.equal(record.childProfileId, row.childProfileId);
+});
+
+test('PPR-2: a childProfileId that does not exist at all is rejected with CHILD_PROFILE_NOT_FOUND', async () => {
+  const { service } = buildServiceWithChildProfileCheck();
+  await assert.rejects(
+    () => service.createInvitation({ ...baseInput, childProfileId: 'no-such-child' }),
+    (error) => {
+      assert.ok(error instanceof InvitationError);
+      assert.equal(error.code, 'CHILD_PROFILE_NOT_FOUND');
+      return true;
+    },
+  );
+});
+
+test('PPR-2: a childProfileId that belongs to a DIFFERENT family is rejected with the SAME code -- no oracle', async () => {
+  const { service, childRegistry } = buildServiceWithChildProfileCheck();
+  const { row } = await childRegistry.create('some-other-family', null, new Date(BASE_TIME));
+  await assert.rejects(
+    () => service.createInvitation({ ...baseInput, childProfileId: row.childProfileId }),
+    (error) => {
+      assert.ok(error instanceof InvitationError);
+      assert.equal(error.code, 'CHILD_PROFILE_NOT_FOUND');
+      return true;
+    },
+  );
+});
+
+test('PPR-2: a rejected childProfileId consumes NO managed-device slot -- checked before slot reservation', async () => {
+  const repository = createInMemoryInvitationRepository();
+  const childRegistry = new InMemoryChildProfileRegistryRepository();
+  let slotReserveCalls = 0;
+  const slotReservationService = {
+    async reserveForInvitation() {
+      slotReserveCalls += 1;
+    },
+  };
+  const service = new InvitationService(
+    repository,
+    () => new Date(BASE_TIME),
+    undefined,
+    slotReservationService,
+    null,
+    childRegistry,
+  );
+  await assert.rejects(() => service.createInvitation({ ...baseInput, childProfileId: 'no-such-child' }));
+  assert.equal(slotReserveCalls, 0);
+});
+
+test('PPR-2: without a membership checker wired (existing callers/tests), childProfileId is format-checked only -- unchanged behaviour', async () => {
+  const { service } = buildService(); // the pre-existing helper: 5-arg constructor, no 6th param
+  const { record } = await service.createInvitation({ ...baseInput, childProfileId: 'anything-well-formed' });
+  assert.equal(record.childProfileId, 'anything-well-formed');
 });

@@ -9,7 +9,10 @@ import { renderWithProviders } from '../utils/renderWithProviders';
 import Devices from '../../src/pages/family/Devices';
 import { getApiClients } from '../../src/api/client';
 import { EndpointNotTrustedError } from '../../src/api/familyDataAccessErrors';
+import { ChildProfileError } from '../../src/api/childProfileClient';
 import { __resetDevDeviceEnrollmentState } from '../../src/api/dev/devDeviceEnrollmentClient';
+import { __resetDevChildProfileState, __seedDevChildProfile } from '../../src/api/dev/devChildProfileClient';
+import { __resetChildLabelsForTest, setChildLabel } from '../../src/domain/childLabels';
 
 /**
  * `/family/devices` used to stack SIX workflows plus a device table plus a
@@ -38,6 +41,8 @@ const TAB_NAMES = [
 describe('Devices page sectioning', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
     localStorage.clear();
     sessionStorage.clear();
   });
@@ -93,6 +98,11 @@ describe('Devices page sectioning', () => {
   });
 
   it('shows one workflow at a time -- the Add-device wizard is alone on its section', async () => {
+    // A real child must already exist for the wizard body to render at all --
+    // otherwise this section correctly shows "Add your first child" (its own,
+    // separately-tested empty state) instead.
+    __seedDevChildProfile('dev-family-1', 'child-existing-1');
+    setChildLabel('child-existing-1', 'Existing Child (DEV)');
     renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
 
     expect(await screen.findByRole('heading', { level: 3, name: 'Who is this device for?' })).toBeInTheDocument();
@@ -135,6 +145,8 @@ describe('Devices page sectioning', () => {
 describe('Devices page -- a fail-closed family read is not an error and not an empty list', () => {
   beforeEach(() => {
     __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
   });
 
   afterEach(() => {
@@ -148,34 +160,49 @@ describe('Devices page -- a fail-closed family read is not an error and not an e
     );
   }
 
-  it('renders the action-needed state with a real next step, never "Something went wrong"', async () => {
-    failFamilyDataClosed();
+  // PPR-2: Add device no longer sources its child list from getDashboard() --
+  // that read is gated behind the trusted-browser crypto boundary, which is a
+  // SEPARATE concern from "can this parent see and manage their children"
+  // (see AddDeviceWizard.tsx's own header comment). childProfileRoutes.ts
+  // sits on the ordinary service-session + family-authorization plane, so
+  // the realistic failure here is a genuine session/authority problem, not
+  // a deliberate fail-closed condition -- which is why it now renders as a
+  // real error, not an action-needed state. The getDashboard() fail-closed
+  // scenario itself is still real and still tested below, against a section
+  // that still depends on that read (overview's offline count).
+  function failChildProfilesListClosed() {
+    const clients = getApiClients();
+    vi.spyOn(clients.childProfiles, 'listChildProfiles').mockRejectedValue(
+      new ChildProfileError('UNAUTHORIZED', 'listChildProfiles: your service session has expired or is invalid. Please sign in again.', 401),
+    );
+  }
+
+  it('a genuine child-registry failure renders a real, retryable error -- never the old dead-end text', async () => {
+    failChildProfilesListClosed();
     renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
 
-    const headline = await screen.findByRole('heading', {
-      name: "We can't read your family profiles on this browser yet",
-    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+
+    // And emphatically NOT the old dead end this file's header describes.
+    expect(screen.queryByText('No child profiles available')).toBeNull();
+  });
+
+  it('an empty (but successfully read) child registry offers Add your first child, never a disabled dropdown', async () => {
+    renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
+
+    const headline = await screen.findByRole('heading', { name: 'Add your first child' });
     expect(headline).toBeInTheDocument();
 
-    // The honest reason sentence survives; only the framing changed.
-    // The honest, parent-readable reason -- never the developer diagnostic
-    // ("ParentFamilyDataGateway.getDashboard requires a TRUSTED browser
-    // endpoint..."), which stays on the Error object for the console.
-    expect(screen.getByText(/not trusted with your family's data yet/)).not.toBeNull();
-    expect(document.body.textContent).not.toContain('ParentFamilyDataGateway');
+    const action = screen.getByRole('button', { name: 'Someone new' });
+    expect(action).toBeInTheDocument();
 
-    // A single, real next step -- this is what makes it not a dead end.
-    const action = screen.getByRole('link', { name: 'Set up this browser' });
-    expect(action.getAttribute('href')).toBe('/security/trusted-browser');
-
-    // Informational, not an interruption, and not the generic failure copy.
     const block = headline.closest('.state-block') as HTMLElement;
     expect(block).toHaveAttribute('role', 'status');
     expect(block.className).toContain('state-action-needed');
     expect(screen.queryByText('Something went wrong')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
-
-    // And emphatically NOT the old dead end.
     expect(screen.queryByText('No child profiles available')).toBeNull();
   });
 
@@ -302,5 +329,41 @@ describe('VIEW_DEVICE_ENROLLMENT gate scope (regression: re-sectioning must not 
         `${section} must render INSIDE a VIEW_DEVICE_ENROLLMENT gate`,
       ).toBe(true);
     }
+  });
+
+  // The source-scan above cannot tell a gate that renders `null` from one
+  // that silently renders its children anyway (a wiring mistake, a typo'd
+  // action string, PermissionGate itself regressing) -- so this actually
+  // renders the page as a role denied VIEW_DEVICE_ENROLLMENT (CHILD; see
+  // src/domain/roles.ts's VIEW_DEVICE_ENROLLMENT case) and asserts the real
+  // DOM, not source positions.
+  //
+  // Deliberately does NOT seed a child first: CHILD is ALSO denied
+  // CREATE_DEVICE_INVITATION (AddDeviceWizard's own INNER PermissionGate),
+  // so a populated wizard body would stay hidden by that inner gate alone
+  // and this test would pass even with the OUTER VIEW_DEVICE_ENROLLMENT gate
+  // removed -- a false negative confirmed by actually removing the outer
+  // gate and watching this exact test keep passing with a seeded child.
+  // Branch C ("Add your first child", the empty-registry state) sits
+  // ABOVE/OUTSIDE that inner gate entirely, so an empty registry is the one
+  // case that isolates the outer gate's own contribution.
+  it('a role denied VIEW_DEVICE_ENROLLMENT sees neither section render any content, on real rendered DOM', async () => {
+    __resetDevDeviceEnrollmentState();
+    __resetDevChildProfileState();
+    __resetChildLabelsForTest();
+
+    renderWithProviders(<Devices />, { role: 'CHILD', route: '/family/devices?section=add' });
+    await screen.findByRole('heading', { name: 'Devices' });
+    // Nothing from AddDeviceWizard's step-0 gate (loading/error/"Add your
+    // first child") ever appears -- the whole subtree is gone, not merely
+    // disabled. Waits out the transient familyId-resolution window (see
+    // tests/component/AddChildFlow.test.tsx's header) before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.queryByText('Add your first child')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Someone new' })).toBeNull();
+
+    renderWithProviders(<Devices />, { role: 'CHILD', route: '/family/devices?section=pending' });
+    await screen.findAllByRole('heading', { name: 'Devices' });
+    expect(screen.queryByRole('heading', { name: 'Invitations' })).toBeNull();
   });
 });

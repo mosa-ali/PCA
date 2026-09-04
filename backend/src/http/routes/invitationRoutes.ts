@@ -129,6 +129,13 @@ export function registerInvitationRoutes(app: FastifyInstance, deps: InvitationR
         if (error instanceof InvitationError && error.code === 'MANAGED_DEVICE_LIMIT_REACHED') {
           return reply.code(403).send({ error: 'forbidden', code: error.code });
         }
+        // PPR-2: same generic invalid_request shape as the malformed-childProfileId
+        // check above -- a caller must never be able to distinguish "not
+        // well-formed" from "well-formed but not a member of this family / does
+        // not exist" (doc 39 Section 5's oracle-safety rule).
+        if (error instanceof InvitationError && error.code === 'CHILD_PROFILE_NOT_FOUND') {
+          return reply.code(400).send({ error: 'invalid_request' });
+        }
         throw error;
       }
     },

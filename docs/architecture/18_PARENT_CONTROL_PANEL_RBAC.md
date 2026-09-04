@@ -22,6 +22,7 @@ Exactly one Family Owner exists. Ownership transfer is a two-party, audited, ste
 | Approve bonus/unblock/exception | yes | yes | no | request only |
 | Add Viewer / remove non-owner parent | yes | configurable policy + step-up | no | no |
 | Add Administrator / change any role | yes + step-up | no | no | no |
+| Create / list child profiles (opaque central registry; the readable label stays parent-local) | yes | yes | read-only | no |
 | Change retention / delete history / export | yes + step-up | no by default | no | no |
 | Remove/revoke device or disable protection policy | yes + step-up | configurable + step-up | no | no |
 | Transfer ownership / reveal or regenerate recovery material | yes + step-up | no | no | no |

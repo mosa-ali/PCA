@@ -56,7 +56,17 @@ export type ServiceOperation =
   // VIEW_OWN_BILLING_STATUS's own judgment call that a read of one's own
   // family's already-existing state needs no additional Owner-authority
   // gate.
-  | 'VIEW_DEVICE_SYNC_STATUS';
+  | 'VIEW_DEVICE_SYNC_STATUS'
+  // PPR-2 opaque child-profile membership registry (doc 00 Section 9 change
+  // CHG-2026-09-04-01, doc 10 Section 7.1). Same shape as CREATE_INVITATION/
+  // LIST_OWN_INVITATIONS: gated on the service account holding an ACTIVE
+  // family scope, nothing more -- this layer still cannot distinguish a
+  // Family Owner from an Administrator/Viewer service account (the same
+  // disclosed KNOWN GAP noted on INITIATE_CHECKOUT above). Neither member
+  // touches readable child content; both operate only on the opaque
+  // childProfileId/familyId edge.
+  | 'CREATE_CHILD_PROFILE'
+  | 'LIST_CHILD_PROFILES';
 
 export type ScopeStatus = 'ACTIVE' | 'REVOKED';
 

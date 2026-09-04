@@ -15,16 +15,16 @@ import type { MessageId } from '../types.js';
 export const EN_MESSAGES: Record<MessageId, string> = {
   // web filtering decision reasons (formerly web/WebFilterEngine.ts's local REASON_CODES)
   'web.SECURITY_DENYLIST': 'blocked by a security threat rule',
-  'web.PARENT_ALLOWLIST': "allowed by your family's allow list",
-  'web.PARENT_DENYLIST': "blocked by your family's block list",
-  'web.CATEGORY_RULE': "blocked by your family's content category rule",
-  'web.SCHEDULE_RULE': "blocked by your family's schedule rule",
-  'web.CLASSIFIER': "blocked by your family's explicit-content rule",
+  'web.PARENT_ALLOWLIST': "allowed by your parent's allow list",
+  'web.PARENT_DENYLIST': "blocked by your parent's block list",
+  'web.CATEGORY_RULE': "blocked by your parent's content category rule",
+  'web.SCHEDULE_RULE': "blocked by your parent's schedule rule",
+  'web.CLASSIFIER': "blocked by your parent's explicit-content rule",
   'web.DEFAULT': 'no matching rule; allowed by default',
   'web.VPN_UNAVAILABLE': 'network filtering capability was unavailable for this request',
 
   // ai/policy.ts EXPLANATION_LABELS
-  'ai.CATEGORY_RULE_MATCHED': "blocked under your family's category rule",
+  'ai.CATEGORY_RULE_MATCHED': "blocked under your parent's category rule",
   'ai.SUPPLEMENTARY_RISK_SIGNAL': 'flagged by a supplementary risk signal for parent review',
   'ai.MODEL_UNAVAILABLE': 'on-device analysis was unavailable for this item',
   'ai.CONFIDENCE_BELOW_THRESHOLD': 'signal confidence was below the configured threshold',
@@ -53,6 +53,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'invitation.INVALID_STATE': 'Invitation is not in a state that allows this action.',
   'invitation.FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED': 'New managed-device capacity is unavailable after free access expires.',
   'invitation.MANAGED_DEVICE_LIMIT_REACHED': 'The managed-device limit for this family has been reached.',
+  'invitation.CHILD_PROFILE_NOT_FOUND': 'This invitation could not be linked to that child profile.',
 
   // pairing/PairingService.ts PAIRING_ERROR_MESSAGES
   'pairing.NOT_FOUND': 'Pairing request was not found.',
@@ -139,7 +140,7 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'retention.DELETE_NOW': 'Removed by a parent’s Delete Now request.',
 
   // export/types.ts ExportOutcomeKind -- doc 20 FR-113, same "no prior English text" situation.
-  'export.COMPLETED': 'Your family data export completed successfully.',
+  'export.COMPLETED': "Your children's data export completed successfully.",
   'export.CANCELLED': 'The export was cancelled before it completed.',
   'export.FAILED': 'The export could not be completed.',
 
@@ -161,5 +162,5 @@ export const EN_MESSAGES: Record<MessageId, string> = {
   'commercial_notification.QUOTE_EXPIRED': 'Your quote has expired.',
   'commercial_notification.RENEWAL_UPCOMING': 'Your subscription is due to renew soon.',
 
-  DOMAIN_BLOCKED_NOTICE: '{domain} was blocked under your family’s rule',
+  DOMAIN_BLOCKED_NOTICE: '{domain} was blocked under your parent’s rule',
 };

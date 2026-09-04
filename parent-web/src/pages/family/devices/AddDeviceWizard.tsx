@@ -5,8 +5,9 @@ import { getApiClients } from '../../../api/client';
 import { useAsync } from '../../../hooks/useAsync';
 import { ActionNeededState, AsyncStates, ErrorState } from '../../../components/common/States';
 import { PermissionGate } from '../../../rbac/PermissionGate';
-import { actionNeededPlanForMessage } from '../../../i18n/errorMessages';
 import { formatDateTime, formatNumber } from '../../../i18n/formatters';
+import { getChildLabel, setChildLabel } from '../../../domain/childLabels';
+import { ChildProfileError } from '../../../api/childProfileClient';
 import InvitationQrCode from '../InvitationQrCode';
 import { CopyableValue, RampPill } from '../DeviceEnrollmentPanel';
 import {
@@ -56,23 +57,16 @@ const LAST_UNCOMMITTED_STEP = 3; // 'review'
 const NEW_CHILD_OPTION = '__new__';
 
 /**
- * A fresh, opaque child-profile identifier.
- *
- * PRODUCT GAP, RAISED NOT PAPERED OVER: there is no backend route that creates
- * or lists a child profile. `childProfileId` is only ever ACCEPTED on
- * invitation creation (validated against `^[A-Za-z0-9_-]{1,128}$`), and a
- * child's display name is family plaintext that only ever reaches a parent
- * through the E2EE path. So the name typed on step 1 is carried in wizard state
- * into this one invitation and is deliberately NOT persisted anywhere -- this
- * file must not invent a persistence mechanism for it.
- *
- * The value is an identifier, not a secret: it authorises nothing on its own.
+ * PPR-2 (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part F/H2): the
+ * product gap this comment used to describe is closed. `childProfileId` is
+ * now ALWAYS server-minted by POST /v1/families/:familyId/children
+ * (../../../api/childProfileClient.ts) -- this file never mints one
+ * itself. The readable name typed on step 1 is NEVER sent to the server;
+ * it is written to ../../../domain/childLabels.ts's session-local store,
+ * keyed by the id the server returns, and is gone the moment this tab's
+ * JS context ends (a reload included) -- see that module's own header for
+ * why that is correct, not a shortcut.
  */
-function newChildProfileId(): string {
-  const runtimeCrypto = globalThis.crypto as Crypto | undefined;
-  if (runtimeCrypto && typeof runtimeCrypto.randomUUID === 'function') return runtimeCrypto.randomUUID();
-  return `child-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
-}
 
 function WarningIcon() {
   return (
@@ -128,17 +122,47 @@ export default function AddDeviceWizard({
   // and it is not an empty list either. Turning the throw into `children = []`
   // is what produced the "No child profiles available" dead end that stopped a
   // new family enrolling at all.
+  // Sourced from the opaque central registry (../../../api/childProfileClient.ts),
+  // NOT clients.parentFamilyData.getDashboard(). That read is gated behind
+  // requireTrustedAndCryptoReady (../../../api/real/familyDataGate.ts) and
+  // fails closed on every browser that has not completed trusted-browser
+  // setup THIS session -- a real, correct, but SEPARATE gate from "can this
+  // parent see and manage their children". childProfileRoutes.ts sits on the
+  // ordinary service-session + family-authorization plane (the SAME one
+  // CREATE_INVITATION already uses), with no crypto/trust dependency at all.
+  // Piggybacking child existence on the crypto-gated read would silently
+  // reintroduce the exact dead end this file exists to close.
   const {
-    data: dashboard,
-    loading: familyLoading,
-    error: familyError,
-  } = useAsync(() => clients.parentFamilyData.getDashboard(), [familyId]);
-  const children = useMemo(() => dashboard?.children ?? [], [dashboard?.children]);
+    data: childProfileDtos,
+    loading: childProfilesLoading,
+    error: childProfilesError,
+    reload: reloadChildProfiles,
+  } = useAsync(() => clients.childProfiles.listChildProfiles(familyId), [familyId]);
+  // Every id in the registry is real; whether THIS browser session can show
+  // its readable name is a separate question childLabels.ts answers. `null`
+  // is the honest "unresolved" state (see the step-0/render logic below) --
+  // never rendered as the raw id.
+  const children = useMemo(
+    () => (childProfileDtos ?? []).map((dto) => ({ childId: dto.childProfileId, displayName: getChildLabel(dto.childProfileId) })),
+    [childProfileDtos],
+  );
 
   const [stepIndex, setStepIndex] = useState(0);
   const [childProfileId, setChildProfileId] = useState('');
   const [newChildName, setNewChildName] = useState('');
-  const [newChildId, setNewChildId] = useState<string | null>(null);
+  // Set the moment createChildProfile() resolves, so the review/code steps
+  // render correctly immediately -- reloadChildProfiles() also runs (see
+  // advanceFromChildStep below), but its promise may not have resolved yet
+  // by the next render, and this file must not show a blank name while it
+  // catches up.
+  const [justCreatedChild, setJustCreatedChild] = useState<{ childId: string; displayName: string } | null>(null);
+  const [creatingChild, setCreatingChild] = useState(false);
+  const [createChildError, setCreateChildError] = useState<string | null>(null);
+  // Doc 08 Section 4: age tier is collected from the parent per
+  // enrollment, feeding CreateInvitationInput.ageUxTier directly -- it is
+  // NOT derived from the central registry, which correctly holds no age
+  // data at all (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part F).
+  const [ageUxTier, setAgeUxTier] = useState<AgeUxTier>('YOUNG_CHILD');
   const [protectionMode, setProtectionMode] = useState<RequestedProtectionMode>('ANDROID_STANDARD');
   const [initialPolicyProfile, setInitialPolicyProfile] = useState<InitialPolicyProfile>('BALANCED');
 
@@ -158,11 +182,10 @@ export default function AddDeviceWizard({
     if (!childProfileId && children[0]) setChildProfileId(children[0].childId);
   }, [childProfileId, children]);
 
-  const selectedChild = children.find((child) => child.childId === childProfileId) ?? null;
+  const selectedChild =
+    children.find((child) => child.childId === childProfileId) ??
+    (justCreatedChild && justCreatedChild.childId === childProfileId ? justCreatedChild : null);
   const addingNewChild = childProfileId === NEW_CHILD_OPTION;
-  // Derived exactly as before: the tier follows the child's age profile and is
-  // never a free choice. A brand-new profile has no age profile yet.
-  const ageUxTier: AgeUxTier = selectedChild?.ageProfile === 'TEEN' ? 'TEEN' : 'YOUNG_CHILD';
 
   const step = STEPS[stepIndex];
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -212,8 +235,9 @@ export default function AddDeviceWizard({
   }, []);
 
   const submit = useCallback(async () => {
-    const resolvedChildId = addingNewChild ? (newChildId ?? newChildProfileId()) : selectedChild?.childId;
-    if (addingNewChild && !newChildId) setNewChildId(resolvedChildId ?? null);
+    // By 'review', child creation already happened (advanceFromChildStep, on
+    // leaving step 0) -- selectedChild is always a real, server-minted id.
+    const resolvedChildId = selectedChild?.childId;
     const created = await create({
       platform: 'ANDROID',
       requestedProtectionMode: protectionMode,
@@ -222,50 +246,85 @@ export default function AddDeviceWizard({
       initialPolicyProfile,
     });
     if (created) setStepIndex(STEPS.findIndex((s) => s.id === 'code'));
-  }, [addingNewChild, newChildId, selectedChild, create, protectionMode, ageUxTier, initialPolicyProfile]);
+  }, [selectedChild, create, protectionMode, ageUxTier, initialPolicyProfile]);
+
+  // Leaving step 0: if the parent is adding a new child, this is where the
+  // REAL, server-minted childProfileId is obtained -- never before, never
+  // client-side. displayName is committed to the session-local label store
+  // ONLY after the server confirms the id; it is never part of the request
+  // (../../../api/childProfileClient.ts's whole point). An existing selection
+  // just advances -- nothing to create.
+  const advanceFromChildStep = useCallback(async () => {
+    if (!addingNewChild) {
+      goNext();
+      return;
+    }
+    setCreatingChild(true);
+    setCreateChildError(null);
+    try {
+      const result = await clients.childProfiles.createChildProfile(familyId);
+      setChildLabel(result.childProfileId, newChildName);
+      setJustCreatedChild({ childId: result.childProfileId, displayName: newChildName.trim() });
+      setChildProfileId(result.childProfileId);
+      reloadChildProfiles();
+      goNext();
+    } catch (error) {
+      setCreateChildError(
+        error instanceof ChildProfileError ? error.message : t('deviceEnrollment.errors.createChildFailed'),
+      );
+    } finally {
+      setCreatingChild(false);
+    }
+  }, [addingNewChild, clients, familyId, newChildName, reloadChildProfiles, goNext, t]);
 
   /* ---------------------------------------------------------- step 0 gate -- */
+  // Scoped to stepIndex === 0: reloadChildProfiles() (advanceFromChildStep,
+  // above) re-triggers this same registry fetch every time step 0 is left,
+  // so childProfilesLoading/childProfilesError/children can all still change
+  // while the parent is on a LATER step. Without this scope, that background
+  // reload would flash the whole wizard -- platform, protection, review,
+  // whatever step is current -- back to a loading spinner or "Add your first
+  // child" over content that has nothing to do with the child list anymore.
 
-  if (familyLoading) return <AsyncStates loading />;
+  if (stepIndex === 0) {
+    if (childProfilesLoading) return <AsyncStates loading />;
 
-  if (familyError) {
-    // BRANCH B -- the fail-closed read. Not an error, not an empty list: the
-    // system deliberately declined to hand this browser family data. The
-    // honest reason sentence already exists; only the framing was wrong.
-    const plan = actionNeededPlanForMessage(familyError, t);
-    return (
-      <ActionNeededState
-        titleKey="deviceEnrollment.familyDataUnavailableTitle"
-        body={familyError}
-        action={
-          plan?.actionLabelKey && plan.actionTo
-            ? { labelKey: plan.actionLabelKey, to: plan.actionTo }
-            : { labelKey: 'states.browserSetupNeededAction', to: '/security/trusted-browser' }
-        }
-      />
-    );
-  }
+    if (childProfilesError) {
+      // BRANCH B -- a GENUINE error (expired session, network failure,
+      // insufficient authority), not a deliberate fail-closed condition.
+      // childProfileRoutes.ts sits on the ordinary service-session +
+      // family-authorization plane, with no crypto/trust gate at all -- so,
+      // unlike the old getDashboard()-sourced check this replaced, there is
+      // no 'ENDPOINT_NOT_TRUSTED'-shaped condition to special-case here.
+      // "Something went wrong" is the honest thing to say: something is.
+      return <ErrorState message={childProfilesError} onRetry={reloadChildProfiles} />;
+    }
 
-  if (children.length === 0 && !addingNewChild) {
-    // BRANCH C -- the read succeeded and there genuinely is no child yet.
-    return (
-      <ActionNeededState
-        titleKey="deviceEnrollment.noChildYetTitle"
-        bodyKey="deviceEnrollment.noChildYetBody"
-        showReassurance={false}
-      >
-        <button
-          type="button"
-          className="btn btn-primary state-action"
-          onClick={() => {
-            setChildProfileId(NEW_CHILD_OPTION);
-            setNewChildId(newChildProfileId());
-          }}
+    if (children.length === 0 && !addingNewChild && !justCreatedChild) {
+      // BRANCH C -- the read succeeded and there genuinely is no child yet.
+      // `justCreatedChild` excludes the moment right after this family's
+      // FIRST child was created: reloadChildProfiles() is a real network
+      // round-trip, and this render can land before it resolves. Without
+      // this guard, that gap would flash "Add your first child" right as
+      // the wizard is leaving step 0 -- the session already knows the child
+      // exists (it just created it); the registry catching up is a
+      // formality, not a reason to distrust it.
+      return (
+        <ActionNeededState
+          titleKey="deviceEnrollment.noChildYetTitle"
+          bodyKey="deviceEnrollment.noChildYetBody"
+          showReassurance={false}
         >
-          {t('deviceEnrollment.addNewChild')}
-        </button>
-      </ActionNeededState>
-    );
+          <button
+            type="button"
+            className="btn btn-primary state-action"
+            onClick={() => setChildProfileId(NEW_CHILD_OPTION)}
+          >
+            {t('deviceEnrollment.addNewChild')}
+          </button>
+        </ActionNeededState>
+      );
+    }
   }
 
   /* ------------------------------------------------------------- the steps -- */
@@ -315,7 +374,12 @@ export default function AddDeviceWizard({
                       checked={childProfileId === child.childId}
                       onChange={() => setChildProfileId(child.childId)}
                     />
-                    <label htmlFor={`enrollment-child-${child.childId}`}>{child.displayName}</label>
+                    <label htmlFor={`enrollment-child-${child.childId}`}>
+                      {/* An id this session holds no label for -- e.g. created in a
+                          DIFFERENT browser/session -- renders this honest sentence,
+                          NEVER the raw childProfileId. See ../../../domain/childLabels.ts. */}
+                      {child.displayName ?? t('deviceEnrollment.childLabelUnresolved')}
+                    </label>
                   </div>
                 ))}
                 <div className="checkbox-row">
@@ -325,10 +389,7 @@ export default function AddDeviceWizard({
                     name="enrollment-child"
                     value={NEW_CHILD_OPTION}
                     checked={addingNewChild}
-                    onChange={() => {
-                      setChildProfileId(NEW_CHILD_OPTION);
-                      if (!newChildId) setNewChildId(newChildProfileId());
-                    }}
+                    onChange={() => setChildProfileId(NEW_CHILD_OPTION)}
                   />
                   <label htmlFor="enrollment-child-new">{t('deviceEnrollment.addNewChild')}</label>
                 </div>
@@ -343,16 +404,35 @@ export default function AddDeviceWizard({
                     value={newChildName}
                     onChange={(e) => setNewChildName(e.target.value)}
                   />
+                  {/* Reassurance the name never leaves this browser -- matches the
+                      privacy guarantee ../../../domain/childLabels.ts's header
+                      documents and ../../../api/childProfileClient.ts enforces at
+                      the type level (there is no field to put it in). */}
+                  <p className="field-hint">{t('deviceEnrollment.childNameLocalOnly')}</p>
                 </div>
               )}
 
-              <div className="field">
-                <span>{t('deviceEnrollment.ageUxTier')}</span>
-                <p>
-                  {t(ageUxTier === 'TEEN' ? 'deviceEnrollment.ageTierTeen' : 'deviceEnrollment.ageTierYoungChild')}
-                </p>
+              {createChildError && <ErrorState message={createChildError} />}
+
+              <fieldset style={{ minInlineSize: 0 }}>
+                <legend>{t('deviceEnrollment.ageUxTier')}</legend>
+                {(['YOUNG_CHILD', 'TEEN'] as const).map((tier) => (
+                  <div className="checkbox-row" key={tier}>
+                    <input
+                      type="radio"
+                      id={`enrollment-age-tier-${tier}`}
+                      name="enrollment-age-tier"
+                      value={tier}
+                      checked={ageUxTier === tier}
+                      onChange={() => setAgeUxTier(tier)}
+                    />
+                    <label htmlFor={`enrollment-age-tier-${tier}`}>
+                      {t(tier === 'TEEN' ? 'deviceEnrollment.ageTierTeen' : 'deviceEnrollment.ageTierYoungChild')}
+                    </label>
+                  </div>
+                ))}
                 <p className="field-hint">{t('deviceEnrollment.ageTierExplain')}</p>
-              </div>
+              </fieldset>
             </>
           )}
 
@@ -434,7 +514,11 @@ export default function AddDeviceWizard({
                 <li>
                   {t('deviceEnrollment.childProfile')}:{' '}
                   <bdi className="iso">
-                    {addingNewChild ? newChildName || t('deviceEnrollment.addNewChild') : selectedChild?.displayName ?? ''}
+                    {/* By 'review', child creation already happened (advanceFromChildStep) --
+                        selectedChild is always real. addingNewChild stays true only for the
+                        instant the create() call is in flight, which the Next button's own
+                        disabled/busy state already covers. */}
+                    {selectedChild?.displayName ?? t('deviceEnrollment.childLabelUnresolved')}
                   </bdi>
                 </li>
                 <li>
@@ -597,10 +681,15 @@ export default function AddDeviceWizard({
             <button
               type="button"
               className="btn btn-primary"
-              onClick={goNext}
-              disabled={step.id === 'child' && addingNewChild && newChildName.trim() === ''}
+              onClick={() => void (step.id === 'child' ? advanceFromChildStep() : goNext())}
+              disabled={
+                creatingChild ||
+                (step.id === 'child' && addingNewChild && newChildName.trim() === '')
+              }
             >
-              {t(STEPS[stepIndex + 1].labelKey)}
+              {step.id === 'child' && addingNewChild && creatingChild
+                ? t('deviceEnrollment.creatingChild')
+                : t(STEPS[stepIndex + 1].labelKey)}
             </button>
           )}
           {step.id === 'review' && (

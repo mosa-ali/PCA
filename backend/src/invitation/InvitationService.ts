@@ -15,6 +15,7 @@ import { FamilyAuditService, InMemoryFamilyAuditRepository } from '../familyrbac
 import { SlotReservationError, type SlotReservationService } from '../entitlements/slots/SlotReservationService.js';
 import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 import type { ProtectionAlertProducer } from '../alerts/ProtectionAlertProducer.js';
+import type { ChildProfileRegistryRepository } from '../childprofiles/ChildProfileRegistryRepository.js';
 
 /**
  * PCA-ADD-ENR-020 alerting composition, scoped narrowly to this service
@@ -40,7 +41,12 @@ export type InvitationErrorCode =
   | 'INVALID_STATE'
   | 'FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED'
   /** PCA-ADD-PA-027: the family's managedDeviceLimit (or its backing entitlement) has no room for a new enrollment invitation. The caller must be pointed at the increase-request/plan-upgrade flow, never a raw 500. */
-  | 'MANAGED_DEVICE_LIMIT_REACHED';
+  | 'MANAGED_DEVICE_LIMIT_REACHED'
+  /** PPR-2: childProfileId was supplied but does not resolve to a MEMBER of this
+   *  family in the opaque child-profile membership registry -- collapses "belongs to
+   *  another family" and "does not exist" into ONE code, matching doc 39 Section 5's
+   *  oracle-safety rule the registry's own resolveMembership() already enforces. */
+  | 'CHILD_PROFILE_NOT_FOUND';
 
 /** Message text is always a fixed, generic string per code — never interpolates the raw token or family data. */
 export class InvitationError extends Error {
@@ -61,6 +67,7 @@ const INVITATION_ERROR_MESSAGES: Record<InvitationErrorCode, string> = {
   INVALID_STATE: 'Invitation is not in a state that allows this action.',
   FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED: 'New managed-device capacity is unavailable after free access expires.',
   MANAGED_DEVICE_LIMIT_REACHED: 'The managed-device limit for this family has been reached.',
+  CHILD_PROFILE_NOT_FOUND: 'The referenced child profile could not be used for this request.',
 };
 
 export interface CreateInvitationInput {
@@ -89,6 +96,7 @@ export class InvitationService {
   private readonly auditService: FamilyAuditService;
   private readonly slotReservationService: SlotReservationService | null;
   private readonly alerting: InvitationAlerting | null;
+  private readonly childProfileMembership: Pick<ChildProfileRegistryRepository, 'resolveMembership'> | null;
 
   /**
    * `auditService` defaults to a private, per-instance in-memory reference
@@ -112,17 +120,39 @@ export class InvitationService {
     auditService: FamilyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository()),
     slotReservationService: SlotReservationService | null = null,
     alerting: InvitationAlerting | null = null,
+    /**
+     * PPR-2: when supplied, a caller-supplied childProfileId must resolve to
+     * MEMBER of `input.familyId` in the opaque child-profile membership
+     * registry or createInvitation throws CHILD_PROFILE_NOT_FOUND -- creating
+     * no invitation at all, same ordering discipline as the slot-reservation
+     * check above. Optional and defaults to null so every existing
+     * caller/test that constructs InvitationService without it keeps working
+     * exactly as before (childProfileId stays merely format-validated, not
+     * existence-checked) -- production wiring (main.ts) supplies the real
+     * registry for the parent-facing HTTP route.
+     */
+    childProfileMembership: Pick<ChildProfileRegistryRepository, 'resolveMembership'> | null = null,
   ) {
     this.repository = repository;
     this.now = now;
     this.auditService = auditService;
     this.slotReservationService = slotReservationService;
     this.alerting = alerting;
+    this.childProfileMembership = childProfileMembership;
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
     if (!isPlatformProtectionModeCompatible(input.platform, input.requestedProtectionMode)) throw new RangeError('invalid protection mode');
     const childProfileId = normalizeChildProfileId(input.childProfileId);
+    // PPR-2: a device-enrollment invitation must reference an EXISTING,
+    // already-created child profile -- it must never be what implicitly
+    // mints the child identity as a side effect (that was the pre-PPR-2
+    // behaviour this closes). Checked before the slot reservation below so
+    // a bad childProfileId never consumes a managed-device slot.
+    if (childProfileId && this.childProfileMembership) {
+      const membership = await this.childProfileMembership.resolveMembership(input.familyId, childProfileId);
+      if (membership !== 'MEMBER') throw new InvitationError('CHILD_PROFILE_NOT_FOUND');
+    }
     const ageUxTier = input.ageUxTier ?? 'YOUNG_CHILD';
     const initialPolicyProfile = input.initialPolicyProfile ?? 'BALANCED';
     if (!isAgeUxTier(ageUxTier) || !isInitialPolicyProfile(initialPolicyProfile)) throw new RangeError('invalid enrollment profile');

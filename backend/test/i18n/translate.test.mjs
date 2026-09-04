@@ -33,13 +33,13 @@ test('SUPPORTED_LOCALES is exactly en and ar (doc 20 PCA-FR-110/111)', () => {
 });
 
 test('translate resolves a plain message with no placeholders in both locales', () => {
-  assert.equal(translate('web.PARENT_DENYLIST', 'en'), "blocked by your family's block list");
-  assert.equal(translate('web.PARENT_DENYLIST', 'ar'), 'محظور بواسطة قائمة الحظر الخاصة بعائلتك');
+  assert.equal(translate('web.PARENT_DENYLIST', 'en'), "blocked by your parent's block list");
+  assert.equal(translate('web.PARENT_DENYLIST', 'ar'), 'محظور بواسطة قائمة الحظر الخاصة بولي أمرك');
 });
 
 test('translate substitutes a domain placeholder without concatenating fragments', () => {
   const en = translate('DOMAIN_BLOCKED_NOTICE', 'en', { domain: 'example.com' });
-  assert.equal(en, 'example.com was blocked under your family’s rule');
+  assert.equal(en, 'example.com was blocked under your parent’s rule');
 });
 
 test('translate wraps the substituted domain in bidi isolates for the Arabic template', () => {

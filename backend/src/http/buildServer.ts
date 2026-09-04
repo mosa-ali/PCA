@@ -3,6 +3,7 @@ import { getPool } from '../db/pool.js';
 import type { AuthService } from '../auth/AuthService.js';
 import type { AuthzService } from '../authz/AuthzService.js';
 import type { InvitationService } from '../invitation/InvitationService.js';
+import type { ChildProfileService } from '../childprofiles/ChildProfileService.js';
 import type { EnrollmentCoordinator } from '../enrollment/EnrollmentCoordinator.js';
 import type { PairingService } from '../pairing/PairingService.js';
 import type { DeviceSessionService } from '../runtime-sync/DeviceSessionService.js';
@@ -12,6 +13,7 @@ import type { DeviceSyncStatusTracker } from '../runtime-sync/StatusService.js';
 import { createRateLimiter } from './rateLimit.js';
 import { registerParentWebCors } from './parentWebCors.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
+import { registerChildProfileRoutes } from './routes/childProfileRoutes.js';
 import { registerBootstrapRoutes } from './routes/bootstrapRoutes.js';
 import { registerPairingRoutes } from './routes/pairingRoutes.js';
 import { registerBrowserEndpointRoutes } from './routes/browserEndpointRoutes.js';
@@ -162,6 +164,7 @@ export interface ServerDependencies {
   authzService: AuthzService;
   authzRepository: AuthzRepository;
   invitationService: InvitationService;
+  childProfileService: ChildProfileService;
   enrollmentCoordinator: EnrollmentCoordinator;
   pairingService: PairingService;
   deviceSessionService: DeviceSessionService;
@@ -408,6 +411,13 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
 
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,
+    authService: deps.authService,
+    authzService: deps.authzService,
+    rateLimiter,
+    authAttemptLimiter,
+  });
+  registerChildProfileRoutes(app, {
+    childProfileService: deps.childProfileService,
     authService: deps.authService,
     authzService: deps.authzService,
     rateLimiter,

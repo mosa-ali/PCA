@@ -9,15 +9,15 @@ import type { MessageId } from '../types.js';
  */
 export const AR_MESSAGES: Record<MessageId, string> = {
   'web.SECURITY_DENYLIST': 'محظور بواسطة قاعدة تهديد أمني',
-  'web.PARENT_ALLOWLIST': 'مسموح به بواسطة قائمة السماح الخاصة بعائلتك',
-  'web.PARENT_DENYLIST': 'محظور بواسطة قائمة الحظر الخاصة بعائلتك',
-  'web.CATEGORY_RULE': 'محظور بواسطة قاعدة تصنيف المحتوى الخاصة بعائلتك',
-  'web.SCHEDULE_RULE': 'محظور بواسطة قاعدة الجدول الزمني الخاصة بعائلتك',
-  'web.CLASSIFIER': 'محظور بواسطة قاعدة المحتوى الصريح الخاصة بعائلتك',
+  'web.PARENT_ALLOWLIST': 'مسموح به بواسطة قائمة السماح الخاصة بولي أمرك',
+  'web.PARENT_DENYLIST': 'محظور بواسطة قائمة الحظر الخاصة بولي أمرك',
+  'web.CATEGORY_RULE': 'محظور بواسطة قاعدة تصنيف المحتوى الخاصة بولي أمرك',
+  'web.SCHEDULE_RULE': 'محظور بواسطة قاعدة الجدول الزمني الخاصة بولي أمرك',
+  'web.CLASSIFIER': 'محظور بواسطة قاعدة المحتوى الصريح الخاصة بولي أمرك',
   'web.DEFAULT': 'لا توجد قاعدة مطابقة؛ مسموح به افتراضيًا',
   'web.VPN_UNAVAILABLE': 'كانت إمكانية تصفية الشبكة غير متاحة لهذا الطلب',
 
-  'ai.CATEGORY_RULE_MATCHED': 'محظور بموجب قاعدة التصنيف الخاصة بعائلتك',
+  'ai.CATEGORY_RULE_MATCHED': 'محظور بموجب قاعدة التصنيف الخاصة بولي أمرك',
   'ai.SUPPLEMENTARY_RISK_SIGNAL': 'تم وضع علامة عليه بواسطة إشارة خطر تكميلية لمراجعة الوالدين',
   'ai.MODEL_UNAVAILABLE': 'تعذر إجراء التحليل على الجهاز لهذا العنصر',
   'ai.CONFIDENCE_BELOW_THRESHOLD': 'كانت ثقة الإشارة أقل من الحد المُعد',
@@ -44,6 +44,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'invitation.INVALID_STATE': 'الدعوة ليست في حالة تسمح بهذا الإجراء.',
   'invitation.FREE_ACCESS_EXPIRED_NEW_CAPACITY_DENIED': 'لا تتوفر سعة أجهزة مُدارة جديدة بعد انتهاء الوصول المجاني.',
   'invitation.MANAGED_DEVICE_LIMIT_REACHED': 'تم بلوغ الحد الأقصى لعدد الأجهزة المُدارة لهذه الأسرة.',
+  'invitation.CHILD_PROFILE_NOT_FOUND': 'تعذّر ربط هذه الدعوة بملف الطفل المحدَّد.',
 
   'pairing.NOT_FOUND': 'لم يتم العثور على طلب الإقران.',
   'pairing.INVALID_STATE': 'طلب الإقران ليس في حالة تسمح بهذا الإجراء.',
@@ -116,7 +117,7 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'retention.ROLLING_RETENTION_SUPERSEDED': 'تمت إزالته لأن نقطة موقع أحدث حلّت محله.',
   'retention.DELETE_NOW': 'تمت إزالته بناءً على طلب "الحذف الآن" من أحد الوالدين.',
 
-  'export.COMPLETED': 'اكتمل تصدير بيانات عائلتك بنجاح.',
+  'export.COMPLETED': 'اكتمل تصدير بيانات أطفالك بنجاح.',
   'export.CANCELLED': 'تم إلغاء التصدير قبل اكتماله.',
   'export.FAILED': 'تعذر إكمال عملية التصدير.',
 
@@ -136,5 +137,5 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'commercial_notification.QUOTE_EXPIRED': 'انتهت صلاحية عرض السعر الخاص بك.',
   'commercial_notification.RENEWAL_UPCOMING': 'من المقرر تجديد اشتراكك قريبًا.',
 
-  DOMAIN_BLOCKED_NOTICE: `تم حظر ${isolateLtr('{domain}')} بموجب قاعدة عائلتك`,
+  DOMAIN_BLOCKED_NOTICE: `تم حظر ${isolateLtr('{domain}')} بموجب قاعدة ولي أمرك`,
 };
