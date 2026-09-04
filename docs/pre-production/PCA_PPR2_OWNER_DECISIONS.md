@@ -691,3 +691,125 @@ non-hidden, classified exception — `LICENSE_ENTITLEMENT_STATUS = OWNER_DECISIO
 foremost among them. No Azure, DNS, `pcasafe.com`, production database, TLS, Key Vault,
 or production secret was started or touched. Per the owner's instruction, this session
 stops here for owner + ChatGPT independent review of `10c80bc`.
+
+---
+
+## PART M · FINAL OWNER DECISION — LICENSE/ENTITLEMENT RESOLVED, PPR-2 CLOSED
+
+**Owner + primary-ChatGPT review of the final PPR-2 report accepted the published remote
+state** (`pca-dev = 7ebd9c5`, `main = f8d5a6f`) and every Part-L conclusion, then issued the
+final, binding ruling on the one remaining blocker:
+
+> **OWNER DECISION: basic/free V1 child-device enrollment must not require an active paid
+> license row.** Core child-protection access must not be blocked merely because no
+> commercial license/bootstrap writer exists yet — this is not a statement that every future
+> PCA feature is free, only that the BASIC V1 protection tier must let a parent enroll a
+> child device before any paid/premium entitlement exists. `CREATE_INVITATION.requiresLicense
+> = false`. Do not remove licensing/entitlement architecture globally, weaken premium/
+> commercial checks elsewhere, delete the `licenses` table, or fabricate a license record.
+
+### M1. Smallest-possible-change implementation
+
+`backend/src/authz/policy.ts`: `CREATE_INVITATION` flipped from `{requiresFamilyScope: true,
+requiresLicense: true}` to `{requiresFamilyScope: true, requiresLicense: false}` — now the
+same shape `CREATE_CHILD_PROFILE`/`LIST_CHILD_PROFILES` already had (Part F). One field, plus
+accurate comments on the three related matrix entries (`CREATE_INVITATION`,
+`INITIATE_CHECKOUT` — unaffected, still license-gated, premium/commercial device-limit
+increase — and `CREATE_CHILD_PROFILE`/`LIST_CHILD_PROFILES`, whose "deliberately different
+from CREATE_INVITATION" framing is now stale and was corrected). No other authz code, no
+billing/checkout/licenses-table code, touched.
+
+**Tests added/adjusted, three levels, all proving the SAME thing real MySQL confirms end to
+end in M3:** `backend/test/authz/service.test.mjs` and `backend/test/db/authz.mysql.test.mjs`
+each gained a dedicated `CREATE_INVITATION succeeds ... no license row at all` test and had
+their pre-existing "license-required operation" example switched from `CREATE_INVITATION` to
+`INITIATE_CHECKOUT` (so that generic license-requirement coverage is preserved, just against
+the operation that still requires one). `backend/test/db/http.mysql.test.mjs`'s
+`'no license at all is 403 for CREATE_INVITATION'` test was rewritten to assert **201**, not
+403. `backend/test/db/childProfileInvitationBindingHttp.mysql.test.mjs` (the real
+childProfileMembership-wiring HTTP suite from Part K) gained a new
+`authorizedParentNoLicense()` helper and an end-to-end test creating a child, then an
+invitation, for a parent with **zero** license rows.
+
+### M2. A second, real, previously-latent bug found and fixed in the same pass
+
+Removing the license gate let `CREATE_INVITATION` reach a code path no real account had ever
+reached before (Part K/L's own analysis: it always 403'd first) — `InvitationService
+.createInvitation` → `SlotReservationService.reserveForInvitation` →
+`MySqlSlotReservationRepository.reserve`, which locks the family's `account_entitlements` row
+via `lockForFamily` and treats a **missing** row as `ENTITLEMENT_NOT_FOUND` (surfaced to the
+caller as the generic `MANAGED_DEVICE_LIMIT_REACHED`, per `InvitationService`'s existing,
+correct, deliberately-generic error mapping). A genuinely fresh family — confirmed via direct
+SQL against a from-zero-migrated database: zero rows in `account_entitlements`,
+`managed_device_slot_reservations`, `devices`, and `enrollment_invitations` — has no such row
+yet, so its very first `CREATE_INVITATION` call failed this way, blocking exactly the flow
+this decision exists to unblock.
+
+`EntitlementService.ts`'s own header comment already documents the invariant this violated:
+*"`getOrCreateForFamily` is the single lazy-initialization point every other entitlements
+service (change requests, slot reservation) calls before touching a family's entitlement
+row."* `MySqlSlotReservationRepository.reserve` never actually did this. Fixed by adding a
+private `ensureEntitlementRowExists` step (reads the family's row; if absent, reads the
+`FREE_STARTER` `entitlement_defaults` row and calls the SAME `EntitlementRepository
+.getOrCreateForFamily` every other entitlements consumer uses — idempotent, duplicate-key-safe
+under concurrency) before `reserve()`'s existing `runInTransaction`/`lockForFamily` step. No
+change to `EntitlementService`, `PlatformAdminEntitlementService`, `entitlement_defaults`
+values, or any billing/checkout code — this closes a gap in the invitation/device-enrollment
+integration itself, using the mechanism the codebase already designated for it.
+
+Not a hidden fix: `SlotReservationService`'s own unit-level contract test (`an
+entitlement-not-found slot reservation failure is also translated to
+MANAGED_DEVICE_LIMIT_REACHED`, in `test/invitation/service.test.mjs`) is untouched and still
+passes — it exercises a hand-built fake repository, independent of the real MySQL
+implementation's row-creation behavior, and remains correct for the genuine edge case (the
+`entitlement_defaults` row itself missing, a deployment misconfiguration).
+
+### M3. Verification, exact
+
+```
+backend non-DB full suite        = 2184/2184 pass
+backend DB suite                 = 475/485 pass, 4 skipped -- SAME 6 pre-existing/
+                                    unrelated failures as Parts K/L (clock-expiry
+                                    timing, expired-bearer timing, family-member
+                                    invitation email/seat management -- zero overlap
+                                    with CREATE_INVITATION/slot-reservation code)
+focused authz/invitation/slot    = 89/89 pass (service.test.mjs, authz/service.test.mjs,
+  suite (non-DB)                   childProfileRoutes.test.mjs, slotConsumption.test.mjs)
+Platform Admin/Parent realm      = 3/3 pass (platformadmin/crossRealm.test.mjs)
+  separation, re-confirmed
+childProfileRoutes suite         = 19/19 pass, re-confirmed after the fix
+Parent real-backend acceptance   = 2/2 pass -- PARENT_REAL_E2E = PASS, JSON evidence
+  flow (playwright.real.config)    written to parent-web/test-results/real-e2e-
+                                    results.json (0 unexpected, 0 flaky)
+```
+
+**Required final browser flow, against a genuinely fresh database** (dropped, recreated,
+migrated from zero, reseeded) **and a genuinely fresh, never-before-touched seed family**
+(`owner-login-ok`, re-verified empty in all four tables before the run): login → new
+family/zero children → add first child (`POST /children` → real 201, exact
+`{childProfileId, createdAt}` shape) → child selectable → request device enrollment → **`POST
+/invitations` → real 201** (previously 403, now the owner's required outcome) → raw invitation
+token visible in the UI → Arabic/RTL → responsive layout → reload → trusted-browser gate still
+correctly shows `SETUP_REQUIRED_EXPECTED` (unweakened) → cross-family isolation (second real
+account) still 403 on both LIST and CREATE. **All items PASS.**
+
+One real, minor test-file bug was found and fixed while re-running this flow for the first
+time against a genuine 201: the back-navigation step's `getByRole('button', { name: 'Back'
+})` locator is a case-insensitive substring match, so it also matched the setup-code step's
+own "Copy fallback code" button (contains "back") — a strict-mode ambiguity only reachable now
+that this spec genuinely reaches the setup-code step for the first time (previously blocked by
+the 403). Fixed with `exact: true`, matching this file's own established idiom elsewhere.
+
+### M4. Final checklist
+
+```
+CREATE_INVITATION_FREE_BASIC     = PASS
+NEW_FAMILY_TO_DEVICE_ENROLLMENT  = PASS   (was NOT_YET in Part L -- the only metric
+                                            this Part changes)
+LICENSE_ENTITLEMENT_STATUS       = RESOLVED (owner decision M, implemented + verified)
+```
+
+Every other Part-L metric is unchanged and re-affirmed: `REPO_SOLVABLE_OPEN = 0`,
+`OPEN_SECURITY_FINDINGS = 0`, licensing/billing architecture untouched, `licenses` table
+untouched, no bootstrap license writer fabricated. Commit, push (fast-forward to `pca-dev`,
+`main` untouched), and exact working-tree/remote state: see this session's final report.

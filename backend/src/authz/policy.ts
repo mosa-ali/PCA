@@ -14,7 +14,19 @@ export interface OperationRequirements {
  * permitted.
  */
 const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
-  CREATE_INVITATION: { requiresFamilyScope: true, requiresLicense: true },
+  // OWNER DECISION (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part M):
+  // basic/free V1 child-device enrollment must not require an active paid
+  // license row -- core child-protection access must not be blocked merely
+  // because no commercial license/bootstrap writer exists yet. This is
+  // scoped exactly to CREATE_INVITATION's basic/free V1 enrollment path;
+  // it is not a statement that every future PCA feature is free, and it
+  // does not touch INITIATE_CHECKOUT (premium/commercial, still license-
+  // gated below) or the licenses table/architecture themselves. Matches
+  // CREATE_CHILD_PROFILE/LIST_CHILD_PROFILES's own, earlier requirement
+  // shape -- see their comment below for the original independent finding
+  // (zero writers to `licenses` anywhere in this codebase) this decision
+  // now resolves for invitations too.
+  CREATE_INVITATION: { requiresFamilyScope: true, requiresLicense: false },
   VIEW_INVITATION_STATUS: { requiresFamilyScope: true, requiresLicense: false },
   REVOKE_INVITATION: { requiresFamilyScope: true, requiresLicense: false },
   LIST_OWN_INVITATIONS: { requiresFamilyScope: true, requiresLicense: false },
@@ -24,7 +36,9 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   LICENSE_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   RELEASE_METADATA_LOOKUP: { requiresFamilyScope: false, requiresLicense: false },
   // PCA-BILL-2A: a paid device-limit-increase checkout requires an active
-  // license, matching CREATE_INVITATION's requirement shape.
+  // license. Unaffected by CREATE_INVITATION's basic/free V1 owner decision
+  // above -- this operation is the premium/commercial path, deliberately
+  // still license-gated.
   INITIATE_CHECKOUT: { requiresFamilyScope: true, requiresLicense: true },
   VIEW_OWN_BILLING_STATUS: { requiresFamilyScope: true, requiresLicense: false },
   // PCA-COMMERCIAL-NOTIFY-1: no license requirement -- a family must still
@@ -36,20 +50,18 @@ const OPERATION_MATRIX: Record<ServiceOperation, OperationRequirements> = {
   // status (parentRuntimeSyncRoutes.ts) -- same shape as VIEW_OWN_BILLING_STATUS.
   VIEW_DEVICE_SYNC_STATUS: { requiresFamilyScope: true, requiresLicense: false },
   // PPR-2 opaque child-profile membership registry. Neither requires a
-  // license -- DELIBERATELY DIFFERENT from CREATE_INVITATION, and the
-  // reason is a real, independently-verified finding: the `licenses` table
-  // (migration 0001) has ZERO writers anywhere in this codebase, in any
-  // environment, including seed-local.mjs. hasActiveLicense() therefore
-  // returns false for every account today, which means CREATE_INVITATION
-  // is UNREACHABLE end to end in the current real seeded stack -- a
-  // pre-existing gap, orthogonal to this change, not introduced or fixed
-  // here (see docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md). Gating
-  // child-profile creation on the same never-populated table would make
-  // the owner-mandated "new family -> create first child -> select child
-  // for enrollment" acceptance flow unreachable too, for a reason that has
-  // nothing to do with child profiles. LIST additionally matches
-  // LIST_OWN_INVITATIONS's own precedent: a family must always be able to
-  // see who is already there even while a license has lapsed.
+  // license -- now the SAME shape as CREATE_INVITATION above, both resting
+  // on the same original, independently-verified finding: the `licenses`
+  // table (migration 0001) has ZERO writers anywhere in this codebase, in
+  // any environment, including seed-local.mjs. Gating child-profile
+  // creation on that never-populated table would have made the
+  // owner-mandated "new family -> create first child -> select child for
+  // enrollment" acceptance flow unreachable for a reason that has nothing
+  // to do with child profiles -- this was decided first, ahead of
+  // CREATE_INVITATION's own later owner decision on the same table. LIST
+  // additionally matches LIST_OWN_INVITATIONS's own precedent: a family
+  // must always be able to see who is already there even while a license
+  // has lapsed.
   CREATE_CHILD_PROFILE: { requiresFamilyScope: true, requiresLicense: false },
   LIST_CHILD_PROFILES: { requiresFamilyScope: true, requiresLicense: false },
 };

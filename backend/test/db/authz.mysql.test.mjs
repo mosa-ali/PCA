@@ -71,13 +71,18 @@ test('MySQL: revoked scope fails', async () => {
   await assert.rejects(() => service.authorize({ accountId, operation: 'VIEW_INVITATION_STATUS', familyId }));
 });
 
+// INITIATE_CHECKOUT (premium/commercial device-limit increase), not
+// CREATE_INVITATION, is this suite's license-required example -- PPR-2's
+// owner decision (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part M)
+// made basic/free V1 enrollment (CREATE_INVITATION) license-free. See
+// 'CREATE_INVITATION succeeds on family scope alone, no license row' below.
 test('MySQL: inactive (expired) license blocks a license-required operation', async () => {
   const service = buildService();
   const accountId = await createAccount();
   const familyId = family();
   await grantScope(accountId, familyId);
   await addLicense(accountId, 'ACTIVE', new Date(Date.now() - 60_000));
-  await assert.rejects(() => service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }));
+  await assert.rejects(() => service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }));
 });
 
 test('MySQL: active license + scope succeeds for a license-required operation', async () => {
@@ -86,6 +91,14 @@ test('MySQL: active license + scope succeeds for a license-required operation', 
   const familyId = family();
   await grantScope(accountId, familyId);
   await addLicense(accountId, 'ACTIVE', new Date(Date.now() + 60 * 60 * 1000));
+  await assert.doesNotReject(() => service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }));
+});
+
+test('MySQL: CREATE_INVITATION succeeds on family scope alone, no license row -- basic/free V1 enrollment', async () => {
+  const service = buildService();
+  const accountId = await createAccount();
+  const familyId = family();
+  await grantScope(accountId, familyId);
   await assert.doesNotReject(() => service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }));
 });
 

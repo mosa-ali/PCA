@@ -216,9 +216,9 @@ OPAQUE_CHILD_LIST                   = PASS
 INVITATION_REQUIRES_EXISTING_CHILD  = PASS
 
 NEW_FAMILY_SESSION_FLOW             = PASS   -- items 1-8, 10-15 of Section C
-NEW_FAMILY_TO_DEVICE_ENROLLMENT     = NOT_YET -- blocked ONLY by the explicitly
-                                                 classified LICENSE_ENTITLEMENT_STATUS
-                                                 (item 9); every other step PASS
+NEW_FAMILY_TO_DEVICE_ENROLLMENT     = PASS   -- see UPDATE below; was NOT_YET when this
+                                                 Step first ran, resolved by the owner's
+                                                 final decision (Part M)
 
 VIEW_DEVICE_ENROLLMENT_SCOPE        = PASS
 
@@ -231,15 +231,23 @@ PLAYWRIGHT_REAL_BROWSER             = PASS
 
 TRUSTED_BROWSER_RELOAD              = SETUP_REQUIRED_EXPECTED
 
-LICENSE_ENTITLEMENT_STATUS          = OWNER_DECISION_REQUIRED (unresolved, explicitly classified)
+LICENSE_ENTITLEMENT_STATUS          = RESOLVED (owner decision, Part M -- was
+                                                 OWNER_DECISION_REQUIRED when this Step
+                                                 first ran)
 ```
 
 Every metric the owner required is either `PASS`/`0` or an explicitly named, non-hidden
-exception (`LICENSE_ENTITLEMENT_STATUS`, `CHROME_PARENT_UAT`, `PA_REAL_E2E` = not run for
-a stated, verified reason). `NEW_FAMILY_TO_DEVICE_ENROLLMENT` stays `NOT_YET`, not `PASS`
--- consistent with H4's original rule and re-confirmed against a real backend this Step,
-not asserted from Step 4's evidence alone.
+exception (`CHROME_PARENT_UAT`, `PA_REAL_E2E` = not run for a stated, verified reason).
+
+**UPDATE (post-Step-5, same session): `LICENSE_ENTITLEMENT_STATUS` and
+`NEW_FAMILY_TO_DEVICE_ENROLLMENT` above are updated in place from this Step's original
+`OWNER_DECISION_REQUIRED`/`NOT_YET` findings** -- the owner's final ruling and its
+implementation, verification, and a second, previously-latent slot-reservation bug this
+same fix exposed and closed, are recorded in full in
+`docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md` Part M, not rewritten here. Every other
+finding in this report (Sections A-G) is unchanged and still accurate as this Step
+originally found it.
 
 Working tree, commit, and push status: see
-`docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md` Part L for the reconciliation and
-final disposition.
+`docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md` Parts L (Step 5 commit) and M (final
+closure) for the reconciliation and final disposition.

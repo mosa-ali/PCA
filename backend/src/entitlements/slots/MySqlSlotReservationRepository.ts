@@ -4,7 +4,7 @@ import type { ComplimentaryGrantRepository } from '../complimentary/Complimentar
 import { computeEffectiveEntitlementSnapshot } from '../complimentary/EffectiveEntitlementCapacity.js';
 import type { EntitlementRepository } from '../EntitlementRepository.js';
 import type { ConsumeOutcome, ReleaseOutcome, ReserveOutcome, SlotReservationRepository } from './SlotReservationRepository.js';
-import type { OpaqueFamilyId, SlotReleaseReason, SlotReservationRecord, SlotReservationStatus } from '../types.js';
+import { FREE_STARTER_TIER, type OpaqueFamilyId, type SlotReleaseReason, type SlotReservationRecord, type SlotReservationStatus } from '../types.js';
 
 interface ReservationRow {
   reservation_id: string;
@@ -71,6 +71,7 @@ export class MySqlSlotReservationRepository implements SlotReservationRepository
    */
   async reserve(familyId: OpaqueFamilyId, invitationId: string, now: Date, expiresAt: Date): Promise<ReserveOutcome> {
     await this.reconcileExpiredForFamily(familyId, now);
+    await this.ensureEntitlementRowExists(familyId, now);
     return runInTransaction(async (conn) => {
       const existing = await execute<ReservationRow>(conn, `SELECT * FROM managed_device_slot_reservations WHERE invitation_id = ?`, [invitationId]);
       if (existing.rows[0]) {
@@ -120,6 +121,34 @@ export class MySqlSlotReservationRepository implements SlotReservationRepository
       const { rows } = await execute<ReservationRow>(conn, `SELECT * FROM managed_device_slot_reservations WHERE reservation_id = ?`, [reservationId]);
       return { outcome: 'RESERVED', record: mapRow(rows[0]!) } as const;
     });
+  }
+
+  /**
+   * Latent-bug fix (PPR-2 Part M follow-up): a brand-new family has no
+   * account_entitlements row until something lazily creates one --
+   * EntitlementService.getOrCreateForFamily's own header comment already
+   * documents this repository as one of the "every other entitlements
+   * service (change requests, slot reservation)" callers that is SUPPOSED
+   * to go through that lazy-init point before touching a family's
+   * entitlement row. reserve() previously skipped straight to
+   * lockForFamily, which returns null (ENTITLEMENT_NOT_FOUND, surfaced to
+   * the caller as the generic MANAGED_DEVICE_LIMIT_REACHED) for exactly
+   * that never-yet-touched family -- always masked before PPR-2 Part M by
+   * CREATE_INVITATION's now-removed requiresLicense gate, which meant no
+   * real account had ever reached this line. Uses the SAME
+   * FREE_STARTER/entitlement_defaults source of truth EntitlementService
+   * itself reads (this.entitlementRepository is the identical shared
+   * instance main.ts wires into both), so this is not a second, divergent
+   * default -- and getOrCreateForFamily is idempotent (duplicate-key
+   * caught), so concurrent first-ever callers for the same family never
+   * race each other into an error.
+   */
+  private async ensureEntitlementRowExists(familyId: OpaqueFamilyId, now: Date): Promise<void> {
+    const existing = await this.entitlementRepository.getForFamily(familyId);
+    if (existing) return;
+    const defaults = await this.entitlementRepository.getDefaults(FREE_STARTER_TIER);
+    if (!defaults) return; // no configured tier defaults at all -- ENTITLEMENT_NOT_FOUND remains the honest outcome
+    await this.entitlementRepository.getOrCreateForFamily(familyId, FREE_STARTER_TIER, defaults, now);
   }
 
   /** Idempotent: releasing an already-RELEASED or already-CONSUMED reservation is a stable no-op, never a double-decrement. */

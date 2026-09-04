@@ -218,7 +218,7 @@ test('MySQL HTTP: disabled account is 401', async () => {
 
 // --- Authorization --------------------------------------------------------
 
-test('MySQL HTTP: correct family + license succeeds creating an invitation', async () => {
+test('MySQL HTTP: correct family succeeds creating an invitation (a license, though no longer required, is also present here)', async () => {
   const parent = await authorizedParent();
   const response = await freshApp().inject({
     method: 'POST',
@@ -250,17 +250,21 @@ test('MySQL HTTP: parent invitation creation requires the controlled enrollment 
   assert.equal(response.statusCode, 400);
 });
 
-test('MySQL HTTP: no license at all is 403 for CREATE_INVITATION', async () => {
+// PPR-2 owner decision (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part
+// M): basic/free V1 device enrollment must not require an active paid
+// license row. CREATE_INVITATION's requiresLicense is now false -- a scope
+// alone, no license row anywhere for this account, succeeds.
+test('MySQL HTTP: CREATE_INVITATION succeeds with family scope and NO license row at all -- basic/free V1 enrollment', async () => {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
-  await grantScope(accountId, familyId); // scope but no license
+  await grantScope(accountId, familyId); // scope but deliberately no license
   const response = await freshApp().inject({
     method: 'POST',
     url: `/v1/families/${familyId}/invitations`,
     headers: authHeader(rawToken),
     payload: { platform: 'ANDROID', requestedProtectionMode: 'ANDROID_STANDARD', childProfileId: 'child-profile-1', ageUxTier: 'YOUNG_CHILD', initialPolicyProfile: 'BALANCED' },
   });
-  assert.equal(response.statusCode, 403);
+  assert.equal(response.statusCode, 201);
 });
 
 test('MySQL HTTP: revoked family scope is 403', async () => {

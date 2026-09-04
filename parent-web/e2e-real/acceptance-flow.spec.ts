@@ -17,8 +17,13 @@ import { test, expect } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 
 const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
-// A genuinely zero-children account for this disposable DB.
-const PRIMARY_EMAIL = 'owner-b@pca-seed.test';
+// owner-a/owner-b are pre-seeded with an existing enrollment_invitations row
+// each (for OTHER, unrelated billing/device-management specs) -- a real
+// managed-device-slot reservation under the FREE_STARTER 1-device limit, so
+// this flow's own invitation-creation step would see a genuine, correct
+// MANAGED_DEVICE_LIMIT_REACHED for either of them, unrelated to the license
+// decision this file exists to prove. owner-login-ok has no such fixture.
+const PRIMARY_EMAIL = 'owner-login-ok@pca-seed.test';
 const SECOND_EMAIL = 'owner-cp-dashboard@pca-seed.test';
 
 async function login(page: import('@playwright/test').Page, email: string, password: string) {
@@ -72,35 +77,36 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
     await expect(page.getByText(childProfileId)).toHaveCount(0);
 
     // 9. create invitation -- record the REAL outcome, whichever it is.
+    // Owner decision (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part
+    // M): basic/free V1 device enrollment must not require an active paid
+    // license row. CREATE_INVITATION's requiresLicense is now false, so a
+    // real 201 is the required outcome here, not merely an accepted one --
+    // a regression back to 403 would be a real defect this test must catch.
     const invitationResponse = page.waitForResponse(
       (res) => res.url().includes('/invitations') && res.request().method() === 'POST',
     );
     await page.getByRole('button', { name: 'I understand, create invitation' }).click();
     const invRes = await invitationResponse;
     const invBody = await invRes.json().catch(() => null);
-    if (invRes.status() === 201) {
-      await expect(page.getByTestId('raw-invitation-token')).toBeVisible();
-    } else {
-      expect(invRes.status(), `expected 201 or 403, got ${invRes.status()}: ${JSON.stringify(invBody)}`).toBe(403);
-      expect(invBody).toMatchObject({ error: 'forbidden' });
-      await expect(page.getByRole('alert')).toBeVisible();
-      await expect(page.getByTestId('raw-invitation-token')).toHaveCount(0);
-    }
+    expect(invRes.status(), `expected 201 (basic/free V1, no license required), got ${invRes.status()}: ${JSON.stringify(invBody)}`).toBe(201);
+    await expect(page.getByTestId('raw-invitation-token')).toBeVisible();
 
     // 7. child selectable -- step 0 still shows Ahmed as a real, selectable,
-    // checked radio (not the "add new" flow still active), whether the
-    // invitation attempt above succeeded or was honestly rejected. Navigates
-    // via in-app state (Back), NOT page.goto/reload: a hard navigation would
+    // checked radio (not the "add new" flow still active). Navigates via
+    // in-app state (Back), NOT page.goto/reload: a hard navigation would
     // wipe the session-local label store by design (H2) -- that is Section
-    // 14's own, separate check, not this one's.
-    if (invRes.status() === 201) {
-      // The wizard advanced to the setup-code step; step back through
-      // review -> protection -> platform -> child.
-      await page.getByRole('button', { name: 'Back' }).click();
-    }
-    await page.getByRole('button', { name: 'Back' }).click();
-    await page.getByRole('button', { name: 'Back' }).click();
-    await page.getByRole('button', { name: 'Back' }).click();
+    // 14's own, separate check, not this one's. The wizard is on the
+    // setup-code step (invitation created above); step back through
+    // code -> review -> protection -> platform -> child.
+    // exact: true -- the setup-code step's own "Copy fallback code" button
+    // is otherwise also matched by a non-exact/case-insensitive name lookup
+    // for "Back" (it contains "fallback"), a real ambiguity only reachable
+    // now that item 9 above genuinely reaches this step (a real 201, not the
+    // pre-Part-M 403 this spec never got past before).
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect(page.getByLabel('Ahmed')).toBeChecked();
     await expect(page.getByRole('heading', { name: 'Add your first child' })).toHaveCount(0);
 

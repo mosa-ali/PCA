@@ -142,12 +142,28 @@ async function addLicense(accountId, status = 'ACTIVE') {
   );
 }
 
-/** A fully authorized parent for a fresh family: session + ACTIVE scope + ACTIVE license (CREATE_INVITATION requires both). */
+/**
+ * A fully authorized parent for a fresh family: session + ACTIVE scope +
+ * ACTIVE license. The license is no longer REQUIRED by CREATE_INVITATION
+ * (PPR-2 owner decision, Part M -- basic/free V1 enrollment is license-free)
+ * but is still granted here so this helper continues to serve every OTHER
+ * test in this file that isn't specifically about the license requirement
+ * itself. See 'CREATE_INVITATION succeeds with no license row at all' below
+ * for the dedicated, license-free coverage.
+ */
 async function authorizedParent() {
   const { rawToken, accountId } = await createAccountWithSession();
   const familyId = family();
   await grantScope(accountId, familyId);
   await addLicense(accountId);
+  return { rawToken, accountId, familyId };
+}
+
+/** Same as authorizedParent(), deliberately WITHOUT a license row. */
+async function authorizedParentNoLicense() {
+  const { rawToken, accountId } = await createAccountWithSession();
+  const familyId = family();
+  await grantScope(accountId, familyId);
   return { rawToken, accountId, familyId };
 }
 
@@ -182,6 +198,38 @@ test('MySQL HTTP (real childProfileMembership wiring): a child actually created 
     payload: invitationPayload(childProfileId),
   });
   assert.equal(createInvitation.statusCode, 201);
+});
+
+// PPR-2 owner decision (docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part
+// M): basic/free V1 device enrollment must not require an active paid
+// license row. This is the strongest evidence for it in this codebase: the
+// REAL childProfileMembership wiring (this file's whole reason for
+// existing, matching main.ts exactly), a REAL child created through the
+// REAL registry route, and a REAL invitation created for it -- all with NO
+// license row anywhere for this account, proven directly by never calling
+// addLicense().
+test('MySQL HTTP (real childProfileMembership wiring): basic/free V1 enrollment succeeds end to end with NO license row at all', async () => {
+  const parent = await authorizedParentNoLicense();
+  const app = freshApp();
+
+  const createChild = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/children`,
+    headers: authHeader(parent.rawToken),
+    payload: {},
+  });
+  assert.equal(createChild.statusCode, 201);
+  const { childProfileId } = createChild.json();
+
+  const createInvitation = await app.inject({
+    method: 'POST',
+    url: `/v1/families/${parent.familyId}/invitations`,
+    headers: authHeader(parent.rawToken),
+    payload: invitationPayload(childProfileId),
+  });
+  assert.equal(createInvitation.statusCode, 201);
+  const body = createInvitation.json();
+  assert.equal(typeof body.invitationId, 'string');
 });
 
 test('MySQL HTTP (real childProfileMembership wiring): a childProfileId that was never created is rejected -- invitation creation can no longer implicitly create a child', async () => {

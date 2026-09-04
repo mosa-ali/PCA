@@ -423,6 +423,14 @@ STEP4_SECURITY_MUTATION = COMPLETE
 not hidden inside `OPEN_SECURITY_FINDINGS` per instruction — it blocks
 `NEW_FAMILY_TO_DEVICE_ENROLLMENT = PASS` (Part H), not `STEP4_SECURITY_MUTATION`.
 
+**UPDATE (later in the same session):** the owner subsequently made the final ruling on this
+item and it is resolved — `LICENSE_ENTITLEMENT_STATUS = RESOLVED`,
+`NEW_FAMILY_TO_DEVICE_ENROLLMENT = PASS`. See
+`docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md` Part M for the decision, implementation, a
+second previously-latent bug it exposed and closed, and full re-verification. This Step's
+finding above is left as originally written — an accurate record of what Step 4 found at the
+time, not rewritten.
+
 **Files touched this Step:**
 `backend/src/childprofiles/MySqlChildProfileRegistryRepository.ts` (temporary mutation
 only, restored — no net diff), `backend/src/invitation/InvitationService.ts` (temporary

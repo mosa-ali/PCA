@@ -64,12 +64,19 @@ test('a REVOKED scope fails identically to no scope at all', async () => {
   assert.equal(revokedError.message, noScopeError.message);
 });
 
+// INITIATE_CHECKOUT (the premium/commercial device-limit-increase path), not
+// CREATE_INVITATION, is this suite's example of a license-requiring
+// operation: the owner decision recorded in
+// docs/pre-production/PCA_PPR2_OWNER_DECISIONS.md Part M made basic/free V1
+// device enrollment (CREATE_INVITATION) license-free -- see
+// 'CREATE_INVITATION succeeds with a valid family scope and no license row
+// at all' below for that operation's own, now-passing coverage.
 test('an operation requiring a license fails without one, even with a valid family scope', async () => {
   const { service, repository } = buildService();
   const accountId = account();
   const familyId = family();
   repository._grantScope(accountId, familyId);
-  const error = await service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }).catch((e) => e);
+  const error = await service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }).catch((e) => e);
   assert.equal(error.code, 'FORBIDDEN');
 });
 
@@ -79,7 +86,7 @@ test('an operation requiring a license succeeds once both scope and an active li
   const familyId = family();
   repository._grantScope(accountId, familyId);
   repository._addLicense(accountId, 'ACTIVE');
-  await assert.doesNotReject(() => service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }));
+  await assert.doesNotReject(() => service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }));
 });
 
 test('an EXPIRED license does not satisfy the license requirement', async () => {
@@ -89,7 +96,7 @@ test('an EXPIRED license does not satisfy the license requirement', async () => 
   repository._grantScope(accountId, familyId);
   repository._addLicense(accountId, 'ACTIVE', new Date(BASE_TIME + 1000));
   clock.advance(1001);
-  const error = await service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }).catch((e) => e);
+  const error = await service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }).catch((e) => e);
   assert.equal(error.code, 'FORBIDDEN');
 });
 
@@ -99,8 +106,20 @@ test('a SUSPENDED license does not satisfy the license requirement', async () =>
   const familyId = family();
   repository._grantScope(accountId, familyId);
   repository._addLicense(accountId, 'SUSPENDED');
-  const error = await service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }).catch((e) => e);
+  const error = await service.authorize({ accountId, operation: 'INITIATE_CHECKOUT', familyId }).catch((e) => e);
   assert.equal(error.code, 'FORBIDDEN');
+});
+
+// PPR-2 owner decision (Part M): CREATE_INVITATION -- basic/free V1 device
+// enrollment -- must succeed on family scope alone, with NO license row at
+// all. This is the operation's own dedicated coverage, not a repurposed
+// license-requirement test.
+test('CREATE_INVITATION succeeds with a valid family scope and no license row at all', async () => {
+  const { service, repository } = buildService();
+  const accountId = account();
+  const familyId = family();
+  repository._grantScope(accountId, familyId);
+  await assert.doesNotReject(() => service.authorize({ accountId, operation: 'CREATE_INVITATION', familyId }));
 });
 
 test('an operation with no family-scope requirement succeeds without any scope row', async () => {
