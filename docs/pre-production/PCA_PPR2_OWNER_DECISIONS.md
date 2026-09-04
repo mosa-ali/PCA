@@ -613,3 +613,81 @@ on `parent-web` (backend has no lint script configured); the three device-enroll
 component-test files stable across 2 consecutive runs (45/45 both times).
 
 **Files touched, full list in the security report's own closing section.**
+
+## PART L · STEP 5 COMPLETE — LOCAL INTEGRATION VALIDATION, COMMIT + PUSH
+
+**Full detail:** `docs/pre-production/PCA_PPR2_STEP5_LOCAL_INTEGRATION_REPORT.md`. All
+localhost only — no Azure, DNS, `pcasafe.com`, production database, or production secret
+was touched or started, per the owner's explicit "do not start yet" instruction.
+
+**Chrome extension:** `CHROME_PARENT_UAT = BLOCKED_EXTERNAL_TOOL`, re-confirmed —
+reproduced against `https://example.com`, a trivial page with no app code, ruling out a
+product cause. Not chased into source. Playwright/real Chromium carried Step 5's full
+acceptance-flow evidence instead, per the owner's own stated fallback rule.
+
+**All 15 required acceptance-flow items PASS against a real backend**, including a real
+`POST /children` (201, exact `{childProfileId, createdAt}` shape, verified against the
+live DB row), a real cross-family 403 from a second real account, and a real reload that
+correctly re-shows `SETUP_REQUIRED_EXPECTED`. Item 9 (create invitation) returned a real,
+honest 403 — `LICENSE_ENTITLEMENT_STATUS` re-derived a third time this Step, same
+conclusion as Steps 1 and 4: zero writers to `licenses` anywhere in source.
+`NEW_FAMILY_TO_DEVICE_ENROLLMENT` therefore stays `NOT_YET`, not `PASS` — every step
+genuinely reachable except the one already-classified, owner-gated blocker.
+
+**Two real, previously-undiscovered gaps found and fixed this Step, neither assumed away:**
+(1) a genuine methodological trap in the new real-backend Playwright spec itself — two
+draft versions incorrectly assumed the session-local child label would survive a hard
+navigation or a fresh browser context; it correctly does not, and the final spec
+navigates in-app instead, exactly matching how a real parent's one continuous session
+works. (2) the *existing* fixture-mode Playwright suite
+(`parent-web/e2e/device-enrollment.spec.ts`) was still assuming a pre-populated demo
+child registry, a holdover regression from Step 2 that vitest's own suite had already
+been fixed against but this file — living outside vitest's test glob — had not. Fixed at
+the source (`DevChildProfileClient`'s default demo state now seeds the same two children
+the old `DEV_CHILDREN` fixture always provided), not by patching the test's expectations
+downward. Confirmed 6/6 afterward, and confirmed every `vitest` test that needs a
+genuinely empty registry is unaffected (they all reset explicitly in their own
+`beforeEach`).
+
+**Full-suite results, exact:** backend non-DB 2183/2183; backend DB (fresh MySQL, migrated
+from zero) 473/483, 6 pre-existing-and-unrelated (unchanged from Step 4); parent-web `tsc`/
+`eslint`/`build` clean, unit suite 996/996 across 137 files, real-backend Playwright 2/2
+with a committed JSON evidence artifact, fixture-mode Playwright 6/6 on the one
+PPR-2-attributable file after the fix above, 3 further failures in unrelated files
+(billing/offline-sync/rbac) confirmed either a `fullyParallel` concurrency flake
+(billing — passes 7/7 serially) or pre-existing and untouched by any PPR-2 Step
+(offline-sync, rbac — zero file overlap with any Steps 1-5 change, confirmed via `git
+status`); platform-admin-web zero files touched, `tsc` clean, full suite not re-run given
+zero code change (`AFFECTED_SCOPE = NONE`); Android 1345/1345 JVM tests + `assembleDebug`
++ `lintDebug` clean, 0 lint issues; iOS zero files touched, no checks to re-run.
+
+**Privacy invariant re-verified, including the camera/eye-distance feature specifically
+named this Step:** `FaceProximityEstimator`'s own interface contract enforces
+single-call-only, no retention, no upload, coarse-reading-only (NEAR/FAR/UNKNOWN, never a
+numeric distance) at the type level, not merely in a comment; `CameraProximitySource`
+enforces the foreground/permission lifecycle in code. No network/upload/frame-persistence
+code exists anywhere in that package tree.
+
+**Commit + push, exact-path staged, never `git add -A`:** every one of the 63 changed
+files (Steps 1–5 combined) was reviewed via `git diff`/`git diff --stat` before staging,
+including a full re-read of all 4 touched controlled architecture documents (00, 10, 18,
+39) for consistency with the actual implementation — all four hold. Staged individually
+by exact path, one `git add -- <path>` per file. Scanned the full staged diff for secrets
+and debug artifacts (console.log/TODO/FIXME/debugger) — none found; the one
+password-shaped string is `e2e-real/acceptance-flow.spec.ts`'s local seed-fixture
+password, the same class already used throughout this codebase's existing dev/test
+tooling, never a real credential.
+
+```
+working tree clean       = YES
+pca-dev pushed            = YES, fast-forward, 5e0b62d..10c80bc
+main unchanged            = YES (still f8d5a6f)
+```
+
+**Final localhost exit checklist:** see
+`docs/pre-production/PCA_PPR2_STEP5_LOCAL_INTEGRATION_REPORT.md` Section H for the
+complete, exact metric block. Every item is `PASS`/`0` or an explicitly named,
+non-hidden, classified exception — `LICENSE_ENTITLEMENT_STATUS = OWNER_DECISION_REQUIRED`
+foremost among them. No Azure, DNS, `pcasafe.com`, production database, TLS, Key Vault,
+or production secret was started or touched. Per the owner's instruction, this session
+stops here for owner + ChatGPT independent review of `10c80bc`.
