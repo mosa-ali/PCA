@@ -1,279 +1,252 @@
 # PCA FABLE — RELEASE ROADMAP
 
-Audit SHA `5dc1fc0`. Read with `PCA_FABLE_EVIDENCE_LOG.md` (coordinator-executed
-evidence) and `PCA_FABLE_FINAL_REASSESSMENT_2026-09-05.md`.
+Audit SHA `5dc1fc0` · amended after Primary ChatGPT review of `b1918ae`.
+Read with `PCA_FABLE_EVIDENCE_LOG.md` (coordinator-executed evidence) and
+`PCA_FABLE_FINAL_REASSESSMENT_2026-09-05.md`.
 
-**Nothing in this roadmap has been implemented.** It is a sequence proposal for
-the owner and primary ChatGPT to approve.
-
----
-
-## 0. THE SHAPE OF THE PROGRAMME, IN ONE PARAGRAPH
-
-PCA is **not** one product that is 90% done. It is **five products at four very
-different maturities**, currently welded together by a release-gate tool that
-treats them as one. Release A (the public site) is a self-contained static
-artifact that builds green today and is held up by three owner inputs, none of
-them engineering. Releases B and C (parent accounts, parent web) are
-**architecturally blocked on two external gates that no amount of coding will
-close** — a production crypto security review and a payment/email provider
-selection — and behind those gates a large amount of genuinely finished code is
-sitting inert. Release D (Android) is source-rich and blocked on physical
-hardware. iOS is the least mature by a wide margin and has a repo-solvable
-compile defect hiding behind four "external" gate rows. The correct next move is
-therefore **not** to write more feature code. It is to **decouple the releases**,
-**close two owner decisions**, and **repair four dead tests**.
+**Nothing here has been implemented.** This is a sequence proposal.
 
 ---
 
-## 1. THE CRITICAL PATH, IN ORDER
+## 0. THE RELEASE MODEL
 
-### Step 1 — Decouple the release gates (repo-solvable, ~1 day, unblocks everything)
+Six release targets, used consistently across all seven FABLE artifacts:
 
-Today `tooling/release/Invoke-ReleaseGateCheck.ps1:115` fails on **any** gate not
-`CLOSED`, with **no release-scope filter**, over a matrix of **33 gates of which
-0 are CLOSED**. The consequence is that Public Release A — a static
-informational website with no login, no database and no payment — is formally
-blocked by iOS Family Controls entitlements, payment provider selection and
-Android hardware UAT.
+| Target | Scope |
+|---|---|
+| **PUBLIC_A** | The informational public site. No login, no database, no payment |
+| **AUTH_B** | Parent identity: registration, verification, login/logout, password reset, production service sessions |
+| **PARENT_C** | Parent Web: the family surfaces (dashboard, policies, safe zones, requests, audit) |
+| **ANDROID_D** | The Android child application |
+| **IOS_FUTURE** | iOS, planned as a separate later release |
+| **BILLING_FUTURE** | Commercial activation |
 
-**Action:** add a `releaseScope` field to each gate in
-`docs/release_readiness/external_gate_matrix.json` and make the checker filter on
-it. Until that exists, no release can ever pass its own gate, and the gate
-therefore gets ignored — which is worse than not having one.
+**The correction that most changes the plan: `AUTH_B` does not require production
+crypto.** `ParentAccountService.verifyEmail` calls `attemptFamilyGenesis`, then
+calls `markVerified` **unconditionally with whatever `familyId` came back** —
+`null` when the crypto suite rejects. The account still becomes `VERIFIED`, still
+receives free-access defaults, and a service session is still issued. Login
+requires only `VERIFIED`. So identity and authentication work without the crypto
+review.
 
-Two defects to fix in the same pass:
+Crypto still gates family genesis, family authority, E2EE, and device trust — so
+it materially blocks `PARENT_C` family functionality and `ANDROID_D`, and it can
+be commissioned **in parallel** with the email and live-database work rather than
+after it.
 
-* `PAYMENT_PRODUCTION_CERTIFICATION` is specified in six documents but is
-  **absent from the JSON**, so the gate governing real-money go-live can never
-  block a release. Add it.
-* In `docs/implementation/PCA_COMPLETION_V2_MATRIX.json`, **291 of 375 rows have
-  `externalGate: []`, and 284 of those read `SOURCE_COMPLETE`** — an empty array
-  is indistinguishable from "all gates cleared" to any consumer. Decide whether
-  empty means *unguarded* or *cleared*, and make the tool say so.
+---
 
-### Step 2 — Repair the four dead DB tests (repo-solvable, hours, P0 for confidence)
+## 1. THE SEQUENCE
 
-All four failures in the executed DB suite are one drift:
-`backend/test/db/parentAccount.mysql.test.mjs` calls `repository.create(...)`,
-which no longer exists — production moved to `createAtomically()`. The in-memory
-double still has both methods, which is why 2,214 non-DB tests stay green while
-these four die.
+### STEP 1 — Release-gate architecture and scoping repair *(repo-solvable)*
 
-**Why this is P0 despite being "only a test":** one of the four is
-`MySQL SECURITY: a family-member invitation can only be accepted by the account
-whose OWN registered email it was addressed to — a stranger with a valid session
-gets NOT_FOUND`. That is a cross-account IDOR defence, and it is currently
-**asserted by no executing test**. Repair the call sites, then add the guard that
-prevents recurrence: a conformance test asserting every double in
-`backend/test/support/` implements its production interface (or type-check the
-test tree). The same latent drift already exists in
-`inMemoryEntitlementRepository.mjs` (8 of 10 methods).
+`Invoke-ReleaseGateCheck.ps1` evaluates **`PRODUCTION_CRYPTO_SUITE`** (derived
+from `backend/src/main.ts`, `:48-59`) and **`REAL_UAT`** (from
+`uat_execution_log.json`, `:69-77`) **before** it reads the external matrix at
+`:108`. Adding a `releaseScope` field to `external_gate_matrix.json` alone would
+therefore leave `PUBLIC_A` still blocked by a source-derived crypto gate and by
+an unexecuted Android-inclusive UAT.
 
-### Step 3 — Close the collation invariant (repo-solvable, hours, P1)
+Scoping must cover **four layers**: source-derived crypto gates · `REAL_UAT` ·
+external matrix gates · future provider/store/security gates. The checker must
+evaluate only gates relevant to the selected release. Its own docstring at
+`:20-22` already promises this; `:113-118` never implemented it.
 
-The migration path and the bootstrap package produce **structurally different
-databases**: 147 of 626 columns, including 7 × `family_id`, get
-`utf8mb4_0900_ai_ci` (case- and accent-**insensitive**) from migrations versus
-`utf8mb4_bin` from the bootstrap. Demonstrated: a row stored as `'FamilyAlpha'`
-is returned by a query for `'familyalpha'` and for `'FàmilyAlpha'`.
+Same pass: add the two missing gate rows (`PAYMENT_PRODUCTION_CERTIFICATION`,
+`PRODUCTION_EMAIL_DELIVERY`), and resolve
+`TELEMETRY_ACTIVATION_OWNER_SIGNOFF`, which gates *activating* telemetry and so
+can never legitimately close.
 
-Production starts correct (the bootstrap pins collation explicitly), but a
-**future migration that creates a new table with a bare `VARCHAR family_id`
-inherits the database default** — and bare `VARCHAR` is the house style in 24 of
-35 existing migrations. Since family isolation has **zero foreign keys to
-`families`** and rests entirely on `WHERE family_id = ?`, this invariant should
-be enforced, not assumed.
+### STEP 2 — Repair the four dead DB tests, and guard against recurrence *(repo-solvable)*
 
-**Action:** assert `schemata.default_collation_name = 'utf8mb4_bin'` in
-`00_preflight.sql`, and re-assert per-table collation in the migration gate
-(`verify-mysql.mjs`), which today checks neither collation nor timezone.
+All four DB-suite failures are one drift: `parentAccount.mysql.test.mjs` calls
+`repository.create(...)`, which production replaced with `createAtomically()`.
+The in-memory double retains both methods, which is why 2,214 non-DB tests stay
+green while the four using the real repository die.
 
-### Step 4 — Release A owner inputs (owner action, not engineering)
+**One of the four is a cross-account IDOR defence test**, so that security
+property is asserted by no executing test. Add a conformance test asserting every
+double in `backend/test/support/` implements its production interface —
+`inMemoryEntitlementRepository.mjs` (8 of 10 methods) is the next one waiting.
 
-Public Release A's **source** is ready: it builds green at HEAD with no
-dependencies, 193/193 EN/AR parity, a genuine contrast gate, 0 unregistered
-claims, all 48 gate scripts parsing. Three things block publication, and all
-three are owner inputs:
+### STEP 3 — Database environment, preflight and collation hardening *(repo-solvable)*
 
-1. **OD-12 (Arabic) — regenerate the review pack first.** The pack the reviewer
-   and owner sign against is keyed to the older 189-key corpus; **≥19 live keys
-   have never been reviewed, including every string on the `/download/` page**.
-   OD-12 must not be signed against the current pack, and may not be
-   self-approved — it needs the independent native reviewer.
-2. **OD-13 (legal).** Operator entity, country, jurisdiction, controller wording,
-   public address, effective date. No engineering can invent these.
-3. **The two videos do not exist.** Zero `.mp4`/`.webm`/`.mov` files are in the
-   repository; both are placeholders with scripts only. Either produce them or
-   ship without the video blocks — an owner content decision.
+Three invariants are unenforced:
 
-Then, and only then, the infrastructure items: apex `pcasafe.com` has no
-A/AAAA/CNAME record and needs its own certificate; ACR pull uses admin
-credentials with no managed identity; Always On, HTTP/2 and a health-check path
-are all unset. None of that is repo-fixable.
+* **Version predicate defect.** `00_preflight.sql:69` asserts `major >= 8` while
+  its own message says "MySQL major version must be 8.x" — so **MySQL 9 passes**,
+  and `:80` emits only an informational note for non-8.4 rather than a `SIGNAL`.
+* **Collation.** Nothing asserts the target database default is `utf8mb4_bin`.
+  Only 11 of 35 migrations pin collation; the other 24 use bare `VARCHAR` that
+  inherits the server default, while the bootstrap pins every column.
+* **UTC.** `PCA_LIVE_DATABASE_SETTINGS` mandates `default-time-zone=+00:00`, but
+  `verify-mysql.mjs` checks neither timezone nor collation.
 
-### Step 5 — The two owner decisions that gate everything else
+Then extend `verify-mysql` and the equivalence check to compare **effective
+collations**, and re-run migration-vs-bootstrap equivalence on **supported MySQL
+8.4**.
 
-These are the real bottleneck for Releases B, C and D, and they are decisions,
-not tasks:
+**Scope note.** The coordinator observed the collation divergence on MySQL 9.7 —
+which is *not* the supported target, and which the defective predicate admitted.
+That demonstrates the environment invariant is unenforced; it does **not**
+invalidate the accepted 8.4 / `utf8mb4_bin` equivalence result.
 
-* **`PRODUCTION_CRYPTO_SUITE` / crypto security review.** Today production wires
-  `RejectingDeviceSignatureVerifier` and `RejectingEnvelopeSignatureVerifier`,
-  which return `false` unconditionally. The consequence chain is total: device
-  sessions cannot issue, E2EE envelopes cannot be accepted, family genesis fails,
-  so **a newly registered parent gets `familyId = null`**, and
-  `UnavailableTrustSetRoleResolver` then denies every parent action. The security
-  review package exists (`docs/security/production-crypto-review/`) but contains
-  an **empty findings template** — the review has not been performed, and its
-  source map's line references have rotted (15 of 31 cited files changed since).
-* **`PAYMENT_PROVIDER_SELECTION`** (and merchant approval, charge/settlement
-  currencies, bank configuration). The production payment registry is
-  intentionally **empty and triple-gated**, which is correct engineering — but no
-  provider means no commerce.
+### STEP 4 — Close the cross-family read and assert the isolation invariants *(repo-solvable)*
 
-**Do not let these be presented as one "crypto activation" milestone.** Seven of
-the release-blocking stubs collapse when crypto activates. The rest do not — see
-Step 6.
+`EyeProtectionSettingsService.get()` (`:48-50`) is an unauthorized pass-through
+while `updateReminders()` (`:61-72`) correctly authorizes; the repository SQL
+ignores `familyId`. A parent in family A supplying family B's `childProfileId`
+receives B's row — and the not-found path returns the caller's own `familyId`,
+making it an existence oracle too.
 
-**And do not sequence them in the wrong order.** For Release B the chain is
-strictly serial and email comes *first*:
+Then make the isolation counters real: five of the six are asserted by **no code
+and no test anywhere**, and this defect proves an unasserted invariant can go
+silently false.
 
-```
-email provider (NOT_STARTED)  →  a parent can reach VERIFIED and log in
-        ↓
-device-signature verifier (crypto review)  →  familyId is no longer null
-        ↓
-CRYPTO_SUITE_APPROVED_FOR_PRODUCTION = true  →  parent-web's ~16 gated operations wake up
-        ↓
-parent-web/Dockerfile (does not exist)  →  Release C has somewhere to run
-```
+### PARALLEL OWNER LANE — finish and publish PUBLIC_A
 
-None of the four has started. Closing the crypto review first delivers **nothing
-observable**, because there is no session with which to reach the gate.
+Public Release A's **source is ready**: it builds green at HEAD with no
+dependencies, 193/193 EN/AR parity, a genuine tiered contrast gate, zero
+unregistered claims. What remains is owner work, and it can run alongside
+Steps 1–4:
 
-### Step 6 — Durability work that crypto activation does NOT fix (repo-solvable)
+1. **Owner visual UAT → PASS** (currently IN_PROGRESS).
+2. **OD-12 Arabic** — regenerate the review pack from the live 193-key corpus
+   first; ≥19 live keys, including every string on `/download/`, have never been
+   reviewed. May not be self-approved.
+3. **OD-13 legal facts** — operator entity, country, jurisdiction, controller
+   wording, public address, effective date.
+4. **Public reply identity / Send-As** — inbound to the four public addresses is
+   verified; reply identity remains NOT_READY.
+5. **Apex DNS record, certificate and apex→www redirect.**
+6. **Production TLS termination and deployment verification.**
+7. **Final owner publication authorization.**
+
+**Videos are not blockers.** Unavailable videos render an honest "Coming later"
+poster-and-transcript card, emit **no `<video>` element**, and the transcript
+renders in both states; critical information is never video-only, and a build
+gate prevents flipping `available: true` before the real asset and captions
+exist. Producing them is post-publication content work (`FABLE-A021`, P3).
+
+### STEP 5 — PCA-LIVE-DB-1: live database infrastructure and one-time bootstrap
+
+`LIVE_DATABASE_CREATED = NO`; the bootstrap has never been executed against
+production. Order: harden preflight (Step 3) → provision live **MySQL 8.4** →
+run the one-time approved bootstrap → verify the canonical fingerprint and
+runtime grants.
+
+### STEP 6 — Production email provider, then real AUTH_B UAT
+
+**This is the outer blocker for Release B.** No email provider integration exists
+anywhere in `backend/src` — zero adapters, zero mail dependencies. `markVerified`
+has exactly one caller (inside `verifyEmail`), so **no account can reach
+`VERIFIED` and no parent can log in**. The send failure is deliberately swallowed
+(`:173-177`), so the parent receives a `202` and waits forever.
+
+This is an **email** gate, not a payment gate — do not file it under
+`PAYMENT_PROVIDER_SELECTION`. Add the dedicated `PRODUCTION_EMAIL_DELIVERY` gate
+(Step 1) requiring: an approved real provider · a production adapter configured ·
+verification-email delivery proven externally · reset-email delivery proven
+externally · sender identity and domain authentication (SPF/DKIM/DMARC) verified ·
+no test-sandbox adapter active in production.
+
+Then run real registration / verification / login / reset UAT and classify
+`AUTH_B`.
+
+### STEP 7 — Production crypto security review *(can start now, in parallel)*
+
+Production wires verifiers that return `false` unconditionally. The review
+package exists but its findings document is an **empty template** — the review
+has not been performed, and its source map's line references have rotted.
+
+**Commission it in parallel with Steps 5–6.** It does not gate `AUTH_B`, but it
+gates `PARENT_C` family functionality and `ANDROID_D`, and its lead time is long.
+
+### STEP 8 — Durability components and `resolveEnvelopeContext`, then PARENT_C
 
 Six components are wired in-memory in the production composition root with **no
-MySQL sibling anywhere in the repo**. These are independent build work, not
-one-line wirings, and they will still be broken the day the crypto review closes:
+MySQL sibling anywhere** — independent build work that crypto activation does not
+fix:
 
 | Component | `main.ts` | Consequence on restart |
 |---|---|---|
-| `InMemoryFamilyAuditRepository` | `:278` | The shared audit store for invitation/enrollment/pairing/device/recovery/authz/retention **evaporates** |
-| `InMemoryDeleteNowLedger` | `:279` | **The record of a deletion the parent was told had happened is lost** — a privacy-commitment risk |
-| `InMemoryWebRuleRepository` | `:579` | Parent-authored web filtering rules are silently lost |
-| `InMemoryChildRequestRepository` | `:554` | All bonus-time requests lost |
-| `BonusGrantLedger` | `:556` | All granted bonus time lost |
-| `resolveEnvelopeContext` placeholder | `:793-799` | Returns empty sender key and zero epochs — **becomes a live anti-downgrade hole the moment crypto activates** |
+| `InMemoryFamilyAuditRepository` | `:278` | The shared audit store evaporates |
+| `InMemoryDeleteNowLedger` | `:279` | **The record of a deletion the parent was told happened is lost** |
+| `InMemoryWebRuleRepository` | `:579` | Parent-authored web filtering rules lost |
+| `InMemoryChildRequestRepository` | `:554` | Bonus-time requests lost |
+| `BonusGrantLedger` | `:556` | Granted bonus time lost |
+| `resolveEnvelopeContext` placeholder | `:793-799` | Empty sender key, zero epochs |
 
-The last row deserves emphasis: it is currently *masked* by the rejecting
-verifier. Activating crypto without fixing it converts a dormant placeholder into
-a security defect.
+**`resolveEnvelopeContext` must be fixed *before* crypto activates** — it is
+masked by the rejecting verifier today and becomes a live anti-downgrade hole the
+moment that mask is removed.
 
-### Step 6b — Keep the retention promise (repo-solvable, P0)
+Also for `PARENT_C`: create `parent-web/Dockerfile` (**it does not exist**, so
+Release C has no deployment path at all), and keep the retention promise —
+`retentionRoutes.ts:203` returns `accepted: true` and **persists nothing**, while
+the device hardcodes `FOURTEEN_DAYS`.
 
-Separate from durability, and more urgent than it looks. A parent who selects a
-retention window is returned `accepted: true` by `retentionRoutes.ts:203` — which
-validates, audits, and **makes no repository call**. The device separately
-hardcodes `FOURTEEN_DAYS` (`RetentionMaintenanceCycle.kt:64-65`). Nothing stores
-the choice, nothing delivers it, nothing enforces it.
+### STEP 9 — Android: repo-solvable cleanup, then the device campaign
 
-Until the policy is persisted and delivered, **the product is telling parents
-their data-retention decision was accepted when it was not**. Two requirements
-assert the opposite and should be challenged in the same pass: `PCA-FR-101` ("the
-real 1_MONTH default route and parent retention presentation are real") and
-`PCA-SEC-014` ("reclassified once RetentionEngine.kt was confirmed a real,
-scheduled…" — it is scheduled, and returns early on every run).
+Android builds and tests clean (1,345 tests, 1,344 pass; `assembleDebug` produces
+a 14.4 MB APK; lint 0 errors). Fix in-repo first:
 
-### Step 7 — Release D (Android): finish two repo-solvable items, then the hardware campaign
+* **The enrollment kill switch is two bugs.** `EnrollmentCoordinator.kt:150`
+  terminates on the crypto gate — expected. But `:387` then persists
+  **`familyId = ""`**, so even after the crypto review clears, retention still
+  returns early and Delete-Now and export still throw.
+* **Placeholder domains in production wiring** — `PcaAppGraph.kt:352` points the
+  real bootstrap client at `https://api.pca.app`, a domain the project does not
+  own; `enroll.pca.app` likewise in the App Link config and the iOS `applinks:`
+  entitlement.
+* Launcher icon, release signing config, and gating retention on the existing
+  `WallClockRollbackMonitor`.
 
-Android is the most complete client and it **builds and tests clean** — 1,345
-unit tests with one skip, `assembleDebug` produces a 14.4 MB APK, lint has 0
-errors. But two things must be fixed in-repo before any device campaign is worth
-booking:
+Then the physical-device campaign and `assetlinks.json` hosting (which depends on
+`PUBLIC_A` being deployed). Confirm Play's current `targetSdk` floor against `35`.
 
-1. **The enrollment kill switch is two bugs, not one.** `EnrollmentCoordinator.kt:150`
-   terminates enrollment on the crypto gate — expected. But `:387` then persists
-   **`familyId = ""`**, because the bootstrap DTO never returns one. So even after
-   the crypto review clears, retention still returns early at
-   `RetentionMaintenanceCycle.kt:67`, and Delete-Now and audit export still throw
-   `require(familyId.isNotBlank())`. **Any plan that treats the crypto review as
-   Android's last blocker is wrong by one full step.**
-2. **A placeholder domain is wired into the production graph.**
-   `PcaAppGraph.kt:352` points the real bootstrap client at `https://api.pca.app`,
-   a domain the project does not own (the product domain is `pcasafe.com`). It is
-   unreachable today only because key generation fails first — so fixing the key
-   generator *without* fixing this would send invitation tokens and device public
-   keys to an unowned host. `enroll.pca.app` has the same problem in the App Link
-   config and the iOS `applinks:` entitlement, which iOS fetches at install time.
+### STEP 10 — Billing / commercial activation *(separate track)*
 
-Also repo-solvable and cheap: a launcher icon and a release signing config (there
-is no `release {}` block at all), and gating retention on the existing
-`WallClockRollbackMonitor` so a clock rollback cannot silently stop deletion.
+Provider selection, merchant approval, currencies, bank configuration, and
+`PAYMENT_PRODUCTION_CERTIFICATION`. Domain logic is source-complete and the empty
+production registry is correct engineering. **This track must not gate `AUTH_B`
+or `PARENT_C`.**
 
-Only then the **physical-device campaign** — real-device UAT, Device Owner
-authorization, telephony/SMS, camera, offline interruption recovery, OEM
-diversity — plus `assetlinks.json` hosting, which depends on Step 4's Public
-deploy. Confirm Play's current `targetSdk` floor against the project's `35`
-before committing to a submission date.
+### STEP 11 — iOS *(separate future release)*
 
-### Step 8 — iOS (do not schedule against the other releases)
-
-iOS should be planned as a separate future release. Its four gates
-(`IOS_MAC_XCODE`, `IOS_FAMILY_CONTROLS_ENTITLEMENT`, `IOS_PHYSICAL_DEVICE`,
-`REQUIRES_ENTITLEMENT`) make it *look* purely externally blocked. It is not:
-there is a **repo-solvable compile defect** — the `PCADeviceActivityMonitor`
-extension target contains one source file but references ten host-app-only types,
-so it cannot compile on any real SDK — plus no `DEVELOPMENT_TEAM`, no app icon,
-no launch screen, and no `DeviceActivityCenter` call site anywhere in the tree.
-Twelve iOS capability types have zero references outside their own declarations.
-Fix those before spending a macOS session.
+Fix the repo-solvable defects before booking a macOS session: the
+`PCADeviceActivityMonitor` target compiles one file referencing ten host-app-only
+types; there is no `DEVELOPMENT_TEAM`, no app icon, no launch screen, and no
+`DeviceActivityCenter` call site anywhere.
 
 ---
 
-## 2. WHAT CAN SHIP, AND WHEN
+## 2. WHAT BLOCKS EACH RELEASE
 
-| Release | Ships when | Engineering remaining |
-|---|---|---|
-| **A — Public site** | OD-12 (regenerated pack + native review), OD-13 legal facts, video decision, apex DNS + cert | **Effectively none.** Source builds green today |
-| **B — Parent accounts** | An email provider is **built from zero** *and* the crypto review closes | Email is the OUTER blocker: `markVerified` has exactly one caller (inside `verifyEmail`), so **no account can ever reach VERIFIED and no parent can ever log in**. Email provider integration is NOT_STARTED. Plus Step 6 durability |
-| **C — Parent Web** | After B, plus a deployment path | **`parent-web/Dockerfile` does not exist** — no container at all — *and* ~16 core operations are hard-gated behind `CRYPTO_SUITE_APPROVED_FOR_PRODUCTION = false`, which is a source constant, not a config flag |
-| **D — Android** | After crypto, plus the hardware campaign and `assetlinks.json` hosting (needs A deployed) | Modest; mostly validation |
-| **iOS** | Separate future release | Substantial — see Step 8 |
-| **Billing** | Provider selection + merchant approval + certification | Domain logic is source-complete; **no provider means no commerce** |
-
----
-
-## 3. THE SEQUENCING MISTAKE TO AVOID
-
-The tempting plan is "finish the features, then release." That is wrong here, for
-a reason the evidence makes plain: **the features are largely finished and
-switched off.** The backend has 2,214 passing non-DB tests, a canonical 75-table
-schema that provably bootstraps from zero, a fail-closed payment registry, and a
-cross-realm auth boundary with real enforcement and a real proving test. What it
-does not have is a crypto review, an email provider, a payment provider, a
-parent-web container, and legal facts.
-
-So the sequence is: **decouple the gates (Step 1), repair the dead tests and the
-collation invariant (Steps 2–3), ship Release A on owner inputs alone (Step 4),
-and put the two owner decisions (Step 5) in front of the owner immediately** —
-because everything downstream of them is idle until they are made, and Step 6's
-durability work can proceed in parallel with them.
+| Release | Blocking |
+|---|---|
+| **PUBLIC_A** | Gate scoping · Owner visual UAT · OD-12 (refreshed corpus) · OD-13 legal · public reply identity / Send-As · apex DNS + certificate · TLS/deployment verification · final owner authorization. **Not videos.** Engineering is essentially done |
+| **AUTH_B** | Live database (never created) · production email provider (never started). **Not crypto. Not payment provider** |
+| **PARENT_C** | AUTH_B, plus the crypto review, plus `parent-web/Dockerfile` (does not exist), plus the durability components and the retention promise |
+| **ANDROID_D** | Crypto review · the blank-`familyId` and placeholder-domain fixes · hardware campaign (9 gates) · `assetlinks.json` hosting · icon and signing config |
+| **IOS_FUTURE** | Four external gates plus a repo-solvable compile defect |
+| **BILLING_FUTURE** | Provider selection, merchant approval, certification |
 
 ---
 
-## 4. HONEST UNCERTAINTY
+## 3. THE SEQUENCING MISTAKES TO AVOID
 
-Items this audit could not verify and which must not be assumed either way:
-
-* The **platform-admin privilege gate** (`npm run test:db:platform-admin-privileges`)
-  was NOT_RUN — it needs `PCA_MIGRATION_DATABASE_URL` with elevated grants. Four
-  privilege-boundary tests are consequently skipped in every run above.
-* **No real-device, macOS/Xcode, provider, store, TLS, email or Azure evidence**
-  was produced. Every such gate remains `BLOCKED_EXTERNAL` on evidence this audit
-  is not permitted to create.
-* Live Azure state was **not** re-probed in this session; the two-App-Service
-  topology and "nothing is deployed" are carried from a prior verified session
-  and are marked UNVERIFIED_BY_ME here.
-* The reverse direction of the OD-12 key diff (pack keys no longer live) needs a
-  proper CSV reader; only the "≥19 never reviewed" figure is solid.
+1. **"Finish the features, then release."** The features are largely finished and
+   switched off. What is missing is two owner decisions, one provider integration
+   that was never started, a live database, and gates that cannot tell one
+   release from another.
+2. **Treating crypto as a Release B blocker.** It is not — identity and login
+   work without it. Chaining `AUTH_B` behind the security review delays the one
+   release that could follow `PUBLIC_A` soonest.
+3. **Treating the crypto review as Android's last blocker.** It is wrong by one
+   full step: `familyId = ""` still breaks retention, Delete-Now and export
+   afterwards.
+4. **Filing email under payment-provider selection.** They are unrelated gates
+   with different owners and different lead times.
+5. **Scoping only `external_gate_matrix.json`.** Two gates are evaluated before
+   that file is ever read.

@@ -45,14 +45,24 @@ assurance about data retention, not an unimplemented feature.
 
 Four further findings change the shape of the plan:
 
-1. **Release B is dead one step earlier than anyone recorded.** `markVerified`
-   has exactly one caller — inside `verifyEmail` — and there is no email provider
-   anywhere in the repository. So **no parent account can ever reach `VERIFIED`,
-   and no parent can ever log in in production.** The `familyId = null` problem
-   everyone has been tracking sits *behind* that wall and is unreachable. Worse,
-   the send failure is deliberately swallowed, so the parent gets a `202` and
-   waits forever — the exact opposite of the "explicit, honest gap, not a silent
-   failure mode" the source comment claims.
+1. **Release B is blocked by email, and by email alone — not by crypto.**
+   `markVerified` has exactly one caller — inside `verifyEmail` — and there is no
+   email provider anywhere in the repository. So **no parent account can reach
+   `VERIFIED`, and no parent can log in in production.** The send failure is
+   deliberately swallowed, so the parent gets a `202` and waits forever — the
+   exact opposite of the "explicit, honest gap, not a silent failure mode" the
+   source comment claims.
+
+   **Crypto is not in this chain, and the first FABLE roadmap was wrong to put it
+   there.** `verifyEmail` calls `attemptFamilyGenesis` and then calls
+   `markVerified` **unconditionally with whatever `familyId` came back** — `null`
+   when the crypto suite rejects. The account still becomes `VERIFIED`, still
+   receives free-access defaults, and a session is still issued; login requires
+   only `VERIFIED`. So **auth-only Release B needs a live database and a
+   production email provider, and nothing else.** Crypto gates family genesis,
+   family authority, E2EE and device trust — it blocks `PARENT_C` family
+   functionality and `ANDROID_D`, and should be commissioned **in parallel**, not
+   sequenced ahead of Release B.
 
 2. **`PARENT_CROSS_FAMILY_READS = 0` is not merely unverified — it is false.** I
    found and verified a live cross-family read and existence oracle in the
@@ -62,11 +72,19 @@ Four further findings change the shape of the plan:
    **no code and no test anywhere in the repository**, and this is the proof that
    an unasserted invariant did not just go unchecked — it went silently wrong.
 
-3. **32 of 33 external gates block Public Release A spuriously.** Exactly one
-   genuinely applies (`DEPLOYED_TLS_TERMINATION_CONFIG`). The gate checker's own
-   docstring promises release-scope filtering; the implementation never had it.
-   The programme's own specification already says *"a later release being blocked
-   must not block an earlier release"* — the tool contradicts the spec it serves.
+3. **32 of the 33 register gates block Public Release A spuriously**, and the fix
+   is broader than the register. Of the JSON-register gates exactly one genuinely
+   applies (`DEPLOYED_TLS_TERMINATION_CONFIG`). But scoping *only*
+   `external_gate_matrix.json` would not unblock PUBLIC_A: the checker evaluates
+   **`PRODUCTION_CRYPTO_SUITE`** (derived from `backend/src/main.ts`, `:48-59`)
+   and **`REAL_UAT`** (`:69-77`) **before** it reads that file at `:108`. Scoping
+   must therefore cover four layers — source-derived crypto gates, `REAL_UAT`,
+   the external matrix, and future provider/store gates. The checker's own
+   docstring at `:20-22` promises release-scope filtering the implementation
+   never had, and the programme's specification already says *"a later release
+   being blocked must not block an earlier release"* — the tool contradicts the
+   spec it serves. Counting all layers, PUBLIC_A has **four** genuine blockers:
+   TLS, a Public-scoped `REAL_UAT`, Owner visual UAT, and public reply identity.
 
 **Nothing is production-ready today.** Release A is closest by a wide margin and
 is blocked only by owner inputs, not engineering.
@@ -89,8 +107,9 @@ the database agent had to mark both NOT_VERIFIABLE. `CENTRAL_READABLE_CHILD_FIEL
 = 0` holds two independent ways: a test that executes in my green run, and my own
 scan of the live schema.
 
-*One correction:* `MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH` is
-**false at the database level** — see §5.
+*One qualification:* the **environment invariant** behind
+`MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP` is unenforced — see §5. The accepted
+8.4 / `utf8mb4_bin` equivalence result is **not** invalidated by this audit.
 
 **Platform Administration.** 32 source files, 33 registered routes, 9 migrations,
 21 CI-running test files, a 19-page console. MFA is mandatory and cannot be
@@ -185,11 +204,22 @@ suite has an **undocumented, unenforced UTC precondition**, and
 **The four skips** are platform-admin privilege-boundary tests needing
 `PCA_MIGRATION_DATABASE_URL`. That mandatory privilege gate was **NOT_RUN**.
 
-### The new database finding
+### The new database finding — scoped correctly
 
-`MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH` **is false at the
-database level.** I built both databases on one server and diffed
-`information_schema`. Indexes (275), foreign keys (84) and CHECK constraints
+```
+CANONICAL_SCHEMA_8_4_BIN_EQUIVALENCE = NOT INVALIDATED BY THIS AUDIT
+ENVIRONMENT_INVARIANT_EQUIVALENCE    = FAIL
+```
+
+**The accepted equivalence result stands.** It was established against the
+supported target — MySQL **8.4** with `collation-server = utf8mb4_bin` and
+`default-time-zone = +00:00` — and nothing in this audit disproves it. My own
+comparison ran on **MySQL 9.7**, which is *not* the supported target and which
+the preflight admitted only because of the defect below. What my run demonstrates
+is narrower and still important: **the schema is equivalent only when the
+environment is right, and nothing enforces that the environment is right.**
+
+I built both databases on one server and diffed `information_schema`. Indexes (275), foreign keys (84) and CHECK constraints
 (228) are identical. **147 of 626 columns differ — every difference is
 collation**, and only collation: migrations yield `utf8mb4_0900_ai_ci`
 (case- *and* accent-insensitive) where the bootstrap yields `utf8mb4_bin`.
@@ -213,9 +243,25 @@ the house style. Given that family isolation has **zero foreign keys to
 `families`** and rests entirely on `WHERE family_id = ?`, this invariant should
 be enforced rather than assumed.
 
+**Three environment invariants are unenforced, not one.** This is the actual
+defect, and it is what `FABLE-A009` now covers:
+
+* **Version predicate.** `00_preflight.sql:69` asserts `major >= 8` while its own
+  failure message reads *"MySQL major version must be 8.x"* — so **MySQL 9
+  passes**. Line `:80` emits only an informational `version_note` for anything
+  that is not 8.4, never a `SIGNAL`. That is precisely why my unsupported 9.7
+  server sailed through preflight.
+* **Collation.** Nothing asserts the target database's default collation is
+  `utf8mb4_bin`. `03_post_validation.sql:83` checks `table_collation` — but only
+  in the bootstrap path, once.
+* **UTC.** `PCA_LIVE_DATABASE_SETTINGS` mandates `default-time-zone=+00:00`, yet
+  `verify-mysql.mjs` — the migration path's gate — checks neither timezone nor
+  collation.
+
 Honest severity: **P1, not P0** — family IDs are server-minted UUIDs, so a
-case-folded collision between two real families is not a realistic live exploit.
-It is a schema-integrity defect with latent security relevance.
+case-folded collision between two real families is not a realistic live exploit,
+and a correctly configured 8.4 target does not exhibit the divergence at all. It
+is an unenforced-invariant defect with latent security relevance.
 
 *Why no agent found it:* the static differ that reported EXACT_MATCH explicitly
 normalises charset/collation inheritance before comparing — the exact dimension
@@ -337,12 +383,23 @@ cluster is 35 real-money billing requirements.
 
 | Release | Verdict | Blocking |
 |---|---|---|
-| **A — Public site** | **NOT_READY** (closest by far) | OD-12 Arabic (pack must be regenerated first), OD-13 legal facts, the two videos do not exist, apex DNS + certificate, TLS termination. **Engineering is essentially done** — it builds green with no dependencies |
-| **B — Parent accounts** | **NOT_READY** | **No email provider exists** → no account can reach VERIFIED → no parent can log in. Then the crypto review. Then six durability components |
-| **C — Parent Web** | **NOT_READY** | **No `parent-web/Dockerfile` at all**, plus ~16 core operations dead behind `CRYPTO_SUITE_APPROVED_FOR_PRODUCTION = false` — a source constant, not a config flag |
+| **PUBLIC_A — Public site** | **NOT_READY** (closest by far) | Release-gate scoping · **Owner visual UAT (IN_PROGRESS)** · OD-12 Arabic (pack must be regenerated first) · OD-13 legal facts · **public reply identity / Send-As (NOT_READY)** · apex DNS + certificate + redirect · TLS/deployment verification · final owner authorization. **Engineering is essentially done** — it builds green with no dependencies. **Videos are NOT a blocker** — see below |
+| **AUTH_B — Parent identity** | **NOT_READY** | **Live database (never created)** and **no email provider exists** → no account can reach VERIFIED → no parent can log in. **Crypto is NOT required** for identity/auth, and payment-provider selection is unrelated |
+| **PARENT_C — Parent Web** | **NOT_READY** | AUTH_B first, then: **no `parent-web/Dockerfile` at all**; ~16 core operations dead behind `CRYPTO_SUITE_APPROVED_FOR_PRODUCTION = false` (a source constant, not a config flag); the six durability components; and the unkept retention promise |
 | **D — Android** | **NOT_READY** | Builds and tests clean (**1,345 tests, 1,344 pass, 0 fail**; lint 0 errors / 95 warnings offline). But `EnrollmentCoordinator.kt:150` is a kill switch that disables retention, location, geofencing, prayer, YouTube Mode A, Delete-Now and export — **and clearing the crypto review does not fix it**, because `:387` then persists `familyId = ""`. Plus 9 hardware gates, no launcher icon, no release signing config, and a placeholder domain (`api.pca.app`) in production wiring |
 | **iOS** | **NOT_READY** | Four external gates *plus* a repo-solvable compile defect: the `PCADeviceActivityMonitor` target compiles one file referencing ten host-app-only types. No `DEVELOPMENT_TEAM`, no app icon, no launch screen, no `DeviceActivityCenter` call site anywhere |
-| **Billing** | **NOT_READY** | Provider selection, merchant approval, certification. Domain logic is source-complete and the empty registry is correct engineering |
+| **BILLING_FUTURE** | **NOT_READY** | Provider selection, merchant approval, certification. Domain logic is source-complete and the empty registry is correct engineering. **Must not gate AUTH_B or PARENT_C** |
+
+**On the videos — corrected.** The first FABLE draft treated the two public
+videos as a Release A blocker. That was wrong. `public-web/src/content/videos.mjs:12-19`
+is explicit: with `available: false` the page renders a polished
+poster-and-transcript card with a "Coming later" status label, emits **no
+`<video>` element**, and renders the transcript in **both** states as a stated
+accessibility requirement. Critical information is never video-only, and
+`build.mjs:803` guards against flipping the flag before the real asset and
+caption files exist. So `VIDEOS_EXIST = NO`,
+`VIDEO_PLACEHOLDERS_HONEST = YES`, `VIDEOS_BLOCK_RELEASE_A = NO`. Producing real
+videos remains desirable post-publication (`FABLE-A021`, now P3).
 
 ---
 
@@ -350,23 +407,35 @@ cluster is 35 real-money billing requirements.
 
 Full detail in `PCA_FABLE_RELEASE_ROADMAP.md`. In brief:
 
-1. **Decouple the release gates** — add `releaseScope` and filter on it. Until
-   then no release can pass its own gate, so the gate is ignored, which is worse
-   than not having one.
+1. **Release-gate architecture and scoping repair** — across all four layers, not
+   just the JSON. Until then no release can pass its own gate, so the gate is
+   ignored, which is worse than not having one.
 2. **Repair the four dead DB tests** and add a double-conformance guard.
-3. **Close the collation invariant** in preflight and the migration gate.
-4. **Ship Release A on owner inputs alone** — regenerate the Arabic pack first.
-5. **Put the two owner decisions in front of the owner now** — crypto review and
-   provider selection. Everything downstream is idle until they are made.
-6. **Build the six durability components in parallel** — they are not fixed by
-   crypto activation, and `resolveEnvelopeContext` must be fixed *before* it.
-7. Android hardware campaign. 8. iOS as a separate future release.
+3. **Database environment hardening** — the MySQL version predicate, the default
+   collation, and UTC; then re-run equivalence on supported 8.4.
+4. **Close the eye-protection cross-family read** and make the isolation counters
+   code-asserted.
+   **In parallel, an owner lane finishes and publishes PUBLIC_A** — Owner visual
+   UAT, OD-12 (refreshed corpus), OD-13, Send-As reply identity, apex DNS/cert,
+   TLS. Not videos.
+5. **PCA-LIVE-DB-1** — provision live MySQL 8.4 and run the one-time bootstrap.
+6. **Production email provider**, then real AUTH_B registration/login/reset UAT.
+7. **Commission the crypto security review — now, in parallel**, not after email.
+8. **Durability components and `resolveEnvelopeContext`**, then PARENT_C
+   (which also needs a `parent-web/Dockerfile` that does not exist).
+9. **Android repo-solvable cleanup** (blank `familyId`, placeholder domains, icon,
+   signing), then the physical-device campaign.
+10. **Billing/commercial activation** as a separate track. 11. **iOS** as a
+    separate future release.
 
-**The sequencing mistake to avoid:** "finish the features, then release." The
-features are largely finished and switched off. For Release B the chain is
-strictly serial and **email comes first** — closing the crypto review first
-delivers nothing observable, because there is no session with which to reach the
-gate.
+**The sequencing mistakes to avoid.** "Finish the features, then release" — the
+features are largely finished and switched off. Treating **crypto as a Release B
+blocker** — it is not; identity and login work without it, and chaining AUTH_B
+behind the security review delays the release that could follow PUBLIC_A soonest.
+Treating the crypto review as **Android's last blocker** — it is wrong by one
+full step, because `familyId = ""` still breaks retention, Delete-Now and export
+afterwards. And filing **email under payment-provider selection** — unrelated
+gates, different owners, different lead times.
 
 ---
 
@@ -393,13 +462,35 @@ CURRENT_TEST_FAILURES = 4    (backend DB suite; all one createAtomically drift)
 CURRENT_TEST_SKIPS    = 4    (platform-admin privilege gate, needs PCA_MIGRATION_DATABASE_URL)
                              (backend non-DB: 2214 pass / 0 fail / 0 skip)
 
-OPEN_ACTIONS_TOTAL = 60       (P0=10, P1=24, P2=21, P3=5)
+OPEN_ACTIONS_TOTAL = 64       (P0=13, P1=24, P2=21, P3=6)
 REPO_SOLVABLE_P0   = 7
-REPO_SOLVABLE_P1   = 19
-OWNER_ACTION_OPEN  = 10       (4 OWNER_ACTION + 1 LEGAL + 1 SECURITY_REVIEW
-                               + 1 EXTERNAL_PROVIDER + 3 INFRASTRUCTURE)
-EXTERNAL_GATE_OPEN = 33       (0 CLOSED, evidence null on all 33;
-                               +1 defined-but-missing: PAYMENT_PRODUCTION_CERTIFICATION)
+REPO_SOLVABLE_P1   = 20
+OWNER_ACTION_OPEN  = 13       (6 OWNER_ACTION + 1 LEGAL + 1 SECURITY_REVIEW
+                               + 1 EXTERNAL_PROVIDER + 4 INFRASTRUCTURE)
+
+CURRENT_EXTERNAL_GATES     = 33   (in external_gate_matrix.json; 0 CLOSED,
+                                   evidence null on all 33)
+SOURCE_DERIVED_GATES       = 2    (PRODUCTION_CRYPTO_SUITE, REAL_UAT - evaluated
+                                   by the checker BEFORE the JSON is read)
+MISSING_GATE_ROWS_PROPOSED = 4    (PAYMENT_PRODUCTION_CERTIFICATION,
+                                   PRODUCTION_EMAIL_DELIVERY, OWNER_VISUAL_UAT,
+                                   PUBLIC_REPLY_IDENTITY)
+GATE_SCOPE_CSV_ROWS        = 38   = 32 IN_JSON_REGISTER + 2 SOURCE_DERIVED
+                                   + 4 PROPOSED_MISSING.
+                                   (PRODUCTION_CRYPTO_SUITE is both in the
+                                   register AND source-derived, so the 33
+                                   register gates appear as 32 + that one.)
+                                   The CSV deliberately holds MORE rows than the
+                                   JSON register. Do NOT describe it as
+                                   "33 gates x 6 releases".
+
+GATES_GENUINELY_BLOCKING_PUBLIC_A = 4
+    DEPLOYED_TLS_TERMINATION_CONFIG (register)
+    REAL_UAT (source-derived; needs a Public-scoped UAT)
+    OWNER_VISUAL_UAT (proposed-missing; IN_PROGRESS)
+    PUBLIC_REPLY_IDENTITY (proposed-missing; NOT_READY)
+  Of the 33 JSON-register gates alone, exactly ONE blocks PUBLIC_A; the other
+  32 block it only because the checker has no release-scope filter.
 
 PRODUCTION_STUBS_TOTAL            = 23
 PRODUCTION_STUBS_RELEASE_BLOCKING = 13
@@ -412,11 +503,33 @@ PARENT_CROSS_FAMILY_READS  = 1       (VERIFIED LIVE — eye-protection read path
 PARENT_CROSS_FAMILY_WRITES = 0       (none found; not test-proven)
 CROSS_FAMILY_EXISTENCE_ORACLES = 1   (same defect)
 
-PUBLIC_RELEASE_A = NOT_READY   (source ready; owner inputs only)
-RELEASE_B        = NOT_READY
-RELEASE_C        = NOT_READY
-ANDROID_RELEASE_D = NOT_READY
-IOS_RELEASE      = NOT_READY
+PUBLIC_A       = NOT_READY   (source ready; owner inputs only)
+AUTH_B         = NOT_READY
+PARENT_C       = NOT_READY
+ANDROID_D      = NOT_READY
+IOS_FUTURE     = NOT_READY
+BILLING_FUTURE = NOT_READY
+
+VIDEOS_EXIST                = NO
+VIDEO_PLACEHOLDERS_HONEST   = YES
+VIDEOS_BLOCK_RELEASE_A      = NO
+OWNER_UAT_BLOCKS_RELEASE_A            = YES
+PUBLIC_REPLY_IDENTITY_BLOCKS_RELEASE_A = YES
+
+CRYPTO_BLOCKS_AUTH_ONLY_RELEASE_B = NO
+LIVE_DB_BLOCKS_RELEASE_B          = YES
+PRODUCTION_EMAIL_BLOCKS_RELEASE_B = YES
+PAYMENT_PROVIDER_BLOCKS_RELEASE_B = NO
+PAYMENT_PROVIDER_BLOCKS_BILLING   = YES
+
+RELEASE_GATE_SCOPE_INCLUDES_CRYPTO          = YES
+RELEASE_GATE_SCOPE_INCLUDES_REAL_UAT        = YES
+RELEASE_GATE_SCOPE_INCLUDES_EXTERNAL_MATRIX = YES
+
+MYSQL_SUPPORTED_TARGET = 8.4
+CANONICAL_SCHEMA_8_4_BIN_EQUIVALENCE = NOT INVALIDATED BY THIS AUDIT
+ENVIRONMENT_INVARIANT_EQUIVALENCE    = FAIL
+ENVIRONMENT_INVARIANT_SCHEMA_EQUIVALENCE = CURRENTLY NOT GUARANTEED
 
 LIVE_DATABASE_CREATED           = NO
 PRODUCTION_DEPLOYMENT_PERFORMED = NO

@@ -187,11 +187,11 @@ the same files define four (`routes.mjs:73`). **P2.**
 
 | Doc / claim | Status after coordinator execution |
 |---|---|
-| `MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH` | **FALSIFIED at the database level.** 147 of 626 columns differ in collation (`utf8mb4_0900_ai_ci` from migrations vs `utf8mb4_bin` from the bootstrap), including 7 × `family_id`. See `PCA_FABLE_EVIDENCE_LOG.md §3.2`. The artifact-level differ that reported EXACT_MATCH normalises charset inheritance and structurally cannot see this |
+| `MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH` | **NOT falsified — but its environment precondition is undocumented and unenforced.** The accepted result was established on the supported MySQL **8.4** / `utf8mb4_bin` target and stands (`CANONICAL_SCHEMA_8_4_BIN_EQUIVALENCE = NOT INVALIDATED BY THIS AUDIT`). On an unsupported 9.7 server the two paths diverge on collation for 147 of 626 columns incl. 7 × `family_id`, so `ENVIRONMENT_INVARIANT_EQUIVALENCE = FAIL`. The documentation defect is that the claim is stated unconditionally, while `00_preflight.sql:69` admits MySQL 9 despite its own "must be 8.x" message and nothing asserts default collation or UTC. See `PCA_FABLE_EVIDENCE_LOG.md §3.2` |
 | `PCA_LIVE_DATABASE_SETTINGS.md` UTC mandate | Real requirement, **entirely unverified by tooling**. A non-UTC MySQL server silently produces two phantom DB-suite failures |
 | "4 pre-existing DB failures" | **Confirmed exactly** (485 tests / 477 pass / 4 fail / 4 skip on a UTC server) — but the characterisation "pre-existing" hid that all four are one live `repository.create is not a function` drift, and that one of them is an **IDOR-defence test**, so that security property is asserted by no executing test |
 | `PAYMENT_PRODUCTION_CERTIFICATION` | Specified in six documents, **absent from `docs/release_readiness/external_gate_matrix.json`**. Because `Invoke-ReleaseGateCheck.ps1` iterates only that JSON, the gate governing real-money go-live **can never block a release** |
-| Public videos | Documents and pages reference two videos; **zero video files exist in the repository**. Both are placeholders |
+| Public videos | **NOT a documentation defect — this row is retained only to record the correction.** Zero video files exist and both are placeholders, but that is a *supported shipping state*, not a gap: `videos.mjs:12-19` renders an honest "Coming later" poster-and-transcript card, emits **no `<video>` element**, and renders the transcript in both states as an accessibility requirement. `VIDEOS_BLOCK_RELEASE_A = NO` |
 
 ---
 

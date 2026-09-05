@@ -144,7 +144,23 @@ Built from an **empty datadir** on disposable MySQL 9.7. Both paths executed.
 Bootstrap-built database independently returned the identical
 75 / 626 / 83 / 117 / 31 / 228, plus 35 `schema_migrations` rows.
 
-### 3.2 **NEW P1 FINDING — `MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP` is NOT an exact match at the database level**
+### 3.2 **NEW P1 FINDING — the schema equivalence invariant is unenforced by the environment**
+
+> **Scope, corrected after Primary review.** The accepted equivalence result was
+> established against the supported target — **MySQL 8.4** with
+> `collation-server = utf8mb4_bin` and `default-time-zone = +00:00` — and this
+> audit does **not** disprove it:
+> ```
+> CANONICAL_SCHEMA_8_4_BIN_EQUIVALENCE = NOT INVALIDATED BY THIS AUDIT
+> ENVIRONMENT_INVARIANT_EQUIVALENCE    = FAIL
+> ```
+> My comparison below ran on **MySQL 9.7**, which is *not* the supported target
+> and which `00_preflight.sql` admitted only because its version predicate is
+> defective (`:69` asserts `major >= 8` while its own message says "must be 8.x",
+> and `:80` merely notes a non-8.4 version instead of raising a `SIGNAL`). What
+> the run proves is narrower and still worth acting on: **the schema is
+> equivalent only when the environment is right, and nothing enforces that it
+> is.** Do not read the section below as "the 8.4 equivalence was disproven".
 
 I built two databases on the same server — `pca_migr_check` (migrations) and
 `pca_bootstrap_check` (bootstrap package) — and diffed them through
@@ -261,9 +277,26 @@ AR native review    193 key(s) = the whole Arabic corpus, pending OD-12 sign-off
 new copy to review  37 key(s)
 ```
 
-**Confirmed Release-A content gap: the videos do not exist.** A repo-wide search
-for `*.mp4` / `*.webm` / `*.mov` returns **zero files**. Both public videos are
-placeholders; only their scripts (`src/content/pages/video.{en,ar}.mjs`) exist.
+**The videos do not exist — and, corrected after Primary review, that does NOT
+block Release A.** A repo-wide search for `*.mp4` / `*.webm` / `*.mov` returns
+**zero files**; both are placeholders with scripts only
+(`src/content/pages/video.{en,ar}.mjs`). But the Public source is explicit that
+this is a supported shipping state, and I verified it:
+`public-web/src/content/videos.mjs:12-19` — with `available: false` the page
+"renders a polished poster-and-transcript card with a *Coming later* status
+label. **No `<video>` element is**" emitted, and "**the transcript renders in
+BOTH states. That is the accessibility requirement.**" `:31` forbids setting
+`available: true` until the real file exists, and `build.mjs:803` enforces that.
+Critical information is never video-only.
+
+```
+VIDEOS_EXIST              = NO
+VIDEO_PLACEHOLDERS_HONEST = YES
+VIDEOS_BLOCK_RELEASE_A    = NO
+```
+
+Producing real videos is post-publication content work (`FABLE-A021`, now P3).
+My first draft classified this as a Release-A blocker; that was wrong.
 
 **OD-12 — independently confirmed P0.** The build itself correctly reports that
 all **193** Arabic keys are pending OD-12 and that **37** are new copy. But the
