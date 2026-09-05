@@ -35,7 +35,7 @@ foreach ($Path in $TrackedFiles) {
 # '.agent-runtime' is required, not merely tolerated: tooling/release/ValidateExternalGateParity.mjs
 # fails unless .agent-runtime/manifests/pca-r3-final/R3_EXTERNAL_GATE_REGISTER.csv is tracked, so
 # omitting it here made the release gate and this check mutually unsatisfiable.
-$AllowedTopLevel = @('.agent-runtime', '.editorconfig', '.gitattributes', '.github', '.gitignore', 'README.md', 'PCA_ARCHITECTURE_MASTER_v1.0.md', 'SHA256SUMS.txt', 'CURRENT_DIRTY_PATHS.txt', 'android', 'backend', 'contracts', 'docs', 'ios', 'parent-sdk', 'parent-web', 'platform-admin-web', 'tooling')
+$AllowedTopLevel = @('.agent-runtime', '.editorconfig', '.gitattributes', '.github', '.gitignore', 'README.md', 'PCA_ARCHITECTURE_MASTER_v1.0.md', 'SHA256SUMS.txt', 'CURRENT_DIRTY_PATHS.txt', 'android', 'backend', 'contracts', 'docs', 'ios', 'parent-sdk', 'parent-web', 'platform-admin-web', 'public-web', 'tooling')
 foreach ($Path in $TrackedFiles) {
   $TopLevel = ($Path -replace '\\', '/').Split('/')[0]
   if ($AllowedTopLevel -notcontains $TopLevel) {

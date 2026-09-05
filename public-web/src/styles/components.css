@@ -1,0 +1,648 @@
+/*
+ * PUBLIC-5 — component layer. Logical properties only (see base.css).
+ * Every interactive control meets the 44px touch target from guideline
+ * section 10, and every one has a visible focus state from base.css.
+ */
+
+/* ---- Header ------------------------------------------------------------- */
+.pw-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 50;
+  background: var(--pw-surface);
+  border-block-end: 1px solid var(--pw-border);
+}
+
+.pw-header__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pw-space-4);
+  min-block-size: var(--pw-header-height);
+}
+
+.pw-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pw-space-2);
+  font-size: var(--pw-text-xl);
+  font-weight: var(--pw-weight-bold);
+  color: var(--pw-text);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+  margin-inline-end: auto;
+  padding-block: var(--pw-space-2);
+}
+
+.pw-brand:hover { color: var(--pw-text); }
+
+.pw-brand__mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--pw-radius-sm);
+  background: var(--pw-trust);
+  color: var(--pw-text-on-trust);
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-bold);
+  flex: 0 0 auto;
+}
+
+/* Desktop navigation */
+.pw-nav {
+  display: none;
+}
+
+.pw-nav__list {
+  display: flex;
+  align-items: center;
+  gap: var(--pw-space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pw-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-3);
+  border-radius: var(--pw-radius-sm);
+  color: var(--pw-text-secondary);
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-medium);
+  text-decoration: none;
+}
+
+.pw-nav__link:hover {
+  background: var(--pw-surface-raised);
+  color: var(--pw-text);
+}
+
+.pw-nav__link[aria-current='page'] {
+  color: var(--pw-text);
+  font-weight: var(--pw-weight-semibold);
+  box-shadow: inset 0 -2px 0 0 var(--pw-primary);
+}
+
+.pw-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pw-space-2);
+}
+
+@media (min-width: 62rem) {
+  .pw-nav { display: block; }
+  .pw-menu-toggle { display: none; }
+}
+
+/* ---- Language switcher (must be reachable without an account, IA s.9) --- */
+.pw-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--pw-border);
+  border-radius: var(--pw-radius-pill);
+  background: var(--pw-surface);
+}
+
+.pw-lang__opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px, not the 38px this originally shipped with: real-Chromium UAT
+     measured the switcher at 38px and Design Guideline section 10 requires
+     44x44 touch targets. */
+  min-block-size: var(--pw-touch-target);
+  min-inline-size: 44px;
+  padding-inline: var(--pw-space-3);
+  border-radius: var(--pw-radius-pill);
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-semibold);
+  color: var(--pw-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.pw-lang__opt:hover { background: var(--pw-surface-raised); color: var(--pw-text); }
+
+.pw-lang__opt[aria-current='true'] {
+  background: var(--pw-primary);
+  color: var(--pw-text-on-primary);
+}
+
+.pw-lang__opt[aria-current='true']:hover {
+  background: var(--pw-primary-hover);
+  color: var(--pw-text-on-primary);
+}
+
+/* ---- Mobile menu -------------------------------------------------------- */
+.pw-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pw-space-2);
+  min-block-size: var(--pw-touch-target);
+  min-inline-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-3);
+  border: 1px solid var(--pw-border);
+  border-radius: var(--pw-radius);
+  background: var(--pw-surface);
+  color: var(--pw-text);
+  font: inherit;
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-semibold);
+  cursor: pointer;
+}
+
+.pw-menu-toggle:hover { background: var(--pw-surface-raised); }
+
+.pw-menu-toggle__bars {
+  display: inline-block;
+  inline-size: 18px;
+  block-size: 2px;
+  background: currentColor;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pw-menu-toggle__bars::before,
+.pw-menu-toggle__bars::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  block-size: 2px;
+  background: currentColor;
+}
+
+.pw-menu-toggle__bars::before { inset-block-start: -6px; }
+.pw-menu-toggle__bars::after { inset-block-start: 6px; }
+
+/*
+ * 320px header fit. Real-Chromium UAT measured 16px (EN) / 18px (AR) of
+ * horizontal overflow at 320px caused by brand + language switcher + labelled
+ * menu button competing for 280px of content width. Below 26rem the menu
+ * button becomes a 44x44 icon-only control -- its label stays in the
+ * accessibility tree via .pw-sr-only, so the accessible name is unchanged --
+ * and the language options tighten. Design Guideline section 21 forbids any
+ * horizontal scrolling from content at 320px.
+ */
+@media (max-width: 26rem) {
+  .pw-header__bar { gap: var(--pw-space-2); }
+
+  .pw-menu-toggle {
+    inline-size: var(--pw-touch-target);
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  .pw-menu-toggle__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .pw-lang__opt {
+    min-inline-size: 40px;
+    padding-inline: var(--pw-space-2);
+  }
+
+  .pw-brand { font-size: var(--pw-text-lg); }
+}
+
+.pw-mobile-menu {
+  display: none;
+  border-block-start: 1px solid var(--pw-border);
+  background: var(--pw-surface);
+  padding-block: var(--pw-space-3) var(--pw-space-6);
+}
+
+.pw-mobile-menu[data-open='true'] { display: block; }
+
+@media (min-width: 62rem) {
+  .pw-mobile-menu { display: none !important; }
+}
+
+.pw-mobile-menu__list {
+  list-style: none;
+  margin: 0 0 var(--pw-space-4);
+  padding: 0;
+}
+
+.pw-mobile-menu__link {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-2);
+  border-radius: var(--pw-radius-sm);
+  color: var(--pw-text);
+  font-weight: var(--pw-weight-medium);
+  text-decoration: none;
+}
+
+.pw-mobile-menu__link:hover { background: var(--pw-surface-raised); }
+.pw-mobile-menu__link[aria-current='page'] { font-weight: var(--pw-weight-bold); }
+
+/* ---- Buttons (guideline section 10) ------------------------------------ */
+.pw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pw-space-2);
+  min-block-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-6);
+  padding-block: var(--pw-space-3);
+  border-radius: var(--pw-radius);
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: var(--pw-text-base);
+  font-weight: var(--pw-weight-semibold);
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.pw-btn--primary {
+  background: var(--pw-primary);
+  color: var(--pw-text-on-primary);
+}
+
+.pw-btn--primary:hover {
+  background: var(--pw-primary-hover);
+  color: var(--pw-text-on-primary);
+}
+
+.pw-btn--primary:active { background: var(--pw-primary-active); }
+
+.pw-btn--secondary {
+  background: var(--pw-surface);
+  color: var(--pw-primary);
+  border-color: var(--pw-border-strong);
+}
+
+.pw-btn--secondary:hover {
+  background: var(--pw-surface-primary-soft);
+  color: var(--pw-primary-hover);
+}
+
+.pw-btn--sm {
+  min-block-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-4);
+  padding-block: var(--pw-space-2);
+  font-size: var(--pw-text-sm);
+}
+
+/* Guideline section 10: never three visually equal primaries in one section.
+   The CTA row pairs exactly one primary with one secondary. */
+.pw-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pw-space-3);
+  margin-block-start: var(--pw-space-6);
+}
+
+/* At 320px buttons stack and go full width rather than overflowing. */
+@media (max-width: 26rem) {
+  .pw-cta-row { flex-direction: column; align-items: stretch; }
+  .pw-cta-row .pw-btn { inline-size: 100%; }
+}
+
+.pw-textlink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pw-space-1);
+  font-weight: var(--pw-weight-semibold);
+  color: var(--pw-primary);
+  text-decoration: underline;
+}
+
+.pw-textlink:hover { color: var(--pw-primary-hover); }
+
+/* ---- Hero --------------------------------------------------------------- */
+.pw-hero {
+  background: linear-gradient(180deg, var(--pw-surface-warm) 0%, var(--pw-canvas) 100%);
+  padding-block: var(--pw-space-12) var(--pw-space-16);
+  border-block-end: 1px solid var(--pw-border);
+}
+
+.pw-hero__title {
+  font-size: var(--pw-text-3xl);
+  max-inline-size: 20ch;
+}
+
+@media (min-width: 48rem) {
+  .pw-hero { padding-block: var(--pw-space-20); }
+  .pw-hero__title { font-size: var(--pw-text-4xl); }
+}
+
+.pw-hero__lead {
+  font-size: var(--pw-text-lg);
+  color: var(--pw-text-secondary);
+  max-inline-size: 60ch;
+}
+
+/* ---- Reassurance / notice ---------------------------------------------- */
+.pw-reassure {
+  display: block;
+  margin-block-start: var(--pw-space-6);
+  padding: var(--pw-space-4) var(--pw-space-5);
+  background: var(--pw-surface-trust-soft);
+  border-inline-start: 4px solid var(--pw-trust);
+  border-radius: var(--pw-radius-sm);
+  color: var(--pw-text);
+  font-weight: var(--pw-weight-medium);
+  max-inline-size: var(--pw-prose-max);
+}
+
+.pw-notice {
+  padding: var(--pw-space-4) var(--pw-space-5);
+  border-radius: var(--pw-radius);
+  background: var(--pw-notice-bg);
+  color: var(--pw-notice-fg);
+  border: 1px solid currentColor;
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-medium);
+  margin-block-end: var(--pw-space-6);
+}
+
+.pw-notice p { color: inherit; margin-block-end: 0; max-inline-size: none; }
+
+/* ---- Cards -------------------------------------------------------------- */
+.pw-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pw-space-2);
+  padding: var(--pw-space-5);
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border);
+  border-radius: var(--pw-radius-lg);
+  box-shadow: var(--pw-shadow-sm);
+}
+
+@media (min-width: 48rem) {
+  .pw-card { padding: var(--pw-space-6); }
+}
+
+.pw-card__title {
+  margin-block-end: 0;
+  font-size: var(--pw-text-base);
+  font-weight: var(--pw-weight-semibold);
+}
+
+.pw-card__body {
+  margin-block-end: 0;
+  color: var(--pw-text-secondary);
+  font-size: var(--pw-text-sm);
+  max-inline-size: none;
+}
+
+/* Numbered step card (How it works) */
+.pw-step__num {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--pw-radius-pill);
+  background: var(--pw-surface-primary-soft);
+  color: var(--pw-primary);
+  font-weight: var(--pw-weight-bold);
+  font-size: var(--pw-text-sm);
+}
+
+/*
+ * Replaces an inline style="list-style:none;padding:0;margin:0" that the
+ * production CSP (style-src 'self') correctly blocked -- caught by real-browser
+ * UAT, invisible to the build. Any list that is semantically ordered but
+ * visually a grid uses this.
+ */
+.pw-plain-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pw-plain-list > li { margin-block-end: 0; }
+
+/* ---- Feature status labels (CONTENT_EN section 4) ---------------------- */
+/*
+ * Status is never communicated by colour alone (guideline section 14): each
+ * label carries its own text, and the Features page repeats the definition.
+ */
+.pw-status {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 2px var(--pw-space-3);
+  border-radius: var(--pw-radius-pill);
+  font-size: var(--pw-text-xs);
+  font-weight: var(--pw-weight-semibold);
+  white-space: nowrap;
+}
+
+.pw-status--available { background: var(--pw-status-available-bg); color: var(--pw-status-available-fg); }
+.pw-status--limited   { background: var(--pw-status-limited-bg);   color: var(--pw-status-limited-fg); }
+.pw-status--later     { background: var(--pw-status-later-bg);     color: var(--pw-status-later-fg); }
+.pw-status--platform  { background: var(--pw-status-platform-bg);  color: var(--pw-status-platform-fg); }
+
+/* ---- FAQ (guideline section 20) ---------------------------------------- */
+/*
+ * Native <details>/<summary>. Keyboard operation, expanded/collapsed state and
+ * assistive semantics come from the platform, and -- the point guideline
+ * section 20 actually makes -- the answer text is present in the served HTML,
+ * so nothing essential is hidden from indexing behind client-side rendering.
+ * Zero JavaScript.
+ */
+.pw-faq { border-block-start: 1px solid var(--pw-border); max-inline-size: var(--pw-prose-max); }
+
+.pw-faq__item { border-block-end: 1px solid var(--pw-border); }
+
+.pw-faq__q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pw-space-4);
+  min-block-size: var(--pw-touch-target);
+  padding-block: var(--pw-space-4);
+  font-weight: var(--pw-weight-semibold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.pw-faq__q::-webkit-details-marker { display: none; }
+
+.pw-faq__q::after {
+  content: '';
+  flex: 0 0 auto;
+  inline-size: 10px;
+  block-size: 10px;
+  border-inline-end: 2px solid var(--pw-text-secondary);
+  border-block-end: 2px solid var(--pw-text-secondary);
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.pw-faq__item[open] .pw-faq__q::after { transform: rotate(-135deg); }
+
+.pw-faq__a {
+  padding-block-end: var(--pw-space-4);
+  color: var(--pw-text-secondary);
+}
+
+.pw-faq__a p:last-child { margin-block-end: 0; }
+
+/* ---- Principle list ----------------------------------------------------- */
+.pw-principles {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--pw-space-3);
+}
+
+.pw-principles li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pw-space-3);
+  margin-block-end: 0;
+}
+
+.pw-principles li::before {
+  content: '';
+  flex: 0 0 auto;
+  inline-size: 8px;
+  block-size: 8px;
+  margin-block-start: 0.6em;
+  border-radius: var(--pw-radius-pill);
+  background: var(--pw-trust);
+}
+
+/* ---- Footer ------------------------------------------------------------- */
+.pw-footer {
+  background: var(--pw-surface);
+  border-block-start: 1px solid var(--pw-border);
+  padding-block: var(--pw-space-12) var(--pw-space-8);
+  margin-block-start: var(--pw-space-16);
+}
+
+.pw-footer__groups {
+  display: grid;
+  gap: var(--pw-space-8);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 40rem) {
+  .pw-footer__groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 60rem) {
+  .pw-footer__groups { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.pw-footer__heading {
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-bold);
+  margin-block-end: var(--pw-space-3);
+}
+
+.pw-footer__list { list-style: none; margin: 0; padding: 0; }
+
+.pw-footer__link {
+  display: inline-flex;
+  align-items: center;
+  /* 44px per Design Guideline section 10; UAT measured these at 36px. */
+  min-block-size: var(--pw-touch-target);
+  color: var(--pw-text-secondary);
+  font-size: var(--pw-text-sm);
+  text-decoration: none;
+}
+
+.pw-footer__link:hover { color: var(--pw-primary); text-decoration: underline; }
+
+.pw-footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pw-space-4);
+  margin-block-start: var(--pw-space-10);
+  padding-block-start: var(--pw-space-6);
+  border-block-start: 1px solid var(--pw-border);
+  color: var(--pw-text-secondary);
+  font-size: var(--pw-text-sm);
+}
+
+.pw-footer__legal-note {
+  margin-block-end: 0;
+  max-inline-size: var(--pw-prose-max);
+}
+
+/* ---- Public video (owner ruling 2026-09-05) ---------------------------- */
+/*
+ * Two states share one shell so the layout does not shift when a real
+ * recording replaces the placeholder. Nothing here autoplays, and the poster
+ * is lazy-loaded so it never competes with first paint.
+ */
+.pw-video {
+  margin: 0;
+  max-inline-size: 56rem;
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border);
+  border-radius: var(--pw-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--pw-shadow-sm);
+}
+
+.pw-video__player,
+.pw-video__poster {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 9;
+  background: var(--pw-surface-raised);
+  object-fit: cover;
+}
+
+.pw-video__placeholder {
+  position: relative;
+  display: block;
+}
+
+.pw-video__placeholder .pw-status {
+  position: absolute;
+  inset-block-start: var(--pw-space-3);
+  inset-inline-start: var(--pw-space-3);
+}
+
+.pw-video__caption {
+  padding: var(--pw-space-5);
+  border-block-start: 1px solid var(--pw-border);
+}
+
+.pw-video__title {
+  margin-block-end: var(--pw-space-2);
+  font-size: var(--pw-text-lg);
+  font-weight: var(--pw-weight-semibold);
+}
+
+.pw-video__summary {
+  margin-block-end: var(--pw-space-3);
+  color: var(--pw-text-secondary);
+  max-inline-size: var(--pw-prose-max);
+}
+
+.pw-video__transcript { border-block-start: 1px solid var(--pw-border); }
+
+.pw-video__scenes {
+  margin: 0;
+  padding-inline-start: var(--pw-space-6);
+  color: var(--pw-text-secondary);
+}
+
+.pw-video__scenes li { margin-block-end: var(--pw-space-2); }

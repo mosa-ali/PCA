@@ -1,0 +1,197 @@
+/*
+ * PUBLIC-5 — PCA Public design tokens.
+ *
+ * Follows PCA_PUBLIC_DESIGN_GUIDELINE.md: light default, calm, human,
+ * accessible, family-friendly, privacy-first. Section 2's prohibited
+ * directions (dark cyberpunk, hacker, surveillance, red-alert) are not
+ * represented here at all -- there is no dark palette to fall into.
+ *
+ * COLOUR STATUS: Design Guideline section 3 is OWNER_APPROVAL_PENDING and
+ * explicitly permits the design agent to propose accessible values. These are
+ * proposals. Section 3 asks for a calm medium blue primary with a teal/green
+ * trust accent and a warm sand neutral, which is what is implemented.
+ *
+ * TWO DELIBERATE CHOICES THE OWNER SHOULD SEE:
+ *
+ * 1. --pw-primary is #1B5FA8, NOT platform-admin-web's #4f8cff. PUBLIC-0
+ *    flagged that the operator console's accent already sits in the "calm
+ *    medium blue" family, so adopting a bright blue here would visually merge
+ *    the public brand with the internal admin realm -- against Design
+ *    Guideline section 27. #1B5FA8 is deeper and calmer, and is not used by
+ *    either console.
+ *
+ * 2. --pw-trust is #0F766A, which IS parent-web's existing accent. Guideline
+ *    section 3 demotes teal to the trust/privacy accent rather than removing
+ *    it, so reusing the shipped hue in that role keeps continuity with the
+ *    Parent console without either app having to re-derive its accent chain.
+ *
+ * CONTRAST IS NOT ASSERTED IN COMMENTS. Every foreground/background pair below
+ * is computed and asserted at build time by assertContrast() in build.mjs, and
+ * the build fails if any pair drops below its WCAG 2.1 target. Real-browser
+ * verification is still required at PUBLIC-12 before CLM-054 may be claimed --
+ * a computed ratio proves the token values, not the rendered page.
+ *
+ * Two layers, same discipline parent-web documents: raw ramps first, semantic
+ * aliases second. Components reference ONLY the semantic layer. PUBLIC-0 found
+ * parent-web's own version of this rule broken in four rules, so here it is
+ * enforced by a build-time scan (assertNoRawTokenUse) rather than by comment.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Layer 1: raw ramps. Components must never reference these. ------- */
+  --pca-white: #ffffff;
+
+  --pca-slate-25: #f7f9fc;
+  --pca-slate-50: #eef2f6;
+  --pca-slate-100: #e4eaf1;
+  --pca-slate-200: #dce3ec;
+  /* #7d8ca0, not the lighter #8a99ad: a strong border is a UI component
+     boundary and must clear WCAG 3:1 against white. assertContrast() in
+     build.mjs measures it; the lighter value computes 2.90:1 and fails. */
+  --pca-slate-400: #7d8ca0;
+  --pca-slate-600: #4a5a6e;
+  --pca-slate-900: #132030;
+
+  --pca-sand-50: #faf6f0;
+  --pca-sand-100: #f3ebdd;
+
+  --pca-blue-50: #eaf1f9;
+  --pca-blue-600: #1b5fa8;
+  --pca-blue-700: #164a85;
+  --pca-blue-800: #113a68;
+  --pca-blue-focus: #0b57d0;
+
+  --pca-teal-50: #e8f6f3;
+  --pca-teal-600: #0f766a;
+  --pca-teal-700: #0b5c53;
+
+  --pca-green-50: #e7f5ee;
+  --pca-green-700: #12704b;
+  --pca-amber-50: #fdf3dc;
+  --pca-amber-700: #7a5600;
+  --pca-red-50: #fdecea;
+  --pca-red-700: #b42318;
+
+  /* ---- Layer 2: semantic aliases. This is the component API. ------------ */
+
+  /* Surfaces */
+  --pw-canvas: var(--pca-slate-25);
+  --pw-surface: var(--pca-white);
+  --pw-surface-raised: var(--pca-slate-50);
+  --pw-surface-warm: var(--pca-sand-50);
+  --pw-surface-warm-strong: var(--pca-sand-100);
+  --pw-surface-primary-soft: var(--pca-blue-50);
+  --pw-surface-trust-soft: var(--pca-teal-50);
+
+  /* Borders */
+  --pw-border: var(--pca-slate-200);
+  --pw-border-strong: var(--pca-slate-400);
+
+  /* Text */
+  --pw-text: var(--pca-slate-900);
+  --pw-text-secondary: var(--pca-slate-600);
+  --pw-text-on-primary: var(--pca-white);
+  --pw-text-on-trust: var(--pca-white);
+
+  /* Actions */
+  --pw-primary: var(--pca-blue-600);
+  --pw-primary-hover: var(--pca-blue-700);
+  --pw-primary-active: var(--pca-blue-800);
+  --pw-trust: var(--pca-teal-600);
+  --pw-trust-hover: var(--pca-teal-700);
+  --pw-focus-ring: var(--pca-blue-focus);
+
+  /* Feature status ramp (Features page status labels, CONTENT_EN section 4) */
+  --pw-status-available-fg: var(--pca-green-700);
+  --pw-status-available-bg: var(--pca-green-50);
+  --pw-status-limited-fg: var(--pca-amber-700);
+  --pw-status-limited-bg: var(--pca-amber-50);
+  --pw-status-later-fg: var(--pca-slate-600);
+  --pw-status-later-bg: var(--pca-slate-50);
+  --pw-status-platform-fg: var(--pca-blue-600);
+  --pw-status-platform-bg: var(--pca-blue-50);
+
+  /* Notices */
+  --pw-notice-fg: var(--pca-amber-700);
+  --pw-notice-bg: var(--pca-amber-50);
+  --pw-danger-fg: var(--pca-red-700);
+  --pw-danger-bg: var(--pca-red-50);
+
+  /* ---- Typography ------------------------------------------------------- */
+  /*
+   * System stack only. No @font-face, no Google Fonts, no self-hosted file.
+   * Three reasons, all from PUBLIC-0: the production CSP is font-src 'self';
+   * a webfont is a payload and LCP cost on a marketing site; and parent-web
+   * already proved this stack renders Arabic acceptably. 'Noto Sans Arabic'
+   * and 'Dubai' are named ahead of Tahoma so an Arabic reader gets a modern
+   * face where one is installed. Guideline section 4 asks for strong Arabic
+   * and Latin support -- adopting a hosted family is an owner decision with a
+   * CSP change attached, recorded for PUBLIC-12.
+   */
+  --pw-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    'Noto Sans Arabic', 'Dubai', Tahoma, Arial, sans-serif;
+
+  --pw-text-xs: 0.8125rem;   /* 13px */
+  --pw-text-sm: 0.9375rem;   /* 15px */
+  --pw-text-base: 1.0625rem; /* 17px  -- guideline section 4: 16-18px body */
+  --pw-text-lg: 1.1875rem;   /* 19px */
+  --pw-text-xl: 1.375rem;    /* 22px */
+  --pw-text-2xl: 1.625rem;   /* 26px */
+  --pw-text-3xl: 2rem;       /* 32px */
+  --pw-text-4xl: 2.5rem;     /* 40px */
+
+  --pw-weight-normal: 400;
+  --pw-weight-medium: 500;
+  --pw-weight-semibold: 600;
+  --pw-weight-bold: 700;
+
+  --pw-leading-tight: 1.25;
+  --pw-leading-snug: 1.4;
+  --pw-leading-body: 1.6;  /* guideline section 4: 1.5-1.7 */
+
+  /* ---- Spacing: 4px / 8px scale (guideline section 5) ------------------- */
+  --pw-space-1: 0.25rem;
+  --pw-space-2: 0.5rem;
+  --pw-space-3: 0.75rem;
+  --pw-space-4: 1rem;
+  --pw-space-5: 1.25rem;
+  --pw-space-6: 1.5rem;
+  --pw-space-8: 2rem;
+  --pw-space-10: 2.5rem;
+  --pw-space-12: 3rem;
+  --pw-space-16: 4rem;
+  --pw-space-20: 5rem;
+
+  /* ---- Layout ----------------------------------------------------------- */
+  /*
+   * PUBLIC-0 flagged that parent-web's --content-max is 90rem (1440px), wider
+   * than guideline section 6's 1180-1280px. The public site follows the
+   * guideline rather than the console token.
+   */
+  --pw-content-max: 75rem;  /* 1200px */
+  --pw-prose-max: 48rem;    /* 768px -- guideline section 6: 720-820px */
+  --pw-gutter: var(--pw-space-5);
+  --pw-touch-target: 44px;
+  --pw-header-height: 4rem;
+
+  --pw-radius-sm: 6px;
+  --pw-radius: 10px;
+  --pw-radius-lg: 16px;
+  --pw-radius-pill: 999px;
+
+  --pw-shadow-sm: 0 1px 2px rgba(19, 32, 48, 0.06);
+  --pw-shadow: 0 2px 8px rgba(19, 32, 48, 0.08);
+  --pw-shadow-lg: 0 8px 28px rgba(19, 32, 48, 0.1);
+
+  /* Section rhythm: 48-72px mobile, 64-112px desktop (guideline section 5) */
+  --pw-section-y: var(--pw-space-12);
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --pw-gutter: var(--pw-space-8);
+    --pw-section-y: var(--pw-space-20);
+  }
+}

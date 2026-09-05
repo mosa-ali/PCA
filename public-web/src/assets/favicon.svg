@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="PCA">
+  <title>PCA</title>
+  <desc>Provisional mark: a soft protective shield with an open centre. Deliberately not a padlock, camera, eye or keyhole, per Design Guideline section 12 (no icons implying spying or monitoring) and section 18 (a padlock is never used as proof of security). Design Guideline section 3 is OWNER_APPROVAL_PENDING and the repository holds no logo or wordmark, so this is a proposal.</desc>
+  <rect width="32" height="32" rx="7" fill="#0F766A"/>
+  <path d="M16 6.5 24 9.4v6.2c0 5-3.3 8.5-8 10.1-4.7-1.6-8-5.1-8-10.1V9.4L16 6.5Z"
+        fill="none" stroke="#FFFFFF" stroke-width="2.1" stroke-linejoin="round"/>
+  <circle cx="16" cy="15.2" r="2.4" fill="#FFFFFF"/>
+</svg>

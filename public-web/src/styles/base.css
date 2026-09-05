@@ -1,0 +1,211 @@
+/*
+ * PUBLIC-5 — base layer: reset, typography, layout, accessibility primitives.
+ *
+ * RTL RULE, ENFORCED NOT DOCUMENTED: this file and components.css use CSS
+ * logical properties exclusively -- margin-inline, padding-inline,
+ * inset-inline, border-inline, text-align: start/end. There is not one
+ * physical margin-left / padding-right / left: / right: box declaration.
+ * build.mjs scans both stylesheets and FAILS the build if a physical box
+ * property appears, because PUBLIC-0 found the equivalent invariant in
+ * parent-web was guarded only by a Playwright spec that CI never runs.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--pw-canvas);
+  color: var(--pw-text);
+  font-family: var(--pw-font-sans);
+  font-size: var(--pw-text-base);
+  line-height: var(--pw-leading-body);
+  /* Arabic needs a little more vertical room (guideline section 4). */
+  font-synthesis-weight: none;
+}
+
+html[dir='rtl'] body {
+  line-height: 1.75;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+h1, h2, h3, h4 {
+  margin-block: 0 var(--pw-space-4);
+  line-height: var(--pw-leading-tight);
+  font-weight: var(--pw-weight-bold);
+  color: var(--pw-text);
+  /* Guideline section 4: avoid overly thin weights; no uppercase transforms,
+     which do not translate to Arabic. */
+  text-transform: none;
+  text-wrap: balance;
+}
+
+h1 { font-size: var(--pw-text-3xl); letter-spacing: -0.015em; }
+h2 { font-size: var(--pw-text-2xl); letter-spacing: -0.01em; }
+h3 { font-size: var(--pw-text-lg); font-weight: var(--pw-weight-semibold); }
+h4 { font-size: var(--pw-text-base); font-weight: var(--pw-weight-semibold); }
+
+@media (min-width: 48rem) {
+  h1 { font-size: var(--pw-text-4xl); }
+  h2 { font-size: var(--pw-text-3xl); }
+  h3 { font-size: var(--pw-text-xl); }
+}
+
+p {
+  margin-block: 0 var(--pw-space-4);
+  max-inline-size: var(--pw-prose-max);
+}
+
+ul, ol {
+  margin-block: 0 var(--pw-space-4);
+  padding-inline-start: var(--pw-space-6);
+}
+
+li { margin-block-end: var(--pw-space-2); }
+
+a {
+  color: var(--pw-primary);
+  text-underline-offset: 0.2em;
+}
+
+a:hover { color: var(--pw-primary-hover); }
+
+strong { font-weight: var(--pw-weight-semibold); }
+
+/* ---- Focus: always visible, never removed (guideline section 23) -------- */
+:focus-visible {
+  outline: 3px solid var(--pw-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--pw-radius-sm);
+}
+
+/* Skip link — first focusable element on every page. */
+.pw-skip {
+  position: absolute;
+  inset-block-start: var(--pw-space-2);
+  inset-inline-start: var(--pw-space-2);
+  z-index: 100;
+  padding: var(--pw-space-3) var(--pw-space-4);
+  background: var(--pw-surface);
+  color: var(--pw-text);
+  border: 2px solid var(--pw-focus-ring);
+  border-radius: var(--pw-radius);
+  font-weight: var(--pw-weight-semibold);
+  transform: translateY(-200%);
+}
+
+.pw-skip:focus {
+  transform: translateY(0);
+}
+
+/* Screen-reader-only. PUBLIC-0 recorded that parent-web once shipped .sr-only
+   with no rule at all, making assistive-only text visible. Defined here first. */
+.pw-sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Motion (guideline section 24) ------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Windows High Contrast --------------------------------------------- */
+/* PUBLIC-0 found neither existing stylesheet handles forced-colors at all. */
+@media (forced-colors: active) {
+  .pw-btn,
+  .pw-card,
+  .pw-status {
+    border: 1px solid ButtonBorder;
+  }
+  :focus-visible {
+    outline: 3px solid Highlight;
+  }
+}
+
+/* ---- Layout ------------------------------------------------------------- */
+.pw-container {
+  inline-size: 100%;
+  max-inline-size: var(--pw-content-max);
+  margin-inline: auto;
+  padding-inline: var(--pw-gutter);
+}
+
+.pw-prose {
+  max-inline-size: var(--pw-prose-max);
+}
+
+.pw-section {
+  padding-block: var(--pw-section-y);
+}
+
+.pw-section--warm { background: var(--pw-surface-warm); }
+.pw-section--raised { background: var(--pw-surface); }
+
+.pw-section__lead {
+  color: var(--pw-text-secondary);
+  font-size: var(--pw-text-lg);
+  max-inline-size: var(--pw-prose-max);
+}
+
+.pw-eyebrow {
+  display: block;
+  font-size: var(--pw-text-sm);
+  font-weight: var(--pw-weight-semibold);
+  color: var(--pw-trust);
+  margin-block-end: var(--pw-space-2);
+}
+
+/* Responsive grid used by feature/principle/step cards. Single column below
+   640px so 320px never produces a horizontal scrollbar. */
+.pw-grid {
+  display: grid;
+  gap: var(--pw-space-5);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 40rem) {
+  .pw-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 60rem) {
+  .pw-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pw-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Bidi isolation for mixed Latin/Arabic runs (product names, emails, URLs).
+   parent-web uses the same primitive at 37 sites. */
+.pw-iso {
+  unicode-bidi: isolate;
+}
+
+main:focus { outline: none; }

@@ -433,3 +433,36 @@ jobs:
       - name: platform-admin-web production demo-mode gate + negative control
         working-directory: platform-admin-web
         run: npm run gate:demo-mode:both
+
+  public-web-build:
+    # PCA Public (Release A). The package is deliberately zero-dependency: the
+    # build is prerendered static HTML produced by plain Node, so this job needs
+    # no `npm ci`, no lockfile cache and no entry in the dependency-audit or
+    # SBOM jobs above -- there is nothing to install or audit.
+    #
+    # `npm run build` runs `node --check` first. That is not ceremony: a patch
+    # once wrote a literal newline into a regular expression in build.mjs, which
+    # made the whole module a SyntaxError and silently disabled the content
+    # parity, contrast, duplication and claim-status gates while the command
+    # still appeared to succeed. The syntax check is what makes the other gates
+    # trustworthy.
+    #
+    # The gates this job actually executes: EN/AR content parity, computed WCAG
+    # contrast over every token pair, logical-property-only CSS, design-token
+    # layering, claim-status labels against the claim register, forbidden public
+    # claims, no external origins, internal link resolution, SVG well-formedness,
+    # video-asset presence, cross-route content duplication, Home reading time,
+    # and staleness of the Arabic-review and new-copy lists.
+    name: public-web build and content gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Build PCA Public and run every content gate
+        working-directory: public-web
+        run: npm run build

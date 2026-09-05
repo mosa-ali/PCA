@@ -1,0 +1,21 @@
+# The Public programme documentation packages ship SHA256SUMS.txt, and their
+# integrity evidence is byte-exact: reports/PUBLIC_DOCS_LOADED_REPORT.md records
+# 13/13 files verifying OK, and that verification is what authorises the v0.2
+# package as the controlling implementation input.
+#
+# PCA_PUBLIC_CLAIM_REGISTER.csv (v0.1 and v0.2) is authored with CRLF line
+# endings. The repository root .gitattributes sets `* text=auto eol=lf`, which
+# would normalise it to LF on checkout -- changing its bytes, and therefore its
+# SHA256, so a fresh clone would FAIL `sha256sum -c SHA256SUMS.txt`. Measured,
+# not assumed: the manifest expects 72b7390108cc338b..., the LF-normalised file
+# hashes to 29e4bc9384650e3c...
+#
+# `-text` disables all line-ending conversion for these files so the packages
+# stay verifiable exactly as the owner issued them. This is a directory-local
+# override deliberately scoped to docs/public/ -- it changes nothing elsewhere
+# in the repository and touches no shared configuration file.
+#
+# It applies to the checksummed packages only. Reports and addenda in this
+# directory are ordinary markdown and keep the repository-wide LF rule.
+PCA_Public_Programme_Documentation_Package_v0.1/** -text
+PCA_Public_Programme_Documentation_Package_v0.2/** -text

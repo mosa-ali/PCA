@@ -1,0 +1,19 @@
+{
+  "name": "pca-public-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PCA Public — bilingual EN/AR informational website (PUBLIC RELEASE A). Prerendered static HTML. Architecturally separate from parent-web and platform-admin-web; shares no session, token, RBAC model or bundle with either.",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "node --check build.mjs && node build.mjs",
+    "check": "node --check build.mjs && node build.mjs --check-only",
+    "serve": "node scripts/serve.mjs",
+    "uat": "node scripts/uat.mjs",
+    "dev": "node build.mjs && node scripts/serve.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

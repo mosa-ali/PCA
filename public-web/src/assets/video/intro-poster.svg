@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="presentation">
+  <title>PCA</title>
+  <desc>Calm, warm, abstract illustration of a parent and child with a device, under an open protective arc. Deliberately contains no fear, hacker, surveillance or distressed-child imagery, per Design Guideline sections 2 and 13. Replaced by a real frame when the recording lands.</desc>
+  <defs>
+    <linearGradient id="pcaSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FAF6F0"/>
+      <stop offset="100%" stop-color="#EAF1F9"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#pcaSky)"/>
+  <circle cx="760" cy="130" r="58" fill="#E8F6F3"/>
+  <path d="M300 400c0-99 80-179 180-179s180 80 180 179" fill="none" stroke="#0F766A" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="430" cy="322" r="34" fill="#1B5FA8"/>
+  <path d="M382 400c0-27 22-48 48-48s48 21 48 48z" fill="#1B5FA8"/>
+  <circle cx="524" cy="344" r="24" fill="#0F766A"/>
+  <path d="M490 400c0-19 15-34 34-34s34 15 34 34z" fill="#0F766A"/>
+  <rect x="600" y="330" width="52" height="76" rx="9" fill="#FFFFFF" stroke="#7D8CA0" stroke-width="4"/>
+  <rect x="612" y="348" width="28" height="6" rx="3" fill="#DCE3EC"/>
+  <rect x="612" y="364" width="20" height="6" rx="3" fill="#DCE3EC"/>
+  <rect x="0" y="430" width="960" height="110" fill="#FFFFFF" opacity="0.55"/>
+</svg>
