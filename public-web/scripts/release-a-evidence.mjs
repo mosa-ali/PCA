@@ -306,6 +306,63 @@ const notFound = await (async () => {
   return { httpStatus: res?.status(), ...out };
 })();
 
+// ---------------------------------------------------------------------------
+// PUBLIC-UAT-DESIGN-001 regression — header navigation exclusivity
+//
+// The desktop navigation and the mobile menu toggle must never both be visible.
+// They were: `.pw-menu-toggle { display: none }` sat inside the `min-width:
+// 62rem` block ABOVE the base `.pw-menu-toggle { display: inline-flex }`
+// declaration, and with equal specificity the later rule wins at every width --
+// so desktop rendered a "Menu" button beside the full navigation it duplicates.
+//
+// Caught by an owner looking at a screenshot, not by this harness, because the
+// suite asserted that controls are REACHABLE and never that they are mutually
+// exclusive. Reachability is exactly what a redundant control passes.
+//
+// Measured with getComputedStyle and a real bounding box rather than by reading
+// the CSS, so it holds regardless of how the rule is eventually expressed.
+// ---------------------------------------------------------------------------
+const navExclusivity = [];
+for (const [locale, path] of [['en', '/'], ['ar', '/ar/']]) {
+  for (const [label, width] of [['desktop', 1440], ['mobile', 390]]) {
+    const navCtx = await browser.newContext({ viewport: { width, height: 900 } });
+    const navPage = await navCtx.newPage();
+    await navPage.goto(BASE + path, { waitUntil: 'networkidle' });
+    const seen = await navPage.evaluate(() => {
+      const visible = (el) => {
+        if (!el) return false;
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0' && r.width > 0 && r.height > 0;
+      };
+      const nav = document.querySelector('nav.pw-nav');
+      const toggle = document.getElementById('pw-menu-toggle');
+      return {
+        navVisible: visible(nav),
+        toggleVisible: visible(toggle),
+        navLinks: nav ? [...nav.querySelectorAll('a')].filter(visible).length : 0,
+        dir: document.documentElement.dir,
+      };
+    });
+    await navCtx.close();
+
+    const want = width >= 992 ? { navVisible: true, toggleVisible: false } : { navVisible: false, toggleVisible: true };
+    const pass = seen.navVisible === want.navVisible && seen.toggleVisible === want.toggleVisible;
+    navExclusivity.push({ locale, label, width, ...seen, pass });
+
+    // Failures are recorded, not flagged here: `problems` and flag() are
+    // declared further down, after the browser is closed.
+    if (!pass) {
+      navExclusivity[navExclusivity.length - 1].problem =
+        'header navigation exclusivity: nav visible=' + seen.navVisible + ' (want ' + want.navVisible +
+        '), menu toggle visible=' + seen.toggleVisible + ' (want ' + want.toggleVisible + ')' +
+        (seen.navVisible && seen.toggleVisible
+          ? ' -- the full navigation and the mobile menu toggle are BOTH visible (PUBLIC-UAT-DESIGN-001)'
+          : '');
+    }
+  }
+}
+
 await browser.close();
 
 // ---------------------------------------------------------------------------
@@ -315,6 +372,10 @@ const GATED_IN_METADATA = /\bWCAG\b|AA compliant|free plan|free forever|Google P
 
 const problems = [];
 function flag(where, msg) { problems.push(`${where}: ${msg}`); }
+
+for (const r of navExclusivity) {
+  if (r.problem) flag(`${r.locale} ${r.width}px`, r.problem);
+}
 
 for (const r of results) {
   const w = `${r.path}@${r.width}`;
@@ -427,6 +488,8 @@ const report = {
 // this file carries internal test telemetry and a loopback base URL.
 const REPORTS = join(ROOT, 'reports');
 await (await import('node:fs/promises')).mkdir(REPORTS, { recursive: true });
+report.headerNavExclusivity = navExclusivity;
+
 await writeFile(join(REPORTS, 'release-a-evidence.json'), JSON.stringify(report, null, 2), 'utf8');
 
 // ---------------------------------------------------------------------------
@@ -436,6 +499,14 @@ console.log('\n=== PUBLIC-13 route matrix ===');
 console.log(`  ${ROUTES.length} routes x ${WIDTHS.length} widths = ${results.length} checks`);
 console.log(`  problems: ${problems.length}`);
 for (const p of problems.slice(0, 40)) console.log(`    - ${p}`);
+
+console.log('\n=== PUBLIC-UAT-DESIGN-001 header nav exclusivity ===');
+for (const r of navExclusivity) {
+  console.log(
+    `  ${r.locale} ${r.label.padEnd(7)} ${String(r.width).padStart(4)}px  nav=${String(r.navVisible).padEnd(5)} ` +
+      `toggle=${String(r.toggleVisible).padEnd(5)} navLinks=${r.navLinks} dir=${r.dir}  ${r.pass ? 'PASS' : 'FAIL'}`
+  );
+}
 
 console.log('\n=== PUBLIC-12 accessibility ===');
 console.log(`  axe violations (WCAG 2.1 A+AA): ${axeViolations} across ${deep.length} page runs`);

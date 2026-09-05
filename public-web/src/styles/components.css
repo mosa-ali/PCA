@@ -93,7 +93,20 @@
 
 @media (min-width: 62rem) {
   .pw-nav { display: block; }
-  .pw-menu-toggle { display: none; }
+  /*
+   * The matching `.pw-menu-toggle { display: none }` is NOT here. It lives at
+   * the end of the mobile-menu section below, AFTER the base
+   * `.pw-menu-toggle { display: inline-flex }` declaration.
+   *
+   * PUBLIC-UAT-DESIGN-001: it used to be on the next line. Both selectors have
+   * specificity (0,1,0), so the later one in source order wins regardless of the
+   * media query -- and the base rule is declared ~45 lines further down. The
+   * toggle therefore stayed `inline-flex` at every width, and desktop rendered a
+   * "Menu" button beside the full navigation it duplicates.
+   *
+   * `.pw-nav` is safe in this position for the opposite reason: its base
+   * `display: none` is declared ABOVE, so this override is the later rule.
+   */
 }
 
 /* ---- Language switcher (must be reachable without an account, IA s.9) --- */
@@ -187,6 +200,16 @@
  * and the language options tighten. Design Guideline section 21 forbids any
  * horizontal scrolling from content at 320px.
  */
+/*
+ * Desktop hides the menu toggle. Declared HERE, after the base
+ * `.pw-menu-toggle` rule above, because equal specificity makes source order
+ * decisive -- see the note in the `min-width: 62rem` block near .pw-nav.
+ * No !important: the cascade is doing the work, in the direction it should.
+ */
+@media (min-width: 62rem) {
+  .pw-menu-toggle { display: none; }
+}
+
 @media (max-width: 26rem) {
   .pw-header__bar { gap: var(--pw-space-2); }
 
