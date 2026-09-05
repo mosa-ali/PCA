@@ -226,7 +226,7 @@ types; there is no `DEVELOPMENT_TEAM`, no app icon, no launch screen, and no
 | Release | Blocking |
 |---|---|
 | **PUBLIC_A** | Gate scoping · Owner visual UAT · OD-12 (refreshed corpus) · OD-13 legal · public reply identity / Send-As · apex DNS + certificate · TLS/deployment verification · final owner authorization. **Not videos.** Engineering is essentially done |
-| **AUTH_B** | Live database (never created) · production email provider (never started). **Not crypto. Not payment provider** |
+| **AUTH_B** | *Functional outer prerequisites:* live database (never created) · production email provider (never started). *Release acceptance additionally requires:* every AUTH_B-scoped P0/P1 action closed or formally accepted with evidence — the dead DB tests (A002), DB environment hardening (A009, A047), `trustProxy` (A014), reset-code hashing (A015), the `NODE_ENV` cookie asymmetry (A030), `__Host-` cookies (A048), and the email gate (A061). **Not crypto. Not payment provider** |
 | **PARENT_C** | AUTH_B, plus the crypto review, plus `parent-web/Dockerfile` (does not exist), plus the durability components and the retention promise |
 | **ANDROID_D** | Crypto review · the blank-`familyId` and placeholder-domain fixes · hardware campaign (9 gates) · `assetlinks.json` hosting · icon and signing config |
 | **IOS_FUTURE** | Four external gates plus a repo-solvable compile defect |

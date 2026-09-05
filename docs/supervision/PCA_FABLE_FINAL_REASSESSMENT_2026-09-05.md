@@ -58,8 +58,13 @@ Four further findings change the shape of the plan:
    `markVerified` **unconditionally with whatever `familyId` came back** — `null`
    when the crypto suite rejects. The account still becomes `VERIFIED`, still
    receives free-access defaults, and a session is still issued; login requires
-   only `VERIFIED`. So **auth-only Release B needs a live database and a
-   production email provider, and nothing else.** Crypto gates family genesis,
+   only `VERIFIED`. So Release B's **functional outer prerequisites** are a
+   **live database and a production email provider** — and *those two alone*
+   decide whether the flow can work at all. They are not the same as
+   **production release acceptance**, which additionally requires every
+   AUTH_B-scoped P0/P1 security, test and runtime action to be closed, or
+   formally accepted/deferred with evidence (see the action register's
+   `BLOCKS_RELEASE = AUTH_B` rows). Crypto gates family genesis,
    family authority, E2EE and device trust — it blocks `PARENT_C` family
    functionality and `ANDROID_D`, and should be commissioned **in parallel**, not
    sequenced ahead of Release B.
@@ -384,7 +389,7 @@ cluster is 35 real-money billing requirements.
 | Release | Verdict | Blocking |
 |---|---|---|
 | **PUBLIC_A — Public site** | **NOT_READY** (closest by far) | Release-gate scoping · **Owner visual UAT (IN_PROGRESS)** · OD-12 Arabic (pack must be regenerated first) · OD-13 legal facts · **public reply identity / Send-As (NOT_READY)** · apex DNS + certificate + redirect · TLS/deployment verification · final owner authorization. **Engineering is essentially done** — it builds green with no dependencies. **Videos are NOT a blocker** — see below |
-| **AUTH_B — Parent identity** | **NOT_READY** | **Live database (never created)** and **no email provider exists** → no account can reach VERIFIED → no parent can log in. **Crypto is NOT required** for identity/auth, and payment-provider selection is unrelated |
+| **AUTH_B — Parent identity** | **NOT_READY** | *Functional outer prerequisites:* **live database (never created)** and **no email provider exists** → no account can reach VERIFIED → no parent can log in. *Release acceptance additionally requires* every AUTH_B-scoped P0/P1 action closed or formally accepted with evidence. **Crypto is NOT required** for identity/auth, and payment-provider selection is unrelated |
 | **PARENT_C — Parent Web** | **NOT_READY** | AUTH_B first, then: **no `parent-web/Dockerfile` at all**; ~16 core operations dead behind `CRYPTO_SUITE_APPROVED_FOR_PRODUCTION = false` (a source constant, not a config flag); the six durability components; and the unkept retention promise |
 | **D — Android** | **NOT_READY** | Builds and tests clean (**1,345 tests, 1,344 pass, 0 fail**; lint 0 errors / 95 warnings offline). But `EnrollmentCoordinator.kt:150` is a kill switch that disables retention, location, geofencing, prayer, YouTube Mode A, Delete-Now and export — **and clearing the crypto review does not fix it**, because `:387` then persists `familyId = ""`. Plus 9 hardware gates, no launcher icon, no release signing config, and a placeholder domain (`api.pca.app`) in production wiring |
 | **iOS** | **NOT_READY** | Four external gates *plus* a repo-solvable compile defect: the `PCADeviceActivityMonitor` target compiles one file referencing ten host-app-only types. No `DEVELOPMENT_TEAM`, no app icon, no launch screen, no `DeviceActivityCenter` call site anywhere |
@@ -516,7 +521,15 @@ VIDEOS_BLOCK_RELEASE_A      = NO
 OWNER_UAT_BLOCKS_RELEASE_A            = YES
 PUBLIC_REPLY_IDENTITY_BLOCKS_RELEASE_A = YES
 
+AUTH_B_FUNCTIONAL_OUTER_PREREQUISITES = LIVE_DB + PRODUCTION_EMAIL
+AUTH_B_PRODUCTION_ACCEPTANCE          = ALL AUTH_B-SCOPED P0/P1 GATES CLOSED
+                                        (or formally accepted/deferred with
+                                        evidence - see BLOCKS_RELEASE = AUTH_B
+                                        rows in the action register)
+
+CRYPTO_BLOCKS_AUTH_B              = NO
 CRYPTO_BLOCKS_AUTH_ONLY_RELEASE_B = NO
+PAYMENT_PROVIDER_BLOCKS_AUTH_B    = NO
 LIVE_DB_BLOCKS_RELEASE_B          = YES
 PRODUCTION_EMAIL_BLOCKS_RELEASE_B = YES
 PAYMENT_PROVIDER_BLOCKS_RELEASE_B = NO
