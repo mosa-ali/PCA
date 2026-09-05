@@ -82,6 +82,90 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Release A converts on DOWNLOAD, never on login
+//
+// Owner ruling: there is no public login in Release A, and the conversion action
+// is downloading the app. Two things have to hold at once, and they pull in
+// opposite directions -- the download area must be VISIBLE, and it must not
+// imply a download that does not exist. CLM-024's register entry states the
+// second half in terms: "NO store badge, NO download action".
+//
+// Auth vocabulary is judged on RENDERED CONTROLS, not on prose. /how-it-works/
+// legitimately describes account creation as a future step, on a page that opens
+// by saying accounts are not open yet. Banning the words outright would force
+// the site to become vaguer about what it cannot do yet, which is the opposite
+// of the point.
+// ---------------------------------------------------------------------------
+{
+  const AUTH_WORDS = /\b(log ?in|sign ?in|sign ?up|create account|get started)\b|تسجيل الدخول|إنشاء حساب/i;
+  const controls = [];
+  for (const [rel, body] of htmlFiles) {
+    for (const m of body.matchAll(/<(a|button)\b[^>]*>([\s\S]*?)<\/(?:a|button)>/gi)) {
+      const text = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (AUTH_WORDS.test(text)) controls.push(`${rel}: <${m[1]}> "${text}"`);
+    }
+  }
+  if (controls.length) {
+    finding('CRITICAL', 'no-public-login', `an auth control is rendered: ${controls.slice(0, 4).join(' | ')}`);
+  } else {
+    ok('no-public-login', 'no login, sign-in, sign-up or create-account control is rendered anywhere');
+  }
+
+  for (const routeId of ['login', 'signup', 'forgotPassword', 'resetPassword', 'verifyEmail']) {
+    const route = ROUTES.find((r) => r.id === routeId);
+    if (route?.build) finding('CRITICAL', 'no-public-login', `auth route ${routeId} is built into the artifact.`);
+    if (route && corpus.has(`/${route.path}/index.html`)) {
+      finding('CRITICAL', 'no-public-login', `auth route /${route.path}/ was emitted.`);
+    }
+  }
+
+  // The download action must exist and must land on the download section.
+  const downloadCtas = [];
+  for (const [rel, body] of htmlFiles) {
+    for (const m of body.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      const text = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (/download|get the app|تنزيل|الحصول على التطبيق/i.test(text)) downloadCtas.push({ rel, href: m[1], text });
+    }
+  }
+  if (!downloadCtas.length) {
+    finding('CRITICAL', 'download-action', 'no download / get-the-app action is rendered anywhere.');
+  } else if (!downloadCtas.some((c) => c.href.includes('#download'))) {
+    finding('HIGH', 'download-action', 'a download action exists but none targets the #download section.');
+  } else {
+    ok('download-action', `${downloadCtas.length} download action(s) rendered, targeting the #download section`);
+  }
+
+  const hasSection = [...corpus].some(([rel, b]) => rel.endsWith('.html') && b.includes('id="download"'));
+  if (!hasSection) finding('CRITICAL', 'download-action', 'nothing renders a section with id="download".');
+
+  // Honesty: no store badge, no store URL, no install file, no fake link.
+  const FAKE = [
+    { re: /play\.google\.com|apps\.apple\.com|itunes\.apple\.com|appgallery|microsoft\.com\/store/i, what: 'an app-store URL' },
+    { re: /\.apk\b|\.ipa\b|\.aab\b/i, what: 'an installable file reference' },
+    { re: /(get it on google play|download on the app store|available on the app store)/i, what: 'store badge wording' },
+    { re: /<img[^>]+(badge|play-?store|app-?store)[^>]*>/i, what: 'a store badge image' },
+  ];
+  const fakes = [];
+  for (const [rel, body] of corpus) {
+    for (const f of FAKE) if (f.re.test(body)) fakes.push(`${rel}: ${f.what}`);
+  }
+  if (fakes.length) {
+    finding('CRITICAL', 'download-honesty', `the artifact implies a download that does not exist: ${fakes.slice(0, 4).join(' | ')}`);
+  } else {
+    ok('download-honesty', 'no store badge, no store URL, no .apk/.ipa/.aab, no fake download link');
+  }
+
+  // The download section must say, in both locales, that nothing ships yet.
+  for (const path of ['/how-it-works/index.html', '/ar/how-it-works/index.html']) {
+    const body = corpus.get(path) ?? '';
+    const saysNotYet = /nothing to download yet|has not been released|لا يوجد شيء للتنزيل|لم يُطلَق/.test(body);
+    if (!saysNotYet) {
+      finding('CRITICAL', 'download-honesty', `${path} carries a download section without stating that nothing is downloadable yet.`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 2. Legal drafts must not be indexable, and must not be in the sitemap
 // ---------------------------------------------------------------------------
 {

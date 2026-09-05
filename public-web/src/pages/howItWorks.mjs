@@ -123,9 +123,19 @@ export function render(ctx) {
       </div>`,
   });
 
-  // CLM-024 / CLM-026, both COMING_LATER.
+  // The download destination. CLM-024 / CLM-026, both COMING_LATER, and
+  // CLM-024's register entry says in terms: "NO store badge, NO download
+  // action". So this section is where a parent comes to get the app and is told
+  // plainly that there is nothing to get yet -- the lead says so before the two
+  // platform cards, each of which carries its own registered status pill.
+  //
+  // Deliberately NOT a separate /download/ route: the owner ruling keeps three
+  // primary pages, and a route whose entire content is "not available yet"
+  // would be a fourth page earning its own sitemap entry to say nothing.
   const child = section(ctx, {
+    id: 'download',
     title: t('howItWorks.child.title'),
+    lead: t('howItWorks.child.lead'),
     body: html`<div class="pw-grid pw-grid--2">
         ${frag(t('howItWorks.child.items').map((item) => card(ctx, item)))}
       </div>`,

@@ -109,7 +109,8 @@ export default {
   "howItWorks.security.title": "فرق مهم من ناحية الأمان",
   "howItWorks.security.body": "تثبيت PCA Parent يتعلق بالسهولة والوصول. أما “المتصفح الموثوق” فهو مفهوم أمني منفصل وله قواعده الخاصة.",
 
-  "howItWorks.child.title": "PCA Child",
+  "howItWorks.child.title": "تنزيل PCA Child",
+  "howItWorks.child.lead": "لا يوجد شيء للتنزيل بعد. لم يُطلَق PCA Child على أي منصة، فلا يوجد إدراج في متجر ولا رابط تنزيل ولا ملف تثبيت. وسيعرض هذا القسم طريقة التنزيل الفعلية لكل منصة عند إطلاقها فعلًا، وليس قبل ذلك.",
   "howItWorks.child.items": [
     {
       "claimId": "CLM-024",

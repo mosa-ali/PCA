@@ -76,6 +76,7 @@ export function render(ctx) {
     <p class="pw-hero__lead">${richText(t('home.hero.body'))}</p>
     <div class="pw-cta-row">
       ${primaryCta(ctx, 'primary')}
+      ${ctaLink(ctx, { routeId: 'howItWorks', hash: 'download', label: t('cta.getTheApp'), variant: 'secondary' })}
       ${ctaLink(ctx, { routeId: 'privacy', label: t('cta.privacyHandling'), variant: 'secondary' })}
     </div>
     <p class="pw-reassure">${richText(t('home.hero.reassure'))}</p>

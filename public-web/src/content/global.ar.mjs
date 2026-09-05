@@ -80,6 +80,7 @@ export default {
   "cta.whyPca": "لماذا PCA؟",
   "cta.howPcaWorks": "كيف تعمل PCA؟",
   "cta.pcaParent": "PCA Parent",
+  "cta.getTheApp": "الحصول على التطبيق",
   "cta.privacyHandling": "تعرّف على كيفية تعامل PCA مع الخصوصية",
   "cta.childSafety": "اقرأ مبادئ سلامة الطفل",
   "cta.access": "تعرّف على خيارات الوصول إلى PCA",

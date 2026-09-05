@@ -16,6 +16,12 @@
  */
 
 export const NEW_COPY = [
+  // Added during Owner UAT: the Release A conversion action is DOWNLOAD, not
+  // login. These three strings are outside the completed native Arabic review
+  // and need OD-12 coverage before publication.
+  'cta.getTheApp',
+  'howItWorks.child.title',
+  'howItWorks.child.lead',
   // Authored during the PUBLIC-14 remediation pass.
   'release.journeyNotice',
   'release.contactNotice',
@@ -99,6 +105,7 @@ export default {
   "cta.whyPca": "Why PCA",
   "cta.howPcaWorks": "How PCA Works",
   "cta.pcaParent": "PCA Parent",
+  "cta.getTheApp": "Get the App",
   "cta.privacyHandling": "See How PCA Handles Privacy",
   "cta.childSafety": "Read Our Child Safety Principles",
   "cta.access": "Learn About Access",

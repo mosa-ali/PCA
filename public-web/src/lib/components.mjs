@@ -152,10 +152,13 @@ export function releaseNotice(ctx, key) {
   </div>`;
 }
 
-export function ctaLink(ctx, { routeId, label, variant = 'secondary' }) {
+export function ctaLink(ctx, { routeId, label, variant = 'secondary', hash = null }) {
   const href = routeHref(ctx, routeId);
   if (!href) return raw('');
-  return html`<a class="pw-btn pw-btn--${variant}" href="${href}">${label}</a>`;
+  // `hash` targets a section on the destination route. It goes through
+  // routeHref() first, so a CTA still disappears entirely when the route is not
+  // linkable -- an anchor must never be the thing that resurrects a dead link.
+  return html`<a class="pw-btn pw-btn--${variant}" href="${href}${hash ? '#' + hash : ''}">${label}</a>`;
 }
 
 /** The release-gated primary conversion CTA. Never points at broken auth. */

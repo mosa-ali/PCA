@@ -134,7 +134,8 @@ export default {
   "howItWorks.security.title": "Important security distinction",
   "howItWorks.security.body": "Installing PCA Parent is about convenience. Trusted Browser authorization is a separate PCA security concept and follows separate rules.",
 
-  "howItWorks.child.title": "PCA Child",
+  "howItWorks.child.title": "Download PCA Child",
+  "howItWorks.child.lead": "There is nothing to download yet. PCA Child has not been released on any platform, so there is no store listing, no download link and no install file. This section will carry the real download route for each platform once that platform is genuinely released — and not before.",
   "howItWorks.child.items": [
     {
       "claimId": "CLM-024",
