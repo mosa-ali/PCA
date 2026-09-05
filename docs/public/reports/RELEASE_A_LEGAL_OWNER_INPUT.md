@@ -60,13 +60,16 @@ false claim.
 **forwarding aliases** to an owner-monitored mailbox. That is not the same as a
 mailbox, and it matters legally in two ways:
 
-1. **Receipt.** Forwarding has not yet been proven to deliver mail sent from an
-   external domain. Until it is, publishing an address as the channel for legal or
-   data-subject requests asserts a capability that has not been demonstrated.
-2. **Reply identity.** Forwarding is not send-as. If a reply to a privacy request
-   leaves from the owner's private personal mailbox, the requester learns a private
-   address, and the reply does not come from the published controller contact. See
-   `RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md`.
+1. **Receipt — now proven.** The owner sent real external messages to all four
+   addresses and observed each arriving in the monitored Inbox. Inbound delivery is
+   no longer an assumption.
+2. **Reply identity — still open.** Forwarding is not send-as. Replies currently
+   leave from the owner's private mailbox, so a data-subject request answered today
+   would disclose a private address and would not come from the published controller
+   contact. `PUBLIC_REPLY_IDENTITY = NOT_READY`; the owner is configuring Send As.
+   This matters more for L-6 and L-7 than for ordinary support mail: a published
+   controller contact that answers from somewhere else is a defect in the policy, not
+   just in the mailbox. See `RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md`.
 
 `admin@pcasafe.com` should stay operational and is deliberately **not** proposed as
 public copy.
@@ -96,6 +99,57 @@ Independent legal review of the final drafted text is strongly recommended befor
 `LEGAL_PUBLICATION_STATUS` moves to `READY`. Producing a policy is drafting; deciding
 it is adequate for children's data in a given jurisdiction is a legal judgement, and
 not one to take from this programme or from me.
+
+---
+
+## 6. Arabic legal strings waiting on the same decision
+
+The independent native Arabic review returned 18 corrections that were deferred
+because they touch legal-sensitive text. They are held, unapplied, behind this same
+OD-13 decision — so the legal review should cover the **English** wording and these
+Arabic corrections together, rather than settling the English and then discovering
+the Arabic says something else.
+
+Thirteen are on the two provisional legal drafts, five are on the Privacy & Safety
+page's own privacy assertions:
+
+| Key | Route | Reviewer decision |
+|---|---|---|
+| `privacy.advanced.items` | /ar/privacy/ | REVISE_MEDIUM |
+| `privacy.faq.items` | /ar/privacy/ | REVISE_MEDIUM |
+| `privacy.notStored.items` | /ar/privacy/ | REVISE_MEDIUM |
+| `privacy.retention.body` | /ar/privacy/ | REVISE_LOW |
+| `privacy.where.items` | /ar/privacy/ | REVISE_MEDIUM |
+| `privacyPolicy.childDevice.body` | /ar/privacy-policy/ | **REVISE_HIGH** |
+| `privacyPolicy.contact.body` | /ar/privacy-policy/ | LEGAL_REVIEW_REQUIRED |
+| `privacyPolicy.cookies.body` | /ar/privacy-policy/ | LEGAL_REVIEW_REQUIRED |
+| `privacyPolicy.deletion.body` | /ar/privacy-policy/ | LEGAL_REVIEW_REQUIRED |
+| `privacyPolicy.feedback.body` | /ar/privacy-policy/ | REVISE_MEDIUM |
+| `privacyPolicy.notCollected.body` | /ar/privacy-policy/ | **REVISE_HIGH** |
+| `privacyPolicy.processing.body` | /ar/privacy-policy/ | REVISE_LOW |
+| `privacyPolicy.providers.body` | /ar/privacy-policy/ | REVISE_LOW |
+| `privacyPolicy.seo.description` | /ar/privacy-policy/ | REVISE_MEDIUM |
+| `privacyPolicy.summary.body` | /ar/privacy-policy/ | REVISE_MEDIUM |
+| `terms.accountSecurity.body` | /ar/terms/ | REVISE_MEDIUM |
+| `terms.availability.body` | /ar/terms/ | LEGAL_REVIEW_REQUIRED |
+| `terms.using.body` | /ar/terms/ | LEGAL_REVIEW_REQUIRED |
+
+**The two REVISE_HIGH rows are the ones to look at first.** `privacyPolicy.notCollected.body`
+lists the data types but omits the English's core condition — that PCA central systems
+must not store them **in readable form** — and `privacyPolicy.childDevice.body` turned
+the English "should remain" into the stronger «يجب أن تبقى» (*must* remain) while
+dropping the transit/relay encryption context. Both are on a `noindex` page that is
+blocked from publication anyway, which is why they were not treated as urgent, but
+both will need fixing before that page can ship.
+
+Full text of every proposal is in `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv`, keyed by the
+same `KEY` column.
+
+Two directly related corrections on `/ar/privacy/` were **released by owner ruling and
+applied**, because they were accuracy defects rather than legal wording: the Arabic had
+dropped the "readable" qualifier from central app-usage data, and had rendered
+"protection without surveillance" as "without *excessive* surveillance". See
+`RELEASE_A_ARABIC_REMEDIATION_REPORT.md`.
 
 ---
 

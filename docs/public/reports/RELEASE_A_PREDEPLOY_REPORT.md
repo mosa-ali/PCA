@@ -4,7 +4,7 @@
 **Phases covered:** PUBLIC-12 (accessibility / performance / SEO), PUBLIC-13 (full bilingual browser UAT), PUBLIC-14 (adversarial privacy / security / claim review), plus the Azure topology reconciliation, the production container and the Arabic review handoff
 **Generated:** 2026-09-05
 **Nothing was deployed.** No Azure resource, container, hostname binding, DNS record or certificate was created, changed or removed by this session.
-**Revised 2026-09-05** after the owner created a dedicated Public Web App and moved `www.pcasafe.com` to it, then again after the independent native Arabic review returned and the owner verified inbound email.
+**Revised 2026-09-05** after the owner created a dedicated Public Web App and moved `www.pcasafe.com` to it, then again after the independent native Arabic review returned, the owner verified inbound email, and the repository-solvable Release A work was closed out.
 
 ```
 RELEASE_A_TECHNICAL_READINESS   = READY
@@ -20,7 +20,7 @@ Technically ready and not authorised to publish are both true at once, and delib
 | | |
 |---|---|
 | Branch | `pca-dev` |
-| Commit at time of report | `89b5612` (Arabic remediation) |
+| Commit at time of report | `92bf263` (final adversarial pass) |
 | Previous accepted checkpoints | `9fb5bff` (IA consolidation), `1fd9bd4` (PUBLIC-12/13/14), `2b73808` (container + Arabic export; the reviewer's baseline) |
 | `origin/main` | `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd` — **unchanged throughout** |
 | Worktree | Public-owned paths only: `public-web/**`, `docs/public/**`. Pre-existing untracked container files at the repository root (`Dockerfile.backend`, `docker-compose.yml`, `azure-pipelines.yml` and others) belong to separate backend/admin work and were left untouched and unstaged. |
@@ -353,30 +353,35 @@ SUPPORTER_ARABIC_REVIEW           = COMPLETE
 ARABIC_REVIEW_ROWS                = 189   (127 PASS, 31 LOW, 21 MEDIUM, 5 HIGH, 5 LEGAL)
 ARABIC_REVIEW_PACKAGE_STALE_ROWS  = 0
 ARABIC_CORRECTIONS_VALIDATED      = 62
-ARABIC_CORRECTIONS_APPLIED        = 40
-ARABIC_CORRECTIONS_DEFERRED_LEGAL = 20
+ARABIC_CORRECTIONS_APPLIED        = 42
+ARABIC_CORRECTIONS_DEFERRED_LEGAL = 18
 ARABIC_CORRECTIONS_REJECTED       = 2
-NATIVE_ARABIC_REMEDIATION         = COMPLETE (non-legal set)
+NATIVE_ARABIC_REMEDIATION         = COMPLETE (non-legal set + the two owner-released rows)
 OD_12                             = AWAITING_OWNER_SIGNOFF
 ```
 
-**Validated before trusted.** The package is review input, not source. Every returned row was re-anchored to the live corpus — key exists, and `ENGLISH_SOURCE`, `CURRENT_ARABIC`, `ROUTE`, `CLAIM_ID`, `CLAIM_STATUS` all match today's values — because the dangerous failure is not a bad translation but a stale one, applied on top of content that has since changed. The intake also proved the package self-consistent: the corrections file is exactly the non-PASS rows, both files agree on every decision and proposal, no row lost its legal flag, and the counts match the reviewer's own report. Independently, the review pack regenerated from source came back byte-identical to the committed copy, which establishes that the reviewer worked from the current corpus.
+**Validated before trusted.** Every returned row was re-anchored to the live corpus — key exists, and `ENGLISH_SOURCE`, `CURRENT_ARABIC`, `ROUTE`, `CLAIM_ID`, `CLAIM_STATUS` all match today's values — because the dangerous failure is not a bad translation but a stale one, applied on top of content that has since changed. The intake also proved the package self-consistent, and the review pack regenerated from source came back byte-identical to the committed copy, establishing that the reviewer worked from the current corpus.
 
-**The corrections that fixed meaning, not phrasing.** `status.platform` — "Requires platform support" had become "depends on platform support", and that one label renders for **nine** `REQUIRES_PLATFORM_SUPPORT` claims. `home.protects.items` — "apply approved" had become "make", "whether protections are **active**" had become "whether protection is **working**" (stronger than English), and "**receive** notices" had become "**send** alerts". `home.availability.items` — "account **access** is not open" had been narrowed to account **creation**. `howItWorks.steps.items` — "**verified** platform capabilities" had lost *verified*. `contact.seo.title` — the Arabic title had dropped "Channels Opening Before Launch" entirely, implying channels already exist.
+**The corrections that fixed meaning, not phrasing.** `status.platform` — "Requires platform support" had become "depends on platform support", and that one label renders for **nine** claims. `home.protects.items` — "whether protections are **active**" had become "whether protection is **working**" (stronger than English), and "**receive** notices" had become "**send** alerts". `home.availability.items` — "account **access** is not open" had been narrowed to account **creation**. `contact.seo.title` — the Arabic title had dropped "Channels Opening Before Launch", implying channels already exist.
 
-**Two proposals were rejected**, neither a criticism of the Arabic. `home.faq.items` rewrote "arbitrary files" as "any other files **not necessary for protection**", a qualifier that concedes files which *are* necessary get collected — contradicting `CHILD_FILES_CENTRAL = 0`. `video.enroll.title` was broader than the approved English title, where the correct remedy is to change the English. Both are escalated to the owner sheet with their full text rather than discarded.
+**Two owner-released privacy corrections**, applied after independent re-derivation — which changed what shipped on both:
 
-**One thing needs an owner decision.** All 20 legal-flagged corrections were deferred per instruction. Two of them are cases where the Arabic currently promises **more** than the English on `/ar/privacy/`, an indexable page: `privacy.topics.items` dropped the qualifier **readable** from central app-usage and location wording, and `privacy.principles.items` rendered "protection without surveillance" as "without *excessive* surveillance". These are accuracy defects in a privacy claim, not legal wording questions — they sit in the deferred pile only because the pack classifier marks every `PRIVACY_ASSERTION` row as legal-sensitive, a cautious rule rather than a legal finding. Recommendation and reasoning in `RELEASE_A_ARABIC_REMEDIATION_REPORT.md` §3.
+- `privacy.topics.items`: the reviewer read items 3 and 5 as the same defect. Only item 3 is. EN item 3 says readable app-usage history must not become "centrally **readable** PCA data" and the Arabic had dropped that second qualifier — fixed. But EN item 5 says readable precise-location history "does not become **central** PCA data", with no second "readable", and the Arabic already matched exactly. The proposed change would have made the Arabic **weaker** than the English, permitting central storage of location history so long as it were not readable. On a CLM-036 row that is a privacy commitment being quietly loosened, so item 5 kept its wording.
+- `privacy.principles.items`: «الحماية دون مراقبة مفرطة» meant "protection without **excessive** surveillance". The reviewer's replacement rendered "surveillance" as «تجسّس» — espionage, narrower and more loaded than the English. The owner specified the exact concept in the ruling, «الحماية دون مراقبة», and that is what shipped.
+
+Three documented sub-item overrides in total. The rule that keeps this safe is unchanged: every character that ships is the reviewer's text, the existing approved text, or a string the owner wrote in the ruling.
+
+**Two proposals were rejected**, neither a criticism of the Arabic. `home.faq.items` rewrote "arbitrary files" as "any other files **not necessary for protection**", a qualifier conceding that necessary files get collected — contradicting `CHILD_FILES_CENTRAL = 0`. `video.enroll.title` was broader than the approved English title, and per the owner ruling the English title remains authoritative; the current Arabic «خطوات التسجيل في PCA» is a faithful expression of "How to Enroll with PCA" and is retained.
 
 ```
-REVISE_HIGH_OPEN          = 4   (all deferred; status.platform was the one applied)
-PRIVACY_HEDGE_DRIFT_OPEN  = 3   (all deferred)
-FEATURE_STATUS_DRIFT_OPEN = 1   (camera wording inside privacy.topics.items)
+REVISE_HIGH_OPEN          = 2   (both on /ar/privacy-policy/, behind OD-13)
+PRIVACY_HEDGE_DRIFT_OPEN  = 1   (privacyPolicy.childDevice.body, deferred)
+FEATURE_STATUS_DRIFT_OPEN = 0
 ENGLISH_LEAKAGE_OPEN      = 0
-GENDER_AGREEMENT_OPEN     = 0   (reviewer found none)
+GENDER_AGREEMENT_OPEN     = 0
 ```
 
-`RELEASE_A_ARABIC_OWNER_SIGNOFF.csv` holds the 120 rows for OD-12, each showing `BEFORE_ARABIC` (from the reviewer's own export) beside `FINAL_PROPOSED_ARABIC` (read live from source), so a remediation error would show rather than hide. Every row is `OWNER_DECISION = PENDING`.
+Every open finding is on a `noindex` page that is blocked from publication anyway. `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv` holds the 120 rows for OD-12, each showing `ORIGINAL_ARABIC` (from the reviewer's own export) beside `FINAL_PROPOSED_ARABIC` (read live from source), so a remediation error would show rather than hide. Every row is `OWNER_DECISION = PENDING`.
 
 ---
 
@@ -386,13 +391,13 @@ GENDER_AGREEMENT_OPEN     = 0   (reviewer found none)
 LEGAL_PUBLICATION_STATUS             = NOT_AUTHORIZED
 PRIVACY_POLICY_PUBLICATION_READINESS = NOT_READY
 TERMS_PUBLICATION_READINESS          = NOT_READY
-OD_13                                = UNRESOLVED
+OD_13                                = OPEN
 PPR1R-D035                           = OPEN
 ```
 
-Unchanged, and **not** resolved by the new email aliases. The 13 facts required from the owner — operator name, entity type, country, jurisdiction, legal and privacy contacts, controller wording, effective date, parent/guardian wording, child age boundary, governing regimes — are set out in `RELEASE_A_LEGAL_OWNER_INPUT.md`. None has been invented or filled with a plausible default.
+Unchanged. The 13 facts required from the owner are set out in `RELEASE_A_LEGAL_OWNER_INPUT.md`; none has been invented or defaulted. That document now also lists the **18 deferred Arabic legal corrections**, so the legal review can cover the English wording and its Arabic counterpart together rather than settling one and discovering the other says something else.
 
-`/privacy-policy/` and `/terms/` remain provisional drafts: `noindex, nofollow`, excluded from the sitemap, reachable only from the footer.
+`/privacy-policy/` and `/terms/` remain provisional drafts: `noindex, nofollow`, excluded from the sitemap, reachable only from the footer. The adversarial pass verifies all four of those pages independently every run.
 
 ---
 
@@ -400,32 +405,31 @@ Unchanged, and **not** resolved by the new email aliases. The 13 facts required 
 
 The baseline is the safest possible: **PCA has never been deployed**, so the first Release A deploy has a clean, known rollback target. The topology split makes it narrower than before.
 
-1. **Record before deploying.** Capture `pcaSafe`'s current sitecontainer image reference, port and app settings (read-only). That record is the rollback target.
-2. **Roll back = redeploy the recorded prior image** (`pca-public-placeholder:hold-v1`). It is a placeholder, so the baseline is always recoverable.
-3. **Blast radius is one hostname.** `www.pcasafe.com` is the only binding on `pcaSafe`. `app`, `parent`, `platform` and `api` live on the separate `pca` App Service and cannot be affected by a Public deploy or rollback — this is what the owner's split bought.
-4. **No stored artifact needed.** The build is deterministic from a commit SHA with no install step; any previous artifact is reproducible by checking out that SHA and rebuilding. Confirm by comparing `artifact-sha256`.
-5. **DNS and certificates are never part of a rollback.** The binding and its SNI certificate are independent of container content. Do not touch them to fix a content problem.
+1. **Record before deploying.** Capture `pcaSafe`'s current sitecontainer image reference, port and app settings (read-only). That record is the rollback target. `node public-web/deploy/release-identity.mjs --image <ref>` prints the identities to record alongside it.
+2. **Roll back = redeploy the recorded prior image** (`pca-public-placeholder:hold-v1`). It is a placeholder, so the baseline is always recoverable. **Record its digest** — a tag is not a rollback target.
+3. **Blast radius is one hostname.** `www.pcasafe.com` is the only binding on `pcaSafe`. `app`, `parent`, `platform` and `api` live on the separate `pca` App Service and cannot be affected by a Public deploy or rollback.
+4. **No stored artifact needed.** The build is deterministic from a commit SHA with no install step — verified by the adversarial pass, which builds twice and compares. Confirm by comparing `ARTIFACT_SHA256`.
+5. **DNS and certificates are never part of a rollback.** The binding and its SNI certificate are independent of container content.
 6. **Verify after any rollback:** run `verify-container.mjs` against the live origin, and confirm the other four hostnames still serve exactly what they served before.
-7. **Use immutable dated tags, never `latest`.** A moving tag makes "which bytes are live?" unanswerable, and turns rollback into guesswork.
+7. **Use immutable, SHA-derived tags, never `latest`.** `release-identity.mjs` recommends `pcasafe.azurecr.io/pca-public:sha-<short-sha>` and refuses to issue an identity from a dirty tree.
 
 ---
 
 ## K. Remaining blockers before publication
 
-None is an engineering defect in the artifact.
+**Every repository-solvable item is closed.** `REPO_SOLVABLE_RELEASE_A_OPEN = 0`. Each remaining blocker needs the owner or an external party — none can be truthfully resolved from this repository.
 
 | # | Class | Blocker | Owner |
 |---|---|---|---|
-| **ARB-1** | ARABIC | Independent review complete and remediated; **OD-12 sign-off outstanding**. 120 rows await the owner in `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv`. Includes one decision that is not merely procedural — see §H and `RELEASE_A_ARABIC_REMEDIATION_REPORT.md` §3. | Owner |
-| **LEG-1** | LEGAL | OD-13 unresolved; `PPR1R-D035` open. 13 deferred Arabic corrections on `/ar/privacy-policy/` and `/ar/terms/` are blocked behind it. 13 facts requested in `RELEASE_A_LEGAL_OWNER_INPUT.md`. | Owner + legal |
-| **OPS-1** | CONTACT | Inbound **PASS** on all four aliases. `PUBLIC_REPLY_IDENTITY = NOT_READY` — replies leave from the owner's private mailbox. `CONTACT_CHANNEL = PARTIAL`. Owner is configuring Send As. | Owner |
-| **AZ-1** | DNS | Apex `pcasafe.com` does not resolve. `APEX_DOMAIN_REDIRECT = NOT_CONFIGURED`. Needs a record, a certificate and a redirect, **in that order** — plan in `RELEASE_A_INFRA_FOLLOWUPS.md` §A. **No DNS change made.** | Owner |
-| **AZ-2** | SECURITY | `pcaSafe` pulls from ACR with admin-user credentials and has no managed identity. `ACR_IDENTITY_HARDENING = OWNER_AUTHORIZATION_REQUIRED`. Plan in `RELEASE_A_INFRA_FOLLOWUPS.md` §B. **No change made.** | Owner |
+| **ARB-1** | ARABIC | Review complete, 42 corrections applied, 18 deferred to legal. **OD-12 sign-off outstanding** — 120 rows await the owner in `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv`. | Owner |
+| **LEG-1** | LEGAL | OD-13 unresolved; `PPR1R-D035` open. 13 facts requested, plus the 18 deferred Arabic legal corrections. | Owner + legal |
+| **OPS-1** | CONTACT | Inbound **PASS** on all four aliases. `PUBLIC_REPLY_IDENTITY = NOT_READY` — replies leave from the owner's private mailbox. Owner is configuring Send As. | Owner |
+| **AZ-1** | DNS | Apex `pcasafe.com` does not resolve. **`APEX_REDIRECT_PLAN = COMPLETE`** — record, certificate and redirect, in that order, with rollback, in `RELEASE_A_INFRA_FOLLOWUPS.md` §A. **No DNS change made.** | Owner |
+| **AZ-2** | SECURITY | `pcaSafe` pulls from ACR with admin-user credentials and no managed identity. **`ACR_IDENTITY_HARDENING_PLAN = COMPLETE`** — exact commands, ordering and rollback in §B. **No change made.** | Owner |
+| **DEP-1** | DEPLOY | Publication itself. `www.pcasafe.com` is live and pointed at the app this image would replace, so the next deploy **is** publication. | Owner + primary ChatGPT |
 | **CLM-1** | CLAIM | CLM-054 stays `NOT_APPROVED_FOR_PUBLIC_CLAIM` by ruling; CLM-041/042 unapproved; CLM-056 approved but deliberately not rendered. **No action needed** — recorded so the gap is not mistaken for an oversight. | — |
 
-**INF-1 is CLOSED.** Production security headers are implemented, served and verified against a running container.
-
-Not blockers, for the predeploy checklist: `alwaysOn` false, HTTP/2 off, no health-check path, `pca` sharing a B1 plan with an unrelated product.
+**INF-1 closed** (production security headers implemented, served, verified). **SUP-1 closed** (supply-chain review; base images pinned by digest, autoindex closed, release identity added).
 
 ---
 
@@ -439,10 +443,12 @@ BROWSER_UAT   = 112/112 PASS (real Chromium, EN+AR, 8 widths, every route)
 ACCESSIBILITY = 0 axe violations, WCAG 2.1 A+AA, real browser, contrast evaluated
 SEO           = PASS (canonical, hreflang+x-default, sitemap 10, robots, OG, per-page metadata)
 PERFORMANCE   = 8,387 B gz first load | CLS 0 | 0 external requests
-CLAIM_GATES   = PASS (57 rows, 53 inherited cross-checked, 20 patterns self-tested)
+CLAIM_GATES   = PASS (57 rows, 53 inherited cross-checked, 20 patterns self-tested,
+                      rendered claims required to be registered)
 
-PUBLIC_RELEASE_A_CRITICAL_FINDINGS = 0
-PUBLIC_RELEASE_A_HIGH_FINDINGS     = 0
+RELEASE_A_REPO_CRITICAL_FINDINGS = 0
+RELEASE_A_REPO_HIGH_FINDINGS     = 0
+REPO_SOLVABLE_RELEASE_A_OPEN     = 0
 
 AZURE_PUBLIC_APP_CREATED       = YES
 AZURE_PUBLIC_SURFACE_ISOLATION = PASS
@@ -450,32 +456,34 @@ WWW_CURRENT_APP                = pcaSafe (pca-group)
 OLD_PCA_WWW_BINDING            = ABSENT
 PCA_PUBLIC_RELEASE_A_DEPLOYED  = NO
 
-LOCAL_RELEASE_A_CONTAINER                = PASS (271/271)
+LOCAL_RELEASE_A_CONTAINER                = PASS (275/275)
 PRODUCTION_SECURITY_HEADER_CONFIGURATION = PASS_LOCAL
-artifact-sha256                          = 848394cd4f83d6c115fe73709fb0ad44517aea5b1c336d94637c6942965555fc
+ARTIFACT_SHA256                          = a623684b13e6fc018ca1a252b239f39d9b480f452630e3ede296e041ca709e46
+IMAGE_TAG_RECOMMENDATION                 = pcasafe.azurecr.io/pca-public:sha-<short-sha>
+ROLLBACK_IMAGE_REFERENCE                 = pcasafe.azurecr.io/pca-public-placeholder:hold-v1
 
 SUPPORT/PRIVACY/SECURITY/ADMIN_ALIAS_CONFIGURED = YES
 SUPPORT/PRIVACY/SECURITY_INBOUND_VERIFIED       = PASS
 INBOUND_CONTACT                                  = PASS
 PUBLIC_REPLY_IDENTITY                            = NOT_READY
 CONTACT_CHANNEL                                  = PARTIAL
+SECURITY_CONTACT_CHANNEL                         = INBOUND_PASS_REPLY_PENDING
 
 SUPPORTER_ARABIC_REVIEW      = COMPLETE
-ARABIC_REVIEW_ROWS           = 189
-ARABIC_CORRECTIONS_APPLIED   = 40
-ARABIC_CORRECTIONS_DEFERRED  = 20
+ARABIC_CORRECTIONS_APPLIED   = 42
+ARABIC_CORRECTIONS_DEFERRED  = 18
 ARABIC_CORRECTIONS_REJECTED  = 2
-NATIVE_ARABIC_REMEDIATION    = COMPLETE (non-legal set)
+REVISE_HIGH_OPEN             = 2   PRIVACY_HEDGE_DRIFT_OPEN  = 1
+FEATURE_STATUS_DRIFT_OPEN    = 0   ENGLISH_LEAKAGE_OPEN      = 0
+NATIVE_ARABIC_REMEDIATION    = COMPLETE
 OD_12                        = AWAITING_OWNER_SIGNOFF
 
-LEGAL_PUBLICATION_STATUS = NOT_AUTHORIZED
-OD_13                    = OPEN
+LEGAL_PUBLICATION_STATUS = NOT_AUTHORIZED     OD_13 = OPEN
 
-APEX_DOMAIN_REDIRECT   = NOT_CONFIGURED
-ACR_IDENTITY_HARDENING = OWNER_AUTHORIZATION_REQUIRED
+APEX_REDIRECT_PLAN          = COMPLETE   APEX_DOMAIN_REDIRECT   = NOT_CONFIGURED
+ACR_IDENTITY_HARDENING_PLAN = COMPLETE   ACR_IDENTITY_HARDENING = OWNER_AUTHORIZATION_REQUIRED
 
-VIDEO_1_STATUS = SCRIPTED_PLACEHOLDER (EN+AR script, storyboard, transcript, poster, captions)
-VIDEO_2_STATUS = SCRIPTED_PLACEHOLDER (as above; real footage after Android device UAT)
+VIDEO_1_STATUS = SCRIPTED_PLACEHOLDER    VIDEO_2_STATUS = SCRIPTED_PLACEHOLDER
 
 AZURE_RESOURCE_CHANGES_BY_THIS_SESSION = 0
 DNS_CHANGES_BY_THIS_SESSION            = 0
@@ -485,8 +493,8 @@ RELEASE_A_TECHNICAL_READINESS    = READY
 RELEASE_A_PUBLICATION_AUTHORIZED = NO
 ```
 
-Technically ready and not authorised to publish remain true at once, and the gap has narrowed to owner decisions: an Arabic sign-off, a set of legal facts, a mail configuration the owner is already doing, and a DNS record. No engineering blocker remains open.
+The repository side of Release A is closed. Everything still open is an owner decision or an owner-side action: the OD-12 Arabic sign-off, the OD-13 legal facts, Send As, an apex DNS record, an ACR identity change, and the publication authorisation itself.
 
-`www.pcasafe.com` resolves to the dedicated Public Web App, so the next deploy is not a rehearsal — it is publication. Stopping here for owner and primary ChatGPT review.
+`www.pcasafe.com` resolves to the dedicated Public Web App, so the next deploy is not a rehearsal — it is publication.
 
 `PCA_PUBLIC_IMPLEMENTATION = READY_FOR_PRIMARY_CHATGPT_REVIEW`
