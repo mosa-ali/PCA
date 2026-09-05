@@ -49,6 +49,7 @@ import {
   paragraphs,
   layout,
   card,
+  videoBlock,
   ctaLink,
   primaryCta,
 } from '../lib/components.mjs';
@@ -82,7 +83,22 @@ export function render(ctx) {
   </div>
 </section>`;
 
-  // --- B. Why PCA exists ---------------------------------------------------
+  // --- B. PCA Introduction video -------------------------------------------
+  // Owner decision: exactly one video per page. This is the general-purpose
+  // introduction and it belongs on Home; the enrolment video belongs on How PCA
+  // Works and neither is duplicated.
+  //
+  // `pw-section--tight` keeps the placeholder proportionate. While no recording
+  // exists this block is a poster, a summary and a transcript, and at full
+  // section rhythm it dominated the first two screens of Home -- a COMING_LATER
+  // artifact taking the visual priority of the thing it stands in for.
+  const video = html`<section class="pw-section pw-section--tight">
+  <div class="pw-container">
+    ${videoBlock(ctx, 'intro', { headingLevel: 2 })}
+  </div>
+</section>`;
+
+  // --- C. Why PCA exists ---------------------------------------------------
   const why = section(ctx, {
     label: t('home.why.label'),
     title: t('home.why.title'),
@@ -90,7 +106,7 @@ export function render(ctx) {
     body: paragraphs(t('home.why.body')),
   });
 
-  // --- C. What PCA helps protect — NAMES ONLY ------------------------------
+  // --- D. What PCA helps protect — NAMES ONLY ------------------------------
   // Four feature names, copied verbatim from the approved How PCA Works titles.
   // Names, not capability sentences: Home therefore asserts nothing about
   // availability and correctly renders no status pill. The single line beneath
@@ -107,7 +123,7 @@ export function render(ctx) {
       </div>`,
   });
 
-  // --- D. The privacy difference — two of four ------------------------------
+  // --- E. The privacy difference — two of four ------------------------------
   // Items 1 and 3, not the first two: the owner named exactly these concepts --
   // "designed without a readable central child profile" and the family-side /
   // local-first one. Picked by meaning rather than by position.
@@ -128,7 +144,7 @@ export function render(ctx) {
       </div>`,
   });
 
-  // --- E. Final CTA --------------------------------------------------------
+  // --- F. Final CTA --------------------------------------------------------
   const final = section(ctx, {
     title: t('home.final.title'),
     body: html`<p class="pw-prose">${richText(t('home.final.body'))}</p>
@@ -138,5 +154,5 @@ export function render(ctx) {
       </div>`,
   });
 
-  return layout(ctx, { main: frag([hero, why, protects, different, final]) });
+  return layout(ctx, { main: frag([hero, video, why, protects, different, final]) });
 }

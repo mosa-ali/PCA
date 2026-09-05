@@ -322,6 +322,54 @@ const notFound = await (async () => {
 // Measured with getComputedStyle and a real bounding box rather than by reading
 // the CSS, so it holds regardless of how the rule is eventually expressed.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Step-card geometry — measured, not inspected
+//
+// The eight setup cards rendered at five different heights because their
+// sentences differ in length, which made an ordered sequence look unfinished.
+// Fixed by the grid (stretch the card inside its <li>, then grid-auto-rows: 1fr
+// at multi-column widths), so this asserts the RESULT rather than the CSS: real
+// bounding boxes from a real browser, in both locales.
+//
+// Single-column widths are exempt by design. Stacked cards show no unevenness,
+// and forcing all eight to the tallest there would add mobile whitespace to fix
+// something nobody can see.
+// ---------------------------------------------------------------------------
+const stepCards = [];
+for (const [locale, path] of [['en', '/how-it-works/'], ['ar', '/ar/how-it-works/']]) {
+  for (const width of [1440, 768, 390]) {
+    const cardCtx = await browser.newContext({ viewport: { width, height: 900 } });
+    const cardPage = await cardCtx.newPage();
+    await cardPage.goto(BASE + path, { waitUntil: 'networkidle' });
+    const geo = await cardPage.evaluate(() => {
+      const items = [...document.querySelectorAll('ol.pw-grid > li')];
+      const cards = items.map((li) => li.firstElementChild ?? li);
+      const boxes = cards.map((c) => {
+        const b = c.getBoundingClientRect();
+        return { w: Math.round(b.width), h: Math.round(b.height) };
+      });
+      const columns = new Set(items.map((li) => Math.round(li.getBoundingClientRect().left))).size;
+      const clipped = cards.filter(
+        (c) => c.scrollHeight > c.clientHeight + 1 || c.scrollWidth > c.clientWidth + 1
+      ).length;
+      return {
+        count: boxes.length,
+        widths: [...new Set(boxes.map((b) => b.w))],
+        heights: [...new Set(boxes.map((b) => b.h))],
+        columns,
+        clipped,
+      };
+    });
+    await cardCtx.close();
+
+    const multiColumn = geo.columns > 1;
+    const widthOk = geo.widths.length === 1;
+    // 1px tolerance for sub-pixel rounding across a row.
+    const heightOk = !multiColumn || Math.max(...geo.heights) - Math.min(...geo.heights) <= 1;
+    stepCards.push({ locale, width, ...geo, multiColumn, widthOk, heightOk, pass: widthOk && heightOk && geo.clipped === 0 });
+  }
+}
+
 const navExclusivity = [];
 for (const [locale, path] of [['en', '/'], ['ar', '/ar/']]) {
   for (const [label, width] of [['desktop', 1440], ['mobile', 390]]) {
@@ -375,6 +423,15 @@ function flag(where, msg) { problems.push(`${where}: ${msg}`); }
 
 for (const r of navExclusivity) {
   if (r.problem) flag(`${r.locale} ${r.width}px`, r.problem);
+}
+
+for (const c of stepCards) {
+  if (c.count !== 8) flag(`${c.locale} ${c.width}px`, `expected 8 step cards, measured ${c.count}`);
+  if (!c.widthOk) flag(`${c.locale} ${c.width}px`, `step cards have ${c.widths.length} distinct widths: ${c.widths.join(', ')}`);
+  if (!c.heightOk) {
+    flag(`${c.locale} ${c.width}px`, `step cards have ${c.heights.length} distinct heights across ${c.columns} columns: ${c.heights.join(', ')}`);
+  }
+  if (c.clipped) flag(`${c.locale} ${c.width}px`, `${c.clipped} step card(s) clip or overflow their content`);
 }
 
 for (const r of results) {
@@ -489,6 +546,7 @@ const report = {
 const REPORTS = join(ROOT, 'reports');
 await (await import('node:fs/promises')).mkdir(REPORTS, { recursive: true });
 report.headerNavExclusivity = navExclusivity;
+report.stepCardGeometry = stepCards;
 
 await writeFile(join(REPORTS, 'release-a-evidence.json'), JSON.stringify(report, null, 2), 'utf8');
 
@@ -505,6 +563,15 @@ for (const r of navExclusivity) {
   console.log(
     `  ${r.locale} ${r.label.padEnd(7)} ${String(r.width).padStart(4)}px  nav=${String(r.navVisible).padEnd(5)} ` +
       `toggle=${String(r.toggleVisible).padEnd(5)} navLinks=${r.navLinks} dir=${r.dir}  ${r.pass ? 'PASS' : 'FAIL'}`
+  );
+}
+
+console.log('\n=== step-card geometry ===');
+for (const c of stepCards) {
+  console.log(
+    `  ${c.locale} ${String(c.width).padStart(4)}px  cards=${c.count} cols=${c.columns} ` +
+      `widths=${c.widths.length} heights=${c.heights.length} clipped=${c.clipped}  ` +
+      `${c.pass ? 'PASS' : 'FAIL'}${c.multiColumn ? '' : ' (single column: heights exempt)'}`
   );
 }
 

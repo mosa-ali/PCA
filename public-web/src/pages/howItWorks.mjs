@@ -90,16 +90,6 @@ export function render(ctx) {
 
   // The journey. Video first, then the eight steps as an ordered list of cards
   // -- the list is the guaranteed path to the information, not the video.
-  // The PCA Introduction video moves here from Home. On Home it was a large
-  // COMING_LATER placeholder in the first screen and a page-length block; here
-  // it sits with the enrolment video on the page that explains the product,
-  // which is where a parent who wants the explanation already is.
-  const intro = html`<section class="pw-section">
-  <div class="pw-container">
-    ${videoBlock(ctx, 'intro', { headingLevel: 2 })}
-  </div>
-</section>`;
-
   const steps = section(ctx, {
     id: 'steps',
     label: t('howItWorks.steps.label'),
@@ -171,7 +161,7 @@ export function render(ctx) {
 
   const notice = html`<div class="pw-section"><div class="pw-container">${releaseNotice(ctx, 'release.journeyNotice')}</div></div>`;
 
-  const main = frag([hero, notice, intro, steps, protects, parent, security, faq, sensitive]);
+  const main = frag([hero, notice, steps, protects, parent, security, faq, sensitive]);
 
   return layout(ctx, { main });
 }

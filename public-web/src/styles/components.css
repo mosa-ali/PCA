@@ -367,6 +367,24 @@
 }
 
 /*
+ * A tighter section rhythm, for a block that should sit close to what follows.
+ *
+ * Two uses, both measured: the Home introduction video, which at full rhythm
+ * gave an unavailable placeholder the visual weight of a released feature; and
+ * the How PCA Works enrolment video, which sat in the same section as the step
+ * cards but a full section-gap away from the first row, so the setup journey
+ * read as two unrelated blocks rather than one sequence.
+ */
+.pw-section--tight {
+  padding-block: var(--pw-space-6);
+}
+
+.pw-video + .pw-grid,
+.pw-video + ol.pw-grid {
+  margin-block-start: var(--pw-space-6);
+}
+
+/*
  * A compact hero for pages that are a destination rather than an introduction.
  * /download/ opens with a statement of what exists, not a pitch, so it does not
  * need the full-height entrance Home uses.

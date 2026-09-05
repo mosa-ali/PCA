@@ -193,6 +193,54 @@ strong { font-weight: var(--pw-weight-semibold); }
   grid-template-columns: 1fr;
 }
 
+/*
+ * Equal-height cards, from the grid rather than from fixed heights.
+ *
+ * A grid stretches its ITEMS by default, so a `.pw-card` placed directly in a
+ * grid already fills its row. The step grids wrap each card in an `<li>` for
+ * the ordered-list semantics, and there the stretch stops at the `<li>`: the
+ * card inside keeps its content height, so an eight-step row rendered at five
+ * different heights purely because the sentences differ in length.
+ *
+ * Measured before and after at 1440/768/390 in both locales -- widths were
+ * always identical; heights were not.
+ *
+ * The `<li>` becomes a flex row so its single child stretches vertically
+ * (align-items defaults to stretch) and fills it horizontally. No fixed pixel
+ * height anywhere: the tallest card in a row still sets that row's height, and
+ * longer Arabic wrapping simply makes the row taller rather than being clipped.
+ */
+.pw-grid > li {
+  display: flex;
+}
+
+.pw-grid > li > * {
+  inline-size: 100%;
+}
+
+/*
+ * Every step card the same height, not merely every card in a row.
+ *
+ * `grid-auto-rows: 1fr` makes all implicit rows equal to the tallest, so the
+ * eight-step sequence renders as one even block instead of two rows of
+ * different depths. Still no fixed pixel height: 1fr is derived from the
+ * tallest card's content, so longer Arabic wrapping makes every card taller
+ * together rather than clipping anything.
+ *
+ * Scoped to `ol` because the step lists are the ordered sequences where
+ * unevenness reads as unfinished, and applied only from 40rem UP -- the width
+ * at which the grid becomes multi-column. In a single column the cards are
+ * stacked and no unevenness is perceptible, so forcing all eight to the tallest
+ * there would add mobile whitespace to fix a problem nobody can see. The ruling
+ * asks for consistency within each viewport, and explicitly not to compress
+ * mobile to match desktop.
+ */
+@media (min-width: 40rem) {
+  ol.pw-grid {
+    grid-auto-rows: 1fr;
+  }
+}
+
 @media (min-width: 40rem) {
   .pw-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
