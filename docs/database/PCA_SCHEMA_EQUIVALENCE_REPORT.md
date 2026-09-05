@@ -5,6 +5,13 @@ by applying the complete historical migration set from zero is
 structurally identical to a database built by applying the new one-time
 canonical bootstrap package from zero.
 
+**Updated for the PCA-LIVE-DB-0 closure pass**: migration `0037` (adding
+the owner-decided `enrollment_bootstrap_attempts.invitation_id` foreign
+key) changed the schema after the original version of this report was
+written. Every number and fingerprint below reflects the post-closure
+state (35 migrations); re-derived and re-verified the same way as the
+original pass, not merely edited.
+
 ## Method
 
 Two disposable, isolated MySQL 8.4 containers were created for this mission
@@ -12,7 +19,7 @@ only (`pca-schema-mission-db-a` port 33071, `pca-schema-mission-db-b` port
 33072 — separate from, and never touching, this repository's own
 `docker-compose.yml` stack or any shared/persistent database).
 
-- **Database A**: empty → `node backend/scripts/migrate.mjs` (all 34 files
+- **Database A**: empty → `node backend/scripts/migrate.mjs` (all 35 files
   in `backend/migrations/`, in filename order) → introspected via
   `backend/scripts/introspect-schema.mjs`.
 - **Database B**: empty → `database/live-bootstrap/01_create_database_schema.sql`
@@ -45,7 +52,7 @@ MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH
 ```
 
 Zero differences between Database A and Database B across all 75 tables,
-626 columns, 82 foreign keys, 31 unique indexes, 116 non-unique indexes, 228
+626 columns, 83 foreign keys, 31 unique indexes, 117 non-unique indexes, 228
 CHECK constraints, and 4 generated columns.
 
 Independently confirmed by a second, differently-computed method: the
@@ -55,8 +62,11 @@ structural metadata only — never MySQL internal ids or environment-specific
 values) is **identical** for both databases:
 
 ```
-CANONICAL_SCHEMA_FINGERPRINT = sha256:11a85f4d0c096d79a97dedc59ae1a09115104784513dbf3ea99b276e5d39a1d1
+CANONICAL_SCHEMA_FINGERPRINT = sha256:a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495
 ```
+
+(Changed from the original mission's `sha256:11a85f4d0c096d79a97dedc59ae1a09115104784513dbf3ea99b276e5d39a1d1`
+— expected, since the schema structurally changed.)
 
 And by a third, independently-implemented, SQL-native method requiring only
 a `mysql` client (`database/live-bootstrap/04_schema_fingerprint.sql`,
@@ -66,7 +76,7 @@ fingerprint, so its own value is not expected to equal the one above, but is
 expected to be internally reproducible):
 
 ```
-PCA_SQL_NATIVE_SCHEMA_FINGERPRINT = 7597a632d4d00da450fb74fbe965b103c06a4ca9c0ca3b44df06057b55b205a7
+PCA_SQL_NATIVE_SCHEMA_FINGERPRINT = 63bff4ad4d99aaf66b4e7debd12033d2992f192a0e2501fb23e8eb74b26a986d
 ```
 
 ...identical for both Database A and Database B.

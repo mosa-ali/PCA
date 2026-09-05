@@ -24,7 +24,7 @@ import { normalizedFingerprint } from './schema-fingerprint.mjs';
 
 const execFileP = promisify(execFile);
 
-const EXPECTED_FINGERPRINT = '11a85f4d0c096d79a97dedc59ae1a09115104784513dbf3ea99b276e5d39a1d1';
+const EXPECTED_FINGERPRINT = 'a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

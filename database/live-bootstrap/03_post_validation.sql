@@ -6,9 +6,9 @@
 -- the application -- do not proceed to the application connection smoke
 -- test in OWNER_RUNBOOK.md.
 --
--- These exact counts (75 tables / 626 columns / 82 foreign keys / 31 unique
--- indexes / 116 non-unique indexes / 14 reference rows / 34 bookkeeping
--- rows) were captured by this mission from Database A (all 34 migrations
+-- These exact counts (75 tables / 626 columns / 83 foreign keys / 31 unique
+-- indexes / 117 non-unique indexes / 14 reference rows / 35 bookkeeping
+-- rows) were captured by this mission from Database A (all 35 migrations
 -- applied from zero) and proven identical on Database B (this bootstrap
 -- package applied from zero) via backend/scripts/compare-schema-snapshots.mjs
 -- reporting EXACT_MATCH. If a future migration changes the schema, these
@@ -56,8 +56,8 @@ CALL _pca_postvalidate_assert(
 
 -- 4. Exact foreign key count.
 CALL _pca_postvalidate_assert(
-  (SELECT COUNT(DISTINCT constraint_name) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE()) = 82,
-  'POST-VALIDATION FAILED: expected exactly 82 foreign keys.'
+  (SELECT COUNT(DISTINCT constraint_name) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE()) = 83,
+  'POST-VALIDATION FAILED: expected exactly 83 foreign keys.'
 );
 
 -- 5. Exact non-PRIMARY unique/non-unique index counts.
@@ -72,8 +72,8 @@ CALL _pca_postvalidate_assert(
   (SELECT COUNT(*) FROM (
     SELECT DISTINCT table_name, index_name FROM information_schema.statistics
     WHERE table_schema = DATABASE() AND index_name <> 'PRIMARY' AND non_unique = 1
-  ) x) = 116,
-  'POST-VALIDATION FAILED: expected exactly 116 non-unique indexes.'
+  ) x) = 117,
+  'POST-VALIDATION FAILED: expected exactly 117 non-unique indexes.'
 );
 
 -- 6. Every table is InnoDB / utf8mb4 / utf8mb4_bin (no exceptions).
@@ -89,7 +89,7 @@ CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_currencies) = 3, 'PO
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_commercial_markets) = 3, 'POST-VALIDATION FAILED: billing_commercial_markets must have exactly 3 rows.');
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_country_market_rules) = 7, 'POST-VALIDATION FAILED: billing_country_market_rules must have exactly 7 rows.');
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM entitlement_defaults) = 1, 'POST-VALIDATION FAILED: entitlement_defaults must have exactly 1 row.');
-CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM schema_migrations) = 34, 'POST-VALIDATION FAILED: schema_migrations must have exactly 34 bookkeeping rows.');
+CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM schema_migrations) = 35, 'POST-VALIDATION FAILED: schema_migrations must have exactly 35 bookkeeping rows.');
 
 -- 8. No test/demo data anywhere: every table OTHER than the five reference
 -- tables above must be completely empty immediately after bootstrap (mission

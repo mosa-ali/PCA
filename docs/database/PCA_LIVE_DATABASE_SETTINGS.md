@@ -3,7 +3,7 @@
 Source of truth for every database/session setting required for the canonical
 schema to behave correctly. Derived from `backend/migrations/*.sql`,
 `backend/src/db/pool.ts`, `backend/compose.yaml`, and by introspecting
-Database A (all 34 migrations applied from zero to a disposable MySQL 8.4
+Database A (all 35 migrations applied from zero to a disposable MySQL 8.4
 instance). No global server setting is changed beyond what is already in
 `backend/compose.yaml`'s startup flags — this document only makes the
 existing, already-relied-upon settings explicit and auditable.
@@ -14,7 +14,7 @@ existing, already-relied-upon settings explicit and auditable.
 convention used consistently across `backend/compose*.yaml` and the root
 `docker-compose.yml`). Migration 0001's own header calls this "PCA-DB-MYSQL-1:
 MySQL 8.4 baseline". CHECK constraints are enforced (not just parsed) as of
-MySQL 8.0.16+, which every one of the 34 migrations relies on.
+MySQL 8.0.16+, which every one of the 35 migrations relies on.
 
 MySQL 8.0.x is very likely compatible (same CHECK-constraint enforcement,
 same information_schema shape) but is UNVERIFIED by this mission — Database A
@@ -99,7 +99,7 @@ against a non-strict mode, so its behavior under one is unverified.
 
 ## 6. `foreign_key_checks`
 
-Never overridden by the application or by any migration file. All 82 foreign
+Never overridden by the application or by any migration file. All 83 foreign
 keys are enforced at all times during normal operation. The one-time bootstrap
 script (`database/live-bootstrap/01_create_database_schema.sql`) transiently
 sets `FOREIGN_KEY_CHECKS=0` only to avoid hand-solving a 75-table topological
@@ -107,11 +107,11 @@ creation order, then restores `FOREIGN_KEY_CHECKS=1` before the script ends —
 this is the same technique `mysqldump` itself uses and is closed by
 `03_post_validation.sql`, which independently re-queries
 `information_schema.key_column_usage`/`referential_constraints` afterward and
-fails if the restored FK set does not exactly match the expected 82.
+fails if the restored FK set does not exactly match the expected 83.
 
 ## 7. Table/identifier case sensitivity
 
-Every table and column name in all 34 migrations is lowercase snake_case with
+Every table and column name in all 35 migrations is lowercase snake_case with
 no two identifiers differing only by case. This is deliberately resilient to
 either MySQL `lower_case_table_names` mode (0 = case-sensitive, the common
 Linux/production default; 1 or 2 = case-insensitive, common on Windows/macOS

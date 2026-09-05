@@ -46,7 +46,8 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0033_commercial_notifications_renewal_upcoming.sql', CURRENT_TIMESTAMP(3)),
   ('0034_audit_alert_ciphertext_expiry.sql', CURRENT_TIMESTAMP(3)),
   ('0035_family_member_invitation_pending_uniqueness.sql', CURRENT_TIMESTAMP(3)),
-  ('0036_family_child_memberships.sql', CURRENT_TIMESTAMP(3));
+  ('0036_family_child_memberships.sql', CURRENT_TIMESTAMP(3)),
+  ('0037_enrollment_bootstrap_attempt_invitation_fk.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

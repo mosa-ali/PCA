@@ -55,21 +55,32 @@ export interface DeviceRepository {
    * unscoped lookup here does not let an attacker impersonate another
    * device.
    *
-   * IMPORTANT, NOT YET CLOSED: `verifyChallenge`'s use of this method is
-   * safe because it's gated by a signature. `issueChallenge`'s use is NOT
-   * signature-gated -- by construction, proof of possession happens later,
-   * so issuance itself currently accepts any caller-supplied deviceId and
-   * answers DEVICE_NOT_FOUND / DEVICE_REVOKED / success based purely on
-   * this unscoped lookup. Today that's inert because nothing calls
-   * issueChallenge except this domain's own tests. The FIRST HTTP-wiring
-   * slice that exposes challenge issuance MUST NOT let an arbitrary caller
-   * supply an arbitrary deviceId to it -- that would reopen exactly the
-   * cross-family existence/revocation-status oracle every other method in
-   * this repository is designed to prevent (e.g. require the caller to
-   * already be the device itself over an authenticated transport, or bind
-   * issuance to a value only the legitimate device could present). Do not
-   * call findDeviceUnscoped from any other HTTP-authenticated-caller code
-   * path -- those must keep using the family-scoped methods above.
+   * `verifyChallenge`'s use of this method is safe because it's gated by a
+   * signature. `issueChallenge`'s use is NOT signature-gated -- by
+   * construction, proof of possession happens later, so issuance itself
+   * accepts any caller-supplied deviceId and answers DEVICE_NOT_FOUND /
+   * DEVICE_REVOKED / success based purely on this unscoped lookup, which
+   * WOULD reopen the cross-family existence/revocation-status oracle every
+   * other method in this repository is designed to prevent, if that
+   * response reached an HTTP caller unmodified.
+   *
+   * CLOSED, not merely inert: the real, currently-wired production path
+   * (`POST /v1/runtime-sync/devices/:deviceId/challenge`, unauthenticated
+   * by design, in http/routes/runtimeSyncRoutes.ts) never calls
+   * `issueChallenge` directly -- it goes through
+   * `DeviceSessionService.issueChallengeSafely`, which catches
+   * DEVICE_NOT_FOUND/DEVICE_REVOKED and returns an indistinguishable,
+   * well-formed synthetic challenge (a nonce that was never persisted, so
+   * it can never subsequently succeed at completeChallenge) instead of
+   * propagating this method's raw result. Every failure mode collapses
+   * into the same generic UNAUTHORIZED only later, at completion. See
+   * DeviceSessionService.issueChallengeSafely's own doc comment and
+   * test/runtime-sync/DeviceSessionService.test.mjs's
+   * "issueChallengeSafely for a nonexistent/revoked device..." tests for
+   * the closing mechanism and its coverage. Do not call
+   * findDeviceUnscoped/issueChallenge from any other HTTP-authenticated-
+   * caller code path without the same indistinguishable-response wrapper --
+   * every other caller must keep using the family-scoped methods above.
    */
   findDeviceUnscoped(deviceId: DeviceId): Promise<DeviceRecord | null>;
   revokeDeviceAndKeysAtomically(

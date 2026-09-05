@@ -2887,7 +2887,7 @@
           "type": "char(36)",
           "nullable": false,
           "default": null,
-          "key": "",
+          "key": "MUL",
           "extra": ""
         },
         {
@@ -2923,6 +2923,12 @@
           "seq": 1
         },
         {
+          "name": "enrollment_bootstrap_attempts_invitation_id_idx",
+          "unique": false,
+          "column": "invitation_id",
+          "seq": 1
+        },
+        {
           "name": "enrollment_bootstrap_attempts_recovery_token_hash_key",
           "unique": true,
           "column": "recovery_token_hash",
@@ -2947,6 +2953,12 @@
           "column": "device_id",
           "referencedTable": "devices",
           "referencedColumn": "device_id"
+        },
+        {
+          "constraint": "enrollment_bootstrap_attempts_invitation_id_fk",
+          "column": "invitation_id",
+          "referencedTable": "enrollment_invitations",
+          "referencedColumn": "invitation_id"
         }
       ]
     },

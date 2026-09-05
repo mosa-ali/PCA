@@ -539,13 +539,15 @@ CREATE TABLE `enrollment_bootstrap_attempts` (
   UNIQUE KEY `enrollment_bootstrap_attempts_recovery_token_hash_key` (`recovery_token_hash`),
   KEY `enrollment_bootstrap_attempts_token_hash_idx` (`token_hash`),
   KEY `enrollment_bootstrap_attempts_device_id_idx` (`device_id`),
+  KEY `enrollment_bootstrap_attempts_invitation_id_idx` (`invitation_id`),
   CONSTRAINT `enrollment_bootstrap_attempts_device_id_fk` FOREIGN KEY (`device_id`) REFERENCES `devices` (`device_id`),
+  CONSTRAINT `enrollment_bootstrap_attempts_invitation_id_fk` FOREIGN KEY (`invitation_id`) REFERENCES `enrollment_invitations` (`invitation_id`),
   CONSTRAINT `enrollment_bootstrap_attempts_attempt_id_check` CHECK ((char_length(`attempt_id`) between 16 and 64)),
   CONSTRAINT `enrollment_bootstrap_attempts_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `enrollment_bootstrap_attempts_platform_check` CHECK ((`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS'))),
-  CONSTRAINT `enrollment_bootstrap_attempts_recovery_token_hash_check` CHECK (regexp_like(`recovery_token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `enrollment_bootstrap_attempts_recovery_token_hash_check` CHECK (regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')),
   CONSTRAINT `enrollment_bootstrap_attempts_status_check` CHECK ((`status` = _utf8mb4'COMPLETED')),
-  CONSTRAINT `enrollment_bootstrap_attempts_token_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$'))
+  CONSTRAINT `enrollment_bootstrap_attempts_token_hash_check` CHECK (regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- enrollment_invitation_transitions

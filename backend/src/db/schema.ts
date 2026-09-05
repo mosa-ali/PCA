@@ -1096,7 +1096,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0003_enrollment_bootstrap_attempts.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0037_enrollment_bootstrap_attempt_invitation_fk.sql"],
     ownerModule: "backend/src/db",
     columns: [
       { name: "attempt_id", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -1119,22 +1119,23 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     indexes: [
       { name: "enrollment_bootstrap_attempts_device_id_idx", columns: ["device_id"], unique: false },
+      { name: "enrollment_bootstrap_attempts_invitation_id_idx", columns: ["invitation_id"], unique: false },
       { name: "enrollment_bootstrap_attempts_token_hash_idx", columns: ["token_hash"], unique: false },
     ],
     foreignKeys: [
       { name: "enrollment_bootstrap_attempts_device_id_fk", columns: ["device_id"], referencedTable: "devices", referencedColumns: ["device_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "enrollment_bootstrap_attempts_invitation_id_fk", columns: ["invitation_id"], referencedTable: "enrollment_invitations", referencedColumns: ["invitation_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
       { name: "enrollment_bootstrap_attempts_attempt_id_check", clause: "(char_length(`attempt_id`) between 16 and 64)" },
       { name: "enrollment_bootstrap_attempts_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
       { name: "enrollment_bootstrap_attempts_platform_check", clause: "(`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS'))" },
-      { name: "enrollment_bootstrap_attempts_recovery_token_hash_check", clause: "regexp_like(`recovery_token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "enrollment_bootstrap_attempts_recovery_token_hash_check", clause: "regexp_like(`recovery_token_hash`,_ascii'^[0-9a-f]{64}$')" },
       { name: "enrollment_bootstrap_attempts_status_check", clause: "(`status` = _utf8mb4'COMPLETED')" },
-      { name: "enrollment_bootstrap_attempts_token_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "enrollment_bootstrap_attempts_token_hash_check", clause: "regexp_like(`token_hash`,_ascii'^[0-9a-f]{64}$')" },
     ],
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
-      { column: "invitation_id", impliedReferencedTable: "enrollment_invitations", impliedReferencedColumn: "invitation_id", status: 'OWNER_DECISION_REQUIRED', rationale: "Types match exactly (CHAR(36) ascii_bin). This table's device_id column DOES carry a real FK to devices, so this is not a table-wide no-FK pattern. Written in the same transaction as invitation redemption (invitation already exists, merely transitioning to REDEEMED). No comment, test, or design doc found explaining the omission.", source: null },
     ],
   },
   {

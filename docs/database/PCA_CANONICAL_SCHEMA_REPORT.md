@@ -6,7 +6,15 @@ production database is created. No live database was created, connected to,
 or modified by this mission.
 
 **Baseline:** branch `pca-dev`, `SOURCE_SHA_BEFORE = 92d2d9bd4535ff3686bd48650d262f468a55941f`
-(== `origin/pca-dev` at mission start).
+(== `origin/pca-dev` at mission start). Committed as `21eb66ffd3e0283c52e53ee8bdfda0bafb6ad9ae`.
+
+**Closure pass (owner decision):** after the above was committed, the owner
+resolved the one `OWNER_DECISION_REQUIRED` relationship by ordering a real
+foreign key added via a new migration. See §18 for the full closure-pass
+record; every count in this report below reflects the post-closure state
+(35 migrations, 83 foreign keys, 117 non-unique indexes, 0
+`OWNER_DECISION_REQUIRED` relationships) unless a section explicitly says
+"at the time of the original mission."
 
 ## 1. Architecture discovery
 
@@ -16,7 +24,8 @@ Before any derivation, the actual repository architecture was established
 - **No ORM.** The backend (`backend/src`) uses raw SQL via `mysql2` only
   (`backend/package.json` dependencies: `fastify`, `mysql2` — nothing else).
 - **Versioned SQL migrations are the existing schema authority.**
-  `backend/migrations/0001` through `0036` (34 files; **0009 and 0010 were
+  `backend/migrations/0001` through `0037` (35 files as of the closure pass,
+  §18; 34 at the original mission's own baseline — **0009 and 0010 were
   never created** — a genuine numbering gap, not a deletion; confirmed via
   `git log` — the filename-sort migration runner does not require numeric
   contiguity, so this has no functional effect).
@@ -45,7 +54,7 @@ only, isolated from the project's own `docker-compose.yml` stack (which was
 left untouched), and are torn down at the end of this mission.
 
 ```
-MIGRATION_FROM_ZERO = PASS  (34/34 migrations applied cleanly, in filename order)
+MIGRATION_FROM_ZERO = PASS  (35/35 migrations applied cleanly, in filename order)
 CANONICAL_BOOTSTRAP_FROM_ZERO = PASS  (generated SQL applied cleanly to an empty database)
 MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH
 ```
@@ -63,18 +72,18 @@ real bugs discovered and fixed during this mission (§7).
 |---|---|
 | Tables | 75 |
 | Columns | 626 |
-| Foreign keys | 82 (100% `ON DELETE NO ACTION ON UPDATE NO ACTION`) |
+| Foreign keys | 83 (100% `ON DELETE NO ACTION ON UPDATE NO ACTION`) |
 | Unique indexes (non-PK) | 31 |
-| Non-unique indexes | 116 |
+| Non-unique indexes | 117 |
 | CHECK constraints | 228 |
 | Generated columns (`GENERATED ALWAYS AS ... STORED`) | 4 |
 | Composite primary keys | 6 |
 | Tables with zero primary key | 0 |
-| Application-enforced (non-FK) relationships identified | 57 total: 56 `APPLICATION_ENFORCED_INTENTIONAL` (30 soft `family_id` column instances + 26 other) + 1 `OWNER_DECISION_REQUIRED`, see `PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md`. Counted directly from `backend/src/db/schema.ts`'s `applicationEnforcedRelations` arrays, not by hand -- see `docs/database/PCA_CANONICAL_DATABASE_OBJECT_INVENTORY.csv`'s `APPLICATION_ENFORCED_RELATION` rows (57). |
-| Relationships flagged `OWNER_DECISION_REQUIRED` | 1 |
-| Production reference-data rows | 14 (+ 34 bootstrap-bookkeeping rows in `schema_migrations`, a distinct category — see §8) |
+| Application-enforced (non-FK) relationships identified | 56, all `APPLICATION_ENFORCED_INTENTIONAL` (30 soft `family_id` column instances + 26 other), see `PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md`. Counted directly from `backend/src/db/schema.ts`'s `applicationEnforcedRelations` arrays, not by hand -- see `docs/database/PCA_CANONICAL_DATABASE_OBJECT_INVENTORY.csv`'s `APPLICATION_ENFORCED_RELATION` rows (56). |
+| Relationships flagged `OWNER_DECISION_REQUIRED` | 0 (was 1; resolved by owner decision — see §18) |
+| Production reference-data rows | 14 (+ 35 bootstrap-bookkeeping rows in `schema_migrations`, a distinct category — see §8) |
 
-`CANONICAL_SCHEMA_FINGERPRINT = sha256:11a85f4d0c096d79a97dedc59ae1a09115104784513dbf3ea99b276e5d39a1d1`
+`CANONICAL_SCHEMA_FINGERPRINT = sha256:a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495`
 
 (Computed by `backend/scripts/schema-fingerprint.mjs` over normalized
 structural metadata only — never MySQL internal ids or environment-specific
@@ -110,11 +119,12 @@ values. Identical on both Database A and Database B.)
 
 ## 5. Migration reconciliation (section 7)
 
-All 34 migration files were classified. **Every one is `CURRENT_REQUIRED`.**
+All 35 migration files (34 at the original mission, plus `0037` added in
+the closure pass, §18) were classified. **Every one is `CURRENT_REQUIRED`.**
 Zero are `SUPERSEDED_BUT_HISTORICAL`, `TEST_ONLY`, `BROKEN/DRIFTED`, or
 `UNKNOWN`. This is a simple, clean classification because **no migration in
 the entire history contains `DROP TABLE`, `DROP COLUMN`, or `RENAME TABLE`**
-(confirmed by grep across all 34 files) — the history is purely additive
+(confirmed by grep across all 35 files) — the history is purely additive
 (`CREATE TABLE` / `ALTER TABLE ... ADD`), so every migration's effect is
 still fully present in the current schema and none has ever been reversed or
 replaced.
@@ -204,23 +214,25 @@ Discovered by actually running the DB integration test suite against a
 bootstrap-built database (not by inspection): two migrations
 (`0006`, `0007`) contain `INSERT INTO` statements alongside their
 `CREATE TABLE`s — this is the **only** place production reference data is
-defined anywhere in the 34 migrations (confirmed: `grep INSERT INTO` across
-all migration files returns exactly these two files, 4 statements, 14
-rows). See `docs/database/PCA_PRODUCTION_REFERENCE_DATA_MATRIX.csv` for the
-exact rows and why each is required (e.g. every `billing_payment_attempts`
-row has a `currency_code` FOREIGN KEY into `billing_currencies`; without
-that table's 3 rows, no billing write can ever succeed).
+defined anywhere in the migration history (confirmed: `grep INSERT INTO`
+across all migration files returns exactly these two files, 4 statements,
+14 rows — `0037`'s FK addition, §18, adds no new reference data). See
+`docs/database/PCA_PRODUCTION_REFERENCE_DATA_MATRIX.csv` for the exact rows
+and why each is required (e.g. every `billing_payment_attempts` row has a
+`currency_code` FOREIGN KEY into `billing_currencies`; without that
+table's 3 rows, no billing write can ever succeed).
 
 A second, distinct category was also required and is **not** business
 reference data: `database/live-bootstrap/02_reference_data.sql` also
-inserts 34 rows into `schema_migrations`, marking every accepted migration
-as already applied. Without this, the very next `npm run db:migrate` run
-against the freshly bootstrapped database would see an empty
-`schema_migrations` table and attempt to re-run migration `0001`
-(`CREATE TABLE schema_migrations`, among others) against tables that
-already exist, failing immediately. This was discovered the same way — by
-actually running the test suite and, separately, by reasoning through what
-the very next migration run would do — not assumed.
+inserts one row per accepted migration (35, after the closure pass) into
+`schema_migrations`, marking every one as already applied. Without this,
+the very next `npm run db:migrate` run against the freshly bootstrapped
+database would see an empty `schema_migrations` table and attempt to
+re-run migration `0001` (`CREATE TABLE schema_migrations`, among others)
+against tables that already exist, failing immediately. This was
+discovered the same way — by actually running the test suite and,
+separately, by reasoning through what the very next migration run would
+do — not assumed.
 
 No test, demo, QA, or fixture data of any kind is inserted anywhere in the
 bootstrap package.
@@ -338,15 +350,16 @@ for exactly this property (`test/runtime-sync/DeviceSessionService.test.mjs`:
 challenge that can never complete"*; *"issueChallengeSafely for a revoked
 device is indistinguishable at the API boundary from a nonexistent one"*).
 
-**Minor documentation-drift finding** (not a security defect): the
-repository interface's own comment on `findDeviceUnscoped` still says
+**Documentation-drift finding, fixed in the closure pass (§18)**: the
+repository interface's own comment on `findDeviceUnscoped` used to say
 *"Today that's inert because nothing calls issueChallenge except this
-domain's own tests"* — this is now factually stale, since
-`DeviceSessionService.issueChallengeSafely` is a real production caller.
-Left uncorrected as out of this mission's scope (application source, not
-schema); flagged for the owner/team to update the comment to name the
-established safe-wrapper pattern, so a future reader doesn't trust the
-stale claim.
+domain's own tests"* — factually stale, since `DeviceSessionService.
+issueChallengeSafely` is a real production caller. The owner's closure-pass
+instructions asked for exactly this comment (and nothing else about
+device-auth behavior) to be corrected; it now names the actual production
+path and the safe-wrapper pattern that closes the oracle. Comment-only
+change — `npm run build` and the full non-DB suite were re-run afterward
+and remain green, confirming no behavior changed.
 
 Two rows in the isolation matrix (`safe_zones`, `family_audit_events`) are
 marked `ENFORCED (by convention)` rather than independently re-verified with
@@ -465,7 +478,87 @@ fingerprint still held (they did — this was a documentation/classification
 completeness fix, not a structural DDL change, since both tables' actual
 columns/keys/indexes were already correctly captured).
 
-## 17. What this mission did NOT do
+## 18. Closure pass: the `OWNER_DECISION_REQUIRED` relationship resolved
+
+The original mission (§§1–17) flagged exactly one relationship as
+`OWNER_DECISION_REQUIRED` (§ formerly numbered per
+`PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md` §8): `enrollment_bootstrap_attempts.invitation_id`
+had no FK to `enrollment_invitations.invitation_id` and no documented
+rationale, unlike this same table's `device_id` column (which does carry a
+real FK). The owner reviewed the finding and decided: add the FK.
+
+**Migration**: `backend/migrations/0037_enrollment_bootstrap_attempt_invitation_fk.sql`
+— a new, additive migration (0003 was never edited retroactively, per this
+schema's own never-edit-history convention). Adds an explicit index
+(`enrollment_bootstrap_attempts_invitation_id_idx`) plus
+`CONSTRAINT enrollment_bootstrap_attempts_invitation_id_fk FOREIGN KEY
+(invitation_id) REFERENCES enrollment_invitations (invitation_id) ON
+UPDATE NO ACTION ON DELETE NO ACTION` — the same `NO ACTION`/`NO ACTION`
+convention every other FK in this schema uses. No backfill needed: no live
+PCA database exists, so there is no possibility of a pre-existing orphaned
+row for the new constraint to reject.
+
+**Full re-derivation and re-verification**, exactly as the original mission
+required for any schema change:
+
+```
+CURRENT_MIGRATION_COUNT              = 35   (was 34)
+CANONICAL_TABLE_COUNT                = 75   (unchanged)
+CANONICAL_COLUMN_COUNT               = 626  (unchanged -- no new column, only an index + FK)
+CANONICAL_FOREIGN_KEY_COUNT          = 83   (was 82)
+CANONICAL_NON_UNIQUE_INDEX_COUNT     = 117  (was 116)
+CANONICAL_UNIQUE_CONSTRAINT_COUNT    = 31   (unchanged -- the new index is non-unique)
+APPLICATION_ENFORCED_RELATION_COUNT  = 56   (was 57; the resolved relationship moved from
+                                              APPLICATION_ENFORCED_RELATIONS to a real FK)
+OWNER_DECISION_REQUIRED_COUNT        = 0    (was 1)
+CANONICAL_SCHEMA_FINGERPRINT = sha256:a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495
+  (changed from the original mission's sha256:11a85f4d0c096d79a97dedc59ae1a09115104784513dbf3ea99b276e5d39a1d1
+  -- expected: the schema structurally changed)
+
+MIGRATION_FROM_ZERO                     = PASS   (35/35 migrations, disposable MySQL 8.4, from zero)
+CANONICAL_BOOTSTRAP_FROM_ZERO           = PASS
+MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP = EXACT_MATCH
+SCHEMA_NEGATIVE_CONTROL_PROOFS          = 9 / 9   (re-run against the new schema)
+BACKEND_FULL = 2187 / 2187 PASS   (unchanged from the original mission)
+BACKEND_DB   = 477 / 485 PASS, 4 FAIL, 4 SKIP   (identical to the original mission --
+                the same 4 pre-existing, schema-unrelated parentAccount.mysql.test.mjs
+                failures; nothing newly broke by adding the FK, confirmed by re-running
+                the complete suite against a fresh canonical-bootstrap database)
+```
+
+Every artifact this repository maintains as a byproduct of the schema was
+regenerated from the new migration set (never hand-edited): `backend/src/db/schema.ts`,
+all three `database/live-bootstrap/*.sql` generated files (`01`, `02`'s
+bookkeeping-row count, `03`'s hardcoded expected counts),
+`backend/scripts/post-validate.mjs`'s expected fingerprint, and every
+affected `docs/database/*` CSV/matrix. `backend/schema/current_schema.sql`
+and `schema_manifest.json` (the pre-existing generated verification
+snapshots, §1) were regenerated the same way as the first time.
+
+`REPO_SOLVABLE_SCHEMA_OPEN = 0`: the one open item was, by construction, an
+owner decision — not something this repository's own evidence could
+resolve unilaterally — and is now closed.
+
+**A benign MySQL rendering quirk noticed while regenerating
+`backend/schema/current_schema.sql`, investigated rather than assumed**:
+two unrelated CHECK constraints on the same table
+(`enrollment_bootstrap_attempts_token_hash_check`,
+`..._recovery_token_hash_check`) changed their `SHOW CREATE TABLE`
+charset-literal introducer from `_utf8mb4` to `_ascii` after migration
+`0037`'s `ALTER TABLE` on that same table — even though `0037` never
+touches `token_hash`/`recovery_token_hash`. Verified this is MySQL
+re-resolving a pre-existing CHECK's literal charset during the table
+rebuild an `ALTER TABLE ADD ... FOREIGN KEY` triggers (confirmed
+reproducible and stable — 3 repeated `SHOW CREATE TABLE` calls against an
+unchanged database always agree), not session-to-session non-determinism.
+It does not threaten this mission's equivalence claims: the bootstrap
+generator embeds whatever introducer `SHOW CREATE TABLE` reports verbatim
+into the generated DDL, so Database B is self-consistent with Database A
+by construction regardless of which introducer MySQL happens to choose —
+and `EXACT_MATCH` was independently re-confirmed after this was
+understood, not before.
+
+## 19. What this mission did NOT do
 
 No Azure MySQL was created. No connection to any production or live MySQL
 instance was made. No migration was run against live infrastructure. No

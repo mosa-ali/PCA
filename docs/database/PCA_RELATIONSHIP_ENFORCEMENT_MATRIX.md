@@ -14,14 +14,17 @@ one of:
   the repository. Flagged for the owner to decide: add the FK, or record why
   not.
 
-This mission does not add, remove, or "improve" any relationship — it only
-classifies what the accepted migration history (`backend/migrations/0001`
-through `0036`) already built, verified against Database A (a disposable
-MySQL 8.4 instance with all 34 migrations applied from zero).
+This mission does not add, remove, or "improve" any relationship on its own
+authority — every relationship below was left exactly as the accepted
+migration history built it, classified against Database A (a disposable
+MySQL 8.4 instance with every migration applied from zero), **except** the
+one case the original mission flagged `OWNER_DECISION_REQUIRED` (formerly
+§8 below), which the owner then explicitly decided via a new migration —
+see the note at the end of this document.
 
-## 1. DB_FOREIGN_KEY_REQUIRED — the 82 declared foreign keys
+## 1. DB_FOREIGN_KEY_REQUIRED — the 83 declared foreign keys
 
-All 82 are `ON UPDATE NO ACTION ON DELETE NO ACTION` (no `CASCADE` anywhere —
+All 83 are `ON UPDATE NO ACTION ON DELETE NO ACTION` (no `CASCADE` anywhere —
 deletes/updates across these relationships are always application-managed,
 never DB-cascaded). Representative examples (full list is the
 `foreignKeys` array of every table in `backend/src/db/schema.ts` /
@@ -33,8 +36,9 @@ never DB-cascaded). Representative examples (full list is the
 | `device_public_keys.device_id` | `devices.device_id` |
 | `devices.registered_by_account_id` | `service_accounts.account_id` (migration 0026) |
 | `enrollment_bootstrap_attempts.device_id` | `devices.device_id` |
+| `enrollment_bootstrap_attempts.invitation_id` | `enrollment_invitations.invitation_id` (migration 0037 — owner decision, see the closing note) |
 | `managed_device_slot_reservations.family_id` → *(see §3, this one is NOT an FK — contrast case)* | — |
-| ...74 more, spanning billing line-items→invoices, settlement batch-items→batches, platform-admin role assignments→accounts, etc. | |
+| ...75 more, spanning billing line-items→invoices, settlement batch-items→batches, platform-admin role assignments→accounts, etc. | |
 
 These are the "obvious" cases: a child row that cannot outlive its parent
 within the same bounded subsystem, using matching opaque-ID types. Full
@@ -49,8 +53,8 @@ Every family-scoped table in the schema stores `family_id` as
 `VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin` — **never** as a
 foreign key into `families.family_id`, which is itself
 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin` (the opaque identity value).
-Zero of the 82 foreign keys in the schema reference `families`. This is not
-82 independent omissions; it is one deliberate, explicitly-documented,
+Zero of the 83 foreign keys in the schema reference `families`. This is not
+30 independent omissions; it is one deliberate, explicitly-documented,
 schema-wide convention, evidenced by:
 
 - **Migration 0036** (`family_child_memberships`), verbatim: *"No FK to
@@ -198,17 +202,39 @@ i.e. it necessarily predates the registry table too, for the same reason.
 Classified the same way by direct extension of the cited rationale, not
 independently re-verified against fixture data.
 
-## 8. OWNER_DECISION_REQUIRED — no rationale found
+## 8. OWNER_DECISION_REQUIRED — RESOLVED (was: no rationale found)
 
-Only one relationship in the entire 75-table schema falls into this bucket:
+**Status: closed by owner decision, migration `0037`.** This section is
+kept for audit history — it originally read as follows, and the decision
+recorded at the end is what happened next.
 
-| Table.Column | Target | Why this is flagged |
+Exactly one relationship in the entire 75-table schema ever fell into this
+bucket:
+
+| Table.Column | Target | Why this was flagged |
 |---|---|---|
-| `enrollment_bootstrap_attempts.invitation_id` | `enrollment_invitations.invitation_id` | Types match exactly (`CHAR(36) ascii_bin` both sides). The same table's `device_id` column **does** carry a real FK to `devices.device_id` (migration 0003), so this is not a "this whole table avoids FKs" pattern — `invitation_id` is the one column singled out without one. Migration 0003's header describes writing this row "in the SAME transaction as invitation redemption," at which point the invitation row already exists and is merely being transitioned to `REDEEMED` (not deleted), so the §6 reservation-before-existence rationale does not apply here. No comment, test, or design doc was found explaining the omission. **Recommendation for the owner**: either add `CONSTRAINT enrollment_bootstrap_attempts_invitation_id_fk FOREIGN KEY (invitation_id) REFERENCES enrollment_invitations (invitation_id)` in a future migration, or record the reason it should stay unenforced. The canonical schema/bootstrap in this mission preserves the current (no-FK) state faithfully — it does not decide this for the owner. |
+| `enrollment_bootstrap_attempts.invitation_id` | `enrollment_invitations.invitation_id` | Types match exactly (`CHAR(36) ascii_bin` both sides). The same table's `device_id` column **does** carry a real FK to `devices.device_id` (migration 0003), so this was not a "this whole table avoids FKs" pattern — `invitation_id` was the one column singled out without one. Migration 0003's header describes writing this row "in the SAME transaction as invitation redemption," at which point the invitation row already exists and is merely being transitioned to `REDEEMED` (not deleted), so the §6 reservation-before-existence rationale did not apply here. No comment, test, or design doc was found explaining the omission. |
+
+**Owner decision (PCA-LIVE-DB-0 closure pass)**: add the FK. Reason given:
+types match exactly; the invitation exists before the bootstrap-attempt
+insert; both are written/redeemed in the same transaction; runtime
+replay/recovery already `INNER JOIN`s the attempt back to the invitation;
+no architectural rationale exists for allowing an orphan attempt.
+Implemented as `backend/migrations/0037_enrollment_bootstrap_attempt_invitation_fk.sql`
+(an explicit index plus `FOREIGN KEY (invitation_id) REFERENCES
+enrollment_invitations (invitation_id) ON UPDATE NO ACTION ON DELETE NO
+ACTION`, additive — migration 0003 was not retroactively edited). Full
+migration-from-zero, canonical-bootstrap-from-zero, `EXACT_MATCH`,
+negative-control, and test-suite re-verification all passed afterward —
+see `PCA_CANONICAL_SCHEMA_REPORT.md` §18 for the complete record.
+`enrollment_bootstrap_attempts.invitation_id` is now correctly classified
+under §1 (`DB_FOREIGN_KEY_REQUIRED`), not here.
 
 ## Summary
 
-- **DB_FOREIGN_KEY_REQUIRED**: 82 (all present, all `NO ACTION`/`NO ACTION`).
+- **DB_FOREIGN_KEY_REQUIRED**: 83 (all present, all `NO ACTION`/`NO ACTION`
+  — includes `enrollment_bootstrap_attempts.invitation_id` as of migration
+  `0037`, §8).
 - **APPLICATION_ENFORCED_INTENTIONAL**: 56 total — every soft `family_id`
   reference (30 tables), every opaque device/key/message identifier (§3),
   every cross-plane billing/entitlements reference (§4), the
@@ -216,5 +242,6 @@ Only one relationship in the entire 75-table schema falls into this bucket:
   (§6), and the child-profile-registry non-backfill case (§7). Counted
   directly from `backend/src/db/schema.ts`'s `applicationEnforcedRelations`
   arrays (also reflected in `docs/database/PCA_CANONICAL_DATABASE_OBJECT_INVENTORY.csv`'s
-  57 `APPLICATION_ENFORCED_RELATION` rows, 56 of which carry this status).
-- **OWNER_DECISION_REQUIRED**: 1 (`enrollment_bootstrap_attempts.invitation_id`, §8).
+  56 `APPLICATION_ENFORCED_RELATION` rows, all of which carry this status).
+- **OWNER_DECISION_REQUIRED**: 0 (was 1 — `enrollment_bootstrap_attempts.invitation_id`,
+  resolved in §8 above).
