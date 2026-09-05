@@ -1,16 +1,17 @@
 # RELEASE A — PREDEPLOY REPORT
 
 **Programme:** PCA Public Website (PUBLIC RELEASE A)
-**Phases covered:** PUBLIC-12 (accessibility / performance / SEO), PUBLIC-13 (full bilingual browser UAT), PUBLIC-14 (adversarial privacy / security / claim review)
+**Phases covered:** PUBLIC-12 (accessibility / performance / SEO), PUBLIC-13 (full bilingual browser UAT), PUBLIC-14 (adversarial privacy / security / claim review), plus the Azure topology reconciliation, the production container and the Arabic review handoff
 **Generated:** 2026-09-05
-**Nothing was deployed.** No Azure resource, container, hostname binding, DNS record or certificate was created, changed or removed.
+**Nothing was deployed.** No Azure resource, container, hostname binding, DNS record or certificate was created, changed or removed by this session.
+**Revised 2026-09-05** after the owner created a dedicated Public Web App and moved `www.pcasafe.com` to it.
 
 ```
 RELEASE_A_TECHNICAL_READINESS   = READY
 RELEASE_A_PUBLICATION_AUTHORIZED = NO
 ```
 
-Technically ready and not authorised to publish are both true at once, and deliberately so: §H lists five blockers, none of which is an engineering defect.
+Technically ready and not authorised to publish are both true at once, and deliberately so: §K lists the remaining blockers, none of which is an engineering defect. The one engineering blocker from the previous revision — no production security headers — is now closed.
 
 ---
 
@@ -19,9 +20,10 @@ Technically ready and not authorised to publish are both true at once, and delib
 | | |
 |---|---|
 | Branch | `pca-dev` |
-| Commit at time of report | `9fb5bff0538f4315fb22042d07002f1c60996340` (the accepted checkpoint) |
+| Commit at time of report | `220ca40def530c63f02abc7a081902bd77a7e2d1` |
+| Previous accepted checkpoints | `9fb5bff` (IA consolidation), `1fd9bd4` (PUBLIC-12/13/14) |
 | `origin/main` | `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd` — **unchanged throughout** |
-| Worktree | 27 modified/untracked paths, all Public-owned: `public-web/**`, `docs/public/**`. The PUBLIC-12/13/14 remediation is not yet committed. |
+| Worktree | Public-owned paths only: `public-web/**`, `docs/public/**`. Pre-existing untracked container files at the repository root (`Dockerfile.backend`, `docker-compose.yml`, `azure-pipelines.yml` and others) belong to separate backend/admin work and were left untouched and unstaged. |
 | `stash@{0}` | intact, 48 files, `DO NOT DROP` — never touched by this programme |
 | PPR-2 | closed at `74e5ad5`; Part M published |
 
@@ -167,138 +169,303 @@ Worth stating plainly, because a gate reporting green while asserting nothing is
 
 ---
 
-## D. Azure current state
+## D. Azure current state — reconciled 2026-09-05
 
-Verified read-only on 2026-09-05. **No subscription ID, credential or app-setting value appears in this report.**
+Verified **read-only**. No subscription ID, tenant ID, verification ID, publish profile, credential, registry username or app-setting value appears in this report.
+
+The owner created a dedicated Public Web App and moved `www.pcasafe.com` to it. That is independently confirmed, and the move is **complete** — which is the part that could not be taken on trust, because a hostname can appear on a new app while still being bound to the old one.
+
+### D.1 The dedicated Public app
 
 | | |
 |---|---|
-| App Service | **`pca`** — Linux, Running, HTTPS Only, UAE North, RG `AppWenPlan` |
-| Plan | `NEWWEPPLAN` — **B1 Basic, capacity 1**, shared with `ims-platform` and `ims-v1` |
-| Container | `mcr.microsoft.com/appsvc/staticsite:latest` — **Azure's own placeholder** |
-| Deployment source | **none configured** |
+| Web App | **`pcaSafe`** — Linux, container, Running, UAE North |
+| Resource group | `pca-group` |
+| App Service Plan | `PcAPlan` — **B1 Basic, 1 site** (not shared with anything) |
+| HTTPS Only | **true** — `http://` answers `301` to `https://` |
+| Default hostname | `pcasafe-…uaenorth-01.azurewebsites.net` |
+| Custom domain | **`www.pcasafe.com`**, `SniEnabled` |
+| TLS certificate | `CN=www.pcasafe.com`, DigiCert/GeoTrust, issued 2026-09-05, valid to 2027-03-05, SAN covers `www.pcasafe.com` only |
+| Container | `sitecontainers`, main container on port 80 |
+| Current image | `pcasafe.azurecr.io/pca-public-placeholder:hold-v1` — **a placeholder** |
+| Registry auth | ACR **admin user credentials**; **no managed identity assigned** |
 | App settings | one: `WEBSITES_ENABLE_APP_SERVICE_STORAGE` |
-| `alwaysOn` | **false** — cold start after ~20 min idle |
-| `http20Enabled` | **false** |
-| `healthCheckPath` | **null** |
+| `alwaysOn` / `http20Enabled` / `healthCheckPath` | false / false / null |
 | `minTlsVersion` / `ftpsState` | 1.2 / FtpsOnly |
 
-**All five secured hostnames are bound to this one service**, every one `SniEnabled`:
+### D.2 The old app, re-checked
 
-`www.pcasafe.com` · `app.pcasafe.com` · `parent.pcasafe.com` · `platform.pcasafe.com` · `api.pcasafe.com`
+| | |
+|---|---|
+| Web App | `pca` — Linux, Running, HTTPS Only, UAE North, RG `AppWenPlan` |
+| Plan | `NEWWEPPLAN` — B1 Basic, **shared with `ims-platform` and `ims-v1`** (unrelated product) |
+| Container | `mcr.microsoft.com/appsvc/staticsite:latest` — Azure's own placeholder |
+| Hostnames | `api` · `platform` · `parent` · `app`.pcasafe.com, all `SniEnabled` |
+| **`www.pcasafe.com`** | **ABSENT** — genuinely removed, not merely duplicated |
 
-All five still return the identical 612-byte nginx placeholder (re-confirmed today). The apex `pcasafe.com` does not resolve.
+### D.3 Independent confirmation that the move is real
 
-### The constraint
+Binding lists can lie by omission, so the isolation was confirmed by behaviour as well as by configuration:
 
-**Any deployment to `pca` changes what all five hostnames serve at once, `api.pcasafe.com` included.** There is no host-based routing in the App Service and none in the repository.
-
----
-
-## E. Deployment options
-
-Directly replacing the current container with Public HTML remains **NOT APPROVED** for public go-live, per the owner ruling, because `api` / `app` / `parent` / `platform` would all serve the Public site.
-
-| | **PATH C — host-routing container** | **PATH B — separate App Service per surface** |
+| Hostname | DNS CNAME target | Serves |
 |---|---|---|
-| **Isolation** | One process fronts all four surfaces. A routing bug or crash affects everything. | True isolation. A Public outage cannot touch the API. |
-| **Blast radius** | Every deploy to any surface restarts the shared container. | Per-surface. Public deploys independently of Parent and API. |
-| **Security headers** | One place to set them for every surface — a real advantage while §F is unresolved. | Set per service; four places to keep in step, but each independently correct. |
-| **Future Parent/API** | Parent and API must be reachable behind the same container, so their deployment model is coupled to Public's. | Each surface keeps its own runtime, scaling and rollback. Matches the Parent/Admin realm separation the architecture already enforces. |
-| **Rollback** | Redeploy the previous container image; all surfaces roll back together. | Per-surface rollback; Public can revert without touching the API. |
-| **Cost** | No new plan. Stays on the shared B1. | New capacity. Also the natural moment to move PCA off a B1 shared with an unrelated product. |
-| **Operational complexity** | A routing layer to build, test and own — it does not exist today. | More resources, but each is a stock static-site or container deployment. |
+| `www.pcasafe.com` | the **`pcaSafe`** default hostname | 1,696 B "Welcome to Azure Container Instances!", no `Server` version |
+| `app` / `parent` / `platform` / `api`.pcasafe.com | the **`pca`** default hostname | identical 612 B "Welcome to nginx!", `Server: nginx/1.19.2` |
 
-**Coordinator assessment.** PATH C is the better *interim* step and the worse *destination*. It is the only option that does not need new Azure resources, and it puts the security headers of §F in one enforceable place — but it couples Public, Parent, Admin and API into one blast radius, which is precisely the separation the Parent/Platform-Admin realm boundary exists to protect (CLM-046).
+Two different placeholder pages from two different containers. `www` is served by the new app and nothing else is.
 
-**Recommendation: PATH B for `www.pcasafe.com`,** because Release A is a static artifact with no backend calls and gains nothing from sharing a runtime with the API. If a single interim container is preferred for cost, PATH C is acceptable **only** with a written commitment to split before Release B activates auth — an auth outage caused by a Public deploy would be the worst version of this trade.
+```
+AZURE_PUBLIC_APP_CREATED       = YES
+AZURE_PUBLIC_SURFACE_ISOLATION = PASS
+WWW_CURRENT_APP                = pcaSafe (resource group pca-group)
+OLD_PCA_WWW_BINDING            = ABSENT
+PCA_PUBLIC_RELEASE_A_DEPLOYED  = NO
+```
 
-Either path also wants: `alwaysOn` enabled, HTTP/2 enabled, a health-check path set, and PCA separated from the B1 plan it currently shares with `ims-platform` and `ims-v1`.
+**A healthy Web App is not a deployed website.** `pcaSafe` is Running and its container answers 200 — with a placeholder. No PCA content is live at `www.pcasafe.com`, and nothing in this session changed that.
 
-**This is an assessment, not a decision.** No Azure change is proposed for execution here.
+### D.4 Findings from the reconciliation
+
+| # | Finding |
+|---|---|
+| **AZ-1** | The apex **`pcasafe.com` has no A, AAAA or CNAME record** — only SOA/NS on Squarespace nameservers. A visitor typing the bare domain reaches nothing. `www` alone is not enough for a public launch; an apex record plus an apex→`www` redirect is needed. **DNS change — not made.** |
+| **AZ-2** | `pcaSafe` pulls from ACR using **admin-user credentials** and has **no managed identity**. Admin credentials live in site config and are shared by everything holding them. A managed identity with `AcrPull` is scoped, rotatable and revocable. **Not changed.** |
+| **AZ-3** | ACR `pcaSafe` (Basic, `pca-group`) has **admin user enabled** and **public network access enabled**. Repository contents could not be listed — the signed-in identity lacks the data-plane role — so the image inventory is **unverified**, and is recorded as unverified rather than assumed. |
+| **AZ-4** | `healthCheckPath` is null, `alwaysOn` false, `http20Enabled` false. The Release A image provides `/healthz`; without a health path Azure cannot distinguish a wedged container from a healthy one. |
+| **AZ-5** | The `www` certificate covers **`www.pcasafe.com` only**. Any future apex binding needs its own certificate. |
+| **AZ-6** | `pca` still shares a B1 plan with `ims-platform` and `ims-v1`, an unrelated product. Unchanged from PUBLIC-0 and unaffected by the Public split. |
+
+**Azure changes made by this session: 0. DNS changes: 0. Custom-domain changes: 0. Certificate changes: 0. Deployments: 0.**
 
 ---
 
-## F. Security headers — Release A production set
+## E. Deployment topology — resolved
 
-The artifact ships a `<meta>` CSP and referrer policy, and the UAT confirms nothing in the build violates them: zero inline scripts, zero inline style attributes, zero external origins. But `frame-ancestors` is ignored in a meta CSP by specification, and HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Permissions-Policy` have **no meta equivalent at all**. These must be real response headers.
+The PATH B / PATH C question from the previous report is **closed by the owner's action**. Creating a dedicated Public Web App and moving `www` to it *is* PATH B, which was the recommendation: true isolation, per-surface rollback, and a Public deploy that cannot touch `api.pcasafe.com`.
+
+The constraint that drove the earlier caution is gone. Deploying Release A now changes exactly one hostname.
+
+That cuts both ways, and it is why the deployment freeze matters more now, not less: **`www.pcasafe.com` is live and pointed at the app this image would replace.** Pushing the Release A image is no longer a staging step — it is publication.
+
+Still recommended, none of it done here: enable `alwaysOn`, enable HTTP/2, set `healthCheckPath` to `/healthz`, move ACR auth to managed identity, and separate `pca` from the B1 plan it shares with an unrelated product.
+
+---
+
+## F. Production security headers — implemented and verified locally
+
+Previously this section was a specification with no host configuration behind it, tracked as blocker **INF-1**. The configuration now exists, and has been verified against a running container rather than reviewed on paper.
+
+### F.1 The artifact
+
+| | |
+|---|---|
+| `public-web/deploy/Dockerfile` | two-stage: run every gate, then serve from nginx 1.27-alpine |
+| `public-web/deploy/nginx.conf` | the response headers, routing, compression and health endpoint |
+| `public-web/deploy/manifest.mjs` | SHA-256 of every shipped byte, written outside the deploy root |
+| `public-web/deploy/verify-container.mjs` | asserts a **running** container serves the reviewed artifact |
+| `public-web/deploy/README.md` | build/run/verify, deployment procedure, rollback |
+
+`docker build` is not packaging — it runs the full gate suite inside the image, asserts the deploy root holds exactly the manifest's files and that each matches its checksum, then runs `nginx -t`. A gate failure produces no image.
+
+### F.2 Headers actually served, measured
+
+Confirmed present on every page, on assets, on `robots.txt`, on `sitemap.xml` **and on the 404**:
 
 ```
-Content-Security-Policy:   default-src 'self'; script-src 'self'; style-src 'self';
-                           img-src 'self' data:; font-src 'self'; connect-src 'none';
-                           frame-ancestors 'none'; base-uri 'self'; form-action 'none';
-                           object-src 'none'
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self';
+                         img-src 'self'; base-uri 'self'; form-action 'none';
+                         frame-ancestors 'none'; upgrade-insecure-requests
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-X-Content-Type-Options:    nosniff
-X-Frame-Options:           DENY
-Referrer-Policy:           strict-origin-when-cross-origin
-Permissions-Policy:        camera=(), microphone=(), geolocation=(), interest-cohort=()
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
+Server: nginx            (version suppressed)
 ```
 
-Justification for the strict directives: Release A makes **no** network calls (`connect-src 'none'`), submits **no** forms (`form-action 'none'`), loads **no** third-party resource, and has all CSS in one external file (`style-src 'self'` with no `'unsafe-inline'` — stricter than either existing console).
+The CSP was **tightened** against measurement, not copied forward. Every `data:` occurrence in `dist/` turned out to be the policy string itself — not one image used a data URI — and the stylesheet declares no `@font-face` and contains no `url()` at all. So `img-src 'self' data:` became `img-src 'self'`, `font-src` was dropped, and the baseline became `default-src 'none'` with every unused fetch directive inheriting it. `'unsafe-inline'` and `'unsafe-eval'` appear nowhere.
 
-Recommended additions: `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`, and `Cache-Control: public, max-age=300` on HTML with a longer immutable TTL on hashed assets.
+`assertCspCoversArtifact()` re-derives the policy from the emitted files on every build and fails **both** ways: a use with no grant would break a real asset, a grant with no use is standing permission for an unreviewed change. Proven by reintroducing five defects (unsafe-inline added, font-src re-added, img-src removed, data: re-granted, frame-ancestors moved back into the inert meta tag) — all five caught.
 
-**PUBLIC-14 was right that the deliverable contains no host configuration file.** The header set exists as a specification in `reports/build-report.json`, which is deliberately not deployed. Emitting the concrete host config is deployment work that follows the PATH B/C decision — a `_headers` file, `staticwebapp.config.json` and an nginx snippet are all trivial once the target is known, and writing one before the decision would be guessing. Tracked as blocker **INF-1**.
+`Cross-Origin-Embedder-Policy` is deliberately absent: it buys cross-origin isolation, which only matters for `SharedArrayBuffer` and high-resolution timers, and this site uses neither.
+
+### F.3 Local container verification
+
+```
+LOCAL_RELEASE_A_CONTAINER                = PASS   (271/271 checks)
+PRODUCTION_SECURITY_HEADER_CONFIGURATION = PASS_LOCAL
+```
+
+Covered: all 8 required headers on 19 distinct paths including the 404; every page byte-identical to the reviewed artifact; `lang`/`dir` correct in the served markup for both locales; real 404 with no SPA fallback; relative directory redirects; dotfile paths denied; gzip on HTML and CSS; no internal claim metadata; reports and source not served; and a real Chromium pass over five pages confirming zero console errors under the **response-header** CSP, zero external requests, every image with `naturalWidth > 0`, and the stylesheet actually applied.
+
+Artifact identity: 26 files, 195,856 B, `artifact-sha256 = f0b042cb7e88782f1bf084920d96d4815807e5a79221a86806523ba649919cce`. Over the wire: home 4,538 B gzipped, `/ar/` 5,458 B, CSS 5,253 B.
+
+### F.4 The verifier was proven, and it found a defect in this image
+
+A verifier that passes on its first run has demonstrated nothing. Four deliberate misconfigurations, all caught:
+
+| Deliberate defect | Result |
+|---|---|
+| a `location` block declares its own `add_header` | 8 security headers silently missing on `/assets/` |
+| `always` dropped from the CSP | header absent on the 404 |
+| SPA history fallback added | missing paths soft-200 as the home page |
+| `absolute_redirect on` | container's internal address leaked into `Location` |
+
+The first is the one worth naming: nginx **discards every inherited `add_header`** in any location block that declares one of its own. A plausible config can serve a fully protected home page and a naked 404, and only a running server reveals it.
+
+A fifth defect was found by inspecting the running container rather than by any check: the nginx base image ships `index.html` and `50x.html` in the document root, and `COPY` **merges into** that directory instead of replacing it. The first build served a stock English `/50x.html` at HTTP 200 — an unreviewed page in the deploy root, absent from the manifest — while all 270 HTTP checks passed, because nothing thinks to request a file it does not know exists. The document root is now cleared before the copy, the file count and every checksum are asserted at build time, and the verifier probes for the leftover explicitly.
 
 ---
 
-## G. Rollback
+## G. Email and contact channels
 
-The current state is the safest possible baseline: **nothing is deployed**, so the first Release A deployment has a clean rollback target.
+The owner has configured four **forwarding aliases** on `pcasafe.com`, all forwarding to a single owner-monitored destination. That destination is deliberately not recorded in this repository, in any report, in any rendered page or in any log.
 
-1. **Before deploying**, record the current container image reference and app settings for `pca` (read-only `az webapp config show` / `az webapp sitecontainers list`), and save them alongside this report.
-2. **Rollback = redeploy the recorded prior container.** The placeholder `mcr.microsoft.com/appsvc/staticsite:latest` is a public image, so the baseline is always recoverable.
-3. **PATH B rollback** is narrower still: revert the Public App Service only; `api` / `app` / `platform` bindings are untouched by a Public deploy.
-4. **Artifact rollback:** the build is deterministic from a commit SHA, so any previous Release A artifact is reproducible by checking out that SHA and running `npm run build` — no stored artifact required, no install step.
-5. **Verification after any rollback:** re-run `scripts/release-a-evidence.mjs` against the live origin (`PCA_UAT_BASE=https://www.pcasafe.com`) and confirm 112/112.
-6. **DNS and certificates are never part of a rollback.** All five bindings already exist with valid SNI certificates; deployment changes container content only.
+```
+SUPPORT_ALIAS_CONFIGURED  = YES     SUPPORT_INBOUND_VERIFIED  = NOT_TESTED
+PRIVACY_ALIAS_CONFIGURED  = YES     PRIVACY_INBOUND_VERIFIED  = NOT_TESTED
+SECURITY_ALIAS_CONFIGURED = YES     SECURITY_INBOUND_VERIFIED = NOT_TESTED
+ADMIN_ALIAS_CONFIGURED    = YES     ADMIN_INBOUND_VERIFIED    = NOT_TESTED
+PUBLIC_REPLY_IDENTITY     = NOT_TESTED
+CONTACT_CHANNEL           = NOT_READY
+EMAIL_ALIAS_CONFIGURATION = OWNER_EVIDENCE_PRESENT
+```
+
+**Configuration is not delivery.** A forwarding rule can exist and still not deliver: SPF or DMARC may not align for forwarded mail, the receiving provider may junk it silently, a loop may form, or the alias may accept and blackhole. None of that is visible from the configuration screen.
+
+**Forwarding is also not send-as.** These are independent capabilities. If a reply to a privacy request leaves from the owner's private mailbox, the requester learns a private address and the reply does not come from the published contact. That must be tested before any address is published.
+
+The full test procedure — 9 inbound tests and 5 reply-identity tests per alias, with the classification rules — is in `RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md`. **None has been run by this session**, and the results table is deliberately empty. I have neither an external mail account nor access to the owner's mailbox, and a fabricated delivery result is worse than an open blocker.
+
+Until delivery is proven, `/contact/` keeps its current honest wording — that PCA cannot receive messages yet — and no address is published. `admin@pcasafe.com` stays operational and is not proposed as public copy in any case.
 
 ---
 
-## H. Blockers
+## H. Arabic review
 
-None is an engineering defect. All five block **publication**, not readiness.
+```
+ARABIC_REVIEW_PACK            = COMPLETE   (189 rows, 338 Arabic strings)
+ARABIC_REVIEW_GUIDE           = COMPLETE
+ARABIC_OWNER_SIGNOFF_TEMPLATE = COMPLETE   (87 rows, all OWNER_DECISION = PENDING)
+NATIVE_ARABIC_REVIEW          = AWAITING_EXTERNAL_REVIEW
+OD_12                         = NOT_APPROVED
+```
+
+The independent reviewer is assigned and the pack now exists:
+
+| File | |
+|---|---|
+| `RELEASE_A_ARABIC_REVIEW_PACK.csv` | 189 rows, 14 columns, one per Arabic key |
+| `RELEASE_A_ARABIC_REVIEW_GUIDE.md` | what to check, how to fill it in, scope boundaries |
+| `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv` | the 87 rows needing the owner's own decision |
+
+Generated by `public-web/scripts/arabic-review-pack.mjs`, which refuses to write a pack it cannot prove faithful: EN/AR key-set equality, one row per key, matching value shapes, no empty string on either side, every route resolving, every claim id present in **both** `claims.mjs` and the register CSV — and then all 14 pages re-rendered and required to match the emitted `dist/` files byte for byte.
+
+Risk distribution: **73 CRITICAL**, 20 HIGH, 70 MEDIUM, 26 LOW. Critical covers every privacy assertion, all legal text, every feature-status label, every release-state notice, and anything bound to a claim weaker than `VERIFIED_AVAILABLE` — because overstating a hedge in Arabic is the exact failure this review exists to catch.
+
+Export and validation only: not one character of Arabic was changed, every row ships `PENDING_REVIEW`, and `PROPOSED_ARABIC` is empty on all 189. Returned corrections will be checked against the English source, claim status, privacy hedge and approved terminology before any is applied — a linguistically better translation that strengthens a claim will be rejected.
+
+---
+
+## I. Legal
+
+```
+LEGAL_PUBLICATION_STATUS             = NOT_AUTHORIZED
+PRIVACY_POLICY_PUBLICATION_READINESS = NOT_READY
+TERMS_PUBLICATION_READINESS          = NOT_READY
+OD_13                                = UNRESOLVED
+PPR1R-D035                           = OPEN
+```
+
+Unchanged, and **not** resolved by the new email aliases. The 13 facts required from the owner — operator name, entity type, country, jurisdiction, legal and privacy contacts, controller wording, effective date, parent/guardian wording, child age boundary, governing regimes — are set out in `RELEASE_A_LEGAL_OWNER_INPUT.md`. None has been invented or filled with a plausible default.
+
+`/privacy-policy/` and `/terms/` remain provisional drafts: `noindex, nofollow`, excluded from the sitemap, reachable only from the footer.
+
+---
+
+## J. Rollback
+
+The baseline is the safest possible: **PCA has never been deployed**, so the first Release A deploy has a clean, known rollback target. The topology split makes it narrower than before.
+
+1. **Record before deploying.** Capture `pcaSafe`'s current sitecontainer image reference, port and app settings (read-only). That record is the rollback target.
+2. **Roll back = redeploy the recorded prior image** (`pca-public-placeholder:hold-v1`). It is a placeholder, so the baseline is always recoverable.
+3. **Blast radius is one hostname.** `www.pcasafe.com` is the only binding on `pcaSafe`. `app`, `parent`, `platform` and `api` live on the separate `pca` App Service and cannot be affected by a Public deploy or rollback — this is what the owner's split bought.
+4. **No stored artifact needed.** The build is deterministic from a commit SHA with no install step; any previous artifact is reproducible by checking out that SHA and rebuilding. Confirm by comparing `artifact-sha256`.
+5. **DNS and certificates are never part of a rollback.** The binding and its SNI certificate are independent of container content. Do not touch them to fix a content problem.
+6. **Verify after any rollback:** run `verify-container.mjs` against the live origin, and confirm the other four hostnames still serve exactly what they served before.
+7. **Use immutable dated tags, never `latest`.** A moving tag makes "which bytes are live?" unanswerable, and turns rollback into guesswork.
+
+---
+
+## K. Remaining blockers before publication
+
+None is an engineering defect in the artifact.
 
 | # | Class | Blocker | Owner |
 |---|---|---|---|
-| **ARB-1** | ARABIC | `NATIVE_ARABIC_REVIEW = NOT_STARTED`. OD-12 requires owner-designated native sign-off; all 189 Arabic keys are pending. CLM-050 and CLM-051 stay `COMING_LATER`. | Owner-designated reviewer |
-| **LEG-1** | LEGAL | OD-13 legal entity and jurisdiction unresolved. `PPR1R-D035` (no privacy policy artifact) is an OPEN V1 blocker. `/privacy-policy/` and `/terms/` are provisional drafts, `noindex`, excluded from the sitemap. `LEGAL_PUBLICATION_STATUS = NOT_AUTHORIZED`. | Owner + legal |
-| **INF-1** | INFRASTRUCTURE | No production security headers can be served. Depends on the PATH B/C decision (§E), then a host config file (§F). | Owner decision, then deployment |
-| **OPS-1** | OWNER | No contact, support or security-disclosure channel exists anywhere. The site now says so honestly rather than pointing at a control that does not exist — but **publishing a child-protection site with no vulnerability-disclosure route is not advisable.** A monitored address, and ideally `/.well-known/security.txt`, should exist before launch. | Owner |
-| **CLM-1** | CLAIM | CLM-054 (accessibility conformance) stays `NOT_APPROVED_FOR_PUBLIC_CLAIM` by owner ruling; no page states a conformance level. CLM-041/042 remain unapproved; CLM-056 approved but deliberately not rendered. **No action needed — recorded so the gap is not mistaken for an oversight.** | — |
+| **ARB-1** | ARABIC | `NATIVE_ARABIC_REVIEW = AWAITING_EXTERNAL_REVIEW`. Pack delivered; OD-12 sign-off outstanding. CLM-050/051 stay `COMING_LATER`. | Reviewer, then owner |
+| **LEG-1** | LEGAL | OD-13 unresolved; `PPR1R-D035` open. 13 facts requested in `RELEASE_A_LEGAL_OWNER_INPUT.md`. | Owner + legal |
+| **OPS-1** | CONTACT | Four aliases configured, **zero delivery tests run**. `CONTACT_CHANNEL = NOT_READY`, `PUBLIC_REPLY_IDENTITY = NOT_TESTED`. A child-protection site must not publish `security@` before proving it receives mail. | Owner |
+| **AZ-1** | DNS | Apex `pcasafe.com` does not resolve at all. Needs an apex record and an apex→`www` redirect. **DNS change — not made.** | Owner |
+| **AZ-2** | SECURITY | `pcaSafe` pulls from ACR with admin-user credentials and has no managed identity. | Owner |
+| **CLM-1** | CLAIM | CLM-054 stays `NOT_APPROVED_FOR_PUBLIC_CLAIM` by ruling; CLM-041/042 unapproved; CLM-056 approved but deliberately not rendered. **No action needed** — recorded so the gap is not mistaken for an oversight. | — |
 
-Not blockers, recorded for the predeploy checklist: `alwaysOn` false, HTTP/2 off, no health-check path, B1 plan shared with an unrelated product.
+**INF-1 is CLOSED.** Production security headers are implemented, served and verified against a running container.
+
+Not blockers, for the predeploy checklist: `alwaysOn` false, HTTP/2 off, no health-check path, `pca` sharing a B1 plan with an unrelated product.
 
 ---
 
-## I. Status
+## L. Status
 
 ```
-PUBLIC_12 = COMPLETE
-PUBLIC_13 = COMPLETE
-PUBLIC_14 = COMPLETE
+PUBLIC_12 = COMPLETE    PUBLIC_13 = COMPLETE    PUBLIC_14 = COMPLETE
 
-BUILD        = PASS (14 pages, 189/189 EN/AR parity, all gates green, deterministic)
-BROWSER_UAT  = 112/112 PASS (real Chromium, EN+AR, 8 widths, every route)
-ACCESSIBILITY= 0 axe violations, WCAG 2.1 A+AA, real browser, contrast evaluated
-SEO          = PASS (canonical, hreflang+x-default, sitemap 10, robots, OG, per-page metadata)
-PERFORMANCE  = 8,408 B gz first load | LCP 68 ms | CLS 0 | 0 external requests | 52,775 B gz total
-CLAIM_GATES  = PASS (57 rows, 53 inherited cross-checked, 20 patterns self-tested)
+BUILD         = PASS (14 pages, 189/189 EN/AR parity, all gates green, deterministic)
+BROWSER_UAT   = 112/112 PASS (real Chromium, EN+AR, 8 widths, every route)
+ACCESSIBILITY = 0 axe violations, WCAG 2.1 A+AA, real browser, contrast evaluated
+SEO           = PASS (canonical, hreflang+x-default, sitemap 10, robots, OG, per-page metadata)
+PERFORMANCE   = 8,387 B gz first load | LCP 68 ms | CLS 0 | 0 external requests
+CLAIM_GATES   = PASS (57 rows, 53 inherited cross-checked, 20 patterns self-tested)
 
 PUBLIC_RELEASE_A_CRITICAL_FINDINGS = 0
 PUBLIC_RELEASE_A_HIGH_FINDINGS     = 0
 
-NATIVE_ARABIC_REVIEW      = NOT_STARTED (189 keys pending, OD-12)
-LEGAL_PUBLICATION_STATUS  = NOT_AUTHORIZED (OD-13, PPR1R-D035)
+AZURE_PUBLIC_APP_CREATED       = YES
+AZURE_PUBLIC_SURFACE_ISOLATION = PASS
+WWW_CURRENT_APP                = pcaSafe (pca-group)
+OLD_PCA_WWW_BINDING            = ABSENT
+PCA_PUBLIC_RELEASE_A_DEPLOYED  = NO
 
-VIDEO_1_STATUS = SCRIPTED_PLACEHOLDER (EN+AR script, storyboard, transcript, poster, caption source)
+LOCAL_RELEASE_A_CONTAINER                = PASS (271/271)
+PRODUCTION_SECURITY_HEADER_CONFIGURATION = PASS_LOCAL
+
+SUPPORT/PRIVACY/SECURITY/ADMIN_ALIAS_CONFIGURED = YES
+SUPPORT/PRIVACY/SECURITY_INBOUND_VERIFIED       = NOT_TESTED
+PUBLIC_REPLY_IDENTITY                            = NOT_TESTED
+CONTACT_CHANNEL                                  = NOT_READY
+
+ARABIC_REVIEW_PACK   = COMPLETE (189 rows)
+NATIVE_ARABIC_REVIEW = AWAITING_EXTERNAL_REVIEW
+OD_12                = NOT_APPROVED
+
+LEGAL_PUBLICATION_STATUS = NOT_AUTHORIZED
+
+VIDEO_1_STATUS = SCRIPTED_PLACEHOLDER (EN+AR script, storyboard, transcript, poster, captions)
 VIDEO_2_STATUS = SCRIPTED_PLACEHOLDER (as above; real footage after Android device UAT)
+
+AZURE_RESOURCE_CHANGES_BY_THIS_SESSION = 0
+DNS_CHANGES_BY_THIS_SESSION            = 0
+CUSTOM_DOMAIN_CHANGES_BY_THIS_SESSION  = 0
 
 RELEASE_A_TECHNICAL_READINESS    = READY
 RELEASE_A_PUBLICATION_AUTHORIZED = NO
 ```
 
-Stopping here for owner and primary ChatGPT review. No Azure container, binding, DNS record or certificate was touched, and Release B auth/email was not activated.
+Technically ready and not authorised to publish remain true at once. The engineering blocker that stood in the previous report (no production security headers) is closed; every remaining blocker is an owner decision or an owner-side verification.
+
+`www.pcasafe.com` now resolves to the dedicated Public Web App, which means the next deploy is not a rehearsal — it is publication. Stopping here for owner and primary ChatGPT review.
 
 `PCA_PUBLIC_IMPLEMENTATION = READY_FOR_PRIMARY_CHATGPT_REVIEW`
