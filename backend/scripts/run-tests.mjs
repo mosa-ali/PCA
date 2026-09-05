@@ -243,6 +243,7 @@ const files = [
   "test/tamper/TrustedTimeTamperBridge.test.mjs",
   "test/telemetry/consent.test.mjs",
   "test/youtube/SafeContentCapability.test.mjs",
+  "test/canonicalSchemaChildFieldsRegression.test.mjs",
   // Guards this very list: fails if any non-DB *.test.mjs exists on disk but is
   // absent from it (see test/meta/testSuiteRegistration.test.mjs for why the
   // list stayed hand-maintained instead of becoming a glob).

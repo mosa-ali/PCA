@@ -111,6 +111,2292 @@
       ],
       "foreignKeys": []
     },
+    "billing_commercial_markets": {
+      "columns": [
+        {
+          "name": "commercial_market",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "default_currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_commercial_markets_currency_fk",
+          "unique": false,
+          "column": "default_currency_code",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "commercial_market",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_commercial_markets_currency_fk",
+          "column": "default_currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        }
+      ]
+    },
+    "billing_country_market_rules": {
+      "columns": [
+        {
+          "name": "country_code",
+          "type": "char(2)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "commercial_market",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_country_market_rules_market_fk",
+          "unique": false,
+          "column": "commercial_market",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "country_code",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_country_market_rules_market_fk",
+          "column": "commercial_market",
+          "referencedTable": "billing_commercial_markets",
+          "referencedColumn": "commercial_market"
+        }
+      ]
+    },
+    "billing_currencies": {
+      "columns": [
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "minor_unit_exponent",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "enabled",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "currency_code",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "billing_disputes": {
+      "columns": [
+        {
+          "name": "dispute_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "payment_transaction_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "evidence_submitted_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "evidence_due_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_disputes_transaction_idx",
+          "unique": false,
+          "column": "payment_transaction_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "dispute_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_disputes_transaction_fk",
+          "column": "payment_transaction_id",
+          "referencedTable": "billing_payment_transactions",
+          "referencedColumn": "payment_transaction_id"
+        }
+      ]
+    },
+    "billing_invoice_lines": {
+      "columns": [
+        {
+          "name": "invoice_line_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "description",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "line_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "quantity",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "plan_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "price_book_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_invoice_lines_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_invoice_lines_invoice_id_idx",
+          "unique": false,
+          "column": "invoice_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_invoice_lines_plan_fk",
+          "unique": false,
+          "column": "plan_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_invoice_lines_price_book_fk",
+          "unique": false,
+          "column": "price_book_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "invoice_line_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_invoice_lines_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_invoice_lines_invoice_fk",
+          "column": "invoice_id",
+          "referencedTable": "billing_invoices",
+          "referencedColumn": "invoice_id"
+        },
+        {
+          "constraint": "billing_invoice_lines_plan_fk",
+          "column": "plan_id",
+          "referencedTable": "billing_plans",
+          "referencedColumn": "plan_id"
+        },
+        {
+          "constraint": "billing_invoice_lines_price_book_fk",
+          "column": "price_book_id",
+          "referencedTable": "billing_price_books",
+          "referencedColumn": "price_book_id"
+        }
+      ]
+    },
+    "billing_invoices": {
+      "columns": [
+        {
+          "name": "invoice_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "subscription_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "total_amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "due_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "period_start",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "period_end",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_invoices_account_ref_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_invoices_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_invoices_subscription_fk",
+          "unique": false,
+          "column": "subscription_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "invoice_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_invoices_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_invoices_subscription_fk",
+          "column": "subscription_id",
+          "referencedTable": "billing_subscriptions",
+          "referencedColumn": "subscription_id"
+        }
+      ]
+    },
+    "billing_payment_attempts": {
+      "columns": [
+        {
+          "name": "payment_attempt_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "increase_request_ref",
+          "type": "varchar(64)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "payment_method_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "quote_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "price_book_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "price_book_version",
+          "type": "int unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "target_device_limit",
+          "type": "int unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider",
+          "type": "varchar(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider_reference",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_payment_attempts_account_ref_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_increase_request_ref_idx",
+          "unique": false,
+          "column": "increase_request_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_invoice_id_idx",
+          "unique": false,
+          "column": "invoice_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_payment_method_fk",
+          "unique": false,
+          "column": "payment_method_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_price_book_fk",
+          "unique": false,
+          "column": "price_book_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_attempts_quote_fk",
+          "unique": false,
+          "column": "quote_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "payment_attempt_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_payment_attempts_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_payment_attempts_invoice_fk",
+          "column": "invoice_id",
+          "referencedTable": "billing_invoices",
+          "referencedColumn": "invoice_id"
+        },
+        {
+          "constraint": "billing_payment_attempts_payment_method_fk",
+          "column": "payment_method_id",
+          "referencedTable": "billing_payment_methods",
+          "referencedColumn": "payment_method_id"
+        },
+        {
+          "constraint": "billing_payment_attempts_price_book_fk",
+          "column": "price_book_id",
+          "referencedTable": "billing_price_books",
+          "referencedColumn": "price_book_id"
+        },
+        {
+          "constraint": "billing_payment_attempts_quote_fk",
+          "column": "quote_id",
+          "referencedTable": "billing_quotes",
+          "referencedColumn": "quote_id"
+        }
+      ]
+    },
+    "billing_payment_methods": {
+      "columns": [
+        {
+          "name": "payment_method_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "provider",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider_payment_method_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "brand",
+          "type": "varchar(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "display_label",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "last4",
+          "type": "char(4)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expiry_month",
+          "type": "tinyint unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expiry_year",
+          "type": "smallint unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_payment_methods_account_ref_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "payment_method_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "billing_payment_transactions": {
+      "columns": [
+        {
+          "name": "payment_transaction_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "payment_attempt_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "provider",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider_transaction_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "quote_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "price_book_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "price_book_version",
+          "type": "int unsigned",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "confirmed_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_payment_transactions_account_ref_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_transactions_attempt_key",
+          "unique": true,
+          "column": "payment_attempt_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_transactions_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_transactions_invoice_fk",
+          "unique": false,
+          "column": "invoice_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_transactions_price_book_fk",
+          "unique": false,
+          "column": "price_book_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_payment_transactions_quote_fk",
+          "unique": false,
+          "column": "quote_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "payment_transaction_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_payment_transactions_attempt_fk",
+          "column": "payment_attempt_id",
+          "referencedTable": "billing_payment_attempts",
+          "referencedColumn": "payment_attempt_id"
+        },
+        {
+          "constraint": "billing_payment_transactions_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_payment_transactions_invoice_fk",
+          "column": "invoice_id",
+          "referencedTable": "billing_invoices",
+          "referencedColumn": "invoice_id"
+        },
+        {
+          "constraint": "billing_payment_transactions_price_book_fk",
+          "column": "price_book_id",
+          "referencedTable": "billing_price_books",
+          "referencedColumn": "price_book_id"
+        },
+        {
+          "constraint": "billing_payment_transactions_quote_fk",
+          "column": "quote_id",
+          "referencedTable": "billing_quotes",
+          "referencedColumn": "quote_id"
+        }
+      ]
+    },
+    "billing_plans": {
+      "columns": [
+        {
+          "name": "plan_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "plan_code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "plan_version",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "billing_cadence",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "default_parent_member_limit",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "default_managed_device_limit",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "price_book_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_plans_code_version",
+          "unique": true,
+          "column": "plan_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_plans_code_version",
+          "unique": true,
+          "column": "plan_version",
+          "seq": 2
+        },
+        {
+          "name": "billing_plans_price_book_fk",
+          "unique": false,
+          "column": "price_book_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "plan_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_plans_price_book_fk",
+          "column": "price_book_id",
+          "referencedTable": "billing_price_books",
+          "referencedColumn": "price_book_id"
+        }
+      ]
+    },
+    "billing_price_books": {
+      "columns": [
+        {
+          "name": "price_book_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "commercial_market",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "target_device_limit",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "price_book_version",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "effective_from",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "effective_to",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "open_active_key",
+          "type": "varchar(64)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": "STORED GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_price_books_admin_fk",
+          "unique": false,
+          "column": "created_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_price_books_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_price_books_key_version",
+          "unique": true,
+          "column": "commercial_market",
+          "seq": 1
+        },
+        {
+          "name": "billing_price_books_key_version",
+          "unique": true,
+          "column": "currency_code",
+          "seq": 2
+        },
+        {
+          "name": "billing_price_books_key_version",
+          "unique": true,
+          "column": "target_device_limit",
+          "seq": 3
+        },
+        {
+          "name": "billing_price_books_key_version",
+          "unique": true,
+          "column": "price_book_version",
+          "seq": 4
+        },
+        {
+          "name": "billing_price_books_lookup_idx",
+          "unique": false,
+          "column": "commercial_market",
+          "seq": 1
+        },
+        {
+          "name": "billing_price_books_lookup_idx",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 2
+        },
+        {
+          "name": "billing_price_books_lookup_idx",
+          "unique": false,
+          "column": "target_device_limit",
+          "seq": 3
+        },
+        {
+          "name": "billing_price_books_lookup_idx",
+          "unique": false,
+          "column": "effective_from",
+          "seq": 4
+        },
+        {
+          "name": "billing_price_books_open_active_key",
+          "unique": true,
+          "column": "open_active_key",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "price_book_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_price_books_admin_fk",
+          "column": "created_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "billing_price_books_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_price_books_market_fk",
+          "column": "commercial_market",
+          "referencedTable": "billing_commercial_markets",
+          "referencedColumn": "commercial_market"
+        }
+      ]
+    },
+    "billing_provider_events": {
+      "columns": [
+        {
+          "name": "provider_event_row_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "provider",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "provider_event_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "received_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "processing_status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "correlation_ref",
+          "type": "varchar(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_provider_events_provider_event_key",
+          "unique": true,
+          "column": "provider",
+          "seq": 1
+        },
+        {
+          "name": "billing_provider_events_provider_event_key",
+          "unique": true,
+          "column": "provider_event_id",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "provider_event_row_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "billing_quotes": {
+      "columns": [
+        {
+          "name": "quote_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "increase_request_ref",
+          "type": "varchar(64)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "commercial_market",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "target_device_limit",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "issued_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_quotes_admin_fk",
+          "unique": false,
+          "column": "issued_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_quotes_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_quotes_increase_request_ref_idx",
+          "unique": false,
+          "column": "increase_request_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_quotes_market_fk",
+          "unique": false,
+          "column": "commercial_market",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "quote_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_quotes_admin_fk",
+          "column": "issued_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "billing_quotes_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_quotes_market_fk",
+          "column": "commercial_market",
+          "referencedTable": "billing_commercial_markets",
+          "referencedColumn": "commercial_market"
+        }
+      ]
+    },
+    "billing_refund_operations": {
+      "columns": [
+        {
+          "name": "refund_operation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "payment_transaction_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "reason_code",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "reason_note",
+          "type": "varchar(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "initiated_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "step_up_session_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "provider",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "provider_refund_ref",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "state",
+          "type": "varchar(20)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "refund_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_refund_operations_admin_fk",
+          "unique": false,
+          "column": "initiated_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_refund_operations_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_refund_operations_idempotency_key",
+          "unique": true,
+          "column": "idempotency_key",
+          "seq": 1
+        },
+        {
+          "name": "billing_refund_operations_refund_fk",
+          "unique": false,
+          "column": "refund_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_refund_operations_step_up_fk",
+          "unique": false,
+          "column": "step_up_session_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_refund_operations_transaction_idx",
+          "unique": false,
+          "column": "payment_transaction_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "refund_operation_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_refund_operations_admin_fk",
+          "column": "initiated_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "billing_refund_operations_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_refund_operations_refund_fk",
+          "column": "refund_id",
+          "referencedTable": "billing_refunds",
+          "referencedColumn": "refund_id"
+        },
+        {
+          "constraint": "billing_refund_operations_step_up_fk",
+          "column": "step_up_session_id",
+          "referencedTable": "platform_admin_step_up_sessions",
+          "referencedColumn": "step_up_id"
+        },
+        {
+          "constraint": "billing_refund_operations_transaction_fk",
+          "column": "payment_transaction_id",
+          "referencedTable": "billing_payment_transactions",
+          "referencedColumn": "payment_transaction_id"
+        }
+      ]
+    },
+    "billing_refunds": {
+      "columns": [
+        {
+          "name": "refund_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "payment_transaction_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "reason_code",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "reason_note",
+          "type": "varchar(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "initiated_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "step_up_session_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "entitlement_treatment",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": "NOT_APPLICABLE",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_refunds_admin_fk",
+          "unique": false,
+          "column": "initiated_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_refunds_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "billing_refunds_step_up_fk",
+          "unique": false,
+          "column": "step_up_session_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_refunds_transaction_idx",
+          "unique": false,
+          "column": "payment_transaction_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "refund_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_refunds_admin_fk",
+          "column": "initiated_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "billing_refunds_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "billing_refunds_step_up_fk",
+          "column": "step_up_session_id",
+          "referencedTable": "platform_admin_step_up_sessions",
+          "referencedColumn": "step_up_id"
+        },
+        {
+          "constraint": "billing_refunds_transaction_fk",
+          "column": "payment_transaction_id",
+          "referencedTable": "billing_payment_transactions",
+          "referencedColumn": "payment_transaction_id"
+        }
+      ]
+    },
+    "billing_subscriptions": {
+      "columns": [
+        {
+          "name": "subscription_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "plan_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "current_period_start",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "current_period_end",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "payment_method_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "canceled_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "auto_renew",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "active_account_key",
+          "type": "varchar(80)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": "STORED GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "billing_subscriptions_account_ref_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "billing_subscriptions_active_account_key",
+          "unique": true,
+          "column": "active_account_key",
+          "seq": 1
+        },
+        {
+          "name": "billing_subscriptions_payment_method_fk",
+          "unique": false,
+          "column": "payment_method_id",
+          "seq": 1
+        },
+        {
+          "name": "billing_subscriptions_plan_fk",
+          "unique": false,
+          "column": "plan_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "subscription_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "billing_subscriptions_payment_method_fk",
+          "column": "payment_method_id",
+          "referencedTable": "billing_payment_methods",
+          "referencedColumn": "payment_method_id"
+        },
+        {
+          "constraint": "billing_subscriptions_plan_fk",
+          "column": "plan_id",
+          "referencedTable": "billing_plans",
+          "referencedColumn": "plan_id"
+        }
+      ]
+    },
+    "commercial_notifications": {
+      "columns": [
+        {
+          "name": "notification_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "event_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "dedupe_key",
+          "type": "varchar(191)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "resource_ref",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "message_key",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "params_json",
+          "type": "json",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "read_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "acknowledged_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "commercial_notifications_account_created_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "commercial_notifications_account_created_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "commercial_notifications_account_unread_idx",
+          "unique": false,
+          "column": "account_ref",
+          "seq": 1
+        },
+        {
+          "name": "commercial_notifications_account_unread_idx",
+          "unique": false,
+          "column": "read_at",
+          "seq": 2
+        },
+        {
+          "name": "commercial_notifications_dedupe_key",
+          "unique": true,
+          "column": "dedupe_key",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "notification_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "complimentary_entitlement_grants": {
+      "columns": [
+        {
+          "name": "grant_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "entitlement_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "category",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "amount_or_allowance",
+          "type": "int",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "effective_from",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "ACTIVE",
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "reason_code",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "internal_note",
+          "type": "varchar(2000)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "granted_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "revoked_by_admin_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "revision",
+          "type": "bigint",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "complimentary_entitlement_grants_expiry_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 1
+        },
+        {
+          "name": "complimentary_entitlement_grants_expiry_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 2
+        },
+        {
+          "name": "complimentary_entitlement_grants_family_scope_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "complimentary_entitlement_grants_family_scope_idx",
+          "unique": false,
+          "column": "entitlement_type",
+          "seq": 2
+        },
+        {
+          "name": "complimentary_entitlement_grants_family_scope_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 3
+        },
+        {
+          "name": "complimentary_entitlement_grants_granted_by_idx",
+          "unique": false,
+          "column": "granted_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "complimentary_entitlement_grants_revoked_by_fk",
+          "unique": false,
+          "column": "revoked_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "grant_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "complimentary_entitlement_grants_granted_by_fk",
+          "column": "granted_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "complimentary_entitlement_grants_revoked_by_fk",
+          "column": "revoked_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
+    },
     "device_challenges": {
       "columns": [
         {
@@ -187,6 +2473,64 @@
       "foreignKeys": [
         {
           "constraint": "device_challenges_device_id_fk",
+          "column": "device_id",
+          "referencedTable": "devices",
+          "referencedColumn": "device_id"
+        }
+      ]
+    },
+    "device_protection_status": {
+      "columns": [
+        {
+          "name": "device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "protection_level",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "device_protection_status_family_id_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "device_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "device_protection_status_device_id_fk",
           "column": "device_id",
           "referencedTable": "devices",
           "referencedColumn": "device_id"
@@ -352,6 +2696,14 @@
           "default": null,
           "key": "MUL",
           "extra": ""
+        },
+        {
+          "name": "registered_by_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
         }
       ],
       "indexes": [
@@ -368,6 +2720,12 @@
           "seq": 1
         },
         {
+          "name": "devices_registered_by_account_id_fk",
+          "unique": false,
+          "column": "registered_by_account_id",
+          "seq": 1
+        },
+        {
           "name": "PRIMARY",
           "unique": true,
           "column": "device_id",
@@ -380,8 +2738,75 @@
           "column": "paired_by_account_id",
           "referencedTable": "service_accounts",
           "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "devices_registered_by_account_id_fk",
+          "column": "registered_by_account_id",
+          "referencedTable": "service_accounts",
+          "referencedColumn": "account_id"
         }
       ]
+    },
+    "enrollment_administration_verifiers": {
+      "columns": [
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "salt_b64",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "verifier_b64",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "failed_attempts",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "locked_until",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
     },
     "enrollment_bootstrap_attempts": {
       "columns": [
@@ -525,6 +2950,78 @@
         }
       ]
     },
+    "enrollment_invitation_transitions": {
+      "columns": [
+        {
+          "name": "transition_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "invitation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "from_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "to_status",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "transitioned_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "enrollment_invitation_transitions_invitation_idx",
+          "unique": false,
+          "column": "invitation_id",
+          "seq": 1
+        },
+        {
+          "name": "enrollment_invitation_transitions_invitation_idx",
+          "unique": false,
+          "column": "transitioned_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "transition_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "enrollment_invitation_transitions_invitation_fk",
+          "column": "invitation_id",
+          "referencedTable": "enrollment_invitations",
+          "referencedColumn": "invitation_id"
+        }
+      ]
+    },
     "enrollment_invitations": {
       "columns": [
         {
@@ -541,6 +3038,14 @@
           "nullable": false,
           "default": null,
           "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "child_profile_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
           "extra": ""
         },
         {
@@ -568,8 +3073,24 @@
           "extra": ""
         },
         {
-          "name": "status",
+          "name": "age_ux_tier",
           "type": "varchar(16)",
+          "nullable": false,
+          "default": "YOUNG_CHILD",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "initial_policy_profile",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "BALANCED",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(32)",
           "nullable": false,
           "default": null,
           "key": "",
@@ -600,7 +3121,39 @@
           "extra": ""
         },
         {
+          "name": "install_required_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "app_installed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "authorization_required_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
           "name": "redeemed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expired_at",
           "type": "datetime(3)",
           "nullable": true,
           "default": null,
@@ -618,6 +3171,18 @@
       ],
       "indexes": [
         {
+          "name": "enrollment_invitations_family_child_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "enrollment_invitations_family_child_idx",
+          "unique": false,
+          "column": "child_profile_id",
+          "seq": 2
+        },
+        {
           "name": "enrollment_invitations_family_id_idx",
           "unique": false,
           "column": "family_id",
@@ -633,6 +3198,187 @@
           "name": "PRIMARY",
           "unique": true,
           "column": "invitation_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "enrollment_protection_approval_requests": {
+      "columns": [
+        {
+          "name": "request_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "child_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "device_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "operation",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protection_level",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "requested_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "reason_category",
+          "type": "varchar(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protective_authority_applies",
+          "type": "tinyint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "state",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "decided_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "decision_method",
+          "type": "varchar(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "temporary_disable_until",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "decided_by_device_id",
+          "type": "varchar(200)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "decision_action_id",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "decision_fingerprint",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "enrollment_protection_approval_decision_action_uq",
+          "unique": true,
+          "column": "decision_action_id",
+          "seq": 1
+        },
+        {
+          "name": "enrollment_protection_approval_family_state_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "enrollment_protection_approval_family_state_idx",
+          "unique": false,
+          "column": "state",
+          "seq": 2
+        },
+        {
+          "name": "enrollment_protection_approval_family_state_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 3
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "request_id",
           "seq": 1
         }
       ],
@@ -1251,6 +3997,57 @@
       ],
       "foreignKeys": []
     },
+    "eye_protection_settings": {
+      "columns": [
+        {
+          "name": "child_profile_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "reminders_enabled",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "eye_protection_settings_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "child_profile_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
     "families": {
       "columns": [
         {
@@ -1270,6 +4067,14 @@
           "extra": ""
         },
         {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "ACTIVE",
+          "key": "MUL",
+          "extra": ""
+        },
+        {
           "name": "created_at",
           "type": "datetime(3)",
           "nullable": false,
@@ -1284,6 +4089,30 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "suspended_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "suspended_by_admin_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "suspension_reason",
+          "type": "varchar(500)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
         }
       ],
       "indexes": [
@@ -1293,6 +4122,698 @@
           "column": "family_reference_hash",
           "seq": 1
         },
+        {
+          "name": "families_status_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 1
+        },
+        {
+          "name": "families_suspended_by_fk",
+          "unique": false,
+          "column": "suspended_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "families_suspended_by_fk",
+          "column": "suspended_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
+    },
+    "family_audit_events": {
+      "columns": [
+        {
+          "name": "envelope_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "parent_device_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "generated_at_utc",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "encrypted_payload_b64",
+          "type": "mediumtext",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce_b64",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "1970-01-01 00:00:00.000",
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_audit_events_expires_at_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 1
+        },
+        {
+          "name": "family_audit_events_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_audit_events_family_idx",
+          "unique": false,
+          "column": "generated_at_utc",
+          "seq": 2
+        },
+        {
+          "name": "family_audit_events_parent_device_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_audit_events_parent_device_idx",
+          "unique": false,
+          "column": "parent_device_id",
+          "seq": 2
+        },
+        {
+          "name": "family_audit_events_parent_device_idx",
+          "unique": false,
+          "column": "generated_at_utc",
+          "seq": 3
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "envelope_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_authority_attestations": {
+      "columns": [
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "attestation_id",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "attestation_revision",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "owner_device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "owner_dsk_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "owner_dsk_public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "trust_set_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "previous_attestation_id",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "signer_device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "signer_dsk_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "signer_dsk_public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "signature",
+          "type": "varchar(512)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_authority_attestations_family_revision_key",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_authority_attestations_family_revision_key",
+          "unique": true,
+          "column": "attestation_revision",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "attestation_id",
+          "seq": 2
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "family_authority_attestations_genesis_fk",
+          "column": "family_id",
+          "referencedTable": "family_authority_genesis_anchors",
+          "referencedColumn": "family_id"
+        }
+      ]
+    },
+    "family_authority_chain_heads": {
+      "columns": [
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "head_attestation_id",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "head_revision",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_authority_chain_heads_attestation_fk",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_authority_chain_heads_attestation_fk",
+          "unique": false,
+          "column": "head_attestation_id",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "family_authority_chain_heads_attestation_fk",
+          "column": "family_id",
+          "referencedTable": "family_authority_attestations",
+          "referencedColumn": "family_id"
+        },
+        {
+          "constraint": "family_authority_chain_heads_attestation_fk",
+          "column": "head_attestation_id",
+          "referencedTable": "family_authority_attestations",
+          "referencedColumn": "attestation_id"
+        },
+        {
+          "constraint": "family_authority_chain_heads_genesis_fk",
+          "column": "family_id",
+          "referencedTable": "family_authority_genesis_anchors",
+          "referencedColumn": "family_id"
+        }
+      ]
+    },
+    "family_authority_genesis_anchors": {
+      "columns": [
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "genesis_device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "genesis_dsk_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "genesis_dsk_public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protocol_version",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "signature",
+          "type": "varchar(512)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_child_memberships": {
+      "columns": [
+        {
+          "name": "child_profile_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "creation_request_key",
+          "type": "varchar(191)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_child_memberships_family_creation_key",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_child_memberships_family_creation_key",
+          "unique": true,
+          "column": "creation_request_key",
+          "seq": 2
+        },
+        {
+          "name": "family_child_memberships_family_id_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "child_profile_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_member_invitations": {
+      "columns": [
+        {
+          "name": "invitation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "invited_email_hash",
+          "type": "binary(32)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "role",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "invited_by_account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "accepted_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expired_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "accepted_by_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "pending_invited_email_hash",
+          "type": "binary(32)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": "STORED GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_member_invitations_email_hash_idx",
+          "unique": false,
+          "column": "invited_email_hash",
+          "seq": 1
+        },
+        {
+          "name": "family_member_invitations_family_id_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_member_invitations_pending_email_key",
+          "unique": true,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_member_invitations_pending_email_key",
+          "unique": true,
+          "column": "pending_invited_email_hash",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "invitation_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_rbac_policy_config": {
+      "columns": [
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "administrator_can_manage_viewers",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "administrator_can_revoke_device_or_disable_protection",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
         {
           "name": "PRIMARY",
           "unique": true,
@@ -1484,6 +5005,404 @@
         }
       ],
       "foreignKeys": []
+    },
+    "parent_account_preferences": {
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "language_code",
+          "type": "varchar(2)",
+          "nullable": false,
+          "default": "en",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "email_alerts_enabled",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "push_requests_enabled",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "email_destination",
+          "type": "varchar(320)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "email_destination_state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "UNVERIFIED",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "account_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "parent_accounts": {
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "email_hash",
+          "type": "binary(32)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": "PENDING_VERIFICATION",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "service_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "free_access_mode",
+          "type": "varchar(16)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "free_access_duration_days",
+          "type": "int",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "free_access_started_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "free_access_expires_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "default_parent_member_limit",
+          "type": "int",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "default_managed_device_limit",
+          "type": "int",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "verified_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "disabled_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_accounts_email_hash_key",
+          "unique": true,
+          "column": "email_hash",
+          "seq": 1
+        },
+        {
+          "name": "parent_accounts_service_account_id_key",
+          "unique": true,
+          "column": "service_account_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "account_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "parent_email_verification_codes": {
+      "columns": [
+        {
+          "name": "code_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "code_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_email_verification_codes_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_email_verification_codes_account_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "code_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_email_verification_codes_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_password_reset_codes": {
+      "columns": [
+        {
+          "name": "code_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "code_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_password_reset_codes_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_password_reset_codes_account_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "code_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_password_reset_codes_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
     },
     "platform_admin_accounts": {
       "columns": [
@@ -1909,6 +5828,132 @@
         }
       ]
     },
+    "platform_admin_security_alerts": {
+      "columns": [
+        {
+          "name": "alert_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "recipient_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "source_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "kind",
+          "type": "varchar(20)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "occurred_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "correlation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "delivery_state",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "PENDING",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "delivered_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "platform_admin_security_alerts_correlation_recipient_key",
+          "unique": true,
+          "column": "correlation_id",
+          "seq": 1
+        },
+        {
+          "name": "platform_admin_security_alerts_correlation_recipient_key",
+          "unique": true,
+          "column": "recipient_admin_id",
+          "seq": 2
+        },
+        {
+          "name": "platform_admin_security_alerts_recipient_state_idx",
+          "unique": false,
+          "column": "recipient_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "platform_admin_security_alerts_recipient_state_idx",
+          "unique": false,
+          "column": "delivery_state",
+          "seq": 2
+        },
+        {
+          "name": "platform_admin_security_alerts_recipient_state_idx",
+          "unique": false,
+          "column": "occurred_at",
+          "seq": 3
+        },
+        {
+          "name": "platform_admin_security_alerts_source_fk",
+          "unique": false,
+          "column": "source_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "alert_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "platform_admin_security_alerts_recipient_fk",
+          "column": "recipient_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "platform_admin_security_alerts_source_fk",
+          "column": "source_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
+    },
     "platform_admin_sessions": {
       "columns": [
         {
@@ -1992,6 +6037,94 @@
         {
           "constraint": "platform_admin_sessions_admin_id_fk",
           "column": "admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
+    },
+    "platform_admin_settings": {
+      "columns": [
+        {
+          "name": "setting_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "category",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "value_json",
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "is_sensitive",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "masked_display",
+          "type": "varchar(128)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        },
+        {
+          "name": "updated_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "platform_admin_settings_category_idx",
+          "unique": false,
+          "column": "category",
+          "seq": 1
+        },
+        {
+          "name": "platform_admin_settings_updated_by_fk",
+          "unique": false,
+          "column": "updated_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "setting_key",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "platform_admin_settings_updated_by_fk",
+          "column": "updated_by_admin_id",
           "referencedTable": "platform_admin_accounts",
           "referencedColumn": "admin_id"
         }
@@ -2090,6 +6223,135 @@
           "referencedColumn": "session_id"
         }
       ]
+    },
+    "protection_alerts": {
+      "columns": [
+        {
+          "name": "alert_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "device_id",
+          "type": "varchar(200)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "parent_device_id",
+          "type": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "trigger_type",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "generated_at_utc",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "encrypted_payload_b64",
+          "type": "mediumtext",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce_b64",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "1970-01-01 00:00:00.000",
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "alert_id",
+          "seq": 1
+        },
+        {
+          "name": "protection_alerts_expires_at_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 1
+        },
+        {
+          "name": "protection_alerts_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "protection_alerts_family_idx",
+          "unique": false,
+          "column": "generated_at_utc",
+          "seq": 2
+        },
+        {
+          "name": "protection_alerts_parent_device_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "protection_alerts_parent_device_idx",
+          "unique": false,
+          "column": "parent_device_id",
+          "seq": 2
+        },
+        {
+          "name": "protection_alerts_parent_device_idx",
+          "unique": false,
+          "column": "generated_at_utc",
+          "seq": 3
+        }
+      ],
+      "foreignKeys": []
     },
     "recovery_envelopes": {
       "columns": [
@@ -2457,6 +6719,111 @@
       ],
       "foreignKeys": []
     },
+    "safe_zones": {
+      "columns": [
+        {
+          "name": "zone_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "recipient_endpoint_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "ciphertext",
+          "type": "mediumblob",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce",
+          "type": "varbinary(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "revision",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "delivery_state",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": "PENDING_OFFLINE",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(6)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(6)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "zone_id",
+          "seq": 1
+        },
+        {
+          "name": "safe_zones_family_recipient_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "safe_zones_family_recipient_idx",
+          "unique": false,
+          "column": "recipient_endpoint_id",
+          "seq": 2
+        }
+      ],
+      "foreignKeys": []
+    },
     "schema_migrations": {
       "columns": [
         {
@@ -2739,6 +7106,566 @@
           "column": "account_id",
           "referencedTable": "service_accounts",
           "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "settlement_accounts": {
+      "columns": [
+        {
+          "name": "settlement_account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "provider_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "display_label",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "settlement_currency",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "ACTIVE",
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "settlement_account_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_accounts_currency_fk",
+          "unique": false,
+          "column": "settlement_currency",
+          "seq": 1
+        },
+        {
+          "name": "settlement_accounts_status_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "settlement_accounts_currency_fk",
+          "column": "settlement_currency",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        }
+      ]
+    },
+    "settlement_batch_items": {
+      "columns": [
+        {
+          "name": "settlement_batch_item_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "settlement_batch_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "payment_transaction_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "amount_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "currency_code",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "settlement_batch_item_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batch_items_batch_idx",
+          "unique": false,
+          "column": "settlement_batch_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batch_items_currency_fk",
+          "unique": false,
+          "column": "currency_code",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batch_items_transaction_key",
+          "unique": true,
+          "column": "payment_transaction_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "settlement_batch_items_batch_fk",
+          "column": "settlement_batch_id",
+          "referencedTable": "settlement_batches",
+          "referencedColumn": "settlement_batch_id"
+        },
+        {
+          "constraint": "settlement_batch_items_currency_fk",
+          "column": "currency_code",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "settlement_batch_items_transaction_fk",
+          "column": "payment_transaction_id",
+          "referencedTable": "billing_payment_transactions",
+          "referencedColumn": "payment_transaction_id"
+        }
+      ]
+    },
+    "settlement_batches": {
+      "columns": [
+        {
+          "name": "settlement_batch_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "settlement_account_ref",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "settlement_currency",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "period_start",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "period_end",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expected_gross_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "fees_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "net_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "received_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "difference_minor",
+          "type": "bigint",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "provider_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "resolution_reason",
+          "type": "varchar(500)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "resolved_by_admin_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "resolved_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_by_admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)"
+        },
+        {
+          "name": "usd_normalized_rate",
+          "type": "decimal(24,10)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "usd_normalized_recorded_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "usd_normalized_by_admin_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "settlement_batch_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_account_ref_idx",
+          "unique": false,
+          "column": "settlement_account_ref",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_created_by_fk",
+          "unique": false,
+          "column": "created_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_currency_fk",
+          "unique": false,
+          "column": "settlement_currency",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_period_idx",
+          "unique": false,
+          "column": "period_start",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_period_idx",
+          "unique": false,
+          "column": "period_end",
+          "seq": 2
+        },
+        {
+          "name": "settlement_batches_resolved_by_fk",
+          "unique": false,
+          "column": "resolved_by_admin_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_status_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 1
+        },
+        {
+          "name": "settlement_batches_usd_norm_by_fk",
+          "unique": false,
+          "column": "usd_normalized_by_admin_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "settlement_batches_account_fk",
+          "column": "settlement_account_ref",
+          "referencedTable": "settlement_accounts",
+          "referencedColumn": "settlement_account_id"
+        },
+        {
+          "constraint": "settlement_batches_created_by_fk",
+          "column": "created_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "settlement_batches_currency_fk",
+          "column": "settlement_currency",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "settlement_batches_resolved_by_fk",
+          "column": "resolved_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        },
+        {
+          "constraint": "settlement_batches_usd_norm_by_fk",
+          "column": "usd_normalized_by_admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
+    },
+    "settlement_fx_snapshots": {
+      "columns": [
+        {
+          "name": "settlement_fx_snapshot_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "settlement_batch_item_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "source_currency",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "settlement_currency",
+          "type": "char(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "recorded_rate",
+          "type": "decimal(24,10)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "effective_timestamp",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider_ref",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "settlement_fx_snapshot_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_fx_snapshots_item_key",
+          "unique": true,
+          "column": "settlement_batch_item_id",
+          "seq": 1
+        },
+        {
+          "name": "settlement_fx_snapshots_settlement_currency_fk",
+          "unique": false,
+          "column": "settlement_currency",
+          "seq": 1
+        },
+        {
+          "name": "settlement_fx_snapshots_source_currency_fk",
+          "unique": false,
+          "column": "source_currency",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "settlement_fx_snapshots_item_fk",
+          "column": "settlement_batch_item_id",
+          "referencedTable": "settlement_batch_items",
+          "referencedColumn": "settlement_batch_item_id"
+        },
+        {
+          "constraint": "settlement_fx_snapshots_settlement_currency_fk",
+          "column": "settlement_currency",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
+        },
+        {
+          "constraint": "settlement_fx_snapshots_source_currency_fk",
+          "column": "source_currency",
+          "referencedTable": "billing_currencies",
+          "referencedColumn": "currency_code"
         }
       ]
     },
