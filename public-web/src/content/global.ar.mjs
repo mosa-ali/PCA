@@ -4,42 +4,29 @@
  *
  * SOURCE OF TRUTH for transcribed strings: PCA_PUBLIC_CONTENT_AR.md v0.2.
  *
- * NATIVE REVIEW IS A RELEASE GATE (OD-12). AR_REVIEW_PENDING lists every key
- * whose Arabic is drafted but NOT approved for publication -- the strings the
- * approved document marks NATIVE_REVIEW_REQUIRED, plus the new copy introduced
- * by this implementation.
+ * NATIVE REVIEW IS A RELEASE GATE (OD-12), AND IT COVERS THE WHOLE CORPUS.
  *
- * Unlike parent-web's `_arReviewPending` array -- which PUBLIC-0 found is read
- * by no test, no lint rule and no CI step, and whose count the PPR-2 ledger
- * records incorrectly -- build.mjs READS this list, prints it on every build
- * and writes it into dist/build-report.json. CLM-050 and CLM-051 stay
- * COMING_LATER until an owner-designated native reviewer signs off.
+ * This list used to be a hand-curated 22 keys. PUBLIC-14 showed why that was
+ * wrong: the /ar/privacy/ H1 and lede — both marked NATIVE_REVIEW_REQUIRED in
+ * the frozen baseline, both shipping verbatim — were missing from it, as was
+ * every key the page authors recorded in their own file headers. A reviewer
+ * working the published list would have signed off 22 strings and believed the
+ * job done.
+ *
+ * The frozen baseline's own header gates the entire Arabic corpus before any
+ * public publication, so the review surface IS every Arabic string. The list is
+ * now derived from the content tables rather than maintained by hand, which
+ * makes it impossible to understate. assertArabicReviewCoversCorpus() in
+ * build.mjs enforces that.
+ *
+ * When an owner-designated native reviewer signs off, record the sign-off and
+ * narrow this deliberately — do not let it drift narrow by omission.
  */
+export const AR_REVIEW_STATUS = 'PENDING_NATIVE_REVIEWER_SIGN_OFF';
 
-export const AR_REVIEW_PENDING = [
-  'home.hero.reassure',
-  'home.steps.items',
-  'video.enroll.summary',
-  'video.enroll.title',
-  'video.enroll.transcript',
-  'video.intro.summary',
-  'video.intro.title',
-  'video.intro.transcript',
-  'video.seo.description',
-  'video.seo.title',
-  'howItWorks.sensitive.body',
-  'nav.menu',
-  'nav.primaryLabel',
-  'nav.languageLabel',
-  'nav.privacy',
-  'brand.homeLink',
-  'a11y.skipToContent',
-  'footer.legalNote',
-  'legal.provisionalNotice',
-  'video.transcriptLabel',
-  'video.captions.en',
-  'video.captions.ar',
-];
+// AR_REVIEW_PENDING is DERIVED in src/content/index.mjs from the merged
+// Arabic content table, so it cannot be narrower than the corpus. It is not
+// maintained here; there is no hand-typed list to fall out of date.
 
 export default {
   "brand.homeLink": "الصفحة الرئيسية لـ PCA",
@@ -72,6 +59,15 @@ export default {
   "footer.group.legal": "الشؤون القانونية",
   "footer.legalNote": "PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار والمزايا الموصوفة بأنها قادمة لاحقًا لم تُطلق بعد.",
   "legal.provisionalNotice": "هذه مسودة أولية وليست الوثيقة القانونية المنشورة. ما زالت قيد المراجعة القانونية ولا تظهر في محركات البحث.",
+  "release.journeyNotice": "**لم تُفتح PCA لإنشاء حسابات جديدة بعد.** تشرح هذه الصفحة رحلة الإعداد التي نبنيها حتى تعرف ما الذي ينتظرك. أما إنشاء الحساب والتحقق من البريد وتطبيق PCA Child فتصبح متاحة في إصدار لاحق.",
+  "release.contactNotice": "**لا يمكننا استقبال الرسائل بعد.** تُعِدّ PCA قنوات الدعم والخصوصية والأمان، وستُنشر هنا قبل أن تُفتح PCA للأسر. والمواضيع أدناه توضح ما ستغطيه هذه القنوات.",
+  "release.reportingPending": "لم تفتح PCA قنوات الإبلاغ بعد. وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر.",
+  "notFound.seo.title": "الصفحة غير موجودة — PCA",
+  "notFound.title": "الصفحة غير موجودة",
+  "notFound.body": "الصفحة التي تبحث عنها غير متاحة. ربما تكون قد نُقلت، أو أن الرابط غير مكتمل.",
+  "notFound.homeCta": "اذهب إلى الصفحة الرئيسية لـPCA",
+  "notFound.arabicNote": "الصفحة غير متاحة.",
+  "notFound.arabicHomeCta": "العودة إلى الصفحة الرئيسية",
   "status.available": "متوفر",
   "status.limited": "محدود",
   "status.later": "قادم لاحقًا",

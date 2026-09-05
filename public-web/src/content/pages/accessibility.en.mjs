@@ -35,6 +35,6 @@ export default {
     "English LTR and Arabic RTL."
   ],
   "accessibility.barrier.title": "Tell us about a barrier",
-  "accessibility.barrier.body": "If something in PCA makes it difficult to complete a task, choose **Accessibility** on Contact and tell us what happened. Please avoid sharing sensitive child information.",
+  "accessibility.barrier.body": "If something in PCA makes it difficult to complete a task, we want to know. PCA has not opened its reporting channels yet; they will be published on the Contact page before PCA opens to families. When they open, please avoid sharing sensitive child information.",
   "accessibility.cta.contact": "Contact Accessibility"
 };

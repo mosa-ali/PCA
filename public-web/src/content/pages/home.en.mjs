@@ -116,11 +116,11 @@ export default {
   "home.different.title": "Technology should protect without taking away dignity",
   "home.different.items": [
     {
-      "title": "No readable central child profile",
+      "title": "Designed without a readable central child profile",
       "body": "Protection does not require a readable central copy."
     },
     {
-      "title": "No child photos, videos, files or messages",
+      "title": "Not designed to collect photos, videos, files or messages",
       "body": "Routine protection does not need them."
     },
     {
@@ -166,7 +166,7 @@ export default {
   "home.availability.items": [
     {
       "title": "PCA Parent",
-      "body": "A responsive experience for phone, tablet and computer."
+      "body": "A responsive experience for phone, tablet and computer. Account access is not open yet."
     },
     {
       "claimId": "CLM-024",

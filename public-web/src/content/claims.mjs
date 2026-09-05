@@ -167,7 +167,7 @@ export const CLAIMS = {
    */
   'CLM-056': {
     status: STATUS.LIMITED,
-    note: 'PROPOSED. "Basic child-device enrollment does not require a paid license." Evidence: PPR-2 Part M + M3 test results. Not rendered in Release A pending owner approval of exact wording.',
+    note: 'OWNER_APPROVED at the checkpoint review. "Basic child-device enrollment does not require a paid license." Evidence: PPR-2 Part M + M3 test results. Not rendered in Release A pending owner approval of exact wording.',
   },
 
   /**
@@ -182,8 +182,8 @@ export const CLAIMS = {
    * CLM-039 (YouTube Mode B production-ready) remain NOT_APPROVED and are in
    * FORBIDDEN_CLAIMS below -- these are the COMING_LATER counterparts.
    */
-  'CLM-057': { status: STATUS.COMING_LATER, note: 'DEF-1. "AI-supported features are planned for a later release." Replaces the leaked directive. Does not assert AI is active.' },
-  'CLM-058': { status: STATUS.COMING_LATER, note: 'DEF-1. "Advanced YouTube protection is planned for a later release." Replaces the leaked directive. Does not assert Mode B readiness.' },
+  'CLM-057': { status: STATUS.COMING_LATER, note: 'OWNER_APPROVED. DEF-1. "AI-supported features are planned for a later release." Replaces the leaked directive. Does not assert AI is active.' },
+  'CLM-058': { status: STATUS.COMING_LATER, note: 'OWNER_APPROVED. DEF-1. "Advanced YouTube protection is planned for a later release." Replaces the leaked directive. Does not assert Mode B readiness.' },
 
   /**
    * The two public videos. COMING_LATER is the honest status while
@@ -196,7 +196,7 @@ export const CLAIMS = {
    * files ship. assertVideoAssets() in build.mjs blocks available:true without
    * the files, so this status and the rendered state cannot drift apart.
    */
-  'CLM-059': { status: STATUS.COMING_LATER, note: 'Public introduction/enrollment videos. Scripts and transcripts exist; recordings do not.' },
+  'CLM-059': { status: STATUS.COMING_LATER, note: 'OWNER_APPROVED. Public introduction/enrollment videos. Scripts and transcripts exist; recordings do not.' },
 };
 
 /**
@@ -252,10 +252,9 @@ export const PROPOSED_STATUS_CHANGES = [
 export const PROPOSED_CLAIMS = new Set([
   'CLM-054', // accessibility conformance — NOT_APPROVED per owner ruling
   'CLM-055', // no analytics/trackers
-  'CLM-056', // basic enrollment needs no paid license (PPR-2 Part M)
-  'CLM-057', // AI planned for a later release (DEF-1)
-  'CLM-058', // advanced YouTube protection planned for a later release (DEF-1)
-  'CLM-059', // public videos
+  // CLM-056..059 were APPROVED at the checkpoint review and are now real rows
+  // in the living register, so they are deliberately absent from this set --
+  // assertClaimsMatchRegister() fails if a listed claim turns up in the CSV.
 ]);
 
 export function claimStatus(claimId) {

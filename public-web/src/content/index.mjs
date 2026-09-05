@@ -20,7 +20,7 @@
  */
 
 import globalEn, { NEW_COPY } from './global.en.mjs';
-import globalAr, { AR_REVIEW_PENDING } from './global.ar.mjs';
+import globalAr, { AR_REVIEW_STATUS } from './global.ar.mjs';
 
 // --- The three main public pages -------------------------------------------
 import homeEn from './pages/home.en.mjs';
@@ -79,4 +79,15 @@ export const CONTENT = {
   ar: mergeLocale(globalAr, 'ar'),
 };
 
-export { NEW_COPY, AR_REVIEW_PENDING };
+/**
+ * The Arabic native-review surface, DERIVED rather than curated.
+ *
+ * OD-12 gates the whole Arabic corpus before any public publication, so the
+ * review surface is every Arabic string. A hand-maintained subset can only
+ * understate it — PUBLIC-14 found exactly that, with the /ar/privacy/ H1 and
+ * lede both omitted from a 22-key list. Deriving it makes understatement
+ * structurally impossible rather than merely gated.
+ */
+export const AR_REVIEW_PENDING = Object.keys(CONTENT.ar).sort();
+
+export { NEW_COPY, AR_REVIEW_STATUS };

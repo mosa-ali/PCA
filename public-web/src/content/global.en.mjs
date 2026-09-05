@@ -16,6 +16,16 @@
  */
 
 export const NEW_COPY = [
+  // Authored during the PUBLIC-14 remediation pass.
+  'release.journeyNotice',
+  'release.contactNotice',
+  'release.reportingPending',
+  'notFound.seo.title',
+  'notFound.title',
+  'notFound.body',
+  'notFound.homeCta',
+  'notFound.arabicNote',
+  'notFound.arabicHomeCta',
   'nav.menu',
   'nav.primaryLabel',
   'nav.languageLabel',
@@ -68,6 +78,15 @@ export default {
   "footer.group.legal": "Legal",
   "footer.legalNote": "PCA is a digital child protection platform. Plans, prices and availability described as coming later are not yet released.",
   "legal.provisionalNotice": "This is a provisional draft and is not the published legal document. It is pending legal review and is not indexed.",
+  "release.journeyNotice": "**PCA is not open for new accounts yet.** This page explains the setup journey we are building so you know what to expect. Account creation, email verification and the PCA Child app all become available in a later release.",
+  "release.contactNotice": "**We are not able to receive messages yet.** PCA is preparing its support, privacy and security contact channels, and they will be published here before PCA opens to families. The topics below show what those channels will cover.",
+  "release.reportingPending": "PCA has not opened its reporting channels yet. They will be published on the Contact page before PCA opens to families.",
+  "notFound.seo.title": "Page not found — PCA",
+  "notFound.title": "Page not found",
+  "notFound.body": "The page you were looking for is not available. It may have moved, or the link may be incomplete.",
+  "notFound.homeCta": "Go to the PCA home page",
+  "notFound.arabicNote": "The page is not available.",
+  "notFound.arabicHomeCta": "Return to the home page",
   "status.available": "Available",
   "status.limited": "Limited",
   "status.later": "Coming later",

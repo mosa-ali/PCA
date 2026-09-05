@@ -84,12 +84,18 @@ export function faqItem({ q, a }) {
  * "Do not make video the only way to obtain critical information" -- so the
  * scene-by-scene script renders as real text whether or not a file exists.
  *
+ * headingLevel exists because the block's correct level depends on where it
+ * sits. On Home the video is its own top-level block, so its title is the
+ * page's first h2; on How PCA Works it sits inside a section that already has
+ * an h2, so h3 is right. Hardcoding h3 produced a real h1 -> h3 skip on Home in
+ * both locales, caught by the PUBLIC-12 heading-order check.
+ *
  * Unavailable state emits NO <video> element, so there is no broken player and
  * nothing for the browser to fetch. Available state emits controls, no
  * autoplay, preload="none" (nothing downloads on first paint) and a caption
  * track per locale.
  */
-export function videoBlock(ctx, videoId) {
+export function videoBlock(ctx, videoId, { headingLevel = 3 } = {}) {
   const video = videoById(videoId);
   const p = video.contentPrefix;
   const scenes = ctx.t(`${p}.transcript`);
@@ -123,11 +129,27 @@ export function videoBlock(ctx, videoId) {
   return html`<figure class="pw-video">
     ${player}
     <figcaption class="pw-video__caption">
-      <h3 class="pw-video__title">${ctx.t(`${p}.title`)}</h3>
+      <h${headingLevel} class="pw-video__title">${ctx.t(`${p}.title`)}</h${headingLevel}>
       <p class="pw-video__summary" id="pw-video-${video.id}-summary">${richText(ctx.t(`${p}.summary`))}</p>
       ${transcript}
     </figcaption>
   </figure>`;
+}
+
+/**
+ * Release-state notice.
+ *
+ * PUBLIC-14 found How PCA Works walking a parent through "Create your parent
+ * account" and "Verify your email" as live steps, when production registration
+ * returns 202 and the verification code never leaves the process — the single
+ * worst publication-day outcome after a broken store link. The steps are still
+ * the right content: they describe the journey PCA is building. What was
+ * missing was saying so, once, before the reader starts following them.
+ */
+export function releaseNotice(ctx, key) {
+  return html`<div class="pw-notice" role="note">
+    <p>${richText(ctx.t(key))}</p>
+  </div>`;
 }
 
 export function ctaLink(ctx, { routeId, label, variant = 'secondary' }) {

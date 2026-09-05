@@ -21,7 +21,7 @@
  *     pill is warranted and none is emitted.
  */
 
-import { html, frag, richText, layout, ctaLink } from '../lib/components.mjs';
+import { html, frag, richText, layout, ctaLink, releaseNotice } from '../lib/components.mjs';
 
 function section(ctx, { id, label, title, lead, body, modifier }) {
   return html`<section class="pw-section ${modifier ?? ''}"${id ? html` id="${id}"` : ''}>
@@ -68,7 +68,9 @@ export function render(ctx) {
       </div>`,
   });
 
-  const main = frag([hero, categories, privacyNote]);
+  const notice = html`<div class="pw-section"><div class="pw-container">${releaseNotice(ctx, 'release.contactNotice')}</div></div>`;
+
+  const main = frag([hero, notice, categories, privacyNote]);
 
   return layout(ctx, { main });
 }

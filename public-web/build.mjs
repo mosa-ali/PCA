@@ -34,7 +34,7 @@
  */
 
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CONTENT, NEW_COPY, AR_REVIEW_PENDING, PAGE_CONTENT } from './src/content/index.mjs';
@@ -63,6 +63,18 @@ import * as termsPage from './src/pages/terms.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
+
+/**
+ * Reports live OUTSIDE the deploy root.
+ *
+ * PUBLIC-14 found build-report.json shipping at dist/build-report.json —
+ * reachable at https://www.pcasafe.com/build-report.json — carrying the whole
+ * internal claim-governance state: which claims are unproven, that auth is not
+ * live, that a predeploy security blocker exists. dist/ is what gets deployed,
+ * so nothing internal may be written into it. The same applied to the UAT
+ * harness's release-a-evidence.json.
+ */
+const REPORTS = join(ROOT, 'reports');
 const CHECK_ONLY = process.argv.includes('--check-only');
 
 /** routeId -> page module. A route builds only when a renderer exists. */
@@ -278,18 +290,100 @@ async function assertNoRawTokenUse(files) {
 // Gate 5/6/7 — rendered-output scans
 // ---------------------------------------------------------------------------
 
+/**
+ * ARABIC patterns. The scan was Latin-only, so the absolute-privacy, free-plan,
+ * pricing and store gates protected the English half of the site and nothing
+ * else. These mirror the Latin patterns for the claims where an Arabic
+ * violation is expressible.
+ */
+const FORBIDDEN_PATTERNS_AR = [
+  { claim: 'CLM-025', label: 'Google Play availability (AR)', re: /Google\s*Play|متجر\s*جوجل/i },
+  { claim: 'CLM-027', label: 'App Store availability (AR)', re: /App\s*Store|متجر\s*التطبيقات/i },
+  { claim: 'CLM-038', label: 'production AI claim (AR)', re: /حماية\s*بالذكاء\s*الاصطناعي|الذكاء\s*الاصطناعي[^.]{0,30}(في\s*الإنتاج|مُفعّل|مفعل|نشط)/ },
+  { claim: 'CLM-039', label: 'YouTube Mode B (AR)', re: /Mode\s*B|وضع\s*YouTube\s*المتقدم/i },
+  { claim: 'CLM-041', label: 'free-plan promise (AR)', re: /خطة\s*مجانية\s*(دائمة|أبدية)|مجاني(ة)?\s*(إلى\s*)?الأبد|مجانًا\s*للأبد/ },
+  // Affirmative constructions only. The approved Home FAQ copy says the
+  // opposite ("لم تُنشر الخطط والأسعار النهائية بعد"), and a pattern that fires
+  // on a negation would force a rewrite of owner-approved copy — the tail
+  // wagging the dog, which this project has already corrected once.
+  { claim: 'CLM-042', label: 'finalized pricing (AR)', re: /(تم\s*اعتماد|اعتُمدت|اُعتمدت)\s*(أسعار|الأسعار)|(أسعار|الأسعار)[^.]{0,25}متاحة\s*للعامة|\d+\s*(ريال|دولار|يورو|درهم)/ },
+  { claim: 'CLM-044', label: 'absolute deletion claim (AR)', re: /(ال)?حذف\s*(ال)?فوري|يحذف[^.]{0,30}جميع\s*سجلات|بشكل\s*نهائي[^.]{0,20}فور/ },
+  { claim: 'CLM-045', label: 'MFA claim (AR)', re: /المصادقة\s*(الثنائية|متعددة\s*العوامل)|مصادقة\s*(ثنائية|متعددة\s*العوامل)|التحقق\s*(بخطوتين|من\s*خطوتين)/ },
+  { claim: 'CLM-048', label: 'screenshot attachment (AR)', re: /إرفاق\s*(لقطات|لقطة)\s*الشاشة|إرفاق\s*ملفات/ },
+  { claim: 'CLM-052', label: 'absolute security claim (AR)', re: /غير\s*قابل(ة)?\s*للاختراق|100\s*%|بنسبة\s*100|أمان\s*مطلق|خصوصية\s*مطلقة|سرية\s*تامة/ },
+  { claim: 'CLM-056', label: 'unapproved licence-free wording (AR)', re: /رخصة\s*مدفوعة|(بدون|دون)\s*(رخصة|ترخيص|دفع)|لا\s*يتطلب[^.]{0,30}(رخصة|ترخيص|دفع)/ },
+];
+
+/**
+ * Every forbidden pattern must catch the sentence it exists to forbid.
+ *
+ * The claim register states each prohibited claim verbatim, in both languages,
+ * on its NOT_APPROVED_FOR_PUBLIC_CLAIM rows. That makes it a ready-made test
+ * corpus: if a pattern cannot match its own claim's CLAIM_TEXT, it cannot
+ * protect anything, and the green build it produces is meaningless.
+ *
+ * PUBLIC-14 caught four Arabic patterns in exactly that state. This runs on
+ * every build so it cannot happen again silently.
+ */
+async function assertForbiddenPatternsCatchTheirClaims() {
+  const csv = await readFile(join(ROOT, '../docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv'), 'utf8');
+  const rows = parseCsv(csv);
+  const header = rows.shift() ?? [];
+  const iId = header.indexOf('CLAIM_ID');
+  const iEn = header.indexOf('CLAIM_TEXT_EN');
+  const iAr = header.indexOf('CLAIM_TEXT_AR');
+  const iStatus = header.indexOf('CURRENT_STATUS');
+
+  const forbidden = new Map();
+  for (const r of rows) {
+    if (!r[iId] || (r[iStatus] ?? '').trim() !== 'NOT_APPROVED_FOR_PUBLIC_CLAIM') continue;
+    forbidden.set(r[iId].trim(), { en: r[iEn] ?? '', ar: r[iAr] ?? '' });
+  }
+
+  let checked = 0;
+  // A claim may be guarded by several patterns (CLM-052 has one for absolutes
+  // and one for zero-data wording). The requirement is that AT LEAST ONE of a
+  // claim's patterns catches the register's own prohibited sentence.
+  const check = (patterns, lang) => {
+    const byClaim = new Map();
+    for (const p of patterns) {
+      if (!forbidden.has(p.claim)) continue;
+      if (!byClaim.has(p.claim)) byClaim.set(p.claim, []);
+      byClaim.get(p.claim).push(p);
+    }
+    for (const [claim, group] of byClaim) {
+      const text = lang === 'ar' ? forbidden.get(claim).ar : forbidden.get(claim).en;
+      if (!text) continue;
+      checked += 1;
+      if (!group.some((p) => p.re.test(text))) {
+        fail(
+          'pattern-selftest',
+          claim + ' has no ' + lang.toUpperCase() + ' pattern that matches the register\'s own prohibited text: "' + text +
+            '" (patterns tried: ' + group.map((p) => p.label).join(', ') + ')'
+        );
+      }
+    }
+  };
+  check(FORBIDDEN_PATTERNS, 'en');
+  check(FORBIDDEN_PATTERNS_AR, 'ar');
+  return checked;
+}
+
 const FORBIDDEN_PATTERNS = [
+  // CLM-056 is APPROVED in the register but the owner ruling forbids rendering
+  // it in Release A, so its absence needs a gate of its own.
+  { claim: 'CLM-056', label: 'unapproved licence-free wording', re: /no\s+(paid\s+)?licen[cs]e\s+(is\s+)?(required|needed)|free\s+to\s+enroll?|without\s+(paying|payment)/i },
   { claim: 'CLM-025', label: 'Google Play availability', re: /google\s*play|play\.google\.com/i },
   { claim: 'CLM-027', label: 'App Store availability', re: /app\s*store|apps\.apple\.com/i },
   { claim: 'CLM-024/026', label: 'availability badge', re: /available\s+now|download\s+for\s+android/i },
   { claim: 'CLM-052', label: 'absolute security claim', re: /unhackable|military[-\s]?grade|100%\s*(secure|private)|complete\s+anonymity/i },
   { claim: 'CLM-052', label: 'zero-data claim', re: /zero\s+data|collects?\s+no\s+data/i },
   { claim: 'CLM-041', label: 'free-plan promise', re: /free\s+forever|always\s+free|permanent\s+free\s+plan|free\s+plan/i },
-  { claim: 'CLM-042', label: 'price statement', re: /\$\s?\d|\d+\s?(USD|SAR|EUR|GBP)\b/i },
+  { claim: 'CLM-042', label: 'price statement', re: /\$\s?\d|\d+\s?(USD|SAR|EUR|GBP)\b|pricing\s+is\s+(finalized|final|published)|prices?\s+(are|is)\s+(finalized|final|published|publicly\s+available)/i },
   { claim: 'CLM-045', label: 'parent MFA claim', re: /\bMFA\b|two[-\s]?factor|\b2FA\b|authenticator\s+app/i },
   { claim: 'CLM-054', label: 'accessibility conformance claim', re: /\bWCAG\b|AA\s+compliant|fully\s+accessible|section\s+508/i },
-  { claim: 'CLM-048', label: 'feedback attachment', re: /attach\s+a\s+screenshot|upload\s+a\s+file/i },
-  { claim: 'CLM-038', label: 'production AI claim', re: /AI[-\s]?powered|AI\s+protection\s+is\s+(enabled|active)/i },
+  { claim: 'CLM-048', label: 'feedback attachment', re: /attach\s+a\s+screenshot|upload\s+a\s+file|screenshot\s+attachment|attach\s+files?/i },
+  { claim: 'CLM-038', label: 'production AI claim', re: /AI[-\s]?powered|production\s+AI|AI\s+protection\s+is\s+(enabled|active)/i },
   { claim: 'CLM-039', label: 'YouTube Mode B', re: /mode\s+b\b/i },
   { claim: 'CLM-044', label: 'absolute deletion claim', re: /(delete[sd]?|removal)[^.]{0,40}(immediately\s+and\s+irreversibly|all\s+records)/i },
 ];
@@ -332,6 +426,24 @@ const ALLOWED_EXACT_PHRASES = [
  * reports work outstanding that cannot be done, and hides work that can.
  * This consolidation deleted nine pages, which immediately stranded two keys.
  */
+/**
+ * Until sign-off is recorded, every Arabic key must be on the review list.
+ * A curated subset silently understates the reviewer's job — PUBLIC-14 found
+ * exactly that, with the highest-risk page's H1 and lede both omitted.
+ */
+function assertArabicReviewCoversCorpus() {
+  const arKeys = Object.keys(CONTENT.ar);
+  const listed = new Set(AR_REVIEW_PENDING);
+  const missing = arKeys.filter((k) => !listed.has(k));
+  if (missing.length) {
+    fail(
+      'ar-review',
+      missing.length + ' Arabic key(s) ship but are not on AR_REVIEW_PENDING, e.g. ' + missing.slice(0, 3).join(', ') +
+        '. The OD-12 gate covers the whole corpus; a partial list understates the review.'
+    );
+  }
+}
+
 function assertReviewListsAreLive() {
   const keys = new Set(Object.keys(CONTENT.en));
   for (const key of AR_REVIEW_PENDING) {
@@ -362,7 +474,10 @@ function assertNoForbiddenText(pageId, htmlText) {
     if (visible.includes(entry.phrase)) visible = visible.split(entry.phrase).join(' ');
   }
 
-  for (const pattern of FORBIDDEN_PATTERNS) {
+  const patterns = pageId.endsWith(':ar')
+    ? [...FORBIDDEN_PATTERNS, ...FORBIDDEN_PATTERNS_AR]
+    : FORBIDDEN_PATTERNS;
+  for (const pattern of patterns) {
     const match = pattern.re.exec(visible);
     if (match) {
       fail('forbidden-claim', `${pageId}: ${pattern.label} (${pattern.claim}) matched "${match[0].trim()}"`);
@@ -446,11 +561,63 @@ function assertNoInternalClaimMetadata(pageId, publicHtml) {
       fail('internal-metadata', pageId + ': production HTML still contains ' + attr);
     }
   }
-  // Belt and braces: a bare claim id anywhere in an attribute value would be
-  // the same disclosure by another name.
   const stray = /(?:data-|aria-[a-z]+=")[^"]*CLM-\d{3}/.exec(publicHtml);
   if (stray) {
     fail('internal-metadata', pageId + ': production HTML exposes a claim id in an attribute: ' + stray[0]);
+  }
+}
+
+/**
+ * Internal governance vocabulary that must not appear in ANY shipped file.
+ *
+ * The previous gate scanned rendered HTML only and reported zero, while claim
+ * ids, register statuses, owner-decision ids and internal file paths were
+ * sitting in the CSS header comment, the JS header comment, the favicon <desc>
+ * and the caption-source headers. A sweep that cannot open the files where the
+ * leak is will always report clean.
+ */
+const INTERNAL_VOCABULARY = [
+  /CLM-\d{3}/,
+  /\bPPR-?\d/,
+  /\bOD-\d{2}\b/,
+  /PUBLIC-\d{1,2}\b/,
+  /claim register/i,
+  /EXTERNAL_SECURITY_REVIEW/,
+  /NOT_APPROVED_FOR_PUBLIC_CLAIM/,
+  /REQUIRES_PLATFORM_SUPPORT/,
+  /COMING_LATER/,
+  /VERIFIED_AVAILABLE/,
+  /NATIVE_REVIEW_REQUIRED/,
+  /OWNER_APPROVAL_PENDING/,
+  /build\.mjs|claims\.mjs|routes\.mjs|src\/content/,
+  /D:[\\/]PCA/i,
+  /127\.0\.0\.1|localhost/,
+  /predeploy blocker/i,
+];
+
+/** Every file that will be deployed, whatever its type. */
+async function assertNoInternalVocabularyInArtifact() {
+  const { readdir } = await import('node:fs/promises');
+  const walk = async (dir, prefix = '') => {
+    const out = [];
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) out.push(...(await walk(p, prefix + '/' + e.name)));
+      else out.push({ abs: p, rel: prefix + '/' + e.name });
+    }
+    return out;
+  };
+  const TEXTUAL = ['.html', '.css', '.js', '.svg', '.txt', '.xml', '.json', '.webmanifest', '.vtt'];
+  for (const f of await walk(DIST)) {
+    if (!TEXTUAL.includes(extname(f.rel))) continue;
+    const body = await readFile(f.abs, 'utf8');
+    for (const re of INTERNAL_VOCABULARY) {
+      const m = re.exec(body);
+      if (m) {
+        fail('internal-metadata', f.rel + ' leaks internal governance vocabulary: "' + m[0] + '"');
+        break;
+      }
+    }
   }
 }
 
@@ -505,20 +672,8 @@ function assertNoExternalRefs(pageId, htmlText, origin) {
  * be quietly promoted here, and a proposed claim cannot linger in the PROPOSED
  * list after the owner adds its real row.
  */
-async function assertClaimsMatchRegister() {
-  const csvPath = join(
-    ROOT,
-    '../docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAIM_REGISTER.csv'
-  );
-  let csv;
-  try {
-    csv = await readFile(csvPath, 'utf8');
-  } catch {
-    fail('claim-register', 'authoritative claim register CSV not found at ' + csvPath);
-    return { registered: 0, proposed: PROPOSED_CLAIMS.size };
-  }
-
-  // Minimal RFC4180 row reader: the CLAIM_TEXT columns contain commas.
+/** Minimal RFC4180 row reader: the CLAIM_TEXT columns contain commas. */
+function parseCsv(csv) {
   const rows = [];
   let field = '';
   let row = [];
@@ -536,19 +691,63 @@ async function assertClaimsMatchRegister() {
     else field += c;
   }
   if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
 
+async function assertClaimsMatchRegister() {
+  // The LIVING register is authoritative: the 53 rows issued in the frozen v0.2
+  // package, plus rows approved since. The frozen package keeps its SHA256SUMS
+  // integrity evidence intact because nothing is ever appended to it.
+  const livingPath = join(ROOT, '../docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv');
+  const basePath = join(
+    ROOT,
+    '../docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAIM_REGISTER.csv'
+  );
+  let csv;
+  let baseCsv;
+  try {
+    csv = await readFile(livingPath, 'utf8');
+    baseCsv = await readFile(basePath, 'utf8');
+  } catch {
+    fail('claim-register', 'claim register not found (living: ' + livingPath + ')');
+    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0 };
+  }
+
+  const rows = parseCsv(csv);
   const header = rows.shift() ?? [];
   const idCol = header.indexOf('CLAIM_ID');
   const statusCol = header.indexOf('CURRENT_STATUS');
   if (idCol === -1 || statusCol === -1) {
     fail('claim-register', 'claim register CSV is missing CLAIM_ID or CURRENT_STATUS');
-    return { registered: 0, proposed: PROPOSED_CLAIMS.size };
+    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0 };
   }
 
   const csvStatus = new Map();
   for (const r of rows) {
     if (!r[idCol]) continue;
     csvStatus.set(r[idCol].trim(), (r[statusCol] ?? '').trim());
+  }
+
+  // The frozen baseline must still be honoured: every row it issued has to
+  // appear in the living register with the SAME status. Approving new claims is
+  // additive; silently re-adjudicating an issued one is not.
+  const baseRows = parseCsv(baseCsv);
+  const baseHeader = baseRows.shift() ?? [];
+  const bId = baseHeader.indexOf('CLAIM_ID');
+  const bStatus = baseHeader.indexOf('CURRENT_STATUS');
+  let inherited = 0;
+  for (const r of baseRows) {
+    if (!r[bId]) continue;
+    inherited += 1;
+    const id = r[bId].trim();
+    if (!csvStatus.has(id)) {
+      fail('claim-register', id + ' was issued in the frozen v0.2 package but is missing from the living register.');
+    } else if (csvStatus.get(id) !== (r[bStatus] ?? '').trim()) {
+      fail(
+        'claim-register',
+        id + ' was issued as ' + (r[bStatus] ?? '').trim() + ' in the frozen v0.2 package but the living register says ' + csvStatus.get(id) + '.'
+      );
+    }
   }
 
   for (const [id, claim] of Object.entries(CLAIMS)) {
@@ -574,7 +773,32 @@ async function assertClaimsMatchRegister() {
     }
   }
 
-  return { registered: csvStatus.size, proposed: PROPOSED_CLAIMS.size };
+  return { registered: csvStatus.size, proposed: PROPOSED_CLAIMS.size, inherited };
+}
+
+/**
+ * <desc> is read by assistive technology and ships publicly, so it must be a
+ * plain description of the image. PUBLIC-14 found the favicon's desc carrying
+ * OWNER_APPROVAL_PENDING and a design-guideline rationale.
+ */
+async function assertSvgDescIsPublicSafe() {
+  const { readdir } = await import('node:fs/promises');
+  for (const dir of ['src/assets', 'src/assets/video']) {
+    let names = [];
+    try { names = await readdir(join(ROOT, dir)); } catch { continue; }
+    for (const name of names.filter((n) => n.endsWith('.svg'))) {
+      const rel = dir + '/' + name;
+      const svg = await readFile(join(ROOT, rel), 'utf8');
+      for (const m of svg.matchAll(/<desc>([\s\S]*?)<\/desc>/g)) {
+        for (const re of INTERNAL_VOCABULARY) {
+          if (re.test(m[1])) {
+            fail('svg-desc', rel + ': <desc> contains internal vocabulary ("' + (re.exec(m[1]) ?? [''])[0] + '"). It is read aloud by screen readers and ships publicly.');
+            break;
+          }
+        }
+      }
+    }
+  }
 }
 
 async function assertSvgAssetsAreWellFormed() {
@@ -810,9 +1034,15 @@ function renderPages(origin) {
   return rendered;
 }
 
-function notFoundPage(origin) {
-  const locale = DEFAULT_LOCALE;
-  const t = makeTranslator(locale);
+function notFoundPage() {
+  /**
+   * Reads from the content tables rather than hardcoding, so the Arabic here is
+   * covered by assertArabicReviewCoversCorpus(). PUBLIC-14 re-verification
+   * found two Arabic sentences inlined in this function: on no review list,
+   * invisible to a gate that can only see keys that exist.
+   */
+  const en = makeTranslator('en');
+  const ar = makeTranslator('ar');
   return `<!doctype html>
 <html lang="en" dir="ltr">
 <head>
@@ -820,7 +1050,7 @@ function notFoundPage(origin) {
 <meta http-equiv="Content-Security-Policy" content="${CSP_CONTENT}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Page not found — PCA</title>
+<title>${en('notFound.seo.title')}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/pca-public.css">
 </head>
@@ -828,12 +1058,12 @@ function notFoundPage(origin) {
 <main id="pw-main">
   <section class="pw-hero">
     <div class="pw-container">
-      <h1 class="pw-hero__title">Page not found</h1>
-      <p class="pw-hero__lead">The page you were looking for is not available. It may have moved, or the link may be incomplete.</p>
+      <h1 class="pw-hero__title">${en('notFound.title')}</h1>
+      <p class="pw-hero__lead">${en('notFound.body')}</p>
       <div class="pw-cta-row">
-        <a class="pw-btn pw-btn--primary" href="/">Go to the PCA home page</a>
+        <a class="pw-btn pw-btn--primary" href="/">${en('notFound.homeCta')}</a>
       </div>
-      <p class="pw-reassure" lang="ar" dir="rtl">الصفحة غير موجودة. <a href="/ar/">العودة إلى الصفحة الرئيسية</a></p>
+      <p class="pw-reassure" lang="ar" dir="rtl">${ar('notFound.arabicNote')} <a href="/ar/">${ar('notFound.arabicHomeCta')}</a></p>
     </div>
   </section>
 </main>
@@ -889,9 +1119,12 @@ async function main() {
   await assertNoPhysicalCss(['src/styles/base.css', 'src/styles/components.css']);
   await assertNoRawTokenUse(['src/styles/base.css', 'src/styles/components.css']);
   const claimRegister = await assertClaimsMatchRegister();
+  const patternsSelfTested = await assertForbiddenPatternsCatchTheirClaims();
   await assertSvgAssetsAreWellFormed();
+  await assertSvgDescIsPublicSafe();
   await assertVideoAssets();
   assertReviewListsAreLive();
+  assertArabicReviewCoversCorpus();
 
   const pages = renderPages(origin);
 
@@ -951,6 +1184,7 @@ async function main() {
     newCopyRequiringReview: NEW_COPY,
     claimsReferenced: Object.keys(CLAIMS),
     claimRegister: { csvRows: claimRegister.registered, proposedNotYetInCsv: claimRegister.proposed },
+    forbiddenPatternsSelfTested: patternsSelfTested,
     requiredResponseHeaders: REQUIRED_RESPONSE_HEADERS,
     notes: [
       'CLM-054 (accessibility conformance) remains NOT_APPROVED_FOR_PUBLIC_CLAIM. Computed token contrast is not rendered-page evidence; real-browser verification is required at PUBLIC-12.',
@@ -972,8 +1206,29 @@ async function main() {
     await readFile(join(ROOT, 'src/styles/base.css'), 'utf8'),
     await readFile(join(ROOT, 'src/styles/components.css'), 'utf8'),
   ].join('\n');
-  await writeFile(join(DIST, 'assets/pca-public.css'), css, 'utf8');
-  await writeFile(join(DIST, 'assets/pca-public.js'), await readFile(join(ROOT, 'src/client/ui.js'), 'utf8'), 'utf8');
+  /**
+   * Comments are stripped from the SHIPPED bundles.
+   *
+   * The source files are heavily commented on purpose — the reasoning is the
+   * point — but PUBLIC-14 found those comments carrying claim ids, register
+   * statuses and internal file paths straight into /assets/pca-public.css and
+   * .js, where anyone could read them. Documentation belongs in the repository,
+   * not in the artifact. It also trims the payload.
+   */
+  const stripBlockComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  const stripJsComments = (src) =>
+    stripBlockComments(src)
+      .split('\n')
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n');
+
+  await writeFile(join(DIST, 'assets/pca-public.css'), stripBlockComments(css), 'utf8');
+  await writeFile(
+    join(DIST, 'assets/pca-public.js'),
+    stripJsComments(await readFile(join(ROOT, 'src/client/ui.js'), 'utf8')),
+    'utf8'
+  );
   await writeFile(join(DIST, 'favicon.svg'), await readFile(join(ROOT, 'src/assets/favicon.svg'), 'utf8'), 'utf8');
 
   /**
@@ -990,15 +1245,12 @@ async function main() {
   for (const video of Object.values(VIDEOS)) {
     for (const locale of video.captions) {
       const lines = CONTENT[locale][`${video.contentPrefix}.transcript`];
+      // No internal identifiers, paths or review-process vocabulary: this file
+      // ships to the public deploy root like everything else in dist/.
       const header = [
-        `# ${CONTENT[locale][`${video.contentPrefix}.title`]} — caption source (${locale})`,
+        `# ${CONTENT[locale][`${video.contentPrefix}.title`]} — caption text (${locale})`,
         '#',
-        '# UNTIMED. These are the cue lines in order, generated from the transcript',
-        '# in src/content/pages/video.' + locale + '.mjs. Timings are added when the',
-        '# recording exists; build.mjs will not let the video be marked available',
-        '# until a real .vtt for every locale is present.',
-        '#',
-        `# Arabic copy remains subject to native-reviewer sign-off (OD-12).`,
+        '# Cue lines in order, untimed. Timings are added when the recording exists.',
         '',
       ].join('\n');
       await writeFile(
@@ -1022,10 +1274,20 @@ async function main() {
     await writeFile(target, page.html, 'utf8');
   }
 
-  await writeFile(join(DIST, '404.html'), notFoundPage(origin), 'utf8');
+  await writeFile(join(DIST, '404.html'), notFoundPage(), 'utf8');
   await writeFile(join(DIST, 'robots.txt'), robotsTxt(origin), 'utf8');
   await writeFile(join(DIST, 'sitemap.xml'), sitemapXml(origin), 'utf8');
-  await writeFile(join(DIST, 'build-report.json'), JSON.stringify(report, null, 2), 'utf8');
+  await mkdir(REPORTS, { recursive: true });
+  await writeFile(join(REPORTS, 'build-report.json'), JSON.stringify(report, null, 2), 'utf8');
+
+  await assertNoInternalVocabularyInArtifact();
+  if (failures.length) {
+    console.error('\nBUILD FAILED — %d artifact gate failure(s):\n', failures.length);
+    for (const f of failures) console.error('  ' + f);
+    console.error('');
+    process.exitCode = 1;
+    return;
+  }
 
   console.log('PCA Public build OK');
   console.log(`  origin              ${origin}`);
@@ -1036,11 +1298,12 @@ async function main() {
   console.log(`  utility routes      ${utilityIds.length} (${utilityIds.join(', ')})`);
   console.log(`  home reading size   ${homeWords} EN words (ceiling ${HOME_MAX_WORDS})`);
   console.log(`  duplicate content   ${duplicates.length} finding(s)`);
-  console.log(`  internal claim meta ${report.internalClaimMetadataExposed} exposed in production HTML`);
-  console.log(`  claim register      ${claimRegister.registered} CSV rows matched, ${claimRegister.proposed} proposed`);
+  console.log(`  internal metadata   0 in HTML attributes, 0 governance vocabulary across every shipped file`);
+  console.log(`  claim register      ${claimRegister.registered} rows (${claimRegister.inherited} inherited from frozen v0.2), ${claimRegister.proposed} proposed`);
+  console.log(`  pattern self-test   ${patternsSelfTested} forbidden pattern(s) proven against the register's own prohibited text`);
   console.log(`  videos              ${Object.values(VIDEOS).map((v) => `${v.id}:${v.available ? 'available' : 'placeholder'}`).join(', ')}`);
   console.log(`  routes pending      ${pending.length ? pending.join(', ') : 'none'}`);
-  console.log(`  AR native review    ${AR_REVIEW_PENDING.length} key(s) pending sign-off (OD-12 gate)`);
+  console.log(`  AR native review    ${AR_REVIEW_PENDING.length} key(s) = the whole Arabic corpus, pending OD-12 sign-off`);
   console.log(`  claim-scan exempt   ${ALLOWED_EXACT_PHRASES.length} approved phrase(s):`);
   for (const e of ALLOWED_EXACT_PHRASES) {
     console.log(`                        ${e.contentKey} [${e.locale}] vs ${e.pattern}`);

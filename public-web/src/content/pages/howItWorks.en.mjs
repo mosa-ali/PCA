@@ -116,8 +116,8 @@ export default {
   "howItWorks.parent.items": [
     {
       "claimId": "CLM-021",
-      "title": "In your browser",
-      "body": "Use PCA Parent in a supported browser on phone, tablet or computer."
+      "title": "No installation required",
+      "body": "PCA Parent is designed to run in a supported browser on phone, tablet or computer, with nothing to install."
     },
     {
       "claimId": "CLM-019",

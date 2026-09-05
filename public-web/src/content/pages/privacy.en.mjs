@@ -148,7 +148,7 @@ export default {
     {
       "claimId": "CLM-037",
       "title": "Camera and eye distance",
-      "body": "Eye-distance protection using the camera is planned for a later release. If it ships, it is designed so that camera frames are processed on the device and are not stored or uploaded."
+      "body": "Eye-distance protection using the camera is planned for a later release. It is not an active feature today, and how any future version would handle camera frames will be described here once it has been verified."
     }
   ],
 
@@ -156,7 +156,7 @@ export default {
   // promised here, and no pill is rendered.
   "privacy.retention.title": "Keeping and deleting information",
   "privacy.retention.body": [
-    "PCA is designed to give parents meaningful control over their account and their family's protection information.",
+    "Parent control over account and protection information is part of PCA's design intent, but the controls are not built yet.",
     "Central information should be kept only as long as it is needed to run the service, keep it secure and meet legal obligations. Exact deletion and retention behaviour will be documented once it has been verified."
   ],
 
@@ -211,7 +211,7 @@ export default {
     },
     {
       "q": "How do I report a privacy or security concern?",
-      "a": "If you believe you found a security issue, choose **Report security concern** on the Contact page. Do not include child-sensitive content unless the support team explicitly and safely requests specific information."
+      "a": "If you believe you have found a security issue, please hold it until PCA publishes its reporting channels — see Contact. Do not include child-sensitive content unless the support team explicitly and safely requests specific information."
     }
   ],
 

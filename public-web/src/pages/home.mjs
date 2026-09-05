@@ -83,13 +83,15 @@ export function render(ctx) {
 </section>`;
 
   // --- B. Short PCA introduction video ------------------------------------
+  // headingLevel 2: this block is a top-level page section with no h2 of its
+  // own, so an h3 here skips a level after the hero h1.
   // videoBlock() supplies the title, summary and full transcript from the video
   // content table, and renders the poster-and-transcript placeholder while no
   // recording exists. Nothing is added around it: the figure carries its own
   // heading, so a second one here would only duplicate it.
   const video = html`<section class="pw-section">
   <div class="pw-container">
-    ${videoBlock(ctx, 'intro')}
+    ${videoBlock(ctx, 'intro', { headingLevel: 2 })}
   </div>
 </section>`;
 

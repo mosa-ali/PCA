@@ -62,12 +62,12 @@ export default {
   "video.seo.description": "Two short PCA videos with full written transcripts: why PCA exists, and how to set up protection for your child step by step.",
 
   "video.intro.title": "PCA Introduction",
-  "video.intro.summary": "A short introduction to why PCA exists, what it helps you do day to day, and how it is designed to protect your child without building a central record of them.",
+  "video.intro.summary": "A short introduction to why PCA exists, what it helps you do day to day, and how it is designed to protect your child without building a readable central profile of their activity.",
   "video.intro.transcript": [
     "Children are protected everywhere they go — at home, at school, in the places where they play.",
     "The digital spaces where they spend time deserve that same everyday care.",
     "PCA began with a father's concern for his own children, and the belief that online life should not be the exception.",
-    "So PCA helps with the everyday things: screen time, safer browsing, app and web controls, and schedules that suit your family.",
+    "So PCA is built to help with the everyday things where the child's platform supports them: screen time, safer browsing, app and web controls, and schedules that suit your family.",
     "It can tell you when something needs your attention, and it gives your child a clear way to ask for more time or access.",
     "PCA also takes a different approach to privacy: it is designed to protect your child without building a readable central profile of them.",
     "Routine protection does not require PCA to collect your child's photos, videos, files or messages.",

@@ -63,6 +63,7 @@ import {
   stepCard,
   videoBlock,
   ctaLink,
+  releaseNotice,
 } from '../lib/components.mjs';
 
 function section(ctx, { id, label, title, lead, body, modifier }) {
@@ -140,7 +141,9 @@ export function render(ctx) {
       </div>`,
   });
 
-  const main = frag([hero, steps, parent, security, child, sensitive]);
+  const notice = html`<div class="pw-section"><div class="pw-container">${releaseNotice(ctx, 'release.journeyNotice')}</div></div>`;
+
+  const main = frag([hero, notice, steps, parent, security, child, sensitive]);
 
   return layout(ctx, { main });
 }
