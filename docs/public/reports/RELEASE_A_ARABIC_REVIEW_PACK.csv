@@ -330,10 +330,10 @@ privacy.principles.items,/ar/privacy/,Privacy & Safety,principles,"[1] title: Pr
 [8] title: Accessible safety
 [8] body: Meaningful protection should be designed for broad family access.
 [9] title: No false capability claims
-[9] body: Trust requires honesty about what is available, limited or coming later.","[1] title: الحماية دون مراقبة مفرطة
+[9] body: Trust requires honesty about what is available, limited or coming later.","[1] title: الحماية دون مراقبة
 [1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.
 [2] title: الخصوصية من أساس التصميم
-[2] body: أبقِ النشاط الحساس للطفل ضمن الأجهزة والأنظمة الموثوقة لدى الوالدين والطفل قدر الإمكان.
+[2] body: أبقِ النشاط الحساس للطفل ضمن الأنظمة الموثوقة لدى الأسرة قدر الإمكان.
 [3] title: الشفافية
 [3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.
 [4] title: كرامة الطفل
@@ -344,8 +344,8 @@ privacy.principles.items,/ar/privacy/,Privacy & Safety,principles,"[1] title: Pr
 [6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.
 [7] title: لا مراقبة خفية
 [7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.
-[8] title: حماية يمكن الوصول إليها
-[8] body: ينبغي تصميم الحماية المفيدة لتصل إلى عدد أكبر من الأسر.
+[8] title: حماية متاحة لأسر أكثر
+[8] body: ينبغي تصميم وسائل حماية مفيدة لتكون متاحة لعدد أكبر من الأسر.
 [9] title: لا ادعاءات غير صحيحة
 [9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PENDING_REVIEW,,,YES
 privacy.principles.lead,/ar/privacy/,Privacy & Safety,principles,Digital protection should help families reduce risk without teaching children that constant surveillance is normal.,يجب أن تساعد الحماية الرقمية الأسرة على تقليل المخاطر دون أن يتعلم الطفل أن المراقبة الدائمة أمر طبيعي.,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PENDING_REVIEW,,,YES
@@ -368,17 +368,17 @@ privacy.topics.items,/ar/privacy/,Privacy & Safety,topics,"[1] title: Photos, vi
 [5] body: Location is sensitive. Any approved location feature must be parent-controlled and designed so readable precise-location history does not become central PCA data.
 [6] title: Camera and eye distance
 [6] body: Eye-distance protection using the camera is planned for a later release. It is not an active feature today, and how any future version would handle camera frames will be described here once it has been verified.","[1] title: الصور والفيديوهات والملفات
-[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية، ويجب ألا تُجمع هذه الأشياء في قاعدة بيانات مركزية مقروءة لدى PCA.
+[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو مقاطع الفيديو أو الملفات الأخرى على الجهاز، ويجب ألا تُجمع هذه المحتويات في قاعدة بيانات مركزية مقروءة لدى PCA.
 [2] title: الرسائل
 [2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
 [3] title: استخدام التطبيقات ووقت الشاشة
-[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية لدى PCA. يمكن معالجة استخدام التطبيقات محليًا عندما تحتاج وظيفة الحماية إلى ذلك.
+[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية مقروءة لدى PCA. وقد تتم معالجة استخدام التطبيقات محليًا عند الحاجة إلى ذلك للحماية.
 [4] title: الحماية أثناء التصفح
-[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج الحماية على الويب إلى معالجة محلية لاتخاذ قرار الحماية.
+[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج وظائف السلامة على الويب إلى معالجة محلية لاتخاذ قرارات الحماية.
 [5] title: الموقع
 [5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.
 [6] title: الكاميرا والمسافة عن الشاشة
-[6] body: حماية المسافة بين العين والشاشة عبر الكاميرا مخطط لها في إصدار لاحق. وهي ليست ميزة فعّالة اليوم، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",CLM-036; CLM-037,REQUIRES_PLATFORM_SUPPORT; COMING_LATER,PRIVACY_ASSERTION,CRITICAL,PENDING_REVIEW,,,YES
+[6] body: حماية المسافة بين العين والشاشة باستخدام الكاميرا مخطط لها في إصدار لاحق. وهي غير متاحة حاليًا، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",CLM-036; CLM-037,REQUIRES_PLATFORM_SUPPORT; COMING_LATER,PRIVACY_ASSERTION,CRITICAL,PENDING_REVIEW,,,YES
 privacy.topics.title,/ar/privacy/,Privacy & Safety,topics,"What this means, topic by topic",ماذا يعني ذلك لكل نوع من المعلومات؟,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PENDING_REVIEW,,,YES
 privacy.where.items,/ar/privacy/,Privacy & Safety,where,"[1] title: What PCA processes locally
 [1] body: Some protection functions need information on the child device. PCA's approach is to process that information locally wherever possible.

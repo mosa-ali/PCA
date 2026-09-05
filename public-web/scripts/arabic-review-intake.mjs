@@ -144,7 +144,25 @@ for (const r of corrections) {
 }
 
 // --- 4. STALENESS: re-anchor every row to the live corpus -------------------
+/**
+ * Remediation moves the corpus, so a row whose Arabic no longer matches what the
+ * reviewer saw is not necessarily stale -- it may simply be one we already
+ * applied. The corrections ledger, if present, records the exact before and
+ * after for every applied key, so the two cases can be told apart.
+ *
+ * Without this, re-running intake after remediation reports every applied row as
+ * stale. A gate that cries wolf on its own successful output stops being read.
+ */
+let ledgerApplied = new Map();
+try {
+  const ledger = JSON.parse(await readFile(join(ROOT, 'reports/arabic-corrections-ledger.json'), 'utf8'));
+  ledgerApplied = new Map((ledger.applied ?? []).filter((a) => a.beforeArabic).map((a) => [a.key, a]));
+} catch {
+  // No ledger yet: pre-remediation run, every difference is genuinely stale.
+}
+
 const stale = [];
+const alreadyRemediated = [];
 for (const r of all189) {
   const live = packByKey.get(r.KEY);
   if (!live) continue;
@@ -154,6 +172,19 @@ for (const r of all189) {
   if (norm(r.ROUTE) !== norm(live.ROUTE)) mismatches.push('ROUTE');
   if (norm(r.CLAIM_ID) !== norm(live.CLAIM_ID)) mismatches.push('CLAIM_ID');
   if (norm(r.CLAIM_STATUS) !== norm(live.CLAIM_STATUS)) mismatches.push('CLAIM_STATUS');
+
+  const entry = ledgerApplied.get(r.KEY);
+  const explainedByRemediation =
+    entry &&
+    mismatches.length === 1 &&
+    mismatches[0] === 'CURRENT_ARABIC' &&
+    norm(entry.beforeArabic) === norm(r.CURRENT_ARABIC) &&
+    norm(entry.afterArabic) === norm(live.CURRENT_ARABIC);
+
+  if (explainedByRemediation) {
+    alreadyRemediated.push(r.KEY);
+    continue;
+  }
   if (mismatches.length) {
     stale.push({ key: r.KEY, fields: mismatches });
     fail('stale', `"${r.KEY}" was reviewed against different ${mismatches.join(' + ')} than the corpus holds today.`);
@@ -197,6 +228,20 @@ const legalDeferred = nonPass.filter(
 );
 const applicable = nonPass.filter((r) => !legalDeferred.includes(r));
 
+const fullRow = (r) => ({
+  key: r.KEY,
+  decision: r.REVIEW_DECISION,
+  severity: r.SEVERITY ?? '',
+  route: r.ROUTE,
+  claimId: r.CLAIM_ID,
+  claimStatus: r.CLAIM_STATUS,
+  category: r.CONTENT_CATEGORY,
+  english: r.ENGLISH_SOURCE,
+  currentArabic: r.CURRENT_ARABIC,
+  proposedArabic: r.PROPOSED_ARABIC,
+  note: r.REVIEWER_NOTE,
+});
+
 const intake = {
   generatedFrom: 'public-web/scripts/arabic-review-intake.mjs',
   reviewerPackage: 'docs/public/reports/PCA_Release_A_Arabic_Native_Review_Package/',
@@ -207,7 +252,11 @@ const intake = {
   signoffRows: signoff.length,
   staleRows: stale.length,
   stale,
+  alreadyRemediated,
   legalDeferred: legalDeferred.map((r) => ({ key: r.KEY, decision: r.REVIEW_DECISION, route: r.ROUTE })),
+  // Full rows too: the owner can release a deferred row, and it must then go
+  // through exactly the same checks as any other correction.
+  legalDeferredRows: legalDeferred.map(fullRow),
   applicable: applicable.map((r) => ({
     key: r.KEY,
     decision: r.REVIEW_DECISION,
@@ -238,6 +287,7 @@ console.log(`  LEGAL_REVIEW_REQUIRED (decision)   ${decisions.LEGAL_REVIEW_REQUI
 console.log(`  REVIEWER_CORRECTIONS               ${corrections.length}`);
 console.log(`  owner signoff sheet rows           ${signoff.length}`);
 console.log(`  ARABIC_REVIEW_PACKAGE_STALE_ROWS   ${stale.length}`);
+console.log(`  already remediated (not stale)     ${alreadyRemediated.length}`);
 console.log(`  legal-flagged non-PASS (defer)     ${legalDeferred.length}`);
 console.log(`  non-legal, eligible for review     ${applicable.length}`);
 for (const n of notes) console.log(`  note: ${n}`);

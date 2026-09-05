@@ -1,4 +1,4 @@
-﻿KEY,ROUTE,PAGE_NAME,ENGLISH_SOURCE,BEFORE_ARABIC,FINAL_PROPOSED_ARABIC,CHANGED,REVIEWER_DECISION,CLAIM_ID,CLAIM_STATUS,REMEDIATION_STATUS,WHY_IN_SIGNOFF,LEGAL_REVIEW_REQUIRED,OWNER_DECISION,OWNER_NOTE
+﻿KEY,ROUTE,PAGE_NAME,ENGLISH_SOURCE,ORIGINAL_ARABIC,FINAL_PROPOSED_ARABIC,CHANGED,REVIEWER_DECISION,CLAIM_ID,CLAIM_STATUS,REMEDIATION_DISPOSITION,WHY_IN_SIGNOFF,LEGAL_REVIEW_REQUIRED,OWNER_DECISION,OWNER_NOTE
 accessibility.barrier.body,/ar/accessibility/,Accessibility,"If something in PCA makes it difficult to complete a task, we want to know. PCA has not opened its reporting channels yet; they will be published on the Contact page before PCA opens to families. When they open, please avoid sharing sensitive child information.",إذا وجدت شيئًا في PCA يصعّب عليك إكمال مهمة، فنحن نريد أن نعرف بذلك. لم تفتح PCA قنوات الإبلاغ بعد، وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر. وعند فتحها، يرجى عدم مشاركة معلومات حساسة عن الطفل.,إذا كان هناك ما في PCA يصعّب عليك إكمال مهمة، فنحن نريد معرفة ذلك. لم تفتح PCA قنوات الإبلاغ بعد؛ وستُنشر على صفحة التواصل قبل إتاحة PCA للأسر. وعند فتح هذه القنوات، يُرجى عدم مشاركة معلومات حساسة عن الطفل.,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 accessibility.cta.contact,/ar/accessibility/,Accessibility,Contact Accessibility,التواصل بخصوص إمكانية الوصول,تواصل معنا بشأن إمكانية الوصول,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING;CTA,NO,PENDING,
 accessibility.goals.items,/ar/accessibility/,Accessibility,"[1] keyboard navigation;
@@ -355,26 +355,9 @@ privacy.principles.items,/ar/privacy/,Privacy & Safety,"[1] title: Protection wi
 [8] title: حماية يمكن الوصول إليها
 [8] body: ينبغي تصميم الحماية المفيدة لتصل إلى عدد أكبر من الأسر.
 [9] title: لا ادعاءات غير صحيحة
-[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.","[1] title: الحماية دون مراقبة مفرطة
+[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.","[1] title: الحماية دون مراقبة
 [1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.
 [2] title: الخصوصية من أساس التصميم
-[2] body: أبقِ النشاط الحساس للطفل ضمن الأجهزة والأنظمة الموثوقة لدى الوالدين والطفل قدر الإمكان.
-[3] title: الشفافية
-[3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.
-[4] title: كرامة الطفل
-[4] body: يجب ألا تُهين الحماية الطفل أو تتعامل معه كمتهم.
-[5] title: حماية مناسبة للعمر
-[5] body: الأعمار والظروف الأسرية المختلفة تحتاج حدودًا مختلفة.
-[6] title: مسؤولية الوالدين
-[6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.
-[7] title: لا مراقبة خفية
-[7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.
-[8] title: حماية يمكن الوصول إليها
-[8] body: ينبغي تصميم الحماية المفيدة لتصل إلى عدد أكبر من الأسر.
-[9] title: لا ادعاءات غير صحيحة
-[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",NO,REVISE_HIGH,NONE,NONE,DEFERRED_LEGAL,"Reviewer selected this row for owner attention: CHANGED_STRING;HIGH_RISK_PRIVACY_SECURITY;LEGAL | DEFERRED TO LEGAL (REVISE_HIGH). Not applied: this row is legal-sensitive and is blocked behind OD-13. Reviewer proposes: [1] title: الحماية دون تجسّس
-[1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.
-[2] title: الخصوصية جزء من التصميم
 [2] body: أبقِ النشاط الحساس للطفل ضمن الأنظمة الموثوقة لدى الأسرة قدر الإمكان.
 [3] title: الشفافية
 [3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.
@@ -389,7 +372,7 @@ privacy.principles.items,/ar/privacy/,Privacy & Safety,"[1] title: Protection wi
 [8] title: حماية متاحة لأسر أكثر
 [8] body: ينبغي تصميم وسائل حماية مفيدة لتكون متاحة لعدد أكبر من الأسر.
 [9] title: لا ادعاءات غير صحيحة
-[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",YES,PENDING,
+[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",YES,REVISE_HIGH,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING;HIGH_RISK_PRIVACY_SECURITY;LEGAL,YES,PENDING,
 privacy.principles.lead,/ar/privacy/,Privacy & Safety,Digital protection should help families reduce risk without teaching children that constant surveillance is normal.,يجب أن تساعد الحماية الرقمية الأسرة على تقليل المخاطر دون أن يتعلم الطفل أن المراقبة الدائمة أمر طبيعي.,يجب أن تساعد الحماية الرقمية الأسرة على تقليل المخاطر دون أن يتعلم الطفل أن المراقبة الدائمة أمر طبيعي.,NO,PASS,NONE,NONE,UNCHANGED,Reviewer selected this row for owner attention: HIGH_RISK_PRIVACY_SECURITY;LEGAL,YES,PENDING,
 privacy.principles.title,/ar/privacy/,Privacy & Safety,Protect children. Respect childhood.,احمِ الطفل واحترم طفولته,احمِ الطفل واحترم طفولته,NO,PASS,NONE,NONE,UNCHANGED,Reviewer selected this row for owner attention: HIGH_RISK_PRIVACY_SECURITY;LEGAL,YES,PENDING,
 privacy.retention.body,/ar/privacy/,Privacy & Safety,"[1] Parent control over account and protection information is part of PCA's design intent, but the controls are not built yet.
@@ -422,17 +405,6 @@ privacy.topics.items,/ar/privacy/,Privacy & Safety,"[1] title: Photos, videos an
 [5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.
 [6] title: الكاميرا والمسافة عن الشاشة
 [6] body: حماية المسافة بين العين والشاشة عبر الكاميرا مخطط لها في إصدار لاحق. وهي ليست ميزة فعّالة اليوم، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.","[1] title: الصور والفيديوهات والملفات
-[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية، ويجب ألا تُجمع هذه الأشياء في قاعدة بيانات مركزية مقروءة لدى PCA.
-[2] title: الرسائل
-[2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
-[3] title: استخدام التطبيقات ووقت الشاشة
-[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية لدى PCA. يمكن معالجة استخدام التطبيقات محليًا عندما تحتاج وظيفة الحماية إلى ذلك.
-[4] title: الحماية أثناء التصفح
-[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج الحماية على الويب إلى معالجة محلية لاتخاذ قرار الحماية.
-[5] title: الموقع
-[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.
-[6] title: الكاميرا والمسافة عن الشاشة
-[6] body: حماية المسافة بين العين والشاشة عبر الكاميرا مخطط لها في إصدار لاحق. وهي ليست ميزة فعّالة اليوم، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",NO,REVISE_HIGH,CLM-036; CLM-037,REQUIRES_PLATFORM_SUPPORT; COMING_LATER,DEFERRED_LEGAL,"Reviewer selected this row for owner attention: CHANGED_STRING;HIGH_RISK_PRIVACY_SECURITY;LEGAL | DEFERRED TO LEGAL (REVISE_HIGH). Not applied: this row is legal-sensitive and is blocked behind OD-13. Reviewer proposes: [1] title: الصور والفيديوهات والملفات
 [1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو مقاطع الفيديو أو الملفات الأخرى على الجهاز، ويجب ألا تُجمع هذه المحتويات في قاعدة بيانات مركزية مقروءة لدى PCA.
 [2] title: الرسائل
 [2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
@@ -441,9 +413,9 @@ privacy.topics.items,/ar/privacy/,Privacy & Safety,"[1] title: Photos, videos an
 [4] title: الحماية أثناء التصفح
 [4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج وظائف السلامة على الويب إلى معالجة محلية لاتخاذ قرارات الحماية.
 [5] title: الموقع
-[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة معتمدة للموقع تحت تحكم الوالدين، وأن تُصمم بحيث لا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية مقروءة لدى PCA.
+[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.
 [6] title: الكاميرا والمسافة عن الشاشة
-[6] body: حماية المسافة بين العين والشاشة باستخدام الكاميرا مخطط لها في إصدار لاحق. وهي غير متاحة حاليًا، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",YES,PENDING,
+[6] body: حماية المسافة بين العين والشاشة باستخدام الكاميرا مخطط لها في إصدار لاحق. وهي غير متاحة حاليًا، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",YES,REVISE_HIGH,CLM-036; CLM-037,REQUIRES_PLATFORM_SUPPORT; COMING_LATER,APPLIED,"Reviewer selected this row for owner attention: CHANGED_STRING;HIGH_RISK_PRIVACY_SECURITY;LEGAL | APPLIED and claim-bearing (CLM-036; CLM-037). Item 3 is the real defect: EN says readable app-usage history must not become ""centrally READABLE PCA data"", and the Arabic had dropped that second qualifier, so it read as a promise of no central app-usage data at all -- stronger than English. The proposal restores it. Item 1 replaces the literal «الملفات العشوائية» with ""other files on the device"", which stays unconditional and so does NOT repeat the home.faq.items defect. Item 4 restores ""web-safety functions"" and plural ""decisions"". Item 6 replaces «فعّالة» (""effective"") with «غير متاحة حاليًا» (""not currently available""), which is what EN ""not an active feature today"" means -- the current wording could be read as a judgement on the feature's efficacy. Item 5 is held back; see SUBITEM_OVERRIDES.",YES,PENDING,
 privacy.topics.title,/ar/privacy/,Privacy & Safety,"What this means, topic by topic",ماذا يعني ذلك لكل نوع من المعلومات؟,ماذا يعني ذلك لكل نوع من المعلومات؟,NO,PASS,NONE,NONE,UNCHANGED,Reviewer selected this row for owner attention: HIGH_RISK_PRIVACY_SECURITY;LEGAL,YES,PENDING,
 privacy.where.items,/ar/privacy/,Privacy & Safety,"[1] title: What PCA processes locally
 [1] body: Some protection functions need information on the child device. PCA's approach is to process that information locally wherever possible.

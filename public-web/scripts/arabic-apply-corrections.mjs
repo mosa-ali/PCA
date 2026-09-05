@@ -57,12 +57,70 @@ const REJECTED = {
 };
 
 /**
+ * Rows released from the legal-deferred bucket by explicit owner ruling.
+ *
+ * The owner authorised exactly two, both on the indexable Privacy & Safety page,
+ * both classified PRIVACY_ACCURACY_CORRECTION / NOT_A_NEW_LEGAL_COMMITMENT. Every
+ * other legal-flagged correction stays deferred behind OD-13.
+ */
+const OWNER_RELEASED = {
+  'privacy.topics.items':
+    'Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. The Arabic must preserve READABLE, CENTRAL and the exact scope of the English.',
+  'privacy.principles.items':
+    'Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. "Protection without surveillance" must not permit non-excessive surveillance.',
+};
+
+/**
+ * Per-sub-item decisions inside an otherwise accepted proposal.
+ *
+ * Normally a proposal is taken whole or rejected whole, because a half-applied
+ * proposal is nobody's reviewed text. These two rows are the documented
+ * exception, and the rule that makes it safe is unchanged: EVERY character that
+ * ships is either the reviewer's text, the existing approved text, or a string
+ * the owner wrote in the ruling. Nothing here is authored by me.
+ *
+ *   CURRENT -> keep the text already in the corpus, verbatim
+ *   OWNER   -> use the exact wording the owner specified in the ruling
+ *
+ * The re-derivation the owner asked for is what produced these: the reviewer
+ * applied one correct pattern to a place it did not belong.
+ */
+const SUBITEM_OVERRIDES = {
+  'privacy.topics.items': {
+    '5.body': {
+      source: 'CURRENT',
+      reason:
+        'The reviewer read items 3 and 5 as the same defect. Only item 3 is. EN item 3 says readable app-usage history must not become "centrally READABLE PCA data", and the Arabic had dropped that second qualifier -- a real drift, and the proposal fixes it. But EN item 5 says readable precise-location history "does not become CENTRAL PCA data", with no second "readable", and the Arabic already matches that exactly. Adding «مقروءة» here as proposed would make the Arabic WEAKER than the English: it would permit precise-location history to be held centrally so long as it were not readable. On a CLM-036 row that is a privacy commitment being quietly loosened, so item 5 keeps its current wording.',
+    },
+  },
+  'privacy.principles.items': {
+    '1.title': {
+      source: 'OWNER',
+      text: 'الحماية دون مراقبة',
+      reason:
+        'The defect is real: «الحماية دون مراقبة مفرطة» means "protection without EXCESSIVE surveillance", which implies some surveillance is acceptable and weakens the approved principle. But the reviewer\'s replacement «الحماية دون تجسّس» renders "surveillance" as «تجسّس» -- espionage or spying, which is narrower and more loaded than the English. That trades one inexact word for another. The owner specified the exact concept in the ruling: «الحماية دون مراقبة». That is the English principle rendered precisely, and it is the owner\'s own wording, so it is what ships.',
+    },
+    '2.title': {
+      source: 'CURRENT',
+      reason:
+        '"Privacy by design" is a term of art: privacy built in from the start. The current «الخصوصية من أساس التصميم» ("from the foundation of the design") carries that. The proposed «الخصوصية جزء من التصميم» ("privacy is A PART OF the design") is weaker and more incidental. The body of this item is accepted; only the title is held back.',
+    },
+  },
+};
+
+/**
  * ACCEPTED corrections. Each was checked against the exact English source, the
  * claim register status, the privacy hedge, feature availability, child/family
  * terminology and the legal flag. The note records what the change actually
  * does, so a later reader can re-audit the judgement rather than trust it.
  */
 const ACCEPTED = {
+  // --- owner-released privacy accuracy corrections (see OWNER_RELEASED) ------
+  'privacy.topics.items':
+    'Item 3 is the real defect: EN says readable app-usage history must not become "centrally READABLE PCA data", and the Arabic had dropped that second qualifier, so it read as a promise of no central app-usage data at all -- stronger than English. The proposal restores it. Item 1 replaces the literal «الملفات العشوائية» with "other files on the device", which stays unconditional and so does NOT repeat the home.faq.items defect. Item 4 restores "web-safety functions" and plural "decisions". Item 6 replaces «فعّالة» ("effective") with «غير متاحة حاليًا» ("not currently available"), which is what EN "not an active feature today" means -- the current wording could be read as a judgement on the feature\'s efficacy. Item 5 is held back; see SUBITEM_OVERRIDES.',
+  'privacy.principles.items':
+    'The title of item 1 said "protection without EXCESSIVE surveillance", implying some surveillance is acceptable and weakening the approved principle; the owner-specified wording replaces it. Item 2 body restores "family-side" (the Arabic had listed devices belonging to parents and child). Item 8 disambiguates «حماية يمكن الوصول إليها», which on a site with a separate Accessibility page reads as a11y rather than EN\'s "accessible" in the sense of broad reach. Titles of items 1 and 2 carry overrides; see SUBITEM_OVERRIDES.',
+
   // --- feature status and release state: the claim-strength cases -----------
   'status.platform':
     'Restores requirement strength. «يعتمد على دعم المنصة» ("depends on") → «يتطلب دعم المنصة» ("requires"), matching EN "Requires platform support". This label renders for nine REQUIRES_PLATFORM_SUPPORT claims, so the weaker Arabic understated the condition on all nine.',
@@ -212,12 +270,37 @@ function leaves(value, path = []) {
 const intake = JSON.parse(await readFile(join(ROOT, 'reports/arabic-review-intake.json'), 'utf8'));
 const applicable = new Map(intake.applicable.map((r) => [r.key, r]));
 
+/**
+ * Pull the owner-released rows out of the deferred set. They carry the same
+ * fields as an eligible row, read from the reviewer's own 189-row export, so
+ * they go through exactly the same checks as everything else -- shape,
+ * re-serialisation, leaf count, single-occurrence replacement, post-condition.
+ * Being owner-authorised changes which bucket a row is in, not how carefully it
+ * is applied.
+ */
+for (const key of Object.keys(OWNER_RELEASED)) {
+  const row = (intake.legalDeferredRows ?? []).find((r) => r.key === key) ?? intake.applicable.find((r) => r.key === key);
+  if (!row) {
+    fail(`owner released "${key}" but the intake carries no reviewed row for it.`);
+    continue;
+  }
+  applicable.set(key, row);
+}
+if (problems.length) {
+  console.error('\nOWNER-RELEASED ROWS NOT FOUND:\n');
+  for (const p of problems) console.error('  ' + p);
+  process.exit(1);
+}
+
 // The ledger must cover the eligible set exactly -- no key silently ignored.
 for (const key of applicable.keys()) {
   if (!(key in ACCEPTED) && !(key in REJECTED)) fail(`"${key}" is eligible but the ledger records no decision for it.`);
 }
 for (const key of [...Object.keys(ACCEPTED), ...Object.keys(REJECTED)]) {
   if (!applicable.has(key)) fail(`the ledger decides "${key}", which is not in the eligible set.`);
+}
+for (const key of Object.keys(SUBITEM_OVERRIDES)) {
+  if (!(key in ACCEPTED)) fail(`"${key}" has sub-item overrides but is not an accepted correction.`);
 }
 if (problems.length) {
   console.error('\nLEDGER INCOMPLETE:\n');
@@ -233,21 +316,35 @@ for (const [tableId, tables] of Object.entries(PAGE_CONTENT)) {
 
 const edits = [];
 const applied = [];
+const alreadyApplied = [];
+const overridesApplied = [];
+
+/** Parse the reviewer's "before" cell back into the value's shape, or record why not. */
+function deserialiseSafe(key, text, shape) {
+  try {
+    const parsed = deserialise(text, shape);
+    if (serialise(parsed) !== text) {
+      fail(`"${key}": the reviewed "before" text does not re-serialise cleanly.`);
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    fail(`"${key}": the reviewed "before" text could not be parsed — ${err.message}`);
+    return null;
+  }
+}
 
 for (const key of Object.keys(ACCEPTED)) {
   const row = applicable.get(key);
   const { CONTENT } = await import('../src/content/index.mjs');
   const current = CONTENT.ar[key];
 
-  // Guard: the corpus must still hold exactly what the reviewer saw.
-  if (serialise(current) !== row.currentArabic) {
-    fail(`"${key}": the corpus no longer matches the reviewed Arabic.`);
-    continue;
-  }
+  const reviewedBase = deserialiseSafe(key, row.currentArabic, current);
+  if (!reviewedBase) continue;
 
   let target;
   try {
-    target = deserialise(row.proposedArabic, current);
+    target = deserialise(row.proposedArabic, reviewedBase);
   } catch (err) {
     fail(`"${key}": the proposal could not be read back into the value's shape — ${err.message}`);
     continue;
@@ -255,6 +352,59 @@ for (const key of Object.keys(ACCEPTED)) {
 
   if (serialise(target) !== row.proposedArabic) {
     fail(`"${key}": the parsed proposal does not re-serialise to the reviewer's text.`);
+    continue;
+  }
+
+  // Documented per-sub-item decisions, applied to the parsed proposal.
+  const overrides = SUBITEM_OVERRIDES[key] ?? {};
+  for (const [path, rule] of Object.entries(overrides)) {
+    const [indexText, field] = path.split('.');
+    const index = Number(indexText) - 1;
+    if (!Array.isArray(target) || !target[index] || typeof target[index] !== 'object' || !(field in target[index])) {
+      fail(`"${key}": sub-item override "${path}" does not address a field that exists.`);
+      continue;
+    }
+    if (rule.source === 'CURRENT') {
+      // Verbatim from the corpus as the reviewer saw it -- already approved text.
+      target[index][field] = reviewedBase[index][field];
+    } else if (rule.source === 'OWNER') {
+      target[index][field] = rule.text;
+    } else {
+      fail(`"${key}": sub-item override "${path}" has an unknown source.`);
+    }
+    overridesApplied.push({ key, path, source: rule.source, reason: rule.reason });
+  }
+
+  /**
+   * Idempotence. HEAD already carries the first 40 corrections, so re-running
+   * must be able to tell "already applied" from "stale". Three outcomes:
+   *   corpus == target        -> already applied, skip
+   *   corpus == reviewed base -> apply
+   *   neither                 -> stale, refuse
+   * Without this the guard reads a correctly-remediated corpus as drift and
+   * refuses to do anything, which is how a re-run gets dismissed as broken.
+   */
+  if (JSON.stringify(current) === JSON.stringify(target)) {
+    // Already in the corpus, from an earlier run. The ledger describes the state
+    // of the corpus, not the work of one invocation, so it is recorded as
+    // applied -- otherwise a second run would silently drop 40 rows from the
+    // ledger and from the owner sign-off sheet built on top of it.
+    alreadyApplied.push(key);
+    applied.push({
+      key,
+      file: fileFor.get(key) ?? 'src/content/global.ar.mjs',
+      leavesChanged: 0,
+      appliedInThisRun: false,
+      decision: row.decision,
+      claimId: row.claimId,
+      beforeArabic: row.currentArabic,
+      afterArabic: serialise(target),
+      ownerReleased: key in OWNER_RELEASED ? OWNER_RELEASED[key] : undefined,
+    });
+    continue;
+  }
+  if (serialise(current) !== row.currentArabic) {
+    fail(`"${key}": the corpus matches neither the reviewed Arabic nor the intended result.`);
     continue;
   }
 
@@ -276,7 +426,19 @@ for (const key of Object.keys(ACCEPTED)) {
 
   const file = fileFor.get(key) ?? 'src/content/global.ar.mjs';
   edits.push({ key, file, changed, target });
-  applied.push({ key, file, leavesChanged: changed.length, decision: row.decision, claimId: row.claimId });
+  applied.push({
+    key,
+    file,
+    leavesChanged: changed.length,
+    appliedInThisRun: true,
+    decision: row.decision,
+    claimId: row.claimId,
+    // Recorded so the intake validator can tell "already applied" from "stale"
+    // on a later run, instead of reporting its own successful output as drift.
+    beforeArabic: row.currentArabic,
+    afterArabic: serialise(target),
+    ownerReleased: key in OWNER_RELEASED ? OWNER_RELEASED[key] : undefined,
+  });
 }
 
 if (problems.length) {
@@ -361,7 +523,13 @@ if (!DRY) {
 const ledger = {
   reviewerPackage: intake.reviewerPackage,
   eligible: intake.applicable.length,
-  applied: applied.map((a) => ({ ...a, note: ACCEPTED[a.key] })),
+  applied: applied
+    .slice()
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map((a) => ({ ...a, note: ACCEPTED[a.key] })),
+  alreadyApplied,
+  subItemOverrides: overridesApplied,
+  ownerReleasedFromLegalDeferral: Object.entries(OWNER_RELEASED).map(([key, reason]) => ({ key, reason })),
   rejected: Object.entries(REJECTED).map(([key, r]) => ({
     key,
     decision: applicable.get(key).decision,
@@ -369,7 +537,7 @@ const ledger = {
     rejectedReason: r.reason,
     finalArabicDecision: 'UNCHANGED — current Arabic retained; routed to the owner sign-off sheet.',
   })),
-  deferredLegal: intake.legalDeferred,
+  deferredLegal: intake.legalDeferred.filter((d) => !(d.key in OWNER_RELEASED)),
 };
 await mkdir(join(ROOT, 'reports'), { recursive: true });
 await writeFile(join(ROOT, 'reports/arabic-corrections-ledger.json'), JSON.stringify(ledger, null, 2), 'utf8');
@@ -377,9 +545,14 @@ await writeFile(join(ROOT, 'reports/arabic-corrections-ledger.json'), JSON.strin
 console.log(DRY ? 'DRY RUN — nothing written' : 'ARABIC CORRECTIONS APPLIED');
 console.log(`  eligible (non-legal)               ${intake.applicable.length}`);
 console.log(`  ARABIC_CORRECTIONS_APPLIED         ${applied.length}`);
+console.log(`      newly applied this run         ${applied.length - alreadyApplied.length}`);
+console.log(`      already applied (unchanged)    ${alreadyApplied.length}`);
+console.log(`  owner-released from legal deferral ${Object.keys(OWNER_RELEASED).length}`);
+console.log(`  documented sub-item overrides      ${overridesApplied.length}`);
+for (const o of overridesApplied) console.log(`      ${o.key} [${o.path}] -> ${o.source}`);
 console.log(`  ARABIC_CORRECTIONS_REJECTED        ${Object.keys(REJECTED).length}`);
-console.log(`  ARABIC_CORRECTIONS_DEFERRED_LEGAL  ${intake.legalDeferred.length}`);
-console.log(`  leaf strings changed               ${applied.reduce((n, a) => n + a.leavesChanged, 0)}`);
+console.log(`  ARABIC_CORRECTIONS_DEFERRED_LEGAL  ${intake.legalDeferred.filter((d) => !(d.key in OWNER_RELEASED)).length}`);
+console.log(`  leaf strings changed this run      ${edits.reduce((n, e) => n + e.changed.length, 0)}`);
 console.log(`  files touched                      ${byFile.size}`);
 for (const [file, e] of byFile) console.log(`      ${file}  (${e.length} key(s))`);
 console.log('\nledger: reports/arabic-corrections-ledger.json');

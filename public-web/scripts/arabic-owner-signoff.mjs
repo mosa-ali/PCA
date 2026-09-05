@@ -5,7 +5,7 @@
  * row what the Arabic said before the independent review, what it says now, and
  * why the row needs the owner's own decision.
  *
- * BEFORE_ARABIC comes from the reviewer's own 189-row export, which is the
+ * ORIGINAL_ARABIC comes from the reviewer's own 189-row export, which is the
  * authoritative snapshot of the corpus as reviewed. FINAL_PROPOSED_ARABIC is
  * read live from the current source. So the two columns are independently
  * sourced: if remediation had gone wrong, the sheet would show it rather than
@@ -123,13 +123,13 @@ const COLUMNS = [
   'ROUTE',
   'PAGE_NAME',
   'ENGLISH_SOURCE',
-  'BEFORE_ARABIC',
+  'ORIGINAL_ARABIC',
   'FINAL_PROPOSED_ARABIC',
   'CHANGED',
   'REVIEWER_DECISION',
   'CLAIM_ID',
   'CLAIM_STATUS',
-  'REMEDIATION_STATUS',
+  'REMEDIATION_DISPOSITION',
   'WHY_IN_SIGNOFF',
   'LEGAL_REVIEW_REQUIRED',
   'OWNER_DECISION',
@@ -165,13 +165,13 @@ for (const [key, reasons] of [...selected].sort((a, b) => a[0].localeCompare(b[0
     ROUTE: r.ROUTE,
     PAGE_NAME: r.PAGE_NAME,
     ENGLISH_SOURCE: r.ENGLISH_SOURCE,
-    BEFORE_ARABIC: before,
+    ORIGINAL_ARABIC: before,
     FINAL_PROPOSED_ARABIC: after,
     CHANGED: before === after ? 'NO' : 'YES',
     REVIEWER_DECISION: r.REVIEW_DECISION,
     CLAIM_ID: r.CLAIM_ID,
     CLAIM_STATUS: r.CLAIM_STATUS,
-    REMEDIATION_STATUS: status,
+    REMEDIATION_DISPOSITION: status,
     WHY_IN_SIGNOFF: reasons.join(' | '),
     LEGAL_REVIEW_REQUIRED: r.LEGAL_REVIEW_REQUIRED,
     OWNER_DECISION: 'PENDING',
@@ -190,7 +190,7 @@ if (problems.length) {
   await writeFile(OUT, body, 'utf8');
 
   const byStatus = {};
-  for (const r of rows) byStatus[r.REMEDIATION_STATUS] = (byStatus[r.REMEDIATION_STATUS] ?? 0) + 1;
+  for (const r of rows) byStatus[r.REMEDIATION_DISPOSITION] = (byStatus[r.REMEDIATION_DISPOSITION] ?? 0) + 1;
 
   console.log('OWNER ARABIC SIGN-OFF SHEET');
   console.log(`  rows                       ${rows.length}`);
