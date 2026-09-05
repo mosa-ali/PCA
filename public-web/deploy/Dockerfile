@@ -18,7 +18,12 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — build the artifact, with every gate running
 # ---------------------------------------------------------------------------
-FROM node:22.16.0-bookworm-slim AS build
+# Pinned by digest, not just by tag. A tag is a moving pointer: `22.16.0-slim`
+# can be rebuilt upstream, and then two builds of the same commit produce
+# different bytes -- which destroys the artifact-sha256 comparison that proves
+# the reviewed image is the deployed one. Update deliberately:
+#   docker pull node:22.16.0-bookworm-slim && docker image inspect --format '{{index .RepoDigests 0}}' node:22.16.0-bookworm-slim
+FROM node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34 AS build
 
 WORKDIR /src
 
@@ -56,7 +61,11 @@ RUN node deploy/manifest.mjs /artifact/MANIFEST.sha256
 # ---------------------------------------------------------------------------
 # Stage 2 — serve
 # ---------------------------------------------------------------------------
-FROM nginx:1.27-alpine AS runtime
+# Pinned by digest for the same reason. This one also ships in the released
+# image, so an unpinned tag would mean the running container's provenance
+# depends on when it happened to be built.
+#   docker pull nginx:1.27-alpine && docker image inspect --format '{{index .RepoDigests 0}}' nginx:1.27-alpine
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 
 LABEL org.opencontainers.image.title="PCA Public"
 LABEL org.opencontainers.image.description="PCA Public Release A — prerendered bilingual EN/AR static site"

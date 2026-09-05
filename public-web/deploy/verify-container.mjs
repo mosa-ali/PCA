@@ -146,6 +146,15 @@ for (const asset of assets) {
   const { res } = await get('/.env');
   check('dotfile paths are denied', res.status === 403 || res.status === 404, `got ${res.status}`);
 }
+{
+  // /assets/ and /assets/video/ contain no index.html. If autoindex were ever
+  // switched on, they would become a browsable listing of the whole artifact.
+  for (const dir of ['/assets/', '/assets/video/']) {
+    const { res, body } = await get(dir);
+    check(`${dir} is not a browsable listing`, res.status === 404, `got ${res.status}`);
+    check(`${dir} does not leak a file index`, !/Index of/i.test(body));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 6. Compression
