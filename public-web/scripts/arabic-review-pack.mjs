@@ -518,7 +518,21 @@ async function main() {
       OWNER_NOTE: '',
     }));
 
-  await writeFile(SIGNOFF_CSV, csvFrom(SIGNOFF_COLUMNS, signoffRows), 'utf8');
+  /**
+   * NOT written from here any more.
+   *
+   * This script and scripts/arabic-owner-signoff.mjs both used to write
+   * RELEASE_A_ARABIC_OWNER_SIGNOFF.csv, and the last one to run won. Re-running
+   * the pack generator after the independent review had returned silently
+   * replaced the final 120-row sign-off sheet -- the one carrying the reviewer's
+   * decisions, the deferrals and the rejections -- with this pre-review
+   * 87-row template, and the only visible sign was a dirty file in git status.
+   *
+   * One artifact, one owner. The sign-off sheet now belongs to
+   * arabic-owner-signoff.mjs, which builds it from the returned review. This
+   * script keeps computing the selection because the count is useful evidence
+   * that the two agree on which rows need the owner, but it writes nothing.
+   */
 
   if (problems.length) {
     console.error(`\nPACK VALIDATION FAILED AFTER WRITE — ${problems.length} problem(s):\n`);
@@ -549,7 +563,7 @@ async function main() {
   console.log(`  ARABIC_REVIEW_PACK_UNRESOLVED_ROUTES 0`);
   console.log(`  rows carrying a claim id          ${claimed}`);
   console.log(`  rows needing legal review         ${legal}`);
-  console.log(`  owner signoff template rows       ${signoffRows.length}`);
+  console.log(`  rows needing owner attention      ${signoffRows.length} (sheet written by arabic-owner-signoff.mjs)`);
   console.log(`  risk        ${Object.entries(byRisk).sort().map(([k, v]) => `${k}=${v}`).join('  ')}`);
   console.log(`  category    ${Object.entries(byCategory).sort().map(([k, v]) => `${k}=${v}`).join('  ')}`);
   console.log(`  artifact    ${pages.length} page(s) re-rendered and matched byte-for-byte against dist/`);
