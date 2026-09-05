@@ -1,0 +1,619 @@
+﻿KEY,ROUTE,PAGE_NAME,SECTION_OR_COMPONENT,ENGLISH_SOURCE,CURRENT_ARABIC,CLAIM_ID,CLAIM_STATUS,CONTENT_CATEGORY,RISK_LEVEL,REVIEW_DECISION,PROPOSED_ARABIC,REVIEWER_NOTE,LEGAL_REVIEW_REQUIRED,SEVERITY
+a11y.skipToContent,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",a11y,Skip to main content,تخطَّ إلى المحتوى الرئيسي,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+accessibility.barrier.body,/ar/accessibility/,Accessibility,barrier,"If something in PCA makes it difficult to complete a task, we want to know. PCA has not opened its reporting channels yet; they will be published on the Contact page before PCA opens to families. When they open, please avoid sharing sensitive child information.",إذا وجدت شيئًا في PCA يصعّب عليك إكمال مهمة، فنحن نريد أن نعرف بذلك. لم تفتح PCA قنوات الإبلاغ بعد، وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر. وعند فتحها، يرجى عدم مشاركة معلومات حساسة عن الطفل.,NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,إذا كان هناك ما في PCA يصعّب عليك إكمال مهمة، فنحن نريد معرفة ذلك. لم تفتح PCA قنوات الإبلاغ بعد؛ وستُنشر على صفحة التواصل قبل إتاحة PCA للأسر. وعند فتح هذه القنوات، يُرجى عدم مشاركة معلومات حساسة عن الطفل.,يحسّن السلاسة ويستبدل التعبير غير الطبيعي «تُفتح PCA للأسر» بـ«إتاحة PCA للأسر» دون تغيير حالة الإطلاق.,NO,LOW
+accessibility.barrier.title,/ar/accessibility/,Accessibility,barrier,Tell us about a barrier,أخبرنا عن أي عائق,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+accessibility.cta.contact,/ar/accessibility/,Accessibility,cta,Contact Accessibility,التواصل بخصوص إمكانية الوصول,NONE,NONE,CTA,HIGH,REVISE_LOW,تواصل معنا بشأن إمكانية الوصول,صياغة أكثر طبيعية وفعلية لزر دعوة إلى الإجراء، وتحافظ على المعنى نفسه.,NO,LOW
+accessibility.goals.items,/ar/accessibility/,Accessibility,goals,"[1] keyboard navigation;
+[2] visible focus states;
+[3] semantic headings and form labels;
+[4] screen-reader support;
+[5] sufficient contrast;
+[6] reduced motion;
+[7] suitable touch targets;
+[8] responsive mobile/tablet/desktop layouts;
+[9] English LTR and Arabic RTL.","[1] التنقل بلوحة المفاتيح؛
+[2] حالات تركيز واضحة؛
+[3] عناوين وتسميات نماذج دلالية؛
+[4] دعم قارئات الشاشة؛
+[5] تباين مناسب؛
+[6] تقليل الحركة حسب تفضيلات المستخدم؛
+[7] أهداف لمس مناسبة؛
+[8] تخطيطات متجاوبة للهاتف والجهاز اللوحي والكمبيوتر؛
+[9] الإنجليزية LTR والعربية RTL.",NONE,NONE,BODY_COPY,MEDIUM,REVISE_MEDIUM,"[1] التنقل بلوحة المفاتيح؛
+[2] مؤشرات تركيز واضحة؛
+[3] عناوين دلالية وتسميات واضحة لحقول النماذج؛
+[4] دعم قارئات الشاشة؛
+[5] تباين كافٍ؛
+[6] تقليل الحركة؛
+[7] مساحات لمس مناسبة؛
+[8] تخطيطات متجاوبة للهاتف والجهاز اللوحي والكمبيوتر؛
+[9] الإنجليزية من اليسار إلى اليمين (LTR) والعربية من اليمين إلى اليسار (RTL).",تُصحَّح مصطلحات إمكانية الوصول غير الطبيعية مثل «حالات تركيز» و«أهداف لمس»، مع شرح LTR/RTL بالعربية بدل ترك اختصارات تقنية غير مفسرة.,NO,MEDIUM
+accessibility.goals.lead,/ar/accessibility/,Accessibility,goals,We design and test for:,نصمم ونختبر من أجل:,NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,نصمم ونختبر لتحقيق ما يلي:,أكثر طبيعية من «نصمم ونختبر من أجل» في العربية.,NO,LOW
+accessibility.goals.title,/ar/accessibility/,Accessibility,goals,Our accessibility goals,أهدافنا,NONE,NONE,HEADING,MEDIUM,REVISE_LOW,أهدافنا لإمكانية الوصول,العنوان الحالي «أهدافنا» عام أكثر من المصدر الإنجليزي ويفقد موضوع إمكانية الوصول.,NO,LOW
+accessibility.hero.body,/ar/accessibility/,Accessibility,hero,"Accessibility is part of product quality, not an optional extra.",إمكانية الوصول جزء من جودة المنتج، وليست إضافة اختيارية.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+accessibility.hero.title,/ar/accessibility/,Accessibility,hero,Digital child protection should be usable by more families,حماية الطفل الرقمية يجب أن تكون قابلة للاستخدام من قبل أسر أكثر,NONE,NONE,HEADING,MEDIUM,REVISE_LOW,ينبغي أن يتمكن عدد أكبر من الأسر من استخدام وسائل حماية الأطفال الرقمية,صياغة عربية طبيعية تتجنب التركيب الحرفي «قابلة للاستخدام من قبل أسر أكثر».,NO,LOW
+accessibility.seo.description,/ar/accessibility/,Accessibility,seo,"PCA's public and Parent experiences are designed for keyboard access, screen readers, responsive devices, reduced motion and English/Arabic use.",تُصمم تجارب PCA العامة وتجربة الوالدين لتدعم لوحة المفاتيح وقارئات الشاشة والحركة المخففة والعربية والإنجليزية ومختلف أحجام الأجهزة.,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_LOW,تُصمم تجارب PCA العامة وتجربة PCA Parent لتدعم استخدام لوحة المفاتيح وقارئات الشاشة، وتقليل الحركة، والعمل بصورة متجاوبة على مختلف أحجام الأجهزة، والاستخدام باللغتين الإنجليزية والعربية.,تحسين السلاسة والدقة؛ «الحركة المخففة» تعبير غير طبيعي، كما أن الاستجابة تخص الواجهة على الأجهزة.,NO,LOW
+accessibility.seo.title,/ar/accessibility/,Accessibility,seo,PCA Accessibility — Designing for More Families,إمكانية الوصول في PCA — تصميم يخدم أسرًا أكثر,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+brand.homeLink,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",brand,PCA home,الصفحة الرئيسية لـ PCA,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.categories.items,/ar/contact/,Contact,categories,"[1] General inquiry
+[2] Technical support
+[3] Privacy question
+[4] Partnership
+[5] Accessibility
+[6] Report security concern","[1] استفسار عام
+[2] دعم فني
+[3] سؤال عن الخصوصية
+[4] شراكة
+[5] إمكانية الوصول
+[6] الإبلاغ عن مشكلة أمنية",NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.categories.title,/ar/contact/,Contact,categories,Categories,الفئات,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.hero.body,/ar/contact/,Contact,hero,"Choose the topic that best matches your question. Please do not include private information about your child unless PCA has specifically requested a safe, necessary detail.",اختر الموضوع الأقرب إلى استفسارك. يرجى عدم إدخال معلومات خاصة عن طفلك إلا إذا طلب فريق PCA معلومة محددة وضرورية بطريقة آمنة.,NONE,NONE,BODY_COPY,MEDIUM,REVISE_MEDIUM,اختر الموضوع الأقرب إلى استفسارك. يُرجى عدم تضمين معلومات خاصة عن طفلك إلا إذا طلبت PCA تحديدًا معلومة ضرورية بطريقة آمنة.,النص الحالي يضيف «فريق PCA» رغم أن المصدر يقول PCA فقط. المقترح يحافظ على الجهة والشرط كما وردا في الإنجليزية.,NO,MEDIUM
+contact.hero.title,/ar/contact/,Contact,hero,How can we help?,كيف يمكننا مساعدتك؟,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.privacyNote.body,/ar/contact/,Contact,privacyNote,"Please do not include child messages, browsing history, precise location, photos, videos or other sensitive child content.",يرجى عدم تضمين رسائل الطفل أو سجل التصفح أو الموقع الدقيق أو الصور أو الفيديوهات أو أي محتوى حساس آخر.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.privacyNote.title,/ar/contact/,Contact,privacyNote,Privacy note,تنبيه الخصوصية,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+contact.seo.description,/ar/contact/,Contact,seo,"PCA is not able to receive messages yet. Support, privacy, accessibility and security contact channels will be published before PCA opens to families.",لا تستطيع PCA استقبال الرسائل بعد. وستُنشر قنوات الدعم والخصوصية وإمكانية الوصول والأمان قبل أن تُفتح PCA للأسر.,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_LOW,لا تستطيع PCA استقبال الرسائل بعد. وستُنشر قنوات الدعم والخصوصية وإمكانية الوصول والأمان قبل إتاحة PCA للأسر.,تحسين الصياغة الطبيعية مع الحفاظ على حالة الإطلاق.,NO,LOW
+contact.seo.title,/ar/contact/,Contact,seo,Contact PCA — Channels Opening Before Launch,تواصل مع PCA — الدعم والخصوصية والاستفسارات,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_MEDIUM,التواصل مع PCA — قنوات ستُفتح قبل الإطلاق,العنوان العربي الحالي يحذف المعلومة الأساسية في المصدر: أن القنوات ستفتح قبل الإطلاق.,NO,MEDIUM
+cta.access,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Learn About Access,تعرّف على إتاحة PCA,NONE,NONE,CTA,HIGH,REVISE_LOW,تعرّف على خيارات الوصول إلى PCA,«إتاحة PCA» ثقيلة وغير طبيعية كزر؛ المقترح واضح للوالد ولا يخلط مع مصطلح إمكانية الوصول.,NO,LOW
+cta.allFaqs,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,View All FAQs,جميع الأسئلة الشائعة,NONE,NONE,CTA,HIGH,REVISE_LOW,عرض جميع الأسئلة الشائعة,يحوّل النص إلى دعوة إجراء فعلية بدل اسم قسم فقط.,NO,LOW
+cta.childSafety,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Read Our Child Safety Principles,اقرأ مبادئ سلامة الطفل,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.createAccount,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Create Account,إنشاء حساب,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.exploreFeatures,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Explore Features,استكشف المزايا,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.getStarted,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Get Started,ابدأ الآن,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.howPcaWorks,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,How PCA Works,كيف تعمل PCA؟,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.login,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Sign In,تسجيل الدخول,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.pcaParent,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,PCA Parent,PCA Parent,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.privacyHandling,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,See How PCA Handles Privacy,كيف تتعامل PCA مع الخصوصية؟,NONE,NONE,CTA,HIGH,REVISE_LOW,تعرّف على كيفية تعامل PCA مع الخصوصية,دعوة إجراء أكثر طبيعية واتساقًا مع المصدر الإنجليزي.,NO,LOW
+cta.seeHowPcaWorks,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,See How PCA Works,تعرّف على طريقة عمل PCA,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+cta.whyPca,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",cta,Why PCA,لماذا PCA؟,NONE,NONE,CTA,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+footer.group.help,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",footer,Help,المساعدة,NONE,NONE,FOOTER_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+footer.group.legal,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",footer,Legal,الشؤون القانونية,NONE,NONE,FOOTER_CHROME,LOW,REVISE_LOW,المعلومات القانونية,«الشؤون القانونية» يوحي بقسم إداري داخل مؤسسة؛ «المعلومات القانونية» أنسب لمجموعة روابط في التذييل.,NO,LOW
+footer.group.pca,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",footer,PCA,PCA,NONE,NONE,FOOTER_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+footer.group.trust,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",footer,Trust,الثقة والخصوصية,NONE,NONE,FOOTER_CHROME,LOW,REVISE_LOW,الثقة,المصدر الإنجليزي هو Trust فقط؛ النص الحالي يضيف «والخصوصية» دون حاجة.,NO,LOW
+footer.legalNote,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",footer,"PCA is a digital child protection platform. Plans, prices and availability described as coming later are not yet released.",PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار والمزايا الموصوفة بأنها قادمة لاحقًا لم تُطلق بعد.,NONE,NONE,FOOTER_CHROME,LOW,REVISE_MEDIUM,‏PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار وأي عناصر مذكورة على أنها «قادمة لاحقًا» لم تُطرح بعد.,النص الحالي يستبدل مفهوم availability بـ«المزايا»، ما يضيّق المعنى. المقترح يبقى عامًا ويمنع الإيحاء بإتاحة أي عنصر لم يُطرح.,NO,MEDIUM
+home.affordability.body,/ar/,Home,affordability,PCA is being designed with affordability and broad access in mind.,تُصمم PCA مع مراعاة القدرة على تحمل التكلفة وإتاحة الخدمة على نطاق أوسع.,NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,تُصمم PCA مع مراعاة أن تكون التكلفة في متناول الأسر وأن تتاح الخدمة على نطاق أوسع.,«القدرة على تحمل التكلفة» ترجمة حرفية ثقيلة؛ المقترح أوضح للوالدين.,NO,LOW
+home.affordability.label,/ar/,Home,affordability,Access,الإتاحة,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.affordability.title,/ar/,Home,affordability,A safer digital world should not depend on income,العالم الرقمي الأكثر أمانًا لا ينبغي أن يعتمد على دخل الأسرة,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.availability.items,/ar/,Home,availability,"[1] title: PCA Parent
+[1] body: A responsive experience for phone, tablet and computer. Account access is not open yet.
+[2] title: PCA Child on Android
+[2] body: The planned primary platform for the first release.
+[3] title: PCA Child on iPhone and iPad
+[3] body: iPhone and iPad child protection is planned for a later release.","[1] title: PCA Parent
+[1] body: تجربة ويب متجاوبة للهاتف والجهاز اللوحي والكمبيوتر. لم يُفتح إنشاء الحسابات بعد.
+[2] title: PCA Child على أندرويد
+[2] body: المنصة الأساسية المخطط لها لأول إصدار.
+[3] title: PCA Child على iPhone وiPad
+[3] body: حماية الطفل على iPhone وiPad مخطط لها في إصدار لاحق.",CLM-024; CLM-026,COMING_LATER; COMING_LATER,RELEASE_STATE_NOTICE,CRITICAL,REVISE_MEDIUM,"[1] title: PCA Parent
+[1] body: تجربة متجاوبة للهاتف والجهاز اللوحي والكمبيوتر. الوصول إلى الحساب غير متاح بعد.
+[2] title: PCA Child على أندرويد
+[2] body: المنصة الرئيسية المخطط لها لأول إصدار.
+[3] title: PCA Child على iPhone وiPad
+[3] body: حماية الطفل على iPhone وiPad مخطط لإتاحتها في إصدار لاحق.",المصدر يقول إن الوصول إلى الحساب غير مفتوح بعد، بينما العربية الحالية تحصر ذلك في إنشاء الحساب. كما تُحسَّن صياغة الحالات المخطط لها دون جعلها تبدو متاحة حاليًا.,NO,MEDIUM
+home.availability.label,/ar/,Home,availability,Availability,التوفر,NONE,NONE,RELEASE_STATE_NOTICE,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.availability.title,/ar/,Home,availability,PCA Parent and PCA Child,PCA Parent وPCA Child,NONE,NONE,RELEASE_STATE_NOTICE,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.different.items,/ar/,Home,different,"[1] title: Designed without a readable central child profile
+[1] body: Protection does not require a readable central copy.
+[2] title: Not designed to collect photos, videos, files or messages
+[2] body: Routine protection does not need them.
+[3] title: Local-first protection
+[3] body: Sensitive information is designed to stay family-side.
+[4] title: Affordable, broad access
+[4] body: Affordability and broad access shape the design.","[1] title: مصممة دون ملف مركزي مقروء عن الطفل
+[1] body: الحماية لا تتطلب نسخة مركزية مقروءة.
+[2] title: لم تُصمم لجمع صور الطفل أو فيديوهاته أو ملفاته أو رسائله
+[2] body: الحماية المعتادة لا تحتاج إليها.
+[3] title: حماية تبدأ من الجهاز
+[3] body: صُممت المعلومات الحساسة لتبقى لدى الأسرة.
+[4] title: تكلفة معقولة وإتاحة أوسع
+[4] body: القدرة على تحمل التكلفة والإتاحة الواسعة جزء من التصميم.",NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,"[1] title: مصممة دون إنشاء ملف مركزي مقروء عن الطفل
+[1] body: الحماية لا تتطلب نسخة مركزية مقروءة.
+[2] title: لم تُصمم لجمع صور الطفل أو مقاطع الفيديو أو الملفات أو الرسائل
+[2] body: الحماية المعتادة لا تحتاج إلى هذه المحتويات.
+[3] title: حماية تبدأ محليًا من الجهاز
+[3] body: صُمم نهج PCA بحيث تبقى المعلومات الحساسة لدى الأسرة.
+[4] title: تكلفة في المتناول وإتاحة أوسع
+[4] body: مراعاة التكلفة والإتاحة الواسعة جزء من التصميم.",تحسينات طبيعية، خصوصًا «صُممت المعلومات الحساسة» و«القدرة على تحمل التكلفة»، مع بقاء المعنى والقيود كما هي.,NO,LOW
+home.different.label,/ar/,Home,different,Why PCA is different,لماذا PCA مختلفة؟,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.different.title,/ar/,Home,different,Technology should protect without taking away dignity,التقنية ينبغي أن تحمي الطفل وتحترم كرامته,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.faq.items,/ar/,Home,faq,"[1] q: Does PCA read my child's messages?
+[1] a: PCA is not designed to capture or centrally read personal messages.
+[2] q: Does PCA collect photos or files?
+[2] a: Routine protection does not require a child's photo library, videos or arbitrary files.
+[3] q: Can I use PCA Parent without installing it?
+[3] a: Yes. Installation is optional; Parent Web remains available in the browser.
+[4] q: Does PCA use AI?
+[4] a: AI-supported features are planned for a later release.
+[5] q: Does PCA protect YouTube use?
+[5] a: Advanced YouTube protection is planned for a later release.
+[6] q: How much does PCA cost?
+[6] a: Final plans and prices are not published yet.","[1] q: هل تقرأ PCA رسائل طفلي؟
+[1] a: لم تُصمم PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
+[2] q: هل تجمع PCA صور الطفل أو ملفاته؟
+[2] a: لا تحتاج الحماية المعتادة إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية.
+[3] q: هل يمكن استخدام PCA Parent دون تثبيتها؟
+[3] a: نعم. التثبيت اختياري ويمكن استخدام نسخة الويب من المتصفح.
+[4] q: هل تستخدم PCA الذكاء الاصطناعي؟
+[4] a: المزايا المدعومة بالذكاء الاصطناعي مخطط لها في إصدار لاحق.
+[5] q: هل تحمي PCA استخدام YouTube؟
+[5] a: الحماية المتقدمة لـYouTube مخطط لها في إصدار لاحق.
+[6] q: كم تكلفة PCA؟
+[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",NONE,NONE,FAQ,MEDIUM,REVISE_MEDIUM,"[1] q: هل تقرأ PCA رسائل طفلي؟
+[1] a: لم تُصمم PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
+[2] q: هل تجمع PCA صور الطفل أو ملفاته؟
+[2] a: لا تحتاج الحماية المعتادة إلى مكتبة صور الطفل أو مقاطع الفيديو أو أي ملفات أخرى غير لازمة للحماية.
+[3] q: هل يمكن استخدام PCA Parent دون تثبيتها؟
+[3] a: نعم. التثبيت اختياري، وتظل PCA Parent متاحة عبر المتصفح.
+[4] q: هل تستخدم PCA الذكاء الاصطناعي؟
+[4] a: المزايا المدعومة بالذكاء الاصطناعي مخطط لإتاحتها في إصدار لاحق.
+[5] q: هل تحمي PCA استخدام YouTube؟
+[5] a: الحماية المتقدمة لاستخدام YouTube مخطط لإتاحتها في إصدار لاحق.
+[6] q: كم تكلفة PCA؟
+[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",«الملفات العشوائية» غير طبيعية وقد تُفهم خطأ، كما تُحسَّن صياغة الميزات المخطط لها وتحافظ صراحةً على حالة «إصدار لاحق».,NO,MEDIUM
+home.faq.label,/ar/,Home,faq,Common questions,أسئلة شائعة,NONE,NONE,FAQ,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.faq.title,/ar/,Home,faq,Quick answers,أسئلة سريعة,NONE,NONE,HEADING,MEDIUM,REVISE_MEDIUM,إجابات سريعة,المصدر Quick answers وليس Quick questions؛ «أسئلة سريعة» تغيّر معنى العنوان.,NO,MEDIUM
+home.final.body,/ar/,Home,final,"Understand the tools, choose the protections that fit your family, and stay in control of sensitive information.",تعرّف على الأدوات، واختر الحماية المناسبة لأسرتك، واحتفظ بالتحكم في المعلومات الحساسة.,NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,تعرّف على الأدوات، واختر وسائل الحماية المناسبة لأسرتك، وحافظ على تحكمك في المعلومات الحساسة.,«احتفظ بالتحكم» تركيب مترجم حرفيًا؛ المقترح طبيعي ويحافظ على معنى stay in control.,NO,LOW
+home.final.title,/ar/,Home,final,Start building safer digital habits with your family,ابدأ ببناء عادات رقمية أكثر أمانًا مع أسرتك,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.hero.body,/ar/,Home,hero,Children deserve care and protection wherever they spend time—including online.,يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك الإنترنت.,NONE,NONE,BODY_COPY,MEDIUM,REVISE_LOW,يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك على الإنترنت.,«بما في ذلك الإنترنت» أقل طبيعية من «على الإنترنت» للمقصود online.,NO,LOW
+home.hero.reassure,/ar/,Home,hero,PCA is designed not to build a readable central profile of your child's sensitive activity.,صُممت PCA بحيث لا تنشئ ملفًا مركزيًا مقروءًا عن النشاط الحساس لطفلك.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.hero.title,/ar/,Home,hero,Protecting children in digital spaces.,حماية الأطفال في المساحات الرقمية,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.protects.items,/ar/,Home,protects,"[1] title: Screen Time
+[1] body: Support healthier device-use limits and routines.
+[2] title: Safer Browsing
+[2] body: Help apply approved web-safety decisions.
+[3] title: Apps & Web Controls
+[3] body: Set appropriate boundaries for apps and online access.
+[4] title: Schedules
+[4] body: Create predictable times for study, rest and sleep.
+[5] title: Protection Status
+[5] body: See whether protections are active.
+[6] title: Parent & Child Requests
+[6] body: Support clear family interaction when a child needs more time.
+[7] title: Alerts
+[7] body: Receive relevant protection notices.
+[8] title: Device Protection
+[8] body: Help maintain the protection configuration on the child device.","[1] title: وقت الشاشة
+[1] body: المساعدة في وضع حدود وروتين أكثر توازنًا لاستخدام الأجهزة.
+[2] title: تصفح أكثر أمانًا
+[2] body: المساعدة في اتخاذ قرارات الحماية على الويب.
+[3] title: التحكم بالتطبيقات والويب
+[3] body: وضع حدود مناسبة للتطبيقات والوصول إلى الويب.
+[4] title: الجداول الزمنية
+[4] body: تحديد أوقات واضحة للدراسة والراحة والنوم.
+[5] title: حالة الحماية
+[5] body: معرفة ما إذا كانت الحماية تعمل.
+[6] title: طلبات الوالدين والطفل
+[6] body: إتاحة تواصل واضح عندما يطلب الطفل وقتًا إضافيًا.
+[7] title: التنبيهات
+[7] body: إرسال تنبيهات مفيدة مرتبطة بالحماية.
+[8] title: حماية الجهاز
+[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.",CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035,REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT,BODY_COPY,CRITICAL,REVISE_MEDIUM,"[1] title: وقت الشاشة
+[1] body: دعم حدود وروتين أكثر توازنًا لاستخدام الأجهزة.
+[2] title: تصفح أكثر أمانًا
+[2] body: المساعدة في تطبيق قرارات السلامة المعتمدة على الويب.
+[3] title: التحكم بالتطبيقات والويب
+[3] body: وضع حدود مناسبة للتطبيقات والوصول إلى الويب.
+[4] title: الجداول الزمنية
+[4] body: تحديد أوقات واضحة للدراسة والراحة والنوم.
+[5] title: حالة الحماية
+[5] body: معرفة ما إذا كانت وسائل الحماية مفعّلة.
+[6] title: طلبات الوالدين والطفل
+[6] body: إتاحة تواصل واضح عندما يطلب الطفل وقتًا إضافيًا.
+[7] title: التنبيهات
+[7] body: تلقي تنبيهات ذات صلة بالحماية.
+[8] title: حماية الجهاز
+[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.",تصحيح فروق معنى في ثلاث نقاط: apply approved decisions ≠ اتخاذ القرارات، active ≠ تعمل بالضرورة، وReceive alerts ≠ إرسال التنبيهات.,NO,MEDIUM
+home.protects.label,/ar/,Home,protects,What PCA protects,ما الذي تحميه PCA؟,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.protects.title,/ar/,Home,protects,Practical protection families can understand,حماية عملية يمكن للأسرة فهمها,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.seo.description,/ar/,Home,seo,"PCA helps families create safer digital spaces for children with practical protection, privacy-minimizing design and clear parental control.",تساعد PCA الوالدين على توفير مساحات رقمية أكثر أمانًا للأطفال من خلال حماية عملية، وتصميم يحد من جمع المعلومات، وتحكم واضح للوالدين.,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.seo.title,/ar/,Home,seo,PCA — Protecting Children in Digital Spaces,PCA — حماية الأطفال في المساحات الرقمية,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.steps.items,/ar/,Home,steps,"[1] title: Create your parent account
+[1] body: Set up access to PCA Parent.
+[2] title: Add your child in PCA Parent
+[2] body: Child setup belongs inside the protected Parent experience.
+[3] title: Install PCA Child on a supported device
+[3] body: Android is the planned primary platform.
+[4] title: Connect the device and choose protections
+[4] body: Set the rules and schedules appropriate for your family.
+[5] title: Review protection status
+[5] body: Check protection status and respond to supported requests.","[1] title: أنشئ حساب الوالدين
+[1] body: ابدأ بإعداد الوصول إلى PCA Parent.
+[2] title: أضف طفلك داخل PCA Parent
+[2] body: يتم إعداد معلومات الطفل داخل بيئة الوالدين المحمية.
+[3] title: ثبّت PCA Child على جهاز مدعوم
+[3] body: أندرويد هو المنصة الأساسية المخطط لها.
+[4] title: اربط الجهاز واختر إعدادات الحماية
+[4] body: حدد القواعد والجداول المناسبة لأسرتك.
+[5] title: راجع حالة الحماية
+[5] body: تابع حالة الحماية وتعامل مع الطلبات المدعومة.",CLM-024,COMING_LATER,BODY_COPY,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.steps.label,/ar/,Home,steps,How it works,كيف تعمل PCA؟,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.steps.title,/ar/,Home,steps,Five simple steps,خمس خطوات واضحة,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.why.body,/ar/,Home,why,"[1] PCA began with a simple question: if we work hard to protect children at home, at school and in public spaces, why should their digital spaces be treated differently?
+[2] We believe families should have useful tools for digital protection without needing to trade away a child’s privacy.","[1] بدأت فكرة PCA بسؤال بسيط: إذا كنا نبذل جهدًا لحماية الأطفال في المنزل والمدرسة والأماكن العامة، فلماذا نتعامل مع المساحات الرقمية وكأن الحماية تتوقف عندها؟
+[2] نؤمن بأن الأسرة تحتاج إلى أدوات مفيدة للحماية الرقمية دون أن تضطر للتنازل عن خصوصية الطفل.",NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.why.label,/ar/,Home,why,Why PCA exists,لماذا وُجدت PCA؟,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+home.why.title,/ar/,Home,why,Built from a parent's concern,بدأت من اهتمام أب بحماية أطفاله,NONE,NONE,HEADING,MEDIUM,REVISE_MEDIUM,بدأت من اهتمام أحد الوالدين بحماية أطفاله,المصدر الحالي يقول parent's concern بينما العربية تحدده بأنه أب. المقترح يتبع المصدر الإنجليزي الحالي دون إضافة جنس الوالد.,NO,MEDIUM
+howItWorks.child.items,/ar/how-it-works/,How PCA Works,child,"[1] title: Android
+[1] body: When the first PCA Child release is ready, Android is the planned primary platform.
+[2] title: iPhone and iPad
+[2] body: Child protection for iPhone and iPad is planned for a later release.","[1] title: أندرويد
+[1] body: عند جاهزية أول إصدار من PCA Child ستكون أندرويد هي المنصة الأساسية المخطط لها.
+[2] title: iPhone وiPad
+[2] body: حماية أجهزة iPhone وiPad مخطط لها في إصدار لاحق.",CLM-024; CLM-026,COMING_LATER; COMING_LATER,BODY_COPY,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.child.title,/ar/how-it-works/,How PCA Works,child,PCA Child,PCA Child,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.hero.body,/ar/how-it-works/,How PCA Works,hero,"PCA is designed to make the protection journey understandable: set up the parent account, connect the supported child device, choose appropriate rules, and review protection status from PCA Parent.",صُممت PCA لتكون خطوات الحماية واضحة: أنشئ حساب الوالدين، واربط جهاز الطفل المدعوم، واختر القواعد المناسبة، ثم راجع حالة الحماية عبر PCA Parent.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.hero.title,/ar/how-it-works/,How PCA Works,hero,From account setup to everyday protection,من إنشاء الحساب إلى الحماية اليومية,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.parent.items,/ar/how-it-works/,How PCA Works,parent,"[1] title: No installation required
+[1] body: PCA Parent is designed to run in a supported browser on phone, tablet or computer, with nothing to install.
+[2] title: Install PCA Parent
+[2] body: Where installation is supported, you may install it for app-like access.
+[3] title: Installation remains optional
+[3] body: You never need to install PCA Parent just to use the service.","[1] title: لا حاجة إلى تثبيت
+[1] body: صُممت PCA Parent للعمل في متصفح مدعوم على الهاتف أو الجهاز اللوحي أو الكمبيوتر، دون تثبيت أي شيء.
+[2] title: تثبيت PCA Parent
+[2] body: عندما يكون التثبيت مدعومًا يمكنك تثبيتها لوصول أقرب للتطبيق.
+[3] title: يبقى التثبيت اختياريًا
+[3] body: لا تحتاج إلى تثبيت PCA Parent حتى تستخدم الخدمة.",CLM-019; CLM-020; CLM-021,COMING_LATER; COMING_LATER; VERIFIED_AVAILABLE,BODY_COPY,CRITICAL,REVISE_LOW,"[1] title: لا حاجة إلى تثبيت
+[1] body: صُممت PCA Parent للعمل في متصفح مدعوم على الهاتف أو الجهاز اللوحي أو الكمبيوتر، دون تثبيت أي شيء.
+[2] title: تثبيت PCA Parent
+[2] body: عندما يكون التثبيت مدعومًا، يمكنك تثبيتها للحصول على تجربة أقرب إلى استخدام التطبيق.
+[3] title: يبقى التثبيت اختياريًا
+[3] body: لا تحتاج إلى تثبيت PCA Parent لمجرد استخدام الخدمة.",تحسين «لوصول أقرب للتطبيق» إلى صياغة عربية طبيعية مع الحفاظ على أن التثبيت اختياري.,NO,LOW
+howItWorks.parent.title,/ar/how-it-works/,How PCA Works,parent,PCA Parent,PCA Parent,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.security.body,/ar/how-it-works/,How PCA Works,security,Installing PCA Parent is about convenience. Trusted Browser authorization is a separate PCA security concept and follows separate rules.,تثبيت PCA Parent يتعلق بالسهولة والوصول. أما “المتصفح الموثوق” فهو مفهوم أمني منفصل وله قواعده الخاصة.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.security.title,/ar/how-it-works/,How PCA Works,security,Important security distinction,فرق أمني مهم,NONE,NONE,HEADING,MEDIUM,REVISE_LOW,فرق مهم من ناحية الأمان,أكثر طبيعية ووضوحًا لغير المتخصص من «فرق أمني مهم».,NO,LOW
+howItWorks.sensitive.body,/ar/how-it-works/,How PCA Works,sensitive,Protection settings and status move between your trusted devices. Privacy & Safety explains what is processed where.,تنتقل إعدادات الحماية وحالتها بين أجهزتك الموثوقة. وتشرح صفحة الخصوصية والسلامة ما الذي تتم معالجته وأين.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.sensitive.title,/ar/how-it-works/,How PCA Works,sensitive,What happens to sensitive information?,ماذا يحدث للمعلومات الحساسة؟,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.seo.description,/ar/how-it-works/,How PCA Works,seo,"See the planned PCA journey from parent account to child-device protection, status and family requests.",تعرّف على المسار المخطط من إنشاء حساب الوالدين إلى ربط جهاز الطفل واختيار الحماية ومتابعة الحالة.,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_MEDIUM,تعرّف على المسار المخطط في PCA، من إنشاء حساب الوالدين إلى ربط جهاز الطفل واختيار الحماية ومتابعة الحالة والتعامل مع طلبات الوالدين والطفل.,العربية الحالية تحذف family requests من وصف SEO.,NO,MEDIUM
+howItWorks.seo.title,/ar/how-it-works/,How PCA Works,seo,How PCA Works — Parent and Child Protection Flow,كيف تعمل PCA؟ — مسار الوالدين وحماية جهاز الطفل,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_LOW,كيف تعمل PCA؟ — مسار الوالدين وحماية الطفل,أقرب إلى Parent and Child Protection Flow من الصياغة الحالية التي تحصر المعنى في جهاز الطفل.,NO,LOW
+howItWorks.steps.items,/ar/how-it-works/,How PCA Works,steps,"[1] title: Create your parent account
+[1] body: Use your email and password to create PCA Parent access.
+[2] title: Verify your email
+[2] body: Confirm your email address to activate PCA Parent access.
+[3] title: Set up your child inside PCA Parent
+[3] body: Child setup belongs within the protected Parent experience.
+[4] title: Install PCA Child
+[4] body: Follow the guidance for the device you are setting up.
+[5] title: Create an enrollment code or link
+[5] body: In PCA Parent, create the enrollment code or link for that child.
+[6] title: Connect the child device
+[6] body: Use the approved enrollment/pairing flow.
+[7] title: Choose protections
+[7] body: Depending on verified platform capabilities, parents may configure screen-time rules, schedules, app/web controls and other supported protections.
+[8] title: Review status and respond
+[8] body: PCA Parent should help the parent understand whether protection is working and respond to supported child requests.","[1] title: إنشاء حساب الوالدين
+[1] body: استخدم البريد الإلكتروني وكلمة المرور لإنشاء حساب PCA Parent.
+[2] title: تأكيد البريد الإلكتروني
+[2] body: أكّد بريدك الإلكتروني لتفعيل الوصول إلى PCA Parent.
+[3] title: إعداد الطفل داخل PCA Parent
+[3] body: يتم إعداد الطفل داخل بيئة PCA Parent المحمية.
+[4] title: تثبيت PCA Child
+[4] body: اتبع الإرشادات المناسبة للجهاز الذي تقوم بإعداده.
+[5] title: إنشاء رمز أو رابط التسجيل
+[5] body: أنشئ من داخل PCA Parent رمز التسجيل أو الرابط الخاص بهذا الطفل.
+[6] title: ربط جهاز الطفل
+[6] body: يتم استخدام مسار التسجيل والربط المعتمد.
+[7] title: اختيار إعدادات الحماية
+[7] body: حسب الإمكانات الفعلية للمنصة، يمكن للوالدين إعداد وقت الشاشة والجداول والتحكم بالتطبيقات والويب وغيرها من وظائف الحماية المدعومة.
+[8] title: متابعة الحالة والطلبات
+[8] body: يُفترض أن تساعد PCA Parent الوالدين على فهم حالة الحماية والتعامل مع الطلبات المدعومة، بحسب ما تدعمه المنصة.",CLM-024,COMING_LATER,BODY_COPY,CRITICAL,REVISE_MEDIUM,"[1] title: إنشاء حساب الوالدين
+[1] body: استخدم البريد الإلكتروني وكلمة المرور لإنشاء حساب PCA Parent.
+[2] title: تأكيد البريد الإلكتروني
+[2] body: أكّد بريدك الإلكتروني لتفعيل الوصول إلى PCA Parent.
+[3] title: إعداد الطفل داخل PCA Parent
+[3] body: يتم إعداد الطفل داخل بيئة PCA Parent المحمية.
+[4] title: تثبيت PCA Child
+[4] body: اتبع الإرشادات المناسبة للجهاز الذي تقوم بإعداده.
+[5] title: إنشاء رمز أو رابط التسجيل
+[5] body: أنشئ من داخل PCA Parent رمز التسجيل أو الرابط الخاص بهذا الطفل.
+[6] title: ربط جهاز الطفل
+[6] body: استخدم مسار التسجيل والربط المعتمد.
+[7] title: اختيار إعدادات الحماية
+[7] body: وفقًا لإمكانات المنصة التي تم التحقق منها، يمكن للوالدين إعداد قواعد وقت الشاشة والجداول والتحكم بالتطبيقات والويب وغيرها من وسائل الحماية المدعومة.
+[8] title: متابعة الحالة والطلبات
+[8] body: ينبغي أن تساعد PCA Parent الوالدين على فهم ما إذا كانت الحماية تعمل والتعامل مع طلبات الطفل المدعومة.",يعيد مفهوم verified platform capabilities الذي اختفى في العربية، ويحافظ على صيغة should في الخطوة الأخيرة، ويحسن صياغة مسار التسجيل والربط.,NO,MEDIUM
+howItWorks.steps.label,/ar/how-it-works/,How PCA Works,steps,The journey,المسار,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+howItWorks.steps.title,/ar/how-it-works/,How PCA Works,steps,Eight steps,ثماني خطوات,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+legal.provisionalNotice,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",legal,This is a provisional draft and is not the published legal document. It is pending legal review and is not indexed.,هذه مسودة أولية وليست الوثيقة القانونية المنشورة. ما زالت قيد المراجعة القانونية ولا تظهر في محركات البحث.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.about,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,About,عن PCA,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.access,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Access,إتاحة الخدمة,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.accessibility,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Accessibility,إمكانية الوصول,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.childSafety,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Child Safety Principles,مبادئ سلامة الطفل,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.contact,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Contact,التواصل,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.download,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Download,التنزيل والتثبيت,NONE,NONE,NAVIGATION_CHROME,LOW,REVISE_LOW,التنزيل,المصدر هو Download فقط؛ إضافة «والتثبيت» توسع عنوان التنقل دون سند من هذا المفتاح.,NO,LOW
+nav.faq,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Help,المساعدة,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.features,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Features,المزايا,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.home,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Home,الرئيسية,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.howItWorks,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,How It Works,كيف تعمل PCA؟,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.languageLabel,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Language,اللغة,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.menu,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Menu,القائمة,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.parents,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,For Parents,للوالدين,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.primaryLabel,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Primary,التنقل الرئيسي,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.privacy,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Privacy & Safety,الخصوصية والسلامة,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.privacyPolicy,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Privacy Policy,سياسة الخصوصية,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.security,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Security,الأمان,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.terms,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Terms,الشروط,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+nav.whyPca,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",nav,Why PCA,لماذا PCA؟,NONE,NONE,NAVIGATION_CHROME,LOW,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.arabicHomeCta,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,Return to the home page,العودة إلى الصفحة الرئيسية,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.arabicNote,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,The page is not available.,الصفحة غير متاحة.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.body,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,"The page you were looking for is not available. It may have moved, or the link may be incomplete.",الصفحة التي تبحث عنها غير متاحة. ربما تكون قد نُقلت، أو أن الرابط غير مكتمل.,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.homeCta,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,Go to the PCA home page,اذهب إلى الصفحة الرئيسية لـPCA,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.seo.title,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,Page not found — PCA,الصفحة غير موجودة — PCA,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+notFound.title,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",notFound,Page not found,الصفحة غير موجودة,NONE,NONE,HEADING,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+privacy.advanced.items,/ar/privacy/,Privacy & Safety,advanced,"[1] title: Separate Parent and Platform Admin authority
+[1] body: PCA Parent and PCA Platform Admin are separate security/session/RBAC realms. An internal operator interface must not become a shortcut into a parent's protected experience.
+[2] title: No hidden surveillance controls
+[2] body: PCA is not designed around password capture, message capture, covert TLS interception, background gallery scanning or hidden screen recording.","[1] title: فصل PCA Parent عن PCA Platform Admin
+[1] body: PCA Parent وPCA Platform Admin بيئتان منفصلتان من ناحية الجلسات والصلاحيات. لا يجوز أن تصبح لوحة الإدارة الداخلية طريقًا مختصرًا للدخول إلى تجربة الوالدين المحمية.
+[2] title: لم تُصمم PCA حول المراقبة الخفية
+[2] body: لم تُصمم PCA حول التقاط كلمات المرور أو الرسائل، أو اعتراض TLS بشكل خفي، أو فحص معرض الصور في الخلفية، أو تسجيل الشاشة سرًا.",CLM-046,VERIFIED_AVAILABLE,PRIVACY_ASSERTION,CRITICAL,REVISE_MEDIUM,"[1] title: فصل PCA Parent عن PCA Platform Admin
+[1] body: PCA Parent وPCA Platform Admin بيئتان منفصلتان من حيث الأمان والجلسات والأدوار والصلاحيات. ويجب ألا تتحول واجهة المشغّل الداخلية إلى طريق مختصر للوصول إلى تجربة الوالدين المحمية.
+[2] title: لم تُصمم PCA حول المراقبة الخفية
+[2] body: لم تُصمم PCA حول التقاط كلمات المرور أو الرسائل، أو اعتراض اتصالات TLS بشكل خفي، أو فحص معرض الصور في الخلفية، أو تسجيل الشاشة سرًا.",العربية الحالية تحذف بُعد الأمان والأدوار من security/session/RBAC realms. المقترح يشرح المعنى دون عرض مصطلح RBAC الداخلي، ويجعل TLS مفهومًا ضمن عبارة عربية.,YES,MEDIUM
+privacy.advanced.lead,/ar/privacy/,Privacy & Safety,advanced,This part is for parents who want the technical picture. You do not need it to use PCA.,هذا القسم لمن يرغب في الصورة التقنية، ولا تحتاج إليه لاستخدام PCA.,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.advanced.title,/ar/privacy/,Privacy & Safety,advanced,More technical detail,تفاصيل تقنية إضافية,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.cta.policy,/ar/privacy/,Privacy & Safety,cta,Read the Detailed Privacy Policy,سياسة الخصوصية بالتفصيل,NONE,NONE,CTA,HIGH,REVISE_LOW,اقرأ سياسة الخصوصية التفصيلية,المصدر دعوة فعلية للقراءة؛ النص الحالي اسم صفحة لا CTA.,NO,LOW
+privacy.faq.items,/ar/privacy/,Privacy & Safety,faq,"[1] q: Does PCA collect my child's data?
+[1] a: PCA needs to process some information to provide protection. The design goal is to keep sensitive activity on trusted family-side devices or synchronize it end-to-end encrypted where required, instead of creating a readable central PCA profile. Central services still need minimum account and technical data to operate.
+[2] q: How do I report a privacy or security concern?
+[2] a: If you believe you have found a security issue, please hold it until PCA publishes its reporting channels — see Contact. Do not include child-sensitive content unless the support team explicitly and safely requests specific information.","[1] q: هل تجمع PCA معلومات طفلي؟
+[1] a: تحتاج PCA إلى معالجة بعض المعلومات حتى تعمل وظائف الحماية. الهدف هو إبقاء النشاط الحساس على الأجهزة الموثوقة لدى الوالدين والطفل، أو مزامنته بتشفير من طرف إلى طرف حيث يلزم، بدل إنشاء ملف مركزي مقروء لدى PCA. وفي الوقت نفسه تحتاج الخدمات المركزية إلى الحد الأدنى من معلومات الحساب والتشغيل.
+[2] q: كيف أبلغ عن مشكلة تتعلق بالخصوصية أو الأمان؟
+[2] a: إذا كنت تعتقد أنك وجدت مشكلة أمنية، فيرجى الانتظار حتى تنشر PCA قنوات الإبلاغ — راجع صفحة التواصل. لا ترسل معلومات حساسة عن الطفل إلا إذا طُلبت منك معلومة محددة وضرورية بطريقة آمنة.",NONE,NONE,PRIVACY_ASSERTION,CRITICAL,REVISE_MEDIUM,"[1] q: هل تجمع PCA معلومات طفلي؟
+[1] a: تحتاج PCA إلى معالجة بعض المعلومات حتى تعمل وظائف الحماية. الهدف هو إبقاء النشاط الحساس على الأجهزة الموثوقة لدى الأسرة، أو مزامنته بتشفير من طرف إلى طرف عند الحاجة، بدلًا من إنشاء ملف مركزي مقروء لدى PCA. وفي الوقت نفسه، تحتاج الخدمات المركزية إلى الحد الأدنى من معلومات الحساب والمعلومات التقنية لتشغيل الخدمة.
+[2] q: كيف أبلغ عن مشكلة تتعلق بالخصوصية أو الأمان؟
+[2] a: إذا كنت تعتقد أنك وجدت مشكلة أمنية، فيُرجى الانتظار حتى تنشر PCA قنوات الإبلاغ — راجع صفحة التواصل. لا ترسل معلومات حساسة عن الطفل إلا إذا طُلبت منك معلومة محددة وضرورية بطريقة آمنة.",يعيد technical data التي تحولت إلى «معلومات التشغيل»، ويحافظ على where required بصياغة «عند الحاجة» دون تقوية الادعاء.,YES,MEDIUM
+privacy.faq.title,/ar/privacy/,Privacy & Safety,faq,Common privacy questions,أسئلة شائعة عن الخصوصية,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.hero.body,/ar/privacy/,Privacy & Safety,hero,PCA is designed to provide protection without building a readable central profile of your child's sensitive activity.,صُممت PCA لتقديم الحماية دون إنشاء ملف مركزي مقروء عن النشاط الحساس لطفلك.,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.hero.title,/ar/privacy/,Privacy & Safety,hero,"Your child's activity belongs to you, not to us",نشاط طفلك يخصك أنت، وليس PCA,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.honesty.body,/ar/privacy/,Privacy & Safety,honesty,An online account service needs some technical and account information to operate. A slogan promising otherwise would hide that reality. The meaningful privacy promise is that PCA must not turn sensitive child activity into a readable central database.,تحتاج أي خدمة حسابات على الإنترنت إلى قدر من المعلومات التقنية ومعلومات الحساب حتى تعمل، وأي شعار يوحي بعكس ذلك قد يكون مضللًا. الوعد الأهم هو أن PCA لا يجب أن تحول النشاط الحساس للطفل إلى قاعدة بيانات مركزية مقروءة.,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.honesty.title,/ar/privacy/,Privacy & Safety,honesty,Why we avoid absolute privacy slogans,لماذا نتجنب الشعارات المطلقة عن الخصوصية؟,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.notStored.items,/ar/privacy/,Privacy & Safety,notStored,"[1] photos and videos;
+[2] arbitrary files/documents;
+[3] messages;
+[4] readable app-usage history;
+[5] readable browsing history;
+[6] readable precise-location history;
+[7] microphone recordings;
+[8] screenshots/background screen recordings;
+[9] passwords or credentials.","[1] الصور والفيديوهات؛
+[2] الملفات والمستندات العشوائية؛
+[3] الرسائل الشخصية؛
+[4] سجل استخدام التطبيقات المقروء؛
+[5] سجل التصفح المقروء؛
+[6] سجل الموقع الدقيق المقروء؛
+[7] تسجيلات الميكروفون؛
+[8] لقطات الشاشة أو التسجيلات الخلفية للشاشة؛
+[9] كلمات المرور أو بيانات الاعتماد.",NONE,NONE,PRIVACY_ASSERTION,CRITICAL,REVISE_MEDIUM,"[1] الصور والفيديوهات؛
+[2] الملفات أو المستندات الأخرى على الجهاز؛
+[3] الرسائل الشخصية؛
+[4] سجل استخدام التطبيقات المقروء؛
+[5] سجل التصفح المقروء؛
+[6] سجل الموقع الدقيق المقروء؛
+[7] تسجيلات الميكروفون؛
+[8] لقطات الشاشة أو تسجيلات الشاشة في الخلفية؛
+[9] كلمات المرور أو بيانات الاعتماد.",«الملفات العشوائية» و«التسجيلات الخلفية للشاشة» تعبيران غير طبيعيين وقد يربكان القارئ؛ المقترح أوضح مع الحفاظ على نطاق الحظر.,YES,MEDIUM
+privacy.notStored.title,/ar/privacy/,Privacy & Safety,notStored,What PCA must not store centrally as readable child content,ما الذي يجب ألا تخزنه PCA مركزيًا كمحتوى مقروء للطفل؟,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.principles.items,/ar/privacy/,Privacy & Safety,principles,"[1] title: Protection without surveillance
+[1] body: Use the minimum information needed for useful protection.
+[2] title: Privacy by design
+[2] body: Keep sensitive child activity within trusted family-side systems wherever possible.
+[3] title: Transparency
+[3] body: Parents should understand what a feature does and what information it needs.
+[4] title: Child dignity
+[4] body: Protection should not humiliate children or treat them as suspects.
+[5] title: Age-appropriate protection
+[5] body: Different ages and family situations need different boundaries.
+[6] title: Parent responsibility
+[6] body: PCA supports parents; it does not replace communication, judgment or care.
+[7] title: No hidden monitoring
+[7] body: PCA should not depend on covert message capture, password capture, hidden screen recording or background gallery collection.
+[8] title: Accessible safety
+[8] body: Meaningful protection should be designed for broad family access.
+[9] title: No false capability claims
+[9] body: Trust requires honesty about what is available, limited or coming later.","[1] title: الحماية دون مراقبة مفرطة
+[1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.
+[2] title: الخصوصية من أساس التصميم
+[2] body: أبقِ النشاط الحساس للطفل ضمن الأجهزة والأنظمة الموثوقة لدى الوالدين والطفل قدر الإمكان.
+[3] title: الشفافية
+[3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.
+[4] title: كرامة الطفل
+[4] body: يجب ألا تُهين الحماية الطفل أو تتعامل معه كمتهم.
+[5] title: حماية مناسبة للعمر
+[5] body: الأعمار والظروف الأسرية المختلفة تحتاج حدودًا مختلفة.
+[6] title: مسؤولية الوالدين
+[6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.
+[7] title: لا مراقبة خفية
+[7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.
+[8] title: حماية يمكن الوصول إليها
+[8] body: ينبغي تصميم الحماية المفيدة لتصل إلى عدد أكبر من الأسر.
+[9] title: لا ادعاءات غير صحيحة
+[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",NONE,NONE,PRIVACY_ASSERTION,CRITICAL,REVISE_HIGH,"[1] title: الحماية دون تجسّس
+[1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.
+[2] title: الخصوصية جزء من التصميم
+[2] body: أبقِ النشاط الحساس للطفل ضمن الأنظمة الموثوقة لدى الأسرة قدر الإمكان.
+[3] title: الشفافية
+[3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.
+[4] title: كرامة الطفل
+[4] body: يجب ألا تُهين الحماية الطفل أو تتعامل معه كمتهم.
+[5] title: حماية مناسبة للعمر
+[5] body: الأعمار والظروف الأسرية المختلفة تحتاج حدودًا مختلفة.
+[6] title: مسؤولية الوالدين
+[6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.
+[7] title: لا مراقبة خفية
+[7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.
+[8] title: حماية متاحة لأسر أكثر
+[8] body: ينبغي تصميم وسائل حماية مفيدة لتكون متاحة لعدد أكبر من الأسر.
+[9] title: لا ادعاءات غير صحيحة
+[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",العنوان «الحماية دون مراقبة مفرطة» يضعف المصدر Protection without surveillance لأنه يسمح ضمنيًا بمراقبة غير «مفرطة». هذا انحراف في قوة مبدأ الخصوصية، لذلك التصنيف مرتفع.,YES,HIGH
+privacy.principles.lead,/ar/privacy/,Privacy & Safety,principles,Digital protection should help families reduce risk without teaching children that constant surveillance is normal.,يجب أن تساعد الحماية الرقمية الأسرة على تقليل المخاطر دون أن يتعلم الطفل أن المراقبة الدائمة أمر طبيعي.,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.principles.title,/ar/privacy/,Privacy & Safety,principles,Protect children. Respect childhood.,احمِ الطفل واحترم طفولته,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.retention.body,/ar/privacy/,Privacy & Safety,retention,"[1] Parent control over account and protection information is part of PCA's design intent, but the controls are not built yet.
+[2] Central information should be kept only as long as it is needed to run the service, keep it secure and meet legal obligations. Exact deletion and retention behaviour will be documented once it has been verified.","[1] تحكم الوالدين في الحساب وفي معلومات الحماية جزء من نية التصميم في PCA، لكن هذه الأدوات لم تُبنَ بعد.
+[2] ينبغي عدم الاحتفاظ بالمعلومات المركزية إلا للمدة اللازمة لتشغيل الخدمة والحفاظ على أمانها والوفاء بالالتزامات القانونية. وسيتم توثيق السلوك الدقيق للاحتفاظ والحذف بعد التحقق منه.",NONE,NONE,PRIVACY_ASSERTION,CRITICAL,REVISE_LOW,"[1] تحكم الوالدين في الحساب ومعلومات الحماية جزء من أهداف تصميم PCA، لكن أدوات التحكم هذه لم تُبنَ بعد.
+[2] ينبغي عدم الاحتفاظ بالمعلومات المركزية إلا للمدة اللازمة لتشغيل الخدمة والحفاظ على أمانها والوفاء بالالتزامات القانونية. وسيتم توثيق السلوك الدقيق للاحتفاظ والحذف بعد التحقق منه.",«نية التصميم» ترجمة حرفية؛ «أهداف تصميم PCA» أوضح ولا تغيّر كون الأدوات غير مبنية بعد.,YES,LOW
+privacy.retention.title,/ar/privacy/,Privacy & Safety,retention,Keeping and deleting information,الاحتفاظ بالمعلومات وحذفها,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.seo.description,/ar/privacy/,Privacy & Safety,seo,"Understand PCA's local-first privacy approach, family-side data, minimum central technical records and the child safety principles behind them.",تعرّف على نهج PCA في المعالجة المحلية، والمعلومات الموجودة ضمن الأجهزة الموثوقة، والحد الأدنى من المعلومات التقنية المركزية، ومبادئ سلامة الطفل.,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_MEDIUM,تعرّف على نهج PCA الذي يعطي الأولوية للمعالجة المحلية، وعلى المعلومات التي تبقى لدى الأسرة، والحد الأدنى من السجلات التقنية المركزية، ومبادئ سلامة الطفل التي يقوم عليها هذا النهج.,يعيد local-first وfamily-side data بصورة أوضح؛ النص الحالي يحصر family-side في «الأجهزة الموثوقة» ويضعف معنى أولوية المعالجة المحلية.,NO,MEDIUM
+privacy.seo.title,/ar/privacy/,Privacy & Safety,seo,PCA Privacy & Safety — Protection Without a Readable Central Child Profile,الخصوصية والسلامة في PCA — حماية دون إنشاء ملف مركزي مقروء للطفل,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+privacy.topics.items,/ar/privacy/,Privacy & Safety,topics,"[1] title: Photos, videos and files
+[1] body: PCA does not need routine access to a child's photo library, videos or arbitrary files. These must not be collected into a readable central PCA database.
+[2] title: Messages
+[2] body: No routine PCA protection feature is designed to capture or centrally read personal messages.
+[3] title: App use and screen time
+[3] body: Readable app-usage history must not become centrally readable PCA data. App use may be processed locally where needed for protection.
+[4] title: Browsing protection
+[4] body: PCA's privacy rule is that readable browsing history must not be stored centrally. Web-safety functions may still need local processing to make protection decisions.
+[5] title: Location
+[5] body: Location is sensitive. Any approved location feature must be parent-controlled and designed so readable precise-location history does not become central PCA data.
+[6] title: Camera and eye distance
+[6] body: Eye-distance protection using the camera is planned for a later release. It is not an active feature today, and how any future version would handle camera frames will be described here once it has been verified.","[1] title: الصور والفيديوهات والملفات
+[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية، ويجب ألا تُجمع هذه الأشياء في قاعدة بيانات مركزية مقروءة لدى PCA.
+[2] title: الرسائل
+[2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
+[3] title: استخدام التطبيقات ووقت الشاشة
+[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية لدى PCA. يمكن معالجة استخدام التطبيقات محليًا عندما تحتاج وظيفة الحماية إلى ذلك.
+[4] title: الحماية أثناء التصفح
+[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج الحماية على الويب إلى معالجة محلية لاتخاذ قرار الحماية.
+[5] title: الموقع
+[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.
+[6] title: الكاميرا والمسافة عن الشاشة
+[6] body: حماية المسافة بين العين والشاشة عبر الكاميرا مخطط لها في إصدار لاحق. وهي ليست ميزة فعّالة اليوم، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",CLM-036; CLM-037,REQUIRES_PLATFORM_SUPPORT; COMING_LATER,PRIVACY_ASSERTION,CRITICAL,REVISE_HIGH,"[1] title: الصور والفيديوهات والملفات
+[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو مقاطع الفيديو أو الملفات الأخرى على الجهاز، ويجب ألا تُجمع هذه المحتويات في قاعدة بيانات مركزية مقروءة لدى PCA.
+[2] title: الرسائل
+[2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
+[3] title: استخدام التطبيقات ووقت الشاشة
+[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية مقروءة لدى PCA. وقد تتم معالجة استخدام التطبيقات محليًا عند الحاجة إلى ذلك للحماية.
+[4] title: الحماية أثناء التصفح
+[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج وظائف السلامة على الويب إلى معالجة محلية لاتخاذ قرارات الحماية.
+[5] title: الموقع
+[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة معتمدة للموقع تحت تحكم الوالدين، وأن تُصمم بحيث لا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية مقروءة لدى PCA.
+[6] title: الكاميرا والمسافة عن الشاشة
+[6] body: حماية المسافة بين العين والشاشة باستخدام الكاميرا مخطط لها في إصدار لاحق. وهي غير متاحة حاليًا، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",في البندين 3 و5 حذفت العربية الحالية قيد «centrally readable»، فأصبحت توحي بعدم وجود أي بيانات مركزية مطلقًا، وهو ادعاء أقوى من الإنجليزية. كما أن «فعّالة اليوم» قد تُفهم كالكفاءة لا حالة الإتاحة. هذا انحراف عالي الخطورة في الخصوصية وحالة الميزة.,YES,HIGH
+privacy.topics.title,/ar/privacy/,Privacy & Safety,topics,"What this means, topic by topic",ماذا يعني ذلك لكل نوع من المعلومات؟,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacy.where.items,/ar/privacy/,Privacy & Safety,where,"[1] title: What PCA processes locally
+[1] body: Some protection functions need information on the child device. PCA's approach is to process that information locally wherever possible.
+[2] title: What may synchronize between trusted family devices
+[2] body: When sensitive protection information needs to move between trusted parent and child endpoints, PCA is designed to use end-to-end encrypted delivery where required. Production scope remains subject to security verification.
+[3] title: What PCA central services need
+[3] body: Central services may keep minimum technical records for parent accounts/authentication, opaque device/child identifiers, enrollment, entitlement/licensing, encrypted delivery, delivery state, timestamps and minimum operational/security metadata.","[1] title: ما الذي تتم معالجته محليًا؟
+[1] body: تحتاج بعض وظائف الحماية إلى معلومات على جهاز الطفل. ونهج PCA هو إبقاء هذه المعالجة محليًا قدر الإمكان.
+[2] title: ما الذي قد تتم مزامنته بين الأجهزة الموثوقة؟
+[2] body: عندما يلزم انتقال معلومات حماية حساسة بين جهاز الوالدين وجهاز الطفل، صُممت PCA لاستخدام نقل مشفّر من طرف إلى طرف حيث يلزم. يبقى نطاق التشفير في الإنتاج خاضعًا للمراجعة الأمنية النهائية.
+[3] title: ما الذي تحتاجه خدمات PCA المركزية؟
+[3] body: قد تحتفظ الخدمات المركزية بالحد الأدنى من السجلات التقنية اللازمة لحساب الوالدين والمصادقة والمعرّفات المبهمة للأجهزة/الأطفال وحالة التسجيل والترخيص/الاستحقاق والتسليم المشفر وحالة التسليم والطوابع الزمنية والحد الأدنى من بيانات التشغيل والأمان.",CLM-015,LIMITED,PRIVACY_ASSERTION,CRITICAL,REVISE_MEDIUM,"[1] title: ما الذي تعالجه PCA محليًا؟
+[1] body: تحتاج بعض وظائف الحماية إلى معلومات على جهاز الطفل. ونهج PCA هو معالجة تلك المعلومات محليًا كلما أمكن.
+[2] title: ما الذي قد تتم مزامنته بين أجهزة الأسرة الموثوقة؟
+[2] body: عندما يلزم نقل معلومات حماية حساسة بين جهاز الوالد وجهاز الطفل، صُممت PCA لاستخدام نقل مشفّر من طرف إلى طرف عند الحاجة. ويظل نطاق ذلك في بيئة الإنتاج خاضعًا للتحقق الأمني.
+[3] title: ما الذي تحتاجه خدمات PCA المركزية؟
+[3] body: قد تحتفظ الخدمات المركزية بالحد الأدنى من السجلات التقنية اللازمة لحساب الوالد والمصادقة، ومعرّفات غير دالّة على الهوية للأجهزة والأطفال، والتسجيل، والاستحقاق والترخيص، والتسليم المشفّر، وحالة التسليم، والطوابع الزمنية، والحد الأدنى من البيانات الوصفية التشغيلية والأمنية.",تحسين دقة المصطلحات: «opaque identifiers» ليست ببساطة «معرفات مبهمة»، وproduction scope هو نطاق خاضع للتحقق لا «نطاق التشفير النهائي» بالضرورة. يحافظ المقترح على may/where required.,YES,MEDIUM
+privacy.where.title,/ar/privacy/,Privacy & Safety,where,Where your child's information lives,أين تبقى معلومات طفلك؟,NONE,NONE,PRIVACY_ASSERTION,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.account.body,/ar/privacy-policy/,Privacy Policy (provisional draft),account,"PCA may process parent email, authentication records and other minimum information required for account access, security and service administration.",قد تعالج PCA البريد الإلكتروني للوالدين وسجلات المصادقة والحد الأدنى من المعلومات المطلوبة للوصول والأمان وإدارة الخدمة.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.account.title,/ar/privacy-policy/,Privacy Policy (provisional draft),account,Information we need for the parent account,معلومات حساب الوالدين,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.childDevice.body,/ar/privacy-policy/,Privacy Policy (provisional draft),childDevice,PCA may use opaque child/device identifiers and enrollment state centrally. Sensitive child protection information should remain family-side or encrypted in transit/relay according to the approved architecture.,قد تستخدم PCA معرفات غير مقروءة للطفل والجهاز وحالة التسجيل مركزيًا. أما معلومات الحماية الحساسة فيجب أن تبقى ضمن الأجهزة الموثوقة أو مشفرة بحسب البنية المعتمدة.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_HIGH,قد تستخدم PCA مركزيًا معرّفات غير دالّة على الهوية للطفل والجهاز، إلى جانب حالة التسجيل. أما معلومات حماية الطفل الحساسة، فينبغي أن تبقى لدى الأسرة أو تظل مشفّرة أثناء النقل وعبر خدمات الترحيل، وفقًا للبنية المعتمدة.,العربية الحالية تحوّل should remain إلى «فيجب أن تبقى» الأقوى، وتحذف قيد in transit/relay. كلاهما يغيّر قوة ونطاق ادعاء الخصوصية، لذا يلزم تصحيح عالي الأولوية.,YES,HIGH
+privacyPolicy.childDevice.title,/ar/privacy-policy/,Privacy Policy (provisional draft),childDevice,Child/device information,معلومات الطفل والجهاز,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.contact.body,/ar/privacy-policy/,Privacy Policy (provisional draft),contact,Final privacy contact and legal entity details are pending owner approval.,بيانات جهة الخصوصية والجهة القانونية النهائية ما زالت بانتظار الاعتماد.,NONE,NONE,LEGAL_TEXT,CRITICAL,LEGAL_REVIEW_REQUIRED,بيانات جهة التواصل المعنية بالخصوصية وبيانات الكيان القانوني النهائية ما زالت بانتظار اعتماد المالك.,«الجهة القانونية» ليست ترجمة دقيقة دائمًا لـlegal entity. المقترح أدق، لكن اعتماد مصطلح الكيان القانوني جزء من النص القانوني النهائي ويجب مراجعته قانونيًا.,YES,MEDIUM
+privacyPolicy.contact.title,/ar/privacy-policy/,Privacy Policy (provisional draft),contact,Contact,التواصل,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.cookies.body,/ar/privacy-policy/,Privacy Policy (provisional draft),cookies,Final disclosure is pending runtime inspection. PCA's recommended posture is to minimize tracking and avoid advertising/session-replay technologies on sensitive authenticated surfaces.,الإفصاح النهائي يتوقف على فحص التطبيق الفعلي. الاتجاه الموصى به هو تقليل التتبع وتجنب تقنيات الإعلانات أو إعادة تشغيل الجلسات في المساحات الحساسة.,NONE,NONE,LEGAL_TEXT,CRITICAL,LEGAL_REVIEW_REQUIRED,الإفصاح النهائي بانتظار فحص بيئة التشغيل الفعلية. ويوصي نهج PCA بتقليل التتبع وتجنب تقنيات الإعلانات أو تسجيل الجلسات وإعادة تشغيلها على الواجهات الحساسة التي تتطلب تسجيل الدخول.,«إعادة تشغيل الجلسات» وحدها قد تُفهم كإعادة تشغيل جلسة تقنية، كما أن العربية الحالية تحذف authenticated. التصحيح يغيّر نطاق إفصاح تتبع/تحليلات قانوني، لذا يتطلب مراجعة قانونية.,YES,HIGH
+privacyPolicy.cookies.title,/ar/privacy-policy/,Privacy Policy (provisional draft),cookies,Cookies/analytics,ملفات الارتباط والتحليلات,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.deletion.body,/ar/privacy-policy/,Privacy Policy (provisional draft),deletion,"Exact account/child deletion behavior is pending runtime verification and must account for primary stores, delivery queues, backups and legal/security retention.",السلوك الدقيق لحذف الحساب/معلومات الطفل يحتاج تحققًا يشمل مخازن البيانات الأساسية وقوائم التسليم والنسخ الاحتياطية وأي احتفاظ قانوني أو أمني.,NONE,NONE,LEGAL_TEXT,CRITICAL,LEGAL_REVIEW_REQUIRED,السلوك الدقيق لحذف الحساب أو بيانات الطفل بانتظار التحقق من بيئة التشغيل، ويجب أن يراعي مخازن البيانات الأساسية، وقوائم انتظار التسليم، والنسخ الاحتياطية، وفترات الاحتفاظ المطلوبة لأسباب قانونية أو أمنية.,التصحيح يوضح pending runtime verification وdelivery queues وmust account for. لأن صياغة الحذف والاحتفاظ ذات أثر قانوني، يجب ألا تعتمد دون مراجعة قانونية.,YES,HIGH
+privacyPolicy.deletion.title,/ar/privacy-policy/,Privacy Policy (provisional draft),deletion,Deletion,الحذف,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.feedback.body,/ar/privacy-policy/,Privacy Policy (provisional draft),feedback,Feedback should include only information intentionally provided by the parent and approved minimal case metadata. Sensitive child activity is not automatically attached.,يجب أن تحتوي الملاحظات على ما يرسله الوالد عمدًا مع الحد الأدنى من معلومات الحالة المعتمدة فقط. ولا يتم إرفاق نشاط الطفل الحساس تلقائيًا.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_MEDIUM,ينبغي ألا تتضمن الملاحظات إلا المعلومات التي يقدّمها الوالد عمدًا، والحد الأدنى المعتمد من البيانات الوصفية للحالة. ولا يُرفق نشاط الطفل الحساس تلقائيًا.,«معلومات الحالة» لا تنقل معنى case metadata بدقة. المقترح يحافظ على الحد الأدنى المعتمد ولا يوسع البيانات المرسلة.,YES,MEDIUM
+privacyPolicy.feedback.title,/ar/privacy-policy/,Privacy Policy (provisional draft),feedback,Feedback/support,الدعم والملاحظات,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.hero.title,/ar/privacy-policy/,Privacy Policy (provisional draft),hero,Privacy Policy,سياسة الخصوصية,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.notCollected.body,/ar/privacy-policy/,Privacy Policy (provisional draft),notCollected,"PCA central systems must not store readable child photos, videos, arbitrary files, messages, app-usage history, browsing history, precise-location history, microphone recordings, screenshots/background recordings, passwords or credentials.",الصور، الفيديوهات، الملفات العشوائية، الرسائل، سجل استخدام التطبيقات، سجل التصفح، سجل الموقع الدقيق، تسجيلات الميكروفون، لقطات/تسجيلات الشاشة في الخلفية، كلمات المرور وبيانات الاعتماد.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_HIGH,يجب ألا تخزّن أنظمة PCA المركزية بصيغة مقروءة صور الطفل أو مقاطع الفيديو أو أي ملفات أخرى أو الرسائل أو سجل استخدام التطبيقات أو سجل التصفح أو سجل الموقع الدقيق أو تسجيلات الميكروفون أو لقطات الشاشة أو تسجيلات الشاشة في الخلفية أو كلمات المرور أو بيانات الاعتماد.,العربية الحالية ليست جملة حظر أصلًا؛ إنها قائمة فقط، وتحذف «PCA central systems must not store readable». هذا أخطر فقد للمعنى في الحزمة لأنه يلغي موضوع الحظر وقوته ومركزيته.,YES,HIGH
+privacyPolicy.notCollected.title,/ar/privacy-policy/,Privacy Policy (provisional draft),notCollected,Information not intended for readable central collection,معلومات لا ينبغي جمعها مركزيًا بشكل مقروء,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.processing.body,/ar/privacy-policy/,Privacy Policy (provisional draft),processing,Protection features may process relevant information locally on the child or trusted parent device.,قد تعالج وظائف الحماية المعلومات ذات الصلة محليًا على جهاز الطفل أو جهاز الوالدين الموثوق.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_LOW,قد تعالج وظائف الحماية المعلومات ذات الصلة محليًا على جهاز الطفل أو على جهاز موثوق لأحد الوالدين.,«جهاز الوالدين الموثوق» تركيب غير طبيعي؛ المقترح يحافظ على trusted parent device وعلى may.,YES,LOW
+privacyPolicy.processing.title,/ar/privacy-policy/,Privacy Policy (provisional draft),processing,Protection processing,معالجة الحماية,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.providers.body,/ar/privacy-policy/,Privacy Policy (provisional draft),providers,Final provider list is pending deployment/runtime inventory.,القائمة النهائية تحتاج جردًا من بيئة التشغيل والنشر.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_LOW,القائمة النهائية للمزوّدين بانتظار جرد بيئة النشر والتشغيل.,صياغة أوضح لـpending deployment/runtime inventory.,YES,LOW
+privacyPolicy.providers.title,/ar/privacy-policy/,Privacy Policy (provisional draft),providers,Providers/subprocessors,المزودون والمعالجون الفرعيون,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.retention.body,/ar/privacy-policy/,Privacy Policy (provisional draft),retention,"Specific periods are pending runtime/legal review. Central information should be retained only as long as needed for service, security, legal or approved support purposes.",فترات الاحتفاظ المحددة تحتاج مراجعة فنية وقانونية. ينبغي عدم الاحتفاظ بالمعلومات المركزية إلا للمدة المطلوبة للخدمة والأمان والالتزامات القانونية أو الدعم المعتمد.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.retention.title,/ar/privacy-policy/,Privacy Policy (provisional draft),retention,Retention,الاحتفاظ,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.seo.description,/ar/privacy-policy/,Privacy Policy (provisional draft),seo,"Detailed information about how PCA processes account, technical and child-protection information. Final legal text requires runtime and legal review.",معلومات تفصيلية عن معالجة PCA لمعلومات الحساب والمعلومات التقنية ومعلومات الحماية. النص القانوني النهائي يحتاج تحققًا فنيًا ومراجعة قانونية.,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_MEDIUM,معلومات تفصيلية عن كيفية معالجة PCA لمعلومات الحساب والمعلومات التقنية ومعلومات حماية الطفل. ويتطلب النص القانوني النهائي تحققًا من بيئة التشغيل ومراجعة قانونية.,العربية الحالية تختصر child-protection إلى «معلومات الحماية» وتستبدل runtime بـ«فني» عام. المقترح أدق دون إضافة التزام جديد.,YES,MEDIUM
+privacyPolicy.seo.title,/ar/privacy-policy/,Privacy Policy (provisional draft),seo,PCA Privacy Policy,سياسة خصوصية PCA,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+privacyPolicy.summary.body,/ar/privacy-policy/,Privacy Policy (provisional draft),summary,"PCA is designed to minimize centrally readable child information. Some protection functions process information locally on trusted devices. Sensitive synchronization, where required, is designed for end-to-end encrypted delivery. Central services keep minimum account and technical data needed to operate the service.",صُممت PCA لتقليل المعلومات المقروءة مركزيًا عن الطفل. تتم بعض معالجة الحماية محليًا على الأجهزة الموثوقة. وعندما يلزم نقل معلومات حساسة بين أجهزة موثوقة، تُصمم المزامنة لتكون مشفرة من طرف إلى طرف. وتحتفظ الخدمات المركزية بالحد الأدنى من معلومات الحساب والتشغيل.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_MEDIUM,صُممت PCA لتقليل المعلومات المقروءة مركزيًا عن الطفل. وتعالج بعض وظائف الحماية المعلومات محليًا على الأجهزة الموثوقة. وعندما تكون مزامنة المعلومات الحساسة مطلوبة، صُممت آلية المزامنة للتسليم بتشفير من طرف إلى طرف. وتحتفظ الخدمات المركزية بالحد الأدنى من معلومات الحساب والمعلومات التقنية اللازمة لتشغيل الخدمة.,يعيد «technical data needed to operate the service» الذي تحول إلى «معلومات الحساب والتشغيل»، ويجعل الجملة الثانية أكثر مطابقة للمصدر مع الحفاظ على تصميم E2EE المشروط.,YES,MEDIUM
+privacyPolicy.summary.title,/ar/privacy-policy/,Privacy Policy (provisional draft),summary,Summary,ملخص,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+release.contactNotice,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",release,"**We are not able to receive messages yet.** PCA is preparing its support, privacy and security contact channels, and they will be published here before PCA opens to families. The topics below show what those channels will cover.",**لا يمكننا استقبال الرسائل بعد.** تُعِدّ PCA قنوات الدعم والخصوصية والأمان، وستُنشر هنا قبل أن تُفتح PCA للأسر. والمواضيع أدناه توضح ما ستغطيه هذه القنوات.,NONE,NONE,RELEASE_STATE_NOTICE,CRITICAL,REVISE_LOW,**لا يمكننا استقبال الرسائل بعد.** تُعِدّ PCA قنوات الدعم والخصوصية والأمان، وستُنشر هنا قبل إتاحة PCA للأسر. وتوضح الموضوعات أدناه ما ستغطيه هذه القنوات.,تحسين طبيعي لـ«تُفتح PCA للأسر» دون تغيير حالة القنوات.,NO,LOW
+release.journeyNotice,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",release,"**PCA is not open for new accounts yet.** This page explains the setup journey we are building so you know what to expect. Account creation, email verification and the PCA Child app all become available in a later release.",**لم تُفتح PCA لإنشاء حسابات جديدة بعد.** تشرح هذه الصفحة رحلة الإعداد التي نبنيها حتى تعرف ما الذي ينتظرك. أما إنشاء الحساب والتحقق من البريد وتطبيق PCA Child فتصبح متاحة في إصدار لاحق.,NONE,NONE,RELEASE_STATE_NOTICE,CRITICAL,REVISE_LOW,**لم تُفتح PCA لإنشاء حسابات جديدة بعد.** تشرح هذه الصفحة رحلة الإعداد التي نعمل على بنائها حتى تعرف ما الذي تتوقعه. وسيُتاح إنشاء الحساب وتأكيد البريد الإلكتروني وتطبيق PCA Child في إصدار لاحق.,تحسين السلاسة وتوحيد email verification إلى «تأكيد البريد الإلكتروني» مع الإبقاء على later release.,NO,LOW
+release.reportingPending,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",release,PCA has not opened its reporting channels yet. They will be published on the Contact page before PCA opens to families.,لم تفتح PCA قنوات الإبلاغ بعد. وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر.,NONE,NONE,RELEASE_STATE_NOTICE,CRITICAL,REVISE_LOW,لم تفتح PCA قنوات الإبلاغ بعد. وستُنشر هذه القنوات في صفحة التواصل قبل إتاحة PCA للأسر.,تحسين طبيعي دون تغيير حالة الإطلاق.,NO,LOW
+status.available,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",status,Available,متوفر,CLM-021; CLM-046,VERIFIED_AVAILABLE; VERIFIED_AVAILABLE,FEATURE_STATUS,CRITICAL,REVISE_LOW,متاح,«متاح» هو المقابل القياسي لحالة Available في واجهات المنتجات، وأكثر اتساقًا من «متوفر» مع نظام الحالات.,NO,LOW
+status.later,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",status,Coming later,قادم لاحقًا,CLM-019; CLM-020; CLM-024; CLM-026; CLM-037; CLM-059,COMING_LATER; COMING_LATER; COMING_LATER; COMING_LATER; COMING_LATER; COMING_LATER,FEATURE_STATUS,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+status.limited,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",status,Limited,محدود,CLM-015,LIMITED,FEATURE_STATUS,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+status.platform,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",status,Requires platform support,يعتمد على دعم المنصة,CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035; CLM-036,REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT,FEATURE_STATUS,CRITICAL,REVISE_HIGH,يتطلب دعم المنصة,«يعتمد على دعم المنصة» أضعف من Requires platform support وقد يُفهم كاعتماد عادي لا كشرط توفر. هذه حالة ميزة حرجة ويجب الحفاظ على قوة الشرط.,NO,HIGH
+terms.acceptableUse.body,/ar/terms/,Terms (provisional draft),acceptableUse,"Do not use PCA to harass, unlawfully monitor, compromise devices, bypass other people's rights or submit abusive/illegal content through support features.",لا تستخدم PCA للمضايقة أو المراقبة غير القانونية أو اختراق الأجهزة أو تجاوز حقوق الآخرين أو إرسال محتوى مسيء أو غير قانوني عبر الدعم.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.acceptableUse.title,/ar/terms/,Terms (provisional draft),acceptableUse,Acceptable use,الاستخدام المقبول,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.accountSecurity.body,/ar/terms/,Terms (provisional draft),accountSecurity,Users are responsible for protecting their account credentials and reporting suspected unauthorized access. PCA must also apply its approved account-security controls.,يتحمل المستخدم مسؤولية حماية بيانات الدخول والإبلاغ عن أي وصول غير مصرح به، وعلى PCA تطبيق ضوابط الأمان المعتمدة أيضًا.,NONE,NONE,LEGAL_TEXT,CRITICAL,REVISE_MEDIUM,يتحمل المستخدم مسؤولية حماية بيانات اعتماد حسابه والإبلاغ عن أي وصول يُشتبه في أنه غير مصرح به. ويجب على PCA أيضًا تطبيق ضوابط أمان الحساب المعتمدة.,العربية الحالية تحذف suspected من unauthorized access وتعمم «ضوابط الأمان» بدل account-security controls. التصحيح مهم لمعنى المسؤولية والأمان.,YES,MEDIUM
+terms.accountSecurity.title,/ar/terms/,Terms (provisional draft),accountSecurity,Account security,أمان الحساب,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.availability.body,/ar/terms/,Terms (provisional draft),availability,"Features can vary by platform, device, browser, entitlement and release stage. PCA will not treat “Coming Later” functionality as a current contractual promise.",قد تختلف المزايا بحسب المنصة والجهاز والمتصفح والصلاحيات والإصدار. المزايا المصنفة “قادم لاحقًا” ليست وعدًا تعاقديًا حاليًا.,NONE,NONE,LEGAL_TEXT,CRITICAL,LEGAL_REVIEW_REQUIRED,قد تختلف المزايا بحسب المنصة والجهاز والمتصفح والاستحقاق ومرحلة الإصدار. ولن تعتبر PCA الوظائف المصنفة «قادمة لاحقًا» وعدًا تعاقديًا قائمًا في الوقت الحالي.,«الصلاحيات» ليست المقابل الدقيق لـentitlement في سياق الإتاحة التجارية/الوظيفية، والجملة الثانية ذات أثر تعاقدي مباشر. المقترح أقرب للمصدر لكن يحتاج اعتمادًا قانونيًا.,YES,HIGH
+terms.availability.title,/ar/terms/,Terms (provisional draft),availability,Feature availability,توفر المزايا,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.changes.body,/ar/terms/,Terms (provisional draft),changes,"Final legal wording for updates, suspension, termination and service availability is pending owner approval.",النص القانوني المتعلق بالتحديثات والإيقاف والإنهاء وتوفر الخدمة ما زال بانتظار الاعتماد.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.changes.title,/ar/terms/,Terms (provisional draft),changes,Changes and service availability,التغييرات وتوفر الخدمة,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.hero.title,/ar/terms/,Terms (provisional draft),hero,Terms,الشروط,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.privacy.body,/ar/terms/,Terms (provisional draft),privacy,Use of PCA is subject to the final Privacy Policy.,يخضع استخدام PCA لسياسة الخصوصية النهائية.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.privacy.title,/ar/terms/,Terms (provisional draft),privacy,Privacy,الخصوصية,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.responsibility.body,/ar/terms/,Terms (provisional draft),responsibility,"PCA supports family protection decisions but does not replace parental judgment, communication, professional advice or emergency services.",PCA أداة مساعدة لقرارات الحماية الأسرية، ولا تحل محل الحكم السليم أو الحوار أو المشورة المتخصصة أو خدمات الطوارئ.,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.responsibility.title,/ar/terms/,Terms (provisional draft),responsibility,Parent responsibility,مسؤولية الوالدين,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.seo.description,/ar/terms/,Terms (provisional draft),seo,Provisional PCA service terms. Final terms require owner and legal approval before publication.,مسودة أولية لشروط استخدام PCA. تحتاج الشروط النهائية مراجعة قانونية واعتماد المالك قبل النشر.,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.seo.title,/ar/terms/,Terms (provisional draft),seo,PCA Terms of Service,شروط استخدام PCA,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+terms.using.body,/ar/terms/,Terms (provisional draft),using,PCA is intended to help authorized parents/guardians manage supported digital child-protection functions. Users must use PCA lawfully and only for children/devices they are authorized to manage.,PCA مخصصة لمساعدة الوالدين أو الأوصياء المخولين على إدارة وظائف حماية رقمية مدعومة للأطفال. يجب استخدامها بشكل قانوني وعلى الأجهزة والأطفال الذين يملك المستخدم صلاحية إدارتهم.,NONE,NONE,LEGAL_TEXT,CRITICAL,LEGAL_REVIEW_REQUIRED,تهدف PCA إلى مساعدة الوالدين أو الأوصياء المخوّلين على إدارة وظائف حماية الطفل الرقمية التي تدعمها المنصة. ويجب على المستخدمين استعمال PCA بصورة قانونية، وللأطفال والأجهزة التي لديهم صلاحية إدارتها فقط.,النص الحالي قد يُقرأ على أن «الأطفال» هم الموصوفون بالمدعومين بدل وظائف الحماية. التصحيح يمس نطاق الاستخدام المصرح به، لذلك يجب مراجعته قانونيًا.,YES,HIGH
+terms.using.title,/ar/terms/,Terms (provisional draft),using,Using PCA,استخدام PCA,NONE,NONE,LEGAL_TEXT,CRITICAL,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,YES,NONE
+video.captions.ar,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",video,Arabic,العربية,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.captions.en,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",video,English,الإنجليزية,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.enroll.summary,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),enroll,"The whole setup walked through end to end, from creating your parent account to reviewing protection status, so you know what to expect before you begin.",شرح كامل لخطوات الإعداد، من إنشاء حساب الوالدين حتى مراجعة حالة الحماية، لتعرف ما ينتظرك قبل أن تبدأ.,NONE,NONE,VIDEO_SCRIPT,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.enroll.title,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),enroll,How to Enroll with PCA,خطوات التسجيل في PCA,NONE,NONE,VIDEO_SCRIPT,HIGH,REVISE_MEDIUM,كيفية التسجيل وإعداد الحماية باستخدام PCA,«خطوات التسجيل في PCA» قد يُفهم كتسجيل حساب فقط، بينما الفيديو يغطي الحساب وتسجيل/ربط جهاز الطفل وإعداد الحماية كاملًا.,NO,MEDIUM
+video.enroll.transcript,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),enroll,"[1] Start by creating your PCA Parent account with your email address and a password.
+[2] Open your inbox and confirm your email address to activate the account.
+[3] Add your child inside PCA Parent. You only need enough detail to tell one child's protection from another's.
+[4] Choose the platform your child's device uses. Android is the planned first platform for PCA Child, and iPhone and iPad child protection is planned for a later release.
+[5] Create an invitation for that child. The invitation is what links a device to your family and to no one else's.
+[6] When PCA Child is released, you will install it and open it on your child's device.
+[7] Enter the setup code from the invitation, or open the setup link, so the child device and your parent account are matched to each other.
+[8] Confirm the connection on the child device and allow the permissions PCA needs to apply your rules.
+[9] Back in PCA Parent, choose the protections that fit this child: screen time, schedules, and app or web controls where the platform supports them.
+[10] Finally, review the protection status, so you can see whether protection is working and what needs your attention.","[1] ابدأ بإنشاء حساب PCA Parent باستخدام بريدك الإلكتروني وكلمة مرور.
+[2] ثم افتح بريدك وأكّد عنوانك الإلكتروني لتفعيل الحساب.
+[3] أضف طفلك داخل PCA Parent، ويكفي من المعلومات ما يميّز حماية كل طفل عن غيره.
+[4] اختر نوع الجهاز الذي يستخدمه طفلك؛ فأندرويد هي المنصة الأولى المخطط لها في PCA Child، أما حماية الأطفال على iPhone وiPad فهي مخططة لإصدار لاحق.
+[5] أنشئ دعوة خاصة بهذا الطفل، فهي ما يربط الجهاز بأسرتك أنت دون غيرها.
+[6] وعند إطلاق PCA Child ستثبّته وتفتحه على جهاز طفلك.
+[7] أدخل رمز الإعداد الوارد في الدعوة، أو افتح رابط الإعداد، ليقترن جهاز الطفل بحساب الوالدين.
+[8] أكّد الربط على جهاز الطفل، وامنح PCA الأذونات اللازمة لتطبيق القواعد التي اخترتها.
+[9] عد إلى PCA Parent واختر وسائل الحماية المناسبة لهذا الطفل: وقت الشاشة، والجداول الزمنية، والتحكم بالتطبيقات والويب حيث تدعم المنصة ذلك.
+[10] وأخيرًا راجع حالة الحماية لتعرف ما إذا كانت تعمل وما الذي يحتاج إلى انتباهك.",NONE,NONE,VIDEO_TRANSCRIPT,HIGH,REVISE_LOW,"[1] ابدأ بإنشاء حساب PCA Parent باستخدام بريدك الإلكتروني وكلمة مرور.
+[2] ثم افتح بريدك وأكّد عنوانك الإلكتروني لتفعيل الحساب.
+[3] أضف طفلك داخل PCA Parent، ويكفي من المعلومات ما يميّز حماية كل طفل عن غيره.
+[4] اختر المنصة التي يعمل بها جهاز طفلك؛ فأندرويد هي المنصة الأولى المخطط لها في PCA Child، أما حماية الأطفال على iPhone وiPad فهي مخطط لها في إصدار لاحق.
+[5] أنشئ دعوة خاصة بهذا الطفل، فهي ما يربط الجهاز بأسرتك أنت دون غيرها.
+[6] وعند إطلاق PCA Child ستثبّته وتفتحه على جهاز طفلك.
+[7] أدخل رمز الإعداد الوارد في الدعوة، أو افتح رابط الإعداد، ليقترن جهاز الطفل بحساب الوالدين.
+[8] أكّد الربط على جهاز الطفل، وامنح PCA الأذونات اللازمة لتطبيق القواعد التي اخترتها.
+[9] عد إلى PCA Parent واختر وسائل الحماية المناسبة لهذا الطفل: وقت الشاشة، والجداول الزمنية، والتحكم بالتطبيقات والويب حيث تدعم المنصة ذلك.
+[10] وأخيرًا راجع حالة الحماية لتعرف ما إذا كانت تعمل وما الذي يحتاج إلى انتباهك.",في الخطوة 4 source يقول platform لا «نوع الجهاز». بقية النص يحافظ جيدًا على حالات Android/iOS والإطلاق اللاحق.,NO,LOW
+video.intro.summary,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),intro,"A short introduction to why PCA exists, what it helps you do day to day, and how it is designed to protect your child without building a readable central profile of their activity.",مقدمة قصيرة تشرح سبب وجود PCA، وما الذي تساعدك عليه في يومك، وكيف صُممت لحماية طفلك دون إنشاء ملف مركزي مقروء عن نشاطه.,NONE,NONE,VIDEO_SCRIPT,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.intro.title,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),intro,PCA Introduction,نبذة تعريفية عن PCA,NONE,NONE,VIDEO_SCRIPT,HIGH,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.intro.transcript,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),intro,"[1] Children are protected everywhere they go — at home, at school, in the places where they play.
+[2] The digital spaces where they spend time deserve that same everyday care.
+[3] PCA began with a father's concern for his own children, and the belief that online life should not be the exception.
+[4] So PCA is built to help with the everyday things where the child's platform supports them: screen time, safer browsing, app and web controls, and schedules that suit your family.
+[5] It can tell you when something needs your attention, and it gives your child a clear way to ask for more time or access.
+[6] PCA also takes a different approach to privacy: it is designed to protect your child without building a readable central profile of them.
+[7] Routine protection does not require PCA to collect your child's photos, videos, files or messages.
+[8] We believe a safer digital world should not depend on a family's income, so affordability and broad access are part of how PCA is designed.
+[9] Start protecting your child's digital spaces. See how PCA works, step by step.","[1] في البيت وفي المدرسة وفي الأماكن التي يلعبون فيها، نحرص دائمًا على حماية أطفالنا.
+[2] والمساحات الرقمية التي يقضون فيها وقتهم تستحق العناية نفسها.
+[3] بدأت PCA من اهتمام أبٍ بحماية أطفاله، ومن قناعة بأن حياتهم على الإنترنت ليست استثناءً.
+[4] ولذلك بُنيت PCA لمساعدتك في الأمور اليومية، بحسب ما تدعمه منصة جهاز الطفل: وقت الشاشة، وتصفح أكثر أمانًا، والتحكم بالتطبيقات والويب، وجداول تناسب يوم أسرتك.
+[5] وتنبّهك عندما يحتاج أمر ما إلى انتباهك، وتمنح طفلك طريقة واضحة ليطلب وقتًا إضافيًا أو إذنًا بالوصول.
+[6] ولـ PCA نهج مختلف في الخصوصية: صُممت لحماية طفلك دون إنشاء ملف مركزي مقروء عنه.
+[7] فالحماية اليومية لا تتطلب من PCA جمع صور طفلك أو مقاطعه المصوّرة أو ملفاته أو رسائله.
+[8] ونؤمن بأن عالمًا رقميًا أكثر أمانًا لا ينبغي أن يرتبط بدخل الأسرة، لذلك كانت التكلفة المعقولة وسعة الإتاحة جزءًا من تصميم PCA.
+[9] ابدأ بحماية المساحات الرقمية لطفلك، وتعرّف على طريقة عمل PCA خطوة بخطوة.",NONE,NONE,VIDEO_TRANSCRIPT,HIGH,REVISE_LOW,"[1] في البيت وفي المدرسة وفي الأماكن التي يلعبون فيها، نحرص دائمًا على حماية أطفالنا.
+[2] والمساحات الرقمية التي يقضون فيها وقتهم تستحق العناية نفسها.
+[3] بدأت PCA من اهتمام أبٍ بحماية أطفاله، ومن قناعة بأن حياتهم على الإنترنت ليست استثناءً.
+[4] ولذلك بُنيت PCA لمساعدتك في الأمور اليومية، بحسب ما تدعمه منصة جهاز الطفل: وقت الشاشة، وتصفح أكثر أمانًا، والتحكم بالتطبيقات والويب، وجداول تناسب يوم أسرتك.
+[5] وتنبّهك عندما يحتاج أمر ما إلى انتباهك، وتمنح طفلك طريقة واضحة ليطلب وقتًا إضافيًا أو إذنًا بالوصول.
+[6] ولـ PCA نهج مختلف في الخصوصية: صُممت لحماية طفلك دون إنشاء ملف مركزي مقروء عنه.
+[7] فالحماية اليومية لا تتطلب من PCA جمع صور طفلك أو مقاطع الفيديو أو ملفاته أو رسائله.
+[8] ونؤمن بأن عالمًا رقميًا أكثر أمانًا لا ينبغي أن يرتبط بدخل الأسرة، لذلك كانت التكلفة المعقولة والإتاحة الواسعة جزءًا من تصميم PCA.
+[9] ابدأ بحماية المساحات الرقمية لطفلك، وتعرّف على طريقة عمل PCA خطوة بخطوة.",التعديل فقط لتحسين «سعة الإتاحة» إلى «الإتاحة الواسعة»؛ بقية النص طبيعي ويحافظ على قيود الخصوصية وحالة دعم المنصة.,NO,LOW
+video.seo.description,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),seo,"Two short PCA videos with full written transcripts: why PCA exists, and how to set up protection for your child step by step.",فيديوهان قصيران مع النص المكتوب كاملًا: لماذا وُجدت PCA، وكيف تُعِدّ الحماية لطفلك خطوة بخطوة.,NONE,NONE,SEO_METADATA,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE
+video.seo.title,/ar/ /ar/how-it-works/,Video scripts (rendered on Home and How PCA Works),seo,PCA Videos — Introduction and Setup,فيديوهات PCA — التعريف وخطوات الإعداد,NONE,NONE,SEO_METADATA,MEDIUM,REVISE_LOW,مقاطع فيديو PCA — التعريف وخطوات الإعداد,«مقاطع فيديو» أفصح وأكثر اتساقًا مع العربية العامة من «فيديوهات».,NO,LOW
+video.transcriptLabel,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",video,Read the transcript,اقرأ النص المكتوب,NONE,NONE,BODY_COPY,MEDIUM,PASS,,النص العربي طبيعي ووفِيّ للمصدر الإنجليزي، ولا يغيّر قوة الادعاء أو حالة الميزة.,NO,NONE

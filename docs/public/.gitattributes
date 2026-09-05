@@ -19,3 +19,9 @@
 # directory are ordinary markdown and keep the repository-wide LF rule.
 PCA_Public_Programme_Documentation_Package_v0.1/** -text
 PCA_Public_Programme_Documentation_Package_v0.2/** -text
+
+# The independent Arabic reviewer package is EVIDENCE. It is stored exactly as
+# supplied, CRLF included, so its checksums stay verifiable -- the same reason
+# the frozen v0.2 package above is protected. LF normalisation silently changes
+# the bytes of a file whose whole value is being unchanged.
+reports/PCA_Release_A_Arabic_Native_Review_Package/** -text
