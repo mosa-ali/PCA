@@ -127,16 +127,31 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
       if (/download|get the app|تنزيل|الحصول على التطبيق/i.test(text)) downloadCtas.push({ rel, href: m[1], text });
     }
   }
+  // The IA rebalance made /download/ a primary page, so the download action must
+  // reach that ROUTE. It used to be a #download anchor on How PCA Works; these
+  // checks moved with the content rather than being relaxed.
   if (!downloadCtas.length) {
     finding('CRITICAL', 'download-action', 'no download / get-the-app action is rendered anywhere.');
-  } else if (!downloadCtas.some((c) => c.href.includes('#download'))) {
-    finding('HIGH', 'download-action', 'a download action exists but none targets the #download section.');
+  } else if (!downloadCtas.some((c) => /(^|\/)download\/?$/.test(c.href.replace(/#.*$/, '')))) {
+    finding('HIGH', 'download-action', `a download action exists but none targets the /download/ route: ${downloadCtas.map((c) => c.href).slice(0, 3).join(', ')}`);
   } else {
-    ok('download-action', `${downloadCtas.length} download action(s) rendered, targeting the #download section`);
+    ok('download-action', `${downloadCtas.length} download action(s) rendered, targeting the /download/ route`);
   }
 
-  const hasSection = [...corpus].some(([rel, b]) => rel.endsWith('.html') && b.includes('id="download"'));
-  if (!hasSection) finding('CRITICAL', 'download-action', 'nothing renders a section with id="download".');
+  for (const path of ['/download/index.html', '/ar/download/index.html']) {
+    if (!corpus.has(path)) finding('CRITICAL', 'download-action', `${path} was not emitted.`);
+  }
+
+  // The download page must be reachable from primary navigation, in both
+  // locales -- a conversion page nobody can find is not a conversion page.
+  for (const [rel, body] of htmlFiles) {
+    if (rel === '/404.html') continue;
+    const nav = /<nav class="pw-nav"[\s\S]*?<\/nav>/.exec(body)?.[0] ?? '';
+    if (!/href="[^"]*\/download\/"/.test(nav)) {
+      finding('HIGH', 'download-action', `${rel}: primary navigation does not link to /download/.`);
+      break;
+    }
+  }
 
   // Honesty: no store badge, no store URL, no install file, no fake link.
   const FAKE = [
@@ -155,12 +170,12 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
     ok('download-honesty', 'no store badge, no store URL, no .apk/.ipa/.aab, no fake download link');
   }
 
-  // The download section must say, in both locales, that nothing ships yet.
-  for (const path of ['/how-it-works/index.html', '/ar/how-it-works/index.html']) {
+  // The download page must say, in both locales, that nothing ships yet.
+  for (const path of ['/download/index.html', '/ar/download/index.html']) {
     const body = corpus.get(path) ?? '';
     const saysNotYet = /nothing to download yet|has not been released|لا يوجد شيء للتنزيل|لم يُطلَق/.test(body);
     if (!saysNotYet) {
-      finding('CRITICAL', 'download-honesty', `${path} carries a download section without stating that nothing is downloadable yet.`);
+      finding('CRITICAL', 'download-honesty', `${path} is the download page but does not state that nothing is downloadable yet.`);
     }
   }
 }

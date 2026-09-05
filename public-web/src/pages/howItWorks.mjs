@@ -61,6 +61,7 @@ import {
   layout,
   card,
   stepCard,
+  faqItem,
   videoBlock,
   ctaLink,
   releaseNotice,
@@ -89,6 +90,16 @@ export function render(ctx) {
 
   // The journey. Video first, then the eight steps as an ordered list of cards
   // -- the list is the guaranteed path to the information, not the video.
+  // The PCA Introduction video moves here from Home. On Home it was a large
+  // COMING_LATER placeholder in the first screen and a page-length block; here
+  // it sits with the enrolment video on the page that explains the product,
+  // which is where a parent who wants the explanation already is.
+  const intro = html`<section class="pw-section">
+  <div class="pw-container">
+    ${videoBlock(ctx, 'intro', { headingLevel: 2 })}
+  </div>
+</section>`;
+
   const steps = section(ctx, {
     id: 'steps',
     label: t('howItWorks.steps.label'),
@@ -123,21 +134,28 @@ export function render(ctx) {
       </div>`,
   });
 
-  // The download destination. CLM-024 / CLM-026, both COMING_LATER, and
-  // CLM-024's register entry says in terms: "NO store badge, NO download
-  // action". So this section is where a parent comes to get the app and is told
-  // plainly that there is nothing to get yet -- the lead says so before the two
-  // platform cards, each of which carries its own registered status pill.
-  //
-  // Deliberately NOT a separate /download/ route: the owner ruling keeps three
-  // primary pages, and a route whose entire content is "not available yet"
-  // would be a fourth page earning its own sitemap entry to say nothing.
-  const child = section(ctx, {
-    id: 'download',
-    title: t('howItWorks.child.title'),
-    lead: t('howItWorks.child.lead'),
-    body: html`<div class="pw-grid pw-grid--2">
-        ${frag(t('howItWorks.child.items').map((item) => card(ctx, item)))}
+  // The eight protection cards move here from Home, WITH their eight registered
+  // REQUIRES_PLATFORM_SUPPORT labels (CLM-028..CLM-035). Home showed the same
+  // eight pills above one-line summaries; here each pill sits beside the
+  // capability sentence it actually qualifies, which is the only place the
+  // repetition earns its keep.
+  const protects = section(ctx, {
+    id: 'protects',
+    label: t('howItWorks.protects.label'),
+    title: t('howItWorks.protects.title'),
+    body: html`<div class="pw-grid pw-grid--2 pw-grid--4">
+        ${frag(t('howItWorks.protects.items').map((item) => card(ctx, item)))}
+      </div>`,
+  });
+
+  // The FAQ moves here from Home: every answer is about how the product works.
+  const faq = section(ctx, {
+    id: 'faq',
+    label: t('howItWorks.faq.label'),
+    title: t('howItWorks.faq.title'),
+    modifier: 'pw-section--raised',
+    body: html`<div class="pw-faq">
+        ${frag(t('howItWorks.faq.items').map((item) => faqItem(item)))}
       </div>`,
   });
 
@@ -153,7 +171,7 @@ export function render(ctx) {
 
   const notice = html`<div class="pw-section"><div class="pw-container">${releaseNotice(ctx, 'release.journeyNotice')}</div></div>`;
 
-  const main = frag([hero, notice, steps, parent, security, child, sensitive]);
+  const main = frag([hero, notice, intro, steps, protects, parent, security, faq, sensitive]);
 
   return layout(ctx, { main });
 }

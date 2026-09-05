@@ -62,6 +62,7 @@ import {
 import * as homePage from './src/pages/home.mjs';
 import * as howItWorksPage from './src/pages/howItWorks.mjs';
 import * as privacyPage from './src/pages/privacy.mjs';
+import * as downloadPage from './src/pages/download.mjs';
 import * as contactPage from './src/pages/contact.mjs';
 import * as accessibilityPage from './src/pages/accessibility.mjs';
 import * as privacyPolicyPage from './src/pages/privacyPolicy.mjs';
@@ -89,6 +90,7 @@ const PAGES = {
   home: homePage,
   howItWorks: howItWorksPage,
   privacy: privacyPage,
+  download: downloadPage,
   // Utility and legal — footer only, never primary navigation
   contact: contactPage,
   accessibility: accessibilityPage,

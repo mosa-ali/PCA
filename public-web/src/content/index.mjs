@@ -22,13 +22,15 @@
 import globalEn, { NEW_COPY } from './global.en.mjs';
 import globalAr, { AR_REVIEW_STATUS } from './global.ar.mjs';
 
-// --- The three main public pages -------------------------------------------
+// --- The four main public pages -------------------------------------------
 import homeEn from './pages/home.en.mjs';
 import homeAr from './pages/home.ar.mjs';
 import howItWorksEn from './pages/howItWorks.en.mjs';
 import howItWorksAr from './pages/howItWorks.ar.mjs';
 import privacyEn from './pages/privacy.en.mjs';
 import privacyAr from './pages/privacy.ar.mjs';
+import downloadEn from './pages/download.en.mjs';
+import downloadAr from './pages/download.ar.mjs';
 
 // --- Utility and legal routes ----------------------------------------------
 import contactEn from './pages/contact.en.mjs';
@@ -49,6 +51,7 @@ export const PAGE_CONTENT = {
   home: { en: homeEn, ar: homeAr },
   howItWorks: { en: howItWorksEn, ar: howItWorksAr },
   privacy: { en: privacyEn, ar: privacyAr },
+  download: { en: downloadEn, ar: downloadAr },
   contact: { en: contactEn, ar: contactAr },
   accessibility: { en: accessibilityEn, ar: accessibilityAr },
   privacyPolicy: { en: privacyPolicyEn, ar: privacyPolicyAr },

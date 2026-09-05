@@ -70,10 +70,17 @@ export const LOCALE_META = {
  *               (IA section 17); legal drafts stay out until legal review closes.
  */
 export const ROUTES = [
-  // --- The three main public pages ----------------------------------------
+  // --- The four main public pages ------------------------------------------
+  //
+  // `download` is the fourth, and it is deliberately the fourth rather than an
+  // auth route: Release A has no public login, and the parent-facing conversion
+  // action is getting the app. It exists while nothing is downloadable because a
+  // parent looking for the app needs somewhere that answers honestly, and the
+  // alternative -- no page at all -- answers nothing.
   { id: 'home',        path: '',              kind: 'main', release: 'A', build: true, indexable: true, priority: '1.0' },
   { id: 'howItWorks',  path: 'how-it-works',  kind: 'main', release: 'A', build: true, indexable: true, priority: '0.9' },
   { id: 'privacy',     path: 'privacy',       kind: 'main', release: 'A', build: true, indexable: true, priority: '0.9' },
+  { id: 'download',    path: 'download',      kind: 'main', release: 'A', build: true, indexable: true, priority: '0.9' },
 
   // --- Utility (footer only, never primary nav) ----------------------------
   { id: 'contact',       path: 'contact',       kind: 'utility', release: 'A', build: true, indexable: true,  priority: '0.5' },
@@ -109,14 +116,14 @@ export const ROUTES = [
 ];
 
 /** Primary navigation — exactly the three main pages, in owner order. */
-export const NAV_ORDER = ['home', 'howItWorks', 'privacy'];
+export const NAV_ORDER = ['home', 'howItWorks', 'privacy', 'download'];
 
 /**
- * Footer. Deliberately small: the three main pages plus the utility and legal
+ * Footer. Deliberately small: the four main pages plus the utility and legal
  * routes that must remain reachable but must not clutter primary navigation.
  */
 export const FOOTER_GROUPS = [
-  { id: 'pca',   items: ['home', 'howItWorks', 'privacy'] },
+  { id: 'pca',   items: ['home', 'howItWorks', 'privacy', 'download'] },
   { id: 'help',  items: ['contact'] },
   { id: 'legal', items: ['privacyPolicy', 'terms', 'accessibility'] },
 ];

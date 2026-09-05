@@ -362,8 +362,43 @@
 }
 
 @media (min-width: 48rem) {
-  .pw-hero { padding-block: var(--pw-space-20); }
+  .pw-hero { padding-block: var(--pw-space-12) 3.5rem; }
   .pw-hero__title { font-size: var(--pw-text-4xl); }
+}
+
+/*
+ * A compact hero for pages that are a destination rather than an introduction.
+ * /download/ opens with a statement of what exists, not a pitch, so it does not
+ * need the full-height entrance Home uses.
+ */
+.pw-hero--compact {
+  padding-block: var(--pw-space-8) var(--pw-space-10);
+}
+
+/*
+ * Feature-name chips: Home lists four feature NAMES, not capability claims.
+ * They are deliberately not cards -- a card invites a body, a body becomes a
+ * capability sentence, and a capability sentence needs a status pill. The chip
+ * shape is what keeps the summary a summary.
+ */
+.pw-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pw-space-3);
+  margin-block: 0 var(--pw-space-6);
+}
+
+.pw-chip {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--pw-touch-target);
+  padding-inline: var(--pw-space-5);
+  border: 1px solid var(--pw-border);
+  border-radius: var(--pw-radius-pill, 999px);
+  background: var(--pw-surface);
+  color: var(--pw-text);
+  font-size: var(--pw-text-base);
+  font-weight: var(--pw-weight-semibold);
 }
 
 .pw-hero__lead {

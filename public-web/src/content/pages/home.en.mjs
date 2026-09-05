@@ -51,67 +51,15 @@
 export default {
   "home.seo.title": "PCA — Protecting Children in Digital Spaces",
   "home.seo.description": "PCA helps families create safer digital spaces for children with practical protection, privacy-minimizing design and clear parental control.",
-
-  // --- A. Hero ------------------------------------------------------------
   "home.hero.title": "Protecting children in digital spaces.",
   "home.hero.body": "Children deserve care and protection wherever they spend time—including online.",
   "home.hero.reassure": "PCA is designed not to build a readable central profile of your child's sensitive activity.",
-
-  // --- C. Why PCA exists --------------------------------------------------
   "home.why.label": "Why PCA exists",
   "home.why.title": "Built from a parent's concern",
   "home.why.body": [
     "PCA began with a simple question: if we work hard to protect children at home, at school and in public spaces, why should their digital spaces be treated differently?",
     "We believe families should have useful tools for digital protection without needing to trade away a child’s privacy."
   ],
-
-  // --- D. What PCA protects ----------------------------------------------
-  "home.protects.label": "What PCA protects",
-  "home.protects.title": "Practical protection families can understand",
-  "home.protects.items": [
-    {
-      "claimId": "CLM-028",
-      "title": "Screen Time",
-      "body": "Support healthier device-use limits and routines."
-    },
-    {
-      "claimId": "CLM-030",
-      "title": "Safer Browsing",
-      "body": "Help apply approved web-safety decisions."
-    },
-    {
-      "claimId": "CLM-029",
-      "title": "Apps & Web Controls",
-      "body": "Set appropriate boundaries for apps and online access."
-    },
-    {
-      "claimId": "CLM-031",
-      "title": "Schedules",
-      "body": "Create predictable times for study, rest and sleep."
-    },
-    {
-      "claimId": "CLM-032",
-      "title": "Protection Status",
-      "body": "See whether protections are active."
-    },
-    {
-      "claimId": "CLM-033",
-      "title": "Parent & Child Requests",
-      "body": "Support clear family interaction when a child needs more time."
-    },
-    {
-      "claimId": "CLM-034",
-      "title": "Alerts",
-      "body": "Receive relevant protection notices."
-    },
-    {
-      "claimId": "CLM-035",
-      "title": "Device Protection",
-      "body": "Help maintain the protection configuration on the child device."
-    }
-  ],
-
-  // --- E. Why PCA is different (prose cards, no claimId, no pill) ---------
   "home.different.label": "Why PCA is different",
   "home.different.title": "Technology should protect without taking away dignity",
   "home.different.items": [
@@ -132,90 +80,14 @@ export default {
       "body": "Affordability and broad access shape the design."
     }
   ],
-
-  // --- F. How it works summary (the journey itself lives on /how-it-works/) -
-  "home.steps.label": "How it works",
-  "home.steps.title": "Five simple steps",
-  "home.steps.items": [
-    {
-      "title": "Create your parent account",
-      "body": "Set up access to PCA Parent."
-    },
-    {
-      "title": "Add your child in PCA Parent",
-      "body": "Child setup belongs inside the protected Parent experience."
-    },
-    {
-      "claimId": "CLM-024",
-      "title": "Install PCA Child on a supported device",
-      "body": "Android is the planned primary platform."
-    },
-    {
-      "title": "Connect the device and choose protections",
-      "body": "Set the rules and schedules appropriate for your family."
-    },
-    {
-      "title": "Review protection status",
-      "body": "Check protection status and respond to supported requests."
-    }
-  ],
-
-  // --- G. Access / availability (no store name, badge, link or download) --
-  "home.availability.label": "Availability",
-  "home.availability.title": "PCA Parent and PCA Child",
-  "home.availability.items": [
-    {
-      "title": "PCA Parent",
-      "body": "A responsive experience for phone, tablet and computer. Account access is not open yet."
-    },
-    {
-      "claimId": "CLM-024",
-      "title": "PCA Child on Android",
-      "body": "The planned primary platform for the first release."
-    },
-    {
-      "claimId": "CLM-026",
-      "title": "PCA Child on iPhone and iPad",
-      "body": "iPhone and iPad child protection is planned for a later release."
-    }
-  ],
-
-  // --- H. Affordability — CLM-040 VALUES statement only, no pill ----------
-  "home.affordability.label": "Access",
-  "home.affordability.title": "A safer digital world should not depend on income",
-  "home.affordability.body": "PCA is being designed with affordability and broad access in mind.",
-
-  // --- I. FAQ -------------------------------------------------------------
-  "home.faq.label": "Common questions",
-  "home.faq.title": "Quick answers",
-  "home.faq.items": [
-    {
-      "q": "Does PCA read my child's messages?",
-      "a": "PCA is not designed to capture or centrally read personal messages."
-    },
-    {
-      "q": "Does PCA collect photos or files?",
-      "a": "Routine protection does not require a child's photo library, videos or arbitrary files."
-    },
-    {
-      "q": "Can I use PCA Parent without installing it?",
-      "a": "Yes. Installation is optional; Parent Web remains available in the browser."
-    },
-    {
-      "q": "Does PCA use AI?",
-      "a": "AI-supported features are planned for a later release."
-    },
-    {
-      "q": "Does PCA protect YouTube use?",
-      "a": "Advanced YouTube protection is planned for a later release."
-    },
-    {
-      "q": "How much does PCA cost?",
-      "a": "Final plans and prices are not published yet."
-    }
-  ],
-
-  // --- J. Final CTA -------------------------------------------------------
   "home.final.title": "Start building safer digital habits with your family",
-  "home.final.body": "Understand the tools, choose the protections that fit your family, and stay in control of sensitive information."
+  "home.final.body": "Understand the tools, choose the protections that fit your family, and stay in control of sensitive information.",
+  "home.protects.title": "What PCA helps protect",
+  "home.protects.body": "What PCA can actually do on a given device depends on what that platform allows. How PCA Works explains each area and its current limits.",
+  "home.protects.items": [
+    "Screen Time",
+    "Safer Browsing",
+    "Apps & Web Controls",
+    "Alerts"
+  ]
 };

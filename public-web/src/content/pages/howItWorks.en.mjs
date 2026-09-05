@@ -70,10 +70,8 @@
 export default {
   "howItWorks.seo.title": "How PCA Works — Parent and Child Protection Flow",
   "howItWorks.seo.description": "See the planned PCA journey from parent account to child-device protection, status and family requests.",
-
   "howItWorks.hero.title": "From account setup to everyday protection",
   "howItWorks.hero.body": "PCA is designed to make the protection journey understandable: set up the parent account, connect the supported child device, choose appropriate rules, and review protection status from PCA Parent.",
-
   "howItWorks.steps.label": "The journey",
   "howItWorks.steps.title": "Eight steps",
   "howItWorks.steps.items": [
@@ -111,7 +109,6 @@ export default {
       "body": "PCA Parent should help the parent understand whether protection is working and respond to supported child requests."
     }
   ],
-
   "howItWorks.parent.title": "PCA Parent",
   "howItWorks.parent.items": [
     {
@@ -130,25 +127,80 @@ export default {
       "body": "You never need to install PCA Parent just to use the service."
     }
   ],
-
   "howItWorks.security.title": "Important security distinction",
   "howItWorks.security.body": "Installing PCA Parent is about convenience. Trusted Browser authorization is a separate PCA security concept and follows separate rules.",
-
-  "howItWorks.child.title": "Download PCA Child",
-  "howItWorks.child.lead": "There is nothing to download yet. PCA Child has not been released on any platform, so there is no store listing, no download link and no install file. This section will carry the real download route for each platform once that platform is genuinely released — and not before.",
-  "howItWorks.child.items": [
+  "howItWorks.sensitive.title": "What happens to sensitive information?",
+  "howItWorks.sensitive.body": "Protection settings and status move between your trusted devices. Privacy & Safety explains what is processed where.",
+  "howItWorks.protects.label": "What PCA protects",
+  "howItWorks.protects.title": "Practical protection families can understand",
+  "howItWorks.protects.items": [
     {
-      "claimId": "CLM-024",
-      "title": "Android",
-      "body": "When the first PCA Child release is ready, Android is the planned primary platform."
+      "claimId": "CLM-028",
+      "title": "Screen Time",
+      "body": "Support healthier device-use limits and routines."
     },
     {
-      "claimId": "CLM-026",
-      "title": "iPhone and iPad",
-      "body": "Child protection for iPhone and iPad is planned for a later release."
+      "claimId": "CLM-030",
+      "title": "Safer Browsing",
+      "body": "Help apply approved web-safety decisions."
+    },
+    {
+      "claimId": "CLM-029",
+      "title": "Apps & Web Controls",
+      "body": "Set appropriate boundaries for apps and online access."
+    },
+    {
+      "claimId": "CLM-031",
+      "title": "Schedules",
+      "body": "Create predictable times for study, rest and sleep."
+    },
+    {
+      "claimId": "CLM-032",
+      "title": "Protection Status",
+      "body": "See whether protections are active."
+    },
+    {
+      "claimId": "CLM-033",
+      "title": "Parent & Child Requests",
+      "body": "Support clear family interaction when a child needs more time."
+    },
+    {
+      "claimId": "CLM-034",
+      "title": "Alerts",
+      "body": "Receive relevant protection notices."
+    },
+    {
+      "claimId": "CLM-035",
+      "title": "Device Protection",
+      "body": "Help maintain the protection configuration on the child device."
     }
   ],
-
-  "howItWorks.sensitive.title": "What happens to sensitive information?",
-  "howItWorks.sensitive.body": "Protection settings and status move between your trusted devices. Privacy & Safety explains what is processed where."
+  "howItWorks.faq.label": "Common questions",
+  "howItWorks.faq.title": "Quick answers",
+  "howItWorks.faq.items": [
+    {
+      "q": "Does PCA read my child's messages?",
+      "a": "PCA is not designed to capture or centrally read personal messages."
+    },
+    {
+      "q": "Does PCA collect photos or files?",
+      "a": "Routine protection does not require a child's photo library, videos or arbitrary files."
+    },
+    {
+      "q": "Can I use PCA Parent without installing it?",
+      "a": "Yes. Installation is optional; Parent Web remains available in the browser."
+    },
+    {
+      "q": "Does PCA use AI?",
+      "a": "AI-supported features are planned for a later release."
+    },
+    {
+      "q": "Does PCA protect YouTube use?",
+      "a": "Advanced YouTube protection is planned for a later release."
+    },
+    {
+      "q": "How much does PCA cost?",
+      "a": "Final plans and prices are not published yet."
+    }
+  ]
 };

@@ -192,6 +192,15 @@
 @media (min-width: 48rem) {
   :root {
     --pw-gutter: var(--pw-space-8);
-    --pw-section-y: var(--pw-space-20);
+    /*
+     * 3.5rem, not 5rem. Owner UAT measured too much unused vertical space
+     * between related sections on desktop -- a 30% cut, which is the shallow
+     * end of the 20-30% the ruling allows, because the pages are calm rather
+     * than cramped and the aim is not density for its own sake.
+     *
+     * Mobile keeps 3rem: it was never the problem, and compressing mobile to
+     * match desktop would be solving a desktop measurement on a phone.
+     */
+    --pw-section-y: 3.5rem;
   }
 }

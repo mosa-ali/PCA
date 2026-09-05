@@ -16,12 +16,25 @@
  */
 
 export const NEW_COPY = [
-  // Added during Owner UAT: the Release A conversion action is DOWNLOAD, not
-  // login. These three strings are outside the completed native Arabic review
-  // and need OD-12 coverage before publication.
+  // Added during Owner UAT. The Release A conversion action is DOWNLOAD, not
+  // login, and the IA rebalance gave that its own page. Everything listed here
+  // is outside the completed native Arabic review and needs OD-12 coverage
+  // before publication.
+  //
+  // Note what is NOT here: every string MOVED to /download/ or to How PCA Works
+  // kept its exact text and only changed key, so the reviewer's judgement on it
+  // still stands. Only genuinely new wording is listed.
   'cta.getTheApp',
-  'howItWorks.child.title',
-  'howItWorks.child.lead',
+  'download.child.lead',
+  'download.seo.title',
+  'download.seo.description',
+  'download.hero.title',
+  'download.hero.body',
+  'home.protects.title',
+  'home.protects.body',
+  // home.protects.items is four feature NAMES copied verbatim from the approved
+  // howItWorks.protects.items titles -- new key, previously reviewed text.
+  'home.protects.items',
   // Authored during the PUBLIC-14 remediation pass.
   'release.journeyNotice',
   'release.contactNotice',
