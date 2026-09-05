@@ -1,0 +1,35 @@
+# Build context for platform-admin-web/Dockerfile.
+#
+# The Dockerfile copies the whole directory, because tsconfig.json's `include`
+# lists src, tests, e2e, e2e-real, vite and the playwright configs -- an
+# enumerated COPY list has to track that array forever, and the previous version
+# already fell out of step with it and could not build.
+#
+# So the directory goes in and this file takes out what must not: install and
+# build output that the image rebuilds itself, local test artefacts, and
+# anything secret-shaped.
+
+node_modules
+dist
+test-results
+playwright-report
+coverage
+
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.pfx
+*.p12
+*.publishsettings
+id_rsa*
+
+.git
+.gitignore
+.vscode
+.idea
+*.log
+.DS_Store
+README.md

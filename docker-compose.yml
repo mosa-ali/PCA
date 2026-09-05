@@ -1,0 +1,126 @@
+# PCA — LOCAL DEVELOPMENT AND INTEGRATION ONLY.
+#
+# This file is NOT the Azure production topology and must never be treated as
+# one. Production runs one App Service per surface with no shared container and
+# no compose network:
+#
+#   www.pcasafe.com       -> pcaSafe App Service   (public-web/deploy/Dockerfile)
+#   api.pcasafe.com       -> pca App Service       (backend/Dockerfile)
+#   platform.pcasafe.com  -> pca App Service       (platform-admin-web/Dockerfile)
+#   app / parent          -> pca App Service       (parent-web: no Dockerfile yet)
+#
+# The database below is DISPOSABLE. It exists so the backend has something to
+# talk to on a laptop. It is not a model of the production database, it holds no
+# real data, and its credentials are deliberately the repository's existing
+# "pca_test_only_not_a_secret" test values -- named that way so nobody mistakes
+# them for something to protect. Nothing here should ever point at Azure.
+#
+#   docker compose up --build
+#   docker compose down -v          # -v also drops the disposable volume
+#
+# Public Web is deliberately absent. It has its own build and its own verifier
+# (public-web/deploy/), it needs no database and no sibling service, and adding
+# it here would create a second way to run it that could drift from the tested
+# one.
+
+services:
+  # ---------------------------------------------------------------------
+  # Backend API
+  # ---------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+    image: pca-backend:local
+    environment:
+      # PCA_DATABASE_URL is the ONLY database variable src/db/pool.ts reads, and
+      # it wants a mysql2 connection URI. The previous version of this file set
+      # POSTGRES_SERVER/USER/PASSWORD/DB -- four variables the backend has never
+      # read -- next to a MySQL container, so the service could not have
+      # connected to anything. Hostname `mysql` matches the service name below
+      # and the allowlist in scripts/bootstrap-e2e-parent-account.mjs.
+      PCA_DATABASE_URL: mysql://pca_test_app:pca_test_only_not_a_secret@mysql:3306/pca_test
+      # Development, not production: NODE_ENV gates the Secure attribute on
+      # session/CSRF cookies, and over plain HTTP on localhost a Secure cookie is
+      # never sent back. The image's own default is production, which is correct
+      # for the image; this override is correct for a laptop.
+      NODE_ENV: development
+      PORT: '4001'
+      HOST: 0.0.0.0
+    ports:
+      - '4001:4001'
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:4001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------
+  # Platform Admin console
+  # ---------------------------------------------------------------------
+  #
+  # A separate container from the backend, deliberately. PCA Parent and PCA
+  # Platform Admin are separate authority realms with separate sessions, and
+  # merging surfaces into one container for convenience is exactly how that
+  # boundary erodes. The console reaches the API same-origin in production via a
+  # reverse proxy; locally it is reached directly on 8081 and talks to the
+  # backend on 4001.
+  platform-admin-web:
+    build:
+      context: ./platform-admin-web
+    image: pca-platform-admin:local
+    ports:
+      - '8081:8080'
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://127.0.0.1:8080/healthz']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # Disposable MySQL
+  # ---------------------------------------------------------------------
+  #
+  # Named `mysql` because backend/scripts/bootstrap-e2e-parent-account.mjs
+  # allowlists exactly 127.0.0.1, localhost and mysql as hostnames it will
+  # bootstrap against -- a deliberate guard against pointing local tooling at a
+  # real database. Renaming this service would break that guard.
+  #
+  # Port 33061 on the host matches README.md's existing local convention and
+  # avoids colliding with a MySQL already installed on 3306.
+  mysql:
+    image: mysql:8.0
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+    environment:
+      MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
+      MYSQL_DATABASE: pca_test
+      MYSQL_USER: pca_test_app
+      MYSQL_PASSWORD: pca_test_only_not_a_secret
+    ports:
+      - '33061:3306'
+    volumes:
+      - pca_local_mysql:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', '-ppca_test_only_not_a_secret']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  # Named, not a host bind: `docker compose down -v` removes it completely.
+  # Nothing in it is meant to survive.
+  pca_local_mysql:

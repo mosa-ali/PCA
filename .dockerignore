@@ -1,0 +1,54 @@
+# Docker build context for the REPOSITORY ROOT.
+#
+# Exactly one build uses this context: public-web/deploy/Dockerfile, which needs
+# the repository root because build.mjs cross-checks the claim register against
+# both the living CSV and the frozen v0.2 package under docs/public/. Every other
+# surface builds from its own directory with its own .dockerignore
+# (backend/, platform-admin-web/).
+#
+# WHY THIS IS AN ALLOWLIST, NOT A DENYLIST.
+#
+# The previous denylist version was measured, and what it let through was not a
+# tidiness problem:
+#
+#   - .agent-runtime/ holds 88 git worktrees, 1,089,727 files, and 201 .env*
+#     files including a real parent-web/.env. `.env` in a denylist matches only
+#     the ROOT .env, so every nested one was in the context.
+#   - .env.azure sits at the repository root with six populated values including
+#     a database password. `.env`, `.env.local` and `.env.*.local` all fail to
+#     match it -- `.env.*.local` requires a `.local` suffix. It is gitignored, so
+#     it was never at risk of being committed, but gitignore has no bearing on
+#     what Docker sends to the daemon.
+#   - .claude/ and .vs/ carry local session and IDE state.
+#   - android/, ios/, parent-web/, contracts/, tooling/ are megabytes of material
+#     no image needs.
+#
+# A denylist has to anticipate every one of those. An allowlist only has to name
+# what the build actually reads, and anything added to the repository later is
+# excluded by default rather than included by default. For a context that is sent
+# whole to the daemon, default-deny is the only version that stays correct.
+
+# Exclude everything...
+*
+
+# ...then re-admit exactly what public-web/deploy/Dockerfile COPYs.
+!public-web
+!docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv
+!docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAIM_REGISTER.csv
+
+# ...minus the parts of public-web that are build output or local state. These
+# are re-excluded AFTER the re-admission above, because later patterns win.
+public-web/dist
+public-web/reports
+public-web/node_modules
+**/node_modules
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
+**/*.publishsettings
+**/id_rsa*
+**/*.keystore
+**/*.jks
