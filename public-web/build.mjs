@@ -522,6 +522,35 @@ function assertClaimLabels(pageId, htmlText, locale) {
  * Every same-origin link must point at a path this build actually writes.
  * Catches links to approved-but-unimplemented routes, which would 404.
  */
+/**
+ * A claim the owner has not approved into the register must not be RENDERED.
+ *
+ * assertClaimLabels() catches a claim id that claims.mjs does not define, and
+ * assertClaimsMatchRegister() catches a status that disagrees with the CSV. Both
+ * miss the case in between: a claim that lives in claims.mjs as a PUBLIC-1
+ * PROPOSAL, is absent from the authoritative register, and carries a status that
+ * can render a visible label.
+ *
+ * CLM-055 is exactly that -- proposed, unregistered, REQUIRES_PLATFORM_SUPPORT.
+ * Nothing renders it today, so nothing is wrong with the artifact. But nothing
+ * stopped a page from rendering it either, and it would have shown a
+ * "Requires platform support" pill for a claim the owner never approved, with
+ * every existing gate green. Found by the final adversarial pass; closed here so
+ * the risk is impossible rather than merely absent.
+ */
+function assertRenderedClaimsAreRegistered(pageId, htmlText, registeredIds) {
+  for (const match of htmlText.matchAll(/data-claim="([^"]+)"/g)) {
+    const id = match[1];
+    if (!registeredIds.has(id)) {
+      fail(
+        'claim-gate',
+        `${pageId}: renders ${id}, which is not in PCA_PUBLIC_CLAIM_REGISTER.csv. ` +
+          'A proposed claim may be referenced in source, but it may not be rendered until the owner approves it into the register.'
+      );
+    }
+  }
+}
+
 function assertInternalLinksResolve(pageId, htmlText, emittedPaths) {
   const re = /href="(\/[^"#?]*)"/g;
   let match;
@@ -840,7 +869,7 @@ async function assertClaimsMatchRegister() {
     baseCsv = await readFile(basePath, 'utf8');
   } catch {
     fail('claim-register', 'claim register not found (living: ' + livingPath + ')');
-    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0 };
+    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0, ids: new Set() };
   }
 
   const rows = parseCsv(csv);
@@ -849,7 +878,7 @@ async function assertClaimsMatchRegister() {
   const statusCol = header.indexOf('CURRENT_STATUS');
   if (idCol === -1 || statusCol === -1) {
     fail('claim-register', 'claim register CSV is missing CLAIM_ID or CURRENT_STATUS');
-    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0 };
+    return { registered: 0, proposed: PROPOSED_CLAIMS.size, inherited: 0, ids: new Set() };
   }
 
   const csvStatus = new Map();
@@ -903,7 +932,7 @@ async function assertClaimsMatchRegister() {
     }
   }
 
-  return { registered: csvStatus.size, proposed: PROPOSED_CLAIMS.size, inherited };
+  return { registered: csvStatus.size, proposed: PROPOSED_CLAIMS.size, inherited, ids: new Set(csvStatus.keys()) };
 }
 
 /**
@@ -1116,7 +1145,7 @@ function makeTranslator(locale) {
   };
 }
 
-function renderPages(origin) {
+function renderPages(origin, registeredClaimIds = null) {
   const rendered = [];
   const routes = buildableRoutes().filter((r) => PAGES[r.id]);
 
@@ -1137,6 +1166,7 @@ function renderPages(origin) {
 
       assertNoForbiddenText(pageId, htmlText);
       assertClaimLabels(pageId, htmlText, locale);
+      if (registeredClaimIds) assertRenderedClaimsAreRegistered(pageId, htmlText, registeredClaimIds);
       assertNoExternalRefs(pageId, htmlText, origin);
 
       // Direction and language must be in the SERVED markup, not applied later.
@@ -1264,7 +1294,7 @@ async function main() {
   assertReviewListsAreLive();
   assertArabicReviewCoversCorpus();
 
-  const pages = renderPages(origin);
+  const pages = renderPages(origin, claimRegister.ids);
 
   assertAllowlistIsLive(pages.map((p) => p.html));
 
