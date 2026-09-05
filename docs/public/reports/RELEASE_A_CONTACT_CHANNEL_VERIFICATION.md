@@ -1,14 +1,23 @@
 # Release A — Contact Channel Verification
 
-**Status: `CONTACT_CHANNEL = NOT_READY`** — aliases exist, delivery is unproven.
+**Status: `CONTACT_CHANNEL = PARTIAL`** — mail arrives; replies do not yet come from PCA.
 
 ```
-SUPPORT_ALIAS_CONFIGURED  = YES        SUPPORT_INBOUND_VERIFIED  = NOT_TESTED
-PRIVACY_ALIAS_CONFIGURED  = YES        PRIVACY_INBOUND_VERIFIED  = NOT_TESTED
-SECURITY_ALIAS_CONFIGURED = YES        SECURITY_INBOUND_VERIFIED = NOT_TESTED
-ADMIN_ALIAS_CONFIGURED    = YES        ADMIN_INBOUND_VERIFIED    = NOT_TESTED
-PUBLIC_REPLY_IDENTITY     = NOT_TESTED
+SUPPORT_ALIAS_CONFIGURED  = YES        SUPPORT_INBOUND_VERIFIED  = PASS
+PRIVACY_ALIAS_CONFIGURED  = YES        PRIVACY_INBOUND_VERIFIED  = PASS
+SECURITY_ALIAS_CONFIGURED = YES        SECURITY_INBOUND_VERIFIED = PASS
+ADMIN_ALIAS_CONFIGURED    = YES        ADMIN_INBOUND_VERIFIED    = PASS
+INBOUND_CONTACT           = PASS
+PUBLIC_REPLY_IDENTITY     = NOT_READY  (owner is configuring Send As)
+CONTACT_CHANNEL           = PARTIAL
+SECURITY_CONTACT_CHANNEL  = PARTIAL
 ```
+
+**Updated after owner testing.** The owner sent real external messages to all four
+addresses and confirmed each arrived in the monitored Inbox. Inbound is therefore
+proven, not assumed. Replies currently leave from the owner's private monitored
+mailbox rather than from the `@pcasafe.com` alias, so the reply half of the channel
+is still open; the owner is separately configuring Send As.
 
 ---
 
@@ -16,18 +25,22 @@ PUBLIC_REPLY_IDENTITY     = NOT_TESTED
 
 The owner has configured four forwarding aliases on `pcasafe.com`:
 `support@`, `privacy@`, `security@`, `admin@`. All forward to a single
-owner-monitored destination.
+owner-monitored destination, which is deliberately not recorded in this
+repository, in any report, in any rendered page, or in any log.
 
-That is **owner evidence of configuration**, and it is recorded as exactly that:
-`EMAIL_ALIAS_CONFIGURATION = OWNER_EVIDENCE_PRESENT`. It is not evidence of delivery.
-The forwarding destination is deliberately not recorded in this repository, in any
-report, in any rendered page, or in any log.
+**Inbound is now proven.** The owner sent real messages from an external account
+to each of the four addresses and observed all four arriving in the monitored
+Inbox. That answers the question a configuration screenshot could not: a
+forwarding rule can exist and still not deliver, because the domain may have no
+SPF or DMARC alignment for forwarded mail, the receiving provider may silently
+junk it, a loop may form, or the alias may accept and blackhole.
 
-A forwarding rule can exist and still not deliver: the domain may have no SPF or DMARC
-alignment for forwarded mail, the receiving provider may silently junk it, a loop may
-form, or the alias may accept and blackhole. None of those are visible from the
-configuration screen. Only a message sent from outside the domain and observed
-arriving proves the channel.
+**The reply half is still open.** Forwarding is not send-as; they are independent
+capabilities. Replies today leave from the owner's private monitored mailbox,
+which means a parent — or a security researcher — who writes to
+`privacy@pcasafe.com` would be answered from a personal address that is not the
+published contact. That is why `CONTACT_CHANNEL` is `PARTIAL` rather than `PASS`,
+and why no address is published yet. The owner is separately configuring Send As.
 
 ---
 
@@ -58,8 +71,10 @@ The activation order is therefore:
 
 These are manual tests. They require sending real mail from a real external account
 and reading a mailbox, and I have neither an external mail account nor access to the
-owner's mailbox — so I have not run them, and no result below is filled in. **Do not
-record a result that was not observed.**
+owner's mailbox — so none was run by this session. The owner has since run the core
+inbound test (T-1, T-2, T-5) on all four aliases and it passed; §6 records that, and
+leaves every test that was not observed blank. **Do not record a result that was not
+observed.**
 
 Run each test from an account on a domain that is **not** `pcasafe.com` (a personal
 Gmail/Outlook account is fine, and using two different providers is better because
@@ -143,15 +158,27 @@ signup returns 202 without sending anything.
 
 ## 6. Results
 
-**Not run.** No test in §3 has been executed by this session. This table stays empty
-until the owner runs the tests and supplies the observations.
+**Inbound: run by the owner and passed. Reply identity: still outstanding.**
 
-| Alias | Inbound | Sender preserved | Junk? | Delay | Reply From | Private address exposed? | Verdict |
-|---|---|---|---|---|---|---|---|
-| `support@pcasafe.com` | | | | | | | `NOT_TESTED` |
-| `privacy@pcasafe.com` | | | | | | | `NOT_TESTED` |
-| `security@pcasafe.com` | | | | | | | `NOT_TESTED` |
-| `admin@pcasafe.com` | | | | | | | `NOT_TESTED` |
+| Alias | Inbound | Reached Inbox | Reply From | Private address exposed? | Verdict |
+|---|---|---|---|---|---|
+| `support@pcasafe.com` | **PASS** | Inbox | private monitored mailbox | yes | `INBOUND PASS / REPLY NOT_READY` |
+| `privacy@pcasafe.com` | **PASS** | Inbox | private monitored mailbox | yes | `INBOUND PASS / REPLY NOT_READY` |
+| `security@pcasafe.com` | **PASS** | Inbox | private monitored mailbox | yes | `INBOUND PASS / REPLY NOT_READY` |
+| `admin@pcasafe.com` | **PASS** | Inbox | private monitored mailbox | yes | operational alias — not for publication |
 
-Until this table is filled in from observation, `/contact/` keeps its current honest
-wording and no address is published.
+Source: owner testing with real external messages. Recorded as reported.
+
+Still not observed, and therefore still blank rather than assumed: sender
+preservation (T-3), Arabic/attachment fidelity (T-7), forwarding-loop check
+(T-8), delivery delay (T-6), per-alias distinguishability (T-9), and every
+SPF/DKIM/DMARC result (R-4). These are worth completing — T-9 in particular,
+because a `security@` disclosure that is indistinguishable from routine support
+mail is a disclosure nobody prioritises.
+
+**No address is published while `PUBLIC_REPLY_IDENTITY = NOT_READY`.** `/contact/`
+keeps its current wording. When the owner's Send As configuration is verified —
+replies actually arriving from `support@`, `privacy@` and `security@`, with
+SPF/DKIM/DMARC checked where observable — the addresses can be proposed for
+`/contact/`, `/privacy/` and, if appropriate, the privacy policy. `admin@` stays
+unpublished either way.

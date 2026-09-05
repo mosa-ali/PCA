@@ -4,7 +4,7 @@
 **Phases covered:** PUBLIC-12 (accessibility / performance / SEO), PUBLIC-13 (full bilingual browser UAT), PUBLIC-14 (adversarial privacy / security / claim review), plus the Azure topology reconciliation, the production container and the Arabic review handoff
 **Generated:** 2026-09-05
 **Nothing was deployed.** No Azure resource, container, hostname binding, DNS record or certificate was created, changed or removed by this session.
-**Revised 2026-09-05** after the owner created a dedicated Public Web App and moved `www.pcasafe.com` to it.
+**Revised 2026-09-05** after the owner created a dedicated Public Web App and moved `www.pcasafe.com` to it, then again after the independent native Arabic review returned and the owner verified inbound email.
 
 ```
 RELEASE_A_TECHNICAL_READINESS   = READY
@@ -20,8 +20,8 @@ Technically ready and not authorised to publish are both true at once, and delib
 | | |
 |---|---|
 | Branch | `pca-dev` |
-| Commit at time of report | `220ca40def530c63f02abc7a081902bd77a7e2d1` |
-| Previous accepted checkpoints | `9fb5bff` (IA consolidation), `1fd9bd4` (PUBLIC-12/13/14) |
+| Commit at time of report | `89b5612` (Arabic remediation) |
+| Previous accepted checkpoints | `9fb5bff` (IA consolidation), `1fd9bd4` (PUBLIC-12/13/14), `2b73808` (container + Arabic export; the reviewer's baseline) |
 | `origin/main` | `f8d5a6fa33b70873901cfb272a6eabfaa9deb2dd` — **unchanged throughout** |
 | Worktree | Public-owned paths only: `public-web/**`, `docs/public/**`. Pre-existing untracked container files at the repository root (`Dockerfile.backend`, `docker-compose.yml`, `azure-pipelines.yml` and others) belong to separate backend/admin work and were left untouched and unstaged. |
 | `stash@{0}` | intact, 48 files, `DO NOT DROP` — never touched by this programme |
@@ -321,51 +321,62 @@ A fifth defect was found by inspecting the running container rather than by any 
 
 ## G. Email and contact channels
 
-The owner has configured four **forwarding aliases** on `pcasafe.com`, all forwarding to a single owner-monitored destination. That destination is deliberately not recorded in this repository, in any report, in any rendered page or in any log.
+The owner configured four forwarding aliases on `pcasafe.com` — `support@`, `privacy@`, `security@`, `admin@` — all forwarding to a single owner-monitored destination, which is deliberately recorded nowhere in this repository, in any report, in any rendered page or in any log.
+
+**Inbound is now proven.** The owner sent real external messages to all four addresses and observed all four arriving in the monitored Inbox. That answers the question a configuration screenshot cannot: a forwarding rule can exist and still not deliver, because SPF/DMARC may not align for forwarded mail, the receiver may silently junk it, a loop may form, or the alias may accept and blackhole.
+
+**The reply half is still open.** Forwarding is not send-as; they are independent capabilities. Replies today leave from the owner's private mailbox, so a parent — or a security researcher — writing to `privacy@pcasafe.com` would be answered from a personal address that is not the published contact. The owner is separately configuring Send As.
 
 ```
-SUPPORT_ALIAS_CONFIGURED  = YES     SUPPORT_INBOUND_VERIFIED  = NOT_TESTED
-PRIVACY_ALIAS_CONFIGURED  = YES     PRIVACY_INBOUND_VERIFIED  = NOT_TESTED
-SECURITY_ALIAS_CONFIGURED = YES     SECURITY_INBOUND_VERIFIED = NOT_TESTED
-ADMIN_ALIAS_CONFIGURED    = YES     ADMIN_INBOUND_VERIFIED    = NOT_TESTED
-PUBLIC_REPLY_IDENTITY     = NOT_TESTED
-CONTACT_CHANNEL           = NOT_READY
-EMAIL_ALIAS_CONFIGURATION = OWNER_EVIDENCE_PRESENT
+SUPPORT_ALIAS_CONFIGURED  = YES     SUPPORT_INBOUND_VERIFIED  = PASS
+PRIVACY_ALIAS_CONFIGURED  = YES     PRIVACY_INBOUND_VERIFIED  = PASS
+SECURITY_ALIAS_CONFIGURED = YES     SECURITY_INBOUND_VERIFIED = PASS
+ADMIN_ALIAS_CONFIGURED    = YES     ADMIN_INBOUND_VERIFIED    = PASS
+INBOUND_CONTACT           = PASS
+PUBLIC_REPLY_IDENTITY     = NOT_READY
+CONTACT_CHANNEL           = PARTIAL
+SECURITY_CONTACT_CHANNEL  = PARTIAL
 ```
 
-**Configuration is not delivery.** A forwarding rule can exist and still not deliver: SPF or DMARC may not align for forwarded mail, the receiving provider may junk it silently, a loop may form, or the alias may accept and blackhole. None of that is visible from the configuration screen.
+No address is published while reply identity is unresolved, so `/contact/` keeps its current wording — that PCA cannot receive messages yet. That is now conservative rather than strictly accurate, and deliberately so: publishing an address promises a reply, and today the reply would come from somewhere else. `admin@pcasafe.com` stays unpublished in any case.
 
-**Forwarding is also not send-as.** These are independent capabilities. If a reply to a privacy request leaves from the owner's private mailbox, the requester learns a private address and the reply does not come from the published contact. That must be tested before any address is published.
-
-The full test procedure — 9 inbound tests and 5 reply-identity tests per alias, with the classification rules — is in `RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md`. **None has been run by this session**, and the results table is deliberately empty. I have neither an external mail account nor access to the owner's mailbox, and a fabricated delivery result is worse than an open blocker.
-
-Until delivery is proven, `/contact/` keeps its current honest wording — that PCA cannot receive messages yet — and no address is published. `admin@pcasafe.com` stays operational and is not proposed as public copy in any case.
+Tests still not observed, and therefore still blank rather than assumed: sender preservation, Arabic and attachment fidelity, forwarding-loop check, delivery delay, per-alias distinguishability, and every SPF/DKIM/DMARC result. Detail and the classification rules are in `RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md`.
 
 ---
 
-## H. Arabic review
+## H. Arabic review — complete, remediated, awaiting sign-off
+
+The independent native reviewer completed all 189 rows and returned four files, preserved verbatim in `PCA_Release_A_Arabic_Native_Review_Package/` with CRLF intact so their checksums stay verifiable.
 
 ```
-ARABIC_REVIEW_PACK            = COMPLETE   (189 rows, 338 Arabic strings)
-ARABIC_REVIEW_GUIDE           = COMPLETE
-ARABIC_OWNER_SIGNOFF_TEMPLATE = COMPLETE   (87 rows, all OWNER_DECISION = PENDING)
-NATIVE_ARABIC_REVIEW          = AWAITING_EXTERNAL_REVIEW
-OD_12                         = NOT_APPROVED
+SUPPORTER_ARABIC_REVIEW           = COMPLETE
+ARABIC_REVIEW_ROWS                = 189   (127 PASS, 31 LOW, 21 MEDIUM, 5 HIGH, 5 LEGAL)
+ARABIC_REVIEW_PACKAGE_STALE_ROWS  = 0
+ARABIC_CORRECTIONS_VALIDATED      = 62
+ARABIC_CORRECTIONS_APPLIED        = 40
+ARABIC_CORRECTIONS_DEFERRED_LEGAL = 20
+ARABIC_CORRECTIONS_REJECTED       = 2
+NATIVE_ARABIC_REMEDIATION         = COMPLETE (non-legal set)
+OD_12                             = AWAITING_OWNER_SIGNOFF
 ```
 
-The independent reviewer is assigned and the pack now exists:
+**Validated before trusted.** The package is review input, not source. Every returned row was re-anchored to the live corpus — key exists, and `ENGLISH_SOURCE`, `CURRENT_ARABIC`, `ROUTE`, `CLAIM_ID`, `CLAIM_STATUS` all match today's values — because the dangerous failure is not a bad translation but a stale one, applied on top of content that has since changed. The intake also proved the package self-consistent: the corrections file is exactly the non-PASS rows, both files agree on every decision and proposal, no row lost its legal flag, and the counts match the reviewer's own report. Independently, the review pack regenerated from source came back byte-identical to the committed copy, which establishes that the reviewer worked from the current corpus.
 
-| File | |
-|---|---|
-| `RELEASE_A_ARABIC_REVIEW_PACK.csv` | 189 rows, 14 columns, one per Arabic key |
-| `RELEASE_A_ARABIC_REVIEW_GUIDE.md` | what to check, how to fill it in, scope boundaries |
-| `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv` | the 87 rows needing the owner's own decision |
+**The corrections that fixed meaning, not phrasing.** `status.platform` — "Requires platform support" had become "depends on platform support", and that one label renders for **nine** `REQUIRES_PLATFORM_SUPPORT` claims. `home.protects.items` — "apply approved" had become "make", "whether protections are **active**" had become "whether protection is **working**" (stronger than English), and "**receive** notices" had become "**send** alerts". `home.availability.items` — "account **access** is not open" had been narrowed to account **creation**. `howItWorks.steps.items` — "**verified** platform capabilities" had lost *verified*. `contact.seo.title` — the Arabic title had dropped "Channels Opening Before Launch" entirely, implying channels already exist.
 
-Generated by `public-web/scripts/arabic-review-pack.mjs`, which refuses to write a pack it cannot prove faithful: EN/AR key-set equality, one row per key, matching value shapes, no empty string on either side, every route resolving, every claim id present in **both** `claims.mjs` and the register CSV — and then all 14 pages re-rendered and required to match the emitted `dist/` files byte for byte.
+**Two proposals were rejected**, neither a criticism of the Arabic. `home.faq.items` rewrote "arbitrary files" as "any other files **not necessary for protection**", a qualifier that concedes files which *are* necessary get collected — contradicting `CHILD_FILES_CENTRAL = 0`. `video.enroll.title` was broader than the approved English title, where the correct remedy is to change the English. Both are escalated to the owner sheet with their full text rather than discarded.
 
-Risk distribution: **73 CRITICAL**, 20 HIGH, 70 MEDIUM, 26 LOW. Critical covers every privacy assertion, all legal text, every feature-status label, every release-state notice, and anything bound to a claim weaker than `VERIFIED_AVAILABLE` — because overstating a hedge in Arabic is the exact failure this review exists to catch.
+**One thing needs an owner decision.** All 20 legal-flagged corrections were deferred per instruction. Two of them are cases where the Arabic currently promises **more** than the English on `/ar/privacy/`, an indexable page: `privacy.topics.items` dropped the qualifier **readable** from central app-usage and location wording, and `privacy.principles.items` rendered "protection without surveillance" as "without *excessive* surveillance". These are accuracy defects in a privacy claim, not legal wording questions — they sit in the deferred pile only because the pack classifier marks every `PRIVACY_ASSERTION` row as legal-sensitive, a cautious rule rather than a legal finding. Recommendation and reasoning in `RELEASE_A_ARABIC_REMEDIATION_REPORT.md` §3.
 
-Export and validation only: not one character of Arabic was changed, every row ships `PENDING_REVIEW`, and `PROPOSED_ARABIC` is empty on all 189. Returned corrections will be checked against the English source, claim status, privacy hedge and approved terminology before any is applied — a linguistically better translation that strengthens a claim will be rejected.
+```
+REVISE_HIGH_OPEN          = 4   (all deferred; status.platform was the one applied)
+PRIVACY_HEDGE_DRIFT_OPEN  = 3   (all deferred)
+FEATURE_STATUS_DRIFT_OPEN = 1   (camera wording inside privacy.topics.items)
+ENGLISH_LEAKAGE_OPEN      = 0
+GENDER_AGREEMENT_OPEN     = 0   (reviewer found none)
+```
+
+`RELEASE_A_ARABIC_OWNER_SIGNOFF.csv` holds the 120 rows for OD-12, each showing `BEFORE_ARABIC` (from the reviewer's own export) beside `FINAL_PROPOSED_ARABIC` (read live from source), so a remediation error would show rather than hide. Every row is `OWNER_DECISION = PENDING`.
 
 ---
 
@@ -405,11 +416,11 @@ None is an engineering defect in the artifact.
 
 | # | Class | Blocker | Owner |
 |---|---|---|---|
-| **ARB-1** | ARABIC | `NATIVE_ARABIC_REVIEW = AWAITING_EXTERNAL_REVIEW`. Pack delivered; OD-12 sign-off outstanding. CLM-050/051 stay `COMING_LATER`. | Reviewer, then owner |
-| **LEG-1** | LEGAL | OD-13 unresolved; `PPR1R-D035` open. 13 facts requested in `RELEASE_A_LEGAL_OWNER_INPUT.md`. | Owner + legal |
-| **OPS-1** | CONTACT | Four aliases configured, **zero delivery tests run**. `CONTACT_CHANNEL = NOT_READY`, `PUBLIC_REPLY_IDENTITY = NOT_TESTED`. A child-protection site must not publish `security@` before proving it receives mail. | Owner |
-| **AZ-1** | DNS | Apex `pcasafe.com` does not resolve at all. Needs an apex record and an apex→`www` redirect. **DNS change — not made.** | Owner |
-| **AZ-2** | SECURITY | `pcaSafe` pulls from ACR with admin-user credentials and has no managed identity. | Owner |
+| **ARB-1** | ARABIC | Independent review complete and remediated; **OD-12 sign-off outstanding**. 120 rows await the owner in `RELEASE_A_ARABIC_OWNER_SIGNOFF.csv`. Includes one decision that is not merely procedural — see §H and `RELEASE_A_ARABIC_REMEDIATION_REPORT.md` §3. | Owner |
+| **LEG-1** | LEGAL | OD-13 unresolved; `PPR1R-D035` open. 13 deferred Arabic corrections on `/ar/privacy-policy/` and `/ar/terms/` are blocked behind it. 13 facts requested in `RELEASE_A_LEGAL_OWNER_INPUT.md`. | Owner + legal |
+| **OPS-1** | CONTACT | Inbound **PASS** on all four aliases. `PUBLIC_REPLY_IDENTITY = NOT_READY` — replies leave from the owner's private mailbox. `CONTACT_CHANNEL = PARTIAL`. Owner is configuring Send As. | Owner |
+| **AZ-1** | DNS | Apex `pcasafe.com` does not resolve. `APEX_DOMAIN_REDIRECT = NOT_CONFIGURED`. Needs a record, a certificate and a redirect, **in that order** — plan in `RELEASE_A_INFRA_FOLLOWUPS.md` §A. **No DNS change made.** | Owner |
+| **AZ-2** | SECURITY | `pcaSafe` pulls from ACR with admin-user credentials and has no managed identity. `ACR_IDENTITY_HARDENING = OWNER_AUTHORIZATION_REQUIRED`. Plan in `RELEASE_A_INFRA_FOLLOWUPS.md` §B. **No change made.** | Owner |
 | **CLM-1** | CLAIM | CLM-054 stays `NOT_APPROVED_FOR_PUBLIC_CLAIM` by ruling; CLM-041/042 unapproved; CLM-056 approved but deliberately not rendered. **No action needed** — recorded so the gap is not mistaken for an oversight. | — |
 
 **INF-1 is CLOSED.** Production security headers are implemented, served and verified against a running container.
@@ -427,7 +438,7 @@ BUILD         = PASS (14 pages, 189/189 EN/AR parity, all gates green, determini
 BROWSER_UAT   = 112/112 PASS (real Chromium, EN+AR, 8 widths, every route)
 ACCESSIBILITY = 0 axe violations, WCAG 2.1 A+AA, real browser, contrast evaluated
 SEO           = PASS (canonical, hreflang+x-default, sitemap 10, robots, OG, per-page metadata)
-PERFORMANCE   = 8,387 B gz first load | LCP 68 ms | CLS 0 | 0 external requests
+PERFORMANCE   = 8,387 B gz first load | CLS 0 | 0 external requests
 CLAIM_GATES   = PASS (57 rows, 53 inherited cross-checked, 20 patterns self-tested)
 
 PUBLIC_RELEASE_A_CRITICAL_FINDINGS = 0
@@ -441,17 +452,27 @@ PCA_PUBLIC_RELEASE_A_DEPLOYED  = NO
 
 LOCAL_RELEASE_A_CONTAINER                = PASS (271/271)
 PRODUCTION_SECURITY_HEADER_CONFIGURATION = PASS_LOCAL
+artifact-sha256                          = 848394cd4f83d6c115fe73709fb0ad44517aea5b1c336d94637c6942965555fc
 
 SUPPORT/PRIVACY/SECURITY/ADMIN_ALIAS_CONFIGURED = YES
-SUPPORT/PRIVACY/SECURITY_INBOUND_VERIFIED       = NOT_TESTED
-PUBLIC_REPLY_IDENTITY                            = NOT_TESTED
-CONTACT_CHANNEL                                  = NOT_READY
+SUPPORT/PRIVACY/SECURITY_INBOUND_VERIFIED       = PASS
+INBOUND_CONTACT                                  = PASS
+PUBLIC_REPLY_IDENTITY                            = NOT_READY
+CONTACT_CHANNEL                                  = PARTIAL
 
-ARABIC_REVIEW_PACK   = COMPLETE (189 rows)
-NATIVE_ARABIC_REVIEW = AWAITING_EXTERNAL_REVIEW
-OD_12                = NOT_APPROVED
+SUPPORTER_ARABIC_REVIEW      = COMPLETE
+ARABIC_REVIEW_ROWS           = 189
+ARABIC_CORRECTIONS_APPLIED   = 40
+ARABIC_CORRECTIONS_DEFERRED  = 20
+ARABIC_CORRECTIONS_REJECTED  = 2
+NATIVE_ARABIC_REMEDIATION    = COMPLETE (non-legal set)
+OD_12                        = AWAITING_OWNER_SIGNOFF
 
 LEGAL_PUBLICATION_STATUS = NOT_AUTHORIZED
+OD_13                    = OPEN
+
+APEX_DOMAIN_REDIRECT   = NOT_CONFIGURED
+ACR_IDENTITY_HARDENING = OWNER_AUTHORIZATION_REQUIRED
 
 VIDEO_1_STATUS = SCRIPTED_PLACEHOLDER (EN+AR script, storyboard, transcript, poster, captions)
 VIDEO_2_STATUS = SCRIPTED_PLACEHOLDER (as above; real footage after Android device UAT)
@@ -464,8 +485,8 @@ RELEASE_A_TECHNICAL_READINESS    = READY
 RELEASE_A_PUBLICATION_AUTHORIZED = NO
 ```
 
-Technically ready and not authorised to publish remain true at once. The engineering blocker that stood in the previous report (no production security headers) is closed; every remaining blocker is an owner decision or an owner-side verification.
+Technically ready and not authorised to publish remain true at once, and the gap has narrowed to owner decisions: an Arabic sign-off, a set of legal facts, a mail configuration the owner is already doing, and a DNS record. No engineering blocker remains open.
 
-`www.pcasafe.com` now resolves to the dedicated Public Web App, which means the next deploy is not a rehearsal — it is publication. Stopping here for owner and primary ChatGPT review.
+`www.pcasafe.com` resolves to the dedicated Public Web App, so the next deploy is not a rehearsal — it is publication. Stopping here for owner and primary ChatGPT review.
 
 `PCA_PUBLIC_IMPLEMENTATION = READY_FOR_PRIMARY_CHATGPT_REVIEW`
