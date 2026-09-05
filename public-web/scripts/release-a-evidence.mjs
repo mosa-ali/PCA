@@ -2,7 +2,7 @@
  * PUBLIC-12 + PUBLIC-13 — Release A evidence harness.
  *
  * One run produces every objective measurement the owner asked for, in a real
- * browser, and writes dist/release-a-evidence.json alongside a console summary.
+ * browser, and writes reports/release-a-evidence.json alongside a console summary.
  *
  * PUBLIC-13 route matrix : every built route x EN/AR x 8 mandated widths
  * PUBLIC-12 accessibility: axe (WCAG 2.1 A+AA), keyboard-only traversal, visible
@@ -461,5 +461,5 @@ for (const [p, v] of Object.entries(report.seo.perPage)) {
 console.log('\n=== 404 ===');
 console.log(`  HTTP ${notFound.httpStatus} | title="${notFound.status}" | robots=${notFound.robots} | home link=${notFound.hasHomeLink} | arabic link=${notFound.hasArabicLink}`);
 
-console.log(`\nevidence written: dist/release-a-evidence.json`);
+console.log(`\nevidence written: reports/release-a-evidence.json (outside the deploy root)`);
 console.log(problems.length === 0 ? '\nALL CHECKS CLEAN' : `\n${problems.length} PROBLEM(S)`);

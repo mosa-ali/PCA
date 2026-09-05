@@ -52,7 +52,13 @@ import {
 } from './src/content/routes.mjs';
 import { VIDEOS } from './src/content/videos.mjs';
 import { CLAIMS, STATUS_CSS, labelKeyForClaim, PROPOSED_CLAIMS } from './src/content/claims.mjs';
-import { siteOrigin, absoluteUrl, REQUIRED_RESPONSE_HEADERS, CSP_CONTENT } from './src/lib/seo.mjs';
+import {
+  siteOrigin,
+  absoluteUrl,
+  REQUIRED_RESPONSE_HEADERS,
+  CSP_CONTENT,
+  CSP_HEADER_CONTENT,
+} from './src/lib/seo.mjs';
 import * as homePage from './src/pages/home.mjs';
 import * as howItWorksPage from './src/pages/howItWorks.mjs';
 import * as privacyPage from './src/pages/privacy.mjs';
@@ -621,6 +627,130 @@ async function assertNoInternalVocabularyInArtifact() {
   }
 }
 
+/**
+ * The CSP must describe THIS artifact -- measured, not asserted.
+ *
+ * Every previous CSP in this repo was written once and then inherited: parent-web
+ * carries style-src 'unsafe-inline' for a build step it no longer has, and this
+ * file shipped `img-src 'self' data:` and `font-src 'self'` for a data URI and a
+ * webfont that never existed. A policy nobody re-derives is a policy that only
+ * ever loosens.
+ *
+ * So this gate reads the emitted files, works out which fetch directives the
+ * artifact genuinely exercises, and fails BOTH ways:
+ *   - a use with no grant  -> the browser would block a real asset;
+ *   - a grant with no use  -> standing permission for a change nobody reviewed.
+ *
+ * It also refuses 'unsafe-inline'/'unsafe-eval'/wildcards outright, and requires
+ * that the meta policy and the response-header policy stay the same document
+ * apart from the two header-only directives.
+ */
+const CSP_USE_PROBES = [
+  { directive: 'script-src', re: /<script\b[^>]*\bsrc=/i, what: 'an external <script src>' },
+  { directive: 'style-src', re: /<link\b[^>]*\brel="stylesheet"/i, what: 'a <link rel="stylesheet">' },
+  { directive: 'img-src', re: /<img\b[^>]*\bsrc=|<link\b[^>]*\brel="(?:icon|apple-touch-icon)"/i, what: 'an <img> or favicon' },
+  { directive: 'font-src', re: /@font-face\b/i, what: 'an @font-face rule' },
+  { directive: 'media-src', re: /<(?:video|audio)\b|<source\b/i, what: 'a <video>/<audio>/<source>' },
+  { directive: 'frame-src', re: /<(?:iframe|frame)\b/i, what: 'an <iframe>' },
+  { directive: 'object-src', re: /<(?:object|embed)\b/i, what: 'an <object>/<embed>' },
+  { directive: 'manifest-src', re: /<link\b[^>]*\brel="manifest"/i, what: 'a web app manifest' },
+  { directive: 'worker-src', re: /new\s+Worker\s*\(|serviceWorker/i, what: 'a worker' },
+  { directive: 'connect-src', re: /\bfetch\s*\(|XMLHttpRequest|new\s+EventSource\s*\(|new\s+WebSocket\s*\(/i, what: 'a network call' },
+  { directive: 'form-action', re: /<form\b/i, what: 'a <form>' },
+];
+
+/** `data:` and `blob:` are separate grants, so probe them separately. */
+const CSP_SCHEME_PROBES = [
+  { token: 'data:', re: /(?:src|href)="data:|url\(\s*['"]?data:/i, what: 'a data: URI' },
+  { token: 'blob:', re: /(?:src|href)="blob:|URL\.createObjectURL/i, what: 'a blob: URI' },
+];
+
+const CSP_BANNED_SOURCES = ["'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'", 'http:', 'https:', '*'];
+
+async function assertCspCoversArtifact() {
+  const { readdir } = await import('node:fs/promises');
+  const walk = async (dir) => {
+    const out = [];
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      const abs = join(dir, e.name);
+      if (e.isDirectory()) out.push(...(await walk(abs)));
+      else out.push(abs);
+    }
+    return out;
+  };
+
+  // Read the artifact as the browser would, minus the policy text itself --
+  // otherwise `img-src 'self' data:` in the meta tag counts as a use of data:.
+  const SCANNED = ['.html', '.css', '.js', '.svg'];
+  let corpus = '';
+  for (const abs of await walk(DIST)) {
+    if (!SCANNED.includes(extname(abs))) continue;
+    corpus +=
+      (await readFile(abs, 'utf8')).replace(
+        /<meta[^>]*http-equiv="Content-Security-Policy"[^>]*>/gi,
+        ''
+      ) + '\n';
+  }
+
+  const policy = new Map();
+  for (const part of CSP_HEADER_CONTENT.split(';')) {
+    const [name, ...sources] = part.trim().split(/\s+/);
+    if (name) policy.set(name, sources);
+  }
+
+  const granted = (directive) => {
+    const own = policy.get(directive);
+    const sources = own ?? policy.get('default-src') ?? [];
+    return sources.length > 0 && !sources.includes("'none'");
+  };
+
+  for (const [name, sources] of policy) {
+    for (const banned of CSP_BANNED_SOURCES) {
+      if (sources.includes(banned)) {
+        fail('csp', `${name} grants ${banned}. Nothing in the artifact requires it.`);
+      }
+    }
+  }
+
+  for (const probe of CSP_USE_PROBES) {
+    const used = probe.re.test(corpus);
+    const allowed = granted(probe.directive);
+    if (used && !allowed) {
+      fail('csp', `the artifact uses ${probe.what} but ${probe.directive} resolves to 'none'.`);
+    }
+    if (!used && allowed) {
+      fail(
+        'csp',
+        `${probe.directive} is granted but nothing in the artifact is ${probe.what}. ` +
+          'Remove the grant or let it inherit default-src.'
+      );
+    }
+  }
+
+  for (const probe of CSP_SCHEME_PROBES) {
+    const used = probe.re.test(corpus);
+    const allowed = [...policy.values()].some((sources) => sources.includes(probe.token));
+    if (used && !allowed) fail('csp', `the artifact uses ${probe.what} but no directive allows ${probe.token}.`);
+    if (!used && allowed) fail('csp', `${probe.token} is granted but the artifact contains no ${probe.what.replace(/^an? /, "")}.`);
+  }
+
+  const metaOnly = CSP_CONTENT.split('; ');
+  const headerOnly = CSP_HEADER_CONTENT.split('; ').filter((d) => !metaOnly.includes(d));
+  const HEADER_ONLY_EXPECTED = ["frame-ancestors 'none'", 'upgrade-insecure-requests'];
+  if (headerOnly.join('|') !== HEADER_ONLY_EXPECTED.join('|')) {
+    fail(
+      'csp',
+      'the meta policy and the header policy have drifted. The header may add only ' +
+        HEADER_ONLY_EXPECTED.join(' and ') +
+        `; it currently adds: ${headerOnly.join(', ') || '(nothing)'}.`
+    );
+  }
+  if (CSP_CONTENT.includes('frame-ancestors')) {
+    fail('csp', 'frame-ancestors is inert in <meta> and makes Chrome log a console error on every page.');
+  }
+  return { directives: policy.size, granted: [...policy.keys()].filter(granted) };
+}
+
 function assertNoExternalRefs(pageId, htmlText, origin) {
   const re = /(?:href|src)="([^"]*)"/g;
   let match;
@@ -1022,7 +1152,15 @@ function renderPages(origin) {
       const publicHtml = stripInternalClaimMetadata(htmlText);
       assertNoInternalClaimMetadata(pageId, publicHtml);
 
-      rendered.push({ routeId: route.id, locale, path: outputPathFor(route.id, locale), html: publicHtml });
+      rendered.push({
+        routeId: route.id,
+        locale,
+        path: outputPathFor(route.id, locale),
+        html: publicHtml,
+        // Pre-strip markup, for the Arabic review pack only. dist/ is written
+        // from `html`, so this never reaches the artifact.
+        htmlWithMetadata: htmlText,
+      });
     }
   }
 
@@ -1185,6 +1323,11 @@ async function main() {
     claimsReferenced: Object.keys(CLAIMS),
     claimRegister: { csvRows: claimRegister.registered, proposedNotYetInCsv: claimRegister.proposed },
     forbiddenPatternsSelfTested: patternsSelfTested,
+    contentSecurityPolicy: {
+      meta: CSP_CONTENT,
+      responseHeader: CSP_HEADER_CONTENT,
+      derivedFromArtifact: null,
+    },
     requiredResponseHeaders: REQUIRED_RESPONSE_HEADERS,
     notes: [
       'CLM-054 (accessibility conformance) remains NOT_APPROVED_FOR_PUBLIC_CLAIM. Computed token contrast is not rendered-page evidence; real-browser verification is required at PUBLIC-12.',
@@ -1278,9 +1421,18 @@ async function main() {
   await writeFile(join(DIST, 'robots.txt'), robotsTxt(origin), 'utf8');
   await writeFile(join(DIST, 'sitemap.xml'), sitemapXml(origin), 'utf8');
   await mkdir(REPORTS, { recursive: true });
+  // The CSP gate re-derives the policy from the files that were actually
+  // emitted, so it can only run once dist/ exists.
+  const csp = await assertCspCoversArtifact();
+  report.contentSecurityPolicy.derivedFromArtifact = {
+    directives: csp.directives,
+    grantedDirectives: csp.granted,
+  };
+
   await writeFile(join(REPORTS, 'build-report.json'), JSON.stringify(report, null, 2), 'utf8');
 
   await assertNoInternalVocabularyInArtifact();
+
   if (failures.length) {
     console.error('\nBUILD FAILED — %d artifact gate failure(s):\n', failures.length);
     for (const f of failures) console.error('  ' + f);
@@ -1311,7 +1463,21 @@ async function main() {
   console.log(`  new copy to review  ${NEW_COPY.length} key(s)`);
 }
 
-main().catch((err) => {
-  console.error('BUILD ERROR:', err.message);
-  process.exitCode = 1;
-});
+/**
+ * Exported so the Arabic review pack can be derived from the SAME renderer the
+ * build uses, rather than from a second copy that can drift. The pack asserts
+ * that stripping its own render reproduces the emitted dist/ file byte for byte.
+ */
+export { renderPages, makeTranslator, stripInternalClaimMetadata, CONTENT, CLAIMS };
+
+// Only build when invoked as a program. Importing this module for its exports
+// must not write dist/.
+const invokedDirectly =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('BUILD ERROR:', err.message);
+    process.exitCode = 1;
+  });
+}

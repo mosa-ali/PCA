@@ -55,30 +55,43 @@ export function languageAlternates(routeId, origin = siteOrigin()) {
 /**
  * Content Security Policy for the public site.
  *
- * Deliberately stricter than either console's policy, because Release A makes
- * no network calls at all:
- *   - connect-src 'none'  : there is no API client, no fetch, no analytics.
- *   - form-action 'none'  : Release A submits no forms (contact is a mailto).
- *   - style-src 'self'    : all CSS is an external file; no inline styles, so
- *                           'unsafe-inline' is not needed as it is in parent-web.
+ * DERIVED FROM THE ARTIFACT, not copied from another app. `assertCspCoversArtifact()`
+ * in build.mjs re-derives the required sources from the emitted files on every
+ * build and fails if this policy is either too loose or too tight, so the two
+ * cannot drift apart.
  *
- * frame-ancestors is INERT when delivered via <meta> per CSP Level 3 -- it is
- * kept so the policy is already correct the day a real response header serves
- * it. Clickjacking protection, HSTS, X-Frame-Options, X-Content-Type-Options
- * and Permissions-Policy are RELEASE-A PREDEPLOY BLOCKERS per the owner
- * ruling, not build blockers: they must come from the host or CDN, which is
- * exactly the gap tracked as PPR1R-D039.
+ * What the Release A artifact actually loads, measured:
+ *   - one same-origin stylesheet          -> style-src 'self'
+ *   - one same-origin deferred script     -> script-src 'self'
+ *   - same-origin SVG images and favicon  -> img-src 'self'
+ *   - nothing else at all: 0 fonts, 0 data: URIs, 0 iframes, 0 <video>/<audio>,
+ *     0 <form>, 0 <object>/<embed>, 0 web manifest, 0 workers, 0 fetch/XHR.
+ *
+ * So the baseline is `default-src 'none'` and every unused fetch directive
+ * inherits it. That is what removes connect-src, font-src, media-src,
+ * frame-src, worker-src, manifest-src and object-src as separate lines: they
+ * are not omitted, they are 'none' by inheritance.
+ *
+ * Two directives were deliberately TIGHTENED after real measurement:
+ *   - `img-src 'self' data:` -> `img-src 'self'`. Every `data:` occurrence in
+ *     dist/ was the policy string itself; not one image used a data URI.
+ *   - `font-src 'self'` was dropped. The stylesheet declares no @font-face and
+ *     contains no url() at all -- the site is system-font only.
+ * A directive nobody needs is not free: it is standing permission for the next
+ * change to smuggle something in without a review.
+ *
+ * 'unsafe-inline' and 'unsafe-eval' appear nowhere, in either directive. The
+ * site emits no inline <style>, no style="" attribute, no inline <script> and
+ * no on*= handler, so neither is technically required -- and parent-web's
+ * style-src 'unsafe-inline' is exactly the compromise this artifact avoids.
  */
 const CSP_DIRECTIVES = [
-  "default-src 'self'",
+  "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src 'none'",
+  "img-src 'self'",
   "base-uri 'self'",
   "form-action 'none'",
-  "object-src 'none'",
 ];
 
 /**
@@ -93,14 +106,40 @@ const CSP_DIRECTIVES = [
  * is how a real error gets missed.
  *
  * So frame-ancestors lives only where it actually works: in
- * REQUIRED_RESPONSE_HEADERS below, which the host or CDN must serve.
+ * REQUIRED_RESPONSE_HEADERS below, served by deploy/nginx.conf.
  */
 export const CSP_CONTENT = CSP_DIRECTIVES.join('; ');
 
-/** The full policy, including directives only a real response header honours. */
-export const CSP_HEADER_CONTENT = [...CSP_DIRECTIVES, "frame-ancestors 'none'"].join('; ');
+/**
+ * The full policy, including the directives only a real response header honours.
+ *
+ * frame-ancestors is inert in <meta> per CSP Level 3. upgrade-insecure-requests
+ * is honoured in <meta>, but it is kept header-side so that the one policy a
+ * reviewer has to audit for transport behaviour is the one the server sends.
+ */
+export const CSP_HEADER_CONTENT = [
+  ...CSP_DIRECTIVES,
+  "frame-ancestors 'none'",
+  'upgrade-insecure-requests',
+].join('; ');
 
-/** Response headers a host/CDN must set. Emitted to dist/ for the predeploy report. */
+/**
+ * Response headers the host must set. Emitted to reports/ for the predeploy
+ * report, asserted against the running container by deploy/verify-container.mjs,
+ * and served by deploy/nginx.conf. Those three must agree; the verifier is what
+ * makes disagreement fail rather than ship.
+ *
+ * Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy were evaluated
+ * against actual behaviour rather than copied in:
+ *   - COOP same-origin: the site opens no popup and is opened by none, so it
+ *     severs nothing that exists and removes window.opener as an attack path.
+ *   - CORP same-origin: nothing here is meant to be embedded by another site.
+ *     Note this is stricter than cross-origin and would need revisiting if a
+ *     future asset is ever meant to be hotlinked; today none is.
+ * Cross-Origin-Embedder-Policy is deliberately NOT set: it buys cross-origin
+ * isolation, which only matters for SharedArrayBuffer and high-resolution
+ * timers, and this site uses neither.
+ */
 export const REQUIRED_RESPONSE_HEADERS = {
   'Content-Security-Policy': CSP_HEADER_CONTENT,
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
@@ -108,6 +147,8 @@ export const REQUIRED_RESPONSE_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
 };
 
 export function robotsContent(routeId) {
