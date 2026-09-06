@@ -83,11 +83,42 @@ function Get-CodeProjection([string] $Line, [ref] $InBlockComment) {
       while ($Index -lt $Line.Length -and $Line[$Index] -ne '`') {
         if ($Line[$Index] -eq '\') { $Index += 2; continue }
         if ($Line[$Index] -eq '$' -and ($Index + 1) -lt $Line.Length -and $Line[$Index + 1] -eq '{') {
+          # PCA-DW-W2-2B-R1: quote-aware brace-depth tracking -- a real,
+          # verified bypass existed here (adversarial review, see commit
+          # history): `${('}' , console.log(child.token))}` is valid JS/TS
+          # that genuinely calls console.log(child.token) at runtime, but a
+          # depth counter that treats EVERY '{'/'}' character as a real
+          # brace -- including ones inside a nested string literal -- hits
+          # depth 0 the instant it sees that quoted '}' and ends
+          # interpolation capture right there. Everything after (the real
+          # call) then falls through to the surrounding template-literal
+          # loop's "discard plain body text" default until the next literal
+          # backtick, silently vanishing from the projection before the
+          # detector's regex ever runs. Skipping a nested '.../"..." string
+          # whole (content discarded, matching top-level string handling)
+          # before counting its braces closes that hole. A nested backtick
+          # template literal inside ${...} is not specially handled and
+          # remains a known residual gap.
           $Depth = 0
           while ($Index -lt $Line.Length) {
-            [void]$Builder.Append($Line[$Index])
-            if ($Line[$Index] -eq '{') { $Depth++ }
-            elseif ($Line[$Index] -eq '}') { $Depth--; if ($Depth -le 0) { $Index++; break } }
+            $InterpChar = $Line[$Index]
+            if ($InterpChar -eq "'" -or $InterpChar -eq '"') {
+              $NestedQuote = $InterpChar
+              [void]$Builder.Append($NestedQuote)
+              $Index++
+              while ($Index -lt $Line.Length -and $Line[$Index] -ne $NestedQuote) {
+                if ($Line[$Index] -eq '\') { $Index++ }
+                $Index++
+              }
+              if ($Index -lt $Line.Length) {
+                [void]$Builder.Append($NestedQuote)
+                $Index++
+              }
+              continue
+            }
+            [void]$Builder.Append($InterpChar)
+            if ($InterpChar -eq '{') { $Depth++ }
+            elseif ($InterpChar -eq '}') { $Depth--; if ($Depth -le 0) { $Index++; break } }
             $Index++
           }
           continue

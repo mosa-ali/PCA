@@ -177,7 +177,7 @@ import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
 import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSender.js';
 import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
-import { isProductionSensitiveRuntime } from './runtime/environment.js';
+import { assertKnownRuntimeEnvironment, isProductionSensitiveRuntime } from './runtime/environment.js';
 import { EmailService } from './email/EmailService.js';
 import { MySqlEmailOutboxRepository } from './email/MySqlEmailOutboxRepository.js';
 import { resolveEmailProviderAdapter } from './email/emailProviderConfig.js';
@@ -305,6 +305,17 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
 }
 
 async function start(): Promise<void> {
+  // PCA-DW-W2-2B-R1: boot-time defense in depth -- throws immediately (and
+  // loudly, before anything else constructs) if NODE_ENV is not exactly
+  // 'test', 'development', or 'production'. Every individual production-
+  // sensitive gate in this codebase already fails closed on its own for a
+  // bad NODE_ENV (isProductionSensitiveRuntime treats it as production-
+  // like), so this is not what stands between a misconfigured deploy and a
+  // security hole -- it exists so that misconfiguration is surfaced as a
+  // crash-on-startup an operator will notice, not a silently-degraded
+  // process running indefinitely in the safe-but-unintended posture.
+  assertKnownRuntimeEnvironment();
+
   const deviceRepository = new MySqlDeviceRepository();
   const relayService = new RelayService(new MySqlRelayRepository());
   const authzRepository = new MySqlAuthzRepository();
