@@ -1,237 +1,303 @@
 {
-  "$schemaNote": "Machine-readable external/human gate state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. Every gate here is BLOCKED or EXTERNAL by definition until an owner outside this repository-editing lane closes it and records evidence. Do not set status to CLOSED/GREEN from within an automated script or an agent lane -- it must be updated by hand by the accountable human owner with an evidence reference.",
-  "lastUpdatedUtc": "2026-08-26T21:21:48.0000000Z",
+  "$schemaNote": "Machine-readable external/human gate state consumed by tooling/release/Invoke-ReleaseGateCheck.ps1. Every gate here is BLOCKED or EXTERNAL by definition until an owner outside this repository-editing lane closes it and records evidence. Do not set status to CLOSED/GREEN from within an automated script or an agent lane -- it must be updated by hand by the accountable human owner with an evidence reference. Each gate also carries a 'releaseScope' array naming which release target(s) this gate blocks while non-CLOSED; a gate is simply ignored for any release target not listed there. Valid release targets (see docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv, the authoritative per-gate x per-target scoping answer key): PUBLIC_A, AUTH_B, PARENT_C, ANDROID_D, IOS_FUTURE, BILLING_FUTURE. An empty releaseScope means the gate currently blocks no release target (e.g. TELEMETRY_ACTIVATION_OWNER_SIGNOFF, which gates ACTIVATING telemetry rather than any release capability, and so can never legitimately close yet must never falsely block a release either).",
+  "releaseTargets": ["PUBLIC_A", "AUTH_B", "PARENT_C", "ANDROID_D", "IOS_FUTURE", "BILLING_FUTURE"],
+  "lastUpdatedUtc": "2026-09-06T00:00:00.0000000Z",
   "gates": [
     {
       "id": "CRYPTO_SECURITY_REVIEW",
       "status": "BLOCKED",
       "description": "Human security review of the production crypto suite (DeviceSignatureVerifier, EnvelopeSignatureVerifier) has not occurred. See docs/security/production-crypto-review/. Backend currently wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier which fail closed by design.",
       "owner": "External security reviewer (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PARENT_C", "ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "ANDROID_REAL_DEVICE_UAT",
       "status": "BLOCKED",
       "description": "No real Android hardware has run the UAT_TEST_PLAN.md case catalogue. This lane has JVM unit-test evidence only (see evidence pack), which does not satisfy this gate.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "IOS_MAC_XCODE",
       "status": "EXTERNAL",
       "description": "No macOS/Xcode build environment is available in this environment. iOS build/test/signing cannot be performed here.",
       "owner": "iOS build owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["IOS_FUTURE"]
     },
     {
       "id": "IOS_FAMILY_CONTROLS_ENTITLEMENT",
       "status": "EXTERNAL",
       "description": "Apple Family Controls entitlement has not been granted/confirmed. Required before any real iOS parental-control capability can ship.",
       "owner": "Apple Developer Program account holder (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["IOS_FUTURE"]
     },
     {
       "id": "IOS_PHYSICAL_DEVICE",
       "status": "EXTERNAL",
       "description": "No physical iPhone/iPad is available for UAT or Family Controls testing (simulator cannot exercise Family Controls/Screen Time APIs).",
       "owner": "iOS device owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["IOS_FUTURE"]
     },
     {
       "id": "YOUTUBE_MODE_B_POLICY_REVIEW",
       "status": "BLOCKED",
       "description": "YouTube Mode B (PCA-controlled playback) policy/compliance review with YouTube API Terms of Service has not been completed. Backend feature flag defaults disabled and unreviewed (see ModeBFeatureFlagStore tests).",
       "owner": "Compliance/legal owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "CLOUD_AI_OWNER_DECISION",
       "status": "BLOCKED",
       "description": "Owner decision on cloud-based AI classifier usage (vs. on-device only) has not been made. On-device model lifecycle/package verification gate exists but cloud-provider decision is unresolved.",
       "owner": "Product/privacy owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "PRODUCTION_CRYPTO_SECURITY_REVIEW",
       "status": "BLOCKED",
       "description": "Production crypto verifier activation requires the independent security review recorded by the release gate.",
-      "owner": "External security reviewer (not yet assigned)",
-      "evidence": null
+      "owner": "Security and release owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": ["PARENT_C", "ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "CRYPTO_ACTIVATION",
       "status": "BLOCKED",
       "description": "Signed runtime acceptance and delivery remain fail-closed until the reviewed production crypto suite is activated.",
       "owner": "Security and release owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PARENT_C", "ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "ANDROID_APP_LINK_ASSETLINKS_HOSTING",
       "status": "EXTERNAL",
       "description": "Android App Link assetlinks hosting and ownership verification require the production domain owner.",
       "owner": "Android/domain owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "ANDROID_PHYSICAL_INSTALL_CONTINUATION",
       "status": "EXTERNAL",
       "description": "Physical Android install and continuation testing require a real device and production distribution path.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "SUPPORTED_CHARGE_CURRENCIES",
       "status": "EXTERNAL",
       "description": "Supported charge-currency approval is a commercial and finance owner decision, not a local source-only claim.",
       "owner": "Commercial/finance owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     },
     {
       "id": "SUPPORTED_SETTLEMENT_CURRENCIES",
       "status": "EXTERNAL",
       "description": "Supported settlement-currency approval requires the accountable finance and settlement owner.",
       "owner": "Finance/settlement owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     },
     {
       "id": "PAYMENT_PROVIDER_SELECTION",
       "status": "EXTERNAL",
       "description": "A production payment provider has not been selected and approved for this repository lane.",
       "owner": "Commercial/finance owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     },
     {
       "id": "MERCHANT_ACCOUNT_APPROVAL",
       "status": "EXTERNAL",
       "description": "Merchant-account onboarding and approval require an external provider and accountable finance owner.",
       "owner": "Commercial/finance owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     },
     {
       "id": "SETTLEMENT_BANK_CONFIGURATION",
       "status": "EXTERNAL",
       "description": "Settlement bank configuration requires an external finance owner and provider-approved account.",
       "owner": "Finance/settlement owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     },
     {
       "id": "DEVICE_OWNER_REAL_DEVICE_AUTHORIZATION",
       "status": "EXTERNAL",
       "description": "Android device-owner authority and real-device authorization cannot be established by repository source alone.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "PLATFORM_ADMIN_ALERT_DELIVERY",
       "status": "EXTERNAL",
       "description": "Durable Platform Administration security-alert rows are generated locally; configuring and independently verifying delivery to other APP_OWNER accounts through an approved email/SMS/paging channel requires an external operations provider.",
       "owner": "Platform operations owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["AUTH_B", "PARENT_C", "ANDROID_D"]
     },
     {
       "id": "REAL_DEVICE_TELEPHONY_UAT",
       "status": "EXTERNAL",
       "description": "Real-device telephony behavior requires hardware, carrier, and controlled UAT evidence.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "REAL_DEVICE_TELEPHONY_SMS_UAT",
       "status": "EXTERNAL",
       "description": "Real-device SMS delivery and locked-state behavior require hardware, carrier, and controlled UAT evidence.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "PRODUCTION_CRYPTO_SUITE",
       "status": "BLOCKED",
-      "description": "Aggregate external dependency for requirements (retention, tamper-monitoring, envelope sync, identity) whose remaining gap is the production cryptographic suite (DeviceSignatureVerifier / EnvelopeSignatureVerifier) not yet being reviewed and activated. Backend wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier, which fail closed by design until the review completes. Tracked as a distinct register token from CRYPTO_SECURITY_REVIEW / PRODUCTION_CRYPTO_SECURITY_REVIEW / CRYPTO_ACTIVATION because the local source half of each row it covers is independently confirmed complete.",
+      "description": "Aggregate external dependency for requirements (retention, tamper-monitoring, envelope sync, identity) whose remaining gap is the production cryptographic suite (DeviceSignatureVerifier / EnvelopeSignatureVerifier) not yet being reviewed and activated. Backend wires RejectingDeviceSignatureVerifier / RejectingEnvelopeSignatureVerifier, which fail closed by design until the review completes. Tracked as a distinct register token from CRYPTO_SECURITY_REVIEW / PRODUCTION_CRYPTO_SECURITY_REVIEW / CRYPTO_ACTIVATION because the local source half of each row it covers is independently confirmed complete. Does NOT block AUTH_B: verifyEmail marks the account VERIFIED and issues a session even when family genesis fails, so identity/login work without it.",
       "owner": "External security reviewer (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PARENT_C", "ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "CAMERA_REAL_DEVICE_VALIDATION",
       "status": "EXTERNAL",
       "description": "Physical-hardware confirmation that on-device camera-based proximity/face-geometry classification (FaceProximityClassifier, AndroidFaceGeometryDetector, CameraProximitySource) behaves correctly across real OEM camera stacks. Source structurally can only emit NEAR/FAR/UNKNOWN with no persistence/network path (guarded by CameraPrivacyStaticScanTest.kt); no Android SDK/device is available in this environment to run the confirmation.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "YOUTUBE_PLATFORM_API_PARTNERSHIP",
       "status": "EXTERNAL",
       "description": "A compliant Restricted Mode / platform-API signal integration for YouTube requires a real YouTube/platform API partnership and terms review that has not been established. defaultYouTubeSafeContentCapability() correctly returns UNSUPPORTED/UNAVAILABLE by construction in the absence of that partnership, guarded by a regression test (SafeContentCapability.test.mjs) against ever introducing scraping/watch-history-monitoring/TLS-interception.",
       "owner": "Commercial/partnerships owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D", "IOS_FUTURE"]
     },
     {
       "id": "PENDING_OWNER_DECISION",
       "status": "BLOCKED",
       "description": "Generic canonical token for requirements blocked on a genuine, still-open product/architecture owner decision rather than a repository-solvable gap (sourceSolvableClass SOURCE_COMPLETE_OWNER_DECISION_GATE). Specific decisions tracked under this gate include PCA-DEC-002/014/015 (Android provisioning path: QR-code PROVISION_MANAGED_DEVICE vs. ADB pilot-only) -- see each requirement's own notes field for its specific decision citation; this canonical token itself must never be edited to imply any decision has been made.",
       "owner": "Product owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "REQUIRES_ENTITLEMENT",
       "status": "EXTERNAL",
       "description": "Requires the Apple Family Controls entitlement grant/confirmation before ChildAuthorizationCenter.swift's authorization flow can be exercised against production Apple infrastructure. Related to, but registered separately from, IOS_FAMILY_CONTROLS_ENTITLEMENT.",
       "owner": "Apple Developer Program account holder (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["IOS_FUTURE"]
     },
     {
       "id": "DEPLOYED_LOG_METRICS_PIPELINE_CONFIG",
       "status": "EXTERNAL",
       "description": "Deployed log/metrics pipeline configuration (reverse proxy / container log shipping) for the relay's routing-metadata-only logging surface. Source proof is strong (type-level exclusion of plaintext fields, Fastify logger disabled, noPayloadLoggingHttp.test.mjs regression, zero stray console/log call sites); the remaining gap is infra-level deployment configuration not present in this repository beyond a plain Dockerfile.",
       "owner": "Platform operations owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["AUTH_B", "PARENT_C", "ANDROID_D"]
     },
     {
       "id": "DEPLOYED_TLS_TERMINATION_CONFIG",
       "status": "EXTERNAL",
-      "description": "Deployed production TLS-termination configuration (reverse proxy / load balancer) is an infrastructure concern outside this repository. Confirmed via direct repo-wide search that no TLS termination is implemented or claimed in-repo, so this requirement is correctly NOT_APPLICABLE to source with the deployment step tracked as an external gate.",
+      "description": "Deployed production TLS-termination configuration (reverse proxy / load balancer) is an infrastructure concern outside this repository. Confirmed via direct repo-wide search that no TLS termination is implemented or claimed in-repo, so this requirement is correctly NOT_APPLICABLE to source with the deployment step tracked as an external gate. Any HTTPS publication, on any release target, needs TLS termination configured -- the one gate here that is genuinely scoped to every target including PUBLIC_A.",
       "owner": "Platform operations owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PUBLIC_A", "AUTH_B", "PARENT_C", "ANDROID_D", "IOS_FUTURE", "BILLING_FUTURE"]
     },
     {
       "id": "TELEMETRY_ACTIVATION_OWNER_SIGNOFF",
       "status": "BLOCKED",
-      "description": "Formal product/privacy-owner sign-off required before ever activating optional telemetry. Consent module (backend/src/telemetry/consent.ts) defaults off, has an explicit distinct grant/revoke, enforces an allowlisted aggregate-only event shape, and noTelemetryEndpoint.test.mjs proves zero ingestion routes exist anywhere in the product; building ingestion infrastructure ahead of sign-off would violate PCA-NFR-014/PRIV-002 rather than satisfy it.",
+      "description": "Formal product/privacy-owner sign-off required before ever activating optional telemetry. Consent module (backend/src/telemetry/consent.ts) defaults off, has an explicit distinct grant/revoke, enforces an allowlisted aggregate-only event shape, and noTelemetryEndpoint.test.mjs proves zero ingestion routes exist anywhere in the product; building ingestion infrastructure ahead of sign-off would violate PCA-NFR-014/PRIV-002 rather than satisfy it. This gate governs ACTIVATING telemetry, not any release capability -- it can never legitimately close before a release and must never be allowed to block one either, so its releaseScope is intentionally empty (see docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv: 'a permanent false blocker' prior to this fix).",
       "owner": "Product/privacy owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": []
     },
     {
       "id": "OFFLINE_DEVICE_INTERRUPTION_RECOVERY_VALIDATION",
       "status": "EXTERNAL",
       "description": "Physical-device validation that schedule/retention runtime correctly recovers state across real offline periods and process interruptions (RetentionEngine, RetentionMaintenanceCycle, ScheduleRuntime reboot/offline handling). The repository-solvable portion (a real RetentionEngine production caller) is closed and independently verified; the remaining gap is device-lab confirmation, which this environment lacks.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "PCA_DEC_009_DISCLOSURE_TEXT",
       "status": "BLOCKED",
       "description": "Small, distinct pending-owner-decision sub-item (decision PCA-DEC-009) on final disclosure text for the battery-budget policy requirement (PCA-NFR-034), kept as its own gate token rather than folded into the generic PENDING_OWNER_DECISION bucket or the ANDROID_REAL_DEVICE_UAT/IOS_PHYSICAL_DEVICE gates it accompanies on that row, so the decision is not hidden behind an unrelated gate.",
       "owner": "Product owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "PRODUCER_CATALOGUE_AUDIT_SIGNOFF",
       "status": "BLOCKED",
       "description": "Formal review/sign-off confirming the child-activity producer disclosure catalogue (parent-web Transparency.tsx) is complete. Every enumerable producer currently traces to a disclosed category and no concrete undisclosed producer was found, but completeness of all future platform/backend producers cannot be proven by source alone.",
       "owner": "Compliance/privacy owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PARENT_C"]
     },
     {
       "id": "OEM_DEVICE_DIVERSITY_VALIDATION",
       "status": "EXTERNAL",
       "description": "Real-device validation that OEM/AOSP dialer and communication-surface resolution (AndroidCommunicationSurfaceResolver, TelecomManager.getSystemDialerPackage()) behaves correctly across the diversity of real OEM Android devices. Hardcoded OEM assumptions were removed and unresolved cases now honestly report unavailable rather than being silently protected; the remaining need is a device lab this environment lacks.",
       "owner": "Android device owner / QA (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["ANDROID_D"]
     },
     {
       "id": "OBSERVABILITY_PIPELINE",
       "status": "EXTERNAL",
       "description": "Deployed observability/monitoring pipeline for the Platform Administration dashboard read-model and settlement-metrics routes is an infra-level dependency outside this repository; the in-repo dashboard read-model and its authorization-boundary tests are independently validated.",
       "owner": "Platform operations owner (not yet assigned)",
-      "evidence": null
+      "evidence": null,
+      "releaseScope": ["PARENT_C"]
+    },
+    {
+      "id": "OWNER_VISUAL_UAT",
+      "status": "BLOCKED",
+      "description": "Owner visual UAT of the Public site (public-web) is still IN_PROGRESS. This is a genuine Release A (PUBLIC_A) blocker distinct from the automated/technical gates: a human owner must actually look at the published public site and sign off before Release A can be considered ready. Was previously absent from this register entirely, so no tooling could ever surface it. See docs/supervision/PCA_FABLE_OPEN_ACTION_REGISTER.csv FABLE-A063 and docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv.",
+      "owner": "Product/design owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": ["PUBLIC_A"]
+    },
+    {
+      "id": "PUBLIC_REPLY_IDENTITY",
+      "status": "BLOCKED",
+      "description": "Inbound delivery to the four public addresses (contact, security-disclosure, etc.) has been verified, but public Send-As / reply identity remains NOT_READY -- the product cannot yet reply to the public from its own identity. A published contact/security-disclosure surface that cannot reply from its own identity is a genuine Release A (PUBLIC_A) blocker, and touches AUTH_B's shared email sending / domain-authentication (SPF/DKIM/DMARC) path, hence treated as blocking there too rather than assumed clear. Do not expose the private forwarding mailbox in any artifact. Was previously absent from this register entirely. See docs/supervision/PCA_FABLE_OPEN_ACTION_REGISTER.csv FABLE-A064 and docs/release_readiness/reports (RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md referenced there).",
+      "owner": "Platform operations owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": ["PUBLIC_A", "AUTH_B"]
+    },
+    {
+      "id": "PRODUCTION_EMAIL_DELIVERY",
+      "status": "EXTERNAL",
+      "description": "No production email provider integration exists in backend/src at all -- only a TestSandboxEmailSender. markVerified has exactly one caller (inside verifyEmail), so no account can reach VERIFIED and no parent can log in without a real production email path; this is the AUTH_B blocker and must not be filed under PAYMENT_PROVIDER_SELECTION. Requires: an approved real provider; a production adapter configured; verification-email delivery proven externally; reset-email delivery proven externally; sender identity and domain authentication (SPF/DKIM/DMARC) verified; and no test-sandbox adapter active in production. PUBLIC_A does not need this (no account system on the public site). ANDROID_D/IOS_FUTURE are PARTIAL: only where enrollment invitations travel by email. Was previously absent from this register entirely, so this single hard blocker for AUTH_B/PARENT_C was invisible to release tooling. See docs/supervision/PCA_FABLE_OPEN_ACTION_REGISTER.csv FABLE-A006/FABLE-A061.",
+      "owner": "Email delivery provider owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": ["AUTH_B", "PARENT_C", "ANDROID_D", "IOS_FUTURE"]
+    },
+    {
+      "id": "PAYMENT_PRODUCTION_CERTIFICATION",
+      "status": "EXTERNAL",
+      "description": "Real-money go-live certification for the production payment provider, distinct from mere provider *selection* (PAYMENT_PROVIDER_SELECTION) or merchant onboarding (MERCHANT_ACCOUNT_APPROVAL) -- this gate covers the final certification/approval to activate live (non-sandbox) payment processing. Specified in multiple release-readiness documents but was absent from this JSON register entirely, so the gate governing real-money go-live could never block a release. Governs BILLING_FUTURE only. See docs/supervision/PCA_FABLE_OPEN_ACTION_REGISTER.csv FABLE-A026.",
+      "owner": "Commercial/finance owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": ["BILLING_FUTURE"]
     }
   ]
 }

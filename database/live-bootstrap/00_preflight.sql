@@ -60,33 +60,69 @@ CALL _pca_preflight_assert(
   'PREFLIGHT FAILED: target database is not empty. This bootstrap requires an empty database. STOP.'
 );
 
--- Check 4: MySQL version must be 8.0.16+ (CHECK constraints genuinely
--- enforced, not merely parsed) -- this schema was built and equivalence-
--- tested against MySQL 8.4 specifically; anything older than 8.0.16 is
--- rejected outright, and anything other than 8.4.x is flagged as
--- unverified (see PCA_LIVE_DATABASE_SETTINGS.md section 1).
+-- Check 4: MySQL version must be EXACTLY 8.4.x. Database A and Database B
+-- (see PCA_LIVE_DATABASE_SETTINGS.md section 1 and
+-- PCA_SCHEMA_EQUIVALENCE_REPORT.md) were both built and equivalence-tested
+-- against MySQL 8.4 only -- 8.0.x is merely "very likely compatible" per
+-- that document but explicitly UNVERIFIED, and every other major (5.x,
+-- 9.x, ...) is untested entirely. This used to only reject <8.0 outright
+-- and print a non-blocking informational note for anything else (FABLE-
+-- A009) -- silently admitting an unverified major/minor into production.
+-- Fail CLOSED instead: require 8.4.x exactly, patch version unconstrained.
 CALL _pca_preflight_assert(
-  CAST(SUBSTRING_INDEX(VERSION(), '.', 1) AS UNSIGNED) >= 8,
-  CONCAT('PREFLIGHT FAILED: MySQL major version must be 8.x. Found: ', VERSION())
+  CAST(SUBSTRING_INDEX(VERSION(), '.', 1) AS UNSIGNED) = 8
+  AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 2), '.', -1) AS UNSIGNED) = 4,
+  CONCAT('PREFLIGHT FAILED: MySQL must be exactly 8.4.x. Found: ', VERSION())
 );
-CALL _pca_preflight_assert(
-  NOT (
-    CAST(SUBSTRING_INDEX(VERSION(), '.', 1) AS UNSIGNED) = 8
-    AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 2), '.', -1) AS UNSIGNED) = 0
-    AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(VERSION(), '.', 3), '.', -1) AS UNSIGNED) < 16
-  ),
-  CONCAT('PREFLIGHT FAILED: MySQL <8.0.16 lacks enforced CHECK constraints. Found: ', VERSION())
-);
-SELECT VERSION() AS mysql_version, IF(VERSION() LIKE '8.4%', 'MATCHES TESTED VERSION', 'DIFFERENT FROM 8.4 -- UNVERIFIED, review PCA_LIVE_DATABASE_SETTINGS.md before proceeding') AS version_note;
+SELECT VERSION() AS mysql_version;
 
--- Check 5: utf8mb4 must be available (it always is on 8.x, but fail closed
+-- Check 5: the TARGET DATABASE's own default character set/collation (as
+-- recorded in information_schema.schemata, independent of the server-wide
+-- --character-set-server/--collation-server flags a CREATE DATABASE could
+-- still override per-schema) must be utf8mb4/utf8mb4_bin -- every one of
+-- the 75 tables this bootstrap creates relies on inheriting this database
+-- default rather than repeating DEFAULT CHARSET/COLLATE on every CREATE
+-- TABLE (see PCA_LIVE_DATABASE_SETTINGS.md section 2).
+SET @db_charset = (SELECT default_character_set_name FROM information_schema.schemata WHERE schema_name = DATABASE());
+SET @db_collation = (SELECT default_collation_name FROM information_schema.schemata WHERE schema_name = DATABASE());
+CALL _pca_preflight_assert(
+  @db_charset = 'utf8mb4' AND @db_collation = 'utf8mb4_bin',
+  CONCAT('PREFLIGHT FAILED: db charset/collation must be utf8mb4/utf8mb4_bin. Found: ', @db_charset, '/', @db_collation)
+);
+
+-- Check 6: effective time zone must be UTC (+00:00), both GLOBAL and
+-- SESSION. GLOBAL is the authoritative signal: it is what every new
+-- connection inherits by default, and it is what actually governs the
+-- literal value NOW()/CURRENT_TIMESTAMP() write into a DEFAULT
+-- CURRENT_TIMESTAMP(3) DATETIME column -- the application pool's own
+-- `timezone: 'Z'` (backend/src/db/pool.ts) is a client-side mysql2
+-- serialization setting only (confirmed against mysql2's source: it feeds
+-- SqlString.escape/format, never a `SET time_zone` sent to the server), so
+-- it does NOT itself make the server evaluate those functions in UTC --
+-- the server's own default is the only thing that does (see
+-- PCA_LIVE_DATABASE_SETTINGS.md section 3). SESSION is asserted too,
+-- belt-and-braces, since that is the scope actually in effect for this
+-- very preflight connection (and every other plain-client connection,
+-- including database/live-bootstrap/01-04's own `mysql` runs) -- a
+-- connection-time override that left GLOBAL untouched would otherwise
+-- slip past a GLOBAL-only check.
+CALL _pca_preflight_assert(
+  @@GLOBAL.time_zone = '+00:00',
+  CONCAT('PREFLIGHT FAILED: global time_zone must be +00:00 (UTC). Found: ', @@GLOBAL.time_zone)
+);
+CALL _pca_preflight_assert(
+  @@SESSION.time_zone = '+00:00',
+  CONCAT('PREFLIGHT FAILED: session time_zone must be +00:00 (UTC). Found: ', @@SESSION.time_zone)
+);
+
+-- Check 7: utf8mb4 must be available (it always is on 8.x, but fail closed
 -- rather than assume).
 CALL _pca_preflight_assert(
   (SELECT COUNT(*) FROM information_schema.character_sets WHERE character_set_name = 'utf8mb4') = 1,
   'PREFLIGHT FAILED: utf8mb4 character set is not available on this server.'
 );
 
--- Check 6: the connected user must hold CREATE on this database (also
+-- Check 8: the connected user must hold CREATE on this database (also
 -- required: REFERENCES, for 01_create_database_schema.sql's foreign keys --
 -- not independently checkable here as precisely as CREATE, so confirmed
 -- instead by 01 itself failing loudly if absent).

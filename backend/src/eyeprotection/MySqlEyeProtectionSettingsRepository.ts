@@ -21,17 +21,31 @@ function toSettings(row: SettingsRow): EyeProtectionSettings {
  * parentaccount/MySqlParentPreferenceRepository.ts -- see that file's own
  * doc comment. `family_id` is written on first insert only (a childProfileId
  * never legitimately migrates between families through this table); every
- * mutation is authorized against the CALLER's own family before this
- * repository is ever reached (see EyeProtectionSettingsService), so this
- * class itself does no cross-family enforcement -- it is a plain keyed
- * upsert, not a second authorization boundary. */
+ * WRITE is authorized against the CALLER's own family before this
+ * repository is ever reached (see EyeProtectionSettingsService), so
+ * update() itself does no cross-family enforcement -- it is a plain keyed
+ * upsert, not a second authorization boundary.
+ *
+ * get() is different: EyeProtectionSettingsService.get() is a bare
+ * pass-through with NO authorization pre-check (reads are, by design,
+ * scoped by the repository itself -- see that service's own doc comment),
+ * so this repository is the ONLY thing standing between a caller and
+ * another family's row. The SELECT therefore filters `AND family_id = ?`
+ * on the caller's own familyId -- a caller-supplied childProfileId that
+ * belongs to a different family, or doesn't exist at all, matches zero
+ * rows either way and falls through to the exact same safe default below
+ * (built from the CALLER's OWN familyId parameter, never a value read from
+ * the database). That closes both a cross-family read/IDOR and the
+ * existence oracle it created (a caller could otherwise tell "exists with
+ * a saved setting" apart from "exists, no setting" apart from "doesn't
+ * exist") in one change. FABLE-A008 / DW-W1-D. */
 export class MySqlEyeProtectionSettingsRepository implements EyeProtectionSettingsRepository {
   async get(familyId: string, childProfileId: string): Promise<EyeProtectionSettings> {
     const { rows } = await runInTransaction((conn) =>
       execute<SettingsRow>(
         conn,
-        `SELECT child_profile_id, family_id, reminders_enabled, updated_at FROM eye_protection_settings WHERE child_profile_id = ?`,
-        [childProfileId],
+        `SELECT child_profile_id, family_id, reminders_enabled, updated_at FROM eye_protection_settings WHERE child_profile_id = ? AND family_id = ?`,
+        [childProfileId, familyId],
       ),
     );
     if (rows[0]) return toSettings(rows[0]);

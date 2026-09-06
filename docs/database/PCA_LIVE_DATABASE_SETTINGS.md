@@ -153,3 +153,67 @@ grant-based, not trigger-based — MySQL 8 under binary logging refuses
 100% InnoDB across all 75 tables (verified by introspection — zero
 exceptions). Required for foreign keys, transactions, and row-level locking,
 all of which the application depends on.
+
+## 11. Preflight/verify hardening (DW-W1-C / FABLE-A009) — clarifying note
+
+Appended after the original mission pass; nothing above was changed.
+
+`database/live-bootstrap/00_preflight.sql`'s version check previously
+admitted any MySQL 8.x (`>= 8`, including an unreleased 9.x) and merely
+printed a non-blocking informational note for anything other than 8.4 —
+contradicting its own "must be 8.x" error text (FABLE-A009). It now REQUIRES
+exactly 8.4.x and fails CLOSED (SIGNAL) otherwise, and two checks were added
+that previously did not exist anywhere in the bootstrap path: the TARGET
+DATABASE's own default charset/collation (`information_schema.schemata`,
+independent of the server-wide flags) must be utf8mb4/utf8mb4_bin, and both
+`@@GLOBAL.time_zone` AND `@@SESSION.time_zone` must be `+00:00`.
+
+On the time-zone check specifically: GLOBAL is the authoritative signal
+because it is what a new connection inherits by default, and therefore what
+actually governs the literal value `NOW()`/`CURRENT_TIMESTAMP()` write into
+a `DEFAULT CURRENT_TIMESTAMP(3)` column. The application pool's own
+`timezone: 'Z'` (section 3 above, `backend/src/db/pool.ts`) does NOT provide
+this guarantee by itself — confirmed by reading `mysql2`'s own source
+(`node_modules/mysql2/lib/base/connection.js`): the `timezone` option is fed
+only to `SqlString.escape`/`format` for client-side JS-Date⇄SQL-literal
+conversion, and `mysql2` never sends a server-side `SET time_zone` for it.
+SESSION is asserted too, belt-and-braces, since that is the scope actually
+in effect for the plain `mysql` client connection running the bootstrap
+files themselves — demonstrated live: a `SET SESSION time_zone='+05:00'`
+negative control was caught by the SESSION check alone (GLOBAL stayed
+`+00:00`), which a GLOBAL-only check would have missed entirely.
+
+`backend/scripts/verify-mysql.mjs` gained the identical three environment
+assertions (checked BEFORE the 35 migrations run, so a wrong environment
+fails in milliseconds rather than after a full migration run — confirmed:
+pointed at a real MySQL 8.0.46 instance it fails immediately with
+`Unsupported MySQL version: must be exactly 8.4.x. Found: 8.0.46`, never
+reaching migration 0001), plus an AFTER-migrations column-collation spot
+check: a handful of concrete ascii/ascii_bin UUID/hash-exception columns and
+utf8mb4/utf8mb4_bin default columns are confirmed exactly as migration
+0001's TYPE DECISIONS documents, and an aggregate
+`information_schema.columns` query independently confirms no OTHER
+charset/collation pair exists anywhere across the 75 tables. The pre-existing
+table-set check is unchanged.
+
+The mandatory equivalence proof (`PCA_SCHEMA_EQUIVALENCE_REPORT.md`) was
+re-run after this hardening — no DDL was touched, only preflight/verify gate
+logic — on real disposable MySQL 8.4.11: `compare-schema-snapshots.mjs`
+still reports `EXACT_MATCH`, and `information_schema` was queried directly
+(not merely trusted) on both a from-migrations database and a
+from-bootstrap-files database, independently confirming MIGRATIONS=35,
+TABLES=75, COLUMNS=626, FOREIGN_KEYS=83, NON_UNIQUE_INDEXES=117,
+UNIQUE_NON_PK_INDEXES=31, CHECKS=228 on both — identical to the original
+pass's numbers, as expected.
+
+Negative controls confirmed fail-closed, each on a throwaway
+container/schema and cleaned up immediately after, never touching the
+shared instance's GLOBAL settings: wrong MySQL version (8.0.46, a real
+throwaway container — MySQL 9.0 was attempted first per the mission's own
+suggested command but its image pull stalled for several minutes in this
+sandbox and was abandoned in favor of the mission's own listed alternative,
+8.0, which is also the more direct regression check since 8.0.x is exactly
+what the OLD `>= 8` check used to wrongly admit); wrong collation
+(`utf8mb4_general_ci` throwaway schema); non-empty database (one throwaway
+table); non-UTC (`SET SESSION time_zone='+05:00'` on a throwaway schema,
+proving the SESSION check specifically, not just GLOBAL, is load-bearing).

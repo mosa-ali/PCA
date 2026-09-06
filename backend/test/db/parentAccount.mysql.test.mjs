@@ -383,7 +383,7 @@ test('MySQL SECURITY: a family-member invitation can only be accepted by the acc
   const familyId = randomUUID();
   const now = new Date();
   const invitation = pendingInvitationRow(familyId, hashInvitedEmail(invitedEmail), now);
-  await repository.create(invitation);
+  await repository.createAtomically(invitation, now);
 
   // A fully authenticated, real parent account that this invitation was
   // simply not addressed to must learn nothing and change nothing.
@@ -445,7 +445,7 @@ test('MySQL: accepting a family-member invitation consumes exactly one parent-me
     failingEntitlementRepository,
   );
   const doomed = pendingInvitationRow(familyId, hashInvitedEmail(invitedEmail), now);
-  await repository.create(doomed);
+  await repository.createAtomically(doomed, now);
   await assert.rejects(() => failingService.acceptInvitation(doomed.invitationId, invited.accountId), /entitlement ledger unavailable/);
   const rolledBack = await repository.findByIdForFamily(familyId, doomed.invitationId);
   assert.equal(rolledBack.status, 'PENDING', 'a failed seat adjustment must roll the whole acceptance back');
@@ -530,7 +530,7 @@ test('MySQL: removeMember clears the target account\'s family_id and releases ex
   await bindAccountToFamilyForTest(owner.accountId, familyId);
   // member: bound to the family WITH an accepted invitation -- what a real
   // acceptance + MySqlFamilyMemberAccountBinder durably produces together.
-  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberEmail), member.accountId, now));
+  await repository.createAtomically(acceptedInvitationRow(familyId, hashInvitedEmail(memberEmail), member.accountId, now), now);
   await bindAccountToFamilyForTest(member.accountId, familyId);
 
   await entitlementRepository.getOrCreateForFamily(
@@ -667,9 +667,9 @@ test('MySQL CONCURRENCY: two concurrent removals of different members in the SAM
   const now = new Date();
 
   await bindAccountToFamilyForTest(owner.accountId, familyId);
-  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberAEmail), memberA.accountId, now));
+  await repository.createAtomically(acceptedInvitationRow(familyId, hashInvitedEmail(memberAEmail), memberA.accountId, now), now);
   await bindAccountToFamilyForTest(memberA.accountId, familyId);
-  await repository.create(acceptedInvitationRow(familyId, hashInvitedEmail(memberBEmail), memberB.accountId, now));
+  await repository.createAtomically(acceptedInvitationRow(familyId, hashInvitedEmail(memberBEmail), memberB.accountId, now), now);
   await bindAccountToFamilyForTest(memberB.accountId, familyId);
 
   await entitlementRepository.getOrCreateForFamily(

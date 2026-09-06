@@ -1,6 +1,8 @@
 // Deterministic in-memory EntitlementRepository for tests only (PCA-MYKIDS-BILL-2).
 // Implements backend/src/entitlements/EntitlementRepository.ts's interface shape.
 // Never used as a production substitute for MySqlEntitlementRepository.
+import { baseOnlyEffectiveEntitlementSnapshot } from '../../dist/entitlements/complimentary/EffectiveEntitlementCapacity.js';
+
 export function createInMemoryEntitlementRepository() {
   const defaultsByTier = new Map();
   const recordsByFamily = new Map();
@@ -9,6 +11,20 @@ export function createInMemoryEntitlementRepository() {
     record.overLimitParentMember = record.parentMemberUsedCount > record.parentMemberLimit;
     record.overLimitManagedDevice = record.managedDeviceActiveCount + record.managedDeviceReservedCount > record.managedDeviceLimit;
     return record;
+  }
+
+  // EFFECTIVE_ENTITLEMENT_V2 (mirrors MySqlEntitlementRepository.toBaseUsage):
+  // this double has no complimentary-grant concept at all, so only the
+  // field-renaming projection is reproduced here -- the base-only path
+  // below is the whole story for this double.
+  function toBaseUsage(record) {
+    return {
+      parentMemberLimit: record.parentMemberLimit,
+      managedDeviceLimit: record.managedDeviceLimit,
+      parentMemberUsed: record.parentMemberUsedCount,
+      managedDeviceActive: record.managedDeviceActiveCount,
+      managedDeviceReserved: record.managedDeviceReservedCount,
+    };
   }
 
   return {
@@ -83,6 +99,29 @@ export function createInMemoryEntitlementRepository() {
       record.updatedAt = now;
       recompute(record);
       return { ...record };
+    },
+
+    /**
+     * EFFECTIVE_ENTITLEMENT_V2: this double has no complimentary-grant
+     * concept at all, so it only ever mirrors
+     * MySqlEntitlementRepository's no-complimentary-repository-wired
+     * fallback (`baseOnlyEffectiveEntitlementSnapshot`) -- byte-for-byte
+     * the same base-only arithmetic the real class degrades to when it is
+     * constructed without a ComplimentaryGrantRepository. Null when no
+     * account_entitlements-equivalent row exists for the family, matching
+     * the real implementation's contract.
+     */
+    async getEffectiveSnapshotForFamily(familyId, _now) {
+      const record = recordsByFamily.get(familyId);
+      if (!record) return null;
+      return baseOnlyEffectiveEntitlementSnapshot(toBaseUsage(record));
+    },
+
+    /** Connection-scoped variant -- `_conn` is ignored, matching this double's existing convention (lockForFamily/raiseLimit/etc. above). */
+    async getEffectiveSnapshotForFamilyOnConnection(_conn, familyId, _now) {
+      const record = recordsByFamily.get(familyId);
+      if (!record) return null;
+      return baseOnlyEffectiveEntitlementSnapshot(toBaseUsage(record));
     },
 
     // Test-only helpers, not part of the EntitlementRepository interface.
