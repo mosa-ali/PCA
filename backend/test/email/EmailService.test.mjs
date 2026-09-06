@@ -32,7 +32,7 @@ test('implements EmailSenderPort: sendVerificationCode resolves on immediate suc
 
 test('resolves normally even when the immediate send attempt fails (retryable) -- the outbox worker retries later, matching ParentAccountService\'s existing best-effort/swallowed contract', async () => {
   const repo = new InMemoryEmailOutboxRepository();
-  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('transient', true) }]);
+  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('transient', true, 'EMAIL_PROVIDER_NETWORK') }]);
   const service = new EmailService({ repository: repo, providerAdapter: provider, env: ENV });
   await assert.doesNotReject(() => service.sendPasswordResetCode('parent@example.com', '654321'));
   assert.equal(provider.calls.length, 1);
@@ -77,4 +77,17 @@ test('SECURITY: the outbox row never holds the plaintext recipient or code -- on
   assert.equal(stored.includes('parent@example.com'), false);
   assert.equal(stored.includes('123456'), false);
   void pending; // deliberately never awaited -- the provider above never resolves
+});
+
+// PCA-DW-W2-R1-13
+test('SECURITY: the stored provider_message_id is exactly what the provider returned -- never augmented with the recipient or code', async () => {
+  const repo = new InMemoryEmailOutboxRepository();
+  const provider = new ScriptedProviderAdapter([{ result: { providerMessageId: 'opaque-provider-id-abc123' } }]);
+  const service = new EmailService({ repository: repo, providerAdapter: provider, env: ENV });
+  await service.sendVerificationCode('parent@example.com', '123456');
+  const rows = repo.getAllRowsForTest();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].providerMessageId, 'opaque-provider-id-abc123');
+  assert.equal(rows[0].providerMessageId.includes('parent@example.com'), false);
+  assert.equal(rows[0].providerMessageId.includes('123456'), false);
 });

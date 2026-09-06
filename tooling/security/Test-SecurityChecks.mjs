@@ -27,6 +27,16 @@
 //      quote-aware, so a nested string's own '}' character could end
 //      interpolation capture early, silently discarding the real call that
 //      followed before the detector's regex ever ran.
+//   6. NEGATIVE CONTROL (PCA-DW-W2-R1-11): a genuinely executable
+//      console.log(child.token) call hidden inside a template-literal
+//      ${...} interpolation that itself contains a NESTED backtick
+//      template literal (rather than a nested '/"' string) whose own body
+//      text contains an unbalanced '}' -- must still FAIL. This is the
+//      residual gap #5's own fix explicitly documented as still open
+//      ("a nested backtick template literal inside ${...} remains
+//      unhandled"); reproduced against the pre-fix scanner (confirmed a
+//      real bypass: the call silently vanished from the projection) before
+//      Read-TemplateLiteral/Read-TemplateInterpolation closed it.
 //
 // Usage: node tooling/security/Test-SecurityChecks.mjs
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -110,6 +120,12 @@ try {
     'utf8',
   );
 
+  writeFileSync(
+    join(fixtureRoot, 'nested-template-literal-brace-depth-bypass.ts'),
+    "const a = `${(function(){ return `}`; })(), console.log(child.token)}`;\n",
+    'utf8',
+  );
+
   git(['add', '-A']);
   git(['commit', '--quiet', '-m', 'fixture files']);
 
@@ -121,6 +137,7 @@ try {
   ok(result.output.includes('genuine-sensitive-logging-sink.ts'), 'NEGATIVE CONTROL: a genuine console.log(child.token) call outside any comment/string is still caught');
   ok(!result.output.includes('commented-out-call-is-inert.ts'), 'a real call shape that only appears commented-out (inert, never executes) is not flagged');
   ok(result.output.includes('template-literal-brace-depth-bypass.ts'), 'NEGATIVE CONTROL: a real console.log(child.token) call hidden behind a nested-string brace-depth trick inside ${...} is still caught');
+  ok(result.output.includes('nested-template-literal-brace-depth-bypass.ts'), 'NEGATIVE CONTROL: a real console.log(child.token) call hidden behind a nested-TEMPLATE-LITERAL brace-depth trick inside ${...} is still caught');
 } finally {
   rmSync(fixtureRoot, { recursive: true, force: true });
 }

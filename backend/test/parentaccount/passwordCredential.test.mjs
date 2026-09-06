@@ -53,3 +53,29 @@ test('BACKWARD COMPAT: a credential encoded at the OLD N=2^15 cost still verifie
   assert.equal(await verifyPassword(password, oldFormatEncoded), true);
   assert.equal(await verifyPassword('wrong password', oldFormatEncoded), false);
 });
+
+// PCA-DW-W2-R1-12
+test('SECURITY: verifyPassword rejects (returns false, does not run scrypt) a corrupt/hostile credential requesting an N/r/p above the legitimate maximum', async () => {
+  const salt = randomBytes(16).toString('hex');
+  const hash = randomBytes(64).toString('hex');
+  const start = Date.now();
+  assert.equal(await verifyPassword('anything', `scrypt$4194304$8$1$${salt}$${hash}`), false, 'N far above 2^17 must be rejected');
+  assert.equal(await verifyPassword('anything', `scrypt$131072$1024$1$${salt}$${hash}`), false, 'r far above the legitimate 8 must be rejected');
+  assert.equal(await verifyPassword('anything', `scrypt$131072$8$64$${salt}$${hash}`), false, 'p far above the legitimate 1 must be rejected');
+  // If these were passed through to scrypt, N=4194304 alone would take
+  // seconds to minutes and request gigabytes of memory -- the bound must
+  // reject before ever calling scrypt, so this whole test stays fast.
+  assert.ok(Date.now() - start < 2000, 'must reject before attempting the expensive scrypt call, not after');
+});
+
+test('verifyPassword still accepts credentials at exactly the legitimate N=2^15 and N=2^17 boundaries', async () => {
+  const encodedAt17 = await hashPassword('boundary check password');
+  assert.equal(await verifyPassword('boundary check password', encodedAt17), true);
+
+  const password = 'another boundary check password';
+  const oldN = 32768; // 2^15
+  const salt = randomBytes(16);
+  const derivedKey = await scrypt(password, salt, 64, { N: oldN, r: 8, p: 1, maxmem: 128 * oldN * 8 * 2 });
+  const encodedAt15 = ['scrypt', oldN, 8, 1, salt.toString('hex'), derivedKey.toString('hex')].join('$');
+  assert.equal(await verifyPassword(password, encodedAt15), true);
+});

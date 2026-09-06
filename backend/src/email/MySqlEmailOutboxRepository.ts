@@ -45,7 +45,7 @@ export class MySqlEmailOutboxRepository implements EmailOutboxRepository {
             input.encryptedPayload.ivBase64,
             input.encryptedPayload.authTagBase64,
             input.encryptedPayload.ciphertextBase64,
-            input.createdAt,
+            input.initialClaimableAt,
             input.createdAt,
             input.expiresAt,
           ],

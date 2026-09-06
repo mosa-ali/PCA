@@ -30,6 +30,17 @@ const SALT_BYTES = 16;
 const DERIVED_KEY_BYTES = 64;
 const CREDENTIAL_PREFIX = 'scrypt';
 
+// PCA-DW-W2-R1-12: verifyPassword reads N/r/p back out of the (untrusted)
+// stored credential string -- a corrupt or hostile row could otherwise ask
+// scrypt for unreasonable CPU/memory before returning false. Bounding them
+// to the current legitimate maximums (never lower than SCRYPT_N/R/P, so
+// this rises automatically alongside any future cost bump and never
+// rejects a real credential) caps the worst case at exactly what a
+// legitimate verification already costs.
+const MAX_SCRYPT_N = SCRYPT_N;
+const MAX_SCRYPT_R = SCRYPT_R;
+const MAX_SCRYPT_P = SCRYPT_P;
+
 function requiredMaxMem(n: number, r: number): number {
   return 128 * n * r * 2;
 }
@@ -53,6 +64,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
   const r = Number.parseInt(parts[2], 10);
   const p = Number.parseInt(parts[3], 10);
   if (!Number.isInteger(n) || !Number.isInteger(r) || !Number.isInteger(p) || n <= 0 || r <= 0 || p <= 0) return false;
+  if (n > MAX_SCRYPT_N || r > MAX_SCRYPT_R || p > MAX_SCRYPT_P) return false;
   const salt = Buffer.from(parts[4], 'hex');
   const expected = Buffer.from(parts[5], 'hex');
   if (salt.length === 0 || expected.length === 0) return false;

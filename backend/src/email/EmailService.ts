@@ -1,9 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { EmailSenderPort } from '../parentaccount/EmailSenderPort.js';
 import type { EmailOutboxRepository } from './EmailOutboxRepository.js';
 import type { EmailProviderAdapter } from './EmailProviderAdapter.js';
 import { attemptDeliveryAndRecordOutcome, type EmailOutboxProcessorDeps, type OutboxMessagePayload } from './EmailOutboxProcessor.js';
 import { encryptOutboxContent } from './emailOutboxEncryption.js';
+import { computeEmailIdempotencyKey } from './emailIdempotencyKey.js';
+import { EMAIL_OUTBOX_CLAIM_LEASE_MS } from './emailTimingPolicy.js';
 import type { EmailAuditSink } from './emailAudit.js';
 import type { EmailTemplateKind } from './emailTemplates.js';
 
@@ -47,6 +49,18 @@ const OUTBOX_MESSAGE_TTL_MS = 30 * 60_000;
  * called, so a transient email failure was never a reason to fail the
  * whole registration/reset request, and still isn't.
  *
+ * PCA-DW-W2-R1-5: the row is inserted with next_attempt_at deferred to
+ * now + EMAIL_OUTBOX_CLAIM_LEASE_MS (never "due immediately") -- this is
+ * this process's OWN exclusivity lease on the row it just created, so
+ * EmailOutboxWorker.claimDueRows cannot hand the SAME row to a concurrent
+ * process while THIS immediate attempt below is still in flight (closing a
+ * real double-send race: without this, another backend instance's worker
+ * tick landing in the same instant as this call could independently claim
+ * and deliver the identical message). If this process crashes before
+ * recording an outcome, the row simply becomes claimable once that lease
+ * elapses -- exactly the same self-healing behaviour claimDueRows' own
+ * per-claim lease already has, applied once here at insert time too.
+ *
  * Only an ENQUEUE failure (a genuine outbox-persistence error, not a
  * delivery failure) rejects -- ParentAccountService's existing try/catch
  * around this call already handles that identically to any other failure.
@@ -68,9 +82,13 @@ export class EmailService implements EmailSenderPort {
     // Deterministic (not random) so a genuine duplicate call for the SAME
     // kind/email/code (e.g. an upstream request retried after a lost
     // response) enqueues only once -- see migration 0038's idempotency_key
-    // column. Not a security boundary (a dedup key, not a secret), so a
-    // plain digest is correct here, unlike verificationCode.ts's HMAC.
-    const idempotencyKey = createHash('sha256').update(`${kind}:${normalizedEmail}:${code}`, 'utf8').digest('hex');
+    // column. KEYED (HMAC via a key derived from the outbox encryption
+    // key), NOT a plain digest: an unkeyed hash of kind+email+code would
+    // let a DB reader who already knows/guesses the recipient email
+    // brute-force all 1,000,000 six-digit candidates offline and recover
+    // the exact code from this column alone -- see emailIdempotencyKey.ts's
+    // own doc comment for the full reasoning.
+    const idempotencyKey = computeEmailIdempotencyKey(kind, normalizedEmail, code, this.deps.env);
     const outboxId = (this.deps.idGenerator ?? randomUUID)();
     const payload: OutboxMessagePayload = { toEmail: normalizedEmail, kind, code };
     const encryptedPayload = encryptOutboxContent(JSON.stringify(payload), this.deps.env);
@@ -81,6 +99,9 @@ export class EmailService implements EmailSenderPort {
       encryptedPayload,
       createdAt: now,
       expiresAt: new Date(now.getTime() + OUTBOX_MESSAGE_TTL_MS),
+      // See this class's own doc comment: reserves exclusive delivery
+      // rights for the immediate attempt below until this lease elapses.
+      initialClaimableAt: new Date(now.getTime() + EMAIL_OUTBOX_CLAIM_LEASE_MS),
     });
     if (outcome === 'DUPLICATE_IDEMPOTENCY_KEY') return;
 

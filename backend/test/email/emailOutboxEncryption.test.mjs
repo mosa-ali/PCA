@@ -49,6 +49,13 @@ test('SECURITY: FAILS CLOSED in production with no configured key', () => {
   assert.throws(() => encryptOutboxContent('x', {}), MissingEmailOutboxEncryptionKeyError, 'unset NODE_ENV must fail closed too');
 });
 
+// PCA-DW-W2-R1-13
+test('SECURITY: decryptOutboxContent ALSO fails closed in production with no configured key -- not just the encrypt side', () => {
+  const encrypted = encryptOutboxContent('x', { NODE_ENV: 'test', PCA_EMAIL_OUTBOX_ENCRYPTION_KEY: TEST_KEY });
+  assert.throws(() => decryptOutboxContent(encrypted, { NODE_ENV: 'production' }), MissingEmailOutboxEncryptionKeyError);
+  assert.throws(() => decryptOutboxContent(encrypted, {}), MissingEmailOutboxEncryptionKeyError, 'unset NODE_ENV must fail closed too');
+});
+
 test('uses the dev-only default key (no throw) in test/development when unconfigured, and succeeds in production when configured', () => {
   assert.doesNotThrow(() => encryptOutboxContent('x', { NODE_ENV: 'test' }));
   assert.doesNotThrow(() => encryptOutboxContent('x', { NODE_ENV: 'development' }));

@@ -27,6 +27,7 @@ export class RejectingEmailProviderAdapter implements EmailProviderAdapter {
     throw new EmailDeliveryError(
       'No production email provider is configured (PCA_EMAIL_PROVIDER unset or incomplete). Refusing to silently drop or fabricate a delivery.',
       true,
+      'EMAIL_PROVIDER_CONFIGURATION',
     );
   }
 }

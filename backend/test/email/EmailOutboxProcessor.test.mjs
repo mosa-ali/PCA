@@ -24,9 +24,9 @@ class ScriptedProviderAdapter {
   }
 }
 
-async function insertRow(repo, { toEmail = 'parent@example.com', kind = 'VERIFICATION', code = '123456', createdAt = new Date('2026-01-01T00:00:00.000Z'), expiresAt = new Date('2026-01-01T01:00:00.000Z'), outboxId = randomUUID(), idempotencyKey = randomUUID() } = {}) {
+async function insertRow(repo, { toEmail = 'parent@example.com', kind = 'VERIFICATION', code = '123456', createdAt = new Date('2026-01-01T00:00:00.000Z'), expiresAt = new Date('2026-01-01T01:00:00.000Z'), initialClaimableAt = createdAt, outboxId = randomUUID(), idempotencyKey = randomUUID() } = {}) {
   const encryptedPayload = encryptOutboxContent(JSON.stringify({ toEmail, kind, code }), ENV);
-  await repo.insert({ outboxId, idempotencyKey, encryptedPayload, createdAt, expiresAt });
+  await repo.insert({ outboxId, idempotencyKey, encryptedPayload, createdAt, expiresAt, initialClaimableAt });
   return outboxId;
 }
 
@@ -49,7 +49,7 @@ test('a due row that decrypts and sends successfully is marked SENT', async () =
 test('a retryable provider failure reschedules the row with a later next-attempt time, never dead-lettering on the first failure', async () => {
   const repo = new InMemoryEmailOutboxRepository();
   const outboxId = await insertRow(repo);
-  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('temporary', true) }]);
+  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('temporary', true, 'EMAIL_PROVIDER_NETWORK') }]);
   const now = new Date('2026-01-01T00:00:01.000Z');
   const summary = await processOutboxOnce({ repository: repo, providerAdapter: provider, env: ENV, now: () => now, randomFraction: () => 0 });
   assert.deepEqual(summary, { claimed: 1, sent: 0, retryScheduled: 1, deadLettered: 0 });
@@ -62,7 +62,7 @@ test('a retryable provider failure reschedules the row with a later next-attempt
 test('a NON-retryable provider failure dead-letters immediately, even on the very first attempt', async () => {
   const repo = new InMemoryEmailOutboxRepository();
   const outboxId = await insertRow(repo);
-  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('invalid recipient', false) }]);
+  const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('invalid recipient', false, 'EMAIL_PROVIDER_REJECTED') }]);
   const summary = await processOutboxOnce({ repository: repo, providerAdapter: provider, env: ENV, now: () => new Date('2026-01-01T00:00:01.000Z') });
   assert.deepEqual(summary, { claimed: 1, sent: 0, retryScheduled: 0, deadLettered: 1 });
   const row = repo.getRowForTest(outboxId);
@@ -75,7 +75,7 @@ test('repeated retryable failures eventually dead-letter once EMAIL_MAX_ATTEMPTS
   const outboxId = await insertRow(repo);
   let now = new Date('2026-01-01T00:00:01.000Z');
   for (let attempt = 0; attempt < EMAIL_MAX_ATTEMPTS; attempt++) {
-    const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('still down', true) }]);
+    const provider = new ScriptedProviderAdapter([{ throw: new EmailDeliveryError('still down', true, 'EMAIL_PROVIDER_NETWORK') }]);
     // eslint-disable-next-line no-await-in-loop -- sequential by construction: each attempt's outcome determines the next claim time.
     await processOutboxOnce({ repository: repo, providerAdapter: provider, env: ENV, now: () => now, randomFraction: () => 0 });
     const row = repo.getRowForTest(outboxId);
@@ -117,7 +117,7 @@ test('a row that cannot be decrypted (wrong key) is dead-lettered, and does not 
   // Encrypted under a DIFFERENT key than processOutboxOnce below will decrypt with.
   const wrongKeyEnv = { NODE_ENV: 'test', PCA_EMAIL_OUTBOX_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64') };
   const encryptedBad = encryptOutboxContent(JSON.stringify({ toEmail: 'x@example.com', kind: 'VERIFICATION', code: '000000' }), wrongKeyEnv);
-  await repo.insert({ outboxId: 'bad-row', idempotencyKey: 'bad-key', encryptedPayload: encryptedBad, createdAt: now, expiresAt: new Date('2026-01-01T01:00:00.000Z') });
+  await repo.insert({ outboxId: 'bad-row', idempotencyKey: 'bad-key', encryptedPayload: encryptedBad, createdAt: now, expiresAt: new Date('2026-01-01T01:00:00.000Z'), initialClaimableAt: now });
   await insertRow(repo, { outboxId: 'good-row', idempotencyKey: 'good-key' });
 
   const provider = new ScriptedProviderAdapter([{ result: { providerMessageId: 'msg-good' } }]);
@@ -127,6 +127,14 @@ test('a row that cannot be decrypted (wrong key) is dead-lettered, and does not 
   assert.equal(summary.sent, 1);
   assert.equal(repo.getRowForTest('bad-row').status, 'DEAD_LETTER');
   assert.equal(repo.getRowForTest('good-row').status, 'SENT');
+  // PCA-DW-W2-R1-13: a decrypt failure must dead-letter safely -- the fixed,
+  // safe explanation string only, never the plaintext it failed to recover
+  // (which by definition was never decrypted) and never the raw crypto
+  // error/ciphertext.
+  const badRowLastError = repo.getRowForTest('bad-row').lastError;
+  assert.equal(badRowLastError, 'failed to decrypt outbox payload');
+  assert.equal(badRowLastError.includes('x@example.com'), false);
+  assert.equal(badRowLastError.includes('000000'), false);
 });
 
 test('startEmailOutboxWorker runs processOutboxOnce on an interval and stop() halts it', async () => {

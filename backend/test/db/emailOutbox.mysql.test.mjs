@@ -14,13 +14,14 @@ if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required
 const ENV = { NODE_ENV: 'test' };
 
 function insertInput(overrides = {}) {
-  const now = new Date();
+  const now = overrides.createdAt ?? new Date();
   return {
     outboxId: randomUUID(),
     idempotencyKey: randomUUID(),
     encryptedPayload: encryptOutboxContent(JSON.stringify({ toEmail: 'parent@example.com', kind: 'VERIFICATION', code: '123456' }), ENV),
     createdAt: now,
     expiresAt: new Date(now.getTime() + 60 * 60_000),
+    initialClaimableAt: now,
     ...overrides,
   };
 }
@@ -29,6 +30,21 @@ async function fetchRow(outboxId) {
   const { rows } = await runInTransaction((conn) => execute(conn, 'SELECT * FROM email_outbox WHERE outbox_id = ?', [outboxId]));
   return rows[0] ?? null;
 }
+
+// PCA-DW-W2-R1-5 (adversarial-review follow-up): claimDueRows orders by
+// next_attempt_at with a caller-supplied LIMIT -- on a disposable database
+// that is RESET but not necessarily EMPTIED between separate local
+// `npm run test:db` invocations (this file is the only one that writes to
+// email_outbox), leftover PENDING rows from a prior run can silently fill
+// that LIMIT window ahead of a fresh test's own row, making an assertion
+// about "the row I just inserted" fail for a reason that has nothing to do
+// with the behaviour under test. A clean slate here, once per file run,
+// removes that cross-run coupling entirely -- this table holds only
+// disposable, random-UUID-keyed test fixtures, never anything meaningful
+// to preserve across runs.
+test.before(async () => {
+  await runInTransaction((conn) => execute(conn, 'DELETE FROM email_outbox'));
+});
 
 test('insert persists a durable row readable back with the exact encrypted payload', async () => {
   const repo = new MySqlEmailOutboxRepository();
@@ -68,6 +84,37 @@ test('CONCURRENCY: two concurrent claimDueRows calls never both claim the same r
   const claimedByFirst = first.some((r) => r.outboxId === input.outboxId);
   const claimedBySecond = second.some((r) => r.outboxId === input.outboxId);
   assert.notEqual(claimedByFirst, claimedBySecond, 'exactly one of the two concurrent claims must have won this row, never both and never neither');
+});
+
+// PCA-DW-W2-R1-5's own required test, verbatim: "test at least two
+// repository instances sharing the same disposable MySQL database" --
+// simulates two separate backend processes, each with their own
+// MySqlEmailOutboxRepository object but the same underlying database.
+test('CONCURRENCY: two separate MySqlEmailOutboxRepository instances never both claim the same row (FOR UPDATE SKIP LOCKED)', async () => {
+  const repoA = new MySqlEmailOutboxRepository();
+  const repoB = new MySqlEmailOutboxRepository();
+  const input = insertInput();
+  await repoA.insert(input);
+  const now = new Date();
+  const [claimedByA, claimedByB] = await Promise.all([repoA.claimDueRows(now, 10, 60_000), repoB.claimDueRows(now, 10, 60_000)]);
+  const gotA = claimedByA.some((r) => r.outboxId === input.outboxId);
+  const gotB = claimedByB.some((r) => r.outboxId === input.outboxId);
+  assert.notEqual(gotA, gotB, 'exactly one of the two independent repository instances must win this row, never both and never neither');
+});
+
+test('CONCURRENCY: a row still inside its OWN initial claim lease (EmailService\'s immediate-send exclusivity window) cannot be claimed by a second repository instance until that lease elapses', async () => {
+  const repoA = new MySqlEmailOutboxRepository(); // simulates the instance that enqueued and is attempting immediate delivery
+  const repoB = new MySqlEmailOutboxRepository(); // simulates a DIFFERENT backend instance's background worker
+  const now = new Date();
+  const leaseMs = 60_000;
+  const input = insertInput({ initialClaimableAt: new Date(now.getTime() + leaseMs) });
+  await repoA.insert(input);
+
+  const stillLeased = await repoB.claimDueRows(now, 10, leaseMs);
+  assert.equal(stillLeased.some((r) => r.outboxId === input.outboxId), false, "repoB must not be able to claim while repoA's own initial lease still holds");
+
+  const afterLeaseElapses = await repoB.claimDueRows(new Date(now.getTime() + leaseMs + 1), 10, leaseMs);
+  assert.equal(afterLeaseElapses.some((r) => r.outboxId === input.outboxId), true, 'once the lease elapses, a different repository instance can claim it (crash recovery)');
 });
 
 test('markSent sets status=SENT and purges the ciphertext columns', async () => {

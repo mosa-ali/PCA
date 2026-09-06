@@ -33,7 +33,7 @@ export class InMemoryEmailOutboxRepository implements EmailOutboxRepository {
       encryptedPayload: input.encryptedPayload,
       status: 'PENDING',
       attemptCount: 0,
-      nextAttemptAt: input.createdAt,
+      nextAttemptAt: input.initialClaimableAt,
       expiresAt: input.expiresAt,
       lastError: null,
       providerMessageId: null,

@@ -51,6 +51,76 @@ function Get-TextContent([string] $Path) {
 # file's line loop) across successive calls -- one call's "still inside an
 # unterminated /* at end of line" exit state is the next call's entry state.
 #
+# Scans a template literal starting at $Index (pointing at its opening
+# backtick) through its matching closing backtick. Plain body text is
+# discarded (mirrors string-literal handling -- it cannot carry a runtime
+# value on its own); any ${...} interpolation is recursively handed to
+# Read-TemplateInterpolation, so real code nested arbitrarily deep (a
+# template literal containing an interpolation containing another template
+# literal containing another interpolation, ...) still reaches the
+# projection. Used for both the top-level template literal and any nested
+# one found inside an interpolation (PCA-DW-W2-R1-11).
+function Read-TemplateLiteral([string] $Line, [ref] $Index, [System.Text.StringBuilder] $Builder) {
+  [void]$Builder.Append('`')
+  $Index.Value++
+  while ($Index.Value -lt $Line.Length -and $Line[$Index.Value] -ne '`') {
+    if ($Line[$Index.Value] -eq '\') { $Index.Value += 2; continue }
+    if ($Line[$Index.Value] -eq '$' -and ($Index.Value + 1) -lt $Line.Length -and $Line[$Index.Value + 1] -eq '{') {
+      [void]$Builder.Append('${')
+      $Index.Value += 2
+      Read-TemplateInterpolation $Line $Index $Builder
+      continue
+    }
+    $Index.Value++
+  }
+  if ($Index.Value -lt $Line.Length) {
+    [void]$Builder.Append('`')
+    $Index.Value++
+  }
+}
+
+# Scans a template-literal ${...} interpolation body (called right after the
+# "${" has already been consumed) through its matching closing '}', tracked
+# via Depth so real nested braces (an object literal, an arrow function's
+# block body) are counted correctly. A nested '/"' string or a nested `...`
+# template literal is skipped/recursed as an opaque unit FIRST, so neither
+# can contribute a stray '{'/'}' of its own text/body that desynchronizes
+# this interpolation's Depth count -- the exact class of bug this function
+# and Read-TemplateLiteral close (PCA-DW-W2-2B-R1 fixed the quote case only;
+# PCA-DW-W2-R1-11 closes the matching nested-template-literal case: e.g.
+# `${(function(){ return `}`; })(), console.log(child.token)}` is valid
+# JS/TS that genuinely calls console.log(child.token) at runtime -- the
+# nested template's literal '}' character must never be counted as closing
+# the real "function(){" brace that precedes it).
+function Read-TemplateInterpolation([string] $Line, [ref] $Index, [System.Text.StringBuilder] $Builder) {
+  $Depth = 1
+  while ($Index.Value -lt $Line.Length) {
+    $InterpChar = $Line[$Index.Value]
+    if ($InterpChar -eq "'" -or $InterpChar -eq '"') {
+      $NestedQuote = $InterpChar
+      [void]$Builder.Append($NestedQuote)
+      $Index.Value++
+      while ($Index.Value -lt $Line.Length -and $Line[$Index.Value] -ne $NestedQuote) {
+        if ($Line[$Index.Value] -eq '\') { $Index.Value++ }
+        $Index.Value++
+      }
+      if ($Index.Value -lt $Line.Length) {
+        [void]$Builder.Append($NestedQuote)
+        $Index.Value++
+      }
+      continue
+    }
+    if ($InterpChar -eq '`') {
+      Read-TemplateLiteral $Line $Index $Builder
+      continue
+    }
+    [void]$Builder.Append($InterpChar)
+    if ($InterpChar -eq '{') { $Depth++ }
+    elseif ($InterpChar -eq '}') { $Depth--; if ($Depth -le 0) { $Index.Value++; break } }
+    $Index.Value++
+  }
+}
+
 # Called only for lines that already matched the cheap whole-file pattern below,
 # so its per-character cost is paid on a handful of lines, not on every tracked file.
 function Get-CodeProjection([string] $Line, [ref] $InBlockComment) {
@@ -78,55 +148,7 @@ function Get-CodeProjection([string] $Line, [ref] $InBlockComment) {
       continue
     }
     if ($Char -eq '`') {
-      [void]$Builder.Append('`')
-      $Index++
-      while ($Index -lt $Line.Length -and $Line[$Index] -ne '`') {
-        if ($Line[$Index] -eq '\') { $Index += 2; continue }
-        if ($Line[$Index] -eq '$' -and ($Index + 1) -lt $Line.Length -and $Line[$Index + 1] -eq '{') {
-          # PCA-DW-W2-2B-R1: quote-aware brace-depth tracking -- a real,
-          # verified bypass existed here (adversarial review, see commit
-          # history): `${('}' , console.log(child.token))}` is valid JS/TS
-          # that genuinely calls console.log(child.token) at runtime, but a
-          # depth counter that treats EVERY '{'/'}' character as a real
-          # brace -- including ones inside a nested string literal -- hits
-          # depth 0 the instant it sees that quoted '}' and ends
-          # interpolation capture right there. Everything after (the real
-          # call) then falls through to the surrounding template-literal
-          # loop's "discard plain body text" default until the next literal
-          # backtick, silently vanishing from the projection before the
-          # detector's regex ever runs. Skipping a nested '.../"..." string
-          # whole (content discarded, matching top-level string handling)
-          # before counting its braces closes that hole. A nested backtick
-          # template literal inside ${...} is not specially handled and
-          # remains a known residual gap.
-          $Depth = 0
-          while ($Index -lt $Line.Length) {
-            $InterpChar = $Line[$Index]
-            if ($InterpChar -eq "'" -or $InterpChar -eq '"') {
-              $NestedQuote = $InterpChar
-              [void]$Builder.Append($NestedQuote)
-              $Index++
-              while ($Index -lt $Line.Length -and $Line[$Index] -ne $NestedQuote) {
-                if ($Line[$Index] -eq '\') { $Index++ }
-                $Index++
-              }
-              if ($Index -lt $Line.Length) {
-                [void]$Builder.Append($NestedQuote)
-                $Index++
-              }
-              continue
-            }
-            [void]$Builder.Append($InterpChar)
-            if ($InterpChar -eq '{') { $Depth++ }
-            elseif ($InterpChar -eq '}') { $Depth--; if ($Depth -le 0) { $Index++; break } }
-            $Index++
-          }
-          continue
-        }
-        $Index++
-      }
-      [void]$Builder.Append('`')
-      $Index++
+      Read-TemplateLiteral $Line ([ref]$Index) $Builder
       continue
     }
     if ($Char -eq '/' -and ($Index + 1) -lt $Line.Length -and $Line[$Index + 1] -eq '/') {

@@ -50,6 +50,19 @@ export class InvalidEmailOutboxEncryptionKeyError extends Error {
 // existing "dev-only, do-not-use-in-production" self-declaration idiom.
 const DEV_ONLY_DEFAULT_KEY = Buffer.alloc(KEY_BYTES, 0).toString('base64');
 
+/**
+ * Exported so emailIdempotencyKey.ts can derive a domain-separated key FROM
+ * this one via HKDF (RFC 5869) -- never used directly for anything but
+ * AES-256-GCM encryption itself. HKDF-Expand with a distinct, explicit
+ * "info" context per consumer produces a cryptographically independent
+ * key from the same high-entropy root, which is the standard way to avoid
+ * provisioning (and rotating) a second production secret for a second,
+ * narrower purpose.
+ */
+export function resolveOutboxEncryptionKeyBytes(env: NodeJS.ProcessEnv): Buffer {
+  return resolveKey(env);
+}
+
 function resolveKey(env: NodeJS.ProcessEnv): Buffer {
   const configured = env.PCA_EMAIL_OUTBOX_ENCRYPTION_KEY;
   const raw = typeof configured === 'string' && configured.length > 0 ? configured : (() => {

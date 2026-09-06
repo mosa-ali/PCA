@@ -38,12 +38,34 @@ function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+// Deliberately a basic sanity check, not full RFC 5322 validation -- its
+// job is narrow: prove the configured value is EMAIL-shaped, not (for
+// example) a bare Microsoft Graph object-id GUID accidentally reused as a
+// sender address (PCA-DW-W2-R1-10).
+const PLAUSIBLE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function resolveSenderIdentity(env: NodeJS.ProcessEnv): EmailSenderIdentity {
+  const fromAddress = requireEnv(env, 'PCA_EMAIL_FROM_ADDRESS');
+  if (!PLAUSIBLE_EMAIL_PATTERN.test(fromAddress)) {
+    throw new EmailProviderConfigError(`PCA_EMAIL_FROM_ADDRESS does not look like a valid email address: ${JSON.stringify(fromAddress)}.`);
+  }
+  if (env.PCA_EMAIL_REPLY_TO_ADDRESS && env.PCA_EMAIL_REPLY_TO_ADDRESS.length > 0 && !PLAUSIBLE_EMAIL_PATTERN.test(env.PCA_EMAIL_REPLY_TO_ADDRESS)) {
+    throw new EmailProviderConfigError(`PCA_EMAIL_REPLY_TO_ADDRESS does not look like a valid email address: ${JSON.stringify(env.PCA_EMAIL_REPLY_TO_ADDRESS)}.`);
+  }
   return {
-    fromAddress: requireEnv(env, 'PCA_EMAIL_FROM_ADDRESS'),
+    fromAddress,
     fromName: env.PCA_EMAIL_FROM_NAME && env.PCA_EMAIL_FROM_NAME.length > 0 ? env.PCA_EMAIL_FROM_NAME : 'PCA',
     replyToAddress: env.PCA_EMAIL_REPLY_TO_ADDRESS && env.PCA_EMAIL_REPLY_TO_ADDRESS.length > 0 ? env.PCA_EMAIL_REPLY_TO_ADDRESS : undefined,
   };
+}
+
+/** PCA-DW-W2-R1-7: PCA_SMTP_SECURE is a security-relevant switch (encrypted-from-the-start vs. requires-STARTTLS) -- it must never silently default to false for an unrecognized/misspelled value. Only the two exact literal strings are accepted. */
+function resolveSmtpSecureFlag(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.PCA_SMTP_SECURE;
+  if (raw !== 'true' && raw !== 'false') {
+    throw new EmailProviderConfigError(`PCA_SMTP_SECURE must be exactly "true" or "false" (got ${JSON.stringify(raw)}) -- a typo must never silently mean false.`);
+  }
+  return raw === 'true';
 }
 
 function createSmtpAdapter(env: NodeJS.ProcessEnv, identity: EmailSenderIdentity): SmtpEmailProviderAdapter {
@@ -53,13 +75,18 @@ function createSmtpAdapter(env: NodeJS.ProcessEnv, identity: EmailSenderIdentity
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new EmailProviderConfigError(`PCA_SMTP_PORT must be a valid TCP port number, got ${JSON.stringify(portRaw)}.`);
   }
-  const secure = env.PCA_SMTP_SECURE === 'true';
+  const secure = resolveSmtpSecureFlag(env);
+  const username = env.PCA_SMTP_USERNAME && env.PCA_SMTP_USERNAME.length > 0 ? env.PCA_SMTP_USERNAME : undefined;
+  const password = env.PCA_SMTP_PASSWORD && env.PCA_SMTP_PASSWORD.length > 0 ? env.PCA_SMTP_PASSWORD : undefined;
+  if ((username && !password) || (password && !username)) {
+    throw new EmailProviderConfigError('PCA_SMTP_USERNAME and PCA_SMTP_PASSWORD must both be set, or both be unset -- one without the other is a configuration error, not an unauthenticated-SMTP intent.');
+  }
   return new SmtpEmailProviderAdapter({
     host,
     port,
     secure,
-    username: env.PCA_SMTP_USERNAME,
-    password: env.PCA_SMTP_PASSWORD,
+    username,
+    password,
     fromAddress: identity.fromAddress,
     fromName: identity.fromName,
     replyToAddress: identity.replyToAddress,
@@ -72,6 +99,12 @@ function createMicrosoftGraphAdapter(env: NodeJS.ProcessEnv, identity: EmailSend
     clientId: requireEnv(env, 'PCA_GRAPH_CLIENT_ID'),
     clientSecret: requireEnv(env, 'PCA_GRAPH_CLIENT_SECRET'),
     senderUserId: requireEnv(env, 'PCA_GRAPH_SENDER_USER_ID'),
+    // PCA-DW-W2-R1-10: NEVER senderUserId here -- that field is the Graph
+    // URL-path mailbox identifier (UPN or GUID, either accepted), never
+    // validated as an email address and not necessarily one. identity.fromAddress
+    // is the one PCA_EMAIL_FROM_ADDRESS value resolveSenderIdentity already
+    // validated is email-shaped, shared with the SMTP adapter.
+    fromAddress: identity.fromAddress,
     fromName: identity.fromName,
     replyToAddress: identity.replyToAddress,
   });

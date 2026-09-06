@@ -33,6 +33,8 @@ export interface GeneratedVerificationCode {
  * than silently falling back to a guessable default.
  */
 const DEV_ONLY_DEFAULT_HMAC_SECRET = 'dev-only-code-hmac-secret-do-not-use-in-production';
+const MIN_PRODUCTION_SECRET_BYTES = 32;
+const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
 
 export class MissingVerificationCodeSecretError extends Error {
   constructor() {
@@ -44,11 +46,41 @@ export class MissingVerificationCodeSecretError extends Error {
   }
 }
 
-function resolveVerificationCodeHmacSecret(env: NodeJS.ProcessEnv): string {
+/**
+ * PCA-DW-W2-R1-9. A short or low-entropy secret defeats the point of keying
+ * the code hash (PCA-DW-W2-15B above): an attacker who can guess/brute-force
+ * the key regains the same offline code-enumeration attack the keyed
+ * construction exists to prevent. Production requires a genuinely random
+ * key: base64-encoded, decoding to at least 32 bytes (e.g.
+ * `openssl rand -base64 32`).
+ */
+export class WeakVerificationCodeSecretError extends Error {
+  constructor() {
+    super(
+      `PCA_VERIFICATION_CODE_HMAC_SECRET does not meet the production strength bar: it must be ` +
+        `base64-encoded and decode to at least ${MIN_PRODUCTION_SECRET_BYTES} bytes (e.g. via ` +
+        `\`openssl rand -base64 32\`). Refusing to hash/verify verification codes with a weak key.`,
+    );
+    this.name = 'WeakVerificationCodeSecretError';
+  }
+}
+
+function decodeStrongSecretBytes(configured: string): Buffer | null {
+  const trimmed = configured.trim();
+  if (trimmed.length === 0 || trimmed.length % 4 !== 0 || !BASE64_SHAPE.test(trimmed)) return null;
+  return Buffer.from(trimmed, 'base64');
+}
+
+function resolveVerificationCodeHmacKey(env: NodeJS.ProcessEnv): Buffer {
   const configured = env.PCA_VERIFICATION_CODE_HMAC_SECRET;
-  if (typeof configured === 'string' && configured.length > 0) return configured;
-  if (isProductionSensitiveRuntime(env)) throw new MissingVerificationCodeSecretError();
-  return DEV_ONLY_DEFAULT_HMAC_SECRET;
+  if (!isProductionSensitiveRuntime(env)) {
+    if (typeof configured === 'string' && configured.length > 0) return Buffer.from(configured, 'utf8');
+    return Buffer.from(DEV_ONLY_DEFAULT_HMAC_SECRET, 'utf8');
+  }
+  if (typeof configured !== 'string' || configured.length === 0) throw new MissingVerificationCodeSecretError();
+  const decoded = decodeStrongSecretBytes(configured);
+  if (!decoded || decoded.length < MIN_PRODUCTION_SECRET_BYTES) throw new WeakVerificationCodeSecretError();
+  return decoded;
 }
 
 export function generateVerificationCode(env: NodeJS.ProcessEnv = process.env): GeneratedVerificationCode {
@@ -58,8 +90,8 @@ export function generateVerificationCode(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function hashVerificationCode(code: string, env: NodeJS.ProcessEnv = process.env): string {
-  const secret = resolveVerificationCodeHmacSecret(env);
-  return createHmac('sha256', secret).update(code, 'utf8').digest('hex');
+  const key = resolveVerificationCodeHmacKey(env);
+  return createHmac('sha256', key).update(code, 'utf8').digest('hex');
 }
 
 const CODE_SHAPE = new RegExp(`^\\d{${CODE_DIGITS}}$`);

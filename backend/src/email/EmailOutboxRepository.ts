@@ -8,6 +8,19 @@ export interface InsertEmailOutboxInput {
   readonly encryptedPayload: EncryptedPayload;
   readonly createdAt: Date;
   readonly expiresAt: Date;
+  /**
+   * PCA-DW-W2-R1-5: the row's initial `next_attempt_at`. The inserting
+   * caller (EmailService) is about to make its OWN immediate delivery
+   * attempt outside of claimDueRows -- this must be set to
+   * now + EMAIL_OUTBOX_CLAIM_LEASE_MS (never `createdAt`/"now"), so
+   * claimDueRows cannot hand the SAME row to a concurrent worker while that
+   * immediate attempt is still legitimately in flight. If the inserting
+   * process crashes before recording an outcome, the row simply becomes
+   * claimable once this lease naturally elapses -- self-healing, matching
+   * claimDueRows' own claim-lease semantics exactly (this is the same
+   * mechanism, applied once at insert time instead of at claim time).
+   */
+  readonly initialClaimableAt: Date;
 }
 
 /** A row claimed for processing -- the ciphertext is still present (not yet purged), since the processor needs to decrypt and attempt delivery. */
@@ -21,7 +34,7 @@ export interface ClaimedEmailOutboxRow {
 export type InsertEmailOutboxOutcome = 'INSERTED' | 'DUPLICATE_IDEMPOTENCY_KEY';
 
 export interface EmailOutboxRepository {
-  /** Inserts a new PENDING row, due immediately. Returns DUPLICATE_IDEMPOTENCY_KEY (never throws) if idempotencyKey already exists -- the caller already enqueued this logical send once. */
+  /** Inserts a new PENDING row, due at `input.initialClaimableAt` (see that field's own doc comment -- NOT immediately, so the inserting caller's own immediate attempt has exclusive delivery rights until its lease elapses). Returns DUPLICATE_IDEMPOTENCY_KEY (never throws) if idempotencyKey already exists -- the caller already enqueued this logical send once. */
   insert(input: InsertEmailOutboxInput): Promise<InsertEmailOutboxOutcome>;
 
   /**

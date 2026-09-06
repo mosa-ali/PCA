@@ -7,11 +7,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MissingVerificationCodeSecretError,
+  WeakVerificationCodeSecretError,
   generateVerificationCode,
   hashVerificationCode,
   isPlausibleVerificationCode,
   verificationCodeHashesMatch,
 } from '../../dist/parentaccount/verificationCode.js';
+
+// A genuinely random 32-byte key, base64-encoded (`openssl rand -base64 32`
+// shape) -- meets the production strength bar. Fixed/deterministic here
+// only because it is a test fixture, never used for anything real.
+const STRONG_PRODUCTION_KEY_BASE64 = 'QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=';
+// Decodes to only 16 bytes -- below the 32-byte minimum.
+const TOO_SHORT_KEY_BASE64 = 'QkJCQkJCQkJCQkJCQkJCQg==';
+// A different strong (32-byte) key -- stands in for "an attacker without
+// the real production secret", not a value ever used for real hashing.
+const WRONG_PRODUCTION_KEY_BASE64 = 'QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUI=';
 
 test('generateVerificationCode produces a 6-digit numeric code and a matching hash', () => {
   const { code, codeHash } = generateVerificationCode({ NODE_ENV: 'test' });
@@ -39,8 +50,44 @@ test('SECURITY: hashVerificationCode/generateVerificationCode FAIL CLOSED in pro
   assert.throws(() => hashVerificationCode('123456', {}), MissingVerificationCodeSecretError);
 });
 
-test('hashVerificationCode succeeds in production when PCA_VERIFICATION_CODE_HMAC_SECRET is configured', () => {
-  assert.doesNotThrow(() => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: 'a-test-only-configured-secret' }));
+test('hashVerificationCode succeeds in production when PCA_VERIFICATION_CODE_HMAC_SECRET is a strong (>=32 byte, base64) key', () => {
+  assert.doesNotThrow(() => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: STRONG_PRODUCTION_KEY_BASE64 }));
+});
+
+// PCA-DW-W2-R1-9
+test('SECURITY: hashVerificationCode FAILS CLOSED in production when the configured secret is too short (decodes to <32 bytes)', () => {
+  assert.throws(
+    () => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: TOO_SHORT_KEY_BASE64 }),
+    WeakVerificationCodeSecretError,
+  );
+});
+
+test('SECURITY: hashVerificationCode FAILS CLOSED in production when the configured secret is not valid base64 (a plain low-entropy passphrase)', () => {
+  assert.throws(
+    () => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: 'a-test-only-configured-secret' }),
+    WeakVerificationCodeSecretError,
+  );
+});
+
+test('SECURITY: a stored code_hash cannot be reproduced by enumerating all 1,000,000 candidate codes without the strong production secret', () => {
+  const env = { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: STRONG_PRODUCTION_KEY_BASE64 };
+  const target = hashVerificationCode('654321', env);
+  // An attacker with only the stored hash (no secret) tries every candidate
+  // code under a WRONG key -- none may match.
+  const wrongEnv = { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: WRONG_PRODUCTION_KEY_BASE64 };
+  let matches = 0;
+  for (let i = 0; i < 1000; i += 1) {
+    // Sampled, not the full 1,000,000 -- the point (no dependence on the
+    // secret) holds identically at any sample size; a full sweep would just
+    // slow this test down for no additional assurance.
+    const candidate = String(i).padStart(6, '0');
+    if (hashVerificationCode(candidate, wrongEnv) === target) matches += 1;
+  }
+  assert.equal(matches, 0);
+});
+
+test('a 32-byte-exactly base64 secret is accepted (the minimum is inclusive)', () => {
+  assert.doesNotThrow(() => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: STRONG_PRODUCTION_KEY_BASE64 }));
 });
 
 test('hashVerificationCode uses the dev-only default secret (not a throw) in test/development when no secret is configured', () => {

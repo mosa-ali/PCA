@@ -5,6 +5,7 @@ import { decryptOutboxContent } from './emailOutboxEncryption.js';
 import { renderEmailTemplate, type EmailTemplateKind } from './emailTemplates.js';
 import { computeEmailBackoff } from './emailBackoff.js';
 import { logRedactedEmailAuditEvent, type EmailAuditSink } from './emailAudit.js';
+import { EMAIL_OUTBOX_CLAIM_LEASE_MS } from './emailTimingPolicy.js';
 
 export interface OutboxMessagePayload {
   readonly toEmail: string;
@@ -29,10 +30,6 @@ export interface ProcessOutboxSummary {
 }
 
 const DEFAULT_CLAIM_LIMIT = 20;
-// Comfortably longer than any single send attempt (SMTP/Graph calls are
-// bounded by their own client timeouts, well under a minute) -- this is a
-// reservation against a concurrent claim, not a real retry decision.
-const DEFAULT_LEASE_MS = 60_000;
 
 export type DeliveryOutcome = 'SENT' | 'RETRY_SCHEDULED' | 'DEAD_LETTER';
 
@@ -63,17 +60,24 @@ export async function attemptDeliveryAndRecordOutcome(
     auditSink({ kind: payload.kind, providerName: deps.providerAdapter.providerName, outcome: 'SENT', attemptCount: row.attemptCount + 1 });
     return 'SENT';
   } catch (error) {
-    const deliveryError = error instanceof EmailDeliveryError ? error : new EmailDeliveryError(String(error), true, { cause: error });
+    // PCA-DW-W2-R1-8: an adapter that threw something other than
+    // EmailDeliveryError is itself a bug (every adapter's own catch blocks
+    // are required to wrap failures), so this fallback path exists only as
+    // defense in depth -- it deliberately never touches the raw `error`
+    // value beyond `instanceof`, since an arbitrary thrown value could
+    // itself carry recipient/provider detail this function must never
+    // persist (see EmailDeliveryError.category's own doc comment).
+    const deliveryError = error instanceof EmailDeliveryError ? error : new EmailDeliveryError('non-EmailDeliveryError thrown by provider adapter', true, 'EMAIL_PROVIDER_UNKNOWN', { cause: error });
     const attemptCount = row.attemptCount + 1;
     const backoff = deliveryError.retryable
       ? computeEmailBackoff(attemptCount, now.getTime(), deps.randomFraction)
       : { shouldRetry: false, nextAttemptAtEpochMillis: now.getTime() };
     if (backoff.shouldRetry) {
-      await deps.repository.recordFailureAndReschedule(row.outboxId, deliveryError.message, new Date(backoff.nextAttemptAtEpochMillis), attemptCount);
+      await deps.repository.recordFailureAndReschedule(row.outboxId, deliveryError.category, new Date(backoff.nextAttemptAtEpochMillis), attemptCount);
       auditSink({ kind: payload.kind, providerName: deps.providerAdapter.providerName, outcome: 'RETRY_SCHEDULED', attemptCount });
       return 'RETRY_SCHEDULED';
     }
-    await deps.repository.markDeadLetter(row.outboxId, deliveryError.message, attemptCount);
+    await deps.repository.markDeadLetter(row.outboxId, deliveryError.category, attemptCount);
     auditSink({ kind: payload.kind, providerName: deps.providerAdapter.providerName, outcome: 'DEAD_LETTER', attemptCount });
     return 'DEAD_LETTER';
   }
@@ -90,7 +94,7 @@ export async function attemptDeliveryAndRecordOutcome(
 export async function processOutboxOnce(
   deps: EmailOutboxProcessorDeps,
   limit: number = DEFAULT_CLAIM_LIMIT,
-  leaseMs: number = DEFAULT_LEASE_MS,
+  leaseMs: number = EMAIL_OUTBOX_CLAIM_LEASE_MS,
 ): Promise<ProcessOutboxSummary> {
   const now = (deps.now ?? (() => new Date()))();
   const claimedRows = await deps.repository.claimDueRows(now, limit, leaseMs);

@@ -5,12 +5,14 @@ import { InMemoryEmailOutboxRepository } from '../../dist/email/InMemoryEmailOut
 const PAYLOAD = { ivBase64: 'iv', authTagBase64: 'tag', ciphertextBase64: 'cipher' };
 
 function insertInput(overrides = {}) {
+  const createdAt = overrides.createdAt ?? new Date('2026-01-01T00:00:00.000Z');
   return {
     outboxId: 'outbox-1',
     idempotencyKey: 'key-1',
     encryptedPayload: PAYLOAD,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    createdAt,
     expiresAt: new Date('2026-01-01T01:00:00.000Z'),
+    initialClaimableAt: createdAt,
     ...overrides,
   };
 }
