@@ -17,12 +17,16 @@
     2. REAL_UAT is read from docs/release_readiness/uat_execution_log.json's
        "cases" array, which only a human tester/owner may populate, after
        real on-device/on-dashboard execution. This script narrows the raw
-       50-case plan (docs/release_readiness/UAT_TEST_PLAN.md) down to the
+       54-case plan (docs/release_readiness/UAT_TEST_PLAN.md) down to the
        subset of cases actually relevant to the selected -ReleaseTarget (a
        Public Release A UAT pass does not require an Android device UAT) --
-       see the $UatCaseTargetMap table below. A target with zero relevant
-       cases is vacuously satisfied; a target with relevant cases and zero of
-       them logged remains genuinely blocked. This script NEVER writes to
+       see the $UatCaseTargetMap table below. docs/supervision/
+       PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv marks REAL_UAT = YES for
+       EVERY release target with no NO/PARTIAL cell anywhere, so a target
+       with ZERO relevant planned cases is a PLANNING GAP, not a satisfied
+       dependency (DW-W1-R2 P1-B) -- it reports UAT_PLAN_INCOMPLETE_FOR_TARGET
+       and blocks the release, exactly like a target with relevant cases and
+       zero of them logged. This script NEVER writes to
        uat_execution_log.json -- its "status"/"cases" fields stay entirely
        human-owned; only how the SCRIPT interprets that human-owned data per
        target changes here.
@@ -172,20 +176,35 @@ if ($UsesRejectingDeviceVerifier -or $UsesRejectingEnvelopeVerifier) {
 $CryptoSuiteInScope = $CryptoSuiteBlockingTargets -contains $ReleaseTarget
 
 # --- 2. REAL_UAT, from the human-maintained execution log, release-scoped --
-# UAT_TEST_PLAN.md (read-only reference, §4) defines exactly 50 planned
-# cases, organized entirely under device/dashboard categories -- confirmed
-# by reading the full plan, not just headers: enrollment, process-death/
-# reboot, screen-time, break shield, schedules, app usage controls,
-# location, safe browser, eye protection, offline/reconnect, parent
-# dashboard, delete/export/retention, recovery, tamper detection, Arabic/
-# RTL. Zero cases concern the static public website or bare account
-# creation/login (that narrow slice is exercised by automated tests
-# elsewhere, not real-device UAT) -- so PUBLIC_A and AUTH_B are vacuously
-# satisfied here, while ANDROID_D/PARENT_C, which the majority of these
-# cases actually cover, remain genuinely blocked until real cases are
-# logged. This map is maintained by hand alongside UAT_TEST_PLAN.md's own
-# §4 case catalogue; if that plan's case list ever changes, this map must
-# be updated to match (a case-count drift check below fails closed if not).
+# UAT_TEST_PLAN.md (read-only reference, §4) defines exactly 54 planned
+# cases: 50 organized entirely under device/dashboard categories --
+# confirmed by reading the full plan, not just headers: enrollment,
+# process-death/reboot, screen-time, break shield, schedules, app usage
+# controls, location, safe browser, eye protection, offline/reconnect,
+# parent dashboard, delete/export/retention, recovery, tamper detection,
+# Arabic/RTL -- plus 4 more (§4.16, added DW-W1-R2) covering AUTH_B's real
+# identity flow (registration/verification/login/logout/reset), added
+# because docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv marks
+# REAL_UAT = YES for EVERY release target with no NO/PARTIAL cell anywhere
+# -- a target with ZERO relevant planned cases is therefore a genuine
+# planning gap (UAT_PLAN_INCOMPLETE_FOR_TARGET below), never a vacuously
+# satisfied dependency. PUBLIC_A, IOS_FUTURE, and BILLING_FUTURE still have
+# zero relevant cases mapped as of this map: PUBLIC_A is a static site with
+# no device/account surface to run REAL-DEVICE UAT against (it already has
+# its own dedicated manual gates, OWNER_VISUAL_UAT and
+# PUBLIC_REPLY_IDENTITY -- see docs/supervision/PCA_DYNAMIC_WORKFLOW_W1_CLOSURE.md's
+# R2 addendum for the full architecture-contradiction writeup rather than
+# fabricating a device UAT case for a page); IOS_FUTURE has no built child-
+# safety functionality yet to UAT (see EXTERNAL_GATE_MATRIX.md's iOS gates
+# -- CI only builds/tests "the inert launch shell"); BILLING_FUTURE has no
+# selected payment provider yet (PAYMENT_PROVIDER_SELECTION is still
+# EXTERNAL). Per DW-W1-R2 section 7/9, this is the explicitly-sanctioned
+# alternative to fabricating cases: these three targets correctly and
+# deliberately fail closed via the zero-relevant-cases branch below rather
+# than being forced into a genuine-but-invented device UAT case. This map
+# is maintained by hand alongside UAT_TEST_PLAN.md's own §4 case catalogue;
+# if that plan's case list ever changes, this map must be updated to match
+# (a case-count drift check below fails closed if not).
 $UatCaseTargetMap = [ordered]@{
   'UAT-ENR-01'  = @('PARENT_C', 'ANDROID_D')
   'UAT-ENR-02'  = @('PARENT_C', 'ANDROID_D')
@@ -237,6 +256,10 @@ $UatCaseTargetMap = [ordered]@{
   'UAT-I18N-01' = @('ANDROID_D')
   'UAT-I18N-02' = @('PARENT_C')
   'UAT-I18N-03' = @('ANDROID_D')
+  'UAT-AUTH-01' = @('AUTH_B')
+  'UAT-AUTH-02' = @('AUTH_B')
+  'UAT-AUTH-03' = @('AUTH_B')
+  'UAT-AUTH-04' = @('AUTH_B')
 }
 
 $UatLogPath = Join-Path $RepositoryRoot 'docs\release_readiness\uat_execution_log.json'
@@ -260,7 +283,8 @@ if ($UatCaseTargetMap.Keys.Count -ne $UatLog.totalCasesInPlan) {
 # SET EQUALITY against `$UatCaseTargetMap.Keys: a case ID present in the
 # plan but missing from the map, present in the map but missing from the
 # plan, or renamed/replaced all fail closed with a specific, actionable
-# diff, rather than only being caught if the total count happens to change.
+# diff, rather than only being caught if the total count happens to change
+# (all 54 lines, including §4.16 added DW-W1-R2, follow this same shape).
 $UatPlanPath = Join-Path $RepositoryRoot 'docs\release_readiness\UAT_TEST_PLAN.md'
 if (-not (Test-Path -LiteralPath $UatPlanPath)) {
   throw "Cannot verify REAL_UAT case-to-target map identity: $UatPlanPath not found."
@@ -303,9 +327,20 @@ function Test-PcaUatCasePassed {
 }
 
 if ($RelevantCaseIds.Count -eq 0) {
-  $RealUatState = 'NOT_APPLICABLE_TO_TARGET'
+  # DW-W1-R2 P1-B: docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv
+  # marks REAL_UAT = YES for every release target -- zero relevant planned
+  # cases is therefore a genuine UAT-PLAN GAP for this target, not a
+  # dependency this target happens not to have. This USED TO report
+  # NOT_APPLICABLE_TO_TARGET and be treated as vacuously satisfied, which
+  # let AUTH_B (and PUBLIC_A/IOS_FUTURE/BILLING_FUTURE) pass this check
+  # with zero real UAT coverage. It now fails closed like any other open
+  # REAL_UAT dependency.
+  $RealUatState = 'UAT_PLAN_INCOMPLETE_FOR_TARGET'
   $RealUatRelevantCount = 0
   $RealUatPassedCount = 0
+  $msg = "REAL_UAT (scoped to $ReleaseTarget) = UAT_PLAN_INCOMPLETE_FOR_TARGET (FABLE marks REAL_UAT = YES for $ReleaseTarget in docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv, but zero of the $($UatCaseTargetMap.Keys.Count) planned UAT_TEST_PLAN.md cases are currently mapped to it -- this is a planning gap, not a satisfied dependency)."
+  $Failures.Add($msg)
+  $TechnicalFailures.Add($msg)
 } else {
   $MissingOrFailed = [System.Collections.Generic.List[string]]::new()
   $passedCount = 0
@@ -413,6 +448,15 @@ if (-not $IgnoreExternalGates) {
     $Overlap = @($Scope | Where-Object { $ConditionalScope -contains $_ })
     if ($Overlap.Count -gt 0) {
       throw "External gate matrix entry '$($Gate.id)' lists the same release target(s) in BOTH releaseScope and conditionalReleaseScope: $($Overlap -join ', '). A target must be a hard blocker (releaseScope) or a conditional dependency (conditionalReleaseScope), never both -- fix docs/release_readiness/external_gate_matrix.json."
+    }
+    # DW-W1-R2 section 12 (P2, small structural hardening): a duplicate
+    # token within the SAME array (e.g. releaseScope: ["AUTH_B", "AUTH_B"])
+    # is corrupt data, not a meaningful scope -- fail closed rather than
+    # silently de-duplicating it.
+    $DuplicateScopeTokens = @($Scope | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+    $DuplicateConditionalTokens = @($ConditionalScope | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+    if ($DuplicateScopeTokens.Count -gt 0 -or $DuplicateConditionalTokens.Count -gt 0) {
+      throw "External gate matrix entry '$($Gate.id)' has duplicate release-target token(s) within releaseScope [$($DuplicateScopeTokens -join ', ')] or conditionalReleaseScope [$($DuplicateConditionalTokens -join ', ')] -- each target may appear at most once per array. Fix docs/release_readiness/external_gate_matrix.json."
     }
 
     $InScope = $Scope -contains $ReleaseTarget

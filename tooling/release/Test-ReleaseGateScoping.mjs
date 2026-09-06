@@ -28,6 +28,7 @@ const matrixPath = join(repoRoot, 'docs', 'release_readiness', 'external_gate_ma
 const registerPath = join(repoRoot, '.agent-runtime', 'manifests', 'pca-r3-final', 'R3_EXTERNAL_GATE_REGISTER.csv');
 const scriptPath = join(repoRoot, 'tooling', 'release', 'Invoke-ReleaseGateCheck.ps1');
 const uatPlanPath = join(repoRoot, 'docs', 'release_readiness', 'UAT_TEST_PLAN.md');
+const uatLogPath = join(repoRoot, 'docs', 'release_readiness', 'uat_execution_log.json');
 
 // pwsh is PowerShell Core -- present on Windows (installed alongside this
 // repo's tooling), on Ubuntu GitHub Actions runners (preinstalled), and
@@ -46,15 +47,29 @@ function ok(cond, label) {
 }
 
 // PowerShell's error stream wraps long throw messages to the console width
-// and interleaves ANSI color codes -- confirmed empirically: a message can
-// be split mid-phrase (e.g. a line break landing between two words with a
-// reset code in between), which breaks a naive contiguous-phrase regex even
-// though the underlying message text is complete and correct. Every regex
-// check below is run against this stripped-and-unwrapped form: ANSI escapes
-// removed, then line breaks collapsed to single spaces, so a phrase that
-// happens to wrap across a terminal-width boundary still matches.
+// and interleaves ANSI color codes -- confirmed empirically ON REAL LINUX
+// (DW-W1-R2 fresh-reviewer finding, reproduced in an Ubuntu container: a
+// non-interactive/redirected pwsh host on Linux defaults
+// $Host.UI.RawUI.WindowSize.Width to 80, unlike this repo's interactive
+// Windows terminal, so a message that never wrapped in local testing can
+// still wrap on real CI). PowerShell's pretty-printed exception display
+// also inserts its OWN "NNN |"/"    | " gutter prefix on every wrapped
+// continuation line (and a "Line |" header plus a "~~~~" underline line
+// that are pure decoration, not part of the thrown message) -- so a
+// wrapped message can read like "...is missing      | the required
+// property..." even after collapsing newlines to spaces. Every gutter/pipe
+// artifact is stripped here as defense in depth (this repo's own
+// Write-Host output never contains a literal "|", confirmed by inspection,
+// so this cannot accidentally eat real output) -- but the PRIMARY defense
+// is that every regex check below matches independent SHORT substrings
+// rather than one contiguous multi-word phrase, so a wrap landing between
+// two checked substrings still cannot cause a false failure.
 function normalizeForMatching(text) {
-  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').replace(/\r?\n/g, ' ');
+  return text
+    .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s*\|\s*/g, ' ')
+    .replace(/\s+/g, ' ');
 }
 
 function runGateRaw(args, timeoutMs = 60000) {
@@ -117,7 +132,13 @@ notBlockedBy('PUBLIC_A', ['IOS_FAMILY_CONTROLS_ENTITLEMENT', 'REQUIRES_ENTITLEME
 notBlockedBy('PUBLIC_A', ['PAYMENT_PROVIDER_SELECTION', 'MERCHANT_ACCOUNT_APPROVAL', 'SETTLEMENT_BANK_CONFIGURATION', 'SUPPORTED_CHARGE_CURRENCIES', 'SUPPORTED_SETTLEMENT_CURRENCIES', 'PAYMENT_PRODUCTION_CERTIFICATION'], 'payment provider/merchant approval/settlement');
 notBlockedBy('PUBLIC_A', ['CLOUD_AI_OWNER_DECISION'], 'cloud AI');
 notBlockedBy('PUBLIC_A', ['YOUTUBE_MODE_B_POLICY_REVIEW', 'YOUTUBE_PLATFORM_API_PARTNERSHIP'], 'YouTube Mode B');
-ok(results.PUBLIC_A.json.technicalGatesPass === true, 'PUBLIC_A: TECHNICAL_GATES_PASS is true (only owner/external gates remain open)');
+// DW-W1-R2 P1-B: PUBLIC_A's TECHNICAL_GATES_PASS flipped from true to false
+// this round -- REAL_UAT is no longer vacuously satisfied for a
+// zero-relevant-case target (see Section 5c item A), so it now correctly
+// contributes a real technical failure (UAT_PLAN_INCOMPLETE_FOR_TARGET) for
+// PUBLIC_A, on top of its pre-existing owner gates. Both remain true at once.
+ok(results.PUBLIC_A.json.technicalGatesPass === false, 'PUBLIC_A: TECHNICAL_GATES_PASS is now false (REAL_UAT is UAT_PLAN_INCOMPLETE_FOR_TARGET, a real technical gap, not vacuously satisfied)');
+ok(results.PUBLIC_A.json.realUatState === 'UAT_PLAN_INCOMPLETE_FOR_TARGET', `PUBLIC_A: realUatState is UAT_PLAN_INCOMPLETE_FOR_TARGET (got: ${results.PUBLIC_A.json.realUatState})`);
 ok(results.PUBLIC_A.json.ownerGatesPendingCount > 0 && results.PUBLIC_A.json.verdict === 'NOT_READY', 'PUBLIC_A: verdict is truthfully NOT_READY while owner gates (e.g. OWNER_VISUAL_UAT, PUBLIC_REPLY_IDENTITY) remain open -- never a misleading blanket READY');
 
 notBlockedBy('AUTH_B', ['PRODUCTION_CRYPTO_SUITE', 'CRYPTO_SECURITY_REVIEW', 'CRYPTO_ACTIVATION', 'PRODUCTION_CRYPTO_SECURITY_REVIEW'], 'production crypto');
@@ -249,17 +270,28 @@ try {
     }
   }
 
+  // DW-W1-R2 (fresh reviewer P0): every check below against a THROWN
+  // (uncaught-exception) message uses independent short substring checks,
+  // never one contiguous multi-word regex. Confirmed empirically on real
+  // Linux (Ubuntu, pwsh non-interactive): PowerShell's pretty-printed
+  // exception display wraps a long throw message to
+  // $Host.UI.RawUI.WindowSize.Width (80 on a non-interactive/redirected
+  // Linux pwsh host) and inserts its own "     | " continuation prefix
+  // between wrapped words -- a single regex spanning a wrap boundary
+  // silently fails to match even though the message is intact and correct.
+  // Plain Write-Host output (never a thrown exception) is NOT subject to
+  // this and does not need the same treatment.
   withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { delete g.releaseScope; }, (r) => {
     ok(r.exitCode !== 0, 'a gate with releaseScope entirely REMOVED makes the whole script fail closed (never fails open)');
-    ok(/missing the required property 'releaseScope'/.test(r.out), 'the failure names the missing releaseScope property');
+    ok(/missing/.test(r.out) && /required property/.test(r.out) && /releaseScope/.test(r.out), 'the failure names the missing releaseScope property');
   });
   withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { g.releaseScope = null; }, (r) => {
     ok(r.exitCode !== 0, 'a gate with releaseScope = null makes the whole script fail closed (never fails open)');
-    ok(/releaseScope' = null/.test(r.out), 'the failure names the null releaseScope');
+    ok(/releaseScope/.test(r.out) && /null/.test(r.out), 'the failure names the null releaseScope');
   });
   withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { g.releaseScope = 'PUBLIC_A'; }, (r) => {
     ok(r.exitCode !== 0, 'a gate with a SCALAR (bare string) releaseScope makes the whole script fail closed (never fails open)');
-    ok(/non-array 'releaseScope'/.test(r.out), 'the failure names the non-array releaseScope');
+    ok(/non-array/.test(r.out) && /releaseScope/.test(r.out), 'the failure names the non-array releaseScope');
   });
   withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { delete g.conditionalReleaseScope; }, (r) => {
     ok(r.exitCode !== 0, 'a gate with conditionalReleaseScope entirely REMOVED makes the whole script fail closed');
@@ -269,6 +301,10 @@ try {
   });
   withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { g.releaseScope = ['PUBLIC_A']; g.conditionalReleaseScope = ['PUBLIC_A']; }, (r) => {
     ok(r.exitCode !== 0, 'a gate listing the SAME target in both releaseScope and conditionalReleaseScope fails closed');
+  });
+  withMutatedGate('DEPLOYED_TLS_TERMINATION_CONFIG', (g) => { g.releaseScope = ['AUTH_B', 'AUTH_B', 'PARENT_C']; }, (r) => {
+    ok(r.exitCode !== 0, 'a gate with a DUPLICATE token within the same releaseScope array (DW-W1-R2 section 12) fails closed');
+    ok(/duplicate/.test(r.out) && /release-target token/.test(r.out), 'the failure names the duplicate-token defect');
   });
 
   // Explicit [] on a deliberately non-blocking gate remains valid (mission
@@ -288,7 +324,7 @@ try {
     try {
       const dupResult = runGate('PUBLIC_A');
       ok(dupResult.exitCode !== 0, 'a duplicate gate id in the matrix makes the whole script fail closed');
-      ok(/duplicate gate id/.test(dupResult.out), 'the failure names the duplicate gate id defect');
+      ok(/duplicate/.test(dupResult.out) && /gate id/.test(dupResult.out), 'the failure names the duplicate gate id defect');
     } finally {
       writeFileSync(matrixPath, originalMatrix, 'utf8');
     }
@@ -334,7 +370,7 @@ console.log('=== Section 5b: REAL_UAT case-to-target map identity vs UAT_TEST_PL
     writeFileSync(uatPlanPath, missing, 'utf8');
     const missingResult = runGateRaw(['-ReleaseTarget', 'ANDROID_D']);
     ok(missingResult.exitCode !== 0, 'a case ID present in the map but REMOVED from the plan fails closed');
-    ok(/case-to-target map identity drift/.test(missingResult.out) && /UAT-ENR-01/.test(missingResult.out), 'the failure names the map-identity drift and cites UAT-ENR-01');
+    ok(/case-to-target/.test(missingResult.out) && /identity drift/.test(missingResult.out) && /UAT-ENR-01/.test(missingResult.out), 'the failure names the map-identity drift and cites UAT-ENR-01');
     writeFileSync(uatPlanPath, originalPlan, 'utf8');
 
     const extra = originalPlan.replace(
@@ -345,7 +381,7 @@ console.log('=== Section 5b: REAL_UAT case-to-target map identity vs UAT_TEST_PL
     writeFileSync(uatPlanPath, extra, 'utf8');
     const extraResult = runGateRaw(['-ReleaseTarget', 'ANDROID_D']);
     ok(extraResult.exitCode !== 0, 'an EXTRA case ID present in the plan but absent from the map fails closed');
-    ok(/case-to-target map identity drift/.test(extraResult.out) && /UAT-FIXTURE-99/.test(extraResult.out), 'the failure names the map-identity drift and cites UAT-FIXTURE-99');
+    ok(/case-to-target/.test(extraResult.out) && /identity drift/.test(extraResult.out) && /UAT-FIXTURE-99/.test(extraResult.out), 'the failure names the map-identity drift and cites UAT-FIXTURE-99');
     writeFileSync(uatPlanPath, originalPlan, 'utf8');
 
     const replaced = originalPlan.replace('UAT-ENR-01', 'UAT-ENR-01-RENAMED');
@@ -358,6 +394,106 @@ console.log('=== Section 5b: REAL_UAT case-to-target map identity vs UAT_TEST_PL
     writeFileSync(uatPlanPath, originalPlan, 'utf8');
     ok(readFileSync(uatPlanPath, 'utf8') === originalPlan, 'UAT_TEST_PLAN.md restored byte-identical after every mutation test');
   }
+}
+
+console.log('');
+console.log('=== Section 5c: REAL_UAT is never vacuously satisfied for a FABLE YES target (DW-W1-R2 P1-B) ===');
+{
+  const originalScript = readFileSync(scriptPath, 'utf8');
+  const originalLog = readFileSync(uatLogPath, 'utf8');
+
+  // --- A. FABLE YES + zero mapped cases = FAIL CLOSED -----------------------
+  // Real repo state today already demonstrates this for PUBLIC_A/IOS_FUTURE/
+  // BILLING_FUTURE (all currently 0 relevant cases, all ACKNOWLEDGED
+  // architecture-contradiction gaps in ValidateFableScopeParity.mjs -- see
+  // that file). Assert it directly here too, against the real script.
+  {
+    const r = runGate('PUBLIC_A');
+    ok(r.json?.realUatState === 'UAT_PLAN_INCOMPLETE_FOR_TARGET', `A: PUBLIC_A (0 relevant cases, FABLE REAL_UAT=YES) reports UAT_PLAN_INCOMPLETE_FOR_TARGET, not a vacuous pass (got: ${r.json?.realUatState})`);
+    ok(failuresText(r).includes('UAT_PLAN_INCOMPLETE_FOR_TARGET'), 'A: UAT_PLAN_INCOMPLETE_FOR_TARGET is a real, counted failure for PUBLIC_A');
+  }
+
+  // --- B. AUTH_B with unexecuted mapped cases = NOT_READY -------------------
+  {
+    const r = runGate('AUTH_B');
+    ok(r.json?.realUatState === 'NOT_SATISFIED_FOR_TARGET', `B: AUTH_B (4 relevant cases, all unexecuted) reports NOT_SATISFIED_FOR_TARGET (got: ${r.json?.realUatState})`);
+    ok(r.json?.realUatRelevantCount === 4 && r.json?.realUatPassedCount === 0, `B: AUTH_B relevant=4 passed=0 (got relevant=${r.json?.realUatRelevantCount} passed=${r.json?.realUatPassedCount})`);
+    ok(r.json?.verdict !== 'READY', 'B: AUTH_B is NOT_READY while its UAT cases are unexecuted');
+  }
+
+  // --- Negative control (section 10): temporarily unmap AUTH_B from all its --
+  // --- UAT cases in the SCRIPT SOURCE -- ValidateFableScopeParity.mjs must ---
+  // --- then FAIL (AUTH_B is FABLE=YES and NOT on the acknowledged-gaps list) -
+  try {
+    const unmapped = originalScript.replace(
+      /'UAT-AUTH-01' = @\('AUTH_B'\)\n  'UAT-AUTH-02' = @\('AUTH_B'\)\n  'UAT-AUTH-03' = @\('AUTH_B'\)\n  'UAT-AUTH-04' = @\('AUTH_B'\)/,
+      "'UAT-AUTH-01' = @('PARENT_C')\n  'UAT-AUTH-02' = @('PARENT_C')\n  'UAT-AUTH-03' = @('PARENT_C')\n  'UAT-AUTH-04' = @('PARENT_C')",
+    );
+    ok(unmapped !== originalScript, 'fixture sanity: unmapping AUTH_B\'s 4 UAT cases actually changed the script text');
+    writeFileSync(scriptPath, unmapped, 'utf8');
+    let parityFailed = false;
+    let parityOutput = '';
+    try {
+      parityOutput = execFileSync('node', [join(repoRoot, 'tooling', 'release', 'ValidateFableScopeParity.mjs')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      parityFailed = true;
+      parityOutput = (err.stdout || '') + (err.stderr || '');
+    }
+    ok(parityFailed, 'negative control: with AUTH_B unmapped from all its UAT cases, ValidateFableScopeParity.mjs FAILS (AUTH_B is FABLE=YES and not an acknowledged gap)');
+    ok(/REAL_UAT\/AUTH_B/.test(parityOutput), 'negative control: the parity failure specifically names REAL_UAT/AUTH_B');
+  } finally {
+    writeFileSync(scriptPath, originalScript, 'utf8');
+  }
+  ok(readFileSync(scriptPath, 'utf8') === originalScript, 'Invoke-ReleaseGateCheck.ps1 restored byte-identical after the AUTH_B-unmapping negative control');
+  {
+    const parityAfterRestore = execFileSync('node', [join(repoRoot, 'tooling', 'release', 'ValidateFableScopeParity.mjs')], { encoding: 'utf8' });
+    ok(/^PASS /m.test(parityAfterRestore) || /\nPASS /.test(parityAfterRestore), 'ValidateFableScopeParity.mjs passes again once the script is restored');
+  }
+
+  // --- C/D. Transient, NEVER-COMMITTED uat_execution_log.json fixtures ------
+  // Read the ORIGINAL content into a variable before any mutation, mutate,
+  // test, and restore in a finally block -- the same safe pattern already
+  // used above for the matrix/register/plan files. This does NOT write fake
+  // PASS evidence into the real committed log at any point after this
+  // function returns.
+  function withMutatedUatLog(mutateFn, testFn) {
+    const logObj = JSON.parse(originalLog);
+    mutateFn(logObj);
+    writeFileSync(uatLogPath, JSON.stringify(logObj, null, 2) + '\n', 'utf8');
+    try {
+      testFn(runGate('AUTH_B'));
+    } finally {
+      writeFileSync(uatLogPath, originalLog, 'utf8');
+    }
+  }
+
+  // --- C. One AUTH_B case PASS, remaining 3 unexecuted = still NOT_READY ----
+  withMutatedUatLog(
+    (log) => {
+      log.cases = [{ caseId: 'UAT-AUTH-01', result: 'PASS' }];
+      log.casesLogged = 1;
+    },
+    (r) => {
+      ok(r.json?.realUatState === 'NOT_SATISFIED_FOR_TARGET', `C: AUTH_B with 1 of 4 cases PASS reports NOT_SATISFIED_FOR_TARGET (got: ${r.json?.realUatState})`);
+      ok(r.json?.realUatPassedCount === 1 && r.json?.realUatRelevantCount === 4, `C: AUTH_B passed=1 relevant=4 (got passed=${r.json?.realUatPassedCount} relevant=${r.json?.realUatRelevantCount})`);
+      ok(r.json?.verdict !== 'READY', 'C: AUTH_B remains NOT_READY with a partially-passed UAT set');
+    },
+  );
+
+  // --- D. ALL 4 AUTH_B cases PASS = SATISFIED_FOR_TARGET (transient fixture only) --
+  withMutatedUatLog(
+    (log) => {
+      log.cases = ['UAT-AUTH-01', 'UAT-AUTH-02', 'UAT-AUTH-03', 'UAT-AUTH-04'].map((caseId) => ({ caseId, result: 'PASS' }));
+      log.casesLogged = 4;
+    },
+    (r) => {
+      ok(r.json?.realUatState === 'SATISFIED_FOR_TARGET', `D: AUTH_B with all 4 relevant cases PASS reports SATISFIED_FOR_TARGET (got: ${r.json?.realUatState})`);
+      ok(r.json?.realUatPassedCount === 4 && r.json?.realUatRelevantCount === 4, `D: AUTH_B passed=4 relevant=4 (got passed=${r.json?.realUatPassedCount} relevant=${r.json?.realUatRelevantCount})`);
+    },
+  );
+
+  // --- E. No test mutation persists ------------------------------------------
+  ok(readFileSync(uatLogPath, 'utf8') === originalLog, 'E: uat_execution_log.json restored byte-identical after every transient fixture -- no fake PASS evidence was left behind');
 }
 
 console.log('');

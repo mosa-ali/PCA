@@ -63,12 +63,30 @@ jobs:
       - name: Test quality tooling controls
         shell: pwsh
         run: ./tooling/quality/Invoke-QualityToolingTests.ps1
-      # DW-W1-R1 (section 10/12/18): release-gate scoping regression + parity
-      # gates. Both are plain node scripts with zero external dependencies
-      # (no npm ci needed) that invoke the already-cross-platform pwsh
-      # release-gate script; they belong here rather than a new job because
-      # this job already runs pwsh-based repository-wide checks and neither
-      # script needs anything this job doesn't already have.
+
+  release-control:
+    # DW-W1-R2 (P1-A): release-gate scoping regression + FABLE parity gates.
+    # Deliberately its OWN independent job, NOT a step appended to
+    # `repository-quality` above (that was DW-W1-R1's mistake): that job has
+    # a pre-existing, unrelated failure in "Run repository checks" (stale
+    # repository-layout expectations against legitimate current
+    # .dockerignore/database/docker-compose.yml -- fixing that whole old
+    # framework is out of scope here), and GitHub Actions does not run a
+    # job's later steps once an earlier one fails with no `continue-on-error`
+    # -- so anything appended after it in the SAME job silently shows
+    # "skipped" forever, never actually gate anything. Confirmed against the
+    # real run for commit 8fedd311 (job "Repository quality": step "Run
+    # repository checks" = failure; both release-scope steps = skipped).
+    # This job is read-only, needs no `npm ci` (both scripts are plain Node
+    # with zero external dependencies), and runs independently of
+    # `repository-quality` so a pre-existing, unrelated failure there can
+    # never hide whether release-scope/FABLE-parity genuinely pass.
+    name: Release control integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

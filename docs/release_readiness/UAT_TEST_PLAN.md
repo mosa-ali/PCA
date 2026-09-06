@@ -143,6 +143,35 @@ See `NETWORK_MATRIX.md` for the full cross-product; execute at minimum:
 - UAT-I18N-02: Full Arabic UI on Parent Web, independently of child device language (mixed-language household case).
 - UAT-I18N-03: Screen reader / TalkBack in Arabic reads all interactive elements including dropdown option labels (see project note: display-only translation is insufficient — verify via actual TalkBack pass, not visual inspection only).
 
+### 4.16 Parent identity / authentication (AUTH_B)
+DW-W1-R2: added because `docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv`
+marks `REAL_UAT = YES` for `AUTH_B`, and the FABLE roadmap requires real
+registration/verification/login/reset UAT before `AUTH_B` may ever be
+classified ready — this plan previously had zero cases mapped to `AUTH_B`,
+which let the release-gate script treat that dependency as vacuously
+satisfied. Runs on a real browser (device D4 — no special hardware, unlike
+§4.1–§4.15) and does NOT require `PRODUCTION_CRYPTO_SUITE` review first
+(`AUTH_B` does not depend on it — see `RELEASE_GATE.md`). **These cases
+REQUIRE a real, approved production email provider** (see
+`PRODUCTION_EMAIL_DELIVERY` in `EXTERNAL_GATE_MATRIX.md`) delivering to a
+real inbox the tester controls — `TestSandboxEmailSender` / any local/dev
+email stub does NOT satisfy this plan; a case run against a sandbox sender
+is not real UAT and must not be logged as PASS.
+- UAT-AUTH-01: Real parent registration on a real device/browser against a
+  production-like backend, with a real verification email delivered to a
+  real inbox (not a sandbox sender) and the account genuinely reaching
+  VERIFIED via the received code/link. Proves registration and the
+  verification-email flow together in one genuine end-to-end pass.
+- UAT-AUTH-02: Login with the verified account's real credentials succeeds
+  and issues a working session on a real device/browser.
+- UAT-AUTH-03: Logout genuinely invalidates the session -- a previously
+  valid session cookie/token no longer authenticates any protected
+  request afterward, and a fresh login re-establishes a working session.
+- UAT-AUTH-04: Password reset/recovery: a real reset email is delivered to
+  a real inbox (not a sandbox sender), redeeming it sets a new password,
+  login succeeds with the NEW password, and login with the OLD password
+  fails afterward.
+
 ## 5. Sign-off
 
 A test cycle is complete only when every case in §4 has a logged

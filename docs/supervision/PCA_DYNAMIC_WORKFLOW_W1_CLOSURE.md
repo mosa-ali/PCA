@@ -144,6 +144,196 @@ Overall verdict from the fresh reviewer: **safe to commit as-is** — every
 one of the 8 intended fixes was independently reproduced-and-confirmed,
 not merely read and accepted.
 
+## DW-W1-R2 addendum: actual CI execution + REAL_UAT release parity
+
+Primary ChatGPT independently reviewed R1 (`8fedd311`) and returned 2
+further P1 findings, both closed below.
+
+**Correction to the R1 addendum above:** that addendum did not claim a
+specific CI conclusion for the two new release-scope steps, but the
+coordinator's own end-of-turn chat summary that round did assert
+`RELEASE_SCOPE_TEST_CI = PASS` on the strength of "wired into CI + valid
+YAML" alone, without ever having fetched the actual GitHub Actions run.
+That claim was wrong. The correct, verified state for commit `8fedd311` is:
+
+**`RELEASE_SCOPE_TEST_CI` (for `8fedd311`) = `WIRED_BUT_NOT_EXECUTED`**, not
+`PASS`. Proof (fetched from the GitHub Actions REST API,
+`GET /repos/mosa-ali/PCA/actions/runs/34011388187/jobs`, run
+`34011388187` for head SHA `8fedd311ea116719cd23aa30e6bc2ef925274af0`):
+
+```
+JOB: Repository quality | completed | failure
+   step: Run repository checks                                              | completed | failure
+   step: Run deterministic quality checks                                   | completed | skipped
+   step: Test quality tooling controls                                      | completed | skipped
+   step: Set up Node.js                                                     | completed | skipped
+   step: Test release-gate -ReleaseTarget scoping (...)                     | completed | skipped
+   step: Validate FABLE release-scope parity (...)                         | completed | skipped
+```
+
+R1 appended the two new steps to the END of the pre-existing
+`repository-quality` job. That job's first step, "Run repository checks"
+(pre-existing, stale repository-layout expectations unrelated to this
+work — `.dockerignore`/`database/`/`docker-compose.yml` are legitimate
+current repository state that check has not been updated for), fails on
+every run, and GitHub Actions does not run a job's later steps once an
+earlier one fails without `continue-on-error` — so both new steps showed
+`skipped`, forever, on every push. "Wired into CI" was true; "executed and
+green" was not, and the coordinator should not have reported the latter
+without checking.
+
+### Findings closed
+
+| ID | Finding | Fix | Verification |
+|---|---|---|---|
+| P1-A | The release-scope/parity steps were appended to `repository-quality`, a job with a pre-existing, unrelated failure earlier in its step sequence, so they never actually ran. | Removed both steps from `repository-quality`. Added a new, independent job, `release-control` ("Release control integrity"), in the same workflow file, with no `needs:` dependency on any other job — checkout, Node setup, `Test-ReleaseGateScoping.mjs`, `ValidateFableScopeParity.mjs`. Fixing the pre-existing `repository-quality` framework itself is explicitly out of scope. | YAML re-parsed with a real parser (`js-yaml`) confirming valid syntax and job independence (`needs: undefined`). **Actual GitHub Actions execution for the R2 commit is required before this finding is considered closed — see the "Actual CI evidence" sub-section below, completed after the R2 push.** |
+| P1-B | `REAL_UAT` was reported `NOT_APPLICABLE_TO_TARGET` (vacuously satisfied) for any target with zero relevant planned UAT cases — including `AUTH_B`, despite `docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv` marking `REAL_UAT = YES` for `AUTH_B` (and every other target) with no `NO`/`PARTIAL` cell anywhere. `ValidateFableScopeParity.mjs` explicitly exempted this from parity checking. | Added 4 new planned UAT cases (`UAT_TEST_PLAN.md` §4.16: `UAT-AUTH-01`..`04`, covering registration+verification, login, logout/session, and password reset/recovery — explicitly requiring a REAL, non-sandbox email provider) mapped to `AUTH_B` in `$UatCaseTargetMap`. The zero-relevant-case branch in `Invoke-ReleaseGateCheck.ps1` now reports `UAT_PLAN_INCOMPLETE_FOR_TARGET` (a real, counted failure) instead of `NOT_APPLICABLE_TO_TARGET`. `ValidateFableScopeParity.mjs`'s blanket exemption is removed and replaced with a narrow, NAMED, justified `ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS` allowlist covering exactly `PUBLIC_A`, `IOS_FUTURE`, `BILLING_FUTURE` (see "Open architecture question" below) — `AUTH_B` is deliberately NOT on it. `totalCasesInPlan` updated 50→54; `status`/`casesLogged`/`cases`/`goNoGoDecision` in `uat_execution_log.json` left untouched (still `NOT_EXECUTED`/`0`/`[]`/`null`). | `Test-ReleaseGateScoping.mjs` §5c, all via safe transient mutate-then-restore (byte-identical restoration verified): (A) a FABLE-YES target with 0 relevant cases (`PUBLIC_A`) reports `UAT_PLAN_INCOMPLETE_FOR_TARGET`, a real counted failure; (B) `AUTH_B` with 4 unexecuted cases reports `NOT_SATISFIED_FOR_TARGET`, `NOT_READY`; negative control: unmapping `AUTH_B`'s 4 cases from `AUTH_B` in a temporary copy of the `.ps1` source makes `ValidateFableScopeParity.mjs` genuinely FAIL, restored byte-identical, parity passes again after restore; (C) one of 4 `AUTH_B` cases logged PASS (transient `uat_execution_log.json` fixture) still reports `NOT_SATISFIED_FOR_TARGET`; (D) all 4 logged PASS (transient fixture only) reports `SATISFIED_FOR_TARGET`; (E) `uat_execution_log.json` byte-identical to its original committed content after every fixture — no fake PASS evidence left anywhere. |
+| (P2, optional) | `releaseScope`/`conditionalReleaseScope` could contain a duplicate token within the SAME array (e.g. `["AUTH_B", "AUTH_B"]`). | Added a small structural check: any duplicate token within either array fails the whole script closed. | `Test-ReleaseGateScoping.mjs` new assertion: a duplicated `AUTH_B` token in `releaseScope` fails closed with a message naming the defect. |
+
+### Open architecture question (raised, not silently resolved)
+
+`PUBLIC_A`, `IOS_FUTURE`, and `BILLING_FUTURE` still have zero relevant
+planned UAT cases. Per the mission's own explicit instruction ("if a
+target genuinely needs a different existing owner/manual gate rather than
+REAL_UAT, STOP and report the architecture contradiction instead of
+silently overriding FABLE"), no case was fabricated for any of the three:
+
+- **`PUBLIC_A`** is a static informational website with no login, device,
+  or account surface — there is no real-device UAT case this plan could
+  genuinely exercise. It already has its own dedicated manual gates
+  (`OWNER_VISUAL_UAT`, `PUBLIC_REPLY_IDENTITY`), which are the correct home
+  for a human-owner sign-off on a static site.
+- **`IOS_FUTURE`** has no built child-safety functionality yet — CI only
+  builds/tests "the inert launch shell." A device-UAT case cannot
+  genuinely exercise functionality that does not exist.
+- **`BILLING_FUTURE`** has no selected production payment provider yet
+  (`PAYMENT_PROVIDER_SELECTION` remains `EXTERNAL`) — there is no real
+  payment flow to UAT.
+
+All three are handled via the mechanical, mission-sanctioned fallback
+(section 9: "OR the checker fails closed as `UAT_PLAN_INCOMPLETE_FOR_TARGET`")
+in `Invoke-ReleaseGateCheck.ps1` — they genuinely, correctly fail closed on
+`REAL_UAT`, exactly as any other zero-case FABLE-YES target would. This
+does not change their overall release verdict (all three were already
+`NOT_READY` for other, independent reasons). `ValidateFableScopeParity.mjs`
+additionally records these three as a narrow, named, justified exception
+(`ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS`) rather than treating them as parity
+failures, since forcing `relevantUatCaseCount > 0` for them would mean
+fabricating a device-UAT case for functionality or a surface that does not
+exist. **This is a decision point for Owner/Primary ChatGPT, not a
+unilateral resolution**: if the supervisory position is that these three
+targets should NOT rely on `REAL_UAT` at all (i.e. FABLE's blanket
+`REAL_UAT = YES` row should itself be revisited for them), that is a FABLE
+document change outside this implementation lane's authority to make.
+
+### Local test evidence (after all R2 fixes)
+
+- `node tooling/release/Test-ReleaseGateScoping.mjs`: **0 failures**
+  (includes the new §5c UAT-parity negative controls A–E, the duplicate-
+  token control, and an updated §2 assertion for `PUBLIC_A` reflecting its
+  now-correctly-`false` `technicalGatesPass`).
+- `node tooling/release/ValidateFableScopeParity.mjs`: **PASS** — 222
+  cells reconciled, plus 3 explicit `NOTE:` lines for the acknowledged
+  `PUBLIC_A`/`IOS_FUTURE`/`BILLING_FUTURE` gaps above.
+- `cd backend && npm test`: **2214/2214 PASS**, unaffected (no backend
+  source touched this round).
+- `git diff --check`: clean. Full diff scope: 9 files, all within
+  `tooling/release/`, `docs/release_readiness/`, and
+  `.github/workflows/quality-gates.yml` — nothing under `database/`,
+  `backend/src/eyeprotection`, `backend/test/db/{parentAccount,
+  eyeProtectionSettings}*`, or `docs/supervision/PCA_FABLE_*` changed
+  (confirmed via targeted `git diff --stat`).
+
+### Actual CI evidence (fetched after the R2 push — required, not optional)
+
+*(GitHub Actions run/job IDs and step conclusions for the actual R2 commit
+are recorded here after the push below — see the FINAL CI EVIDENCE
+sub-section at the very end of this addendum.)*
+
+**Pre-push proxy evidence** (not a substitute for the real run, but the
+strongest verification available before pushing): both
+`tooling/release/Test-ReleaseGateScoping.mjs` and
+`tooling/release/ValidateFableScopeParity.mjs` were run inside a genuine
+Ubuntu Linux container (`mcr.microsoft.com/powershell:latest`, pwsh 7.4.2,
+Node.js 22.23.2 installed via NodeSource — the same combination a fresh
+adversarial reviewer independently used to find and confirm a real defect,
+see below) with the actual repository bind-mounted read/write, matching
+the exact command each new CI step runs. Both passed cleanly: the scoping
+suite printed `ALL PASS (0 failures)` (all ~90 assertions, including every
+§5c UAT-parity check), and the parity validator printed `PASS` (222 cells,
+3 acknowledged-gap NOTE lines). `git status --short` on the host
+afterward showed exactly the 10 files this round intentionally changed —
+nothing left behind by the container run.
+
+### Fresh adversarial review (R2)
+
+A second fresh, independent, read-only reviewer agent (no context beyond
+the diff and the R2 attack list) was launched via the Agent tool.
+
+**Result: 1 P0, 0 P1.** The P0 is now fixed (see below); everything else
+the reviewer attempted to break held up:
+
+**P0 (found and fixed): `tooling/release/Test-ReleaseGateScoping.mjs` would
+have failed on the very first real Ubuntu CI run.** The reviewer built a
+genuine Ubuntu container (independently of the coordinator, using the same
+`mcr.microsoft.com/powershell:latest` image) and ran the exact CI command
+(`node tooling/release/Test-ReleaseGateScoping.mjs`) for real. It failed:
+one assertion (`the failure names the missing releaseScope property`, a
+pre-existing R1-era check, not part of this round's diff) used a single
+contiguous multi-word regex against a THROWN PowerShell exception message.
+Non-interactive `pwsh` on Linux defaults `$Host.UI.RawUI.WindowSize.Width`
+to 80 (vs. this repo's wider interactive Windows terminal), and
+PowerShell's pretty-printed exception display wraps long throw messages to
+that width, inserting its own `NNN |` / `    |` gutter prefix on every
+continuation line — splitting "is missing" from "the required property"
+across lines, which a single regex checking the whole phrase at once
+cannot match even though the underlying message is complete and correct.
+This bug was LATENT through both R1 and this round's own "local test
+evidence" claims (both truthfully reported 0 failures — because neither
+had ever actually been run on real Linux before this reviewer did). It
+only became consequential because R2's entire purpose is making this suite
+actually execute in CI for the first time.
+
+**Fix**: every regex check in the file that matches against a THROWN
+(uncaught-exception) message — not just the one flagged — was converted to
+independent short substring checks (the same pattern already proven safe
+for one pre-existing check), and `normalizeForMatching()` additionally
+strips PowerShell's gutter/pipe artifacts as defense in depth (verified
+safe: this repo's own `Write-Host` output never contains a literal `|`).
+**Re-verified directly on real Linux** (the same Ubuntu-container
+methodology the reviewer used, run independently by the coordinator
+afterward): `Test-ReleaseGateScoping.mjs` → `ALL PASS (0 failures)`;
+`ValidateFableScopeParity.mjs` → `PASS`. Not merely reasoned about —
+directly reproduced fixed on the actual target OS.
+
+**Everything else verified as claimed, with no defect found**, including
+several checks the reviewer extended beyond what R2's own tests covered:
+job independence (`needs: undefined`, confirmed via a real YAML parser,
+`parent-web/node_modules/js-yaml`); no workflow-level `if:`/path-filter
+that could skip the job; a 3-of-4 AUTH_B-cases-passed scenario (not one of
+the shipped 0/1/4 test points) independently reproduced as
+`NOT_SATISFIED_FOR_TARGET`; a lowercase case-ID variant matched only
+because PowerShell hashtables are case-insensitive by default (a P2
+observation, not a real defect — it cannot make a genuinely different case
+ID match); an injected 5th bogus case ID correctly ignored; `uat_execution_log.json`
+independently read and confirmed `NOT_EXECUTED`/`0`/`[]`/`null`; the 54
+case IDs in `UAT_TEST_PLAN.md` and `$UatCaseTargetMap`'s 54 keys
+independently diffed as identical sets with zero duplicates; the duplicate-
+token check independently reproduced against a live-mutated (then
+byte-identical-restored) `external_gate_matrix.json`; the pre-existing
+`repository-quality` job's original 3 steps confirmed unchanged; scope
+confirmed to exactly the 10 files this round touched, with
+`docs/supervision/PCA_FABLE_*` and the preserved Wave-1 DB/IDOR files
+confirmed byte-identical; no hostnames/credentials/production
+infrastructure changes found anywhere in the diff; the one assertion
+removed from the diff confirmed to be the disclosed, intentional `PUBLIC_A`
+`technicalGatesPass` flip, replaced by two stronger assertions, not a
+weakening. One P2 note carried forward: nothing technically prevents a
+future casual addition to `ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS` without a
+genuine architecture contradiction behind it — enforcement is by code
+review, which the reviewer correctly named as inherent to any such
+allowlist mechanism rather than a defect unique to this one.
+
 ## Explicitly out of scope for this wave (per mission sections 5 and 25)
 
 No production crypto, production email provider, live production database,

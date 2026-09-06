@@ -68,7 +68,7 @@ timeouts, which disappeared on a clean re-run (see flake note below).
 | Android JVM unit tests | **Not captured.** The run recorded in `evidence/latest.json` was made without `-RunAndroid`, and that pack records `"android": { "skipped": true }`. No committed evidence pack in this repository contains an Android test count. | Re-run the collector with `-RunAndroid` before citing any Android number here. (A previously published figure of 802/131 files was corrected during PPR-1: it was not supported by any evidence artifact, and the current source has 1,299 tests across 228 suite files.) |
 | Parent Web tests | 259/259 pass, 35/35 files pass | Process exit code was still 1 in this run — see note below, this is not a test failure |
 | `PRODUCTION_CRYPTO_SUITE` | `PENDING_HUMAN_SECURITY_REVIEW` | Confirmed by source inspection of `backend/src/main.ts` |
-| `REAL_UAT` | `NOT_EXECUTED` | `uat_execution_log.json`, 0/50 cases logged |
+| `REAL_UAT` | `NOT_EXECUTED` | `uat_execution_log.json`, 0/54 cases logged |
 | External gates | All 34 registered gates `BLOCKED`/`EXTERNAL`; none `CLOSED`, none with evidence populated | `external_gate_matrix.json` is authoritative (33 gates) plus `PAYMENT_PRODUCTION_CERTIFICATION`, which is registered in the completion matrix but not yet in the JSON. `EXTERNAL_GATE_MATRIX.md` documents only the original 7. |
 
 ### Known flake note (parent-web)

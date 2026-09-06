@@ -84,7 +84,7 @@ As of this lane's work (git SHA recorded in the evidence pack):
   call. Device-session issuance and inbound envelope acceptance are
   correctly, completely non-functional in production today.
 - `REAL_UAT = NOT_EXECUTED` — `uat_execution_log.json` has never been
-  updated by a human tester; `casesLogged: 0` of `50`.
+  updated by a human tester; `casesLogged: 0` of `54`.
 - All 34 registered external gates are `BLOCKED` or `EXTERNAL`; none is
   `CLOSED` and none has evidence populated. `external_gate_matrix.json` is
   authoritative and holds 33; `PAYMENT_PRODUCTION_CERTIFICATION` is

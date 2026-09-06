@@ -152,17 +152,61 @@ if (csvCrypto || csvRealUat) {
         errors.push(`PRODUCTION_CRYPTO_SUITE/${target}: FABLE CSV says '${csvCrypto[target]}' but the live script's cryptoSuiteInScope=${json.cryptoSuiteInScope}.`);
       }
     }
-    // REAL_UAT: the CSV marks this YES for every target (every real release
-    // needs SOME UAT sign-off in principle). The CSV expresses no per-case
-    // breakdown, so this only confirms the signal is genuinely EVALUATED
-    // for every target -- never that its relevant-case count is nonzero.
-    // PUBLIC_A/AUTH_B/IOS_FUTURE/BILLING_FUTURE legitimately have zero
-    // relevant cases per docs/release_readiness/UAT_TEST_PLAN.md and are
-    // vacuously satisfied by design -- that is DW-W1's own evidence-based
-    // refinement, not a parity violation, and is deliberately NOT re-litigated
-    // here.
+    // REAL_UAT: the CSV marks this YES for every target with no NO/PARTIAL
+    // cell anywhere -- every release genuinely needs real UAT sign-off, no
+    // exceptions. DW-W1-R2 P1-B: a target with a FABLE YES row for REAL_UAT
+    // must satisfy BOTH (a) the signal is genuinely evaluated at all, AND
+    // (b) it actually has at least one relevant planned case
+    // ($UatCaseTargetMap in Invoke-ReleaseGateCheck.ps1) -- zero relevant
+    // cases is a planning gap, never a legitimately vacuous pass. This
+    // used to exempt EVERY zero-relevant-case target from the YES
+    // requirement with no visibility at all; that blanket exemption is
+    // REMOVED (it let AUTH_B pass this check with no real UAT coverage,
+    // exactly the defect this correction closes).
+    //
+    // ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS below is the one narrow,
+    // deliberate exception mechanism this validator still allows -- and it
+    // is the opposite of silent: every entry is a named target with a
+    // written, falsifiable justification, checked into source, surfaced in
+    // this tool's own console output, and disclosed in
+    // docs/supervision/PCA_DYNAMIC_WORKFLOW_W1_CLOSURE.md's R2 addendum for
+    // Owner/Primary-ChatGPT review. It exists because PUBLIC_A, IOS_FUTURE,
+    // and BILLING_FUTURE each present a genuine architecture contradiction
+    // when forced into "real DEVICE UAT" (mission DW-W1-R2 section 7's own
+    // explicit escape hatch: "if a target genuinely needs a different
+    // existing owner/manual gate rather than REAL_UAT, STOP and report the
+    // architecture contradiction instead of silently overriding FABLE") --
+    // none of the three has any built, testable functionality or device/
+    // account surface for this specific plan to exercise yet. AUTH_B is
+    // deliberately NOT on this list: it has a real, testable identity flow
+    // today, so it must have real cases, which it now does (see §4.16).
+    // Adding a target to this list without a genuine architecture
+    // contradiction behind it would be exactly the silent-override this
+    // mechanism exists to prevent -- do not use it as a convenience.
+    const ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS = {
+      PUBLIC_A: 'PUBLIC_A is a static informational website with no login, no device, and no account surface -- there is no real-DEVICE UAT case this plan could genuinely exercise. Release-A readiness is already gated by its own dedicated manual gates (OWNER_VISUAL_UAT, PUBLIC_REPLY_IDENTITY in external_gate_matrix.json), which is the correct home for a human-owner sign-off on a static site, not this device-UAT plan.',
+      IOS_FUTURE: 'IOS_FUTURE has no built child-safety functionality to UAT yet -- the iOS CI job builds/tests only "the inert launch shell" (see .github/workflows/quality-gates.yml). A device-UAT case cannot genuinely exercise functionality that does not exist; IOS_FUTURE remains blocked by its own real gates (IOS_MAC_XCODE, IOS_FAMILY_CONTROLS_ENTITLEMENT, IOS_PHYSICAL_DEVICE, REQUIRES_ENTITLEMENT).',
+      BILLING_FUTURE: 'BILLING_FUTURE has no selected production payment provider yet (PAYMENT_PROVIDER_SELECTION remains EXTERNAL in external_gate_matrix.json) -- there is no real payment flow to UAT. BILLING_FUTURE remains blocked by its own real payment/certification gates.',
+    };
     if (json.realUatState === null || json.realUatState === undefined) {
       errors.push(`REAL_UAT/${target}: no realUatState present in the live script's JSON output -- the signal is not being evaluated for this target at all, contradicting the FABLE CSV's blanket YES.`);
+    } else if (!(Number(json.realUatRelevantCount) > 0)) {
+      if (Object.prototype.hasOwnProperty.call(ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS, target)) {
+        console.log(`NOTE: REAL_UAT/${target} has 0 relevant planned cases -- ACKNOWLEDGED architecture-contradiction gap, not a parity failure: ${ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS[target]}`);
+      } else {
+        errors.push(`REAL_UAT/${target}: FABLE CSV marks REAL_UAT=YES, but realUatRelevantCount=${json.realUatRelevantCount} (zero relevant planned cases) -- this is a genuine UAT-plan gap, not a satisfied YES dependency. Add planned cases for this target to docs/release_readiness/UAT_TEST_PLAN.md and map them in $UatCaseTargetMap, or if REAL_UAT genuinely does not apply to this target's actual release shape, add a justified entry to ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS above rather than silently overriding FABLE.`);
+      }
+    }
+    // Regardless of relevant-case count, an incomplete/unexecuted UAT plan
+    // must never report the release as satisfied for this target while
+    // REAL_UAT is FABLE=YES -- confirm the live script's own state agrees
+    // it is not satisfied (uat_execution_log.json's real "cases" array is
+    // empty as of this commit, so every target must currently be either
+    // UAT_PLAN_INCOMPLETE_FOR_TARGET or NOT_SATISFIED_FOR_TARGET, never
+    // SATISFIED_FOR_TARGET -- a SATISFIED_FOR_TARGET result right now would
+    // mean fabricated/fake execution evidence slipped into the log).
+    if (json.realUatState === 'SATISFIED_FOR_TARGET') {
+      errors.push(`REAL_UAT/${target}: live script reports SATISFIED_FOR_TARGET while docs/release_readiness/uat_execution_log.json's real "cases" array should still be empty (status NOT_EXECUTED) -- either real UAT genuinely occurred and this validator's assumption is stale, or fabricated execution evidence exists in the log. Investigate before trusting this result.`);
     }
   }
 }
