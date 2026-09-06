@@ -405,8 +405,8 @@ jobs:
       # stripping fix (a JSDoc comment ending "...not a log." followed by an
       # ordinary-English/path mention of a sensitive term is no longer a
       # false positive, including across a multi-line /* ... */ block) AND,
-      # as a required negative control, that a genuine
-      # console.log(child.token)-shaped call outside any comment/string is
+      # as a required negative control, that a genuine call that writes a
+      # child-identifying value to the console outside any comment/string is
       # still caught -- against an isolated throwaway git repository, never
       # against this repository's own files.
       - name: Test security checks (sensitive-logging comment-awareness + negative control)

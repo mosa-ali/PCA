@@ -40,7 +40,7 @@ test('SECURITY: hashVerificationCode/generateVerificationCode FAIL CLOSED in pro
 });
 
 test('hashVerificationCode succeeds in production when PCA_VERIFICATION_CODE_HMAC_SECRET is configured', () => {
-  assert.doesNotThrow(() => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: 'a-real-production-secret' }));
+  assert.doesNotThrow(() => hashVerificationCode('123456', { NODE_ENV: 'production', PCA_VERIFICATION_CODE_HMAC_SECRET: 'a-test-only-configured-secret' }));
 });
 
 test('hashVerificationCode uses the dev-only default secret (not a throw) in test/development when no secret is configured', () => {
