@@ -177,6 +177,13 @@ import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
 import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSender.js';
 import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
+import { isProductionSensitiveRuntime } from './runtime/environment.js';
+import { EmailService } from './email/EmailService.js';
+import { MySqlEmailOutboxRepository } from './email/MySqlEmailOutboxRepository.js';
+import { resolveEmailProviderAdapter } from './email/emailProviderConfig.js';
+import { RejectingEmailProviderAdapter } from './email/providers/RejectingEmailProviderAdapter.js';
+import { startEmailOutboxWorker, type EmailOutboxWorkerHandle } from './email/EmailOutboxProcessor.js';
+import type { EmailProviderAdapter } from './email/EmailProviderAdapter.js';
 // PCA-COMPLIMENTARY-ENTITLEMENTS-1 (Round5 Owner decision, Addendum 004):
 // durable, audited complimentary entitlement grants. Reuses the SAME
 // platformAdminAuthService instance every other Platform Administration
@@ -228,35 +235,66 @@ import { WebFilteringDashboardCardProvider } from './parentpanel/WebFilteringDas
 import { YouTubeDashboardCardProvider } from './parentpanel/YouTubeDashboardCardProvider.js';
 
 /**
- * PCA-ADD-IDENT-005: no real production email provider is selected this
- * round (EXTERNAL_GATE, unchanged -- matches PAYMENT_PROVIDER_SELECTION's
- * precedent exactly). `TestSandboxEmailSender` deliberately THROWS if
- * constructed outside NODE_ENV=test|development (see its own header), so
- * it cannot be wired unconditionally here without crashing production
- * server startup entirely -- a strictly worse failure mode than every
- * other crypto/provider gate in this file, which fails individual
- * operations closed without taking down the whole process. This adapter
- * is production's `createDefaultEmailSender` counterpart: registration/
- * verification-code-request/login remain fully reachable, but
- * `sendVerificationCode` itself always rejects, so no verification code
- * ever silently appears to have been delivered when it was not. An
- * explicit, honest gap, not a silent failure mode -- exactly the same
- * posture EmailSenderPort.ts's own header already documents.
+ * PCA-DW-W2-15F: PRODUCTION_PROVIDER_CONFIGURED is still NO today -- no
+ * PCA_EMAIL_PROVIDER is selected, and no tenant/SMTP credentials exist yet
+ * (see docs/release_readiness/external_gate_matrix.json's
+ * PRODUCTION_EMAIL_DELIVERY entry; pcasafe.com's current mail setup is
+ * plain DNS forwarding aliases, not a verified Microsoft 365 tenant -- see
+ * docs/public/reports/RELEASE_A_CONTACT_CHANNEL_VERIFICATION.md).
+ *
+ * What HAS changed from the single RejectingEmailSender stub this
+ * replaces: EmailService (email/EmailService.ts) is now the SOLE
+ * production EmailSenderPort implementation, built on a real, durable,
+ * encrypted-at-rest outbox (email/EmailOutboxRepository.ts,
+ * migrations/0038_email_outbox.sql) with bounded retries and
+ * dead-lettering (email/EmailOutboxProcessor.ts). Today that whole pipeline
+ * runs against RejectingEmailProviderAdapter -- every attempt fails, every
+ * failure is durably retried per policy, then dead-lettered, exactly the
+ * behaviour a real, persistently-failing provider would also produce -- and
+ * it is ready to switch to a real SMTP or Microsoft Graph transport
+ * (email/providers/) the moment PCA_EMAIL_PROVIDER and that provider's
+ * credentials are configured, with NO code change here.
+ *
+ * Test/development still uses TestSandboxEmailSender via its own,
+ * separately-gated construction path (unchanged) -- this whole outbox/
+ * provider pipeline is production-only.
  */
-class RejectingEmailSender implements EmailSenderPort {
-  async sendVerificationCode(): Promise<void> {
-    throw new Error('Email sending is not configured in production (PCA-ADD-IDENT-005 EXTERNAL_GATE, provider not yet selected).');
+function createEmailProviderAdapterForProduction(env: NodeJS.ProcessEnv): EmailProviderAdapter {
+  if (env.PCA_EMAIL_PROVIDER !== 'SMTP' && env.PCA_EMAIL_PROVIDER !== 'MICROSOFT_GRAPH') {
+    // Nothing selected yet -- an explicit, honest gap (see this function's
+    // own doc comment), never a crash merely because the owner has not
+    // configured a provider yet. A PCA_EMAIL_PROVIDER value that names a
+    // real provider but is otherwise incomplete DOES still throw loudly at
+    // startup below (resolveEmailProviderAdapter) -- a genuine operator
+    // misconfiguration worth surfacing immediately, unlike "not configured
+    // at all".
+    return new RejectingEmailProviderAdapter();
   }
-  async sendPasswordResetCode(): Promise<void> {
-    throw new Error('Email sending is not configured in production (PCA-ADD-IDENT-005 EXTERNAL_GATE, provider not yet selected).');
-  }
+  return resolveEmailProviderAdapter(env);
 }
 
-function createDefaultEmailSender(env: NodeJS.ProcessEnv = process.env): EmailSenderPort {
-  if (env.NODE_ENV === 'test' || env.NODE_ENV === 'development') {
-    return createTestSandboxEmailSender(env);
+const EMAIL_OUTBOX_WORKER_INTERVAL_MS = 15_000;
+
+interface EmailInfrastructure {
+  emailSender: EmailSenderPort;
+  /** undefined in test/development, where TestSandboxEmailSender (not this outbox/provider pipeline) is used -- see buildServer.ts's own doc comment on why /health/email is then simply not registered. */
+  emailProviderAdapter: EmailProviderAdapter | undefined;
+  /** No-op (returns undefined) in test/development -- there is no outbox to work in that environment. */
+  startWorker: () => EmailOutboxWorkerHandle | undefined;
+}
+
+function createEmailInfrastructure(env: NodeJS.ProcessEnv = process.env): EmailInfrastructure {
+  if (!isProductionSensitiveRuntime(env)) {
+    return { emailSender: createTestSandboxEmailSender(env), emailProviderAdapter: undefined, startWorker: () => undefined };
   }
-  return new RejectingEmailSender();
+  const emailProviderAdapter = createEmailProviderAdapterForProduction(env);
+  const emailOutboxRepository = new MySqlEmailOutboxRepository();
+  const emailSender = new EmailService({ repository: emailOutboxRepository, providerAdapter: emailProviderAdapter, env });
+  return {
+    emailSender,
+    emailProviderAdapter,
+    startWorker: () => startEmailOutboxWorker({ repository: emailOutboxRepository, providerAdapter: emailProviderAdapter, env }, EMAIL_OUTBOX_WORKER_INTERVAL_MS),
+  };
 }
 
 const port = Number.parseInt(process.env.PORT ?? '4001', 10);
@@ -462,10 +500,11 @@ async function start(): Promise<void> {
   // SAME instance/backing store (see ParentAccountService.ts's own
   // SESSION BACKING STORE doc comment).
   const authService = new AuthService(new MySqlAuthRepository());
+  const emailInfrastructure = createEmailInfrastructure();
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
-    emailSender: createDefaultEmailSender(),
+    emailSender: emailInfrastructure.emailSender,
     // PCA-FAMILY-AUTH-1-R1: the SAME engine instance constructed above --
     // a self-registered parent's genesis ceremony and every subsequent
     // Owner-authority check run through the identical, unmodified
@@ -748,6 +787,7 @@ async function start(): Promise<void> {
 
   const app = buildServer({
     dashboardAggregatorService,
+    emailProviderAdapter: emailInfrastructure.emailProviderAdapter,
     authService,
     authzService: new AuthzService(authzRepository),
     authzRepository,
@@ -878,6 +918,11 @@ async function start(): Promise<void> {
   });
   await app.listen({ host, port });
 
+  // PCA-DW-W2-15F: background retry loop for EmailService's durable outbox
+  // -- see createEmailInfrastructure's own doc comment. No-op (undefined)
+  // in test/development, where there is no outbox to work.
+  const emailOutboxWorker = emailInfrastructure.startWorker();
+
   // PCA-COMMERCIAL-RUNTIME-1: periodic quote-expiry reconciliation +
   // commercial-notification retention. Coordinator-owned interval timer +
   // shutdown hook, per ROUND5_INTERFACE_CONTRACTS.md -- the lane itself
@@ -927,7 +972,10 @@ async function start(): Promise<void> {
   // cannot hold the process open. See runtime/gracefulShutdown.ts.
   registerGracefulShutdown(
     createGracefulShutdownHandler({
-      stopBackgroundWork: () => clearInterval(commercialMaintenanceTimer),
+      stopBackgroundWork: () => {
+        clearInterval(commercialMaintenanceTimer);
+        emailOutboxWorker?.stop();
+      },
       closeServer: () => app.close(),
       closeDatabasePool: () => closePool(),
       exit: (code) => process.exit(code),

@@ -2,7 +2,7 @@
 // test/childprofiles/noReadableChildFieldsRegression.test.mjs (which guards
 // only family_child_memberships and its dedicated repository/service/route
 // files). This test scans backend/src/db/schema.ts's PCA_CANONICAL_SCHEMA --
-// every column of all 75 tables -- for the same class of prohibited
+// every column of all 76 tables -- for the same class of prohibited
 // central-child-data field names, so a FUTURE migration/table cannot
 // silently introduce one without also updating this explicit allowlist.
 //
@@ -57,6 +57,8 @@ const ALLOWED_FALSE_POSITIVES = {
   'commercial_notifications.message_key': ['message', 'age'],
   'envelope_message_idempotency_ledger.message_id': ['message', 'age'],
   'relay_envelopes.message_id': ['message', 'age'],
+  // Same reasoning, migration 0038: an opaque email-provider delivery-tracking id, never message content.
+  'email_outbox.provider_message_id': ['message', 'age'],
   // "policy" substring: a named closed-enum tier/profile selection, never stored activity/browsing policy content.
   'enrollment_invitations.initial_policy_profile': 'policy',
   // "age" substring on a closed UX-tier enum (YOUNG_CHILD/TEEN), never an actual age/DOB -- migration 0019: "No display name, activity, location, or readable child content is stored here."

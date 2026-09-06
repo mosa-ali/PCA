@@ -11,6 +11,9 @@ import type { OutboundRelayService } from '../runtime-sync/OutboundRelayService.
 import type { InboundReconnectService } from '../runtime-sync/InboundReconnectService.js';
 import type { DeviceSyncStatusTracker } from '../runtime-sync/StatusService.js';
 import { createRateLimiter } from './rateLimit.js';
+import { resolveTrustProxyOption, type TrustProxyOption } from './trustProxyConfig.js';
+import type { EmailProviderAdapter } from '../email/EmailProviderAdapter.js';
+import { getEmailServiceHealth } from '../email/emailHealth.js';
 import { registerParentWebCors } from './parentWebCors.js';
 import { registerInvitationRoutes } from './routes/invitationRoutes.js';
 import { registerChildProfileRoutes } from './routes/childProfileRoutes.js';
@@ -160,6 +163,16 @@ import { registerDashboardRoutes } from './routes/dashboardRoutes.js';
 import type { DashboardAggregatorService } from '../parentpanel/DashboardAggregatorService.js';
 
 export interface ServerDependencies {
+  /**
+   * PCA-DW-W2-15A: overrides the CIDR-validated trustProxy allowlist
+   * `resolveTrustProxyOption()` would otherwise resolve from
+   * `PCA_TRUSTED_PROXY_CIDRS`/`process.env`. Optional purely so every
+   * existing buildServer() call site (production, and every test that
+   * doesn't specifically exercise proxy-trust behaviour) needs no change;
+   * omitting it resolves from the real environment exactly as before this
+   * option existed.
+   */
+  trustProxy?: TrustProxyOption;
   authService: AuthService;
   authzService: AuthzService;
   authzRepository: AuthzRepository;
@@ -292,6 +305,13 @@ export interface ServerDependencies {
   protectionAlertLedger?: ProtectionAlertLedger;
   /** parentpanel family dashboard: see registerDashboardRoutes below. Optional so existing buildServer() test callers that don't exercise the dashboard route need no change; registerDashboardRoutes itself registers nothing when this is omitted, never a silent empty-card response. */
   dashboardAggregatorService?: Pick<DashboardAggregatorService, 'getDashboard'>;
+  /**
+   * PCA-DW-W2-15F: backs the `/health/email` readiness probe below (see
+   * email/EmailService.ts). Optional so existing buildServer() test
+   * callers need no change; when omitted, `/health/email` is not
+   * registered at all, never a silent always-ok response.
+   */
+  emailProviderAdapter?: Pick<EmailProviderAdapter, 'providerName'>;
 }
 
 /**
@@ -307,7 +327,7 @@ export interface ServerDependencies {
  * authentication/authorization requirements are implemented.
  */
 export function buildServer(deps: ServerDependencies): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, trustProxy: deps.trustProxy ?? resolveTrustProxyOption() });
   registerParentWebCors(app);
   const rateLimiter = createRateLimiter();
   // Bounds how many session-validation DB round-trips a single IP can force
@@ -408,6 +428,21 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
       return { status: 'error', database: 'unavailable' };
     }
   });
+
+  // PCA-DW-W2-15F: reports whether a real production email provider is
+  // wired at all -- no network call, no send attempt, never the
+  // provider's host/credentials. Its own rate-limit bucket for the same
+  // reason /health/db has one: an unbudgeted probe must never share a
+  // budget with anything that actually costs a resource. Registered only
+  // when emailProviderAdapter is wired (see that field's own doc comment).
+  if (deps.emailProviderAdapter) {
+    const emailProviderAdapter = deps.emailProviderAdapter;
+    app.get('/health/email', { preHandler: rateLimiter({ windowMs: 60_000, max: 60, bucket: 'health-email' }) }, async (_request, reply) => {
+      const health = getEmailServiceHealth(emailProviderAdapter);
+      if (!health.providerConfigured) reply.code(503);
+      return { status: health.providerConfigured ? 'ok' : 'no_provider_configured', provider: health.providerName };
+    });
+  }
 
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,

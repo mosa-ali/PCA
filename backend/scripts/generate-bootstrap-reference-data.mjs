@@ -42,7 +42,7 @@ const lines = [
   '-- =========================================================================',
   '-- 1. Bootstrap bookkeeping: mark every accepted migration as already',
   '--    applied, so the next `npm run db:migrate` only applies NEW migrations',
-  '--    (0037+) going forward -- see this script\'s header.',
+  '--    (0039+) going forward -- see this script\'s header.',
   '-- =========================================================================',
   'INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES',
   files.map((f) => `  ('${f}', CURRENT_TIMESTAMP(3))`).join(',\n') + ';',

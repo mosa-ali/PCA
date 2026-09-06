@@ -27,14 +27,14 @@ import { ParentAccountError, type ParentAccountService } from '../../parentaccou
 import { createKeyedRateLimiter } from '../../parentaccount/rateLimiter.js';
 import { hashParentEmail } from '../../parentaccount/emailHash.js';
 import {
-  CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
-  SESSION_COOKIE_NAME,
-  isProductionEnvironment,
+  csrfCookieName,
   parseCookies,
   serializeCookie,
   serializeExpiredCookie,
+  sessionCookieName,
 } from '../../parentaccount/cookies.js';
+import { isProductionSensitiveRuntime } from '../../runtime/environment.js';
 import {
   LOGIN_EMAIL_RATE_LIMIT,
   LOGIN_IP_RATE_LIMIT,
@@ -121,32 +121,32 @@ function generateCsrfToken(): string {
 const SESSION_COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
 
 function setSessionCookies(reply: FastifyReply, rawSessionToken: string): string {
-  const secure = isProductionEnvironment();
+  const secure = isProductionSensitiveRuntime();
   const csrfToken = generateCsrfToken();
   reply.header('Set-Cookie', [
-    serializeCookie(SESSION_COOKIE_NAME, rawSessionToken, { httpOnly: true, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
-    serializeCookie(CSRF_COOKIE_NAME, csrfToken, { httpOnly: false, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
+    serializeCookie(sessionCookieName(), rawSessionToken, { httpOnly: true, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
+    serializeCookie(csrfCookieName(), csrfToken, { httpOnly: false, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
   ]);
   return csrfToken;
 }
 
 function clearSessionCookies(reply: FastifyReply): void {
-  const secure = isProductionEnvironment();
+  const secure = isProductionSensitiveRuntime();
   reply.header('Set-Cookie', [
-    serializeExpiredCookie(SESSION_COOKIE_NAME, { httpOnly: true, secure }),
-    serializeExpiredCookie(CSRF_COOKIE_NAME, { httpOnly: false, secure }),
+    serializeExpiredCookie(sessionCookieName(), { httpOnly: true, secure }),
+    serializeExpiredCookie(csrfCookieName(), { httpOnly: false, secure }),
   ]);
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
   const cookies = parseCookies(request.headers.cookie);
-  return cookies.get(SESSION_COOKIE_NAME) ?? null;
+  return cookies.get(sessionCookieName()) ?? null;
 }
 
 /** Double-submit CSRF check: the `pca_family_csrf` cookie value must exactly match the `X-PCA-CSRF-Token` header. Cookie presence alone (without the header, or with a mismatched header) never passes -- an attacker's cross-origin form/fetch can trigger the cookie to be sent automatically but cannot read it to also set the matching header, and SameSite=Strict additionally blocks the cookie from even being attached on a cross-site navigation/request. */
 function csrfOk(request: FastifyRequest): boolean {
   const cookies = parseCookies(request.headers.cookie);
-  const cookieToken = cookies.get(CSRF_COOKIE_NAME);
+  const cookieToken = cookies.get(csrfCookieName());
   const headerToken = request.headers[CSRF_HEADER_NAME];
   if (typeof cookieToken !== 'string' || cookieToken.length === 0) return false;
   if (typeof headerToken !== 'string' || headerToken.length === 0) return false;

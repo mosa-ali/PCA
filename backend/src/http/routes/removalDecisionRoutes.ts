@@ -18,10 +18,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import {
-  CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
-  SESSION_COOKIE_NAME,
+  csrfCookieName,
   parseCookies,
+  sessionCookieName,
 } from '../../parentaccount/cookies.js';
 import {
   RemovalDecisionError,
@@ -61,12 +61,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
-  return parseCookies(request.headers.cookie).get(SESSION_COOKIE_NAME) ?? null;
+  return parseCookies(request.headers.cookie).get(sessionCookieName()) ?? null;
 }
 
 function csrfOk(request: FastifyRequest): boolean {
   const cookies = parseCookies(request.headers.cookie);
-  const cookieToken = cookies.get(CSRF_COOKIE_NAME);
+  const cookieToken = cookies.get(csrfCookieName());
   const headerToken = request.headers[CSRF_HEADER_NAME];
   if (typeof cookieToken !== 'string' || cookieToken.length === 0) return false;
   if (typeof headerToken !== 'string' || headerToken.length === 0) return false;

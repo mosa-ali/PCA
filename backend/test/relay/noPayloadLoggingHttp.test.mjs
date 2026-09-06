@@ -167,8 +167,8 @@ test('buildServer.ts constructs Fastify with logger disabled (source-level regre
   const source = readFileSync(path.join(BACKEND_ROOT, 'src', 'http', 'buildServer.ts'), 'utf8');
   assert.match(
     source,
-    /Fastify\(\s*\{\s*logger:\s*false\s*\}\s*\)/,
-    'buildServer.ts must construct Fastify with logger explicitly disabled -- Fastify\'s default pino logger would otherwise emit per-request access logs (method/url/headers) to stdout in production, which is a payload-adjacent leak surface independent of the relay DB schema.',
+    /Fastify\(\s*\{\s*logger:\s*false\s*,/,
+    'buildServer.ts must construct Fastify with logger explicitly disabled (as the object literal\'s first, unconditional property) -- Fastify\'s default pino logger would otherwise emit per-request access logs (method/url/headers) to stdout in production, which is a payload-adjacent leak surface independent of the relay DB schema.',
   );
 });
 

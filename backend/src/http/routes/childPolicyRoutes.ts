@@ -30,7 +30,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, SESSION_COOKIE_NAME, parseCookies } from '../../parentaccount/cookies.js';
+import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentActionAuthorizationService } from '../../familyrbac/ParentActionAuthorizationService.js';
 import type { OutboundRelayService } from '../../runtime-sync/OutboundRelayService.js';
@@ -52,12 +52,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
-  return parseCookies(request.headers.cookie).get(SESSION_COOKIE_NAME) ?? null;
+  return parseCookies(request.headers.cookie).get(sessionCookieName()) ?? null;
 }
 
 function csrfOk(request: FastifyRequest): boolean {
   const cookies = parseCookies(request.headers.cookie);
-  const cookieToken = cookies.get(CSRF_COOKIE_NAME);
+  const cookieToken = cookies.get(csrfCookieName());
   const headerToken = request.headers[CSRF_HEADER_NAME];
   if (typeof cookieToken !== 'string' || cookieToken.length === 0) return false;
   if (typeof headerToken !== 'string' || headerToken.length === 0) return false;

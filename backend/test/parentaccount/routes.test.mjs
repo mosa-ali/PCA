@@ -105,14 +105,17 @@ test('SECURITY: register+verify-email sets an HttpOnly, SameSite=Strict session 
   assert.doesNotMatch(csrfCookieHeader, /HttpOnly/i, 'the CSRF companion cookie must be JS-readable (double-submit pattern)');
 });
 
-// The assertion above is only safe BECAUSE the shipped image genuinely runs
-// with NODE_ENV=production. cookies.ts's isProductionEnvironment() gates the
-// `Secure` attribute on that single value and, unlike every other NODE_ENV
-// gate in this codebase, an unset NODE_ENV there fails OPEN -- session and
-// CSRF cookies served over plain HTTP. backend/Dockerfile never set it, so
-// the deployed container inherited whatever the runtime handed it (npm's own
-// `npm run start` does not set NODE_ENV either). Static check, because
-// nothing at test time can observe the built image's environment.
+// PCA-DW-W2-15C correction: the assertion above no longer depends on the
+// shipped image happening to set NODE_ENV=production -- cookies.ts's
+// sessionCookieName()/csrfCookieName() and this route's Secure computation
+// now go through runtime/environment.ts's isProductionSensitiveRuntime(),
+// which fails CLOSED (treats missing/unrecognized NODE_ENV as production)
+// rather than open. See test/runtime/environment.test.mjs and
+// test/parentaccount/cookies.test.mjs for the explicit fail-closed proof.
+// This Dockerfile check is kept anyway as defense in depth (and because
+// npm ci --omit=dev/other build-time behaviour still wants NODE_ENV=production
+// set before the build step) -- static check, because nothing at test time
+// can observe the built image's environment.
 test('DEPLOYMENT: backend/Dockerfile sets NODE_ENV=production, and only after the build step (npm derives omit=dev from it)', async () => {
   const dockerfile = await readFile(new URL('../../Dockerfile', import.meta.url), 'utf8');
   assert.match(dockerfile, /^ENV NODE_ENV=production$/m, 'the image must default to production so session cookies are Secure');

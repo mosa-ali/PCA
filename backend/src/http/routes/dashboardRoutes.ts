@@ -24,7 +24,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
-import { SESSION_COOKIE_NAME, parseCookies } from '../../parentaccount/cookies.js';
+import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import type { DashboardAggregatorService } from '../../parentpanel/DashboardAggregatorService.js';
 import type { DashboardCard } from '../../parentpanel/types.js';
 
@@ -35,7 +35,7 @@ export interface DashboardRoutesDeps {
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
-  return parseCookies(request.headers.cookie).get(SESSION_COOKIE_NAME) ?? null;
+  return parseCookies(request.headers.cookie).get(sessionCookieName()) ?? null;
 }
 
 function toCardDto(card: DashboardCard): Record<string, unknown> {

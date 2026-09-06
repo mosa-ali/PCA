@@ -1,4 +1,5 @@
-import { randomInt, createHash, timingSafeEqual } from 'node:crypto';
+import { randomInt, createHmac, timingSafeEqual } from 'node:crypto';
+import { isProductionSensitiveRuntime } from '../runtime/environment.js';
 
 /**
  * A single-use, cryptographically random 6-digit numeric verification code
@@ -15,14 +16,50 @@ export interface GeneratedVerificationCode {
   codeHash: string;
 }
 
-export function generateVerificationCode(): GeneratedVerificationCode {
-  const value = randomInt(CODE_MIN, CODE_MAX);
-  const code = value.toString(10).padStart(CODE_DIGITS, '0');
-  return { code, codeHash: hashVerificationCode(code) };
+/**
+ * PCA-DW-W2-15B. A 6-digit code has only 1,000,000 possible values -- a
+ * plain unkeyed digest (the previous `sha256(code)`) lets anyone who reads
+ * the `code_hash` column (a DB leak, a backup, a misdirected replica)
+ * brute-force every stored code offline in a fraction of a second, with no
+ * dependence on the rate limiting that protects the LIVE verify endpoint.
+ * Keying the hash with a server-side secret (HMAC-SHA256) removes that:
+ * the attacker also needs the secret, which never lives in the database or
+ * in git.
+ *
+ * Mirrors billing/provider/sandboxProvider.ts's env-gated-secret shape:
+ * override via PCA_VERIFICATION_CODE_HMAC_SECRET; a fixed, clearly-labeled
+ * dev-only secret is used only when isProductionSensitiveRuntime() is
+ * false; production with no configured secret FAILS CLOSED (throws) rather
+ * than silently falling back to a guessable default.
+ */
+const DEV_ONLY_DEFAULT_HMAC_SECRET = 'dev-only-code-hmac-secret-do-not-use-in-production';
+
+export class MissingVerificationCodeSecretError extends Error {
+  constructor() {
+    super(
+      'PCA_VERIFICATION_CODE_HMAC_SECRET must be set in production. Refusing to hash/verify ' +
+        'verification codes with a guessable or absent key.',
+    );
+    this.name = 'MissingVerificationCodeSecretError';
+  }
 }
 
-export function hashVerificationCode(code: string): string {
-  return createHash('sha256').update(code, 'utf8').digest('hex');
+function resolveVerificationCodeHmacSecret(env: NodeJS.ProcessEnv): string {
+  const configured = env.PCA_VERIFICATION_CODE_HMAC_SECRET;
+  if (typeof configured === 'string' && configured.length > 0) return configured;
+  if (isProductionSensitiveRuntime(env)) throw new MissingVerificationCodeSecretError();
+  return DEV_ONLY_DEFAULT_HMAC_SECRET;
+}
+
+export function generateVerificationCode(env: NodeJS.ProcessEnv = process.env): GeneratedVerificationCode {
+  const value = randomInt(CODE_MIN, CODE_MAX);
+  const code = value.toString(10).padStart(CODE_DIGITS, '0');
+  return { code, codeHash: hashVerificationCode(code, env) };
+}
+
+export function hashVerificationCode(code: string, env: NodeJS.ProcessEnv = process.env): string {
+  const secret = resolveVerificationCodeHmacSecret(env);
+  return createHmac('sha256', secret).update(code, 'utf8').digest('hex');
 }
 
 const CODE_SHAPE = new RegExp(`^\\d{${CODE_DIGITS}}$`);

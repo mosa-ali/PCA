@@ -71,7 +71,7 @@ test('FR-137 diagnostic sink failures never change relay delivery semantics', as
 
 test('FR-137 production server logger is explicitly disabled', () => {
   const source = readFileSync(path.join(TEST_ROOT, 'src', 'http', 'buildServer.ts'), 'utf8');
-  assert.match(source, /Fastify\(\s*\{\s*logger:\s*false\s*\}\s*\)/);
+  assert.match(source, /Fastify\(\s*\{\s*logger:\s*false\s*,/);
 });
 
 function listTypeScriptFiles(root) {

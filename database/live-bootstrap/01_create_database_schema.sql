@@ -519,6 +519,27 @@ CREATE TABLE `devices` (
   CONSTRAINT `devices_status_check` CHECK ((`status` in (_utf8mb4'PAIRING_PENDING',_utf8mb4'PAIRED',_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- email_outbox (defined by backend/migrations/0038_email_outbox.sql)
+CREATE TABLE `email_outbox` (
+  `outbox_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `idempotency_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_iv` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_auth_tag` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_payload` text CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'PENDING',
+  `attempt_count` int NOT NULL DEFAULT 0,
+  `next_attempt_at` datetime(3) NOT NULL,
+  `last_error` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `provider_message_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `expires_at` datetime(3) NOT NULL,
+  `completed_at` datetime(3) NULL,
+  PRIMARY KEY (`outbox_id`),
+  UNIQUE KEY `email_outbox_idempotency_key_key` (`idempotency_key`),
+  KEY `email_outbox_status_next_attempt_idx` (`status`, `next_attempt_at`),
+  CONSTRAINT `email_outbox_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'SENT',_utf8mb4'DEAD_LETTER')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- enrollment_administration_verifiers (defined by backend/migrations/0022_enrollment_administration_persistence.sql)
 CREATE TABLE `enrollment_administration_verifiers` (
   `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,

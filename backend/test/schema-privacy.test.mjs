@@ -253,3 +253,37 @@ test('eye-protection-settings migration stores only the parent reminders-enabled
     ['child_profile_id', 'family_id', 'reminders_enabled', 'updated_at'],
   );
 });
+
+// PCA-DW-W2-15F: 0038_email_outbox.sql adds the durable email outbox (see
+// that migration's own header). This is the FIRST table in this domain to
+// hold recipient-email-derived content at all since migration 0013
+// established "no raw email column exists" -- so this gets its own,
+// stricter static gate: not just the generic prohibited-terms list, but an
+// explicit proof that no raw email/code column exists ANYWHERE in it, only
+// the encrypted (iv/auth-tag/ciphertext) columns
+// backend/src/email/emailOutboxEncryption.ts produces.
+const emailOutboxMigration = await readFile(new URL('../migrations/0038_email_outbox.sql', import.meta.url), 'utf8');
+
+test('email-outbox migration contains exactly the approved single outbox table', () => {
+  assert.match(emailOutboxMigration, /CREATE TABLE email_outbox \(/);
+  assert.equal((emailOutboxMigration.match(/CREATE TABLE/g) ?? []).length, 1);
+});
+
+test('email-outbox migration does not introduce prohibited readable or secret fields', () => {
+  const schema = emailOutboxMigration.replace(/--[^\n]*/g, '').toLowerCase();
+  for (const term of prohibitedTerms) assert.equal(schema.includes(term), false, `prohibited schema term: ${term}`);
+});
+
+test('SECURITY: email-outbox migration stores the recipient/code ONLY as an encrypted blob -- no raw email, recipient, or code column of any kind', () => {
+  const schema = emailOutboxMigration.replace(/--[^\n]*/g, '');
+  assert.equal(/\bemail\s+(?:VARCHAR|CHAR|TEXT)/i.test(schema), false, 'no raw email-shaped column');
+  assert.equal(/\b(?:recipient|to_email|code)\s+(?:VARCHAR|CHAR|TEXT)/i.test(schema), false, 'no raw recipient/code-shaped column');
+  assert.match(schema, /encrypted_iv VARCHAR\(32\)/);
+  assert.match(schema, /encrypted_auth_tag VARCHAR\(32\)/);
+  assert.match(schema, /encrypted_payload TEXT/);
+});
+
+test('email-outbox migration has a unique idempotency_key column (duplicate enqueue must not double-send)', () => {
+  assert.match(emailOutboxMigration, /idempotency_key VARCHAR\(128\)/);
+  assert.match(emailOutboxMigration, /UNIQUE KEY email_outbox_idempotency_key_key \(idempotency_key\)/);
+});

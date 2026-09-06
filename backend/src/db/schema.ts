@@ -1,8 +1,8 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 75 tables), derived once by applying every
-// accepted migration (backend/migrations/0001 through 0036) from an empty
+// central MySQL schema (all 76 tables), derived once by applying every
+// accepted migration (backend/migrations/0001 through 0038) from an empty
 // database and introspecting the result via
 // backend/scripts/introspect-schema.mjs. It is NOT an ORM and does not
 // introduce a runtime schema-framework dependency -- it is a strongly typed
@@ -1053,6 +1053,46 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
+    ],
+  },
+  {
+    name: "email_outbox",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0038_email_outbox.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/email",
+    columns: [
+      { name: "outbox_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "idempotency_key", columnType: "varchar(128)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Idempotency/dedup/uniqueness key, opaque." },
+      { name: "encrypted_iv", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM initialization vector for encrypted_payload (see backend/src/email/emailOutboxEncryption.ts) -- opaque, never plaintext." },
+      { name: "encrypted_auth_tag", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM authentication tag for encrypted_payload (see backend/src/email/emailOutboxEncryption.ts) -- opaque, never plaintext." },
+      { name: "encrypted_payload", columnType: "text", dataType: "text", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "ENCRYPTED_PAYLOAD", privacyNote: "AES-256-GCM ciphertext of the recipient/kind/code JSON payload (see backend/src/email/emailOutboxEncryption.ts) -- never plaintext; NULL once purged after a terminal SENT/DEAD_LETTER state." },
+      { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: "PENDING", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "attempt_count", columnType: "int", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "next_attempt_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "last_error", columnType: "varchar(512)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "System-generated free-text delivery-failure diagnostic (e.g. provider API/SMTP error text) -- never child/family personal content, but genuinely free-text; see PCA_CANONICAL_SCHEMA_REPORT.md caveat." },
+      { name: "provider_message_id", columnType: "varchar(255)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: "CURRENT_TIMESTAMP(3)", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "completed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["outbox_id"],
+    uniqueIndexes: [
+      { name: "email_outbox_idempotency_key_key", columns: ["idempotency_key"], unique: true },
+    ],
+    indexes: [
+      { name: "email_outbox_status_next_attempt_idx", columns: ["status", "next_attempt_at"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "email_outbox_status_check", clause: "(`status` in (_utf8mb4'PENDING',_utf8mb4'SENT',_utf8mb4'DEAD_LETTER'))" },
+    ],
+    applicationEnforcedRelations: [
+
     ],
   },
   {

@@ -81,8 +81,8 @@ re-run this step from scratch.
 mysql ... <database> < database/live-bootstrap/01_create_database_schema.sql
 ```
 
-This creates all 75 tables, 83 foreign keys, 31 unique indexes, 117
-non-unique indexes, 228 CHECK constraints, and 4 generated columns —
+This creates all 76 tables, 83 foreign keys, 32 unique indexes, 118
+non-unique indexes, 229 CHECK constraints, and 4 generated columns —
 generated deterministically from `backend/src/db/schema.ts`. It contains no
 application data. If any statement fails, the script stops at that
 statement (no `DROP TABLE IF EXISTS` pattern is used, so nothing is silently
@@ -95,9 +95,9 @@ partial failure here means the database is no longer empty.
 mysql ... <database> < database/live-bootstrap/02_reference_data.sql
 ```
 
-Inserts exactly 35 `schema_migrations` bookkeeping rows (marking every
-accepted migration 0001–0037 as already applied, so a **future**
-`npm run db:migrate` only applies new migrations from 0038 onward — without
+Inserts exactly 36 `schema_migrations` bookkeeping rows (marking every
+accepted migration 0001–0038 as already applied, so a **future**
+`npm run db:migrate` only applies new migrations from 0039 onward — without
 this step, the next migration run would try to recreate tables that already
 exist and fail) plus 14 production reference/lookup rows (currencies,
 commercial markets, country routing, the FREE_STARTER entitlement default —
@@ -123,7 +123,7 @@ Both must report **ALL PASSED** / **ALL CHECKS PASSED**. The fingerprint
 check must report:
 
 ```
-PASS: schema fingerprint matches expected sha256:a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495
+PASS: schema fingerprint matches expected sha256:ee31abcd6f67815c778fdc3703fd4808e324c33594c5bfbd409de4c8f4127043
 ```
 
 **If it fails: STOP.** Do not proceed to Step 5. This means the live database
@@ -162,7 +162,7 @@ that file's own header. Do not compare the two values to each other.)
 ## Step 6 — Backup immediately after creation
 
 Take a full backup/snapshot of the database **now**, while its known-good
-state is exactly: schema + the 14 reference rows + the 35 bookkeeping rows +
+state is exactly: schema + the 14 reference rows + the 36 bookkeeping rows +
 whatever Step 5's smoke test wrote. Label it clearly (e.g.
 `pca-production-post-bootstrap-<date>`) and record its identifier somewhere
 durable (not only in this runbook). This is your rollback point for
@@ -186,7 +186,7 @@ everything that happens next.
   database.
 - Do not run `02_reference_data.sql` more than once against the same
   database (it is not idempotent by design — see that file's own header;
-  re-running it would duplicate the 35 bookkeeping rows and violate
+  re-running it would duplicate the 36 bookkeeping rows and violate
   `schema_migrations`' PRIMARY KEY, which is itself a safe failure mode, but
   don't rely on that as your safety net).
 - Do not add test accounts, demo parents/children, fake devices,
@@ -201,7 +201,7 @@ everything that happens next.
 
 - **FIRST_DEPLOY**: this `database/live-bootstrap/` package (one time only).
 - **FUTURE_CHANGES**: a new, numbered file in `backend/migrations/`
-  (`0038_...sql` onward), applied via `npm run db:migrate` — never by
+  (`0039_...sql` onward), applied via `npm run db:migrate` — never by
   re-running this bootstrap package. After a new migration is accepted,
   regenerate `backend/src/db/schema.ts` and this entire
   `database/live-bootstrap/` directory from it (see

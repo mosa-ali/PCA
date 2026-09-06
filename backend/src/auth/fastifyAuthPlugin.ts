@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthError, type AuthService } from './AuthService.js';
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, SESSION_COOKIE_NAME, parseCookies } from '../parentaccount/cookies.js';
+import { CSRF_HEADER_NAME, csrfCookieName, parseCookies, sessionCookieName } from '../parentaccount/cookies.js';
 
 const BEARER_PREFIX = 'Bearer ';
 // Bounded well above any real session token (43 chars) to reject abuse
@@ -49,12 +49,12 @@ export function createRequireServiceSession(authService: AuthService) {
     ) {
       rawToken = header.slice(BEARER_PREFIX.length);
     } else {
-      rawToken = cookies.get(SESSION_COOKIE_NAME);
+      rawToken = cookies.get(sessionCookieName());
       cookieTransport = Boolean(rawToken);
     }
 
     if (cookieTransport && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-      const csrfCookie = cookies.get(CSRF_COOKIE_NAME);
+      const csrfCookie = cookies.get(csrfCookieName());
       const csrfHeader = request.headers[CSRF_HEADER_NAME];
       if (!csrfCookie || typeof csrfHeader !== 'string' || csrfHeader !== csrfCookie) {
         await reply.code(403).send({ error: 'csrf_mismatch' });

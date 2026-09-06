@@ -17,7 +17,13 @@ const scrypt = promisify(scryptCallback) as (
  * rather than imported so this credential domain has zero source
  * dependency on backend/src/platformadmin/** (PCA-ADD-IDENT-001).
  */
-const SCRYPT_N = 32768;
+// PCA-DW-W2-15E: raised from 2^15 to 2^17 (measured ~205ms -> ~425ms on the
+// authoring host, node:crypto scrypt) -- still comfortably fast for a
+// single login/registration request, and the format above is already
+// self-describing (N/r/p are read back out of the encoded credential by
+// verifyPassword), so this needs no migration: existing credentials hashed
+// at the old cost keep verifying correctly under their own stored N.
+const SCRYPT_N = 131072;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SALT_BYTES = 16;

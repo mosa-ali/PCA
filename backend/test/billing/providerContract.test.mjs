@@ -12,7 +12,13 @@ test('backend/package.json introduces zero payment-provider SDK dependencies (St
   for (const name of Object.keys(allDeps)) {
     assert.equal(prohibitedNamePatterns.test(name), false, `unexpected payment-provider SDK dependency: ${name}`);
   }
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['fastify', 'mysql2'], 'dependency set must remain unchanged by this lane');
+  // PCA-DW-W2-15F added `nodemailer` (zero runtime dependencies of its own --
+  // verified via `npm view nodemailer dependencies` before adding it) for
+  // EmailService's real SMTP transport -- unrelated to payment providers,
+  // and already proven above to match none of the prohibited SDK patterns.
+  // This list should simply be kept in sync whenever a legitimate new
+  // backend dependency is added; it is not itself a payment-lane guarantee.
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['fastify', 'mysql2', 'nodemailer'], 'dependency set must remain unchanged by this lane');
 });
 
 test('providerContract.ts source contains no provider-SDK import statement', async () => {

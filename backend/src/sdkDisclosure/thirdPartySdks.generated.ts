@@ -30,13 +30,18 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
     "backend": [
       {
         "name": "fastify",
-        "version": "5.11.3",
+        "version": "5.12.3",
         "category": "HTTP server framework"
       },
       {
         "name": "mysql2",
-        "version": "3.15.2",
+        "version": "3.24.3",
         "category": "database driver"
+      },
+      {
+        "name": "nodemailer",
+        "version": "10.0.0",
+        "category": "uncategorized"
       }
     ],
     "platformAdminWeb": [

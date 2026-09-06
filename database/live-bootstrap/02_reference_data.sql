@@ -10,7 +10,7 @@
 -- =========================================================================
 -- 1. Bootstrap bookkeeping: mark every accepted migration as already
 --    applied, so the next `npm run db:migrate` only applies NEW migrations
---    (0037+) going forward -- see this script's header.
+--    (0039+) going forward -- see this script's header.
 -- =========================================================================
 INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0001_mysql_baseline.sql', CURRENT_TIMESTAMP(3)),
@@ -47,7 +47,8 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0034_audit_alert_ciphertext_expiry.sql', CURRENT_TIMESTAMP(3)),
   ('0035_family_member_invitation_pending_uniqueness.sql', CURRENT_TIMESTAMP(3)),
   ('0036_family_child_memberships.sql', CURRENT_TIMESTAMP(3)),
-  ('0037_enrollment_bootstrap_attempt_invitation_fk.sql', CURRENT_TIMESTAMP(3));
+  ('0037_enrollment_bootstrap_attempt_invitation_fk.sql', CURRENT_TIMESTAMP(3)),
+  ('0038_email_outbox.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

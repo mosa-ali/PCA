@@ -24,7 +24,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
-import { SESSION_COOKIE_NAME, parseCookies } from '../../parentaccount/cookies.js';
+import { parseCookies, sessionCookieName } from '../../parentaccount/cookies.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ProtectionAlertLedger } from '../../alerts/ProtectionAlertLedger.js';
 import type { ProtectionAlertEvent } from '../../alerts/types.js';
@@ -37,7 +37,7 @@ export interface ProtectionAlertRoutesDeps {
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
-  return parseCookies(request.headers.cookie).get(SESSION_COOKIE_NAME) ?? null;
+  return parseCookies(request.headers.cookie).get(sessionCookieName()) ?? null;
 }
 
 function toAlertDto(event: ProtectionAlertEvent): Record<string, unknown> {

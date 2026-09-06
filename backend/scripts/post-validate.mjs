@@ -24,7 +24,11 @@ import { normalizedFingerprint } from './schema-fingerprint.mjs';
 
 const execFileP = promisify(execFile);
 
-const EXPECTED_FINGERPRINT = 'a7a31c6fb1e3f89d9a44bb885ac76550cd41964b48ddb287f5939e041658a495';
+// PCA-DW-W2-15F: was 'a7a31c6f...' (75 tables) -- regenerated after
+// migrations/0038_email_outbox.sql added the 76th table, verified via
+// schema-fingerprint.mjs against a real bootstrap-vs-migration schema
+// comparison (compare-schema-snapshots.mjs reported EXACT_MATCH).
+const EXPECTED_FINGERPRINT = 'ee31abcd6f67815c778fdc3703fd4808e324c33594c5bfbd409de4c8f4127043';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;
@@ -77,6 +81,11 @@ try {
     'commercial_notifications.message_key', 'envelope_message_idempotency_ledger.message_id', 'relay_envelopes.message_id',
     'enrollment_invitations.initial_policy_profile', 'enrollment_invitations.age_ux_tier',
     'platform_admin_accounts.display_name',
+    // PCA-DW-W2-15F: opaque email-provider delivery-tracking id -- matches
+    // "age" (substring of "mess-AGE-id") and "message", neither of which
+    // describes actual message/private-communication content here, exactly
+    // like commercial_notifications.message_key/*.message_id above.
+    'email_outbox.provider_message_id',
   ]);
   const [colRows] = await connection.query(`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = ?`, [dbName]);
   let offenders = 0;

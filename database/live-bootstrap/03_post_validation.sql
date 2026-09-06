@@ -6,9 +6,9 @@
 -- the application -- do not proceed to the application connection smoke
 -- test in OWNER_RUNBOOK.md.
 --
--- These exact counts (75 tables / 626 columns / 83 foreign keys / 31 unique
--- indexes / 117 non-unique indexes / 14 reference rows / 35 bookkeeping
--- rows) were captured by this mission from Database A (all 35 migrations
+-- These exact counts (76 tables / 639 columns / 83 foreign keys / 32 unique
+-- indexes / 118 non-unique indexes / 14 reference rows / 36 bookkeeping
+-- rows) were captured by this mission from Database A (all 36 migrations
 -- applied from zero) and proven identical on Database B (this bootstrap
 -- package applied from zero) via backend/scripts/compare-schema-snapshots.mjs
 -- reporting EXACT_MATCH. If a future migration changes the schema, these
@@ -29,14 +29,14 @@ DELIMITER ;
 
 -- 1. Exact table count.
 CALL _pca_postvalidate_assert(
-  (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE') = 75,
-  'POST-VALIDATION FAILED: expected exactly 75 base tables.'
+  (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE') = 76,
+  'POST-VALIDATION FAILED: expected exactly 76 base tables.'
 );
 
 -- 2. Exact table name set (order-independent, via GROUP_CONCAT of a sorted
 -- list -- mirrors backend/scripts/verify-mysql.mjs's own established
 -- pattern for this same check). MySQL's group_concat_max_len defaults to
--- 1024 bytes, which silently truncates a 75-table name list mid-string
+-- 1024 bytes, which silently truncates a 76-table name list mid-string
 -- (confirmed while testing this file: the comparison failed until this was
 -- raised) -- always widen it before relying on GROUP_CONCAT for a
 -- completeness check like this one.
@@ -45,13 +45,13 @@ SET @actual_tables = (
   SELECT GROUP_CONCAT(table_name ORDER BY table_name SEPARATOR ',')
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
 );
-SET @expected_tables = 'account_entitlements,billing_commercial_markets,billing_country_market_rules,billing_currencies,billing_disputes,billing_invoice_lines,billing_invoices,billing_payment_attempts,billing_payment_methods,billing_payment_transactions,billing_plans,billing_price_books,billing_provider_events,billing_quotes,billing_refund_operations,billing_refunds,billing_subscriptions,commercial_notifications,complimentary_entitlement_grants,device_challenges,device_protection_status,device_public_keys,devices,enrollment_administration_verifiers,enrollment_bootstrap_attempts,enrollment_invitation_transitions,enrollment_invitations,enrollment_protection_approval_requests,entitlement_activation_idempotency,entitlement_change_request_transitions,entitlement_change_requests,entitlement_defaults,envelope_data_version_ledger,envelope_message_idempotency_ledger,envelope_replay_ledger,eye_protection_settings,families,family_audit_events,family_authority_attestations,family_authority_chain_heads,family_authority_genesis_anchors,family_child_memberships,family_member_invitations,family_rbac_policy_config,licenses,managed_device_slot_reservations,parent_account_preferences,parent_accounts,parent_email_verification_codes,parent_password_reset_codes,platform_admin_accounts,platform_admin_audit_events,platform_admin_login_attempts,platform_admin_mfa_state,platform_admin_role_assignments,platform_admin_security_alerts,platform_admin_sessions,platform_admin_settings,platform_admin_step_up_sessions,protection_alerts,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,safe_zones,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions,settlement_accounts,settlement_batch_items,settlement_batches,settlement_fx_snapshots,sync_sequence_progress_ledger';
-CALL _pca_postvalidate_assert(@actual_tables = @expected_tables, 'POST-VALIDATION FAILED: table name set does not exactly match the expected 75.');
+SET @expected_tables = 'account_entitlements,billing_commercial_markets,billing_country_market_rules,billing_currencies,billing_disputes,billing_invoice_lines,billing_invoices,billing_payment_attempts,billing_payment_methods,billing_payment_transactions,billing_plans,billing_price_books,billing_provider_events,billing_quotes,billing_refund_operations,billing_refunds,billing_subscriptions,commercial_notifications,complimentary_entitlement_grants,device_challenges,device_protection_status,device_public_keys,devices,email_outbox,enrollment_administration_verifiers,enrollment_bootstrap_attempts,enrollment_invitation_transitions,enrollment_invitations,enrollment_protection_approval_requests,entitlement_activation_idempotency,entitlement_change_request_transitions,entitlement_change_requests,entitlement_defaults,envelope_data_version_ledger,envelope_message_idempotency_ledger,envelope_replay_ledger,eye_protection_settings,families,family_audit_events,family_authority_attestations,family_authority_chain_heads,family_authority_genesis_anchors,family_child_memberships,family_member_invitations,family_rbac_policy_config,licenses,managed_device_slot_reservations,parent_account_preferences,parent_accounts,parent_email_verification_codes,parent_password_reset_codes,platform_admin_accounts,platform_admin_audit_events,platform_admin_login_attempts,platform_admin_mfa_state,platform_admin_role_assignments,platform_admin_security_alerts,platform_admin_sessions,platform_admin_settings,platform_admin_step_up_sessions,protection_alerts,recovery_envelopes,relay_envelopes,release_current_pointers,release_packages,safe_zones,schema_migrations,security_audit_metadata,service_account_family_scopes,service_accounts,service_sessions,settlement_accounts,settlement_batch_items,settlement_batches,settlement_fx_snapshots,sync_sequence_progress_ledger';
+CALL _pca_postvalidate_assert(@actual_tables = @expected_tables, 'POST-VALIDATION FAILED: table name set does not exactly match the expected 76.');
 
 -- 3. Exact column count.
 CALL _pca_postvalidate_assert(
-  (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()) = 626,
-  'POST-VALIDATION FAILED: expected exactly 626 columns across all tables.'
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE()) = 639,
+  'POST-VALIDATION FAILED: expected exactly 639 columns across all tables.'
 );
 
 -- 4. Exact foreign key count.
@@ -65,15 +65,15 @@ CALL _pca_postvalidate_assert(
   (SELECT COUNT(*) FROM (
     SELECT DISTINCT table_name, index_name FROM information_schema.statistics
     WHERE table_schema = DATABASE() AND index_name <> 'PRIMARY' AND non_unique = 0
-  ) x) = 31,
-  'POST-VALIDATION FAILED: expected exactly 31 unique (non-PK) indexes.'
+  ) x) = 32,
+  'POST-VALIDATION FAILED: expected exactly 32 unique (non-PK) indexes.'
 );
 CALL _pca_postvalidate_assert(
   (SELECT COUNT(*) FROM (
     SELECT DISTINCT table_name, index_name FROM information_schema.statistics
     WHERE table_schema = DATABASE() AND index_name <> 'PRIMARY' AND non_unique = 1
-  ) x) = 117,
-  'POST-VALIDATION FAILED: expected exactly 117 non-unique indexes.'
+  ) x) = 118,
+  'POST-VALIDATION FAILED: expected exactly 118 non-unique indexes.'
 );
 
 -- 6. Every table is InnoDB / utf8mb4 / utf8mb4_bin (no exceptions).
@@ -89,7 +89,7 @@ CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_currencies) = 3, 'PO
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_commercial_markets) = 3, 'POST-VALIDATION FAILED: billing_commercial_markets must have exactly 3 rows.');
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM billing_country_market_rules) = 7, 'POST-VALIDATION FAILED: billing_country_market_rules must have exactly 7 rows.');
 CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM entitlement_defaults) = 1, 'POST-VALIDATION FAILED: entitlement_defaults must have exactly 1 row.');
-CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM schema_migrations) = 35, 'POST-VALIDATION FAILED: schema_migrations must have exactly 35 bookkeeping rows.');
+CALL _pca_postvalidate_assert((SELECT COUNT(*) FROM schema_migrations) = 36, 'POST-VALIDATION FAILED: schema_migrations must have exactly 36 bookkeeping rows.');
 
 -- 8. No test/demo data anywhere: every table OTHER than the five reference
 -- tables above must be completely empty immediately after bootstrap (mission
