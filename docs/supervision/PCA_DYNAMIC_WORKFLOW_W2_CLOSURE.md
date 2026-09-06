@@ -249,12 +249,34 @@ Identical failure signature (same job, same single step) as Wave-2's own
 final SHA `ea19dd5` above — confirming this is the same pre-existing,
 Wave-3-tracked issue, not a regression introduced by this round.
 
-`W2_RELEVANT_CI = PASS` (every job this round's scope touches, including
-every Parent Web and Platform Admin shard). `IOS_CI = FAILURE` (known,
-pre-existing, unrelated). `OVERALL_QUALITY_WORKFLOW =
-FAILURE_DUE_TO_KNOWN_IOS` — not claimed green overall, per this round's own
-explicit instruction not to overstate a red iOS job as an all-green
-workflow.
+`W2_RELEVANT_CI = PASS` for this substantive commit (every job this
+round's scope touches, including every Parent Web and Platform Admin
+shard).
+
+**A second, docs-only commit (`6625987`) was then pushed** to record this
+CI evidence in this same document, making `6625987` the actual tip of
+`pca-dev`. Its own CI run (`34046942957`) was also fetched for the exact
+SHA: iOS failed identically to above, but **Android build, lint, and unit
+tests also failed** this time (`Build, lint, and test` step, generic `exit
+code 1`, no further detail available via the public annotations API).
+`git diff --stat 2748b40 6625987` confirms the ONLY change between this
+commit and the one that passed Android cleanly minutes earlier is the
+markdown file this section is written in — nothing under `android/` or any
+Android-relevant path changed. This is assessed as a **transient CI
+flake** (an emulator/Gradle-runner hiccup), not a regression: the
+Android-relevant source tree is byte-identical to the immediately prior
+run, which passed. No re-run was triggered (no write-level CI API access
+available from this session) — reported here exactly as observed rather
+than silently re-pushed to paper over it.
+
+`IOS_CI = FAILURE` (known, pre-existing, unrelated to this round, confirmed
+on both pushed SHAs). `ANDROID_CI (6625987 only) = FAILURE, assessed
+transient/unrelated` — `ANDROID_CI (2748b40, the substantive commit) =
+SUCCESS`. `OVERALL_QUALITY_WORKFLOW = FAILURE_DUE_TO_KNOWN_IOS` for the
+substantive commit `2748b40`; the tip commit `6625987` additionally shows
+an assessed-transient Android failure, disclosed rather than hidden. Not
+claimed green overall for either SHA, per this round's own explicit
+instruction not to overstate a red job as an all-green workflow.
 
 ## Explicitly out of scope for this round (per mission sections 5, 16, 17)
 
