@@ -352,7 +352,34 @@ jobs:
         run: test -x ./gradlew
       - name: Build, lint, and test
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace lint test assembleDebug
+        run: |
+          # PCA-DW-W3 follow-up: mirrors the same diagnostic technique added
+          # to the iOS job's own build/test step -- a Gradle failure here
+          # previously surfaced via the public GitHub Actions API only as
+          # the generic "Process completed with exit code 1", with no
+          # Kotlin compiler error, lint violation, or test-failure text
+          # visible without authenticated log access. `set +e`/`set -e`
+          # bracket the pipeline deliberately: GitHub Actions' default
+          # `bash -e -o pipefail` would otherwise abort this whole script
+          # the instant `tee`'s pipeline reports non-zero, before ever
+          # reaching the diagnostic code below.
+          set +e
+          ./gradlew --no-daemon --stacktrace lint test assembleDebug 2>&1 | tee gradle-output.log
+          status="${PIPESTATUS[0]}"
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "gradlew exited with status $status -- surfacing likely error/failure lines as annotations:"
+            found_line=0
+            while IFS= read -r line; do
+              echo "::error::${line}"
+              found_line=1
+            done < <(grep -E "^e: |error:|FAILURE:|BUILD FAILED|What went wrong|Caused by:|^\s*at .*Exception" gradle-output.log | head -n 50 || true)
+            if [ "$found_line" -eq 0 ]; then
+              echo "::error::gradlew failed (exit $status) with no matching error/failure line found by this step's own grep -- see the last 60 lines of raw output below."
+              tail -n 60 gradle-output.log
+            fi
+            exit "$status"
+          fi
 
   ios:
     name: iOS build and unit tests
