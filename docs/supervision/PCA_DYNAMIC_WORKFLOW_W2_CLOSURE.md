@@ -1,9 +1,8 @@
 # PCA Dynamic Workflow — Wave 2 Closure Report
 
-Status: CLOSED (pending final CI verification for the exact R1 push SHA,
-recorded below once available). This is an implementation closure report,
-not a supervisory reassessment — it does not reopen, rewrite, or supersede
-any FABLE document.
+Status: CLOSED. This is an implementation closure report, not a
+supervisory reassessment — it does not reopen, rewrite, or supersede any
+FABLE document.
 
 Coordinator: primary Claude Code session, working directly against the
 authorized repository (no worktree, no delegated implementation agents —
@@ -223,7 +222,39 @@ found is fixed and re-verified above, not merely disclosed-and-deferred).
 
 ## Actual CI evidence for the exact R1 push (§20)
 
-<!-- FILLED IN AFTER THE PUSH -->
+Pushed as commit `2748b407c60114ddee29b883702df1260b31bda7` to
+`origin/pca-dev` (fast-forward from `ea19dd5`, no force push, no other
+branch touched). Fetched directly from the GitHub Actions REST API
+(`GET /repos/mosa-ali/PCA/actions/runs/34046563187/jobs`) for this exact
+SHA:
+
+```
+21/22 jobs: SUCCESS
+  Repository quality                            SUCCESS
+  Security controls                             SUCCESS
+  Dependency vulnerability audit                 SUCCESS
+  Backend build and unit tests                  SUCCESS
+  Release control integrity                     SUCCESS
+  Contracts validation                          SUCCESS
+  public-web build and content gates            SUCCESS
+  parent-web unit tests (shards 1-8/8)           SUCCESS (all 8)
+  Web production demo-mode gate                 SUCCESS
+  platform-admin-web unit tests (shards 1-4/4)  SUCCESS (all 4)
+  Android build, lint, and unit tests           SUCCESS
+iOS build and unit tests                        FAILURE
+  step "Build and test the inert launch shell"  FAILURE
+```
+
+Identical failure signature (same job, same single step) as Wave-2's own
+final SHA `ea19dd5` above — confirming this is the same pre-existing,
+Wave-3-tracked issue, not a regression introduced by this round.
+
+`W2_RELEVANT_CI = PASS` (every job this round's scope touches, including
+every Parent Web and Platform Admin shard). `IOS_CI = FAILURE` (known,
+pre-existing, unrelated). `OVERALL_QUALITY_WORKFLOW =
+FAILURE_DUE_TO_KNOWN_IOS` — not claimed green overall, per this round's own
+explicit instruction not to overstate a red iOS job as an all-green
+workflow.
 
 ## Explicitly out of scope for this round (per mission sections 5, 16, 17)
 
