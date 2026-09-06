@@ -33,7 +33,7 @@ Assert-Rejected 'secret-like value' 'src/config.txt' 'api_key = "Abcdefghijklmno
 Assert-Rejected 'private recovery secret' 'src/config.txt' 'recovery_secret = "not-a-real-recovery-secret"'
 Assert-Rejected 'telemetry SDK' 'android/app/build.gradle.kts' 'implementation("io.sentry:sentry:8.0.0")'
 Assert-Rejected 'generated IDE artifact' '.idea/workspace.xml' '<workspace />'
-Assert-Rejected 'sensitive logging' 'android/App.kt' 'Log.d("PCA", "url=https://PCA-SYNTHETIC.invalid")'
+Assert-Rejected 'sensitive logging' 'android/App.kt' 'Log.d("PCA", url)'
 Assert-Rejected 'escaped privacy sentinel' 'contracts/example.json' '{"value":"PCA_SYNTHETIC_RECOVERY_SECRET"}'
 Assert-Rejected 'escaped Android privacy sentinel' 'android/src/main/kotlin/App.kt' 'val marker = "PCA_SYNTHETIC_APP_USAGE_EVENT"'
 Assert-Rejected 'escaped iOS privacy sentinel' 'ios/App.swift' 'let marker = "PCA_SYNTHETIC_YOUTUBE_VIDEO_ID"'
