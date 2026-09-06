@@ -446,8 +446,23 @@ console.log('=== Section 5c: REAL_UAT is never vacuously satisfied for a FABLE Y
   }
   ok(readFileSync(scriptPath, 'utf8') === originalScript, 'Invoke-ReleaseGateCheck.ps1 restored byte-identical after the AUTH_B-unmapping negative control');
   {
-    const parityAfterRestore = execFileSync('node', [join(repoRoot, 'tooling', 'release', 'ValidateFableScopeParity.mjs')], { encoding: 'utf8' });
-    ok(/^PASS /m.test(parityAfterRestore) || /\nPASS /.test(parityAfterRestore), 'ValidateFableScopeParity.mjs passes again once the script is restored');
+    // execFileSync THROWS on a non-zero exit -- this call is deliberately
+    // wrapped (a sibling call above already was; this one previously was
+    // NOT, a real bug: any non-zero exit here -- for any reason, including
+    // a transient/environmental one -- would crash this WHOLE test script
+    // with an uncaught exception instead of reporting one graceful `ok(false, ...)`
+    // failure, which is indistinguishable from a genuine hang/crash in CI
+    // output and defeats the point of every other assertion in this file
+    // failing gracefully.
+    let parityAfterRestore = '';
+    let parityAfterRestoreOk = false;
+    try {
+      parityAfterRestore = execFileSync('node', [join(repoRoot, 'tooling', 'release', 'ValidateFableScopeParity.mjs')], { encoding: 'utf8' });
+      parityAfterRestoreOk = true;
+    } catch (err) {
+      parityAfterRestore = (err.stdout || '') + (err.stderr || '');
+    }
+    ok(parityAfterRestoreOk && (/^PASS /m.test(parityAfterRestore) || /\nPASS /.test(parityAfterRestore)), 'ValidateFableScopeParity.mjs passes again once the script is restored');
   }
 
   // --- C/D. Transient, NEVER-COMMITTED uat_execution_log.json fixtures ------

@@ -387,9 +387,42 @@ allowlist mechanism rather than a defect unique to this one.
 
 ### FINAL CI EVIDENCE (the exact R2 commit that is actually pushed and accepted)
 
-*(filled in after the diagnostic-annotation follow-up push, once its
-`release-control` job completes — this is the authoritative result for
-Wave 1 R2 closure, superseding the `c4b0103` failure recorded above.)*
+**Second real push (commit `b67a407`, the diagnostic-annotation fix): still
+`failure`, but this time the annotations came back genuinely informative
+— and revealing.** Fetched annotations for that run's `release-control`
+check run showed only the generic `"Process completed with exit code 1."`
+— NEITHER of the new `::error::` lines the diagnostic step was supposed to
+emit appeared. That absence was itself the real signal: the diagnostic
+step's own `grep '^FAIL'` found nothing to emit, which is exactly what
+happens when the Node process CRASHES (an uncaught exception, printing a
+stack trace, never reaching a graceful `"N FAILURE(S)"` summary) rather
+than completing and reporting assertion failures gracefully.
+
+**Root cause found and fixed.** Auditing every `execFileSync` call in
+`tooling/release/Test-ReleaseGateScoping.mjs` for the exact failure mode
+just inferred (throws on non-zero exit unless caught) found one genuine,
+unguarded instance: the check immediately after the AUTH_B-unmapping
+negative control re-invokes `ValidateFableScopeParity.mjs` directly via
+`execFileSync('node', [...])` with NO try/catch, to confirm it "passes
+again once the script is restored" — unlike its sibling call two lines
+above (which IS wrapped). `execFileSync` throws on any non-zero exit; if
+that specific invocation exited non-zero for ANY reason — including a
+transient/environmental one such as slower subprocess start-up under a
+shared CI runner's resource contention across its own SIX internal `pwsh`
+sub-invocations — the whole test script would crash with an uncaught
+exception instead of reporting one graceful `ok(false, ...)` failure. This
+is indistinguishable from a hang/crash in CI output, explains the empty
+`grep '^FAIL'`, and is a real defect on its own merits regardless of
+whether it was the exact trigger on the real runner: a test suite must
+never crash instead of failing gracefully. **Fixed**: wrapped in the same
+try/catch pattern as its sibling, reporting a graceful `ok(false, ...)` on
+any non-zero exit instead of throwing. Audited every other `execFileSync`
+call in both this file and `ValidateFableScopeParity.mjs` — all three
+others were already correctly guarded.
+
+*(The actual GitHub Actions result for this fix's own commit is recorded
+immediately below, once that run completes — this is the authoritative,
+final result for Wave 1 R2 closure.)*
 
 ## Explicitly out of scope for this wave (per mission sections 5 and 25)
 
