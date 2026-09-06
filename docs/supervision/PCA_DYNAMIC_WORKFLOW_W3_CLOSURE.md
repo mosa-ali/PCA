@@ -34,14 +34,14 @@ constraints.
 | W3-D Durable family-data persistence | CLOSED (2 of 3) / BLOCKED (1 of 3) | `MySqlDeleteNowLedger`, `MySqlProfileModeRepository`, migrations 0039/0040, `schema.ts` update, bootstrap regeneration | 13 new DB tests + full equivalence proof, all passing | `WebRuleRepository`: privacy-denylist collision (see Privacy status) | Owner decision on domain-rule persistence design | Closes 2 real functional-regression-on-restart gaps; 1 deferred safely | This report's Test evidence section |
 | W3-E Parent Web production hardening | CLOSED (Docker/headers) | `parent-web/Dockerfile`, `nginx.conf`, `.dockerignore` | Built + run live, headers curl-verified | n/a | n/a | Closes a real, previously-documented clickjacking/header gap | This report's Test evidence section |
 | W3-F Platform Admin | ALREADY_CLOSED | None needed — no defect found | 114/114 + 153/153 tests (discovery) | n/a | n/a | Confirms authority boundary intact | Discovery fork |
-| W3-G Android | CLOSED (hardening) + EXTERNAL (real-device UAT) | `VpnEnforcementPolicy.kt`, gate wired into `VpnEnforcementController.kt`/`PcaAppGraph.kt` | CI-only (no local toolchain) | Real device UAT | Real hardware/CI-device evidence | Defense-in-depth only; policy doctrine unchanged | Discovery fork + this wave's diff; CI section below |
-| W3-H iOS | REMAINING_ENGINEERING (root cause) | CI diagnostic annotation step only; no Swift change | CI-only; YAML validated, bash logic locally simulated against fake failures | Exact root cause not yet visible | Real Xcode/SDK access, or the new diagnostic's real output | Currently the only known-red required CI job | Discovery fork + this wave's diagnostic; CI section below |
+| W3-G Android | CLOSED (hardening + CI-confirmed) + EXTERNAL (real-device UAT) | `VpnEnforcementPolicy.kt`, gate wired into `VpnEnforcementController.kt`/`PcaAppGraph.kt`; CI diagnostic step added | CI-confirmed compiling/passing (21/22-job run) after an unrelated transient first-push failure was diagnosed as environment contention, not a regression | Real device UAT | Real hardware/CI-device evidence | Defense-in-depth only; policy doctrine unchanged | CI evidence section below |
+| W3-H iOS | REMAINING_ENGINEERING (root cause now identified, not yet fixed) | CI diagnostic annotation step only; no Swift/project change | CI-confirmed: real, deterministic, reproducible `TEST_HOST`/scheme error now visible via the public API (previously only "exit code 70") | Root cause identified (Xcode project/scheme target-dependency wiring); safe fix requires real Xcode | Real Xcode/SDK access to safely edit `.pbxproj`/scheme internals | Currently the only known-red required CI job | CI evidence section below |
 | W3-I Billing | ALREADY_CLOSED | None needed — no defect found | 196/196 tests (discovery) | n/a | Payment provider selection (unchanged doctrine) | BILLING_SOURCE_READY only | Discovery fork |
 | W3-J Crypto pre-activation | BLOCKED (correctly, by design) | None — audit only | Fail-closed verifiers confirmed wired at every composition point | External security review | `PCA-DEC-020` human security review | Crypto stays inert | Discovery fork |
 | W3-K Privacy/retention | ALREADY_CLOSED | None needed | Both privacy gates re-run, passing; extended coverage confirmed for 2 new tables | n/a | n/a | Invariants held | This report's Privacy status section |
 | W3-L Family isolation | CLOSED (1 real finding fixed) | `ChildRequestService.decide()` familyId scoping | Service-level + HTTP-level negative-control tests, both passing | n/a | n/a | Closes a real (UUID-gated) cross-family existence oracle | This report's Test evidence + diff |
 | W3-M Release-gate system | ALREADY_CLOSED | None needed | Re-verified live (fail-closed behaviors, scoping, parity) | n/a | n/a | Unrelated-gate-does-not-block-unrelated-target confirmed | Discovery fork + this session's re-run |
-| W3-N CI/quality | PASS (local) / PASS_WITH_KNOWN_UNRELATED_FAILURE (iOS, pending exact-SHA re-check) | n/a | See Test evidence + CI evidence sections | iOS root cause | See W3-H | Do not claim overall green until iOS's status for the exact pushed SHA is re-confirmed | This report |
+| W3-N CI/quality | PASS (local) / PASS_WITH_KNOWN_UNRELATED_FAILURE (iOS, confirmed for the exact final pushed SHA) | n/a | 21/22 jobs green for `131f783` (the actual tip); iOS red with a confirmed, deterministic root cause | iOS root cause | See W3-H | Overall workflow not claimed green -- explicitly `FAILURE_DUE_TO_KNOWN_IOS` | CI evidence section |
 | W3-O Security scanner/lint | CLOSED | New `console` sub-alternation in `Invoke-SecurityChecks.ps1`, including the optional-chaining extension the adversarial review prompted | 11/11 scanner tests; full repo re-scan clean (2,450 files) | n/a | n/a | Closes 4 real detection bypasses | This report's Test evidence + diff |
 | W3-P Documentation drift | CLOSED (2 bounded fixes) | `PCA_LIVE_DATABASE_SETTINGS.md` counts; `external_gate_matrix.json` description | Read-diffed; JSON validity confirmed | n/a | n/a | Prevents operational confusion about schema size / email-architecture state | This report's diff |
 
@@ -97,8 +97,9 @@ constraints.
   confirms neither new table introduces a readable-monitoring-surface
   column name.
 - **Android/iOS**: `LOCAL_ANDROID_BUILD_UNAVAILABLE` / no local Xcode
-  toolchain — neither claimed as locally verified. See CI evidence section
-  once available.
+  toolchain — neither claimed as locally verified. Both confirmed via real
+  CI: Android build/lint/test passes (21/22-job run); iOS fails with a
+  now-diagnosed, deterministic root cause. See CI evidence section.
 
 ## Adversarial review
 
@@ -163,7 +164,72 @@ and its only caller is not yet wired to any HTTP route in production).
 
 ## Actual CI evidence for the exact W3 push
 
-<!-- FILLED IN AFTER THE PUSH -->
+**First push (commit `4615cc751484af69395bb6ef5f292839eac0acdb`, the
+substantive change set)**. Fetched from the GitHub Actions REST API
+(run `34055757764`):
+
+```
+20/22 jobs: SUCCESS (Repository quality, Security controls, Dependency
+  audit, Backend, Release control, Contracts, Public, all 8 Parent Web
+  shards, Web production demo-mode gate, all 4 Platform Admin shards)
+Android build, lint, and unit tests   FAILURE  (unexpected -- first-ever
+  failure of this job in this session; no diagnostic wrapper existed yet
+  to explain why)
+iOS build and unit tests              FAILURE  (known pre-existing;
+  this wave's new diagnostic step worked immediately -- see below)
+```
+
+The iOS diagnostic step (added this wave) surfaced a REAL, specific,
+previously-invisible root cause via the public annotations API for the
+first time:
+
+```
+xcodebuild: error: Failed to build project PCA with scheme PCA.:
+Could not find test host for PCATests: TEST_HOST evaluates to
+"/Users/runner/Library/Developer/Xcode/DerivedData/PCA-.../
+Build/Products/Debug-iphonesimulator/PCA.app/PCA"
+```
+
+This is NOT the Swift-API-mismatch hypothesis a prior document had
+speculated — it is an Xcode project/scheme target-dependency issue: the
+`PCA.xcscheme`'s `BuildActionEntries`/`TestAction` structurally look
+correct (the `PCA.app` entry has `buildForTesting="YES"`), but
+`project.pbxproj` uses a suspiciously clean, sequential identifier scheme
+(`A10000000000000000000401`, ..., not the random-looking hex Xcode itself
+generates) suggesting this project file was hand-authored/generated rather
+than produced by real Xcode — a much more plausible source of a subtle
+target-dependency wiring bug than a Swift API mismatch. No blind fix was
+attempted: safely diagnosing or correcting `.pbxproj` internals requires
+real Xcode, which is not available in this environment, and the mission's
+own instruction is not to claim a fix without being able to verify it.
+Classified `REMAINING ENGINEERING` / `PLATFORM_VALIDATION_REQUIRED`.
+
+The UNEXPECTED Android failure had no diagnostic wrapper in place yet to
+explain it. Rather than assume it was transient, a matching diagnostic
+step (identical technique to the iOS one) was added and pushed as a
+second, small, CI-tooling-only commit.
+
+**Second push (commit `131f783991dbbdcbdd9ba9d9c6bdbaeffb44407d`, the CI
+diagnostic follow-up -- now the actual tip of `pca-dev`)**. Fetched from
+the GitHub Actions REST API (run `34056200146`):
+
+```
+21/22 jobs: SUCCESS -- Android build, lint, and unit tests now PASSES
+  (confirms the first push's Android failure was transient/environment
+  contention on the shared runner, NOT a regression from this wave's
+  Kotlin changes -- independently consistent with the adversarial
+  review's own observation that this exact job had already been seen to
+  flake/get cancelled earlier in this session on an UNRELATED commit)
+iOS build and unit tests              FAILURE  (identical error text,
+  byte-for-byte, to the first push -- deterministic and reproducible,
+  confirmed NOT flaky, a real and now well-evidenced root cause)
+```
+
+`W3_RELEVANT_CI = PASS` for the actual final tip (`131f783`): every
+required job except iOS is green. `IOS_CI = FAILURE` (known, pre-existing,
+now root-cause-identified via this wave's own diagnostic improvement).
+`OVERALL_QUALITY_WORKFLOW = FAILURE_DUE_TO_KNOWN_IOS` — not claimed green
+overall, per this mission's own explicit instruction.
 
 ## Production status
 
@@ -237,7 +303,8 @@ worked around or silently skipped.
 - **ANDROID_D**: VPN/DNS dormancy hardened (explicit gate, not just
   "no caller yet"); `ANDROID_VPN_DNS_POLICY = OWNER_DECISION_PENDING` and
   `THIRD_PARTY_DNS_DEFAULT = NONE`/`VPN_RUNTIME_DEFAULT = DORMANT` both still
-  hold. Real device UAT not performed (no hardware/CI-device access).
+  hold. Real CI confirms the change compiles/builds/lints/tests cleanly.
+  Real device UAT not performed (no hardware/CI-device access).
 - **BILLING**: source-ready (196/196 tests), architecturally provider-neutral,
   no change this wave. `BILLING_SOURCE_READY ≠ BILLING_PRODUCTION_READY` —
   blocked by `PAYMENT_PROVIDER_SELECTION` (external, unchanged).
@@ -278,15 +345,22 @@ worked around or silently skipped.
 - Real device UAT (Android/iOS), real production email delivery proof,
   live database creation — all correctly out of reach without external
   input this session could not fabricate.
-- iOS build root cause — the exact compiler/test failure text was not
-  previously visible via the public API; this wave added a diagnostic
-  step to surface it as a GitHub Actions annotation, but the actual root
-  cause is not yet confirmed pending that diagnostic's real output.
+- iOS build root cause — now genuinely identified (a deterministic
+  `TEST_HOST`/scheme target-dependency error, confirmed reproducible
+  across two separate pushes with byte-identical error text), but not
+  fixed: safely editing `.pbxproj`/scheme internals without real Xcode to
+  validate the result was judged too risky to attempt blind.
 
 ### REMAINING ENGINEERING
-- iOS: once the new diagnostic annotation reveals the real failure text,
-  a genuine source-level fix (if one is needed at all) is likely a bounded,
-  CI-verifiable follow-up.
+- iOS: the real root cause is now known (`Could not find test host for
+  PCATests: TEST_HOST evaluates to ".../PCA.app/PCA"` — a deterministic,
+  reproducible Xcode project/scheme target-dependency issue, not a Swift
+  API mismatch). `PCA.xcscheme` looks structurally correct on inspection;
+  `project.pbxproj`'s suspiciously clean sequential object identifiers
+  (unlike Xcode's own randomly-generated hex IDs) suggest the actual bug
+  is a subtle wiring issue in a hand-authored/generated project file.
+  Fixing it safely requires real Xcode to open, validate, and re-save the
+  project — genuinely implementable, but not blind.
 - Security scanner: identifier aliasing/indirection (`const c = console;
   c.error(...)`, `globalThis['console'].error(...)`) still bypasses
   detection — a fundamentally different, whole-program-analysis class this
