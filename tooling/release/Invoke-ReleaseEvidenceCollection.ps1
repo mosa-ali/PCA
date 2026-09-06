@@ -36,17 +36,39 @@
 .PARAMETER OutputDirectory
   Where to write the timestamped JSON evidence pack. Defaults to
   docs/release_readiness/evidence.
+
+.PARAMETER ReleaseTarget
+  REQUIRED (DW-W1-R1 P1-1). Which release this evidence pack is FOR. Must be
+  exactly one of: PUBLIC_A, AUTH_B, PARENT_C, ANDROID_D, IOS_FUTURE,
+  BILLING_FUTURE -- passed straight through to
+  tooling/release/Invoke-ReleaseGateCheck.ps1's own -ReleaseTarget. There is
+  no default and no interactive prompt: a missing or unrecognized value
+  fails this script closed immediately, before any evidence step runs, the
+  same fail-closed contract the release gate script itself enforces.
 #>
 [CmdletBinding()]
 param(
   [string] $RepositoryRoot = (Join-Path $PSScriptRoot '..\\..'),
   [switch] $RunDbTests,
   [switch] $RunAndroid,
-  [string] $OutputDirectory
+  [string] $OutputDirectory,
+  [string] $ReleaseTarget
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# --- -ReleaseTarget validation, BEFORE any evidence step runs (DW-W1-R1 P1-1,
+# mirrors Invoke-ReleaseGateCheck.ps1's own fail-closed contract exactly:
+# hand-validated rather than [Parameter(Mandatory)] so a missing value can
+# never hang waiting on an interactive prompt). -----------------------------
+$ValidReleaseTargets = @('PUBLIC_A', 'AUTH_B', 'PARENT_C', 'ANDROID_D', 'IOS_FUTURE', 'BILLING_FUTURE')
+if ([string]::IsNullOrWhiteSpace($ReleaseTarget) -or ($ValidReleaseTargets -notcontains $ReleaseTarget)) {
+  $gotValue = if ([string]::IsNullOrWhiteSpace($ReleaseTarget)) { '(not supplied)' } else { "'$ReleaseTarget'" }
+  Write-Host "-ReleaseTarget is required and must be exactly one of: $($ValidReleaseTargets -join ', '). Got: $gotValue." -ForegroundColor Red
+  Write-Host 'This is a fail-closed validation error -- no evidence-collection step was run.' -ForegroundColor Red
+  exit 1
+}
 
 $RepositoryRoot = (Resolve-Path $RepositoryRoot).Path
 if (-not $OutputDirectory) {
@@ -77,6 +99,7 @@ function Invoke-CapturedNpm {
 $Evidence = [ordered]@{
   generatedUtc     = (Get-Date).ToUniversalTime().ToString('o')
   repositoryRoot   = $RepositoryRoot
+  releaseTarget    = $ReleaseTarget
   git              = $null
   releaseGate      = $null
   dependencyAudits = [ordered]@{}
@@ -103,16 +126,38 @@ try {
   Pop-Location
 }
 
-# --- Release gate (crypto / UAT / external gates) ----------------------------
-Write-Step 'Release gate check'
+# --- Release gate (crypto / UAT / external gates), for THIS -ReleaseTarget --
+# DW-W1-R1 P1-1: this used to call the gate script with no -ReleaseTarget at
+# all, which (after the gate script's own DW-W1 fail-closed fix) now means
+# this call would itself fail closed rather than silently evaluating an
+# unscoped aggregate -- passing -ReleaseTarget through is what keeps this
+# evidence pack meaningful.
+Write-Step "Release gate check (ReleaseTarget=$ReleaseTarget)"
 $GateScript = Join-Path $RepositoryRoot 'tooling\release\Invoke-ReleaseGateCheck.ps1'
-$GateOutput = & pwsh -File $GateScript 2>&1 | Out-String
+$GateJsonPath = Join-Path ([System.IO.Path]::GetTempPath()) "pca-evidence-gate-$([Guid]::NewGuid().ToString('N')).json"
+$GateOutput = & pwsh -File $GateScript -ReleaseTarget $ReleaseTarget -JsonOutPath $GateJsonPath 2>&1 | Out-String
 $GateExit = $LASTEXITCODE
 Write-Host $GateOutput
+$GateJson = $null
+if (Test-Path -LiteralPath $GateJsonPath) {
+  try { $GateJson = Get-Content -LiteralPath $GateJsonPath -Raw | ConvertFrom-Json } catch { $GateJson = $null }
+  Remove-Item -LiteralPath $GateJsonPath -Force -ErrorAction SilentlyContinue
+}
 $Evidence.releaseGate = [ordered]@{
-  exitCode = $GateExit
-  ready    = ($GateExit -eq 0)
-  output   = $GateOutput
+  releaseTarget      = $ReleaseTarget
+  exitCode           = $GateExit
+  # DW-W1-R1 P0-2: exit 0 is the ONLY release-ready exit code now (2 means
+  # informational-only, 1 means genuinely not ready) -- this evidence pack
+  # must never claim `ready = true` for anything else.
+  ready              = ($GateExit -eq 0)
+  verdict            = if ($GateJson) { $GateJson.verdict } else { $null }
+  technicalGatesPass = if ($GateJson) { $GateJson.technicalGatesPass } else { $null }
+  ownerGatesPendingCount = if ($GateJson) { $GateJson.ownerGatesPendingCount } else { $null }
+  conditionalGatesPendingCount = if ($GateJson) { $GateJson.conditionalGatesPendingCount } else { $null }
+  output             = $GateOutput
+}
+if (-not $GateJson) {
+  $Evidence.notes.Add('Release gate check did not produce a parseable JSON summary (see releaseGate.output for the raw transcript).')
 }
 
 # --- Dependency audits ---------------------------------------------------------

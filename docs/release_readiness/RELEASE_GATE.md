@@ -2,16 +2,35 @@
 
 ## Rule
 
-A release candidate targeting any production capability that depends on
-functional device-session issuance or inbound envelope acceptance is
-**NOT RELEASABLE** while either of the following holds:
+`-ReleaseTarget` is REQUIRED (one of `PUBLIC_A`, `AUTH_B`, `PARENT_C`,
+`ANDROID_D`, `IOS_FUTURE`, `BILLING_FUTURE`) — there is no default, no
+interactive prompt, and a missing or unrecognized value fails the whole
+evaluation closed immediately. A release candidate for the given target is
+**NOT RELEASABLE** while any of the following, SCOPED TO THAT TARGET, holds:
 
 - `PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW` (i.e.
   `backend/src/main.ts` still wires `RejectingDeviceSignatureVerifier` /
   `RejectingEnvelopeSignatureVerifier` from
-  `backend/src/runtime-sync/RejectingCryptoVerifiers.ts`), or
-- `REAL_UAT = NOT_EXECUTED` (i.e. `uat_execution_log.json` `status` is not
-  `COMPLETE` with a recorded go/no-go decision).
+  `backend/src/runtime-sync/RejectingCryptoVerifiers.ts`) — only evaluated
+  for targets that actually depend on it (currently `PARENT_C`,
+  `ANDROID_D`, `IOS_FUTURE`; never `PUBLIC_A` or `AUTH_B`), or
+- `REAL_UAT` is not satisfied for the cases actually relevant to that
+  target (i.e. `uat_execution_log.json`'s human-logged `cases` don't cover
+  every planned case `UAT_TEST_PLAN.md` §4 assigns to that target — a
+  target with zero relevant cases is vacuously satisfied), or
+- an external gate whose `releaseScope` (a HARD dependency) includes that
+  target is not `CLOSED`.
+
+A gate whose `conditionalReleaseScope` (a real but FEATURE-SCOPED
+dependency, not a hard one) includes the target is surfaced separately
+(`CONDITIONAL_GATES_PENDING`) but never blocks the base release for that
+target — see
+[`docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv`](../supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv)
+(YES → hard, PARTIAL → conditional, NO → neither) for the authoritative
+per-gate-per-target answer key, and
+[`tooling/release/ValidateFableScopeParity.mjs`](../../tooling/release/ValidateFableScopeParity.mjs)
+for the tool that reconciles every cell of it against
+`external_gate_matrix.json`.
 
 This is not a bypassable checklist item. It is enforced mechanically by
 [`tooling/release/Invoke-ReleaseGateCheck.ps1`](../../tooling/release/Invoke-ReleaseGateCheck.ps1),
@@ -20,24 +39,40 @@ which:
 1. Scans `backend/src/main.ts` for the Rejecting verifier wiring to derive
    `PRODUCTION_CRYPTO_SUITE` state directly from source — it does not trust
    a hand-edited flag, because that would be trivially gameable.
-2. Reads `uat_execution_log.json`'s `status` field to derive `REAL_UAT`
-   state. This one *is* a hand-maintained file, because "did a human run
-   real-device UAT" cannot be derived from source code — it can only be
-   attested by the human who did it, which is why changing it away from
-   `NOT_EXECUTED` requires the owner discipline described in that file's
-   own header.
+2. Reads `uat_execution_log.json`'s human-logged `cases` to derive
+   `REAL_UAT` state for the selected target. This is a hand-maintained
+   file, because "did a human run real-device UAT" cannot be derived from
+   source code — it can only be attested by the human who did it, which is
+   why advancing it requires the owner discipline described in that file's
+   own header. The script never writes to it.
 3. Reads `external_gate_matrix.json` and fails the gate for any external
-   gate relevant to the targeted release scope that is not `CLOSED`.
-4. Exits non-zero (`NOT READY`) unless every condition above is satisfied.
+   gate whose `releaseScope` includes the selected target and is not
+   `CLOSED`.
+4. Exits non-zero (`NOT READY`) unless every condition above is satisfied
+   for the selected target.
+
+`-IgnoreExternalGates` is informational-only, and this is enforced in the
+script's own output, not just documented here: with it set, `verdict` is
+always `INFORMATIONAL_ONLY` (never `READY`) and the exit code is always
+non-zero (`2`) — never the release-ready exit code — even when crypto/UAT
+happen to pass on their own, so a caller checking only the exit code can
+never mistake an `-IgnoreExternalGates` run for a real release verdict.
 
 ## Running it
 
 ```
-pwsh tooling/release/Invoke-ReleaseGateCheck.ps1
+pwsh tooling/release/Invoke-ReleaseGateCheck.ps1 -ReleaseTarget PUBLIC_A
 ```
 
-Exit code `0` means READY. Any other exit code means NOT READY, and the
-script prints exactly which condition(s) failed.
+(substitute the release you're actually evaluating — `AUTH_B`, `PARENT_C`,
+`ANDROID_D`, `IOS_FUTURE`, or `BILLING_FUTURE`)
+
+Exit code `0` means READY *for that target*. Exit code `1` means NOT READY.
+Exit code `2` means the run was `-IgnoreExternalGates`-only and is
+explicitly not a release verdict. The script prints exactly which
+condition(s) failed, and which are hard (`OWNER_GATES_PENDING`) vs.
+conditional (`CONDITIONAL_GATES_PENDING`). Pass `-JsonOutPath <file>` for a
+machine-readable summary.
 
 ## Current state (informational — re-run the script for the live answer)
 

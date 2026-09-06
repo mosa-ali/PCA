@@ -63,6 +63,20 @@ jobs:
       - name: Test quality tooling controls
         shell: pwsh
         run: ./tooling/quality/Invoke-QualityToolingTests.ps1
+      # DW-W1-R1 (section 10/12/18): release-gate scoping regression + parity
+      # gates. Both are plain node scripts with zero external dependencies
+      # (no npm ci needed) that invoke the already-cross-platform pwsh
+      # release-gate script; they belong here rather than a new job because
+      # this job already runs pwsh-based repository-wide checks and neither
+      # script needs anything this job doesn't already have.
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Test release-gate -ReleaseTarget scoping (hard invariants + negative controls)
+        run: node tooling/release/Test-ReleaseGateScoping.mjs
+      - name: Validate FABLE release-scope parity (full, non-sampled reconciliation)
+        run: node tooling/release/ValidateFableScopeParity.mjs
 
   backend-tests:
     # PPR-2 (W6). Before this job existed, this workflow ran ZERO backend tests

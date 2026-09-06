@@ -58,7 +58,7 @@ self-report:
 - **Equivalence false-positive**: the coordinator re-ran `introspect-schema.mjs` + `compare-schema-snapshots.mjs` from scratch against the two schemas Agent C left in place, independently reproducing `EXACT_MATCH`.
 - **Eye-protection foreign read / existence oracle / family_id leakage**: the coordinator read the final repository file directly and confirmed the `AND family_id = ?` filter, then re-ran all 18 DB+HTTP tests.
 - **Accidental production/live infrastructure access**: `git diff | grep` for production hostnames/credentials/key material returned zero matches; `docker-compose.yml` and `backend/compose.yaml` are both untouched.
-- **Ownership violations**: `git status --short` shows exactly the 14 files each agent was authorized to touch (11 modified + 3 new) — nothing else.
+- **Ownership violations**: `git status --short` shows exactly the 15 files each agent was authorized to touch (11 modified + 4 new: `backend/scripts/verify-test-double-conformance.mjs`, `backend/test/db/eyeProtectionSettingsHttp.mysql.test.mjs`, `tooling/release/Test-ReleaseGateScoping.mjs`, and this closure report itself) — nothing else. (Corrected in the DW-W1-R1 addendum below: the originally-published Wave-1 commit `18c6cf8` in fact touched 15 paths, not 14 as first written here — verified directly against `git show --stat 18c6cf8`.)
 - **Frozen supervisory authority**: `git diff --stat -- docs/supervision/` is empty — every FABLE document is byte-identical to before this wave (the closure report itself is a new, separate file, not an edit to any FABLE document).
 
 No P0 or P1 findings survived this review. Two pre-existing-and-disclosed
@@ -66,6 +66,83 @@ follow-ups were noted above (the `Invoke-ReleaseEvidenceCollection.ps1` caller
 needing a `-ReleaseTarget` argument, and stale doc references to the old
 no-argument usage) — neither is a defect introduced by this wave, and neither
 blocks this wave's own acceptance criteria.
+
+## DW-W1-R1 addendum: closing the primary review findings
+
+Primary ChatGPT independently reviewed the Wave-1 commit (`18c6cf8`) and
+returned 2 P0 and 3 P1 findings, all now closed below. This addendum does
+not reopen or rewrite the Wave-1 table above, or any FABLE document — it
+records what changed on top, why, and how it was verified.
+
+### Findings closed
+
+| ID | Finding | Fix | Verification |
+|---|---|---|---|
+| P0-1 | A gate with a missing/null/non-array `releaseScope` silently defaulted to an empty scope (failed OPEN). | `Invoke-ReleaseGateCheck.ps1` now fails the WHOLE script closed on a missing property, `null`, or a non-array value for `releaseScope` **or** `conditionalReleaseScope`, on **any** overlap between the two arrays for the same target, and on a duplicate gate id anywhere in the matrix. | `Test-ReleaseGateScoping.mjs` §5 exercises all of these via safe mutate-then-restore (byte-identical restoration verified). Independently re-verified by the fresh reviewer via direct mutation of the real files (not the test harness). |
+| P0-2 | `-IgnoreExternalGates` could exit `0` with `VERDICT: READY` whenever crypto/REAL_UAT happened to pass on their own (reproduced live for `PUBLIC_A` before the fix: exit `0`, `VERDICT: READY`, external gates silently skipped). | `-IgnoreExternalGates` now always reports `verdict = "INFORMATIONAL_ONLY"`, `releaseReady = false`, `externalGatesEvaluated = false`, and exits `2` — never `0`, never `READY` — regardless of how the technical signals came out. | `Test-ReleaseGateScoping.mjs` §3 runs this for `PUBLIC_A`, `AUTH_B`, and `ANDROID_D` for real. Fresh reviewer independently re-ran all 6 targets live and confirmed the same. |
+| P1-1 | `Invoke-ReleaseEvidenceCollection.ps1` called the release gate with no `-ReleaseTarget` at all. | Added a required `-ReleaseTarget` (same fail-closed contract as the gate script itself), passed straight through to `Invoke-ReleaseGateCheck.ps1 -ReleaseTarget`, and recorded in the evidence pack's `releaseGate` block. | Verified live: missing/garbage target fails in <1s before any evidence step runs; a partial timed run for `PUBLIC_A` and `AUTH_B` shows `RELEASE_TARGET: <target>` in the inner gate-check output, proving propagation. Fresh reviewer independently reproduced the same. |
+| P1-2 | A FABLE `PARTIAL` scope cell (e.g. `PUBLIC_REPLY_IDENTITY`/`AUTH_B`, `PRODUCTION_EMAIL_DELIVERY`/`ANDROID_D`+`IOS_FUTURE`, `PLATFORM_ADMIN_ALERT_DELIVERY`, `DEPLOYED_LOG_METRICS_PIPELINE_CONFIG`, `OBSERVABILITY_PIPELINE`, `YOUTUBE_MODE_B_POLICY_REVIEW`, `YOUTUBE_PLATFORM_API_PARTNERSHIP`, `CLOUD_AI_OWNER_DECISION`) had been flattened into a hard `releaseScope` blocker. | Added an explicit `conditionalReleaseScope` array alongside `releaseScope` on every one of the 37 gates, populated by a full, non-sampled reconciliation of every row of `docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv` (YES→hard, PARTIAL→conditional, NO→neither) — not sampled, not guessed. Conditional gates are surfaced (`CONDITIONAL_GATES_PENDING`) but never added to `$Failures`. | `tooling/release/ValidateFableScopeParity.mjs` (new) checks all 222 gate×target cells programmatically — PASS. `Test-ReleaseGateScoping.mjs` §2b asserts the 8 previously-mis-scoped gates by name. Fresh reviewer independently hand-tabulated all 222 cells against the CSV and separately ran all 6 targets live — zero discrepancies. |
+| P1-3 | `verify-test-double-conformance.mjs` existed but nothing ran it automatically. | `backend/package.json`'s `test` script now runs it (after `build`, before the rest of the suite) — the existing CI `backend-tests` job already runs `npm test`, so this is now a CI gate with no separate wiring needed. | `npm test` run live: conformance gate executes and passes before the rest of the 2214-test suite. Fresh reviewer independently confirmed via a live `npm test` run and by reading the CI job. |
+| — | Small related items also closed per the review's own list. | `Test-ReleaseGateScoping.mjs` rewritten to use `node:path` `join()` throughout (no forced Windows backslash conversion) and now checks for `pwsh` up front with a clear error; `RELEASE_GATE.md`/`EXTERNAL_GATE_MATRIX.md`/`README.md`/`tooling/release/README.md` updated for the 5 items the review named (mandatory `-ReleaseTarget`, scoped behavior, conditional/PARTIAL scope, `-IgnoreExternalGates` semantics, evidence-collection target usage) — no broader stale-doc cleanup attempted; this closure report's own "14 files" miscount corrected to 15 (confirmed against `git show --stat 18c6cf8`); `$UatCaseTargetMap`'s case-ID identity (not just count) is now checked by regex-extracting every `- UAT-<CODE>-<NN>:` line from `UAT_TEST_PLAN.md` §4 and requiring exact set equality, with negative controls for a removed, added, and renamed case ID. | `Test-ReleaseGateScoping.mjs` §5b; fresh reviewer independently re-extracted the 50 case IDs and diffed them against the map, byte-identical. |
+
+### New/changed files this round
+
+Modified: `tooling/release/Invoke-ReleaseGateCheck.ps1`,
+`tooling/release/Invoke-ReleaseEvidenceCollection.ps1`,
+`tooling/release/Test-ReleaseGateScoping.mjs`,
+`docs/release_readiness/external_gate_matrix.json`, `backend/package.json`,
+`.github/workflows/quality-gates.yml`,
+`docs/release_readiness/RELEASE_GATE.md`,
+`docs/release_readiness/EXTERNAL_GATE_MATRIX.md`,
+`docs/release_readiness/README.md`, `tooling/release/README.md`. New:
+`tooling/release/ValidateFableScopeParity.mjs`. This closure report itself
+was also amended (the "14 files" correction above) — a legitimate,
+disclosed self-correction, not a FABLE/CSV authority document. No file
+under `docs/supervision/PCA_FABLE_*` was touched (confirmed:
+`git diff --stat -- docs/supervision/` shows only this closure report).
+`database/live-bootstrap/*`, `backend/scripts/verify-mysql.mjs`,
+`backend/src/eyeprotection/*`, and the eye-protection/parentAccount test
+files accepted in Wave 1 were not touched (confirmed via targeted
+`git diff --stat`) — no DB/IDOR regression was found, so per mission
+section 16 the equivalence campaign was not re-run.
+
+### Integration re-test (coordinator, after all R1 fixes)
+
+- `node tooling/release/Test-ReleaseGateScoping.mjs`: **0 failures** (extended this round with ~20 new assertions: explicit PUBLIC_A/AUTH_B `-IgnoreExternalGates` checks, FABLE-PARTIAL-is-conditional checks for all 8 corrected gates, missing/null/scalar/overlapping-scope negative controls, duplicate-gate-id negative control, and the UAT case-identity negative controls).
+- `node tooling/release/ValidateFableScopeParity.mjs`: **PASS** — 222 cells checked, 0 discrepancies.
+- `cd backend && npm test`: **2214/2214 PASS** (build → conformance gate → schema-privacy → server → full suite), identical to the Wave-1 baseline.
+- `git diff --check`: clean.
+- Full diff scope reviewed: exactly the files listed above; nothing under `database/`, `backend/src/eyeprotection`, `backend/test/db/{parentAccount,eyeProtectionSettings}*`, `docker-compose.yml`, or `backend/compose.yaml` changed.
+
+### Fresh adversarial review (genuinely independent — a separate agent, not the coordinator)
+
+A fresh, read-only reviewer agent (no context beyond the diff and this
+attack list) was launched via the Agent tool and completed successfully.
+Method: read the real diff directly, then independently reproduced —
+never merely trusted — the fixes by live-mutating the real files (with
+verified byte-identical restore) to force each failure mode, running the
+real `.ps1` script against all 6 targets with and without
+`-IgnoreExternalGates`, hand-tabulating all 222 gate×target cells against
+the FABLE CSV independently of `ValidateFableScopeParity.mjs`, parsing
+`.github/workflows/quality-gates.yml` with a real YAML parser, and
+confirming `Test-ReleaseGateScoping.mjs`'s Windows-only path construction
+was actually removed rather than merely relocated.
+
+**Result: 0 P0, 0 P1.** Two P2 (cosmetic) notes, both accepted as-is rather
+than requiring a fix:
+1. `ValidateFableScopeParity.mjs`'s REAL_UAT cross-check confirms the
+   signal is evaluated for every target but does not re-litigate DW-W1's
+   own case-relevance judgment call — a limitation the script's own
+   comments already disclose, and one independently backstopped by
+   `Invoke-ReleaseGateCheck.ps1`'s own exact-set-equality UAT-plan check
+   (verified separately by the reviewer).
+2. This closure report was edited outside the round's declared file list
+   — a disclosed, accurate self-correction (the "14→15 files" fix above),
+   not a change to any FABLE or CSV authority document.
+
+Overall verdict from the fresh reviewer: **safe to commit as-is** — every
+one of the 8 intended fixes was independently reproduced-and-confirmed,
+not merely read and accepted.
 
 ## Explicitly out of scope for this wave (per mission sections 5 and 25)
 

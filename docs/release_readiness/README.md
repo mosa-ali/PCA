@@ -21,13 +21,21 @@ runnable checks and real-device test plans for programme phases PCA-18
 
 `tooling/release/`:
 
-- `Invoke-ReleaseGateCheck.ps1` — the binding release gate. Exits non-zero
-  (NOT READY) unless `PRODUCTION_CRYPTO_SUITE` is reviewed, `REAL_UAT` is
-  `COMPLETE`, and every external gate is `CLOSED`.
+- `Invoke-ReleaseGateCheck.ps1` — the binding release gate. REQUIRES an
+  explicit `-ReleaseTarget` (`PUBLIC_A`/`AUTH_B`/`PARENT_C`/`ANDROID_D`/
+  `IOS_FUTURE`/`BILLING_FUTURE`, no default, fails closed if missing/
+  invalid). Exits non-zero (NOT READY) unless `PRODUCTION_CRYPTO_SUITE`,
+  `REAL_UAT`, and every external gate relevant to that target (per its
+  `releaseScope`) are satisfied for it. A gate's `conditionalReleaseScope`
+  entry for that target is a real but non-hard dependency, surfaced
+  separately, never a base-release blocker. `-IgnoreExternalGates` is
+  informational-only and machine-enforced as such: it never reports
+  `READY` and never exits `0`.
 - `Invoke-ReleaseEvidenceCollection.ps1` — collects reproducible evidence
   (git state, dependency audits, test counts, gate state) into a
-  timestamped JSON pack. Never invents numbers; records what it could not
-  run as explicitly skipped.
+  timestamped JSON pack, for the SAME required `-ReleaseTarget` it passes
+  through to the release gate above. Never invents numbers; records what it
+  could not run as explicitly skipped.
 
 ## What "release readiness" means here
 

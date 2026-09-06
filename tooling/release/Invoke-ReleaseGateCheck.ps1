@@ -32,11 +32,24 @@
     4. Every external gate in docs/release_readiness/external_gate_matrix.json
        relevant to -ReleaseTarget (per that gate's own "releaseScope" array)
        must be CLOSED. A gate whose releaseScope does not include the
-       selected target is not evaluated at all for that target. A gate whose
-       releaseScope contains a token outside the canonical release-target set
-       is a corrupt/undeclared reference and fails the WHOLE script closed
-       immediately (see $ValidReleaseTargets below), rather than silently
-       being ignored or silently blocking everything.
+       selected target is not evaluated at all for that target. A gate's
+       "conditionalReleaseScope" array (a FABLE PARTIAL cell) names targets
+       where the gate is a real but feature-scoped dependency -- surfaced
+       separately as CONDITIONAL_GATES_PENDING, never counted as a hard
+       blocker of that target's base release (DW-W1-R1 P1-2; see
+       docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv). Every
+       gate MUST declare BOTH arrays explicitly: a missing property, a null
+       value, a non-array value, an invalid/undeclared release-target token,
+       or a duplicate gate id anywhere in the matrix fails the WHOLE script
+       closed immediately (see $ValidReleaseTargets below) -- a missing or
+       malformed scope is NEVER silently treated as an empty scope
+       (DW-W1-R1 P0-1; this used to fail OPEN).
+
+  -IgnoreExternalGates is fully informational: this script's verdict field
+  is NEVER "READY" when external gates were not evaluated, and its exit code
+  is never the release-ready success code either, so no caller can mistake
+  an -IgnoreExternalGates run for a real release verdict by checking only
+  the exit code (DW-W1-R1 P0-2; see that parameter's own help below).
 
   This script must never be edited to make it report READY without the
   underlying condition actually changing. Its job is to tell the truth.
@@ -56,10 +69,15 @@
   For informational/local use only (e.g. checking crypto+UAT state alone).
   Does NOT make a real release candidate releasable -- external gates are
   still required for any real production promotion. Never pass this flag
-  in a CI/release-promotion context. This flag's effect is unchanged by the
-  -ReleaseTarget feature: it still only skips step 4 (the external gate
-  matrix loop) and always prints a warning that the result is not a real
-  verdict.
+  in a CI/release-promotion context. This flag still only skips step 4 (the
+  external gate matrix loop); crypto and scoped REAL_UAT are still fully
+  evaluated and can still fail the run. Machine-enforced, not just prose
+  (DW-W1-R1 P0-2): with this flag set, `verdict` in the console/JSON output
+  is ALWAYS "INFORMATIONAL_ONLY" -- NEVER "READY" -- and the exit code is
+  ALWAYS non-zero, even when crypto/REAL_UAT/validators all pass, so a
+  caller checking only the exit code (or a stray "READY" string) can never
+  mistake this for a real release-ready verdict. `releaseReady` and
+  `externalGatesEvaluated` are both explicitly `false` in the JSON output.
 
 .PARAMETER JsonOutPath
   Optional. When given, an additional machine-readable JSON summary of this
@@ -121,6 +139,10 @@ $Failures = [System.Collections.Generic.List[string]]::new()
 # PUBLIC_REPLY_IDENTITY) are still open.
 $TechnicalFailures = [System.Collections.Generic.List[string]]::new()
 $OwnerGatesPending = [System.Collections.Generic.List[psobject]]::new()
+# Gates whose CONDITIONAL scope (a FABLE PARTIAL cell) includes this target.
+# Surfaced for visibility only -- NEVER added to $Failures, so a conditional
+# gate can never block a base release verdict (DW-W1-R1 P1-2).
+$ConditionalGatesPending = [System.Collections.Generic.List[psobject]]::new()
 
 # --- 1. PRODUCTION_CRYPTO_SUITE, derived from source, release-scoped -------
 $CryptoSuiteBlockingTargets = @('PARENT_C', 'ANDROID_D', 'IOS_FUTURE')
@@ -228,6 +250,33 @@ if ($UatCaseTargetMap.Keys.Count -ne $UatLog.totalCasesInPlan) {
   throw "REAL_UAT case-to-target map drift: this script's `$UatCaseTargetMap has $($UatCaseTargetMap.Keys.Count) cases but uat_execution_log.json declares totalCasesInPlan=$($UatLog.totalCasesInPlan). Update `$UatCaseTargetMap in this script to match docs/release_readiness/UAT_TEST_PLAN.md section 4 before trusting REAL_UAT scoping again."
 }
 
+# DW-W1-R1 section 14: count equality alone does not prove the same case IDs
+# are represented (two different sets of the same size would slip past it
+# undetected). UAT_TEST_PLAN.md section 4's catalogue is a deterministic,
+# reliably parseable list -- every real case is a top-level markdown bullet
+# of the exact form "- UAT-<CODE>-<NN>: <description>" (confirmed by
+# reading the full section: all 50 lines follow this shape with no
+# exceptions) -- so its case IDs are extracted here and compared by EXACT
+# SET EQUALITY against `$UatCaseTargetMap.Keys: a case ID present in the
+# plan but missing from the map, present in the map but missing from the
+# plan, or renamed/replaced all fail closed with a specific, actionable
+# diff, rather than only being caught if the total count happens to change.
+$UatPlanPath = Join-Path $RepositoryRoot 'docs\release_readiness\UAT_TEST_PLAN.md'
+if (-not (Test-Path -LiteralPath $UatPlanPath)) {
+  throw "Cannot verify REAL_UAT case-to-target map identity: $UatPlanPath not found."
+}
+$UatPlanContent = Get-Content -LiteralPath $UatPlanPath -Raw
+$UatPlanCaseIds = @([regex]::Matches($UatPlanContent, '(?m)^- (UAT-[A-Z0-9]+-\d+):') | ForEach-Object { $_.Groups[1].Value })
+if ($UatPlanCaseIds.Count -eq 0) {
+  throw "Cannot verify REAL_UAT case-to-target map identity: no case IDs could be parsed from $UatPlanPath section 4 (expected lines like '- UAT-ENR-01: ...'). Do not silently fall back to the count-only check above -- fix the parser or the plan's formatting."
+}
+$MapKeys = @($UatCaseTargetMap.Keys)
+$MissingFromMap = @($UatPlanCaseIds | Where-Object { $MapKeys -notcontains $_ })
+$ExtraInMap = @($MapKeys | Where-Object { $UatPlanCaseIds -notcontains $_ })
+if ($MissingFromMap.Count -gt 0 -or $ExtraInMap.Count -gt 0) {
+  throw "REAL_UAT case-to-target map identity drift: case ID(s) in UAT_TEST_PLAN.md but missing from `$UatCaseTargetMap: [$($MissingFromMap -join ', ')]. Case ID(s) in `$UatCaseTargetMap but absent from UAT_TEST_PLAN.md (renamed/removed?): [$($ExtraInMap -join ', ')]. Update `$UatCaseTargetMap in this script to match docs/release_readiness/UAT_TEST_PLAN.md section 4 exactly before trusting REAL_UAT scoping again."
+}
+
 $RelevantCaseIds = @($UatCaseTargetMap.Keys | Where-Object { $UatCaseTargetMap[$_] -contains $ReleaseTarget })
 
 $LoggedCasesById = @{}
@@ -313,23 +362,75 @@ if (-not $IgnoreExternalGates) {
     throw "Cannot evaluate external gates: $GateMatrixPath not found."
   }
   $GateMatrix = Get-Content -LiteralPath $GateMatrixPath -Raw | ConvertFrom-Json
+
+  # Structural check FIRST, over the whole matrix, before evaluating any
+  # single gate: a duplicate gate id is a corrupt register and must fail the
+  # WHOLE script closed rather than silently evaluating one copy of it
+  # (DW-W1-R1 P0-1).
+  $AllGateIds = @($GateMatrix.gates | ForEach-Object { $_.id })
+  $DuplicateGateIds = @($AllGateIds | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+  if ($DuplicateGateIds.Count -gt 0) {
+    throw "External gate matrix contains duplicate gate id(s): $($DuplicateGateIds -join ', '). Fix docs/release_readiness/external_gate_matrix.json -- gate ids must be unique before any gate can be evaluated for any release."
+  }
+
+  function Get-PcaStrictScopeArray {
+    param($Gate, [string] $PropertyName)
+    # Fail closed on a missing property, a null value, or a non-array value
+    # (e.g. a bare string) -- NEVER treat any of these as an empty scope.
+    # This is the exact defect this function exists to close: previously a
+    # missing/null releaseScope silently meant "blocks nothing" (fails OPEN).
+    if (-not ($Gate.PSObject.Properties.Name -contains $PropertyName)) {
+      throw "External gate matrix entry '$($Gate.id)' is missing the required property '$PropertyName'. Fail closed -- a missing scope is never treated as an empty scope. Add an explicit '$PropertyName': [] if this gate truly has none."
+    }
+    $Value = $Gate.$PropertyName
+    if ($null -eq $Value) {
+      throw "External gate matrix entry '$($Gate.id)' has '$PropertyName' = null. Fail closed -- use an explicit empty array [] instead of null."
+    }
+    if ($Value -isnot [array]) {
+      throw "External gate matrix entry '$($Gate.id)' has a non-array '$PropertyName' ($($Value.GetType().Name)). Fail closed -- '$PropertyName' must be a JSON array, e.g. [`"$ReleaseTarget`"] or []."
+    }
+    # The leading comma is load-bearing: a bare `return @($Value)` unrolls
+    # onto the function's output pipeline, and when $Value has ZERO elements
+    # that means the function emits nothing at all -- the caller's
+    # `$Scope = Get-PcaStrictScopeArray ...` then captures $null, not an
+    # empty array (confirmed empirically). `,@($Value)` wraps the array as a
+    # single pipeline object so an empty (or single-element) array survives
+    # the return intact.
+    return ,@($Value)
+  }
+
   foreach ($Gate in $GateMatrix.gates) {
-    $Scope = @()
-    if ($Gate.PSObject.Properties.Name -contains 'releaseScope' -and $null -ne $Gate.releaseScope) {
-      $Scope = @($Gate.releaseScope)
-    }
-    # Fail the WHOLE script closed on a corrupt/undeclared scope token --
-    # never silently ignore it and never silently let it block everything.
-    $InvalidTokens = @($Scope | Where-Object { $ValidReleaseTargets -notcontains $_ })
+    $Scope = Get-PcaStrictScopeArray -Gate $Gate -PropertyName 'releaseScope'
+    $ConditionalScope = Get-PcaStrictScopeArray -Gate $Gate -PropertyName 'conditionalReleaseScope'
+
+    # Fail the WHOLE script closed on a corrupt/undeclared scope token in
+    # EITHER array -- never silently ignore it and never silently let it
+    # block everything.
+    $InvalidTokens = @(($Scope + $ConditionalScope) | Where-Object { $ValidReleaseTargets -notcontains $_ })
     if ($InvalidTokens.Count -gt 0) {
-      throw "External gate matrix entry '$($Gate.id)' has invalid/undeclared releaseScope token(s): $($InvalidTokens -join ', '). Valid release targets are: $($ValidReleaseTargets -join ', '). Fix docs/release_readiness/external_gate_matrix.json before this gate can be evaluated for any release."
+      throw "External gate matrix entry '$($Gate.id)' has invalid/undeclared releaseScope/conditionalReleaseScope token(s): $($InvalidTokens -join ', '). Valid release targets are: $($ValidReleaseTargets -join ', '). Fix docs/release_readiness/external_gate_matrix.json before this gate can be evaluated for any release."
     }
+    $Overlap = @($Scope | Where-Object { $ConditionalScope -contains $_ })
+    if ($Overlap.Count -gt 0) {
+      throw "External gate matrix entry '$($Gate.id)' lists the same release target(s) in BOTH releaseScope and conditionalReleaseScope: $($Overlap -join ', '). A target must be a hard blocker (releaseScope) or a conditional dependency (conditionalReleaseScope), never both -- fix docs/release_readiness/external_gate_matrix.json."
+    }
+
     $InScope = $Scope -contains $ReleaseTarget
-    $ExternalGateState += [PSCustomObject]@{ id = $Gate.id; status = $Gate.status; owner = $Gate.owner; releaseScope = $Scope; inScope = $InScope }
+    $ConditionallyInScope = $ConditionalScope -contains $ReleaseTarget
+    $ExternalGateState += [PSCustomObject]@{
+      id = $Gate.id; status = $Gate.status; owner = $Gate.owner
+      releaseScope = $Scope; conditionalReleaseScope = $ConditionalScope
+      inScope = $InScope; conditionallyInScope = $ConditionallyInScope
+    }
     if ($InScope -and ($Gate.status -ne 'CLOSED')) {
       $msg = "External gate $($Gate.id) is $($Gate.status) (owner: $($Gate.owner)) and is in scope for release target $ReleaseTarget."
       $Failures.Add($msg)
       $OwnerGatesPending.Add([PSCustomObject]@{ id = $Gate.id; status = $Gate.status; owner = $Gate.owner })
+    } elseif ($ConditionallyInScope -and ($Gate.status -ne 'CLOSED')) {
+      # Conditional/feature-scoped dependency (FABLE PARTIAL): real and
+      # worth surfacing, but deliberately NEVER added to $Failures -- it
+      # must never block this target's BASE release verdict.
+      $ConditionalGatesPending.Add([PSCustomObject]@{ id = $Gate.id; status = $Gate.status; owner = $Gate.owner })
     }
   }
 } else {
@@ -362,17 +463,40 @@ if ($OwnerGatesPendingCount -eq 0) {
   Write-Host "OWNER_GATES_PENDING: $OwnerGatesPendingCount gate(s) open for ${ReleaseTarget}:"
   foreach ($og in $OwnerGatesPending) { Write-Host "  - $($og.id) [$($og.status)] (owner: $($og.owner))" }
 }
+$ConditionalGatesPendingCount = $ConditionalGatesPending.Count
+if ($ConditionalGatesPendingCount -eq 0) {
+  Write-Host 'CONDITIONAL_GATES_PENDING: NONE'
+} else {
+  Write-Host "CONDITIONAL_GATES_PENDING: $ConditionalGatesPendingCount gate(s) open for ${ReleaseTarget} (feature-scoped dependency -- does NOT block the base release):"
+  foreach ($cg in $ConditionalGatesPending) { Write-Host "  - $($cg.id) [$($cg.status)] (owner: $($cg.owner))" }
+}
 Write-Host ''
 
-$Verdict = if ($Failures.Count -gt 0) { 'NOT_READY' } else { 'READY' }
+# --IgnoreExternalGates makes this ALWAYS an informational-only run (DW-W1-R1
+# P0-2): never "READY", never the normal success exit code, regardless of how
+# many (if any) of $Failures are present -- so a caller checking only the
+# exit code or a stray "READY" string can never mistake this for a real
+# release verdict. externalGatesEvaluated/releaseReady are both explicitly
+# false in the JSON output for the same reason.
+if ($IgnoreExternalGates) {
+  $Verdict = 'INFORMATIONAL_ONLY'
+  $ReleaseReady = $false
+} else {
+  $Verdict = if ($Failures.Count -gt 0) { 'NOT_READY' } else { 'READY' }
+  $ReleaseReady = ($Verdict -eq 'READY')
+}
 
 if ($JsonOutPath) {
   [ordered]@{
     releaseTarget         = $ReleaseTarget
     verdict               = $Verdict
+    releaseReady          = $ReleaseReady
+    externalGatesEvaluated = -not [bool]$IgnoreExternalGates
     technicalGatesPass    = $TechnicalGatesPass
     ownerGatesPendingCount = $OwnerGatesPendingCount
     ownerGatesPending     = $OwnerGatesPending
+    conditionalGatesPendingCount = $ConditionalGatesPendingCount
+    conditionalGatesPending = $ConditionalGatesPending
     cryptoSuiteState      = $CryptoSuiteState
     cryptoSuiteInScope    = $CryptoSuiteInScope
     realUatState          = $RealUatState
@@ -384,6 +508,15 @@ if ($JsonOutPath) {
     externalGateState     = $ExternalGateState
     failures              = @($Failures)
   } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $JsonOutPath -Encoding utf8
+}
+
+if ($IgnoreExternalGates) {
+  Write-Host 'VERDICT: INFORMATIONAL_ONLY -- NOT A RELEASE READINESS VERDICT (external gates were not evaluated)' -ForegroundColor Yellow
+  if ($Failures.Count -gt 0) {
+    Write-Host 'The technical signals below still failed on their own merits:' -ForegroundColor Yellow
+    foreach ($f in $Failures) { Write-Host "  - $f" -ForegroundColor Yellow }
+  }
+  exit 2
 }
 
 if ($Failures.Count -gt 0) {

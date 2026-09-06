@@ -5,11 +5,18 @@ or docs — each requires a real human decision, real hardware, or a real
 external review outside the source tree. Machine-readable state lives in
 [`external_gate_matrix.json`](./external_gate_matrix.json); this file is
 a hand-maintained human-readable summary of the ORIGINAL SEVEN gates only.
-It is NOT generated and NOT exhaustive: the JSON now holds 33 gates and no
-generator for this file exists. Read the JSON for the authoritative list --
-`tooling/release/Invoke-ReleaseGateCheck.ps1` evaluates that JSON, not this
-table, and treats any status other than `CLOSED` as blocking for every gate
-in it with no release-scope filter.
+It is NOT generated and NOT exhaustive: the JSON now holds more gates than
+the table below and no generator for this file exists. Read the JSON for
+the authoritative list -- `tooling/release/Invoke-ReleaseGateCheck.ps1`
+evaluates that JSON, not this table, and REQUIRES an explicit
+`-ReleaseTarget`: each gate's `releaseScope` (hard blocker) and
+`conditionalReleaseScope` (feature-scoped, non-hard dependency) arrays
+determine whether it is even evaluated for the selected target at all --
+see [`RELEASE_GATE.md`](./RELEASE_GATE.md) and
+[`docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv`](../supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv)
+for the authoritative per-target scoping. A missing/null/malformed scope on
+any gate fails the whole evaluation closed rather than silently blocking
+nothing.
 
 | Gate ID | Status | What closes it |
 |---|---|---|
@@ -27,5 +34,8 @@ No agent, script, or lane may set any of these to CLOSED/GREEN. They are
 closed only by the accountable human owner named in
 `external_gate_matrix.json`, with an evidence reference filled into that
 file's `evidence` field. `tooling/release/Invoke-ReleaseGateCheck.ps1`
-treats any status other than `CLOSED` as blocking for gates the current
-release targets.
+treats any status other than `CLOSED` as a HARD blocker only for release
+target(s) named in that gate's own `releaseScope` array; a target named
+only in `conditionalReleaseScope` is surfaced as a real but non-hard
+dependency instead, and a target named in neither array is unaffected by
+that gate entirely.
