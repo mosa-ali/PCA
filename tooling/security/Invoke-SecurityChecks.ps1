@@ -18,7 +18,8 @@ function Get-TextContent([string] $Path) {
 }
 
 # Projects a source line down to its CODE, discarding the *content* of constant
-# string literals while KEEPING template-literal ${...} interpolations.
+# string literals (while KEEPING template-literal ${...} interpolations) AND
+# discarding // line comments and /* ... */ block comments entirely.
 #
 # Why this exists: a sensitive word inside a fixed message string ("Usage: ...",
 # "=== PRODUCTION_DEMO_MODE_GATE (parent-web) ===", "PARENT_CONSOLE_ERRORS=") is a
@@ -28,12 +29,41 @@ function Get-TextContent([string] $Path) {
 # conflated the two and produced false failures on three files that log nothing
 # sensitive at all, while adding nothing to real detection.
 #
+# PCA-DW-W2-2B correction: prose -- comments, and especially JSDoc -- routinely
+# ends a sentence in a word this scanner's call-pattern also matches ("...not a
+# log.") and, within the following 160-char window, goes on to mention a
+# sensitive term in ordinary English or a documented path
+# ("/children/:childId/activity") -- see parent-web/src/components/dashboard/
+# ActivityCard.tsx's header comment, the false positive this fixes. A comment
+# is not executable; it cannot log anything at runtime, exactly like a string
+# literal's content above. Comment-stripping is applied ONLY inside this
+# function (i.e. only to the sensitive-logging detector below) -- the secret/
+# private-key/recovery-material/telemetry detectors still scan comments
+# unchanged, since a real secret pasted into a comment is still a real leak.
+#
+# Quote-aware: a `//` or `/*` that appears INSIDE a string/template literal is
+# not treated as starting a comment (string/template scanning below still
+# runs first and consumes the whole literal before comment-detection ever
+# sees its contents).
+#
+# Block comments can span multiple lines, so the caller threads
+# $InBlockComment (a [ref] to a single per-file boolean, reset before each
+# file's line loop) across successive calls -- one call's "still inside an
+# unterminated /* at end of line" exit state is the next call's entry state.
+#
 # Called only for lines that already matched the cheap whole-file pattern below,
 # so its per-character cost is paid on a handful of lines, not on every tracked file.
-function Get-CodeProjection([string] $Line) {
+function Get-CodeProjection([string] $Line, [ref] $InBlockComment) {
   $Builder = [System.Text.StringBuilder]::new()
   $Index = 0
   while ($Index -lt $Line.Length) {
+    if ($InBlockComment.Value) {
+      $CloseIndex = $Line.IndexOf('*/', $Index)
+      if ($CloseIndex -lt 0) { break }
+      $Index = $CloseIndex + 2
+      $InBlockComment.Value = $false
+      continue
+    }
     $Char = $Line[$Index]
     if ($Char -eq "'" -or $Char -eq '"') {
       $Quote = $Char
@@ -66,6 +96,15 @@ function Get-CodeProjection([string] $Line) {
       }
       [void]$Builder.Append('`')
       $Index++
+      continue
+    }
+    if ($Char -eq '/' -and ($Index + 1) -lt $Line.Length -and $Line[$Index + 1] -eq '/') {
+      break
+    }
+    if ($Char -eq '/' -and ($Index + 1) -lt $Line.Length -and $Line[$Index + 1] -eq '*') {
+      $CloseIndex = $Line.IndexOf('*/', $Index + 2)
+      if ($CloseIndex -lt 0) { $InBlockComment.Value = $true; break }
+      $Index = $CloseIndex + 2
       continue
     }
     [void]$Builder.Append($Char)
@@ -166,8 +205,8 @@ $AggregateSuffixPattern = '(?i)^(?:count|total|length|size|quantity)s?\b'
 # per-line projection below never runs for it.
 $SensitiveLoggingPattern = $SensitiveLoggingCallPattern + '.{0,160}' + $SensitiveTermPattern
 
-function Get-SensitiveLoggingHit([string] $Line) {
-  $Code = Get-CodeProjection $Line
+function Get-SensitiveLoggingHit([string] $Line, [ref] $InBlockComment) {
+  $Code = Get-CodeProjection $Line $InBlockComment
   foreach ($Call in [regex]::Matches($Code, $SensitiveLoggingCallPattern)) {
     $Start = $Call.Index + $Call.Length
     if ($Start -ge $Code.Length) { continue }
@@ -253,10 +292,16 @@ foreach ($TrackedPath in $TrackedFiles) {
 
     if ($Content -match $SensitiveLoggingPattern -and $SensitiveLoggingExemptPaths -notcontains $NormalPath) {
       $LineNumber = 0
+      # Tracks "still inside an unterminated /* from a prior line" across this file's lines.
+      # Reset per file. Every line goes through Get-SensitiveLoggingHit (not gated behind the
+      # cheap raw-line prefilter this replaced) so that state is threaded correctly even for a
+      # line that opens a block comment without itself matching the sensitive-logging shape --
+      # gating per-line on the raw prefilter would silently skip updating this state exactly on
+      # those lines, corrupting comment-boundary tracking for every line after them.
+      $InBlockComment = $false
       foreach ($Line in ($Content -split "`r?`n")) {
         $LineNumber++
-        if ($Line -notmatch $SensitiveLoggingPattern) { continue }
-        $Hit = Get-SensitiveLoggingHit $Line
+        $Hit = Get-SensitiveLoggingHit $Line ([ref]$InBlockComment)
         if ($null -ne $Hit) {
           Add-Failure $Failures "potential prohibited sensitive logging statement (`"$Hit`" logged as a value): ${TrackedPath}:$LineNumber"
         }
