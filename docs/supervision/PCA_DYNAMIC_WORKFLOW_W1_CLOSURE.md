@@ -186,7 +186,7 @@ without checking.
 
 | ID | Finding | Fix | Verification |
 |---|---|---|---|
-| P1-A | The release-scope/parity steps were appended to `repository-quality`, a job with a pre-existing, unrelated failure earlier in its step sequence, so they never actually ran. | Removed both steps from `repository-quality`. Added a new, independent job, `release-control` ("Release control integrity"), in the same workflow file, with no `needs:` dependency on any other job — checkout, Node setup, `Test-ReleaseGateScoping.mjs`, `ValidateFableScopeParity.mjs`. Fixing the pre-existing `repository-quality` framework itself is explicitly out of scope. | YAML re-parsed with a real parser (`js-yaml`) confirming valid syntax and job independence (`needs: undefined`). **Actual GitHub Actions execution for the R2 commit is required before this finding is considered closed — see the "Actual CI evidence" sub-section below, completed after the R2 push.** |
+| P1-A | The release-scope/parity steps were appended to `repository-quality`, a job with a pre-existing, unrelated failure earlier in its step sequence, so they never actually ran. | Removed both steps from `repository-quality`. Added a new, independent job, `release-control` ("Release control integrity"), in the same workflow file, with no `needs:` dependency on any other job — checkout, Node setup, `Test-ReleaseGateScoping.mjs`, `ValidateFableScopeParity.mjs`. Fixing the pre-existing `repository-quality` framework itself is explicitly out of scope. | YAML re-parsed with a real parser (`js-yaml`) confirming valid syntax and job independence (`needs: undefined`). **CLOSED**: the `release-control` job genuinely ran (never skipped, never hidden) on every one of 4 real pushes and now genuinely PASSES on the real GitHub Actions runner for commit `6f6a1ee` — see "Actual CI evidence" / "FINAL CI EVIDENCE" below for the full run history, including two further real (unrelated to P1-A) CI-only defects found and fixed along the way. |
 | P1-B | `REAL_UAT` was reported `NOT_APPLICABLE_TO_TARGET` (vacuously satisfied) for any target with zero relevant planned UAT cases — including `AUTH_B`, despite `docs/supervision/PCA_FABLE_EXTERNAL_GATE_RELEASE_SCOPE.csv` marking `REAL_UAT = YES` for `AUTH_B` (and every other target) with no `NO`/`PARTIAL` cell anywhere. `ValidateFableScopeParity.mjs` explicitly exempted this from parity checking. | Added 4 new planned UAT cases (`UAT_TEST_PLAN.md` §4.16: `UAT-AUTH-01`..`04`, covering registration+verification, login, logout/session, and password reset/recovery — explicitly requiring a REAL, non-sandbox email provider) mapped to `AUTH_B` in `$UatCaseTargetMap`. The zero-relevant-case branch in `Invoke-ReleaseGateCheck.ps1` now reports `UAT_PLAN_INCOMPLETE_FOR_TARGET` (a real, counted failure) instead of `NOT_APPLICABLE_TO_TARGET`. `ValidateFableScopeParity.mjs`'s blanket exemption is removed and replaced with a narrow, NAMED, justified `ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS` allowlist covering exactly `PUBLIC_A`, `IOS_FUTURE`, `BILLING_FUTURE` (see "Open architecture question" below) — `AUTH_B` is deliberately NOT on it. `totalCasesInPlan` updated 50→54; `status`/`casesLogged`/`cases`/`goNoGoDecision` in `uat_execution_log.json` left untouched (still `NOT_EXECUTED`/`0`/`[]`/`null`). | `Test-ReleaseGateScoping.mjs` §5c, all via safe transient mutate-then-restore (byte-identical restoration verified): (A) a FABLE-YES target with 0 relevant cases (`PUBLIC_A`) reports `UAT_PLAN_INCOMPLETE_FOR_TARGET`, a real counted failure; (B) `AUTH_B` with 4 unexecuted cases reports `NOT_SATISFIED_FOR_TARGET`, `NOT_READY`; negative control: unmapping `AUTH_B`'s 4 cases from `AUTH_B` in a temporary copy of the `.ps1` source makes `ValidateFableScopeParity.mjs` genuinely FAIL, restored byte-identical, parity passes again after restore; (C) one of 4 `AUTH_B` cases logged PASS (transient `uat_execution_log.json` fixture) still reports `NOT_SATISFIED_FOR_TARGET`; (D) all 4 logged PASS (transient fixture only) reports `SATISFIED_FOR_TARGET`; (E) `uat_execution_log.json` byte-identical to its original committed content after every fixture — no fake PASS evidence left anywhere. |
 | (P2, optional) | `releaseScope`/`conditionalReleaseScope` could contain a duplicate token within the SAME array (e.g. `["AUTH_B", "AUTH_B"]`). | Added a small structural check: any duplicate token within either array fails the whole script closed. | `Test-ReleaseGateScoping.mjs` new assertion: a duplicated `AUTH_B` token in `releaseScope` fails closed with a message naming the defect. |
 
@@ -453,9 +453,43 @@ directly under `bash -e -o pipefail` locally (both that the happy path is
 unaffected and that a genuinely failing command now correctly reaches and
 executes the annotation logic) before this push.
 
-*(The actual GitHub Actions result for this fix's own commit is recorded
-immediately below, once that run completes — this is the authoritative,
-final result for Wave 1 R2 closure.)*
+**Fourth real push (commit `6f6a1ee`, the `bash -e` fix): GREEN.** Fetched
+directly from the GitHub Actions REST API
+(`GET /repos/mosa-ali/PCA/actions/runs/34021785803/jobs`), for head SHA
+`6f6a1ee608d5c3ae450c0a33f81f0b660d584e37`:
+
+```
+JOB: Release control integrity | completed | success
+   step: Check out source                                                   | completed | success
+   step: Set up Node.js                                                     | completed | success
+   step: Test release-gate -ReleaseTarget scoping (...)                     | completed | success
+   step: Validate FABLE release-scope parity (...)                         | completed | success
+```
+
+This is the authoritative result for Wave 1 R2 closure:
+`RELEASE_CONTROL_CI_JOB = COMPLETED_SUCCESS`,
+`RELEASE_SCOPE_TEST_CI = PASS`, `FABLE_SCOPE_PARITY_CI = PASS` — genuinely
+verified against the real GitHub Actions run for the exact commit that is
+now the tip of `pca-dev`, not inferred from local execution or YAML
+inspection alone. Getting here took three real, failed attempts and a real
+root-cause chase (documented in full above rather than only reporting the
+final green) — the job was never skipped or hidden behind a dependency at
+any point; it genuinely ran, genuinely failed twice for different real
+reasons, and now genuinely passes.
+
+**Note on adversarial review scope**: the fresh reviewer above (found 1 P0,
+now fixed) reviewed the substantive release-control logic changes and
+explicitly flagged that it could not itself trigger a real GitHub Actions
+run. The three follow-up commits after that review (`b67a407`, `c8e58bf`,
+`6f6a1ee`) changed ONLY the workflow YAML's shell-invocation mechanics
+(annotation surfacing, a defensive `execFileSync` guard, and `bash -e`
+handling) in response to genuine CI execution — none touched
+`Invoke-ReleaseGateCheck.ps1`'s gating behavior, `ValidateFableScopeParity.mjs`'s
+parity logic, or the UAT plan/cases the review already covered. A second
+fresh-review round was not spun up for these CI-plumbing-only fixes;
+instead, each was verified the way the reviewer itself said it could not —
+against the actual GitHub Actions run for its own commit — which is the
+exact gap that review flagged as unverifiable from its side.
 
 ## Explicitly out of scope for this wave (per mission sections 5 and 25)
 
