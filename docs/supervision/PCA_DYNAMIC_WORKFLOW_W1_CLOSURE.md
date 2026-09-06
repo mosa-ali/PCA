@@ -420,6 +420,39 @@ any non-zero exit instead of throwing. Audited every other `execFileSync`
 call in both this file and `ValidateFableScopeParity.mjs` — all three
 others were already correctly guarded.
 
+**Third real push (commit `c8e58bf`, the crash-guard fix): still
+`failure`, still zero custom annotations — which disproved the "crash"
+hypothesis and led to the ACTUAL root cause.** If the execFileSync fix had
+been the real cause, the diagnostic step's fallback branch ("No 'FAIL:'
+line found... last 25 lines") should have fired regardless of whether the
+underlying bug was fixed, since that branch runs unconditionally whenever
+`grep '^FAIL'` finds nothing. Its total silence on a THIRD attempt meant
+the diagnostic step's own error-handling code was never being reached at
+all, on any of the three attempts — a bug in the diagnostic scaffolding
+itself, not in the thing it was trying to diagnose.
+
+**Actual root cause**: GitHub Actions runs every `run:` step as `bash
+--noprofile --norc -eo pipefail {0}` by default — `-e` (errexit) is
+already active, on top of the `set -o pipefail` this addendum's own
+diagnostic steps redundantly (and, it turns out, insufficiently) added.
+Under `-e`, bash aborts the ENTIRE script the instant a failing pipeline
+completes — it never reaches the very next line (`status=$?`), let alone
+the `if [ $status -ne 0 ]` block that was supposed to emit annotations.
+Confirmed directly: `bash -e -o pipefail -c 'false-command | tee log;
+echo "never runs"'` genuinely never prints the second line. This explains
+all three prior failures uniformly: the diagnostic code added in `b67a407`
+and refined in `c8e58bf` was dead code on every single run, on the real
+GitHub runner, because the shell itself exited before reaching it — while
+every local reproduction attempt (both Docker containers) used a
+differently-invoked, non-`-e` shell and so never revealed this.
+
+**Fixed** (commit recorded below): wrapped each pipeline in `set +e` /
+`set -e` around the `status=$?` capture, the standard idiom for reading a
+command's real exit status under `errexit` without aborting first — verified
+directly under `bash -e -o pipefail` locally (both that the happy path is
+unaffected and that a genuinely failing command now correctly reaches and
+executes the annotation logic) before this push.
+
 *(The actual GitHub Actions result for this fix's own commit is recorded
 immediately below, once that run completes — this is the authoritative,
 final result for Wave 1 R2 closure.)*

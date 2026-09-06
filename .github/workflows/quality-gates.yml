@@ -92,27 +92,65 @@ jobs:
         with:
           node-version: '22'
       - name: Test release-gate -ReleaseTarget scoping (hard invariants + negative controls)
-        # Surface any FAIL line as a GitHub error annotation (visible on the
+        # Surface the failure as GitHub error annotations (visible on the
         # public checks/PR UI and via the public annotations API even
         # without authenticated log access) in addition to the full log --
         # a genuine diagnostic improvement, not a one-off hack: a future
         # failure here should never require anything beyond what the public
-        # checks UI already shows.
+        # checks UI already shows. Deliberately NOT limited to lines matching
+        # "FAIL": an uncaught exception/crash produces no such line at all,
+        # so on any non-zero exit this emits every FAIL line AND (if none
+        # matched, i.e. likely a crash) the last 25 lines of raw output,
+        # so a crash is diagnosable exactly like a graceful assertion
+        # failure. Newlines/percent/CR are escaped per GitHub's workflow
+        # command format so multi-line output survives as one annotation.
         run: |
-          set -o pipefail
+          # GitHub Actions runs `run:` steps as `bash --noprofile --norc -eo
+          # pipefail {0}` by default -- `-e` (errexit) is ALREADY active.
+          # Confirmed the hard way (DW-W1-R2): a first attempt here added
+          # `set -o pipefail` (redundant -- already on) but relied on
+          # reaching `status=$?` on the line AFTER the pipeline to detect
+          # failure -- under `-e`, bash aborts the WHOLE script the instant
+          # the failing pipeline completes, never reaching that line, so
+          # the diagnostic below never ran on either real attempt (both
+          # produced only the generic "Process completed with exit code 1"
+          # annotation, on a REAL node-script failure each time). Wrapping
+          # the pipeline in `set +e` / `set -e` is what actually lets this
+          # step inspect the real exit code before deciding whether to fail.
+          set +e
           node tooling/release/Test-ReleaseGateScoping.mjs 2>&1 | tee /tmp/release-scope-test.log
           status=$?
+          set -e
           if [ $status -ne 0 ]; then
-            grep '^FAIL' /tmp/release-scope-test.log | while IFS= read -r line; do echo "::error::$line"; done
+            escape() { printf '%s' "$1" | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            failLines=$(grep '^FAIL' /tmp/release-scope-test.log || true)
+            if [ -n "$failLines" ]; then
+              echo "$failLines" | while IFS= read -r line; do echo "::error::$(escape "$line")"; done
+            else
+              echo "::error::No 'FAIL:' line found -- likely an uncaught exception/crash, not a graceful assertion failure. Last 25 lines:"
+              echo "::error::$(escape "$(tail -n 25 /tmp/release-scope-test.log)")"
+            fi
             exit $status
           fi
       - name: Validate FABLE release-scope parity (full, non-sampled reconciliation)
+        # Same `set +e`/`set -e` wrapping as the step above, and for the
+        # identical reason -- GitHub's default `bash -e` would otherwise
+        # abort this script the instant the pipeline fails, before this
+        # diagnostic ever runs.
         run: |
-          set -o pipefail
+          set +e
           node tooling/release/ValidateFableScopeParity.mjs 2>&1 | tee /tmp/fable-parity.log
           status=$?
+          set -e
           if [ $status -ne 0 ]; then
-            sed -n '/^FAIL /,$p' /tmp/fable-parity.log | while IFS= read -r line; do echo "::error::$line"; done
+            escape() { printf '%s' "$1" | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            failLines=$(sed -n '/^FAIL /,$p' /tmp/fable-parity.log || true)
+            if [ -n "$failLines" ]; then
+              echo "$failLines" | while IFS= read -r line; do echo "::error::$(escape "$line")"; done
+            else
+              echo "::error::No 'FAIL ' block found -- likely an uncaught exception/crash, not a graceful validation failure. Last 25 lines:"
+              echo "::error::$(escape "$(tail -n 25 /tmp/fable-parity.log)")"
+            fi
             exit $status
           fi
 
