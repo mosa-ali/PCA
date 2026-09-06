@@ -37,6 +37,34 @@
 //      unhandled"); reproduced against the pre-fix scanner (confirmed a
 //      real bypass: the call silently vanished from the projection) before
 //      Read-TemplateLiteral/Read-TemplateInterpolation closed it.
+//   7. NEGATIVE CONTROL (PCA-DW-W3-O): a genuine console.error(child.token)
+//      call -- not console.log -- must still FAIL. A real, verified bypass
+//      existed here: the old $SensitiveLoggingCallPattern's `console\.`
+//      branch relied entirely on a shared trailing '\s*[.(]' requirement
+//      that only happens to close for .log( (caught incidentally via the
+//      separate bare "Log" alternative), never for .error/.warn/.info/
+//      .debug/.trace( despite this file's own prior comment claiming
+//      otherwise -- confirmed empirically before the fix
+//      ('console.error(x)' did not match the old pattern at all).
+//   8. NEGATIVE CONTROL (PCA-DW-W3-O): a genuine
+//      console['log'](child.token) call (bracket-notation member access)
+//      must still FAIL. A real, verified bypass existed here:
+//      Get-CodeProjection correctly strips the quoted 'log' literal's
+//      CONTENT (matching its own string-literal handling elsewhere), which
+//      left neither a literal '.' nor the substring "log" in the
+//      projection for the old pattern to match on, silently hiding the
+//      real call.
+//   9. NEGATIVE CONTROL (PCA-DW-W3 adversarial review): a genuine
+//      console?.error(child.token) call (optional chaining on the member
+//      access) must still FAIL. A real, verified residual bypass existed
+//      here after item 7's own fix: the `console` sub-alternation required
+//      `console` to be followed immediately (mod whitespace) by a literal
+//      '.' or '[', and a '?' before either broke both branches.
+//  10. NEGATIVE CONTROL (PCA-DW-W3 adversarial review): a genuine
+//      console.error?.(child.token) call (optional chaining on the CALL
+//      itself, after a normal, non-optional member access) must still
+//      FAIL -- the same class of gap as item 9, on the other side of the
+//      member name.
 //
 // Usage: node tooling/security/Test-SecurityChecks.mjs
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -126,6 +154,30 @@ try {
     'utf8',
   );
 
+  writeFileSync(
+    join(fixtureRoot, 'console-error-method-not-just-log.ts'),
+    "function reportChild(child) {\n  console.error('child token', child.token);\n}\n",
+    'utf8',
+  );
+
+  writeFileSync(
+    join(fixtureRoot, 'console-bracket-notation-bypass.ts'),
+    "function reportChild(child) {\n  console['log']('child token', child.token);\n}\n",
+    'utf8',
+  );
+
+  writeFileSync(
+    join(fixtureRoot, 'console-optional-chaining-bypass.ts'),
+    "function reportChild(child) {\n  console?.error('child token', child.token);\n}\n",
+    'utf8',
+  );
+
+  writeFileSync(
+    join(fixtureRoot, 'console-optional-chaining-call-bypass.ts'),
+    "function reportChild(child) {\n  console.error?.('child token', child.token);\n}\n",
+    'utf8',
+  );
+
   git(['add', '-A']);
   git(['commit', '--quiet', '-m', 'fixture files']);
 
@@ -138,6 +190,10 @@ try {
   ok(!result.output.includes('commented-out-call-is-inert.ts'), 'a real call shape that only appears commented-out (inert, never executes) is not flagged');
   ok(result.output.includes('template-literal-brace-depth-bypass.ts'), 'NEGATIVE CONTROL: a real console.log(child.token) call hidden behind a nested-string brace-depth trick inside ${...} is still caught');
   ok(result.output.includes('nested-template-literal-brace-depth-bypass.ts'), 'NEGATIVE CONTROL: a real console.log(child.token) call hidden behind a nested-TEMPLATE-LITERAL brace-depth trick inside ${...} is still caught');
+  ok(result.output.includes('console-error-method-not-just-log.ts'), 'NEGATIVE CONTROL (PCA-DW-W3-O): console.error(child.token) -- not just console.log -- is caught');
+  ok(result.output.includes('console-bracket-notation-bypass.ts'), 'NEGATIVE CONTROL (PCA-DW-W3-O): console[\'log\'](child.token) bracket-notation access is caught');
+  ok(result.output.includes('console-optional-chaining-bypass.ts'), 'NEGATIVE CONTROL (PCA-DW-W3 adversarial review): console?.error(child.token) optional chaining on the member access is caught');
+  ok(result.output.includes('console-optional-chaining-call-bypass.ts'), 'NEGATIVE CONTROL (PCA-DW-W3 adversarial review): console.error?.(child.token) optional chaining on the call itself is caught');
 } finally {
   rmSync(fixtureRoot, { recursive: true, force: true });
 }

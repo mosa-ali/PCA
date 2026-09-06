@@ -451,6 +451,15 @@ CREATE TABLE `complimentary_entitlement_grants` (
   CONSTRAINT `complimentary_entitlement_grants_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED',_utf8mb4'EXPIRED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- delete_now_ledger (defined by backend/migrations/0040_delete_now_ledger.sql)
+CREATE TABLE `delete_now_ledger` (
+  `action_id` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `purge_plan` json NOT NULL,
+  `completed_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`action_id`),
+  CONSTRAINT `delete_now_ledger_action_id_check` CHECK ((char_length(`action_id`) between 1 and 300))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- device_challenges (defined by backend/migrations/0001_mysql_baseline.sql)
 CREATE TABLE `device_challenges` (
   `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1201,6 +1210,19 @@ CREATE TABLE `platform_admin_step_up_sessions` (
   CONSTRAINT `platform_admin_step_up_sessions_admin_id_fk` FOREIGN KEY (`admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `platform_admin_step_up_sessions_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `platform_admin_sessions` (`session_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `platform_admin_step_up_sessions_scope_check` CHECK ((`scope` in (_utf8mb4'REFUND',_utf8mb4'SETTLEMENT_BANK_CONFIG',_utf8mb4'ADMIN_ROLE_GRANT',_utf8mb4'FAMILY_ACCOUNT_SUSPEND',_utf8mb4'FAMILY_ACCOUNT_REACTIVATE',_utf8mb4'ENTITLEMENT_LIMIT_OVERRIDE',_utf8mb4'COMPLIMENTARY_GRANT_MUTATION')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- profile_protection_mode (defined by backend/migrations/0039_profile_protection_mode.sql)
+CREATE TABLE `profile_protection_mode` (
+  `profile_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `mode` varchar(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'A',
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`profile_id`),
+  KEY `profile_protection_mode_family_idx` (`family_id`),
+  CONSTRAINT `profile_protection_mode_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `profile_protection_mode_mode_check` CHECK ((`mode` in (_utf8mb4'A',_utf8mb4'B'))),
+  CONSTRAINT `profile_protection_mode_profile_id_check` CHECK ((char_length(`profile_id`) between 1 and 128))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- protection_alerts (defined by backend/migrations/0025_protection_alerts.sql, altered by 0034_audit_alert_ciphertext_expiry.sql)

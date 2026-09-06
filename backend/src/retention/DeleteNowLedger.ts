@@ -13,8 +13,11 @@ export interface DeleteNowRecord {
  * mirrors familyenvelope/MessageIdempotencyLedger's shape deliberately
  * (same idempotency discipline, applied to a local one-time action rather
  * than a signed envelope).
+ *
+ * PCA-DW-W3-D: async (was synchronous) so a durable, MySQL-backed
+ * implementation is possible -- see MySqlDeleteNowLedger.ts.
  */
 export interface DeleteNowLedger {
-  get(actionId: string): DeleteNowRecord | null;
-  record(actionId: string, plan: PurgePlan, completedAtUtc: Date): void;
+  get(actionId: string): Promise<DeleteNowRecord | null>;
+  record(actionId: string, plan: PurgePlan, completedAtUtc: Date): Promise<void>;
 }

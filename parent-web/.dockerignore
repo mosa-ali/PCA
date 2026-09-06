@@ -1,0 +1,35 @@
+# Build context for parent-web/Dockerfile.
+#
+# The Dockerfile copies the whole directory, mirroring platform-admin-web's own
+# .dockerignore for the identical reason: tsconfig.json's `include` lists src,
+# tests, e2e, and vite -- an enumerated COPY list would have to track that array
+# forever.
+#
+# So the directory goes in and this file takes out what must not: install and
+# build output the image rebuilds itself, local test artefacts, and anything
+# secret-shaped.
+
+node_modules
+dist
+test-results
+playwright-report
+coverage
+
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.pfx
+*.p12
+*.publishsettings
+id_rsa*
+
+.git
+.gitignore
+.vscode
+.idea
+*.log
+.DS_Store
+README.md

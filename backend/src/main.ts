@@ -39,7 +39,7 @@ import {
   RejectingDeviceSignatureVerifier,
   RejectingEnvelopeSignatureVerifier,
 } from './runtime-sync/index.js';
-import { InMemoryDeleteNowLedger } from './retention/InMemoryDeleteNowLedger.js';
+import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
@@ -221,13 +221,23 @@ import { PlatformAdminSettlementService } from './platformadmin/settlement/Platf
 // BlockDecisionStateService's already-recorded block/review decisions;
 // YouTubeDashboardCardProvider adapts ModeTransitionService's real,
 // persisted per-profile mode state (Mode B stays out of scope -- see that
-// provider's own doc comment). Both repositories are in-memory reference
-// implementations, matching this codebase's existing posture for
-// device-local/no-durable-store-yet domains (see BlockDecisionStateStore.ts's
-// and ModeTransitionService.ts's own doc comments) -- never a new MySQL
-// table invented here.
+// provider's own doc comment).
+//
+// BlockDecisionStateRepository remains an in-memory reference
+// implementation -- it is DEVICE-local browsing/block-decision state per
+// doc 14's privacy matrix (see BlockDecisionStateStore.ts's own doc
+// comment); a durable central store for it would be a privacy regression,
+// never merely a missing feature.
+//
+// PCA-DW-W3-D: ProfileModeRepository is now MySQL-backed
+// (migration 0039_profile_protection_mode.sql) -- unlike block-decision
+// state, a profile's current Mode A/B is parent-configured CONFIGURATION,
+// not readable activity content (same class as eye_protection_settings/
+// family_rbac_policy_config), so losing it to a restart was a genuine,
+// safely-closeable durability gap, not a privacy boundary.
 import { InMemoryBlockDecisionStateRepository } from './safebrowser/BlockDecisionStateStore.js';
-import { InMemoryProfileModeRepository, ModeTransitionService } from './youtube/ModeTransitionService.js';
+import { ModeTransitionService } from './youtube/ModeTransitionService.js';
+import { MySqlProfileModeRepository } from './youtube/MySqlProfileModeRepository.js';
 import { InMemoryModeBFeatureFlagRepository } from './youtube/ModeBFeatureFlagStore.js';
 import { ModeAUsageReportService } from './youtube/ModeAUsageReportService.js';
 import { DashboardAggregatorService } from './parentpanel/DashboardAggregatorService.js';
@@ -325,7 +335,11 @@ async function start(): Promise<void> {
   // is deliberately never a durable PCA server audit log, only the
   // in-memory reference implementation the audit domain itself ships.
   const familyAuditService = new FamilyAuditService(new InMemoryFamilyAuditRepository());
-  const deleteNowLedger = new InMemoryDeleteNowLedger();
+  // PCA-DW-W3-D: MySQL-backed (migration 0040_delete_now_ledger.sql) --
+  // was in-memory only, meaning a restart between an original Delete-Now
+  // call and a client's retried/duplicated call lost the idempotency
+  // record of the action having already run.
+  const deleteNowLedger = new MySqlDeleteNowLedger();
   const deviceAuthService = new DeviceAuthService(
     new MySqlDeviceChallengeRepository(),
     deviceRepository,
@@ -780,7 +794,7 @@ async function start(): Promise<void> {
   // still-open gap this task does not close, per this task's own scope) --
   // this dashboard card only ever reads it.
   const blockDecisionStateRepository = new InMemoryBlockDecisionStateRepository();
-  const profileModeRepository = new InMemoryProfileModeRepository();
+  const profileModeRepository = new MySqlProfileModeRepository();
   const modeBFeatureFlagRepository = new InMemoryModeBFeatureFlagRepository();
   const modeTransitionService = new ModeTransitionService(profileModeRepository, modeBFeatureFlagRepository);
   const modeAUsageReportService = new ModeAUsageReportService();

@@ -65,16 +65,45 @@ test('a child request cannot self-approve: the CHILD device deciding its own req
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-child', 'APPROVED', 'act-1', 'idem-1'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-child', 'APPROVED', 'act-1', 'idem-1'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
+});
+
+// PCA-DW-W3-L: a request genuinely belonging to a DIFFERENT family must be
+// indistinguishable from an unknown requestId -- both are NOT_FOUND, never
+// a distinguishable NOT_AUTHORIZED_TO_DECIDE (which would be a cross-family
+// existence oracle: "your family's owner device gets a different error for
+// a request that exists-but-isn't-yours vs. one that never existed at
+// all").
+test('SECURITY: deciding a request with the WRONG familyId is NOT_FOUND, identical to an unknown requestId (no cross-family existence oracle)', async () => {
+  const { service } = makeHarness();
+  const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
+  const pending = await service.submit(draft);
+
+  async function captureErrorCode(fn) {
+    try {
+      await fn();
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  const wrongFamilyError = await captureErrorCode(() => service.decide(pending.requestId, 'fam-2', 'dev-owner', 'APPROVED', 'act-wrong-family', 'idem-wrong-family'));
+  assert.ok(wrongFamilyError instanceof ChildRequestError);
+  assert.equal(wrongFamilyError.code, 'NOT_FOUND');
+
+  const unknownIdError = await captureErrorCode(() => service.decide('00000000-0000-0000-0000-000000000000', 'fam-2', 'dev-owner', 'APPROVED', 'act-unknown', 'idem-unknown'));
+  assert.ok(unknownIdError instanceof ChildRequestError);
+  assert.equal(unknownIdError.code, wrongFamilyError.code, 'a request that exists but belongs to another family and one that never existed at all must produce the SAME error code');
 });
 
 test('an Owner can approve a pending request', async () => {
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-2', 'idem-2');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-2', 'idem-2');
   assert.equal(decided.state, 'APPROVED');
   assert.equal(decided.decidedByDeviceId, 'dev-owner');
   assert.equal(decided.decisionActionId, 'act-2');
@@ -84,7 +113,7 @@ test('an Owner can deny a pending request', async () => {
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'DENIED', 'act-3', 'idem-3');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'DENIED', 'act-3', 'idem-3');
   assert.equal(decided.state, 'DENIED');
 });
 
@@ -92,9 +121,9 @@ test('deciding an already-decided request with a DIFFERENT outcome is an illegal
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  await service.decide(pending.requestId, 'dev-owner', 'DENIED', 'act-4', 'idem-4');
+  await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'DENIED', 'act-4', 'idem-4');
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-5', 'idem-5'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-5', 'idem-5'),
     (err) => err instanceof ChildRequestError && err.code === 'ILLEGAL_TRANSITION',
   );
 });
@@ -103,8 +132,8 @@ test('a repeated decide() call with the SAME outcome and actor is idempotent', a
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  const first = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-6', 'idem-6');
-  const second = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-6-retry', 'idem-6-retry');
+  const first = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-6', 'idem-6');
+  const second = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-6-retry', 'idem-6-retry');
   assert.deepEqual(second, first);
 });
 
@@ -116,7 +145,7 @@ test('a request past its expiry cannot be decided and transitions to EXPIRED', a
 
   clock = new Date(pending.expiresAt.getTime() + 60_000);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-late', 'idem-late'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-late', 'idem-late'),
     (err) => err instanceof ChildRequestError && err.code === 'REQUEST_EXPIRED',
   );
   const found = await repo.get(pending.requestId);
@@ -139,7 +168,7 @@ test('acknowledgeApplied moves APPROVED to APPLIED_ACKNOWLEDGED only for the req
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-7', 'idem-7');
+  await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-7', 'idem-7');
   await assert.rejects(() => service.acknowledgeApplied(pending.requestId, 'dev-owner'), ChildRequestError);
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child');
   assert.equal(acknowledged.state, 'APPLIED_ACKNOWLEDGED');
@@ -149,7 +178,7 @@ test('DENIED and CANCELLED and EXPIRED are terminal -- no further transition is 
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  const denied = await service.decide(pending.requestId, 'dev-owner', 'DENIED', 'act-8', 'idem-8');
+  const denied = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'DENIED', 'act-8', 'idem-8');
   assert.equal(denied.state, 'DENIED');
   await assert.rejects(() => service.acknowledgeApplied(pending.requestId, 'dev-child'), ChildRequestError);
 });
@@ -162,7 +191,7 @@ test('deciding a request targeting a CHILD_PROFILE from a DIFFERENT family is de
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-in-other-family' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-cross-family', 'idem-cross-family'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-cross-family', 'idem-cross-family'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
@@ -192,7 +221,7 @@ test('deciding a CHILD_PROFILE-targeted request with NO membership resolver wire
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-no-resolver', 'idem-no-resolver'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-no-resolver', 'idem-no-resolver'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
@@ -225,7 +254,7 @@ test('an Owner approving a BONUS_TIME request grants exactly the requested (boun
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-bonus-approve', 'idem-bonus-approve');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-bonus-approve', 'idem-bonus-approve');
   assert.equal(decided.state, 'APPROVED');
   assert.equal(decided.grantedExtraMinutes, 30);
   assert.equal(decided.grantExpiresAtUtc.getTime(), T0.getTime() + 30 * 60_000);
@@ -242,7 +271,7 @@ test('an Owner may counter-offer a SHORTER duration than requested; the granted 
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 60, 'ALL');
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-counter', 'idem-counter', 15);
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-counter', 'idem-counter', 15);
   assert.equal(decided.state, 'COUNTERED');
   assert.equal(decided.grantedExtraMinutes, 15);
   assert.equal(decided.grantExpiresAtUtc.getTime(), T0.getTime() + 15 * 60_000);
@@ -254,11 +283,11 @@ test('a counter-offer that is not shorter than the request is rejected', async (
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-bad-counter', 'idem-bad-counter', 30),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-bad-counter', 'idem-bad-counter', 30),
     (err) => err instanceof ChildRequestError && err.code === 'COUNTER_OFFER_NOT_SHORTER',
   );
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-bad-counter-2', 'idem-bad-counter-2', 45),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-bad-counter-2', 'idem-bad-counter-2', 45),
     (err) => err instanceof ChildRequestError && err.code === 'COUNTER_OFFER_NOT_SHORTER',
   );
 });
@@ -269,7 +298,7 @@ test('a counter-offer over the bound is rejected even though it is shorter than 
   // exercises the counter-offer's OWN independent bound check with a request at the ceiling.
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 120, 'ALL');
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-c', 'idem-c', 119);
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-c', 'idem-c', 119);
   assert.equal(decided.grantedExtraMinutes, 119);
 });
 
@@ -277,7 +306,7 @@ test('DENIED never sets a granted amount or expiry', async () => {
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'DENIED', 'act-deny-bonus', 'idem-deny-bonus');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'DENIED', 'act-deny-bonus', 'idem-deny-bonus');
   assert.equal(decided.grantedExtraMinutes, null);
   assert.equal(decided.grantExpiresAtUtc, null);
   assert.equal(service.toBonusGrant(decided), null);
@@ -287,14 +316,14 @@ test('a repeated APPROVED decide() by the same actor is idempotent (same amount)
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
-  const first = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-replay', 'idem-replay');
-  const second = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-replay-retry', 'idem-replay-retry');
+  const first = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-replay', 'idem-replay');
+  const second = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-replay-retry', 'idem-replay-retry');
   assert.deepEqual(second, first);
 
   // A COUNTERED "replay" of an already-APPROVED request is a different outcome/amount -- must be
   // rejected as an illegal transition (APPROVED is terminal), never treated as idempotent.
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-replay-different', 'idem-replay-different', 5),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-replay-different', 'idem-replay-different', 5),
     (err) => err instanceof ChildRequestError && err.code === 'ILLEGAL_TRANSITION',
   );
 });
@@ -363,7 +392,7 @@ test('a VIEWER cannot decide (approve/deny/counter) a BONUS_TIME request', async
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'BONUS_TIME', { kind: 'CHILD_PROFILE', id: 'child-1' }, null, 30, 'ALL');
   const pending = await service.submit(draft);
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-viewer', 'APPROVED', 'act-viewer-deny', 'idem-viewer-deny'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-viewer', 'APPROVED', 'act-viewer-deny', 'idem-viewer-deny'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
@@ -414,7 +443,7 @@ test('createDraft requires installTargetPackageName and a valid installCapabilit
 test('an Owner deciding an INSTALL_APPROVAL request never sets installEnforcementOutcome -- decide() records the authorization only, never the on-device outcome', async () => {
   const { service } = makeHarness();
   const pending = await service.submit(installDraft(service));
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-install-approve', 'idem-install-approve');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-install-approve', 'idem-install-approve');
   assert.equal(decided.state, 'APPROVED');
   assert.equal(decided.installEnforcementOutcome, null, 'decide() must never write the enforcement outcome');
   assert.equal(decided.installCapabilityState, 'ENFORCED', 'the request-time snapshot is untouched by decide()');
@@ -424,7 +453,7 @@ test('a COUNTER-offer is illegal for INSTALL_APPROVAL (there is no "shorter inst
   const { service } = makeHarness();
   const pending = await service.submit(installDraft(service));
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'COUNTERED', 'act-install-counter', 'idem-install-counter', 5),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'COUNTERED', 'act-install-counter', 'idem-install-counter', 5),
     (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
   );
 });
@@ -432,7 +461,7 @@ test('a COUNTER-offer is illegal for INSTALL_APPROVAL (there is no "shorter inst
 test('acknowledgeApplied requires a valid capabilityOutcome for INSTALL_APPROVAL, and forbids one for every other type', async () => {
   const { service } = makeHarness();
   const installPending = await service.submit(installDraft(service));
-  await service.decide(installPending.requestId, 'dev-owner', 'APPROVED', 'act-1', 'idem-1');
+  await service.decide(installPending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-1', 'idem-1');
   await assert.rejects(
     () => service.acknowledgeApplied(installPending.requestId, 'dev-child', null),
     (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
@@ -444,7 +473,7 @@ test('acknowledgeApplied requires a valid capabilityOutcome for INSTALL_APPROVAL
 
   const unblockDraft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const unblockPending = await service.submit(unblockDraft);
-  await service.decide(unblockPending.requestId, 'dev-owner', 'APPROVED', 'act-2', 'idem-2');
+  await service.decide(unblockPending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-2', 'idem-2');
   await assert.rejects(
     () => service.acknowledgeApplied(unblockPending.requestId, 'dev-child', 'ENFORCED'),
     (err) => err instanceof ChildRequestError && err.code === 'INVALID_INPUT',
@@ -454,7 +483,7 @@ test('acknowledgeApplied requires a valid capabilityOutcome for INSTALL_APPROVAL
 test('capability available -> acknowledgeApplied honestly reports ENFORCED', async () => {
   const { service } = makeHarness();
   const pending = await service.submit(installDraft(service, { installCapabilityState: 'ENFORCED' }));
-  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-enf', 'idem-enf');
+  await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-enf', 'idem-enf');
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'ENFORCED');
   assert.equal(acknowledged.state, 'APPLIED_ACKNOWLEDGED');
   assert.equal(acknowledged.installEnforcementOutcome, 'ENFORCED');
@@ -466,7 +495,7 @@ test('capability unavailable -> acknowledgeApplied honestly reports REQUEST_ONLY
   // Device Owner authority) -- an Owner can still APPROVE the install (the decision is honest
   // regardless of enforceability), but the device's own applied-report must never claim ENFORCED.
   const pending = await service.submit(installDraft(service, { installCapabilityState: 'REQUEST_ONLY' }));
-  const decided = await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-req-only', 'idem-req-only');
+  const decided = await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-req-only', 'idem-req-only');
   assert.equal(decided.state, 'APPROVED', 'approved is a real, distinct state from enforced');
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'REQUEST_ONLY');
   assert.equal(acknowledged.installEnforcementOutcome, 'REQUEST_ONLY');
@@ -480,7 +509,7 @@ test('authority lost between request and decision -> acknowledgeApplied reports 
   // at apply time is what acknowledgeApplied's capabilityOutcome carries; it must never be
   // silently overwritten to match the stale request-time snapshot.
   const pending = await service.submit(installDraft(service, { installCapabilityState: 'ENFORCED' }));
-  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-degrade', 'idem-degrade');
+  await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-degrade', 'idem-degrade');
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'AUTHORIZATION_REQUIRED');
   assert.equal(pending.installCapabilityState, 'ENFORCED', 'the original request-time snapshot is preserved, not rewritten');
   assert.equal(acknowledged.installEnforcementOutcome, 'AUTHORIZATION_REQUIRED', 'the real-time outcome degrades honestly instead');
@@ -509,11 +538,11 @@ test('a VIEWER cannot decide an INSTALL_APPROVAL request, and a CHILD cannot sel
 
   const pending = await service.submit(installDraft(service));
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-viewer', 'APPROVED', 'act-viewer', 'idem-viewer'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-viewer', 'APPROVED', 'act-viewer', 'idem-viewer'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-child', 'APPROVED', 'act-self', 'idem-self'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-child', 'APPROVED', 'act-self', 'idem-self'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
@@ -522,7 +551,7 @@ test('deciding an INSTALL_APPROVAL request targeting a CHILD_PROFILE from a DIFF
   const { service } = makeHarness();
   const pending = await service.submit(installDraft(service, { targetScope: { kind: 'CHILD_PROFILE', id: 'child-in-other-family' } }));
   await assert.rejects(
-    () => service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-cross', 'idem-cross'),
+    () => service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-cross', 'idem-cross'),
     (err) => err instanceof ChildRequestError && err.code === 'NOT_AUTHORIZED_TO_DECIDE',
   );
 });
@@ -535,7 +564,7 @@ test('NOT_SUPPORTED is an honest, distinct capability state (e.g. iOS: no OS mec
   // never enforce it (the decision and the enforceability of that decision are independent) --
   // acknowledgeApplied is only reachable from APPROVED, matching every other request type's own
   // state machine (see the "DENIED ... terminal" test above).
-  await service.decide(pending.requestId, 'dev-owner', 'APPROVED', 'act-unsupported', 'idem-unsupported');
+  await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-unsupported', 'idem-unsupported');
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child', 'NOT_SUPPORTED');
   assert.equal(acknowledged.installEnforcementOutcome, 'NOT_SUPPORTED');
 });

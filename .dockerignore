@@ -1,10 +1,16 @@
 # Docker build context for the REPOSITORY ROOT.
 #
-# Exactly one build uses this context: public-web/deploy/Dockerfile, which needs
-# the repository root because build.mjs cross-checks the claim register against
-# both the living CSV and the frozen v0.2 package under docs/public/. Every other
-# surface builds from its own directory with its own .dockerignore
-# (backend/, platform-admin-web/).
+# Two builds use this context:
+#   - public-web/deploy/Dockerfile, which needs the repository root because
+#     build.mjs cross-checks the claim register against both the living CSV
+#     and the frozen v0.2 package under docs/public/.
+#   - parent-web/Dockerfile, which needs the repository root because
+#     parent-web depends on two LOCAL, file-protocol sibling packages under
+#     parent-sdk/ (`file:../parent-sdk/browser-runtime`,
+#     `file:../parent-sdk/wellbeing-control`) that a parent-web-only build
+#     context cannot see at all.
+# Every other surface builds from its own directory with its own
+# .dockerignore (backend/, platform-admin-web/).
 #
 # WHY THIS IS AN ALLOWLIST, NOT A DENYLIST.
 #
@@ -36,11 +42,23 @@
 !docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv
 !docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAIM_REGISTER.csv
 
-# ...minus the parts of public-web that are build output or local state. These
-# are re-excluded AFTER the re-admission above, because later patterns win.
+# ...and exactly what parent-web/Dockerfile COPYs.
+!parent-web
+!parent-sdk
+
+# ...minus the parts of public-web/parent-web/parent-sdk that are build output
+# or local state. These are re-excluded AFTER the re-admission above, because
+# later patterns win.
 public-web/dist
 public-web/reports
 public-web/node_modules
+parent-web/dist
+parent-web/node_modules
+parent-web/test-results
+parent-web/playwright-report
+parent-web/coverage
+parent-sdk/*/dist
+parent-sdk/*/node_modules
 **/node_modules
 **/.env
 **/.env.*

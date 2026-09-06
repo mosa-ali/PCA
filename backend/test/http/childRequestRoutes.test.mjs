@@ -46,7 +46,12 @@ function buildApp({ nowFn = () => T0 } = {}) {
   const childRequestService = new ChildRequestService(new InMemoryChildRequestRepository(), authorization, nowFn);
   const bonusGrantLedger = new BonusGrantLedger();
 
-  const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
+  const sessions = new Map([
+    ['session-owner', { accountId: 'acct-owner', familyId: FAMILY }],
+    // PCA-DW-W3-L: a second family's own valid, authenticated Owner session --
+    // used only by the cross-family existence-oracle test below.
+    ['session-owner-family-b', { accountId: 'acct-owner-b', familyId: 'family-bonus-http-2' }],
+  ]);
   const parentAccountService = {
     async readSession(token) {
       const session = sessions.get(token);
@@ -58,6 +63,7 @@ function buildApp({ nowFn = () => T0 } = {}) {
     ['dev-token-owner', { deviceId: 'dev-owner', familyId: FAMILY }],
     ['dev-token-viewer', { deviceId: 'dev-viewer', familyId: FAMILY }],
     ['dev-token-child', { deviceId: 'dev-child', familyId: FAMILY }],
+    ['dev-token-owner-family-b', { deviceId: 'dev-owner-b', familyId: 'family-bonus-http-2' }],
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
@@ -253,6 +259,41 @@ test('a request targeting a CHILD_PROFILE from a different family is denied at d
       payload: { decision: 'APPROVED' },
     });
     assert.equal(decide.statusCode, 403);
+  } finally {
+    await app.close();
+  }
+});
+
+// PCA-DW-W3-L: an authenticated Owner of a DIFFERENT family (family B) holding a real requestId
+// that genuinely belongs to family A must see the SAME 404 an unknown/garbage requestId would --
+// never the distinguishable 403 the pre-fix authorization-layer check produced (a real, if
+// UUID-gated, cross-family existence oracle: "your own family's request decisions return 403 when
+// wrong, but someone else's family's request returns 403 too" would let a caller learn whether a
+// requestId "belongs to a family" versus not existing at all).
+test('SECURITY: a DIFFERENT family session deciding a request that genuinely belongs to another family gets 404, identical to an unknown requestId (no cross-family existence oracle)', async () => {
+  const { app, childRequestService } = buildApp();
+  try {
+    const draft = childRequestService.createDraft(FAMILY, 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
+    const pending = await childRequestService.submit(draft);
+
+    const familyBHeaders = { cookie: 'pca_family_session=session-owner-family-b; pca_family_csrf=csrf-b', 'x-pca-csrf-token': 'csrf-b' };
+
+    const decideOthersRequest = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/family-bonus-http-2/child-requests/${pending.requestId}/decide`,
+      headers: { ...familyBHeaders, authorization: 'Bearer dev-token-owner-family-b' },
+      payload: { decision: 'APPROVED' },
+    });
+    const decideUnknownRequest = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/family-bonus-http-2/child-requests/00000000-0000-0000-0000-000000000000/decide`,
+      headers: { ...familyBHeaders, authorization: 'Bearer dev-token-owner-family-b' },
+      payload: { decision: 'APPROVED' },
+    });
+
+    assert.equal(decideOthersRequest.statusCode, 404);
+    assert.equal(decideUnknownRequest.statusCode, decideOthersRequest.statusCode, 'a real request belonging to another family and an unknown requestId must return the SAME status code');
+    assert.deepEqual(decideOthersRequest.json(), decideUnknownRequest.json(), 'and the same body');
   } finally {
     await app.close();
   }

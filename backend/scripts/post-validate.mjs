@@ -24,11 +24,12 @@ import { normalizedFingerprint } from './schema-fingerprint.mjs';
 
 const execFileP = promisify(execFile);
 
-// PCA-DW-W2-15F: was 'a7a31c6f...' (75 tables) -- regenerated after
-// migrations/0038_email_outbox.sql added the 76th table, verified via
-// schema-fingerprint.mjs against a real bootstrap-vs-migration schema
+// PCA-DW-W3-D: was 'ee31abcd...' (76 tables) -- regenerated after
+// migrations/0039_profile_protection_mode.sql and
+// migrations/0040_delete_now_ledger.sql added the 77th/78th tables, verified
+// via schema-fingerprint.mjs against a real bootstrap-vs-migration schema
 // comparison (compare-schema-snapshots.mjs reported EXACT_MATCH).
-const EXPECTED_FINGERPRINT = 'ee31abcd6f67815c778fdc3703fd4808e324c33594c5bfbd409de4c8f4127043';
+const EXPECTED_FINGERPRINT = '278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

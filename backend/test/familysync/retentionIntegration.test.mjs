@@ -120,13 +120,13 @@ test('an expired deletion instruction never applies, even once its "predecessor 
 test('reconnect after a local Delete Now must not restore deleted data: the purge decision lives in retention/deleteNow, independent of and unaffected by envelope resync', async () => {
   const ledger = new InMemoryDeleteNowLedger();
   const records = [{ entityClass: 'WEB_VISIT', id: 'r1', eventTimestampUtc: new Date('2026-01-01T00:00:00.000Z') }];
-  const localDeletion = applyDeleteNow('delete-now-1', records, ledger, new Date('2026-01-05T00:00:00.000Z'));
+  const localDeletion = await applyDeleteNow('delete-now-1', records, ledger, new Date('2026-01-05T00:00:00.000Z'));
   assert.deepEqual(localDeletion.plan.toDelete.map((e) => e.id), ['r1']);
 
   // Simulate the device dropping the deleted record from its local store (what a real deletion does),
   // then "reconnecting" and re-running the SAME planning/ledger call with the now-smaller working set.
   const remainingRecords = [];
-  const afterReconnect = applyDeleteNow('delete-now-1', remainingRecords, ledger, new Date('2026-01-06T00:00:00.000Z'));
+  const afterReconnect = await applyDeleteNow('delete-now-1', remainingRecords, ledger, new Date('2026-01-06T00:00:00.000Z'));
   assert.equal(afterReconnect.idempotent, true);
   assert.deepEqual(afterReconnect.plan.toDelete.map((e) => e.id), ['r1'], 'the ledger recalls the original plan; it never re-derives from the (now-empty) working set');
 });

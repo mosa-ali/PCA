@@ -160,20 +160,34 @@ export class ChildRequestService {
    * offer a SHORTER duration" is enforced structurally here, not left to
    * caller discipline -- a counter-offer that is not shorter than the ask
    * is rejected outright, never silently clamped to look shorter.
+   *
+   * PCA-DW-W3-L: `familyId` is the caller's own authoritative, session-
+   * derived family identity -- REQUIRED so an unknown requestId and a
+   * request genuinely belonging to a DIFFERENT family collapse to the
+   * identical NOT_FOUND outcome (no membership oracle), mirroring
+   * familyrbac/RemovalDecisionAuthority.ts's own `requirePending`/
+   * `getRequest` pattern. Before this, `ChildRequestRepository.get(id)` had
+   * no family scoping at all and the authorization check below keyed off
+   * the FETCHED record's own familyId rather than the caller's -- so a
+   * family-B caller holding a family-A requestId got a distinguishable
+   * NOT_AUTHORIZED_TO_DECIDE (403) instead of the SAME NOT_FOUND (404) an
+   * unknown id produces, a real (if UUID-gated) cross-family existence
+   * oracle.
    */
   async decide(
     requestId: ChildRequestId,
+    familyId: string,
     decidingActorDeviceId: string,
     outcome: ParentDecisionOutcome,
     decisionActionId: string,
     idempotencyKey: string,
     counterOfferExtraMinutes?: number | null,
   ): Promise<ChildRequest> {
-    if (!isPlausibleOpaqueId(decidingActorDeviceId) || !isPlausibleOpaqueId(decisionActionId)) {
+    if (!isPlausibleOpaqueId(familyId) || !isPlausibleOpaqueId(decidingActorDeviceId) || !isPlausibleOpaqueId(decisionActionId)) {
       throw new ChildRequestError('INVALID_INPUT');
     }
     const request = await this.repository.get(requestId);
-    if (request === null) throw new ChildRequestError('NOT_FOUND');
+    if (request === null || request.familyId !== familyId) throw new ChildRequestError('NOT_FOUND');
 
     const now = this.now();
     if (request.state === 'PENDING' && now.getTime() > request.expiresAt.getTime()) {
@@ -224,7 +238,7 @@ export class ChildRequestService {
     if (!isLegalChildRequestTransition(request.state, outcome)) throw new ChildRequestError('ILLEGAL_TRANSITION');
 
     const decision = this.authorization.authorize({
-      familyId: request.familyId,
+      familyId,
       actorDeviceId: decidingActorDeviceId,
       operation: operationForRequestType(request.requestType),
       targetScope: request.targetScope,
@@ -308,7 +322,7 @@ export class ChildRequestService {
   ): Promise<ChildRequest> {
     const draft = this.createDraft(familyId, childDeviceId, childMemberId, 'BONUS_TIME', targetScope, reasonNote, extraMinutes, appScope);
     const pending = await this.submit(draft);
-    return this.decide(pending.requestId, grantingActorDeviceId, 'APPROVED', decisionActionId, idempotencyKey);
+    return this.decide(pending.requestId, familyId, grantingActorDeviceId, 'APPROVED', decisionActionId, idempotencyKey);
   }
 
   /** Thin passthrough -- the HTTP layer (parent-facing list view) has no business reaching into the repository port directly. */

@@ -41,6 +41,7 @@ import org.pca.app.feature.webprotection.vpn.VpnDnsDecisionChannel
 import org.pca.app.feature.webprotection.vpn.VpnEnforcementController
 import org.pca.app.feature.webprotection.vpn.VpnMetadataDecisionAdapter
 import org.pca.app.feature.webprotection.vpn.VpnSafeSearchPolicyStore
+import org.pca.app.feature.webprotection.vpn.defaultVpnEnforcementPolicy
 import org.pca.app.platform.StandardVpnCapabilitySource
 import org.pca.app.feature.youtube.engine.ModeAAndroidUsageAdapter
 import org.pca.app.feature.youtube.policy.ModeBFeatureFlagLocalStore
@@ -509,7 +510,10 @@ class PcaAppGraph private constructor(
     /** Doc 14 layer-2 real enforcement (PCA-5 closure): [vpnDnsDecisionChannel] is the in-process bridge [org.pca.app.feature.webprotection.vpn.WebProtectionVpnService] populates while actually running -- [vpnMetadataDecisionAdapter] now reports a real ALLOWED/BLOCKED verdict whenever that service is connected and has itself decided a domain, and honestly UNAVAILABLE otherwise (see both classes' own doc comments). [vpnSafeSearchPolicyStore] defaults to OFF until explicitly set -- SafeSearch is never fabricated at the DNS layer either. [vpnEnforcementController] is the real, reachable consent/start/stop orchestration seam a future parent settings screen wires a button to (no such screen exists in this pass -- see traceability doc). */
     val vpnDnsDecisionChannel = VpnDnsDecisionChannel()
     val vpnSafeSearchPolicyStore = VpnSafeSearchPolicyStore(runtimeStateStore)
-    val vpnEnforcementController = VpnEnforcementController(context, vpnCapabilitySource)
+    // ANDROID_VPN_DNS_POLICY = OWNER_DECISION_PENDING: defaultVpnEnforcementPolicy() passed
+    // explicitly (rather than relying on the constructor's own default) so this composition
+    // root itself visibly shows enforcement stays gated off until an owner decision changes it.
+    val vpnEnforcementController = VpnEnforcementController(context, vpnCapabilitySource, defaultVpnEnforcementPolicy())
     val vpnMetadataDecisionAdapter = VpnMetadataDecisionAdapter(vpnCapabilitySource, vpnDnsDecisionChannel)
     val parentUnblockRequestRepository = PersistentParentUnblockRequestRepository(runtimeStateStore)
     val parentUnblockRequestService = ParentUnblockRequestService(parentUnblockRequestRepository)

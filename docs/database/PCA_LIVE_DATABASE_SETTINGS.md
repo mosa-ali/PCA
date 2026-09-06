@@ -3,7 +3,7 @@
 Source of truth for every database/session setting required for the canonical
 schema to behave correctly. Derived from `backend/migrations/*.sql`,
 `backend/src/db/pool.ts`, `backend/compose.yaml`, and by introspecting
-Database A (all 35 migrations applied from zero to a disposable MySQL 8.4
+Database A (all 38 migrations applied from zero to a disposable MySQL 8.4
 instance). No global server setting is changed beyond what is already in
 `backend/compose.yaml`'s startup flags — this document only makes the
 existing, already-relied-upon settings explicit and auditable.
@@ -14,7 +14,7 @@ existing, already-relied-upon settings explicit and auditable.
 convention used consistently across `backend/compose*.yaml` and the root
 `docker-compose.yml`). Migration 0001's own header calls this "PCA-DB-MYSQL-1:
 MySQL 8.4 baseline". CHECK constraints are enforced (not just parsed) as of
-MySQL 8.0.16+, which every one of the 35 migrations relies on.
+MySQL 8.0.16+, which every one of the 38 migrations relies on.
 
 MySQL 8.0.x is very likely compatible (same CHECK-constraint enforcement,
 same information_schema shape) but is UNVERIFIED by this mission — Database A
@@ -25,7 +25,7 @@ independently verifies 8.0.
 
 - **Server**: `--character-set-server=utf8mb4 --collation-server=utf8mb4_bin`
   (`backend/compose.yaml`).
-- **Every one of the 75 tables**: `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`
+- **Every one of the 78 tables**: `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`
   (verified by introspecting Database A — zero exceptions).
 - **Column-level exception, by design** (migration 0001 TYPE DECISIONS): columns
   holding an application-generated UUID or a fixed-length lowercase-hex hash
@@ -111,7 +111,7 @@ fails if the restored FK set does not exactly match the expected 83.
 
 ## 7. Table/identifier case sensitivity
 
-Every table and column name in all 35 migrations is lowercase snake_case with
+Every table and column name in all 38 migrations is lowercase snake_case with
 no two identifiers differing only by case. This is deliberately resilient to
 either MySQL `lower_case_table_names` mode (0 = case-sensitive, the common
 Linux/production default; 1 or 2 = case-insensitive, common on Windows/macOS
@@ -150,7 +150,7 @@ grant-based, not trigger-based — MySQL 8 under binary logging refuses
 
 ## 10. Engine
 
-100% InnoDB across all 75 tables (verified by introspection — zero
+100% InnoDB across all 78 tables (verified by introspection — zero
 exceptions). Required for foreign keys, transactions, and row-level locking,
 all of which the application depends on.
 
@@ -184,7 +184,7 @@ negative control was caught by the SESSION check alone (GLOBAL stayed
 `+00:00`), which a GLOBAL-only check would have missed entirely.
 
 `backend/scripts/verify-mysql.mjs` gained the identical three environment
-assertions (checked BEFORE the 35 migrations run, so a wrong environment
+assertions (checked BEFORE the 38 migrations run, so a wrong environment
 fails in milliseconds rather than after a full migration run — confirmed:
 pointed at a real MySQL 8.0.46 instance it fails immediately with
 `Unsupported MySQL version: must be exactly 8.4.x. Found: 8.0.46`, never
@@ -193,7 +193,7 @@ check: a handful of concrete ascii/ascii_bin UUID/hash-exception columns and
 utf8mb4/utf8mb4_bin default columns are confirmed exactly as migration
 0001's TYPE DECISIONS documents, and an aggregate
 `information_schema.columns` query independently confirms no OTHER
-charset/collation pair exists anywhere across the 75 tables. The pre-existing
+charset/collation pair exists anywhere across the 78 tables. The pre-existing
 table-set check is unchanged.
 
 The mandatory equivalence proof (`PCA_SCHEMA_EQUIVALENCE_REPORT.md`) was

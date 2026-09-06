@@ -243,12 +243,46 @@ $TelemetryReferenceContextPattern = '(?i)(?:\b(?:import|require|from|classpath|i
 # "fingerprint" in a test file path list), producing false positives against
 # files that contain no logging call at all.
 #
-# 'console\.' is listed explicitly. "console.log(" already matched incidentally via
-# the Log alternative (the lookbehind permits a preceding '.'), but console.error /
-# .warn / .info / .debug / .trace did not match at all -- and console.* is the only
-# logging mechanism the backend and both web apps use, so those four were entirely
-# uncovered.
-$SensitiveLoggingCallPattern = '(?i)(?<![A-Za-z])(?:console\.|Log|logger|print|NSLog|os_log)\s*[.(]'
+# PCA-DW-W3-O: the previous version of the `console` branch was just
+# 'console\.', relying on the shared trailing '\s*[.(]' to close the match --
+# which only works for console.log( (caught incidentally via the bare "Log"
+# alternative below, using the preceding '.' as its own word-boundary), NOT
+# for console.error/.warn/.info/.debug/.trace(, which never matched at all
+# despite this file's own prior doc comment claiming otherwise (verified
+# empirically: `'console.error(x)' -match $SensitiveLoggingCallPattern` was
+# `$false` under the old pattern). It also could not see bracket-notation
+# access at all: `console['log'](child.token)` -- a real, reproduced bypass
+# (adversarial review) -- projects (after Get-CodeProjection strips the
+# quoted 'log' literal's content) to `console[''](...)`, which contains
+# neither a literal '.' nor the substring "log" for either branch to match,
+# so the real call silently vanished from detection.
+#
+# Fixed by giving `console` its own two-shape sub-alternation instead of
+# relying on the shared trailing requirement: the dot-call shape matches a
+# full "console.<anyMethodName>(" call outright (log/error/warn/info/debug/
+# trace/anything), and the bracket shape matches bracket access on the
+# identifier `console` itself -- which, unlike the string/computed content
+# inside the brackets, is never stripped by Get-CodeProjection's
+# quote-handling, so it stays a reliable anchor regardless of what the
+# member name turns out to be (`console['log']`, `console[methodName]`,
+# `` console[`log`] ``).
+#
+# PCA-DW-W3 adversarial review: a real, verified residual bypass existed
+# here too -- `console?.error(child.token)` / `console.error?.(child.token)`
+# (optional chaining, a common modern-JS defensive-logging idiom) did not
+# match the first version of this fix, since neither sub-shape accounted
+# for an optional `?.` before the member name or before the call
+# parenthesis (and, separately, before a bracket). Both sub-shapes now
+# tolerate an optional leading `?.` (dot form) and the dot-call shape also
+# tolerates an optional `?.` immediately before its closing `(` --
+# `console?.error(`, `console.error?.(`, `console?.error?.(`, and
+# `console?.['log'](` all now match, alongside every already-fixed
+# non-optional-chained shape. Deliberately NOT attempting to solve
+# identifier aliasing/indirection (`const c = console; c.error(...)`,
+# `globalThis['console'].error(...)`) -- a fundamentally different,
+# whole-program-analysis-requiring class this line-based regex scanner was
+# never built to catch, unchanged before and after this fix.
+$SensitiveLoggingCallPattern = '(?i)(?<![A-Za-z])(?:console\s*(?:\?{0,1}\.\s*\w+\s*(?:\?\.)?\s*\(|(?:\?\.)?\s*\[)|(?:Log|logger|print|NSLog|os_log)\s*[.(])'
 $SensitiveTermPattern = '(?i)(?:url|domain|search|location|youtube|usage|family|child|parent|token|secret|private.?key|recovery|fd[ek]|camera|face)'
 # An aggregate COUNT of families/children is not family-sensitive data; a familyId is.
 # Without this, a seed script's "{ familyCount, accountCount }" summary line reads as a

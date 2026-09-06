@@ -913,6 +913,36 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "delete_now_ledger",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0040_delete_now_ledger.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/retention",
+    columns: [
+      { name: "action_id", columnType: "varchar(300)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque, caller-supplied, family-scoped one-time action identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "purge_plan", columnType: "json", dataType: "json", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Structured JSON bookkeeping (entityClass/id/reason enums plus a localized presentation string) about which already-opaque entity ids a purge plan named and why -- never readable child content." },
+      { name: "completed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["action_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "delete_now_ledger_action_id_check", clause: "(char_length(`action_id`) between 1 and 300)" },
+    ],
+    applicationEnforcedRelations: [
+
+    ],
+  },
+  {
     name: "device_challenges",
     engine: 'InnoDB',
     charset: "utf8mb4",
@@ -2466,6 +2496,39 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     applicationEnforcedRelations: [
 
+    ],
+  },
+  {
+    name: "profile_protection_mode",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0039_profile_protection_mode.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/youtube",
+    columns: [
+      { name: "profile_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "mode", columnType: "varchar(1)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: "A", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column -- which of two parent-configured protection modes is currently applied, never a usage/activity record." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["profile_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "profile_protection_mode_family_idx", columns: ["family_id"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "profile_protection_mode_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
+      { name: "profile_protection_mode_mode_check", clause: "(`mode` in (_utf8mb4'A',_utf8mb4'B'))" },
+      { name: "profile_protection_mode_profile_id_check", clause: "(char_length(`profile_id`) between 1 and 128)" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
     ],
   },
   {

@@ -23,20 +23,20 @@ export interface DeleteNowResult {
  * so a duplicated instruction can never delete newer, unrelated data that
  * arrived after the original action completed.
  */
-export function applyDeleteNow(
+export async function applyDeleteNow(
   actionId: string,
   records: RetentionRecord[],
   ledger: DeleteNowLedger,
   nowUtc: Date,
   locale: SupportedLocale = 'en',
-): DeleteNowResult {
+): Promise<DeleteNowResult> {
   if (typeof actionId !== 'string' || actionId.length === 0) throw new RangeError('actionId must be a non-empty string.');
   if (!(nowUtc instanceof Date) || !Number.isFinite(nowUtc.getTime())) throw new RangeError('nowUtc must be a valid UTC instant.');
-  const existing = ledger.get(actionId);
+  const existing = await ledger.get(actionId);
   if (existing) {
     return { plan: clonePurgePlan(existing.plan), idempotent: true };
   }
   const plan = planDeleteNow(records, locale);
-  ledger.record(actionId, plan, nowUtc);
+  await ledger.record(actionId, plan, nowUtc);
   return { plan: clonePurgePlan(plan), idempotent: false };
 }

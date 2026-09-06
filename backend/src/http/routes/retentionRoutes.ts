@@ -229,7 +229,7 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
       // client-generated id in a DIFFERENT family can never replay or
       // observe this family's stored plan.
       const scopedActionId = `${familyId}:${actionId}`;
-      const result = applyDeleteNow(scopedActionId, records, deps.deleteNowLedger, now());
+      const result = await applyDeleteNow(scopedActionId, records, deps.deleteNowLedger, now());
 
       await deps.auditService.record(
         auditRecord(familyId, 'DELETE_NOW', 'SUCCESS', `actionId=${actionId} idempotent=${result.idempotent} toDelete=${result.plan.toDelete.length}`, actionId),

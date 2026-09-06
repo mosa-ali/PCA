@@ -365,6 +365,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
       try {
         const decided = await childRequestService.decide(
           requestId,
+          session.familyId,
           actorDeviceId,
           body.decision as ParentDecisionOutcome,
           randomUUID(),
