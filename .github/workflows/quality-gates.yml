@@ -92,9 +92,29 @@ jobs:
         with:
           node-version: '22'
       - name: Test release-gate -ReleaseTarget scoping (hard invariants + negative controls)
-        run: node tooling/release/Test-ReleaseGateScoping.mjs
+        # Surface any FAIL line as a GitHub error annotation (visible on the
+        # public checks/PR UI and via the public annotations API even
+        # without authenticated log access) in addition to the full log --
+        # a genuine diagnostic improvement, not a one-off hack: a future
+        # failure here should never require anything beyond what the public
+        # checks UI already shows.
+        run: |
+          set -o pipefail
+          node tooling/release/Test-ReleaseGateScoping.mjs 2>&1 | tee /tmp/release-scope-test.log
+          status=$?
+          if [ $status -ne 0 ]; then
+            grep '^FAIL' /tmp/release-scope-test.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit $status
+          fi
       - name: Validate FABLE release-scope parity (full, non-sampled reconciliation)
-        run: node tooling/release/ValidateFableScopeParity.mjs
+        run: |
+          set -o pipefail
+          node tooling/release/ValidateFableScopeParity.mjs 2>&1 | tee /tmp/fable-parity.log
+          status=$?
+          if [ $status -ne 0 ]; then
+            sed -n '/^FAIL /,$p' /tmp/fable-parity.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit $status
+          fi
 
   backend-tests:
     # PPR-2 (W6). Before this job existed, this workflow ran ZERO backend tests

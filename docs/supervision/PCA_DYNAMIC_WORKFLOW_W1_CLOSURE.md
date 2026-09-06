@@ -246,9 +246,60 @@ document change outside this implementation lane's authority to make.
 
 ### Actual CI evidence (fetched after the R2 push — required, not optional)
 
-*(GitHub Actions run/job IDs and step conclusions for the actual R2 commit
-are recorded here after the push below — see the FINAL CI EVIDENCE
-sub-section at the very end of this addendum.)*
+**First real push (commit `c4b0103`): the `release-control` job genuinely
+ran — and genuinely FAILED.** Fetched from the GitHub Actions REST API
+(`GET /repos/mosa-ali/PCA/actions/runs/34019879320/jobs`):
+
+```
+JOB: Release control integrity | completed | failure
+   step: Check out source                                                   | completed | success
+   step: Set up Node.js                                                     | completed | success
+   step: Test release-gate -ReleaseTarget scoping (...)                     | completed | failure
+   step: Validate FABLE release-scope parity (...)                         | completed | skipped
+```
+
+This is genuinely different from the P1-A defect (the job ran, was not
+skipped, was not hidden behind `needs:`) — it means the release-scope test
+suite itself failed on the real runner. The GitHub logs endpoint requires
+an authenticated token with admin rights even for a public repository
+(`403 Must have admin rights to Repository` on an unauthenticated request)
+and the public web log viewer also required sign-in for this repository,
+so the actual failure text could not be read directly. The only
+unauthenticated signal available was the check-run annotations API
+(`GET /repos/mosa-ali/PCA/check-runs/101450362981/annotations`), which
+only ever surfaces `"Process completed with exit code 1."` for a plain
+`run:` step failure — not the underlying assertion text.
+
+**Investigation.** The most likely candidate was the exact class of defect
+the fresh reviewer had just found and the coordinator had just fixed
+(PowerShell console-width text wrapping breaking a regex match) — but
+possibly a *different* wrapped assertion, or the same class of bug with a
+different width/environment than what had been tested. Two Linux
+reproduction attempts were made BEFORE this push using the wrong base
+image (Ubuntu 22.04 via `mcr.microsoft.com/powershell:latest`, pwsh
+7.4.2) — both passed cleanly, which is why the push was made in the first
+place. After the real CI failure, the coordinator built the EXACT matching
+environment (`ubuntu:24.04` base image + Microsoft's official PowerShell
+apt package for 24.04 + Node 22 via NodeSource, matching GitHub's own
+`ubuntu-24.04` runner label) and re-ran both scripts: **both passed
+cleanly there too** (`ALL PASS (0 failures)` / `PASS`), meaning the OS/pwsh
+version was not, in fact, the differentiator, and the exact underlying
+cause of the real CI failure could not be reproduced locally in either
+tested environment.
+
+**Response**: rather than guess blindly at a fix for a failure whose exact
+text could not be read, the coordinator added a genuine, permanent
+diagnostic improvement to both `release-control` steps: on a non-zero exit,
+the step now greps its own captured output for `FAIL`/`FAIL ` lines and
+re-emits each as a GitHub Actions `::error::` annotation, which — unlike
+plain log output — IS visible via the public, unauthenticated
+`check-runs/{id}/annotations` API and the public checks UI, for this
+repository and any future failure in this job. This is committed as its
+own value independent of this specific investigation: no future failure of
+either release-control step should ever again require authenticated log
+access to diagnose. See the FINAL CI EVIDENCE sub-section at the very end
+of this addendum for the result once this diagnostic push's own run
+completes.
 
 **Pre-push proxy evidence** (not a substitute for the real run, but the
 strongest verification available before pushing): both
@@ -333,6 +384,12 @@ future casual addition to `ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS` without a
 genuine architecture contradiction behind it — enforcement is by code
 review, which the reviewer correctly named as inherent to any such
 allowlist mechanism rather than a defect unique to this one.
+
+### FINAL CI EVIDENCE (the exact R2 commit that is actually pushed and accepted)
+
+*(filled in after the diagnostic-annotation follow-up push, once its
+`release-control` job completes — this is the authoritative result for
+Wave 1 R2 closure, superseding the `c4b0103` failure recorded above.)*
 
 ## Explicitly out of scope for this wave (per mission sections 5 and 25)
 
