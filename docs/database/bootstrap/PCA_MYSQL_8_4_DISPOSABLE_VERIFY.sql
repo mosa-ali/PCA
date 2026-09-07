@@ -43,6 +43,8 @@ FROM (
   UNION ALL SELECT 'CHECK constraints', 233,
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'CHECK')
+  UNION ALL SELECT 'reference data rows', 14,
+         (SELECT COUNT(*) FROM `billing_currencies`) + (SELECT COUNT(*) FROM `billing_commercial_markets`) + (SELECT COUNT(*) FROM `billing_country_market_rules`) + (SELECT COUNT(*) FROM `entitlement_defaults`)
   UNION ALL SELECT 'schema_migrations rows', 38,
          (SELECT COUNT(*) FROM `schema_migrations`)
   UNION ALL SELECT 'views (must be 0)', 0,
@@ -74,6 +76,52 @@ SELECT
       THEN 'FAIL: database collation must be utf8mb4_bin'
     ELSE 'PASS'
   END AS result;
+
+-- REFERENCE DATA (data-aware verification).
+--
+-- A schema fingerprint compares DDL and therefore CANNOT see a missing
+-- lookup row. An earlier artifact was byte-identical in schema to a
+-- migrated database and still unusable, because it shipped none of these
+-- rows: 105 of the 532 DB-backed tests failed on foreign-key violations.
+-- These checks compare ACTUAL contents against values derived from
+-- backend/scripts/db/referenceData.mjs at generation time.
+
+SELECT check_name, expected, actual,
+       CASE WHEN expected = actual THEN 'PASS' ELSE 'FAIL' END AS result
+FROM (
+  SELECT 'ref rows: billing_currencies' AS check_name, 3 AS expected,
+         (SELECT COUNT(*) FROM `billing_currencies`) AS actual
+  UNION ALL SELECT 'ref rows: billing_commercial_markets', 3,
+         (SELECT COUNT(*) FROM `billing_commercial_markets`)
+  UNION ALL SELECT 'ref rows: billing_country_market_rules', 7,
+         (SELECT COUNT(*) FROM `billing_country_market_rules`)
+  UNION ALL SELECT 'ref rows: entitlement_defaults', 1,
+         (SELECT COUNT(*) FROM `entitlement_defaults`)
+) AS reference_row_counts;
+
+SELECT 'ref content: billing_currencies' AS check_name,
+       'SAR|2|1;USD|2|1;YER|2|1' AS expected,
+       (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`currency_code` AS CHAR), '<NULL>'), IFNULL(CAST(`minor_unit_exponent` AS CHAR), '<NULL>'), IFNULL(CAST(`enabled` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`currency_code` AS CHAR), '<NULL>'), IFNULL(CAST(`minor_unit_exponent` AS CHAR), '<NULL>'), IFNULL(CAST(`enabled` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_currencies`) AS actual,
+       CASE WHEN (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`currency_code` AS CHAR), '<NULL>'), IFNULL(CAST(`minor_unit_exponent` AS CHAR), '<NULL>'), IFNULL(CAST(`enabled` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`currency_code` AS CHAR), '<NULL>'), IFNULL(CAST(`minor_unit_exponent` AS CHAR), '<NULL>'), IFNULL(CAST(`enabled` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_currencies`) = 'SAR|2|1;USD|2|1;YER|2|1'
+            THEN 'PASS' ELSE 'FAIL' END AS result;
+
+SELECT 'ref content: billing_commercial_markets' AS check_name,
+       'GLOBAL_OTHER|USD;GULF|SAR;YEMEN|YER' AS expected,
+       (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>'), IFNULL(CAST(`default_currency_code` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>'), IFNULL(CAST(`default_currency_code` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_commercial_markets`) AS actual,
+       CASE WHEN (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>'), IFNULL(CAST(`default_currency_code` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>'), IFNULL(CAST(`default_currency_code` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_commercial_markets`) = 'GLOBAL_OTHER|USD;GULF|SAR;YEMEN|YER'
+            THEN 'PASS' ELSE 'FAIL' END AS result;
+
+SELECT 'ref content: billing_country_market_rules' AS check_name,
+       'AE|GULF;BH|GULF;KW|GULF;OM|GULF;QA|GULF;SA|GULF;YE|YEMEN' AS expected,
+       (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`country_code` AS CHAR), '<NULL>'), IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`country_code` AS CHAR), '<NULL>'), IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_country_market_rules`) AS actual,
+       CASE WHEN (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`country_code` AS CHAR), '<NULL>'), IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`country_code` AS CHAR), '<NULL>'), IFNULL(CAST(`commercial_market` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `billing_country_market_rules`) = 'AE|GULF;BH|GULF;KW|GULF;OM|GULF;QA|GULF;SA|GULF;YE|YEMEN'
+            THEN 'PASS' ELSE 'FAIL' END AS result;
+
+SELECT 'ref content: entitlement_defaults' AS check_name,
+       'FREE_STARTER|1|1|<NULL>' AS expected,
+       (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`tier` AS CHAR), '<NULL>'), IFNULL(CAST(`parent_member_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`managed_device_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`updated_by_admin_id` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`tier` AS CHAR), '<NULL>'), IFNULL(CAST(`parent_member_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`managed_device_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`updated_by_admin_id` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `entitlement_defaults`) AS actual,
+       CASE WHEN (SELECT GROUP_CONCAT(CONCAT_WS('|', IFNULL(CAST(`tier` AS CHAR), '<NULL>'), IFNULL(CAST(`parent_member_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`managed_device_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`updated_by_admin_id` AS CHAR), '<NULL>')) ORDER BY CONCAT_WS('|', IFNULL(CAST(`tier` AS CHAR), '<NULL>'), IFNULL(CAST(`parent_member_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`managed_device_limit` AS CHAR), '<NULL>'), IFNULL(CAST(`updated_by_admin_id` AS CHAR), '<NULL>')) SEPARATOR ';') FROM `entitlement_defaults`) = 'FREE_STARTER|1|1|<NULL>'
+            THEN 'PASS' ELSE 'FAIL' END AS result;
 
 -- No application or business data may exist in a freshly bootstrapped
 -- database. A non-zero count here means something seeded it.

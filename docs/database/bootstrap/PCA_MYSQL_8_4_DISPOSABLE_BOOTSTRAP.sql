@@ -22,14 +22,15 @@
 --    32 unique non-primary-key indexes
 --   119 non-unique indexes
 --   233 CHECK constraints
+--    14 production reference-data rows (currencies, markets, country
+--       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
 --    38 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
--- schema_migrations journal (bookkeeping). Reference data such as currencies
--- and commercial markets is a separate, deliberate step --
--- database/live-bootstrap/02_reference_data.sql. The DB-backed test suite does
--- not require it.
+-- schema_migrations journal (bookkeeping) and the production reference data
+-- that migrations 0006/0007 insert themselves. No families, parents, children,
+-- devices, invitations, entitlements or licenses.
 --
 -- PREREQUISITE: an EMPTY database whose default collation is utf8mb4_bin, e.g.
 --   CREATE DATABASE `disposable` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
@@ -1546,9 +1547,39 @@ CREATE TABLE `sync_sequence_progress_ledger` (
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ---------------------------------------------------------------------
+-- Production reference data (see scripts/db/referenceData.mjs).
+--
+-- Lookup/config rows the application cannot function without. A database
+-- built by running the migrations has these too -- 0006 and 0007 insert
+-- them alongside their CREATE TABLE -- so a bootstrap without them is
+-- schema-identical to a migrated database and still unusable.
+-- ---------------------------------------------------------------------
+INSERT INTO `billing_currencies` (`currency_code`, `minor_unit_exponent`, `enabled`) VALUES
+  ('USD', 2, 1),
+  ('SAR', 2, 1),
+  ('YER', 2, 1);
+
+INSERT INTO `billing_commercial_markets` (`commercial_market`, `default_currency_code`) VALUES
+  ('YEMEN', 'YER'),
+  ('GULF', 'SAR'),
+  ('GLOBAL_OTHER', 'USD');
+
+INSERT INTO `billing_country_market_rules` (`country_code`, `commercial_market`) VALUES
+  ('YE', 'YEMEN'),
+  ('SA', 'GULF'),
+  ('AE', 'GULF'),
+  ('QA', 'GULF'),
+  ('KW', 'GULF'),
+  ('BH', 'GULF'),
+  ('OM', 'GULF');
+
+INSERT INTO `entitlement_defaults` (`tier`, `parent_member_limit`, `managed_device_limit`, `updated_at`, `updated_by_admin_id`) VALUES
+  ('FREE_STARTER', 1, 1, CURRENT_TIMESTAMP(3), NULL);
+
+-- ---------------------------------------------------------------------
 -- Migration journal.
 --
--- These are the ONLY rows this file writes, and they are bookkeeping, not
+-- Bookkeeping, not application data:
 -- application data: one row per file in backend/migrations/. Without them a
 -- bootstrapped database would look un-migrated and the migration runner
 -- would try to apply migration 0001 on top of an existing schema.

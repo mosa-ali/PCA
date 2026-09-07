@@ -20,15 +20,27 @@
  * backend/migrations/. So this artifact is derived, twice over, from the
  * repository's own sources of truth.
  *
- * WHAT IT DELIBERATELY DOES NOT CONTAIN. No application or business data:
- * no families, parents, children, devices, invitations, entitlements,
- * licenses, or billing reference rows. The ONLY rows it writes are the
- * `schema_migrations` bookkeeping journal, so a bootstrapped database reports
- * the same migration state as a migrated one and the migration runner treats
- * it as already up to date. Reference data (currencies, markets, entitlement
- * defaults) is a separate, deliberate step -- see
- * database/live-bootstrap/02_reference_data.sql. The DB-backed test suite does
- * not need it.
+ * WHAT IT WRITES, AND WHAT IT DOES NOT. No application or business data: no
+ * families, parents, children, devices, invitations, entitlements or licenses.
+ * It writes exactly two kinds of row, and both are things a migration-built
+ * database already has:
+ *
+ *   1. the `schema_migrations` bookkeeping journal, so a bootstrapped database
+ *      reports the same migration state as a migrated one and the migration
+ *      runner treats it as already up to date; and
+ *   2. production REFERENCE data -- currencies, commercial markets, country
+ *      market rules and entitlement defaults -- because migrations 0006 and
+ *      0007 insert those alongside their CREATE TABLE.
+ *
+ * (2) used to be omitted, on the reasoning that reference data belonged to
+ * database/live-bootstrap/02_reference_data.sql. That was wrong for a
+ * migration-EQUIVALENT artifact: a database built from the old file was
+ * byte-identical in schema to a migrated one and still unusable, missing 14
+ * rows across 4 tables, and 105 of the 532 DB-backed tests failed against it.
+ * The schema fingerprint could not see it, because a fingerprint compares DDL.
+ * Both generators now read scripts/db/referenceData.mjs, so the rows are
+ * defined once, and the emitted verification script checks their contents --
+ * not just the schema -- for exactly that reason.
  *
  * WHAT IT IS NOT FOR. Production. Production is bootstrapped through
  * database/live-bootstrap/ and its OWNER_RUNBOOK.md, which carry preflight,
@@ -43,6 +55,7 @@ import { fileURLToPath } from 'node:url';
 
 import { generateSqlFromSchema } from './generate-bootstrap-sql.mjs';
 import { PCA_CANONICAL_SCHEMA } from '../dist/db/schema.js';
+import { PCA_REFERENCE_DATA, renderInsert, referenceRowCount, comparableColumns } from './db/referenceData.mjs';
 
 const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url);
 const OUT_DIR = new URL('../../docs/database/bootstrap/', import.meta.url);
@@ -88,7 +101,119 @@ export function computeExpectedCounts(schema, migrationFiles) {
     nonUniqueIndexes,
     checkConstraints,
     migrationRows: migrationFiles.length,
+    referenceRows: referenceRowCount(),
   };
+}
+
+/**
+ * Production reference data.
+ *
+ * Lookup/config rows the application cannot function without: every billing row
+ * carries a currency_code foreign key into billing_currencies, and entitlement
+ * provisioning reads the FREE_STARTER row out of entitlement_defaults. These
+ * are NOT business data -- a database built by running the migrations has them
+ * too, because migrations 0006 and 0007 insert them alongside the CREATE TABLE.
+ *
+ * Omitting them is what made an earlier version of this artifact
+ * schema-identical to a migrated database and yet unusable: 105 of the 532
+ * DB-backed tests failed against it on foreign-key violations and a missing
+ * FREE_STARTER row. A schema fingerprint cannot catch that, because it compares
+ * DDL. Row order is foreign-key safe, and comes from
+ * scripts/db/referenceData.mjs -- the single place these rows are defined.
+ */
+function referenceDataSql() {
+  const header = [
+    '-- ---------------------------------------------------------------------',
+    '-- Production reference data (see scripts/db/referenceData.mjs).',
+    '--',
+    '-- Lookup/config rows the application cannot function without. A database',
+    '-- built by running the migrations has these too -- 0006 and 0007 insert',
+    '-- them alongside their CREATE TABLE -- so a bootstrap without them is',
+    '-- schema-identical to a migrated database and still unusable.',
+    '-- ---------------------------------------------------------------------',
+  ];
+  const inserts = PCA_REFERENCE_DATA.flatMap((entry) => [renderInsert(entry), '']);
+  return header.concat(inserts).join('\n');
+}
+
+/** Renders one SQL literal for the verification script's expected-value rows. */
+function sqlLiteral(value) {
+  if (value === null) return 'NULL';
+  if (typeof value === 'number') return String(value);
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+
+/**
+ * Data-aware verification, built here rather than hand-written, so the expected
+ * values can only ever come from scripts/db/referenceData.mjs.
+ *
+ * Two checks per table: the row COUNT, and the exact CONTENT (a table with the
+ * right number of wrong rows must fail). Columns whose value is a SQL
+ * expression -- CURRENT_TIMESTAMP(3) defaults -- are excluded from the content
+ * comparison, because they legitimately differ between any two databases and
+ * comparing them would make a correct bootstrap look broken.
+ */
+function referenceChecksSql() {
+  const out = [
+    '-- REFERENCE DATA (data-aware verification).',
+    '--',
+    '-- A schema fingerprint compares DDL and therefore CANNOT see a missing',
+    '-- lookup row. An earlier artifact was byte-identical in schema to a',
+    '-- migrated database and still unusable, because it shipped none of these',
+    '-- rows: 105 of the 532 DB-backed tests failed on foreign-key violations.',
+    '-- These checks compare ACTUAL contents against values derived from',
+    '-- backend/scripts/db/referenceData.mjs at generation time.',
+    '',
+  ];
+
+  const countRows = PCA_REFERENCE_DATA.map((entry, i) => {
+    const lead = i === 0 ? '  SELECT' : '  UNION ALL SELECT';
+    const asCheck = i === 0 ? ' AS check_name' : '';
+    const asExpected = i === 0 ? ' AS expected' : '';
+    const asActual = i === 0 ? ' AS actual' : '';
+    return (
+      lead +
+      " 'ref rows: " + entry.table + "'" + asCheck + ', ' + entry.rows.length + asExpected + ',\n' +
+      '         (SELECT COUNT(*) FROM `' + entry.table + '`)' + asActual
+    );
+  });
+
+  out.push(
+    'SELECT check_name, expected, actual,',
+    "       CASE WHEN expected = actual THEN 'PASS' ELSE 'FAIL' END AS result",
+    'FROM (',
+    countRows.join('\n'),
+    ') AS reference_row_counts;',
+    '',
+  );
+
+  for (const entry of PCA_REFERENCE_DATA) {
+    const cols = comparableColumns(entry);
+    const indexes = cols.map((c) => entry.columns.indexOf(c));
+
+    // Compare the table's ENTIRE comparable content as one deterministic
+    // string: each row rendered field by field, rows sorted, joined. A missing
+    // row, an extra row, or a changed value all change that string, so this is
+    // a genuine content check and not merely a count. NULL is rendered
+    // explicitly so it can never be confused with an empty string.
+    const render = (row) => indexes.map((i) => (row[i] === null ? '<NULL>' : String(row[i]))).join('|');
+    const expected = entry.rows.map(render).sort().join(';');
+
+    const sqlRow =
+      "CONCAT_WS('|', " + cols.map((c) => 'IFNULL(CAST(`' + c + "` AS CHAR), '<NULL>')").join(', ') + ')';
+    const actual =
+      '(SELECT GROUP_CONCAT(' + sqlRow + ' ORDER BY ' + sqlRow + " SEPARATOR ';') FROM `" + entry.table + '`)';
+
+    out.push(
+      "SELECT 'ref content: " + entry.table + "' AS check_name,",
+      '       ' + sqlLiteral(expected) + ' AS expected,',
+      '       ' + actual + ' AS actual,',
+      '       CASE WHEN ' + actual + ' = ' + sqlLiteral(expected),
+      "            THEN 'PASS' ELSE 'FAIL' END AS result;",
+      '',
+    );
+  }
+  return out.join('\n');
 }
 
 function journalSql(migrationFiles) {
@@ -97,7 +222,7 @@ function journalSql(migrationFiles) {
     '-- ---------------------------------------------------------------------',
     '-- Migration journal.',
     '--',
-    '-- These are the ONLY rows this file writes, and they are bookkeeping, not',
+    '-- Bookkeeping, not application data:',
     '-- application data: one row per file in backend/migrations/. Without them a',
     '-- bootstrapped database would look un-migrated and the migration runner',
     '-- would try to apply migration 0001 on top of an existing schema.',
@@ -156,6 +281,8 @@ FROM (
   UNION ALL SELECT 'CHECK constraints', ${expected.checkConstraints},
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'CHECK')
+  UNION ALL SELECT 'reference data rows', ${expected.referenceRows},
+         (${PCA_REFERENCE_DATA.map((e) => 'SELECT COUNT(*) FROM `' + e.table + '`').join(') + (')})
   UNION ALL SELECT 'schema_migrations rows', ${expected.migrationRows},
          (SELECT COUNT(*) FROM \`schema_migrations\`)
   UNION ALL SELECT 'views (must be 0)', 0,
@@ -188,6 +315,7 @@ SELECT
     ELSE 'PASS'
   END AS result;
 
+${referenceChecksSql()}
 -- No application or business data may exist in a freshly bootstrapped
 -- database. A non-zero count here means something seeded it.
 SELECT 'no application data' AS check_name, 0 AS expected,
@@ -229,14 +357,15 @@ function bootstrapSql(schema, migrationFiles, expected) {
 --   ${String(expected.uniqueNonPrimaryIndexes).padStart(3)} unique non-primary-key indexes
 --   ${String(expected.nonUniqueIndexes).padStart(3)} non-unique indexes
 --   ${String(expected.checkConstraints).padStart(3)} CHECK constraints
+--   ${String(expected.referenceRows).padStart(3)} production reference-data rows (currencies, markets, country
+--       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
 --   ${String(expected.migrationRows).padStart(3)} schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
--- schema_migrations journal (bookkeeping). Reference data such as currencies
--- and commercial markets is a separate, deliberate step --
--- database/live-bootstrap/02_reference_data.sql. The DB-backed test suite does
--- not require it.
+-- schema_migrations journal (bookkeeping) and the production reference data
+-- that migrations 0006/0007 insert themselves. No families, parents, children,
+-- devices, invitations, entitlements or licenses.
 --
 -- PREREQUISITE: an EMPTY database whose default collation is utf8mb4_bin, e.g.
 --   CREATE DATABASE \`disposable\` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
@@ -253,7 +382,7 @@ function bootstrapSql(schema, migrationFiles, expected) {
 
   // The generator re-enables FOREIGN_KEY_CHECKS at the very end; the journal
   // rows are appended after that, so they are inserted with constraints on.
-  return `${header}${ddlBody}\n${journalSql(migrationFiles)}`;
+  return `${header}${ddlBody}\n${referenceDataSql()}\n${journalSql(migrationFiles)}`;
 }
 
 // --- entrypoint -------------------------------------------------------------

@@ -26,6 +26,12 @@
 //    from-zero-migrated disposable database.
 import { readdir, writeFile } from 'node:fs/promises';
 
+// The reference rows themselves live in ONE place, shared with
+// generate-disposable-bootstrap.mjs and the data-aware validation, so a new
+// lookup table cannot be added to one bootstrap path and silently missed by
+// the other -- which is exactly the defect this refactor closes.
+import { PCA_REFERENCE_DATA, renderInsert } from './db/referenceData.mjs';
+
 const migrationsDir = new URL('../migrations/', import.meta.url);
 const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort();
 
@@ -47,34 +53,21 @@ const lines = [
   'INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES',
   files.map((f) => `  ('${f}', CURRENT_TIMESTAMP(3))`).join(',\n') + ';',
   '',
-  '-- =========================================================================',
-  '-- 2. Production reference data (from backend/migrations/0007_billing_core.sql)',
-  '-- =========================================================================',
-  "INSERT INTO `billing_currencies` (`currency_code`, `minor_unit_exponent`, `enabled`) VALUES",
-  "  ('USD', 2, 1),",
-  "  ('SAR', 2, 1),",
-  "  ('YER', 2, 1);",
-  '',
-  "INSERT INTO `billing_commercial_markets` (`commercial_market`, `default_currency_code`) VALUES",
-  "  ('YEMEN', 'YER'),",
-  "  ('GULF', 'SAR'),",
-  "  ('GLOBAL_OTHER', 'USD');",
-  '',
-  "INSERT INTO `billing_country_market_rules` (`country_code`, `commercial_market`) VALUES",
-  "  ('YE', 'YEMEN'),",
-  "  ('SA', 'GULF'),",
-  "  ('AE', 'GULF'),",
-  "  ('QA', 'GULF'),",
-  "  ('KW', 'GULF'),",
-  "  ('BH', 'GULF'),",
-  "  ('OM', 'GULF');",
-  '',
-  '-- =========================================================================',
-  '-- 3. Production reference data (from backend/migrations/0006_platform_entitlements_enrollment_limits.sql)',
-  '-- =========================================================================',
-  "INSERT INTO `entitlement_defaults` (`tier`, `parent_member_limit`, `managed_device_limit`, `updated_at`, `updated_by_admin_id`) VALUES",
-  "  ('FREE_STARTER', 1, 1, CURRENT_TIMESTAMP(3), NULL);",
-  '',
+  ...PCA_REFERENCE_DATA.flatMap((entry, i, all) => {
+    const isNewSection = i === 0 || all[i - 1].source !== entry.source;
+    const sectionNumber = 2 + all.slice(0, i).filter((e, j) => j === 0 || all[j - 1].source !== e.source).length;
+    return [
+      ...(isNewSection
+        ? [
+            '-- =========================================================================',
+            `-- ${sectionNumber}. Production reference data (from ${entry.source})`,
+            '-- =========================================================================',
+          ]
+        : []),
+      renderInsert(entry),
+      '',
+    ];
+  }),
 ];
 
 const outPath = new URL('../../database/live-bootstrap/02_reference_data.sql', import.meta.url);
