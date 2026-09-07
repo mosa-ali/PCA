@@ -369,11 +369,27 @@ jobs:
           set -e
           if [ "$status" -ne 0 ]; then
             echo "gradlew exited with status $status -- surfacing likely error/failure lines as annotations:"
+
+            # A FAILING UNIT TEST used to be invisible here. The grep below was
+            # written for compile and lint failures, and Gradle announces a test
+            # failure as "org.pca.app.SomeTest > someMethod FAILED" -- no colon,
+            # so it matched "FAILURE:" no better than it matched "error:". The
+            # public annotations therefore showed only the generic
+            # "There were failing tests. See the report at: file:///..." plus a
+            # local file:// URL that nobody outside the runner can open. That is
+            # the exact failure shape this wrapper exists to make diagnosable, so
+            # the JUnit XML is read FIRST and names the actual failing tests.
             found_line=0
+            while IFS= read -r line; do
+              echo "::error::FAILING TEST: ${line}"
+              found_line=1
+            done < <(grep -rh -B1 --include='TEST-*.xml' -e '<failure' -e '<error ' app/build/test-results 2>/dev/null | grep -oE '<testcase name="[^"]*" classname="[^"]*"' | head -n 40 || true)
+
             while IFS= read -r line; do
               echo "::error::${line}"
               found_line=1
-            done < <(grep -E "^e: |error:|FAILURE:|BUILD FAILED|What went wrong|Caused by:|^\s*at .*Exception" gradle-output.log | head -n 50 || true)
+            done < <(grep -E "^e: |error:|FAILURE:|BUILD FAILED|What went wrong|Caused by:|^\s*at .*Exception|^.* > .* FAILED$|tests? completed, .* failed" gradle-output.log | head -n 50 || true)
+
             if [ "$found_line" -eq 0 ]; then
               echo "::error::gradlew failed (exit $status) with no matching error/failure line found by this step's own grep -- see the last 60 lines of raw output below."
               tail -n 60 gradle-output.log
