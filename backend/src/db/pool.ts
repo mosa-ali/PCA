@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import mysql from 'mysql2/promise';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { isProductionSensitiveRuntime } from '../runtime/environment.js';
 
 /** Row shape used by every repository SELECT -- see `execute` below. */
 type Row = RowDataPacket;
@@ -12,6 +14,120 @@ function getConnectionUri(): string {
   return uri;
 }
 
+export class DatabaseTlsConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DatabaseTlsConfigurationError';
+  }
+}
+
+/** What `mysql2` accepts for its `ssl` option: `false` means plaintext. */
+export type DatabaseTlsOption = false | { minVersion: 'TLSv1.2'; rejectUnauthorized: true; ca?: string };
+
+/**
+ * PCA-DW-E2E F-1: resolve the database link's TLS posture EXPLICITLY.
+ *
+ * mysql2 does not negotiate TLS on its own. Its own `ConnectionConfig` reads
+ * `this.ssl = typeof options.ssl === 'string' ? getSSLProfile(options.ssl) :
+ * options.ssl || false` -- so an absent `ssl` option is exactly `false`, i.e.
+ * a PLAINTEXT connection carrying the database password and every family
+ * record on the wire. `getPool()` previously passed only a URI, so PCA's
+ * database link had no TLS enforcement at all, and whether production traffic
+ * was encrypted depended entirely on an operator remembering to embed a JSON
+ * fragment in a URL.
+ *
+ * Worse, the obvious way to try was silently wrong: `?ssl-mode=REQUIRED` is
+ * the standard MySQL client spelling, and mysql2 does not recognise it as an
+ * option at all -- it prints "Ignoring invalid configuration option" to stderr
+ * and connects in PLAINTEXT. A near-miss that fails OPEN is exactly the shape
+ * that survives a review.
+ *
+ * So the posture is now named, not inferred:
+ *
+ *   PCA_DATABASE_TLS=REQUIRED  -> TLS 1.2+, certificate verification ON,
+ *                                 optionally against PCA_DATABASE_TLS_CA.
+ *   PCA_DATABASE_TLS=DISABLED  -> plaintext; REFUSED in a production-sensitive
+ *                                 runtime, allowed only for the disposable
+ *                                 local/Compose database, which serves no
+ *                                 trusted certificate.
+ *   unset                      -> plaintext in test/development; a hard error
+ *                                 in a production-sensitive runtime.
+ *   anything else              -> a hard error, always. A typo must never
+ *                                 quietly mean "plaintext".
+ *
+ * There is deliberately NO "encrypt but skip verification" mode: an
+ * unverified TLS session authenticates nothing and is not meaningfully better
+ * than plaintext against an active attacker. A private or self-signed CA is
+ * supported the honest way instead, by supplying it via PCA_DATABASE_TLS_CA.
+ *
+ * Note this option is passed to `mysql2` alongside the URI, and mysql2 merges
+ * URI parameters only where the explicit option is FALSY (`if (options[key])
+ * continue;`). A resolved REQUIRED object is truthy, so a connection string
+ * can never downgrade it -- proven by test.
+ */
+export function resolveDatabaseTlsOption(env: NodeJS.ProcessEnv = process.env): DatabaseTlsOption {
+  const raw = env.PCA_DATABASE_TLS;
+  const productionSensitive = isProductionSensitiveRuntime(env);
+
+  if (raw === undefined || raw === '') {
+    if (productionSensitive) {
+      throw new DatabaseTlsConfigurationError(
+        'PCA_DATABASE_TLS must be set to "REQUIRED" in a production-sensitive runtime. ' +
+          'Refusing to open a database connection whose encryption posture was never stated: ' +
+          'mysql2 defaults to an unencrypted connection when no ssl option is supplied.',
+      );
+    }
+    return false;
+  }
+
+  if (raw === 'DISABLED') {
+    if (productionSensitive) {
+      throw new DatabaseTlsConfigurationError(
+        'PCA_DATABASE_TLS=DISABLED is refused in a production-sensitive runtime. ' +
+          'Plaintext is only permitted for the disposable local/Compose database.',
+      );
+    }
+    return false;
+  }
+
+  if (raw !== 'REQUIRED') {
+    throw new DatabaseTlsConfigurationError(
+      `PCA_DATABASE_TLS must be exactly "REQUIRED" or "DISABLED" (got ${JSON.stringify(raw)}). ` +
+        'An unrecognized value must never be treated as either -- in particular it must never silently mean plaintext.',
+    );
+  }
+
+  const ca = resolveTlsCertificateAuthority(env);
+  return ca === undefined
+    ? { minVersion: 'TLSv1.2', rejectUnauthorized: true }
+    : { minVersion: 'TLSv1.2', rejectUnauthorized: true, ca };
+}
+
+/** PCA_DATABASE_TLS_CA is either an inline PEM or a path to one. Anything unreadable is a hard error, never a silent fallback to the system trust store. */
+function resolveTlsCertificateAuthority(env: NodeJS.ProcessEnv): string | undefined {
+  const configured = env.PCA_DATABASE_TLS_CA;
+  if (configured === undefined || configured === '') return undefined;
+  if (configured.includes('-----BEGIN CERTIFICATE-----')) return configured;
+  try {
+    return readFileSync(configured, 'utf8');
+  } catch (error) {
+    throw new DatabaseTlsConfigurationError(
+      `PCA_DATABASE_TLS_CA is set to ${JSON.stringify(configured)}, which is neither an inline PEM nor a readable file: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+/**
+ * Boot-time assertion, so a database TLS misconfiguration is a startup failure
+ * rather than a surprise at the first query -- the same posture the production
+ * email configuration already takes.
+ */
+export function assertDatabaseTlsConfiguration(env: NodeJS.ProcessEnv = process.env): void {
+  resolveDatabaseTlsOption(env);
+}
+
 /**
  * All connections operate in UTC (`timezone: 'Z'`): every DATETIME column
  * is written and read as a UTC instant, and application code never depends
@@ -21,8 +137,15 @@ function getConnectionUri(): string {
  */
 export function getPool(): Pool {
   if (!pool) {
+    const tls = resolveDatabaseTlsOption();
     pool = mysql.createPool({
       uri: getConnectionUri(),
+      // mysql2's own types accept only `SslOptions | string | undefined`, while
+      // its runtime reads `options.ssl || false` -- so `undefined` and `false`
+      // are the same plaintext posture to it. The resolver returns an explicit
+      // `false` because that is the honest, testable value for "plaintext was
+      // chosen"; it is narrowed to `undefined` only here, at the boundary.
+      ssl: tls === false ? undefined : tls,
       timezone: 'Z',
       dateStrings: false,
       supportBigNumbers: true,

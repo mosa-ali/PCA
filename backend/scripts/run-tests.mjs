@@ -268,6 +268,8 @@ const files = [
   // Guards this very list: fails if any non-DB *.test.mjs exists on disk but is
   // absent from it (see test/meta/testSuiteRegistration.test.mjs for why the
   // list stayed hand-maintained instead of becoming a glob).
+  "test/scripts/disposableDatabaseTargetGate.test.mjs",
+  "test/scripts/disposableBootstrapArtifact.test.mjs",
   "test/meta/testSuiteRegistration.test.mjs",
 ];
 

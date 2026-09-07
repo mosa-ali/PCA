@@ -139,13 +139,77 @@ async function assertColumnCollations(connection) {
 const connectionString = process.env.PCA_MIGRATION_DATABASE_URL ?? process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL (or PCA_MIGRATION_DATABASE_URL) is required for the disposable database test.');
 const url = new URL(connectionString);
-if (!['127.0.0.1', 'localhost', 'mysql'].includes(url.hostname)) {
-  throw new Error('PCA_DATABASE_URL/PCA_MIGRATION_DATABASE_URL must point to the disposable local/Compose database.');
+const targetIsRemoteDisposable = assertDisposableDatabaseTarget(url);
+
+/**
+ * The disposable-database gate.
+ *
+ * Local/Compose hosts are always allowed. Any OTHER host is refused unless the
+ * operator has explicitly declared BOTH which remote host and which database
+ * name are the authorized disposable environment -- and TLS is required for it.
+ * The allowlist is not removed and no hostname is hardcoded: a remote target
+ * has to be named twice, deliberately, in the environment, and a stray or
+ * mistyped URL still fails closed exactly as before.
+ *
+ * Three independent things must line up, so no single typo can widen this:
+ *   PCA_DISPOSABLE_REMOTE_DB_HOST  must equal the URL's host
+ *   PCA_DISPOSABLE_REMOTE_DB_NAME  must equal the URL's database
+ *   PCA_DATABASE_TLS=REQUIRED      because a remote disposable database is
+ *                                  reached over a network PCA does not own
+ *
+ * This deliberately grants no production capability: it is the same
+ * schema-creating gate it always was, pointed at a database the operator has
+ * declared disposable. Production databases are not provisioned through this
+ * script at all -- see database/live-bootstrap/OWNER_RUNBOOK.md.
+ */
+function assertDisposableDatabaseTarget(target) {
+  const LOCAL_DISPOSABLE_HOSTS = ['127.0.0.1', 'localhost', 'mysql'];
+  if (LOCAL_DISPOSABLE_HOSTS.includes(target.hostname)) return false;
+
+  const declaredHost = process.env.PCA_DISPOSABLE_REMOTE_DB_HOST;
+  const declaredDatabase = process.env.PCA_DISPOSABLE_REMOTE_DB_NAME;
+  const database = decodeURIComponent(target.pathname.slice(1));
+
+  const refuse = (why) => {
+    throw new Error(
+      `Refusing to run the disposable-database gate against host ${JSON.stringify(target.hostname)}: ${why}. ` +
+        `It must be a local/Compose host (${LOCAL_DISPOSABLE_HOSTS.join(', ')}), or an explicitly declared remote ` +
+        'disposable environment: set PCA_DISPOSABLE_REMOTE_DB_HOST and PCA_DISPOSABLE_REMOTE_DB_NAME to exactly the ' +
+        'host and database you are authorizing, and PCA_DATABASE_TLS=REQUIRED.',
+    );
+  };
+
+  if (!declaredHost || !declaredDatabase) refuse('no remote disposable environment has been declared');
+  if (declaredHost !== target.hostname) refuse(`declared remote host is ${JSON.stringify(declaredHost)}`);
+  if (declaredDatabase !== database) refuse(`declared remote database is ${JSON.stringify(declaredDatabase)}, URL names ${JSON.stringify(database)}`);
+  if (process.env.PCA_DATABASE_TLS !== 'REQUIRED') refuse('PCA_DATABASE_TLS=REQUIRED is mandatory for a remote disposable database');
+
+  console.log(
+    `DISPOSABLE REMOTE TARGET: host=${target.hostname} database=${database} (explicitly declared; TLS required). ` +
+      'This gate CREATES SCHEMA in that database. It is not a production provisioning path.',
+  );
+  return true;
 }
 
 const root = new URL('../migrations/', import.meta.url);
 const files = (await readdir(root)).filter((file) => file.endsWith('.sql')).sort();
-const connection = await mysql.createConnection({ uri: connectionString, multipleStatements: true, timezone: 'Z' });
+// A REMOTE disposable target resolves its TLS posture through the SAME
+// resolver the application pool uses (backend/src/db/pool.ts), so this gate
+// can never reach it over a link the application itself would refuse. The
+// local/Compose container is the disposable plaintext database by definition
+// and serves no trusted certificate, so it keeps its existing posture and
+// `npm run db:verify` behaves exactly as before.
+let tlsOption = false;
+if (targetIsRemoteDisposable) {
+  const { resolveDatabaseTlsOption } = await import('../dist/db/pool.js');
+  tlsOption = resolveDatabaseTlsOption(process.env);
+}
+const connection = await mysql.createConnection({
+  uri: connectionString,
+  ssl: tlsOption === false ? undefined : tlsOption,
+  multipleStatements: true,
+  timezone: 'Z',
+});
 try {
   await assertSupportedEnvironment(connection);
 

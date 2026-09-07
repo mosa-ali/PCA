@@ -5,7 +5,7 @@ import {
   createGracefulShutdownHandler,
   registerGracefulShutdown,
 } from './runtime/gracefulShutdown.js';
-import { closePool } from './db/pool.js';
+import { closePool, assertDatabaseTlsConfiguration } from './db/pool.js';
 import { AuthService } from './auth/AuthService.js';
 import { MySqlAuthRepository } from './auth/MySqlAuthRepository.js';
 import { AuthzService } from './authz/AuthzService.js';
@@ -330,6 +330,13 @@ async function start(): Promise<void> {
   // crash-on-startup an operator will notice, not a silently-degraded
   // process running indefinitely in the safe-but-unintended posture.
   assertKnownRuntimeEnvironment();
+  // PCA-DW-E2E F-1: the database link's TLS posture must be STATED, not
+  // inferred. mysql2 opens a plaintext connection when no ssl option is
+  // supplied, and silently ignores the ?ssl-mode=REQUIRED spelling an
+  // operator is most likely to reach for -- so an unstated posture in a
+  // production-sensitive runtime is refused here, at boot, rather than
+  // discovered as an unencrypted link carrying real family data.
+  assertDatabaseTlsConfiguration();
 
   const deviceRepository = new MySqlDeviceRepository();
   const relayService = new RelayService(new MySqlRelayRepository());
