@@ -239,6 +239,7 @@ const files = [
   "test/email/emailBackoff.test.mjs",
   "test/email/emailTemplates.test.mjs",
   "test/email/emailProviderConfig.test.mjs",
+  "test/email/productionEmailConfigurationStartup.test.mjs",
   "test/email/providers/SmtpEmailProviderAdapter.test.mjs",
   "test/email/providers/MicrosoftGraphEmailProviderAdapter.test.mjs",
   "test/email/InMemoryEmailOutboxRepository.test.mjs",

@@ -179,6 +179,7 @@ import { createTestSandboxEmailSender } from './parentaccount/TestSandboxEmailSe
 import type { EmailSenderPort } from './parentaccount/EmailSenderPort.js';
 import { assertKnownRuntimeEnvironment, isProductionSensitiveRuntime } from './runtime/environment.js';
 import { EmailService } from './email/EmailService.js';
+import { assertProductionEmailConfigurationComplete } from './email/emailProviderConfig.js';
 import { MySqlEmailOutboxRepository } from './email/MySqlEmailOutboxRepository.js';
 import { resolveEmailProviderAdapter } from './email/emailProviderConfig.js';
 import { RejectingEmailProviderAdapter } from './email/providers/RejectingEmailProviderAdapter.js';
@@ -298,6 +299,10 @@ function createEmailInfrastructure(env: NodeJS.ProcessEnv = process.env): EmailI
     return { emailSender: createTestSandboxEmailSender(env), emailProviderAdapter: undefined, startWorker: () => undefined };
   }
   const emailProviderAdapter = createEmailProviderAdapterForProduction(env);
+  // Fail closed at BOOT on an incomplete outbox configuration, exactly as
+  // incomplete provider credentials already do -- see this function's own
+  // doc comment in email/emailProviderConfig.ts for the hole this closes.
+  assertProductionEmailConfigurationComplete(env);
   const emailOutboxRepository = new MySqlEmailOutboxRepository();
   const emailSender = new EmailService({ repository: emailOutboxRepository, providerAdapter: emailProviderAdapter, env });
   return {

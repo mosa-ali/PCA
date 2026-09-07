@@ -185,11 +185,17 @@ against, which §3 blocks. The methodology is ready and unchanged
 
 Not exercised against Azure. Two things were established locally by execution:
 
-- **Env override works.** Node's `--env-file` does *not* override a variable
-  already present in the environment (verified directly). So exporting
-  `PCA_DATABASE_URL` in the shell cleanly redirects `npm run test:db` at another
-  server **without editing any repository file** — the right mechanism for this
-  phase, when it can resume.
+- **Env override works, but a second gate blocks Azure anyway — CORRECTION.**
+  Node's `--env-file` does not override a variable already present in the
+  environment (verified directly), so exporting `PCA_DATABASE_URL` does reach
+  the test runner. It does **not** follow that `npm run test:db` can be pointed
+  at Azure, as this report first stated. `backend/scripts/verify-mysql.mjs` --
+  the suite's own first step -- enforces a **hostname allowlist**
+  (`127.0.0.1`, `localhost`, `mysql`) and refuses anything else outright:
+  "PCA_DATABASE_URL/PCA_MIGRATION_DATABASE_URL must point to the disposable
+  local/Compose database." Confirmed by executing it against the Azure host.
+  This is a second, independent blocker (finding **F-5**), and it is a
+  deliberate safety control, not a bug.
 - **The connection path is `PCA_DATABASE_URL` only.** `backend/src/db/pool.ts`
   builds its pool from that single URI with `timezone: 'Z'`,
   `connectionLimit: 10`, keep-alive, and a 10s connect timeout.
@@ -287,6 +293,14 @@ database called `pca_prod`. Anyone reaching for it as the Azure configuration
 model would find the wrong variable names entirely — the backend reads
 `PCA_DATABASE_URL`. It should be deleted or rewritten to the real key names.
 
+### F-5 — The DB test suite cannot target any non-local host
+
+`verify-mysql.mjs` allow-lists the hostnames `127.0.0.1`, `localhost` and
+`mysql`, and throws on anything else before any test runs. So even on a correct
+MySQL 8.4 server, `npm run test:db` cannot be pointed at the Azure disposable
+database without changing that control. Correct and protective — recorded
+because it means Stage 9 needs an explicit decision, not just a URL.
+
 ### F-4 — Canonical object inventory CSV is one wave stale
 
 See §6. Cosmetic; reconciles exactly.
@@ -372,8 +386,10 @@ moved.
    the password from every line of output — including error messages.
 4. `PCA_DATABASE_URL=… npm run db:migrate`, then `npm run db:verify`, then the
    schema-equivalence proof.
-5. `PCA_DATABASE_URL=… npm run test:db` — the shell variable overrides
-   `test.db.env`, so no repository file needs editing.
+5. `npm run test:db` against Azure — **requires an owner decision first**, per
+   F-5: the suite's own preflight hostname allowlist refuses any non-local host.
+   Extending it, like the reset allow-list in F-2, widens a safety control and
+   is not something to do quietly.
 6. Phases 7–11 (family isolation, constraints, email outbox, privacy, reset)
    against the migrated Azure schema.
 
@@ -402,11 +418,11 @@ moved.
 12 Email outbox persistence ............... NOT_TESTED
 13 Privacy verification ................... PASS   (schema gates, local; nothing written)
 14 Reset / repeatability .................. BLOCKED (F-2)
-15 Defects discovered ..................... 4 (1 HIGH, security-relevant)
+15 Defects discovered ..................... 5 (1 HIGH, security-relevant)
 16 Source changes ......................... NONE
 17 CI status .............................. 21/22 green, iOS known-red
 18 Production-readiness implications ...... NONE GAINED
-19 Remaining external blockers ............ 3
+19 Remaining external blockers ............ 3 (+F-5 decision)
 20 Next actions ........................... 7
 
 DATABASE_TARGET      = disposable        (authorized, not connected)

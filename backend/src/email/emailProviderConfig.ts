@@ -1,6 +1,7 @@
 import { isProductionSensitiveRuntime } from '../runtime/environment.js';
 import type { EmailProviderAdapter } from './EmailProviderAdapter.js';
 import { RejectingEmailProviderAdapter } from './providers/RejectingEmailProviderAdapter.js';
+import { resolveOutboxEncryptionKeyBytes } from './emailOutboxEncryption.js';
 import { SmtpEmailProviderAdapter } from './providers/SmtpEmailProviderAdapter.js';
 import { MicrosoftGraphEmailProviderAdapter } from './providers/MicrosoftGraphEmailProviderAdapter.js';
 
@@ -108,6 +109,37 @@ function createMicrosoftGraphAdapter(env: NodeJS.ProcessEnv, identity: EmailSend
     fromName: identity.fromName,
     replyToAddress: identity.replyToAddress,
   });
+}
+
+/**
+ * Startup assertion for the COMPLETE production email path, not just the
+ * provider half of it.
+ *
+ * `resolveEmailProviderAdapter` already fails loudly at boot when a provider is
+ * NAMED but its credentials are incomplete -- a genuine operator
+ * misconfiguration worth surfacing immediately. The durable outbox's
+ * encryption key (`PCA_EMAIL_OUTBOX_ENCRYPTION_KEY`) is equally required and
+ * sits on exactly the same critical path, but was only ever resolved lazily at
+ * the first send. That left a real production hole: with a provider fully
+ * configured and this one key missing, the process booted, `/health` returned
+ * ok, and `/health/email` returned `{"status":"ok","provider":"SMTP"}` --
+ * while the very first real parent registration answered HTTP 500, created the
+ * account row anyway, and enqueued NOTHING (the throw happens before the
+ * outbox insert, so the durable-retry path never sees the message either).
+ * Both health signals an operator would check before a production cutover
+ * reported green over a completely non-functional authentication path.
+ *
+ * Resolving the key here makes that misconfiguration behave exactly like the
+ * incomplete-credentials case it belongs with: refuse to start.
+ *
+ * Deliberately scoped to a SELECTED provider. With no provider configured at
+ * all, the absence of an outbox key is not a misconfiguration -- it is the
+ * honest not-yet-configured state `createEmailProviderAdapterForProduction`
+ * documents, and it must keep booting so the rest of the product can run.
+ */
+export function assertProductionEmailConfigurationComplete(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.PCA_EMAIL_PROVIDER !== 'SMTP' && env.PCA_EMAIL_PROVIDER !== 'MICROSOFT_GRAPH') return;
+  resolveOutboxEncryptionKeyBytes(env);
 }
 
 export function resolveEmailProviderAdapter(env: NodeJS.ProcessEnv = process.env): EmailProviderAdapter {
