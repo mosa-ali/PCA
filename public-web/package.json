@@ -10,6 +10,7 @@
   "scripts": {
     "build": "node --check build.mjs && node build.mjs",
     "check": "node --check build.mjs && node build.mjs --check-only",
+    "test": "node --test test/*.test.mjs",
     "serve": "node scripts/serve.mjs",
     "uat": "node scripts/uat.mjs",
     "dev": "node build.mjs && node scripts/serve.mjs"

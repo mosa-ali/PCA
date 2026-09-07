@@ -48,7 +48,7 @@ cta.whyPca,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /
 footer.group.legal,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",Legal,الشؤون القانونية,المعلومات القانونية,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 footer.group.trust,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)",Trust,الثقة والخصوصية,الثقة,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 footer.legalNote,/ar/ /ar/how-it-works/ /ar/privacy/ /ar/contact/ /ar/accessibility/ /ar/privacy-policy/ /ar/terms/,"Site-wide (header, footer, navigation)","PCA is a digital child protection platform. Plans, prices and availability described as coming later are not yet released.",PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار والمزايا الموصوفة بأنها قادمة لاحقًا لم تُطلق بعد.,‏PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار وأي عناصر مذكورة على أنها «قادمة لاحقًا» لم تُطرح بعد.,YES,REVISE_MEDIUM,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
-home.affordability.body,/ar/,Home,PCA is being designed with affordability and broad access in mind.,تُصمم PCA مع مراعاة القدرة على تحمل التكلفة وإتاحة الخدمة على نطاق أوسع.,تُصمم PCA مع مراعاة أن تكون التكلفة في متناول الأسر وأن تتاح الخدمة على نطاق أوسع.,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
+home.affordability.body,/ar/,Home,PCA is being designed with affordability and broad access in mind.,تُصمم PCA مع مراعاة القدرة على تحمل التكلفة وإتاحة الخدمة على نطاق أوسع.,,REMOVED,REVISE_LOW,NONE,NONE,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: CHANGED_STRING | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was APPLIED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
 home.availability.items,/ar/,Home,"[1] title: PCA Parent
 [1] body: A responsive experience for phone, tablet and computer. Account access is not open yet.
 [2] title: PCA Child on Android
@@ -59,14 +59,9 @@ home.availability.items,/ar/,Home,"[1] title: PCA Parent
 [2] title: PCA Child على أندرويد
 [2] body: المنصة الأساسية المخطط لها لأول إصدار.
 [3] title: PCA Child على iPhone وiPad
-[3] body: حماية الطفل على iPhone وiPad مخطط لها في إصدار لاحق.","[1] title: PCA Parent
-[1] body: تجربة متجاوبة للهاتف والجهاز اللوحي والكمبيوتر. الوصول إلى الحساب غير متاح بعد.
-[2] title: PCA Child على أندرويد
-[2] body: المنصة الرئيسية المخطط لها لأول إصدار.
-[3] title: PCA Child على iPhone وiPad
-[3] body: حماية الطفل على iPhone وiPad مخطط لإتاحتها في إصدار لاحق.",YES,REVISE_MEDIUM,CLM-024; CLM-026,COMING_LATER; COMING_LATER,APPLIED,"Reviewer selected this row for owner attention: CHANGED_STRING;FEATURE_OR_RELEASE_STATUS | APPLIED and claim-bearing (CLM-024; CLM-026). Current Arabic narrowed EN ""Account access is not open yet"" to account CREATION only. The proposal restores the full scope. Items 2 and 3 keep COMING_LATER framing.",NO,PENDING,
-home.availability.label,/ar/,Home,Availability,التوفر,التوفر,NO,PASS,NONE,NONE,UNCHANGED,Reviewer selected this row for owner attention: FEATURE_OR_RELEASE_STATUS,NO,PENDING,
-home.availability.title,/ar/,Home,PCA Parent and PCA Child,PCA Parent وPCA Child,PCA Parent وPCA Child,NO,PASS,NONE,NONE,UNCHANGED,Reviewer selected this row for owner attention: FEATURE_OR_RELEASE_STATUS,NO,PENDING,
+[3] body: حماية الطفل على iPhone وiPad مخطط لها في إصدار لاحق.",,REMOVED,REVISE_MEDIUM,CLM-024; CLM-026,COMING_LATER; COMING_LATER,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: CHANGED_STRING;FEATURE_OR_RELEASE_STATUS | APPLIED and claim-bearing (CLM-024; CLM-026). Current Arabic narrowed EN ""Account access is not open yet"" to account CREATION only. The proposal restores the full scope. Items 2 and 3 keep COMING_LATER framing. | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was APPLIED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
+home.availability.label,/ar/,Home,Availability,التوفر,,REMOVED,PASS,NONE,NONE,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: FEATURE_OR_RELEASE_STATUS | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was UNCHANGED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
+home.availability.title,/ar/,Home,PCA Parent and PCA Child,PCA Parent وPCA Child,,REMOVED,PASS,NONE,NONE,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: FEATURE_OR_RELEASE_STATUS | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was UNCHANGED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
 home.different.items,/ar/,Home,"[1] title: Designed without a readable central child profile
 [1] body: Protection does not require a readable central copy.
 [2] title: Not designed to collect photos, videos, files or messages
@@ -111,18 +106,7 @@ home.faq.items,/ar/,Home,"[1] q: Does PCA read my child's messages?
 [5] q: هل تحمي PCA استخدام YouTube؟
 [5] a: الحماية المتقدمة لـYouTube مخطط لها في إصدار لاحق.
 [6] q: كم تكلفة PCA؟
-[6] a: لم تُنشر الخطط والأسعار النهائية بعد.","[1] q: هل تقرأ PCA رسائل طفلي؟
-[1] a: لم تُصمم PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
-[2] q: هل تجمع PCA صور الطفل أو ملفاته؟
-[2] a: لا تحتاج الحماية المعتادة إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية.
-[3] q: هل يمكن استخدام PCA Parent دون تثبيتها؟
-[3] a: نعم. التثبيت اختياري ويمكن استخدام نسخة الويب من المتصفح.
-[4] q: هل تستخدم PCA الذكاء الاصطناعي؟
-[4] a: المزايا المدعومة بالذكاء الاصطناعي مخطط لها في إصدار لاحق.
-[5] q: هل تحمي PCA استخدام YouTube؟
-[5] a: الحماية المتقدمة لـYouTube مخطط لها في إصدار لاحق.
-[6] q: كم تكلفة PCA؟
-[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",NO,REVISE_MEDIUM,NONE,NONE,REJECTED_PROPOSAL_CURRENT_ARABIC_RETAINED,"Reviewer selected this row for owner attention: CHANGED_STRING | REJECTED (REVISE_MEDIUM). Answer 2 rewrites ""arbitrary files"" as «أي ملفات أخرى غير لازمة للحماية» — ""any other files not necessary for protection"". That qualifier implicitly concedes that files which ARE necessary for protection are collected, which the English does not say and which contradicts the locked invariant CHILD_FILES_CENTRAL = 0. The reviewer is right that «الملفات العشوائية» is unnatural, but the fix has to keep the unconditional scope. Routed to the owner sheet for a replacement that does not add the condition. Reviewer proposal, for the record: [1] q: هل تقرأ PCA رسائل طفلي؟
+[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",,REMOVED,REVISE_MEDIUM,NONE,NONE,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: CHANGED_STRING | REJECTED (REVISE_MEDIUM). Answer 2 rewrites ""arbitrary files"" as «أي ملفات أخرى غير لازمة للحماية» — ""any other files not necessary for protection"". That qualifier implicitly concedes that files which ARE necessary for protection are collected, which the English does not say and which contradicts the locked invariant CHILD_FILES_CENTRAL = 0. The reviewer is right that «الملفات العشوائية» is unnatural, but the fix has to keep the unconditional scope. Routed to the owner sheet for a replacement that does not add the condition. Reviewer proposal, for the record: [1] q: هل تقرأ PCA رسائل طفلي؟
 [1] a: لم تُصمم PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.
 [2] q: هل تجمع PCA صور الطفل أو ملفاته؟
 [2] a: لا تحتاج الحماية المعتادة إلى مكتبة صور الطفل أو مقاطع الفيديو أو أي ملفات أخرى غير لازمة للحماية.
@@ -133,8 +117,8 @@ home.faq.items,/ar/,Home,"[1] q: Does PCA read my child's messages?
 [5] q: هل تحمي PCA استخدام YouTube؟
 [5] a: الحماية المتقدمة لاستخدام YouTube مخطط لإتاحتها في إصدار لاحق.
 [6] q: كم تكلفة PCA؟
-[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",NO,PENDING,
-home.faq.title,/ar/,Home,Quick answers,أسئلة سريعة,إجابات سريعة,YES,REVISE_MEDIUM,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
+[6] a: لم تُنشر الخطط والأسعار النهائية بعد. | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was REJECTED_PROPOSAL_CURRENT_ARABIC_RETAINED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
+home.faq.title,/ar/,Home,Quick answers,أسئلة سريعة,,REMOVED,REVISE_MEDIUM,NONE,NONE,REMOVED_FROM_CORPUS,"Reviewer selected this row for owner attention: CHANGED_STRING | REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was APPLIED. Confirm the removal was intended; nothing here needs a translation decision.",NO,PENDING,
 home.final.body,/ar/,Home,"Understand the tools, choose the protections that fit your family, and stay in control of sensitive information.",تعرّف على الأدوات، واختر الحماية المناسبة لأسرتك، واحتفظ بالتحكم في المعلومات الحساسة.,تعرّف على الأدوات، واختر وسائل الحماية المناسبة لأسرتك، وحافظ على تحكمك في المعلومات الحساسة.,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 home.hero.body,/ar/,Home,Children deserve care and protection wherever they spend time—including online.,يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك الإنترنت.,يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك على الإنترنت.,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 home.protects.items,/ar/,Home,"[1] title: Screen Time
@@ -167,22 +151,10 @@ home.protects.items,/ar/,Home,"[1] title: Screen Time
 [7] title: التنبيهات
 [7] body: إرسال تنبيهات مفيدة مرتبطة بالحماية.
 [8] title: حماية الجهاز
-[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.","[1] title: وقت الشاشة
-[1] body: دعم حدود وروتين أكثر توازنًا لاستخدام الأجهزة.
-[2] title: تصفح أكثر أمانًا
-[2] body: المساعدة في تطبيق قرارات السلامة المعتمدة على الويب.
-[3] title: التحكم بالتطبيقات والويب
-[3] body: وضع حدود مناسبة للتطبيقات والوصول إلى الويب.
-[4] title: الجداول الزمنية
-[4] body: تحديد أوقات واضحة للدراسة والراحة والنوم.
-[5] title: حالة الحماية
-[5] body: معرفة ما إذا كانت وسائل الحماية مفعّلة.
-[6] title: طلبات الوالدين والطفل
-[6] body: إتاحة تواصل واضح عندما يطلب الطفل وقتًا إضافيًا.
-[7] title: التنبيهات
-[7] body: تلقي تنبيهات ذات صلة بالحماية.
-[8] title: حماية الجهاز
-[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.",YES,REVISE_MEDIUM,CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035,REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT,APPLIED,"Reviewer selected this row for owner attention: CHANGED_STRING | APPLIED and claim-bearing (CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035). Three genuine fidelity fixes on a card set carrying eight REQUIRES_PLATFORM_SUPPORT claims: ""apply approved web-safety decisions"" had become ""MAKE web protection decisions""; ""whether protections are ACTIVE"" had become ""whether protection is WORKING"" (a stronger assertion); and ""RECEIVE relevant protection notices"" had become ""SEND useful alerts"" — wrong direction.",NO,PENDING,
+[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.","[1] وقت الشاشة
+[2] تصفح أكثر أمانًا
+[3] التحكم بالتطبيقات والويب
+[4] التنبيهات",YES,REVISE_MEDIUM,CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035,REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT; REQUIRES_PLATFORM_SUPPORT,APPLIED,"Reviewer selected this row for owner attention: CHANGED_STRING | APPLIED and claim-bearing (CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035). Three genuine fidelity fixes on a card set carrying eight REQUIRES_PLATFORM_SUPPORT claims: ""apply approved web-safety decisions"" had become ""MAKE web protection decisions""; ""whether protections are ACTIVE"" had become ""whether protection is WORKING"" (a stronger assertion); and ""RECEIVE relevant protection notices"" had become ""SEND useful alerts"" — wrong direction.",NO,PENDING,
 home.why.title,/ar/,Home,Built from a parent's concern,بدأت من اهتمام أب بحماية أطفاله,بدأت من اهتمام أحد الوالدين بحماية أطفاله,YES,REVISE_MEDIUM,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,
 howItWorks.parent.items,/ar/how-it-works/,How PCA Works,"[1] title: No installation required
 [1] body: PCA Parent is designed to run in a supported browser on phone, tablet or computer, with nothing to install.

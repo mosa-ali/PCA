@@ -11,6 +11,14 @@
  * sourced: if remediation had gone wrong, the sheet would show it rather than
  * hide it behind a single value quoted twice.
  *
+ * A reviewed key may also have been DELETED from the corpus since the review
+ * (the four-page IA rebalance did exactly that to six selected rows). Such a
+ * row ships nowhere, so it is neither remediated nor retained: it is reported
+ * as REMOVED_FROM_CORPUS with an empty FINAL_PROPOSED_ARABIC and CHANGED =
+ * REMOVED, and it is exempt from the drift cross-check rather than being
+ * silently dropped -- the owner still needs to see that a row they were asked
+ * to decide on no longer exists.
+ *
  * Row selection is the union of four sets, and each row says which it came from:
  *   - the reviewer's own owner-attention selection;
  *   - every correction deferred to legal review;
@@ -142,22 +150,42 @@ const rows = [];
 for (const [key, reasons] of [...selected].sort((a, b) => a[0].localeCompare(b[0]))) {
   const r = reviewedByKey.get(key);
   const before = r.CURRENT_ARABIC;
-  const after = serialise(CONTENT.ar[key]);
 
-  const status = appliedByKey.has(key)
+  // A reviewed key can legitimately disappear from the corpus: the reviewer's
+  // 189-row export is a snapshot, and the four-page IA rebalance (e7f1206)
+  // landed AFTER the review package was recorded (87f1f83), deleting the Home
+  // availability/affordability/steps/FAQ blocks and howItWorks.child outright.
+  // That is a THIRD state, distinct from both "remediated" and "left alone",
+  // and it must be reported as itself. Reading CONTENT.ar[key] blindly here
+  // used to conflate it with drift in two opposite and equally wrong ways:
+  // an UNCHANGED/REJECTED row was accused of having "changed anyway" (which
+  // aborted the whole sheet, so OD-12 could not be produced at all), while an
+  // APPLIED row passed the cross-check vacuously and would have rendered the
+  // literal string "undefined" into FINAL_PROPOSED_ARABIC as though that were
+  // the remediated Arabic the owner is signing. Absence is therefore resolved
+  // FIRST, and only rows that still ship are drift-checked.
+  const stillInCorpus = Object.prototype.hasOwnProperty.call(CONTENT.ar, key);
+  const after = stillInCorpus ? serialise(CONTENT.ar[key]) : '';
+
+  const ledgerStatus = appliedByKey.has(key)
     ? 'APPLIED'
     : rejectedByKey.has(key)
       ? 'REJECTED_PROPOSAL_CURRENT_ARABIC_RETAINED'
       : deferredByKey.has(key)
         ? 'DEFERRED_LEGAL'
         : 'UNCHANGED';
+  const status = stillInCorpus ? ledgerStatus : 'REMOVED_FROM_CORPUS';
 
-  // Cross-check the ledger against the live corpus, per row.
-  if (status === 'APPLIED' && before === after) {
-    problems.push(`"${key}" is recorded as APPLIED but the Arabic is unchanged.`);
-  }
-  if (status !== 'APPLIED' && before !== after) {
-    problems.push(`"${key}" is ${status} but the Arabic changed anyway.`);
+  // Cross-check the ledger against the live corpus, per row. Only meaningful
+  // for a row that still ships -- a removed row has no live Arabic to compare
+  // against, and neither assertion below can say anything true about it.
+  if (stillInCorpus) {
+    if (ledgerStatus === 'APPLIED' && before === after) {
+      problems.push(`"${key}" is recorded as APPLIED but the Arabic is unchanged.`);
+    }
+    if (ledgerStatus !== 'APPLIED' && before !== after) {
+      problems.push(`"${key}" is ${ledgerStatus} but the Arabic changed anyway.`);
+    }
   }
 
   rows.push({
@@ -167,12 +195,18 @@ for (const [key, reasons] of [...selected].sort((a, b) => a[0].localeCompare(b[0
     ENGLISH_SOURCE: r.ENGLISH_SOURCE,
     ORIGINAL_ARABIC: before,
     FINAL_PROPOSED_ARABIC: after,
-    CHANGED: before === after ? 'NO' : 'YES',
+    CHANGED: !stillInCorpus ? 'REMOVED' : before === after ? 'NO' : 'YES',
     REVIEWER_DECISION: r.REVIEW_DECISION,
     CLAIM_ID: r.CLAIM_ID,
     CLAIM_STATUS: r.CLAIM_STATUS,
     REMEDIATION_DISPOSITION: status,
-    WHY_IN_SIGNOFF: reasons.join(' | '),
+    WHY_IN_SIGNOFF: (stillInCorpus
+      ? reasons
+      : [
+          ...reasons,
+          `REMOVED FROM THE SITE after the review: this key no longer exists in either locale, so the Arabic above ships nowhere and there is no remediated text to approve. Its ledger disposition at review time was ${ledgerStatus}. Confirm the removal was intended; nothing here needs a translation decision.`,
+        ]
+    ).join(' | '),
     LEGAL_REVIEW_REQUIRED: r.LEGAL_REVIEW_REQUIRED,
     OWNER_DECISION: 'PENDING',
     OWNER_NOTE: '',
@@ -195,6 +229,7 @@ if (problems.length) {
   console.log('OWNER ARABIC SIGN-OFF SHEET');
   console.log(`  rows                       ${rows.length}`);
   console.log(`  changed by remediation     ${rows.filter((r) => r.CHANGED === 'YES').length}`);
+  console.log(`  removed from the site      ${rows.filter((r) => r.CHANGED === 'REMOVED').length}`);
   for (const [s, n] of Object.entries(byStatus).sort()) console.log(`  ${s.padEnd(42)} ${n}`);
   console.log(`  OWNER_DECISION = PENDING   ${rows.filter((r) => r.OWNER_DECISION === 'PENDING').length}/${rows.length}`);
   console.log(`\nwritten: docs/public/reports/RELEASE_A_ARABIC_OWNER_SIGNOFF.csv`);

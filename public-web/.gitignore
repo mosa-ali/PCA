@@ -1,4 +1,21 @@
 dist
 node_modules
 *.log
-reports
+
+# reports/ holds two DIFFERENT kinds of file, and they must not share a rule.
+#
+# Regenerable build output (build-report.json, release-a-evidence.json,
+# MANIFEST.sha256) is rebuilt from tracked source by `npm run build` and the
+# evidence probes, so it stays ignored.
+#
+# The two Arabic files below are NOT build output: they are the decision
+# record behind docs/public/reports/RELEASE_A_ARABIC_OWNER_SIGNOFF.csv -- 42
+# applied corrections, 2 rejections with their reasons, 18 legal deferrals and
+# the reviewer's own 189-row decision tally. `scripts/arabic-owner-signoff.mjs`
+# hard-depends on the ledger, so while these were ignored a clean checkout
+# could not regenerate or even verify the sheet the owner signs OD-12 against
+# (confirmed by running the generator against `git archive HEAD`: ENOENT).
+# Ignoring an audit trail put it one `git clean -x` from being unrecoverable.
+reports/*
+!reports/arabic-corrections-ledger.json
+!reports/arabic-review-intake.json

@@ -680,3 +680,26 @@ jobs:
       - name: Build PCA Public and run every content gate
         working-directory: public-web
         run: npm run build
+      - name: Release-A evidence-generator regression tests
+        # `npm run build` does not exercise scripts/, so the OD-12 owner
+        # sign-off generator had no coverage at all and was silently broken:
+        # six reviewer-selected keys were deleted from the corpus by the
+        # four-page IA rebalance, which made the generator abort with a
+        # misleading drift message (so the sheet the owner signs could not be
+        # produced) while a second, opposite path would have written the
+        # literal string "undefined" into the sheet as remediated Arabic.
+        # These tests run the real generator, assert the removal handling, and
+        # keep a negative control proving genuine drift still fails the run.
+        working-directory: public-web
+        run: npm test
+      - name: Assert the generator left no uncommitted drift
+        # The generator writes a TRACKED artifact
+        # (docs/public/reports/RELEASE_A_ARABIC_OWNER_SIGNOFF.csv). If the
+        # committed sheet ever stops matching what the current corpus and
+        # ledger produce, that divergence must fail here rather than be
+        # discovered when an owner signs a stale sheet.
+        run: |
+          if ! git diff --exit-code -- docs/public/reports/RELEASE_A_ARABIC_OWNER_SIGNOFF.csv; then
+            echo "::error::The committed OD-12 sign-off sheet does not match what arabic-owner-signoff.mjs now generates. Re-run 'node scripts/arabic-owner-signoff.mjs' in public-web/ and commit the result."
+            exit 1
+          fi

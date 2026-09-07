@@ -1,0 +1,650 @@
+{
+  "reviewerPackage": "docs/public/reports/PCA_Release_A_Arabic_Native_Review_Package/",
+  "eligible": 42,
+  "applied": [
+    {
+      "key": "accessibility.barrier.body",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "إذا وجدت شيئًا في PCA يصعّب عليك إكمال مهمة، فنحن نريد أن نعرف بذلك. لم تفتح PCA قنوات الإبلاغ بعد، وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر. وعند فتحها، يرجى عدم مشاركة معلومات حساسة عن الطفل.",
+      "afterArabic": "إذا كان هناك ما في PCA يصعّب عليك إكمال مهمة، فنحن نريد معرفة ذلك. لم تفتح PCA قنوات الإبلاغ بعد؛ وستُنشر على صفحة التواصل قبل إتاحة PCA للأسر. وعند فتح هذه القنوات، يُرجى عدم مشاركة معلومات حساسة عن الطفل.",
+      "note": "Fluency only. Reporting channels remain stated as not open."
+    },
+    {
+      "key": "accessibility.cta.contact",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "التواصل بخصوص إمكانية الوصول",
+      "afterArabic": "تواصل معنا بشأن إمكانية الوصول",
+      "note": "CTA phrasing. Links to /contact/, which states plainly that PCA cannot receive messages yet — same expectation as the English."
+    },
+    {
+      "key": "accessibility.goals.items",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "[1] التنقل بلوحة المفاتيح؛\n[2] حالات تركيز واضحة؛\n[3] عناوين وتسميات نماذج دلالية؛\n[4] دعم قارئات الشاشة؛\n[5] تباين مناسب؛\n[6] تقليل الحركة حسب تفضيلات المستخدم؛\n[7] أهداف لمس مناسبة؛\n[8] تخطيطات متجاوبة للهاتف والجهاز اللوحي والكمبيوتر؛\n[9] الإنجليزية LTR والعربية RTL.",
+      "afterArabic": "[1] التنقل بلوحة المفاتيح؛\n[2] مؤشرات تركيز واضحة؛\n[3] عناوين دلالية وتسميات واضحة لحقول النماذج؛\n[4] دعم قارئات الشاشة؛\n[5] تباين كافٍ؛\n[6] تقليل الحركة؛\n[7] مساحات لمس مناسبة؛\n[8] تخطيطات متجاوبة للهاتف والجهاز اللوحي والكمبيوتر؛\n[9] الإنجليزية من اليسار إلى اليمين (LTR) والعربية من اليمين إلى اليسار (RTL).",
+      "note": "Accessibility terminology, and closer to EN: \"suitable contrast\" → \"sufficient contrast\" as EN says, and LTR/RTL spelled out in Arabic instead of bare English abbreviations. These are stated design goals, not a conformance claim."
+    },
+    {
+      "key": "accessibility.goals.lead",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "نصمم ونختبر من أجل:",
+      "afterArabic": "نصمم ونختبر لتحقيق ما يلي:",
+      "note": "Fluency only."
+    },
+    {
+      "key": "accessibility.goals.title",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "أهدافنا",
+      "afterArabic": "أهدافنا لإمكانية الوصول",
+      "note": "Arabic had dropped the topic: «أهدافنا» (\"our goals\") for EN \"Our accessibility goals\"."
+    },
+    {
+      "key": "accessibility.hero.title",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "حماية الطفل الرقمية يجب أن تكون قابلة للاستخدام من قبل أسر أكثر",
+      "afterArabic": "ينبغي أن يتمكن عدد أكبر من الأسر من استخدام وسائل حماية الأطفال الرقمية",
+      "note": "Improves fidelity to the hedge: «يجب» (\"must\") → «ينبغي» (\"should\"), matching EN \"should be usable\"."
+    },
+    {
+      "key": "accessibility.seo.description",
+      "file": "src/content/pages/accessibility.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "تُصمم تجارب PCA العامة وتجربة الوالدين لتدعم لوحة المفاتيح وقارئات الشاشة والحركة المخففة والعربية والإنجليزية ومختلف أحجام الأجهزة.",
+      "afterArabic": "تُصمم تجارب PCA العامة وتجربة PCA Parent لتدعم استخدام لوحة المفاتيح وقارئات الشاشة، وتقليل الحركة، والعمل بصورة متجاوبة على مختلف أحجام الأجهزة، والاستخدام باللغتين الإنجليزية والعربية.",
+      "note": "Fluency and completeness; no accessibility conformance claim is added (CLM-054 stays unasserted)."
+    },
+    {
+      "key": "contact.hero.body",
+      "file": "src/content/pages/contact.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "اختر الموضوع الأقرب إلى استفسارك. يرجى عدم إدخال معلومات خاصة عن طفلك إلا إذا طلب فريق PCA معلومة محددة وضرورية بطريقة آمنة.",
+      "afterArabic": "اختر الموضوع الأقرب إلى استفسارك. يُرجى عدم تضمين معلومات خاصة عن طفلك إلا إذا طلبت PCA تحديدًا معلومة ضرورية بطريقة آمنة.",
+      "note": "Removes «فريق PCA» (\"the PCA team\"), an actor the English does not name."
+    },
+    {
+      "key": "contact.seo.description",
+      "file": "src/content/pages/contact.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "لا تستطيع PCA استقبال الرسائل بعد. وستُنشر قنوات الدعم والخصوصية وإمكانية الوصول والأمان قبل أن تُفتح PCA للأسر.",
+      "afterArabic": "لا تستطيع PCA استقبال الرسائل بعد. وستُنشر قنوات الدعم والخصوصية وإمكانية الوصول والأمان قبل إتاحة PCA للأسر.",
+      "note": "Fluency only. \"PCA is not able to receive messages yet\" is untouched."
+    },
+    {
+      "key": "contact.seo.title",
+      "file": "src/content/pages/contact.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "تواصل مع PCA — الدعم والخصوصية والاستفسارات",
+      "afterArabic": "التواصل مع PCA — قنوات ستُفتح قبل الإطلاق",
+      "note": "Current Arabic dropped EN's \"Channels Opening Before Launch\" and implied channels already exist. The proposal restores it."
+    },
+    {
+      "key": "cta.access",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "تعرّف على إتاحة PCA",
+      "afterArabic": "تعرّف على خيارات الوصول إلى PCA",
+      "note": "CTA phrasing. \"Access options\" matches the availability section it opens (Parent web, Child Android, iOS later); no capability is implied that English does not imply."
+    },
+    {
+      "key": "cta.allFaqs",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "جميع الأسئلة الشائعة",
+      "afterArabic": "عرض جميع الأسئلة الشائعة",
+      "note": "Adds the verb EN has: \"View All FAQs\" was rendered as a bare section name."
+    },
+    {
+      "key": "cta.privacyHandling",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "كيف تتعامل PCA مع الخصوصية؟",
+      "afterArabic": "تعرّف على كيفية تعامل PCA مع الخصوصية",
+      "note": "Restores the imperative of EN \"See How PCA Handles Privacy\"; current Arabic was a question."
+    },
+    {
+      "key": "footer.group.legal",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "الشؤون القانونية",
+      "afterArabic": "المعلومات القانونية",
+      "note": "Register only."
+    },
+    {
+      "key": "footer.group.trust",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "الثقة والخصوصية",
+      "afterArabic": "الثقة",
+      "note": "EN is \"Trust\". Arabic had added \"and privacy\"."
+    },
+    {
+      "key": "footer.legalNote",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار والمزايا الموصوفة بأنها قادمة لاحقًا لم تُطلق بعد.",
+      "afterArabic": "‏PCA منصة لحماية الأطفال في المساحات الرقمية. الخطط والأسعار وأي عناصر مذكورة على أنها «قادمة لاحقًا» لم تُطرح بعد.",
+      "note": "Current Arabic narrowed EN \"availability\" to «المزايا» (\"features\"). The proposal restores the general scope, so nothing described as coming later can read as available."
+    },
+    {
+      "key": "home.affordability.body",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "تُصمم PCA مع مراعاة القدرة على تحمل التكلفة وإتاحة الخدمة على نطاق أوسع.",
+      "afterArabic": "تُصمم PCA مع مراعاة أن تكون التكلفة في متناول الأسر وأن تتاح الخدمة على نطاق أوسع.",
+      "note": "Fluency only; affordability stays an intent, not a price promise."
+    },
+    {
+      "key": "home.availability.items",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "CLM-024; CLM-026",
+      "beforeArabic": "[1] title: PCA Parent\n[1] body: تجربة ويب متجاوبة للهاتف والجهاز اللوحي والكمبيوتر. لم يُفتح إنشاء الحسابات بعد.\n[2] title: PCA Child على أندرويد\n[2] body: المنصة الأساسية المخطط لها لأول إصدار.\n[3] title: PCA Child على iPhone وiPad\n[3] body: حماية الطفل على iPhone وiPad مخطط لها في إصدار لاحق.",
+      "afterArabic": "[1] title: PCA Parent\n[1] body: تجربة متجاوبة للهاتف والجهاز اللوحي والكمبيوتر. الوصول إلى الحساب غير متاح بعد.\n[2] title: PCA Child على أندرويد\n[2] body: المنصة الرئيسية المخطط لها لأول إصدار.\n[3] title: PCA Child على iPhone وiPad\n[3] body: حماية الطفل على iPhone وiPad مخطط لإتاحتها في إصدار لاحق.",
+      "note": "Current Arabic narrowed EN \"Account access is not open yet\" to account CREATION only. The proposal restores the full scope. Items 2 and 3 keep COMING_LATER framing."
+    },
+    {
+      "key": "home.different.items",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "[1] title: مصممة دون ملف مركزي مقروء عن الطفل\n[1] body: الحماية لا تتطلب نسخة مركزية مقروءة.\n[2] title: لم تُصمم لجمع صور الطفل أو فيديوهاته أو ملفاته أو رسائله\n[2] body: الحماية المعتادة لا تحتاج إليها.\n[3] title: حماية تبدأ من الجهاز\n[3] body: صُممت المعلومات الحساسة لتبقى لدى الأسرة.\n[4] title: تكلفة معقولة وإتاحة أوسع\n[4] body: القدرة على تحمل التكلفة والإتاحة الواسعة جزء من التصميم.",
+      "afterArabic": "[1] title: مصممة دون إنشاء ملف مركزي مقروء عن الطفل\n[1] body: الحماية لا تتطلب نسخة مركزية مقروءة.\n[2] title: لم تُصمم لجمع صور الطفل أو مقاطع الفيديو أو الملفات أو الرسائل\n[2] body: الحماية المعتادة لا تحتاج إلى هذه المحتويات.\n[3] title: حماية تبدأ محليًا من الجهاز\n[3] body: صُمم نهج PCA بحيث تبقى المعلومات الحساسة لدى الأسرة.\n[4] title: تكلفة في المتناول وإتاحة أوسع\n[4] body: مراعاة التكلفة والإتاحة الواسعة جزء من التصميم.",
+      "note": "Fluency. The readable-central-profile and no-photos/videos/files/messages constraints are unchanged, and item 3 remains a design-intent statement rather than a guarantee."
+    },
+    {
+      "key": "home.faq.title",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "أسئلة سريعة",
+      "afterArabic": "إجابات سريعة",
+      "note": "EN is \"Quick answers\". The Arabic said «أسئلة سريعة» — \"quick questions\". Straight mistranslation."
+    },
+    {
+      "key": "home.final.body",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "تعرّف على الأدوات، واختر الحماية المناسبة لأسرتك، واحتفظ بالتحكم في المعلومات الحساسة.",
+      "afterArabic": "تعرّف على الأدوات، واختر وسائل الحماية المناسبة لأسرتك، وحافظ على تحكمك في المعلومات الحساسة.",
+      "note": "Fluency only."
+    },
+    {
+      "key": "home.hero.body",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك الإنترنت.",
+      "afterArabic": "يستحق الأطفال الرعاية والحماية أينما يقضون وقتهم، بما في ذلك على الإنترنت.",
+      "note": "Preposition only."
+    },
+    {
+      "key": "home.protects.items",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035",
+      "beforeArabic": "[1] title: وقت الشاشة\n[1] body: المساعدة في وضع حدود وروتين أكثر توازنًا لاستخدام الأجهزة.\n[2] title: تصفح أكثر أمانًا\n[2] body: المساعدة في اتخاذ قرارات الحماية على الويب.\n[3] title: التحكم بالتطبيقات والويب\n[3] body: وضع حدود مناسبة للتطبيقات والوصول إلى الويب.\n[4] title: الجداول الزمنية\n[4] body: تحديد أوقات واضحة للدراسة والراحة والنوم.\n[5] title: حالة الحماية\n[5] body: معرفة ما إذا كانت الحماية تعمل.\n[6] title: طلبات الوالدين والطفل\n[6] body: إتاحة تواصل واضح عندما يطلب الطفل وقتًا إضافيًا.\n[7] title: التنبيهات\n[7] body: إرسال تنبيهات مفيدة مرتبطة بالحماية.\n[8] title: حماية الجهاز\n[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.",
+      "afterArabic": "[1] title: وقت الشاشة\n[1] body: دعم حدود وروتين أكثر توازنًا لاستخدام الأجهزة.\n[2] title: تصفح أكثر أمانًا\n[2] body: المساعدة في تطبيق قرارات السلامة المعتمدة على الويب.\n[3] title: التحكم بالتطبيقات والويب\n[3] body: وضع حدود مناسبة للتطبيقات والوصول إلى الويب.\n[4] title: الجداول الزمنية\n[4] body: تحديد أوقات واضحة للدراسة والراحة والنوم.\n[5] title: حالة الحماية\n[5] body: معرفة ما إذا كانت وسائل الحماية مفعّلة.\n[6] title: طلبات الوالدين والطفل\n[6] body: إتاحة تواصل واضح عندما يطلب الطفل وقتًا إضافيًا.\n[7] title: التنبيهات\n[7] body: تلقي تنبيهات ذات صلة بالحماية.\n[8] title: حماية الجهاز\n[8] body: المساعدة في الحفاظ على إعدادات الحماية على جهاز الطفل.",
+      "note": "Three genuine fidelity fixes on a card set carrying eight REQUIRES_PLATFORM_SUPPORT claims: \"apply approved web-safety decisions\" had become \"MAKE web protection decisions\"; \"whether protections are ACTIVE\" had become \"whether protection is WORKING\" (a stronger assertion); and \"RECEIVE relevant protection notices\" had become \"SEND useful alerts\" — wrong direction."
+    },
+    {
+      "key": "home.why.title",
+      "file": "src/content/pages/home.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "بدأت من اهتمام أب بحماية أطفاله",
+      "afterArabic": "بدأت من اهتمام أحد الوالدين بحماية أطفاله",
+      "note": "EN is \"Built from a parent's concern\". Arabic specified «أب» (a father), a gender the English does not state. The video transcript keeps «أب» because ITS English says \"a father's concern\" — the two are correctly different."
+    },
+    {
+      "key": "howItWorks.parent.items",
+      "file": "src/content/pages/howItWorks.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "CLM-019; CLM-020; CLM-021",
+      "beforeArabic": "[1] title: لا حاجة إلى تثبيت\n[1] body: صُممت PCA Parent للعمل في متصفح مدعوم على الهاتف أو الجهاز اللوحي أو الكمبيوتر، دون تثبيت أي شيء.\n[2] title: تثبيت PCA Parent\n[2] body: عندما يكون التثبيت مدعومًا يمكنك تثبيتها لوصول أقرب للتطبيق.\n[3] title: يبقى التثبيت اختياريًا\n[3] body: لا تحتاج إلى تثبيت PCA Parent حتى تستخدم الخدمة.",
+      "afterArabic": "[1] title: لا حاجة إلى تثبيت\n[1] body: صُممت PCA Parent للعمل في متصفح مدعوم على الهاتف أو الجهاز اللوحي أو الكمبيوتر، دون تثبيت أي شيء.\n[2] title: تثبيت PCA Parent\n[2] body: عندما يكون التثبيت مدعومًا، يمكنك تثبيتها للحصول على تجربة أقرب إلى استخدام التطبيق.\n[3] title: يبقى التثبيت اختياريًا\n[3] body: لا تحتاج إلى تثبيت PCA Parent لمجرد استخدام الخدمة.",
+      "note": "Restores EN's \"just\" in \"never need to install ... just to use the service\"; rest is fluency."
+    },
+    {
+      "key": "howItWorks.security.title",
+      "file": "src/content/pages/howItWorks.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "فرق أمني مهم",
+      "afterArabic": "فرق مهم من ناحية الأمان",
+      "note": "Fluency only."
+    },
+    {
+      "key": "howItWorks.seo.description",
+      "file": "src/content/pages/howItWorks.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "تعرّف على المسار المخطط من إنشاء حساب الوالدين إلى ربط جهاز الطفل واختيار الحماية ومتابعة الحالة.",
+      "afterArabic": "تعرّف على المسار المخطط في PCA، من إنشاء حساب الوالدين إلى ربط جهاز الطفل واختيار الحماية ومتابعة الحالة والتعامل مع طلبات الوالدين والطفل.",
+      "note": "Current Arabic omitted \"family requests\" from the description entirely."
+    },
+    {
+      "key": "howItWorks.seo.title",
+      "file": "src/content/pages/howItWorks.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "كيف تعمل PCA؟ — مسار الوالدين وحماية جهاز الطفل",
+      "afterArabic": "كيف تعمل PCA؟ — مسار الوالدين وحماية الطفل",
+      "note": "Current Arabic narrowed \"Child Protection\" to \"child DEVICE protection\"."
+    },
+    {
+      "key": "howItWorks.steps.items",
+      "file": "src/content/pages/howItWorks.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "CLM-024",
+      "beforeArabic": "[1] title: إنشاء حساب الوالدين\n[1] body: استخدم البريد الإلكتروني وكلمة المرور لإنشاء حساب PCA Parent.\n[2] title: تأكيد البريد الإلكتروني\n[2] body: أكّد بريدك الإلكتروني لتفعيل الوصول إلى PCA Parent.\n[3] title: إعداد الطفل داخل PCA Parent\n[3] body: يتم إعداد الطفل داخل بيئة PCA Parent المحمية.\n[4] title: تثبيت PCA Child\n[4] body: اتبع الإرشادات المناسبة للجهاز الذي تقوم بإعداده.\n[5] title: إنشاء رمز أو رابط التسجيل\n[5] body: أنشئ من داخل PCA Parent رمز التسجيل أو الرابط الخاص بهذا الطفل.\n[6] title: ربط جهاز الطفل\n[6] body: يتم استخدام مسار التسجيل والربط المعتمد.\n[7] title: اختيار إعدادات الحماية\n[7] body: حسب الإمكانات الفعلية للمنصة، يمكن للوالدين إعداد وقت الشاشة والجداول والتحكم بالتطبيقات والويب وغيرها من وظائف الحماية المدعومة.\n[8] title: متابعة الحالة والطلبات\n[8] body: يُفترض أن تساعد PCA Parent الوالدين على فهم حالة الحماية والتعامل مع الطلبات المدعومة، بحسب ما تدعمه المنصة.",
+      "afterArabic": "[1] title: إنشاء حساب الوالدين\n[1] body: استخدم البريد الإلكتروني وكلمة المرور لإنشاء حساب PCA Parent.\n[2] title: تأكيد البريد الإلكتروني\n[2] body: أكّد بريدك الإلكتروني لتفعيل الوصول إلى PCA Parent.\n[3] title: إعداد الطفل داخل PCA Parent\n[3] body: يتم إعداد الطفل داخل بيئة PCA Parent المحمية.\n[4] title: تثبيت PCA Child\n[4] body: اتبع الإرشادات المناسبة للجهاز الذي تقوم بإعداده.\n[5] title: إنشاء رمز أو رابط التسجيل\n[5] body: أنشئ من داخل PCA Parent رمز التسجيل أو الرابط الخاص بهذا الطفل.\n[6] title: ربط جهاز الطفل\n[6] body: استخدم مسار التسجيل والربط المعتمد.\n[7] title: اختيار إعدادات الحماية\n[7] body: وفقًا لإمكانات المنصة التي تم التحقق منها، يمكن للوالدين إعداد قواعد وقت الشاشة والجداول والتحكم بالتطبيقات والويب وغيرها من وسائل الحماية المدعومة.\n[8] title: متابعة الحالة والطلبات\n[8] body: ينبغي أن تساعد PCA Parent الوالدين على فهم ما إذا كانت الحماية تعمل والتعامل مع طلبات الطفل المدعومة.",
+      "note": "Restores \"verified\" in EN \"Depending on VERIFIED platform capabilities\", which the Arabic had dropped to \"actual capabilities\". Step 8 keeps the \"should\" hedge and drops an extra platform-support qualifier the English does not have, landing on EN parity."
+    },
+    {
+      "key": "nav.download",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "التنزيل والتثبيت",
+      "afterArabic": "التنزيل",
+      "note": "EN is \"Download\". Arabic had added \"and installation\"."
+    },
+    {
+      "key": "privacy.cta.policy",
+      "file": "src/content/pages/privacy.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "سياسة الخصوصية بالتفصيل",
+      "afterArabic": "اقرأ سياسة الخصوصية التفصيلية",
+      "note": "Restores the imperative of EN \"Read the Detailed Privacy Policy\". Target page is unchanged and still a provisional draft."
+    },
+    {
+      "key": "privacy.principles.items",
+      "file": "src/content/pages/privacy.ar.mjs",
+      "leavesChanged": 4,
+      "appliedInThisRun": true,
+      "decision": "REVISE_HIGH",
+      "claimId": "NONE",
+      "beforeArabic": "[1] title: الحماية دون مراقبة مفرطة\n[1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.\n[2] title: الخصوصية من أساس التصميم\n[2] body: أبقِ النشاط الحساس للطفل ضمن الأجهزة والأنظمة الموثوقة لدى الوالدين والطفل قدر الإمكان.\n[3] title: الشفافية\n[3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.\n[4] title: كرامة الطفل\n[4] body: يجب ألا تُهين الحماية الطفل أو تتعامل معه كمتهم.\n[5] title: حماية مناسبة للعمر\n[5] body: الأعمار والظروف الأسرية المختلفة تحتاج حدودًا مختلفة.\n[6] title: مسؤولية الوالدين\n[6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.\n[7] title: لا مراقبة خفية\n[7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.\n[8] title: حماية يمكن الوصول إليها\n[8] body: ينبغي تصميم الحماية المفيدة لتصل إلى عدد أكبر من الأسر.\n[9] title: لا ادعاءات غير صحيحة\n[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",
+      "afterArabic": "[1] title: الحماية دون مراقبة\n[1] body: استخدم الحد الأدنى من المعلومات المطلوبة لتحقيق حماية مفيدة.\n[2] title: الخصوصية من أساس التصميم\n[2] body: أبقِ النشاط الحساس للطفل ضمن الأنظمة الموثوقة لدى الأسرة قدر الإمكان.\n[3] title: الشفافية\n[3] body: يجب أن يفهم الوالدان ما الذي تفعله الميزة وما المعلومات التي تحتاجها.\n[4] title: كرامة الطفل\n[4] body: يجب ألا تُهين الحماية الطفل أو تتعامل معه كمتهم.\n[5] title: حماية مناسبة للعمر\n[5] body: الأعمار والظروف الأسرية المختلفة تحتاج حدودًا مختلفة.\n[6] title: مسؤولية الوالدين\n[6] body: PCA أداة مساعدة، وليست بديلًا عن الحوار والحكم السليم والرعاية.\n[7] title: لا مراقبة خفية\n[7] body: لا ينبغي أن تعتمد PCA على التقاط الرسائل أو كلمات المرور أو تسجيل الشاشة سرًا أو جمع صور الطفل في الخلفية.\n[8] title: حماية متاحة لأسر أكثر\n[8] body: ينبغي تصميم وسائل حماية مفيدة لتكون متاحة لعدد أكبر من الأسر.\n[9] title: لا ادعاءات غير صحيحة\n[9] body: الثقة تحتاج إلى الصراحة بشأن ما هو متاح وما هو محدود وما سيأتي لاحقًا.",
+      "ownerReleased": "Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. \"Protection without surveillance\" must not permit non-excessive surveillance.",
+      "note": "The title of item 1 said \"protection without EXCESSIVE surveillance\", implying some surveillance is acceptable and weakening the approved principle; the owner-specified wording replaces it. Item 2 body restores \"family-side\" (the Arabic had listed devices belonging to parents and child). Item 8 disambiguates «حماية يمكن الوصول إليها», which on a site with a separate Accessibility page reads as a11y rather than EN's \"accessible\" in the sense of broad reach. Titles of items 1 and 2 carry overrides; see SUBITEM_OVERRIDES."
+    },
+    {
+      "key": "privacy.seo.description",
+      "file": "src/content/pages/privacy.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_MEDIUM",
+      "claimId": "NONE",
+      "beforeArabic": "تعرّف على نهج PCA في المعالجة المحلية، والمعلومات الموجودة ضمن الأجهزة الموثوقة، والحد الأدنى من المعلومات التقنية المركزية، ومبادئ سلامة الطفل.",
+      "afterArabic": "تعرّف على نهج PCA الذي يعطي الأولوية للمعالجة المحلية، وعلى المعلومات التي تبقى لدى الأسرة، والحد الأدنى من السجلات التقنية المركزية، ومبادئ سلامة الطفل التي يقوم عليها هذا النهج.",
+      "note": "Restores two concepts the Arabic had lost: \"local-first\" (was flattened to \"local processing\") and \"family-side data\" (was narrowed to \"trusted devices\"). \"Minimum central technical records\" is unchanged. No privacy promise is strengthened."
+    },
+    {
+      "key": "privacy.topics.items",
+      "file": "src/content/pages/privacy.ar.mjs",
+      "leavesChanged": 4,
+      "appliedInThisRun": true,
+      "decision": "REVISE_HIGH",
+      "claimId": "CLM-036; CLM-037",
+      "beforeArabic": "[1] title: الصور والفيديوهات والملفات\n[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو فيديوهاته أو ملفاته العشوائية، ويجب ألا تُجمع هذه الأشياء في قاعدة بيانات مركزية مقروءة لدى PCA.\n[2] title: الرسائل\n[2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.\n[3] title: استخدام التطبيقات ووقت الشاشة\n[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية لدى PCA. يمكن معالجة استخدام التطبيقات محليًا عندما تحتاج وظيفة الحماية إلى ذلك.\n[4] title: الحماية أثناء التصفح\n[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج الحماية على الويب إلى معالجة محلية لاتخاذ قرار الحماية.\n[5] title: الموقع\n[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.\n[6] title: الكاميرا والمسافة عن الشاشة\n[6] body: حماية المسافة بين العين والشاشة عبر الكاميرا مخطط لها في إصدار لاحق. وهي ليست ميزة فعّالة اليوم، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",
+      "afterArabic": "[1] title: الصور والفيديوهات والملفات\n[1] body: لا تحتاج الحماية المعتادة إلى الوصول إلى مكتبة صور الطفل أو مقاطع الفيديو أو الملفات الأخرى على الجهاز، ويجب ألا تُجمع هذه المحتويات في قاعدة بيانات مركزية مقروءة لدى PCA.\n[2] title: الرسائل\n[2] body: لم تُصمم وظائف الحماية المعتادة في PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.\n[3] title: استخدام التطبيقات ووقت الشاشة\n[3] body: يجب ألا يتحول سجل استخدام التطبيقات المقروء إلى بيانات مركزية مقروءة لدى PCA. وقد تتم معالجة استخدام التطبيقات محليًا عند الحاجة إلى ذلك للحماية.\n[4] title: الحماية أثناء التصفح\n[4] body: قاعدة الخصوصية في PCA هي عدم حفظ سجل التصفح المقروء مركزيًا. وقد تحتاج وظائف السلامة على الويب إلى معالجة محلية لاتخاذ قرارات الحماية.\n[5] title: الموقع\n[5] body: الموقع معلومات حساسة. يجب أن تكون أي ميزة موقع معتمدة تحت تحكم الوالدين، وألا يتحول سجل الموقع الدقيق المقروء إلى بيانات مركزية لدى PCA.\n[6] title: الكاميرا والمسافة عن الشاشة\n[6] body: حماية المسافة بين العين والشاشة باستخدام الكاميرا مخطط لها في إصدار لاحق. وهي غير متاحة حاليًا، وسنوضح هنا كيفية تعامل أي إصدار مستقبلي مع صور الكاميرا بعد التحقق من ذلك.",
+      "ownerReleased": "Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. The Arabic must preserve READABLE, CENTRAL and the exact scope of the English.",
+      "note": "Item 3 is the real defect: EN says readable app-usage history must not become \"centrally READABLE PCA data\", and the Arabic had dropped that second qualifier, so it read as a promise of no central app-usage data at all -- stronger than English. The proposal restores it. Item 1 replaces the literal «الملفات العشوائية» with \"other files on the device\", which stays unconditional and so does NOT repeat the home.faq.items defect. Item 4 restores \"web-safety functions\" and plural \"decisions\". Item 6 replaces «فعّالة» (\"effective\") with «غير متاحة حاليًا» (\"not currently available\"), which is what EN \"not an active feature today\" means -- the current wording could be read as a judgement on the feature's efficacy. Item 5 is held back; see SUBITEM_OVERRIDES."
+    },
+    {
+      "key": "release.contactNotice",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "**لا يمكننا استقبال الرسائل بعد.** تُعِدّ PCA قنوات الدعم والخصوصية والأمان، وستُنشر هنا قبل أن تُفتح PCA للأسر. والمواضيع أدناه توضح ما ستغطيه هذه القنوات.",
+      "afterArabic": "**لا يمكننا استقبال الرسائل بعد.** تُعِدّ PCA قنوات الدعم والخصوصية والأمان، وستُنشر هنا قبل إتاحة PCA للأسر. وتوضح الموضوعات أدناه ما ستغطيه هذه القنوات.",
+      "note": "Fluency only. \"We are not able to receive messages yet\" is untouched."
+    },
+    {
+      "key": "release.journeyNotice",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "**لم تُفتح PCA لإنشاء حسابات جديدة بعد.** تشرح هذه الصفحة رحلة الإعداد التي نبنيها حتى تعرف ما الذي ينتظرك. أما إنشاء الحساب والتحقق من البريد وتطبيق PCA Child فتصبح متاحة في إصدار لاحق.",
+      "afterArabic": "**لم تُفتح PCA لإنشاء حسابات جديدة بعد.** تشرح هذه الصفحة رحلة الإعداد التي نعمل على بنائها حتى تعرف ما الذي تتوقعه. وسيُتاح إنشاء الحساب وتأكيد البريد الإلكتروني وتطبيق PCA Child في إصدار لاحق.",
+      "note": "Fluency only. \"not open for new accounts yet\" and \"later release\" are untouched."
+    },
+    {
+      "key": "release.reportingPending",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "لم تفتح PCA قنوات الإبلاغ بعد. وستُنشر في صفحة التواصل قبل أن تُفتح PCA للأسر.",
+      "afterArabic": "لم تفتح PCA قنوات الإبلاغ بعد. وستُنشر هذه القنوات في صفحة التواصل قبل إتاحة PCA للأسر.",
+      "note": "Fluency only. Reporting channels remain stated as not open."
+    },
+    {
+      "key": "status.available",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "CLM-021; CLM-046",
+      "beforeArabic": "متوفر",
+      "afterArabic": "متاح",
+      "note": "Terminology only: «متوفر» → «متاح», the conventional Arabic for an \"Available\" status. No change in claim strength."
+    },
+    {
+      "key": "status.platform",
+      "file": "src/content/global.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_HIGH",
+      "claimId": "CLM-028; CLM-029; CLM-030; CLM-031; CLM-032; CLM-033; CLM-034; CLM-035; CLM-036",
+      "beforeArabic": "يعتمد على دعم المنصة",
+      "afterArabic": "يتطلب دعم المنصة",
+      "note": "Restores requirement strength. «يعتمد على دعم المنصة» (\"depends on\") → «يتطلب دعم المنصة» (\"requires\"), matching EN \"Requires platform support\". This label renders for nine REQUIRES_PLATFORM_SUPPORT claims, so the weaker Arabic understated the condition on all nine."
+    },
+    {
+      "key": "video.enroll.transcript",
+      "file": "src/content/pages/video.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "[1] ابدأ بإنشاء حساب PCA Parent باستخدام بريدك الإلكتروني وكلمة مرور.\n[2] ثم افتح بريدك وأكّد عنوانك الإلكتروني لتفعيل الحساب.\n[3] أضف طفلك داخل PCA Parent، ويكفي من المعلومات ما يميّز حماية كل طفل عن غيره.\n[4] اختر نوع الجهاز الذي يستخدمه طفلك؛ فأندرويد هي المنصة الأولى المخطط لها في PCA Child، أما حماية الأطفال على iPhone وiPad فهي مخططة لإصدار لاحق.\n[5] أنشئ دعوة خاصة بهذا الطفل، فهي ما يربط الجهاز بأسرتك أنت دون غيرها.\n[6] وعند إطلاق PCA Child ستثبّته وتفتحه على جهاز طفلك.\n[7] أدخل رمز الإعداد الوارد في الدعوة، أو افتح رابط الإعداد، ليقترن جهاز الطفل بحساب الوالدين.\n[8] أكّد الربط على جهاز الطفل، وامنح PCA الأذونات اللازمة لتطبيق القواعد التي اخترتها.\n[9] عد إلى PCA Parent واختر وسائل الحماية المناسبة لهذا الطفل: وقت الشاشة، والجداول الزمنية، والتحكم بالتطبيقات والويب حيث تدعم المنصة ذلك.\n[10] وأخيرًا راجع حالة الحماية لتعرف ما إذا كانت تعمل وما الذي يحتاج إلى انتباهك.",
+      "afterArabic": "[1] ابدأ بإنشاء حساب PCA Parent باستخدام بريدك الإلكتروني وكلمة مرور.\n[2] ثم افتح بريدك وأكّد عنوانك الإلكتروني لتفعيل الحساب.\n[3] أضف طفلك داخل PCA Parent، ويكفي من المعلومات ما يميّز حماية كل طفل عن غيره.\n[4] اختر المنصة التي يعمل بها جهاز طفلك؛ فأندرويد هي المنصة الأولى المخطط لها في PCA Child، أما حماية الأطفال على iPhone وiPad فهي مخطط لها في إصدار لاحق.\n[5] أنشئ دعوة خاصة بهذا الطفل، فهي ما يربط الجهاز بأسرتك أنت دون غيرها.\n[6] وعند إطلاق PCA Child ستثبّته وتفتحه على جهاز طفلك.\n[7] أدخل رمز الإعداد الوارد في الدعوة، أو افتح رابط الإعداد، ليقترن جهاز الطفل بحساب الوالدين.\n[8] أكّد الربط على جهاز الطفل، وامنح PCA الأذونات اللازمة لتطبيق القواعد التي اخترتها.\n[9] عد إلى PCA Parent واختر وسائل الحماية المناسبة لهذا الطفل: وقت الشاشة، والجداول الزمنية، والتحكم بالتطبيقات والويب حيث تدعم المنصة ذلك.\n[10] وأخيرًا راجع حالة الحماية لتعرف ما إذا كانت تعمل وما الذي يحتاج إلى انتباهك.",
+      "note": "Step 4: EN says \"platform\", Arabic said \"device type\". Android/iOS release states unchanged."
+    },
+    {
+      "key": "video.intro.transcript",
+      "file": "src/content/pages/video.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "[1] في البيت وفي المدرسة وفي الأماكن التي يلعبون فيها، نحرص دائمًا على حماية أطفالنا.\n[2] والمساحات الرقمية التي يقضون فيها وقتهم تستحق العناية نفسها.\n[3] بدأت PCA من اهتمام أبٍ بحماية أطفاله، ومن قناعة بأن حياتهم على الإنترنت ليست استثناءً.\n[4] ولذلك بُنيت PCA لمساعدتك في الأمور اليومية، بحسب ما تدعمه منصة جهاز الطفل: وقت الشاشة، وتصفح أكثر أمانًا، والتحكم بالتطبيقات والويب، وجداول تناسب يوم أسرتك.\n[5] وتنبّهك عندما يحتاج أمر ما إلى انتباهك، وتمنح طفلك طريقة واضحة ليطلب وقتًا إضافيًا أو إذنًا بالوصول.\n[6] ولـ PCA نهج مختلف في الخصوصية: صُممت لحماية طفلك دون إنشاء ملف مركزي مقروء عنه.\n[7] فالحماية اليومية لا تتطلب من PCA جمع صور طفلك أو مقاطعه المصوّرة أو ملفاته أو رسائله.\n[8] ونؤمن بأن عالمًا رقميًا أكثر أمانًا لا ينبغي أن يرتبط بدخل الأسرة، لذلك كانت التكلفة المعقولة وسعة الإتاحة جزءًا من تصميم PCA.\n[9] ابدأ بحماية المساحات الرقمية لطفلك، وتعرّف على طريقة عمل PCA خطوة بخطوة.",
+      "afterArabic": "[1] في البيت وفي المدرسة وفي الأماكن التي يلعبون فيها، نحرص دائمًا على حماية أطفالنا.\n[2] والمساحات الرقمية التي يقضون فيها وقتهم تستحق العناية نفسها.\n[3] بدأت PCA من اهتمام أبٍ بحماية أطفاله، ومن قناعة بأن حياتهم على الإنترنت ليست استثناءً.\n[4] ولذلك بُنيت PCA لمساعدتك في الأمور اليومية، بحسب ما تدعمه منصة جهاز الطفل: وقت الشاشة، وتصفح أكثر أمانًا، والتحكم بالتطبيقات والويب، وجداول تناسب يوم أسرتك.\n[5] وتنبّهك عندما يحتاج أمر ما إلى انتباهك، وتمنح طفلك طريقة واضحة ليطلب وقتًا إضافيًا أو إذنًا بالوصول.\n[6] ولـ PCA نهج مختلف في الخصوصية: صُممت لحماية طفلك دون إنشاء ملف مركزي مقروء عنه.\n[7] فالحماية اليومية لا تتطلب من PCA جمع صور طفلك أو مقاطع الفيديو أو ملفاته أو رسائله.\n[8] ونؤمن بأن عالمًا رقميًا أكثر أمانًا لا ينبغي أن يرتبط بدخل الأسرة، لذلك كانت التكلفة المعقولة والإتاحة الواسعة جزءًا من تصميم PCA.\n[9] ابدأ بحماية المساحات الرقمية لطفلك، وتعرّف على طريقة عمل PCA خطوة بخطوة.",
+      "note": "Fluency only. Every privacy constraint in steps 6 and 7 is unchanged."
+    },
+    {
+      "key": "video.seo.title",
+      "file": "src/content/pages/video.ar.mjs",
+      "leavesChanged": 0,
+      "appliedInThisRun": false,
+      "decision": "REVISE_LOW",
+      "claimId": "NONE",
+      "beforeArabic": "فيديوهات PCA — التعريف وخطوات الإعداد",
+      "afterArabic": "مقاطع فيديو PCA — التعريف وخطوات الإعداد",
+      "note": "Register only: «فيديوهات» → «مقاطع فيديو»."
+    }
+  ],
+  "alreadyApplied": [
+    "status.platform",
+    "status.available",
+    "home.availability.items",
+    "release.contactNotice",
+    "release.journeyNotice",
+    "release.reportingPending",
+    "accessibility.cta.contact",
+    "cta.access",
+    "cta.allFaqs",
+    "cta.privacyHandling",
+    "privacy.cta.policy",
+    "home.faq.title",
+    "home.why.title",
+    "accessibility.goals.title",
+    "accessibility.hero.title",
+    "howItWorks.security.title",
+    "contact.seo.title",
+    "howItWorks.seo.title",
+    "howItWorks.seo.description",
+    "accessibility.seo.description",
+    "contact.seo.description",
+    "privacy.seo.description",
+    "video.seo.title",
+    "home.protects.items",
+    "home.different.items",
+    "home.hero.body",
+    "home.final.body",
+    "home.affordability.body",
+    "howItWorks.parent.items",
+    "howItWorks.steps.items",
+    "contact.hero.body",
+    "accessibility.barrier.body",
+    "accessibility.goals.lead",
+    "accessibility.goals.items",
+    "nav.download",
+    "footer.group.legal",
+    "footer.group.trust",
+    "footer.legalNote",
+    "video.enroll.transcript",
+    "video.intro.transcript"
+  ],
+  "subItemOverrides": [
+    {
+      "key": "privacy.topics.items",
+      "path": "5.body",
+      "source": "CURRENT",
+      "reason": "The reviewer read items 3 and 5 as the same defect. Only item 3 is. EN item 3 says readable app-usage history must not become \"centrally READABLE PCA data\", and the Arabic had dropped that second qualifier -- a real drift, and the proposal fixes it. But EN item 5 says readable precise-location history \"does not become CENTRAL PCA data\", with no second \"readable\", and the Arabic already matches that exactly. Adding «مقروءة» here as proposed would make the Arabic WEAKER than the English: it would permit precise-location history to be held centrally so long as it were not readable. On a CLM-036 row that is a privacy commitment being quietly loosened, so item 5 keeps its current wording."
+    },
+    {
+      "key": "privacy.principles.items",
+      "path": "1.title",
+      "source": "OWNER",
+      "reason": "The defect is real: «الحماية دون مراقبة مفرطة» means \"protection without EXCESSIVE surveillance\", which implies some surveillance is acceptable and weakens the approved principle. But the reviewer's replacement «الحماية دون تجسّس» renders \"surveillance\" as «تجسّس» -- espionage or spying, which is narrower and more loaded than the English. That trades one inexact word for another. The owner specified the exact concept in the ruling: «الحماية دون مراقبة». That is the English principle rendered precisely, and it is the owner's own wording, so it is what ships."
+    },
+    {
+      "key": "privacy.principles.items",
+      "path": "2.title",
+      "source": "CURRENT",
+      "reason": "\"Privacy by design\" is a term of art: privacy built in from the start. The current «الخصوصية من أساس التصميم» (\"from the foundation of the design\") carries that. The proposed «الخصوصية جزء من التصميم» (\"privacy is A PART OF the design\") is weaker and more incidental. The body of this item is accepted; only the title is held back."
+    }
+  ],
+  "ownerReleasedFromLegalDeferral": [
+    {
+      "key": "privacy.topics.items",
+      "reason": "Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. The Arabic must preserve READABLE, CENTRAL and the exact scope of the English."
+    },
+    {
+      "key": "privacy.principles.items",
+      "reason": "Owner ruling: approved as a privacy accuracy correction, not a new legal commitment. \"Protection without surveillance\" must not permit non-excessive surveillance."
+    }
+  ],
+  "rejected": [
+    {
+      "key": "home.faq.items",
+      "decision": "REVISE_MEDIUM",
+      "reviewerProposal": "[1] q: هل تقرأ PCA رسائل طفلي؟\n[1] a: لم تُصمم PCA لالتقاط الرسائل الشخصية أو قراءتها مركزيًا.\n[2] q: هل تجمع PCA صور الطفل أو ملفاته؟\n[2] a: لا تحتاج الحماية المعتادة إلى مكتبة صور الطفل أو مقاطع الفيديو أو أي ملفات أخرى غير لازمة للحماية.\n[3] q: هل يمكن استخدام PCA Parent دون تثبيتها؟\n[3] a: نعم. التثبيت اختياري، وتظل PCA Parent متاحة عبر المتصفح.\n[4] q: هل تستخدم PCA الذكاء الاصطناعي؟\n[4] a: المزايا المدعومة بالذكاء الاصطناعي مخطط لإتاحتها في إصدار لاحق.\n[5] q: هل تحمي PCA استخدام YouTube؟\n[5] a: الحماية المتقدمة لاستخدام YouTube مخطط لإتاحتها في إصدار لاحق.\n[6] q: كم تكلفة PCA؟\n[6] a: لم تُنشر الخطط والأسعار النهائية بعد.",
+      "rejectedReason": "Answer 2 rewrites \"arbitrary files\" as «أي ملفات أخرى غير لازمة للحماية» — \"any other files not necessary for protection\". That qualifier implicitly concedes that files which ARE necessary for protection are collected, which the English does not say and which contradicts the locked invariant CHILD_FILES_CENTRAL = 0. The reviewer is right that «الملفات العشوائية» is unnatural, but the fix has to keep the unconditional scope. Routed to the owner sheet for a replacement that does not add the condition.",
+      "finalArabicDecision": "UNCHANGED — current Arabic retained; routed to the owner sign-off sheet."
+    },
+    {
+      "key": "video.enroll.title",
+      "decision": "REVISE_MEDIUM",
+      "reviewerProposal": "كيفية التسجيل وإعداد الحماية باستخدام PCA",
+      "rejectedReason": "Broadens the approved English title. EN is \"How to Enroll with PCA\"; the proposal is «كيفية التسجيل وإعداد الحماية باستخدام PCA» — \"How to enroll AND SET UP PROTECTION with PCA\". The reviewer's observation is sound — the video does cover more than signup — but the remedy is to change the ENGLISH title, which is owner-approved copy and reopens claim review. Making only the Arabic broader would put EN and AR out of parity on a video that does not exist yet. Routed to the owner sheet as a proposed English copy change.",
+      "finalArabicDecision": "UNCHANGED — current Arabic retained; routed to the owner sign-off sheet."
+    }
+  ],
+  "deferredLegal": [
+    {
+      "key": "privacy.advanced.items",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy/"
+    },
+    {
+      "key": "privacy.faq.items",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy/"
+    },
+    {
+      "key": "privacy.notStored.items",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy/"
+    },
+    {
+      "key": "privacy.retention.body",
+      "decision": "REVISE_LOW",
+      "route": "/ar/privacy/"
+    },
+    {
+      "key": "privacy.where.items",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy/"
+    },
+    {
+      "key": "privacyPolicy.childDevice.body",
+      "decision": "REVISE_HIGH",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.contact.body",
+      "decision": "LEGAL_REVIEW_REQUIRED",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.cookies.body",
+      "decision": "LEGAL_REVIEW_REQUIRED",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.deletion.body",
+      "decision": "LEGAL_REVIEW_REQUIRED",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.feedback.body",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.notCollected.body",
+      "decision": "REVISE_HIGH",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.processing.body",
+      "decision": "REVISE_LOW",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.providers.body",
+      "decision": "REVISE_LOW",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.seo.description",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "privacyPolicy.summary.body",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/privacy-policy/"
+    },
+    {
+      "key": "terms.accountSecurity.body",
+      "decision": "REVISE_MEDIUM",
+      "route": "/ar/terms/"
+    },
+    {
+      "key": "terms.availability.body",
+      "decision": "LEGAL_REVIEW_REQUIRED",
+      "route": "/ar/terms/"
+    },
+    {
+      "key": "terms.using.body",
+      "decision": "LEGAL_REVIEW_REQUIRED",
+      "route": "/ar/terms/"
+    }
+  ]
+}

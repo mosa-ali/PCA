@@ -7,7 +7,9 @@
 #   www.pcasafe.com       -> pcaSafe App Service   (public-web/deploy/Dockerfile)
 #   api.pcasafe.com       -> pca App Service       (backend/Dockerfile)
 #   platform.pcasafe.com  -> pca App Service       (platform-admin-web/Dockerfile)
-#   app / parent          -> pca App Service       (parent-web: no Dockerfile yet)
+#   app / parent          -> pca App Service       (parent-web/Dockerfile, built
+#                                                   from the REPOSITORY ROOT --
+#                                                   it needs parent-sdk/ siblings)
 #
 # The database below is DISPOSABLE. It exists so the backend has something to
 # talk to on a laptop. It is not a model of the production database, it holds no

@@ -389,13 +389,26 @@ the deployment truth, and rollback always names the previous immutable image.
 | Public Web | `public-web/` | `public-web/deploy/Dockerfile` | nginx 1.27-alpine | 80 | `/healthz` | `pcaSafe` | `www.pcasafe.com` | **NOT DEPLOYED** (placeholder live) | none — anonymous static |
 | Backend API | `backend/` | `backend/Dockerfile` | Node 22 / Fastify | 4001 | `/health` | `pca` | `api.pcasafe.com` | **NOT DEPLOYED** (placeholder live) | serves Parent and Platform Admin realms separately |
 | Platform Admin Web | `platform-admin-web/` | `platform-admin-web/Dockerfile` | nginx-unprivileged | 8080 | `/healthz` | `pca` | `platform.pcasafe.com` | **NOT DEPLOYED** (placeholder live) | **PA realm — separate session, never shared with Parent** |
-| Parent Web | `parent-web/` | — | — | — | — | `pca` | `app` / `parent.pcasafe.com` | `PARENT_DOCKER = NOT_CURRENTLY_DEFINED` | Parent realm |
+| Parent Web | `parent-web/` | `parent-web/Dockerfile` | nginx-unprivileged 1.27-alpine | 8080 | `/healthz` | `pca` | `app` / `parent.pcasafe.com` | **NOT DEPLOYED** (placeholder live) | Parent realm |
 | Android | `android/` | — | — | — | — | — | — | `NOT_A_WEB_CONTAINER` | Child device |
 | iOS | `ios/` | — | — | — | — | — | — | `NOT_A_WEB_CONTAINER` | Child device (later release) |
 
-`PARENT_DOCKER = NOT_CURRENTLY_DEFINED` is recorded, not fixed. Parent Web has no
-accepted Dockerfile and no approved deployment programme, and inventing one here would
-create exactly the unreviewed second authority this review exists to prevent.
+`PARENT_DOCKER = NOT_CURRENTLY_DEFINED` was the position when this review was written.
+It is **superseded**: Wave 3 (`4615cc7`) added `parent-web/Dockerfile` and
+`parent-web/nginx.conf` to close the real X-Frame-Options / X-Content-Type-Options /
+Permissions-Policy gap that a `<meta>` tag cannot deliver, and the image was built and
+its response headers verified live against a running container. Unlike every other
+surface here, its build context is the **repository root**, because parent-web depends
+on two file-protocol sibling packages under `parent-sdk/` that must be built first:
+
+```bash
+docker build -f parent-web/Dockerfile -t pca-parent-web:local .
+docker run --rm -p 8082:8080 pca-parent-web:local
+```
+
+What has **not** changed is the deployment position: Parent Web still has no approved
+deployment programme, and nothing has been pushed or deployed. A Dockerfile existing is
+not authority to deploy it.
 
 ---
 
