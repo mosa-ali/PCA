@@ -17,12 +17,12 @@
     <string name="child_home_management_authorization_required">PCA needs device authorization before stronger protection can apply. The current state is shown below.</string>
     <string name="child_home_management_not_supported">PCA protection is not supported by this device capability. The current state is shown below.</string>
     <string name="child_home_parent_visibility_title">What your parent can see</string>
-    <string name="child_home_parent_visibility_body">Your parent can see protection status, screen-time and policy events, and activity categories enabled for your device. PCA does not store camera frames or facial identity as a children\'s monitoring history.</string>
+    <string name="child_home_parent_visibility_body">Once this device is connected to your family, your parent can see protection status, screen-time and policy events, and activity categories enabled for your device. Until it is connected, your parent cannot see anything from this device. PCA does not store camera frames or facial identity as a children\'s monitoring history.</string>
     <!-- PCA-NFR-044: young-child reading-level variants of the two strings above. Same privacy
          substance (what a parent can and cannot see); never a shortened/hidden version; only
          sentence structure/vocabulary is simplified. -->
     <string name="child_home_parent_visibility_title_simple">What your parent can see</string>
-    <string name="child_home_parent_visibility_body_simple">Your parent can see if protection is on, how much screen time you\'ve used, and what kind of apps or websites you use. Your parent cannot see your camera or your face.</string>
+    <string name="child_home_parent_visibility_body_simple">When this device is connected to your family, your parent can see if protection is on, how much screen time you\'ve used, and what kind of apps or websites you use. Until then, your parent cannot see anything from this device. Your parent cannot see your camera or your face.</string>
 
     <string name="child_home_local_protection_active">Protection is active on this device</string>
     <string name="child_home_remote_updates_pending">Remote updates are pending until this device reconnects</string>

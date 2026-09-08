@@ -87,7 +87,7 @@ RUN npm run gate:demo-mode
 #
 # The UNPRIVILEGED nginx image (matching platform-admin-web/backend/public-web):
 # runs as uid 101 on port 8080, needs no privileged bind.
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 AS runtime
 
 LABEL org.opencontainers.image.title="PCA Parent Web"
 LABEL org.opencontainers.image.description="PCA Parent console — React/Vite SPA served by nginx"

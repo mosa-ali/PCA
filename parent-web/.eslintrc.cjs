@@ -18,6 +18,10 @@ module.exports = {
   settings: { react: { version: 'detect' } },
   plugins: ['react-refresh'],
   rules: {
+    // PCA-FINAL-ASSESSMENT 2026-09-08 (FABLE-A057): the browser console is a privacy sink.
+    // Every diagnostic must go through src/security/diagnosticConsole.ts, which drops raw
+    // objects in production builds; direct console use is a lint error.
+    'no-console': 'error',
     'react/react-in-jsx-scope': 'off',
     'react/prop-types': 'off',
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
@@ -33,9 +37,11 @@ module.exports = {
   },
   overrides: [
     {
-      files: ['tests/**/*', 'e2e/**/*', '**/*.test.ts', '**/*.test.tsx'],
+      files: ['tests/**/*', 'e2e/**/*', 'e2e-real/**/*', 'e2e-qa-coordinator-b/**/*', 'qa-r2/**/*', 'scripts/**/*', '**/*.test.ts', '**/*.test.tsx'],
       env: { node: true },
-      rules: { '@typescript-eslint/no-explicit-any': 'off' },
+      // Test/QA harnesses and build scripts print to the terminal by design; the
+      // no-console privacy rule targets shipped application source only.
+      rules: { '@typescript-eslint/no-explicit-any': 'off', 'no-console': 'off' },
     },
   ],
 };

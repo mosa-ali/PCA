@@ -51,11 +51,13 @@
       { "method": "POST", "path": "/v1/runtime-sync/outbound", "auth": "device-session" },
       { "method": "GET", "path": "/v1/runtime-sync/inbound", "auth": "device-session" },
       { "method": "POST", "path": "/v1/runtime-sync/inbound/:messageId/ack", "auth": "device-session" },
-      { "method": "GET", "path": "/v1/runtime-sync/status", "auth": "device-session" }
+      { "method": "GET", "path": "/v1/runtime-sync/status", "auth": "device-session" },
+      { "method": "POST", "path": "/v1/runtime-sync/protection-status", "auth": "device-session" }
     ]
   },
   "deviceSessionErrorCodes": ["INVALID_INPUT", "UNAUTHORIZED"],
-  "outboundSubmitErrorCodes": ["INVALID_INPUT", "CROSS_FAMILY_RECIPIENT", "CONFLICT", "BATCH_TOO_LARGE"],
+  "outboundSubmitErrorCodes": ["INVALID", "CROSS_FAMILY_RECIPIENT", "CONFLICT"],
+  "outboundSubmitErrorCodesNote": "Per-item outcomes actually emitted by backend OutboundRelayService (QUEUED is the success value). A malformed batch is rejected whole with HTTP 400 invalid_request, and items beyond the batch bound are reported in droppedForBatchBound -- neither is a per-item code. The previous INVALID_INPUT/BATCH_TOO_LARGE entries were phantom codes no source ever emitted (corrected 2026-09-08).",
   "e2eeBoundary": {
     "serviceVisibility": ["opaque-envelope-metadata", "ciphertext"],
     "serverDecryption": "forbidden",

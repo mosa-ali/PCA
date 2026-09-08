@@ -1051,7 +1051,7 @@
     "locationCurrentOnly": "Current/latest location only",
     "locationWindowLabel": "Location history: {{window}}",
     "locationMustNotExceedGeneral": "Location-history retention cannot exceed general activity retention.",
-    "updatedStatus": "Retention policy validated and audited: {{window}}. Devices apply this value locally.",
+    "updatedStatus": "Retention window {{window}} was validated and audited, but it is not yet stored or applied to any device. Delivery to devices is pending the production cryptography review.",
     "localEnforcementNotice": "Each device enforces retention against the local copy it holds. Network access is not required for local expiry deletion, but a remote delivery or acknowledgement can remain pending while a device is offline.",
     "auditRetentionNotice": "Audit and tamper records have a separate floor of the active general-retention window or 12 months, whichever is longer; ordinary activity retention does not remove them.",
     "windowLabels": {

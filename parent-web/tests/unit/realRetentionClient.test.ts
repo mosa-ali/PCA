@@ -70,7 +70,7 @@ describe('RealRetentionClient', () => {
 
     it('a mutating call sends the double-submit CSRF header carrying the pca_family_csrf cookie value', async () => {
       document.cookie = 'pca_family_csrf=csrf-token-value; path=/';
-      fetchMock.mockResolvedValueOnce(jsonResponse(200, { policy: POLICY, accepted: true }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(202, { policy: POLICY, validated: true, persisted: false, deliveryStatus: 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW' }));
 
       await cookieClient().submitPolicy(POLICY);
 

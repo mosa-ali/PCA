@@ -92,3 +92,18 @@ function validateCatalogue(catalogue) {
 }
 
 module.exports = { validateCatalogue };
+
+// PCA-FINAL-ASSESSMENT 2026-09-08 (FABLE-A017): this file used to be an
+// export-only module, so the CI step `node contracts/child-profile-scope/validate-catalogue.cjs` loaded it and exited 0
+// without validating anything -- a gate in name only. Running it directly now
+// validates the catalogue next to it and fails the process on any error.
+if (require.main === module) {
+  const catalogue = require('./catalogue.json');
+  const errors = validateCatalogue(catalogue);
+  if (errors.length > 0) {
+    console.error(`contracts/child-profile-scope/validate-catalogue.cjs: FAIL (${errors.length} error(s))`);
+    for (const error of errors) console.error(` - ${error}`);
+    process.exit(1);
+  }
+  console.log(`contracts/child-profile-scope/validate-catalogue.cjs: OK -- catalogue validated`);
+}

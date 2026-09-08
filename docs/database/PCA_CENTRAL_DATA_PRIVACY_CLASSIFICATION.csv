@@ -187,7 +187,7 @@ complimentary_entitlement_grants,revision,bigint,OPERATIONAL_METADATA,"Numeric/b
 device_challenges,challenge_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 device_challenges,device_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 device_challenges,family_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
-device_challenges,nonce,varchar(256),ENCRYPTED_PAYLOAD,Opaque encrypted/binary payload.
+device_challenges,nonce,varchar(256),SECURITY_METADATA,Random proof-of-possession challenge nonce (device auth). Not an encrypted payload; corrected 2026-09-08 (was misclassified ENCRYPTED_PAYLOAD).
 device_challenges,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 device_challenges,expires_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 device_challenges,consumed_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
@@ -542,7 +542,7 @@ release_packages,version,varchar(32),OPERATIONAL_METADATA,"Numeric/boolean opera
 release_packages,artifact_digest,char(64),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."
 release_packages,artifact_size_bytes,bigint unsigned,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 release_packages,signing_key_id,varchar(128),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
-release_packages,signed_metadata,mediumblob,ENCRYPTED_PAYLOAD,Opaque encrypted/binary payload.
+release_packages,signed_metadata,mediumblob,OPERATIONAL_METADATA,Signed (NOT encrypted) release-package metadata: readable plaintext plus a signature. Contains no family/child data by construction; corrected 2026-09-08 (was misclassified ENCRYPTED_PAYLOAD -- signed is not encrypted).
 release_packages,minimum_supported_version,varchar(32),OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 release_packages,state,varchar(16),OPERATIONAL_METADATA,Closed-vocabulary status/type/category/currency/market column.
 release_packages,published_at,datetime(3),OPERATIONAL_METADATA,Timestamp.

@@ -114,7 +114,7 @@ test('RBAC: an authenticated account WITHOUT active family scope is rejected wit
   }
 });
 
-test('RBAC: an authenticated account WITH active family scope may reach retention-policy and gets 200', async () => {
+test('RBAC: an authenticated account WITH active family scope may reach retention-policy and gets 202 (validated, explicitly NOT persisted)', async () => {
   const { app, authService, authzRepository } = buildApp();
   try {
     const familyId = `family-${randomUUID()}`;
@@ -125,10 +125,33 @@ test('RBAC: an authenticated account WITH active family scope may reach retentio
       headers: { authorization: `Bearer ${rawToken}` },
       payload: RETENTION_POLICY_BODY,
     });
-    assert.equal(response.statusCode, 200);
+    assert.equal(response.statusCode, 202);
     const body = response.json();
-    assert.equal(body.accepted, true);
+    assert.equal(body.validated, true);
+    assert.equal(body.persisted, false);
+    assert.equal(body.deliveryStatus, 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW');
     assert.deepEqual(body.policy, RETENTION_POLICY_BODY);
+  } finally {
+    await app.close();
+  }
+});
+
+test('FABLE-A049 regression: the retention-policy route never claims acceptance or persistence -- nothing stores, delivers or enforces the parent choice yet', async () => {
+  const { app, authService, authzRepository } = buildApp();
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { rawToken } = await authenticatedAccount(authService, authzRepository, familyId);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/families/${familyId}/retention-policy`,
+      headers: { authorization: `Bearer ${rawToken}` },
+      payload: RETENTION_POLICY_BODY,
+    });
+    const body = response.json();
+    assert.notEqual(response.statusCode, 200, 'a 200 would read as "in force"; the honest answer is 202 (validated only)');
+    assert.equal('accepted' in body, false, 'the old accepted:true false-assurance field must not come back');
+    assert.equal(body.persisted, false);
+    assert.match(body.deliveryStatus, /NOT_PERSISTED/);
   } finally {
     await app.close();
   }

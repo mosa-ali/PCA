@@ -27,7 +27,8 @@ export class DevRetentionClient implements RetentionClient {
   async submitPolicy(policy: RetentionPolicySettings): Promise<RetentionPolicySubmitResult> {
     await delay();
     lastSubmittedPolicy = policy;
-    return { policy, accepted: true };
+    // Mirrors the real backend contract exactly: validated only, never persisted.
+    return { policy, validated: true, persisted: false, deliveryStatus: 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW' };
   }
 
   async deleteNow(actionId: string): Promise<DeleteNowResult> {

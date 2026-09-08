@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { describeUserFacingError, errorDiagnosticDetail } from '../i18n/errorMessages';
+import { reportDiagnostic } from '../security/diagnosticConsole';
 
 interface AsyncState<T> {
   data: T | null;
@@ -39,7 +40,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
           // trust state, the "see src/cryptoGate.ts" pointer) is preserved
           // here on purpose -- it is exactly what a developer needs and
           // exactly what a parent must not be shown as the error sentence.
-          console.error('[pca] async load failed:', errorDiagnosticDetail(err), err);
+          reportDiagnostic('[pca] async load failed:', errorDiagnosticDetail(err), err);
           setFailure({ cause: err });
           setLoading(false);
         }

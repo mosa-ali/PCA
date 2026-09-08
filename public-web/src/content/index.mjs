@@ -1,7 +1,7 @@
 /**
  * Content registry — COORDINATOR-OWNED.
  *
- * Registers the content tables for the three main public pages, the utility and
+ * Registers the content tables for the four main public pages, the utility and
  * legal routes, and the two public video scripts.
  *
  * Page writers own only their own three files:

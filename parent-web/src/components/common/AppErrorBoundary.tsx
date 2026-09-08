@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import i18n from '../../i18n';
+import { reportDiagnostic } from '../../security/diagnosticConsole';
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -31,7 +32,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     // construction/render error, not user data) -- safe to log for
     // operators.
     // eslint-disable-next-line no-console -- intentional operator-facing diagnostic
-    console.error('PCA Parent Console: unrecoverable app error', error, info.componentStack);
+    reportDiagnostic('PCA Parent Console: unrecoverable app error', error instanceof Error ? `${error.name}: ${error.message}` : String(error), { error, componentStack: info.componentStack });
   }
 
   render(): ReactNode {

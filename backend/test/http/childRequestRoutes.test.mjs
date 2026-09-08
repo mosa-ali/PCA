@@ -401,7 +401,17 @@ test('the /applied route only accepts the report from the SAME child device that
       headers: { authorization: 'Bearer dev-token-owner' },
       payload: { capabilityOutcome: 'ENFORCED' },
     });
-    assert.equal(wrongDevice.statusCode, 403);
+    // Device-level existence oracle closed (2026-09-08): a foreign device must see
+    // EXACTLY what an unknown requestId produces -- same status, same body.
+    assert.equal(wrongDevice.statusCode, 404);
+    const unknownRequest = await app.inject({
+      method: 'POST',
+      url: `/api/families/${FAMILY}/child-requests/request-that-does-not-exist-0001/applied`,
+      headers: { authorization: 'Bearer dev-token-owner' },
+      payload: { capabilityOutcome: 'ENFORCED' },
+    });
+    assert.equal(unknownRequest.statusCode, 404);
+    assert.deepEqual(wrongDevice.json(), unknownRequest.json());
 
     const applied = await app.inject({
       method: 'POST',

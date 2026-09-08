@@ -139,6 +139,7 @@ const files = [
   "test/runtime-sync/http/runtimeSyncRoutes.test.mjs",
   "test/http/parentRuntimeSyncRoutes.test.mjs",
   "test/runtime-sync/RejectingCryptoVerifiers.test.mjs",
+  "test/runtime-sync/RejectingEnvelopeContextResolver.test.mjs",
   "test/runtime-sync/http/productionCryptoGateFailClosed.test.mjs",
   "test/platformadmin/policy.test.mjs",
   "test/platformadmin/rbacPolicy.test.mjs",

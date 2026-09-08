@@ -76,23 +76,33 @@ machine-readable summary.
 
 ## Current state (informational — re-run the script for the live answer)
 
-As of this lane's work (git SHA recorded in the evidence pack):
+Re-executed on 2026-09-08 for all six targets (`docs/supervision/PCA_FINAL_GAP_ASSESSMENT_2026-09-08.md` §N has the verbatim output):
 
-- `PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW` — confirmed by
-  source inspection; both Rejecting verifiers are wired in
-  `backend/src/main.ts` and both fail closed (`return false`) on every
-  call. Device-session issuance and inbound envelope acceptance are
-  correctly, completely non-functional in production today.
+- `PRODUCTION_CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW` — derived from
+  source; both Rejecting verifiers are wired in `backend/src/main.ts` and
+  fail closed. Since 2026-09-08 the envelope-context resolver next to them is
+  also fail-closed by construction (`rejectingResolveEnvelopeContext`), so
+  activating a reviewed verifier without a real trust-set resolver can no
+  longer open an anti-downgrade hole. Only in scope for PARENT_C, ANDROID_D,
+  IOS_FUTURE.
 - `REAL_UAT = NOT_EXECUTED` — `uat_execution_log.json` has never been
-  updated by a human tester; `casesLogged: 0` of `54`.
-- All 34 registered external gates are `BLOCKED` or `EXTERNAL`; none is
+  updated by a human tester; `casesLogged: 0` of `54`. PUBLIC_A, IOS_FUTURE
+  and BILLING_FUTURE have zero mapped cases and therefore fail closed as
+  `UAT_PLAN_INCOMPLETE_FOR_TARGET` — an acknowledged, owner-decision
+  contradiction (see `ValidateFableScopeParity.mjs`), not a satisfied term.
+- All **39** registered external gates are `BLOCKED` or `EXTERNAL`; none is
   `CLOSED` and none has evidence populated. `external_gate_matrix.json` is
-  authoritative and holds 33; `PAYMENT_PRODUCTION_CERTIFICATION` is
-  registered in the completion matrix but not yet in that JSON, so the gate
-  script does not currently enforce it. `EXTERNAL_GATE_MATRIX.md` documents
-  only the original 7 and is not exhaustive.
+  authoritative and `EXTERNAL_GATE_MATRIX.md` is now generated from it
+  (`tooling/release/GenerateExternalGateMatrixMd.mjs`, checked in CI). Two
+  gates were added on 2026-09-08: `ANDROID_RELEASE_SIGNING_CONFIG` (no
+  release build type or signing config exists) and
+  `PRODUCTION_EMAIL_CREDENTIAL_ROTATION` (owner-reported compromised SMTP
+  credential; the repository cannot verify rotation).
+- Per target: PUBLIC_A 3 hard gates open + unsatisfiable `REAL_UAT`; AUTH_B
+  3 hard; PARENT_C 8 hard; ANDROID_D 17 hard; IOS_FUTURE 9 hard;
+  BILLING_FUTURE 7 hard.
 
-**Therefore the release gate correctly reports NOT READY.** This is the
+**Therefore the release gate correctly reports NOT READY for every target.** This is the
 honest, expected state — do not "fix" the gate script to pass; fix the
 underlying conditions (get the crypto suite reviewed, run real UAT, close
 the external gates) instead.

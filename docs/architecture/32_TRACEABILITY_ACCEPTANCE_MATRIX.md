@@ -2,6 +2,18 @@
 
 ## Canonical normative inventory
 
+> **Reconciliation note (2026-09-08 final assessment).** This matrix holds **203** rows: the 199 IDs
+> of the accepted A-100 package plus the four owner-approved lettered additions
+> (`PCA-FR-043B`, `PCA-FR-043C`, `PCA-FR-015A`, `PCA-AND-003A`, PCA-NIGHT-COMMUNICATION-SAFETY-1).
+> Every row's "Current architecture status" column still reads *DEFINED; IMPLEMENTATION TEST
+> PENDING* — that column describes the architecture-baseline acceptance state and has never been
+> upgraded per ID. Per-ID **implementation** status (SOURCE_COMPLETE / PARTIAL / NOT_STARTED with
+> file-level evidence) is maintained exclusively in `docs/implementation/PCA_COMPLETION_V2_MATRIX.json`
+> (machine-checked) and summarised in `docs/implementation/PCA_IMPLEMENTATION_TRACEABILITY.md`;
+> the 172 addendum IDs (`PCA-ADD-ENR/PA/BILL/IDENT/COMP-*`) are deliberately not rows here — they
+> are additional authority mapped in those implementation documents, not part of the A-100 set.
+> Nothing in this matrix is VALIDATED_COMPLETE or PRODUCTION_READY.
+
 Each line is one traceability row for one exact normative ID defined in the current controlled architecture package. Included families are `PCA-FR`, `PCA-NFR`, `PCA-SEC`, `PCA-PRIV`, `PCA-DATA`, `PCA-AND`, `PCA-IOS`, and `PCA-AI`. The cited source remains the authoritative normative wording. No ID range is used.
 
 | Requirement ID | Requirement text / summary | Source document | Architecture design document(s) | Platform applicability | Capability status | Owner agent | Future implementation phase | Planned test ID/type | Acceptance criterion | Owner decision dependency | Current architecture status |

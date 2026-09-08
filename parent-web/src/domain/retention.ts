@@ -25,14 +25,18 @@ export interface RetentionPolicySettings {
 }
 
 /**
- * POST /v1/families/:familyId/retention-policy response. See
- * retentionRoutes.ts's own doc comment: this backend deliberately holds no
- * policy payload storage -- a 200 here means "validated and audited," not
- * "persisted," and the UI must not claim otherwise.
+ * POST /v1/families/:familyId/retention-policy response (202). See
+ * retentionRoutes.ts's RETENTION_POLICY_DISCLOSED_STATE: this backend holds
+ * no policy storage and the device-delivery path is crypto-gated, so the
+ * parent's chosen window is VALIDATED and AUDITED only -- never persisted,
+ * delivered or enforced yet. The old `accepted: true` field told parents
+ * their choice was in force when nothing kept it (FABLE-A049) and is gone.
  */
 export interface RetentionPolicySubmitResult {
   policy: RetentionPolicySettings;
-  accepted: true;
+  validated: true;
+  persisted: false;
+  deliveryStatus: 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW';
 }
 
 /** POST /v1/families/:familyId/delete-now response -- see retentionRoutes.ts's DELETE_NOW_DISCLOSED_STATE doc comment: always pending, never "completed". */

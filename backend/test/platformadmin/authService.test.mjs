@@ -138,6 +138,30 @@ test('lockout: 5 failed attempts within the window lock out a 6th attempt even w
   await assert.rejects(() => harness.authService.login(admin.email, admin.password, code), PlatformAdminAuthError);
 });
 
+test('FABLE-A037: the LOCKED_OUT alert names the locked APP_OWNER account, so a sustained brute force on an owner is no longer silent; an unknown email locks out without alerting', async () => {
+  const harness = buildHarness();
+  const owner = await createLoginableAdmin(harness, { role: 'APP_OWNER' });
+  for (let i = 0; i < 5; i++) {
+    await harness.authService.login(owner.email, 'wrong', '000000').catch(() => {});
+    harness.clock.advance(1000);
+  }
+  const alertsBeforeLockout = harness.alertPort.events.length;
+  const code = computeTotp(owner.secret, harness.now().getTime());
+  await assert.rejects(() => harness.authService.login(owner.email, owner.password, code), PlatformAdminAuthError);
+  const lockedOutAlerts = harness.alertPort.events.slice(alertsBeforeLockout).filter((event) => event.kind === 'LOCKED_OUT');
+  assert.equal(lockedOutAlerts.length, 1, 'exactly one LOCKED_OUT alert for the locked owner');
+  assert.equal(lockedOutAlerts[0].sourceAdminId, owner.adminId, 'the alert must name the locked account (was hard-coded null)');
+
+  // Negative control: an email with no account locks out (ledgered) but has no
+  // roles, so no alert -- and the caller sees the identical error either way.
+  const unknownEmail = 'nobody-' + randomUUID() + '@example.invalid';
+  for (let i = 0; i < 6; i++) {
+    await assert.rejects(() => harness.authService.login(unknownEmail, 'wrong', '000000'), PlatformAdminAuthError);
+    harness.clock.advance(1000);
+  }
+  assert.equal(harness.alertPort.events.length, alertsBeforeLockout + 1, 'no alert for an unknown email lockout');
+});
+
 test('lockout alert: a failed login on an APP_OWNER account notifies other app owners; SUPPORT_ADMIN failures do not', async () => {
   const harness = buildHarness();
   const owner = await createLoginableAdmin(harness, { role: 'APP_OWNER' });

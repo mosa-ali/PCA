@@ -2,7 +2,7 @@
 //
 // This file is the single declarative source of truth for the complete PCA
 // central MySQL schema (all 76 tables), derived once by applying every
-// accepted migration (backend/migrations/0001 through 0038) from an empty
+// accepted migration (backend/migrations/0001 through 0040; 38 files, 0009/0010 never existed) from an empty
 // database and introspecting the result via
 // backend/scripts/introspect-schema.mjs. It is NOT an ORM and does not
 // introduce a runtime schema-framework dependency -- it is a strongly typed

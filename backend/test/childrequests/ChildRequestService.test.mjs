@@ -152,14 +152,16 @@ test('a request past its expiry cannot be decided and transitions to EXPIRED', a
   assert.equal(found.state, 'EXPIRED');
 });
 
-test('cancel is only permitted by the requesting child device', async () => {
+test('cancel is only permitted by the requesting child device, and a foreign device learns nothing (NOT_FOUND, identical to an unknown requestId)', async () => {
   const { service } = makeHarness();
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
-  await assert.rejects(
-    () => service.cancel(pending.requestId, 'dev-owner'),
-    (err) => err instanceof ChildRequestError && err.code === 'NOT_THE_REQUESTER',
-  );
+  const foreignDevice = await service.cancel(pending.requestId, 'dev-owner').catch((err) => err);
+  const unknownRequest = await service.cancel('request-that-does-not-exist', 'dev-owner').catch((err) => err);
+  assert.ok(foreignDevice instanceof ChildRequestError && foreignDevice.code === 'NOT_FOUND');
+  assert.ok(unknownRequest instanceof ChildRequestError && unknownRequest.code === 'NOT_FOUND');
+  assert.equal(foreignDevice.message, unknownRequest.message);
+  assert.notEqual((await service.listForFamily('fam-1')).find((r) => r.requestId === pending.requestId)?.state, 'CANCELLED');
   const cancelled = await service.cancel(pending.requestId, 'dev-child');
   assert.equal(cancelled.state, 'CANCELLED');
 });
@@ -169,7 +171,11 @@ test('acknowledgeApplied moves APPROVED to APPLIED_ACKNOWLEDGED only for the req
   const draft = service.createDraft('fam-1', 'dev-child', 'child-1', 'UNBLOCK', { kind: 'CHILD_PROFILE', id: 'child-1' });
   const pending = await service.submit(draft);
   await service.decide(pending.requestId, 'fam-1', 'dev-owner', 'APPROVED', 'act-7', 'idem-7');
-  await assert.rejects(() => service.acknowledgeApplied(pending.requestId, 'dev-owner'), ChildRequestError);
+  const foreign = await service.acknowledgeApplied(pending.requestId, 'dev-owner').catch((err) => err);
+  const unknown = await service.acknowledgeApplied('request-that-does-not-exist', 'dev-owner').catch((err) => err);
+  assert.ok(foreign instanceof ChildRequestError && foreign.code === 'NOT_FOUND');
+  assert.ok(unknown instanceof ChildRequestError && unknown.code === 'NOT_FOUND');
+  assert.equal(foreign.message, unknown.message);
   const acknowledged = await service.acknowledgeApplied(pending.requestId, 'dev-child');
   assert.equal(acknowledged.state, 'APPLIED_ACKNOWLEDGED');
 });

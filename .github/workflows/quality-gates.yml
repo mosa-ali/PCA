@@ -145,6 +145,19 @@ jobs:
             fi
             exit $status
           fi
+      # PCA-FINAL-ASSESSMENT 2026-09-08: the derived R3 ledgers (in particular
+      # R3_EXTERNAL_GATE_REGISTER.csv, which ValidateExternalGateParity.mjs and
+      # therefore the release gate itself depend on) had been hand-edited with
+      # rows the rebuild script could not reproduce -- a regeneration silently
+      # dropped four gates and failed the parity check. The register is now
+      # derived from the completion matrix's gate registry, and this step fails
+      # the build if any derived ledger no longer matches a fresh regeneration.
+      - name: Check derived R3 ledgers are reproducible from the completion matrix
+        run: node tooling/release/RebuildR3DerivedLedgers.mjs --check
+      # Same discipline for the human-readable gate table: it used to list 7 of
+      # 37 gates by hand. It is now generated from external_gate_matrix.json.
+      - name: Check EXTERNAL_GATE_MATRIX.md is generated from external_gate_matrix.json
+        run: node tooling/release/GenerateExternalGateMatrixMd.mjs --check
       - name: Validate FABLE release-scope parity (full, non-sampled reconciliation)
         # Same `set +e`/`set -e` wrapping as the step above, and for the
         # identical reason -- GitHub's default `bash -e` would otherwise
@@ -328,6 +341,57 @@ jobs:
       - name: Run unit tests (shard ${{ matrix.shard }} of 4)
         working-directory: platform-admin-web
         run: npm test -- --shard=${{ matrix.shard }}/4 --maxWorkers=2
+
+  web-e2e:
+    # PCA-FINAL-ASSESSMENT 2026-09-08 (FABLE-A018/A035): until this job existed
+    # CI ran NO real-browser test at all -- six Playwright configs and ~40
+    # committed specs (RBAC route guards, session security, RTL shell,
+    # offline/reconnect UX, keyboard accessibility, responsive layout) had only
+    # ever run on a developer's machine, and three parent-web specs had gone
+    # stale against renamed demo-mode controls without anyone noticing. This
+    # job runs both consoles' Playwright suites in Chromium against a
+    # production build served by `vite preview` (each playwright.config.ts
+    # owns its webServer), in demo mode (the committed .env), so no backend or
+    # database is needed. It includes the real-browser WCAG AA colour-contrast
+    # gate (e2e/contrast.spec.ts in both apps) that jsdom axe cannot provide,
+    # with a script-independent Arabic-text audit because axe-core 4.10 skips
+    # Arabic-only text nodes. Deliberately no continue-on-error: a real-browser
+    # regression must be able to fail the build.
+    name: Web real-browser e2e (Playwright, Chromium)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            parent-web/package-lock.json
+            platform-admin-web/package-lock.json
+      - name: Build parent-sdk (parent-web's file-protocol dependencies)
+        run: |
+          npm ci --prefix parent-sdk/browser-runtime
+          npm run build --prefix parent-sdk/browser-runtime
+          npm ci --prefix parent-sdk/wellbeing-control
+          npm run build --prefix parent-sdk/wellbeing-control
+      - name: Install parent-web dependencies
+        working-directory: parent-web
+        run: npm ci
+      - name: Install platform-admin-web dependencies
+        working-directory: platform-admin-web
+        run: npm ci
+      - name: Install Chromium for Playwright (both apps pin the same @playwright/test version)
+        working-directory: parent-web
+        run: npx playwright install --with-deps chromium
+      - name: parent-web Playwright suite (incl. real-browser contrast gate)
+        working-directory: parent-web
+        run: npx playwright test --project=chromium --reporter=list
+      - name: platform-admin-web Playwright suite (incl. real-browser contrast gate)
+        working-directory: platform-admin-web
+        run: npx playwright test --project=chromium --reporter=list
 
   android:
     name: Android build, lint, and unit tests

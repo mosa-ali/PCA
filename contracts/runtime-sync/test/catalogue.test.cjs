@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const catalogue = require("../catalogue.json");
-const { validateCatalogue } = require("../validate-catalogue.cjs");
+const { validateCatalogue, validateHttpSurfaceAgainstSource, loadAuthoritySources } = require("../validate-catalogue.cjs");
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
@@ -63,4 +63,36 @@ test("marking the crypto suite reviewed without review is rejected", () => {
   const invalid = clone(catalogue);
   invalid.e2eeBoundary.cryptoSuiteStatus = "COMPLETE";
   assert.match(validateCatalogue(invalid).join("\n"), /cryptoSuiteStatus must remain PENDING_HUMAN_SECURITY_REVIEW/);
+});
+
+
+test("httpSurface and error-code vocabularies reconcile against the real backend/parent-sdk source (FABLE-A017)", () => {
+  assert.deepEqual(validateHttpSurfaceAgainstSource(catalogue, loadAuthoritySources()), []);
+});
+
+test("a route registered in source but missing from the catalogue is detected", () => {
+  const invalid = clone(catalogue);
+  invalid.httpSurface.routes = invalid.httpSurface.routes.filter((r) => r.path !== "/v1/runtime-sync/protection-status");
+  assert.match(validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n"), /registered in source but absent from catalogue.*protection-status/);
+});
+
+test("a catalogue route the source never registers is detected", () => {
+  const invalid = clone(catalogue);
+  invalid.httpSurface.routes.push({ method: "DELETE", path: "/v1/runtime-sync/fabricated", auth: "device-session" });
+  assert.match(validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n"), /declares a route the source does not register: DELETE \/v1\/runtime-sync\/fabricated/);
+});
+
+test("a phantom error code (declared but never emitted) is detected in both vocabularies", () => {
+  const invalid = clone(catalogue);
+  invalid.deviceSessionErrorCodes.push("PHANTOM_AUTH_CODE");
+  invalid.outboundSubmitErrorCodes.push("BATCH_TOO_LARGE");
+  const text = validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n");
+  assert.match(text, /phantom device-session error code: PHANTOM_AUTH_CODE/);
+  assert.match(text, /phantom outbound error code: BATCH_TOO_LARGE/);
+});
+
+test("an emitted outcome the catalogue omits is detected", () => {
+  const invalid = clone(catalogue);
+  invalid.outboundSubmitErrorCodes = invalid.outboundSubmitErrorCodes.filter((c) => c !== "CONFLICT");
+  assert.match(validateHttpSurfaceAgainstSource(invalid, loadAuthoritySources()).join("\n"), /emitted by source but absent from catalogue: CONFLICT/);
 });

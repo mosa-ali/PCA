@@ -6,7 +6,7 @@
 |---|---|
 | Addendum ID | PCA-ADDENDUM-001 |
 | Authority | `PCA-DEC-009 = OWNER_APPROVED` |
-| Status | APPROVED FOR IMPLEMENTATION; NOT YET IMPLEMENTED |
+| Status | APPROVED FOR IMPLEMENTATION; IMPLEMENTATION UNDERWAY — per `docs/implementation/PCA_COMPLETION_V2_MATRIX.json` at the 2026-09-08 final assessment: 24 SOURCE_COMPLETE (incl. external-gate sub-status), 1 PARTIAL, 0 NOT_STARTED, 0 NOT_APPLICABLE of 25; no row is VALIDATED_COMPLETE (no real-device/provider/UAT evidence exists) and no row is PRODUCTION_READY (every applicable external gate is open). (This field read "NOT YET IMPLEMENTED" from authoring until 2026-09-08, long after source existed; corrected as a status-accuracy fix, not a re-approval.) |
 | Baseline | A-100 Architecture v1.0; its 199 normative requirements remain immutable |
 | Scope | Secure child-device invitation, capability-honest enrollment, parent Administration PIN, and authorized disable/removal decisions |
 | Out of scope | Hidden installation, installation-security bypass, plaintext family activity storage, server-held family decryption keys, or a staff recovery bypass |

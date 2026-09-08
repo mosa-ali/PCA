@@ -28,7 +28,6 @@ export type ChildRequestErrorCode =
   | 'ILLEGAL_TRANSITION'
   | 'REQUEST_EXPIRED'
   | 'NOT_AUTHORIZED_TO_DECIDE'
-  | 'NOT_THE_REQUESTER'
   | 'BONUS_MINUTES_OUT_OF_BOUND'
   | 'COUNTER_OFFER_NOT_SHORTER';
 
@@ -47,7 +46,6 @@ const CHILD_REQUEST_ERROR_MESSAGES: Record<ChildRequestErrorCode, string> = {
   ILLEGAL_TRANSITION: 'This child request has already been decided or is not in a decidable state.',
   REQUEST_EXPIRED: 'This child request has expired.',
   NOT_AUTHORIZED_TO_DECIDE: 'The deciding device is not authorized to approve/deny this request type.',
-  NOT_THE_REQUESTER: 'Only the requesting child device may perform this action.',
   BONUS_MINUTES_OUT_OF_BOUND: 'Requested/granted extra minutes is outside the permitted bound.',
   COUNTER_OFFER_NOT_SHORTER: 'A counter-offer must grant strictly fewer minutes than the child requested.',
 };
@@ -330,10 +328,19 @@ export class ChildRequestService {
     return this.repository.listForFamily(familyId);
   }
 
+  /**
+   * PCA-FINAL-ASSESSMENT 2026-09-08 (device-level existence oracle, closed): a
+   * request that exists but was submitted by a DIFFERENT child device is
+   * reported exactly as NOT_FOUND -- the same outcome an unknown requestId
+   * produces -- never a distinguishable NOT_THE_REQUESTER. The prior
+   * 404-vs-403 split let any device-session holder confirm that a foreign
+   * requestId exists (UUID-gated, existence only, but observable over
+   * HTTP). The requester rule itself is unchanged: only the submitting
+   * child device can cancel; everyone else learns nothing.
+   */
   async cancel(requestId: ChildRequestId, requestingDeviceId: string): Promise<ChildRequest> {
     const request = await this.repository.get(requestId);
-    if (request === null) throw new ChildRequestError('NOT_FOUND');
-    if (request.childDeviceId !== requestingDeviceId) throw new ChildRequestError('NOT_THE_REQUESTER');
+    if (request === null || request.childDeviceId !== requestingDeviceId) throw new ChildRequestError('NOT_FOUND');
     if (!isLegalChildRequestTransition(request.state, 'CANCELLED')) throw new ChildRequestError('ILLEGAL_TRANSITION');
 
     const cancelled: ChildRequest = { ...request, state: 'CANCELLED' };
@@ -360,8 +367,8 @@ export class ChildRequestService {
     capabilityOutcome?: InstallApprovalCapabilityState | null,
   ): Promise<ChildRequest> {
     const request = await this.repository.get(requestId);
-    if (request === null) throw new ChildRequestError('NOT_FOUND');
-    if (request.childDeviceId !== childDeviceId) throw new ChildRequestError('NOT_THE_REQUESTER');
+    // Same indistinguishable NOT_FOUND outcome as cancel() -- see its doc comment.
+    if (request === null || request.childDeviceId !== childDeviceId) throw new ChildRequestError('NOT_FOUND');
     if (!isLegalChildRequestTransition(request.state, 'APPLIED_ACKNOWLEDGED')) throw new ChildRequestError('ILLEGAL_TRANSITION');
 
     if (request.requestType === 'INSTALL_APPROVAL') {

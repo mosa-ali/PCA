@@ -53,6 +53,15 @@ const [matrixText, sourceText, progress] = await Promise.all([
 const matrix = JSON.parse(matrixText);
 const sourceRows = parseCsv(sourceText);
 
+// 2026-09-08: every gate label a requirement row cites must be declared in
+// matrix.externalGates. 23 labels (including 7 of the 8 Android device gates)
+// were undeclared and nothing cross-checked them (FABLE-A059).
+const declaredGateIds = new Set((matrix.externalGates ?? []).map((gate) => gate.gateId));
+const undeclaredGateLabels = [...new Set(matrix.requirements
+  .flatMap((requirement) => (Array.isArray(requirement.externalGate) ? requirement.externalGate : []))
+  .flatMap((label) => String(label).split(/[;|]/).map((part) => part.trim()).filter(Boolean))
+  .filter((label) => !declaredGateIds.has(label)))];
+
 const externalGateWithoutEvidence = matrix.requirements
   .filter((requirement) => requirement.status === 'SOURCE_COMPLETE_EXTERNAL_GATE')
   .filter((requirement) => !Array.isArray(requirement.externalGate) || requirement.externalGate.length === 0)
@@ -190,6 +199,7 @@ const result = {
   nonArrayEvidenceFields,
   malformedEvidenceFragments,
   nonCanonicalGateTokens,
+  undeclaredGateLabels,
   statusBucketMismatch,
   staleCurrentStateClaims,
   status: (
@@ -199,6 +209,7 @@ const result = {
     || nonArrayEvidenceFields.length
     || malformedEvidenceFragments.length
     || nonCanonicalGateTokens.length
+    || undeclaredGateLabels.length
     || statusBucketMismatch
     || staleCurrentStateClaims.length
   ) ? 'FAIL' : 'PASS',

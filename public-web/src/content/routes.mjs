@@ -1,7 +1,8 @@
 /**
  * PUBLIC-2 (revision 2) — canonical route table.
  *
- * OWNER IA RULING, 2026-09-05: three main public pages, not fourteen. Parents
+ * OWNER IA RULING, 2026-09-05: three main public pages, not fourteen -- extended to FOUR
+ * main pages by the e7f1206 rebalance (/download/ re-created as the conversion page). Parents
  * will not read a fourteen-page marketing tree, so the useful content is
  * consolidated rather than spread:
  *

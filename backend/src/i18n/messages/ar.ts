@@ -87,7 +87,6 @@ export const AR_MESSAGES: Record<MessageId, string> = {
   'childRequest.ILLEGAL_TRANSITION': 'تم اتخاذ قرار بشأن هذا الطلب مسبقًا أو أنه ليس في حالة تسمح باتخاذ قرار.',
   'childRequest.REQUEST_EXPIRED': 'انتهت صلاحية طلب الطفل هذا.',
   'childRequest.NOT_AUTHORIZED_TO_DECIDE': 'الجهاز الذي يحاول اتخاذ القرار غير مخوّل للموافقة على هذا النوع من الطلبات أو رفضه.',
-  'childRequest.NOT_THE_REQUESTER': 'يمكن فقط لجهاز الطفل الذي أرسل الطلب تنفيذ هذا الإجراء.',
   'childRequest.BONUS_MINUTES_OUT_OF_BOUND': 'عدد الدقائق الإضافية المطلوبة أو الممنوحة يتجاوز الحد المسموح به.',
   'childRequest.COUNTER_OFFER_NOT_SHORTER': 'يجب أن يمنح العرض المقابل من الوالد مدة أقصر بشكل صريح مما طلبه الطفل.',
 

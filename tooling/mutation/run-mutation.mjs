@@ -1,5 +1,16 @@
 // CURRENT_HEAD_MUTATION runner.
 //
+// !!! WHAT THIS HARNESS IS AND IS NOT (2026-09-08 final assessment, FABLE-A040) !!!
+// It does NOT execute any test suite. Each mutant is classified ONLY by the
+// static string-assertion scripts check-{backend,parent-web,android}-boundaries.mjs
+// (requireText/forbidText over source), and EQUIVALENT/INVALID are read from the
+// manifest's expectedClassification, never derived. "KILLED" therefore means
+// "a hardcoded string assertion noticed the mutated text changed", not "a test
+// failed". Do not cite its VALID_MUTATION_SURVIVORS as test-strength evidence;
+// see tooling/mutation/README.md. The report it writes now carries
+// executesTests: false so no downstream ledger can mistake it for a real
+// mutation-testing run.
+//
 // It copies each package to a temporary directory, applies one declared
 // source mutation there, and runs the bounded tests against that copy. The
 // entry worktree is read-only from this script's perspective: no production
@@ -276,6 +287,11 @@ const counts = Object.fromEntries([...validClassifications].map((classification)
   results.filter((result) => result.classification === classification).length,
 ]));
 const report = {
+  // See the file header: every classification below is a static string-assertion
+  // outcome, not a test-suite run. Downstream ledgers must not read this as
+  // mutation-testing evidence.
+  executesTests: false,
+  classificationMethod: 'STATIC_STRING_ASSERTION_ONLY',
   mission: scope.mission,
   mutationHead: head,
   entrySha: head,

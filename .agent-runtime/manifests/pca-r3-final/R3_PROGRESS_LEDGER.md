@@ -1,6 +1,6 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-08-26.
+Generated from the completion matrix and repository evidence on 2026-09-08.
 
 ## Exact requirement counts
 
@@ -16,7 +16,7 @@ Generated from the completion matrix and repository evidence on 2026-08-26.
 | UNMAPPED_PHASE_CROSSWALK_PENDING | 0 |
 | STATUS_BUCKET_SUM | 375 |
 | Partial plus not-started | 29 |
-| External-gate rows | 84 |
+| External-gate rows | 85 |
 | Terminology audit rows | 209 |
 
 Crosswalk control: 199 of 199 Base A-100 requirements have explicit programme/domain phases; UNMAPPED_IDS=0. These are ledger counts, not a completion claim. PARTIAL, NOT_STARTED, and UNMAPPED_PHASE_CROSSWALK_PENDING remain open until source, test, device, provider, owner, and independent-review evidence is present.
@@ -196,9 +196,9 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - OWNER_DECISION_REQUIRED_FOR_SOURCE = 0
 - PARENT_REAL_E2E = PASS
 - PLATFORM_ADMIN_REAL_E2E = PASS
-- P23_MUTANTS_TOTAL = 28
-- P23_MUTANTS_KILLED = 22
-- P23_VALID_MUTATION_SURVIVORS = 0
+- P23_MUTANTS_TOTAL = NOT_PROVEN_AT_CURRENT_HEAD
+- P23_MUTANTS_KILLED = NOT_PROVEN_AT_CURRENT_HEAD
+- P23_VALID_MUTATION_SURVIVORS = NOT_PROVEN_AT_CURRENT_HEAD
 - VALID_MUTATION_SURVIVORS = 0
 - PARENT_PRODUCTION_DEMO_MODE_GATE = PASS
 - PARENT_DEMO_MODE_NEGATIVE_CONTROL = PASS
@@ -212,11 +212,7 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read live from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_AT_CURRENT_HEAD if that report does not match today's actual git HEAD. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
 ### Current mutation validation (Prompt-2/3)
 
-- MUTATION_HEAD = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
-- MUTANTS_TOTAL = 28
-- MUTANTS_KILLED = 22
-- MUTANTS_EQUIVALENT = 3
-- MUTANTS_INVALID = 3
-- VALID_MUTATION_SURVIVORS = 0
-- ENVIRONMENT_BLOCK = null
-- Scope: PCA-NFR-014, PCA-NFR-051, PCA-NFR-060, PCA-FR-137, PCA-FR-063, PCA-FR-091, PCA-FR-135 (tooling/mutation/mutation-scope.json). Generated 2026-08-25T20:50:18.796Z.
+- MUTATION_HEAD_MATCH = FAIL
+- CURRENT_GIT_HEAD = 5dacd8468216fb40a1e3ca819013cc7106d316b3
+- REPORT_MUTATION_HEAD = e180e16225ffa41de2062821dde0d0351f7eed79
+- The tooling/mutation/reports/current-head-mutation.json report does not match the current git HEAD (or does not exist). Run `node tooling/mutation/run-mutation.mjs` at the current HEAD (after updating tooling/mutation/mutation-scope.json entrySha to match) to produce a current, re-verifiable result before treating mutation coverage as evidenced at this commit.

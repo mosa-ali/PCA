@@ -1,7 +1,9 @@
 export type OpaqueFamilyId = string;
 
 /**
- * PCA-DEC-006: no support master key. The server holds only an opaque
+ * Doc 09 Section 5 / ADR-003 (no support master key; the historical register row
+ * that carried this subject is PCA-DEC-R06 -- see doc 31 "Legacy register series",
+ * NOT doc 03's PCA-DEC-006, which is the YouTube account-history decision). The server holds only an opaque
  * encrypted recovery envelope produced entirely client-side -- it never
  * sees the plaintext family root recovery secret and cannot decrypt this
  * blob itself. `version` is an optimistic-concurrency token: a replace must

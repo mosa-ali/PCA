@@ -55,7 +55,7 @@ RUN npm run gate:demo-mode
 # ran stock nginx with `USER appuser` on `listen 80`; a non-root process cannot
 # bind a privileged port, so that container could never have started. This image
 # is built to run as uid 101 on port 8080 and needs no privileged bind.
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 AS runtime
 
 LABEL org.opencontainers.image.title="PCA Platform Admin Web"
 LABEL org.opencontainers.image.description="PCA Platform Admin console — React/Vite SPA served by nginx"

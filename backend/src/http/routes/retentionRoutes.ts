@@ -28,6 +28,20 @@ import { FamilyAuditService } from '../../familyrbac/FamilyAuditStore.js';
 const DELETE_NOW_DISCLOSED_STATE: DeletionState = 'DELETE_PENDING_REMOTE_DEVICE';
 
 /**
+ * PCA-FINAL-ASSESSMENT 2026-09-08 (FABLE-A049, the "false assurance" finding).
+ * This backend holds NO retention-policy storage (doc 09/10: readable family
+ * policy is never a central entity) and the E2EE policy-delivery path to
+ * devices is crypto-gated (PRODUCTION_CRYPTO_SUITE). A parent's chosen window
+ * is therefore VALIDATED and AUDITED here and nothing else: it is not stored,
+ * not delivered and not enforced by anything. The response says exactly that
+ * (202 + persisted:false + this disclosed state). It previously answered
+ * 200 { accepted: true }, telling a parent their choice was in force when
+ * nothing kept it; this constant MUST NOT be turned back into an
+ * acceptance claim until a real, delivered policy path exists.
+ */
+export const RETENTION_POLICY_DISCLOSED_STATE = 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED_PENDING_CRYPTO_REVIEW' as const;
+
+/**
  * doc 11 Section 10: "mark it EXPORT_EXISTS_EXTERNALLY and disclose that
  * limitation at creation" -- this route never fabricates a completed
  * export (see this file's top doc comment), but the 202 intake response
@@ -200,8 +214,9 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: RetentionRou
         return reply.code(422).send({ error: 'invalid_policy', violations });
       }
 
-      await deps.auditService.record(auditRecord(familyId, 'CHANGE_RETENTION', 'SUCCESS', 'RETENTION_POLICY_VALIDATED'));
-      return reply.code(200).send({ policy, accepted: true });
+      await deps.auditService.record(auditRecord(familyId, 'CHANGE_RETENTION', 'SUCCESS', 'RETENTION_POLICY_VALIDATED_NOT_PERSISTED'));
+      // 202 and never `accepted: true` -- see RETENTION_POLICY_DISCLOSED_STATE.
+      return reply.code(202).send({ policy, validated: true, persisted: false, deliveryStatus: RETENTION_POLICY_DISCLOSED_STATE });
     },
   );
 

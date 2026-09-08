@@ -134,7 +134,6 @@ function errorStatus(code: ChildRequestError['code']): number {
     case 'REQUEST_EXPIRED':
       return 409;
     case 'NOT_AUTHORIZED_TO_DECIDE':
-    case 'NOT_THE_REQUESTER':
       return 403;
     default:
       return 400;
@@ -296,7 +295,7 @@ export function registerChildRequestRoutes(app: FastifyInstance, deps: ChildRequ
   // the parent's own /decide call above, so "approved" and "enforced" are never the same write).
   // Same actor-device-bound-by-bearer-token authentication as the submit route above; a request can
   // only ever be acknowledged by the SAME child device that originally submitted it
-  // (ChildRequestService.acknowledgeApplied's own NOT_THE_REQUESTER check).
+  // (ChildRequestService.acknowledgeApplied's own requester check, which reports a foreign device as NOT_FOUND -- indistinguishable from an unknown requestId).
   app.post(
     '/api/families/:familyId/child-requests/:requestId/applied',
     { bodyLimit: MAX_BODY_BYTES },

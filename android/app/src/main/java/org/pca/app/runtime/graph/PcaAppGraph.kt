@@ -346,11 +346,15 @@ class PcaAppGraph private constructor(
      * PRODUCTION_CRYPTO_SUITE human security review, so [enrollmentCoordinator] can be safely wired
      * here today: any real bootstrap attempt stops at key preparation
      * (`EnrollmentState.CryptoReviewRequired`) and never reaches [deviceBootstrapApiClient]. The
-     * endpoint base URL is a placeholder pending real deployment configuration (see
-     * [BootstrapEndpointConfig]'s own doc); HTTPS is enforced unconditionally regardless. */
+     * endpoint base URL is the recorded production API hostname (api.pcasafe.com -- the hostname
+     * bound to the backend App Service in docs/deployment/DOCKER_AZURE_SUPPORT_REVIEW.md's
+     * cross-surface matrix; FABLE-A051 closed 2026-09-08: the previous "https://api.pca.app"
+     * placeholder was a domain the project does not own, so a future key-generator swap would have
+     * POSTed invitation tokens and device public keys to an unowned host). Nothing is deployed
+     * there yet -- see that review's status section; HTTPS is enforced unconditionally regardless. */
     val deviceKeyPairGenerator: DeviceKeyPairGenerator = NotApprovedDeviceKeyPairGenerator()
     val deviceBootstrapApiClient: DeviceBootstrapApiClient =
-        HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pca.app"))
+        HttpDeviceBootstrapApiClient(BootstrapEndpointConfig(baseUrl = "https://api.pcasafe.com"))
     /** PCA-ADD-ENR-008: accepts both the custom `pca://enroll` scheme and the `https://` Android
      * App Link continuation form -- see [EnrollmentDeepLinkConfig.APP_LINK_HOST]'s own doc. */
     val enrollmentLinkParser: EnrollmentLinkParser =

@@ -12,6 +12,24 @@ const effectiveRoot = process.env.PCA_R3_TEST_ROOT ?? root;
 const manifestRoot = `${effectiveRoot}/.agent-runtime/manifests/pca-r3-final`;
 const matrixPath = `${effectiveRoot}/docs/implementation/PCA_COMPLETION_V2_MATRIX.json`;
 
+// --check (2026-09-08 final assessment): regenerate everything in memory and
+// compare it with what is on disk WITHOUT writing. Exit 1 on any drift in the
+// deterministic outputs (matrix, audit/source/validation CSVs, external gate
+// register). The progress ledger carries a generation date and live HEAD
+// fields, so it is excluded from the comparison. This exists because the
+// committed R3_EXTERNAL_GATE_REGISTER.csv had been hand-edited with four gate
+// rows the rebuild could not reproduce: a regeneration silently dropped them
+// and the release gate's parity check failed -- a derived ledger that is not
+// derivable is a false green waiting to happen.
+const CHECK_MODE = process.argv.includes('--check');
+const checkDrift = [];
+async function emit(path, text, { volatile = false } = {}) {
+  if (!CHECK_MODE) { await writeFile(path, text, 'utf8'); return; }
+  if (volatile) return;
+  const onDisk = await readFile(path, 'utf8').catch(() => null);
+  if (onDisk !== text) checkDrift.push(path);
+}
+
 const paths = {
   audit: `${manifestRoot}/R3_REQUIREMENT_AUDIT.csv`,
   source: `${manifestRoot}/R3_SOURCE_BACKLOG.csv`,
@@ -1277,7 +1295,7 @@ const SOURCE_UPDATES = {
   sourceEvidence: [...['backend/src/billing/provider/providerRegistry.ts | backend/src/billing/provider/secretResolver.ts'], 'backend/src/billing/provider/providerRegistry.ts', 'backend/src/billing/provider/secretResolver.ts'],
   testEvidence: [...['backend/test/billing/providerRegistry.test.mjs (unknown-provider failure, duplicate registration, empty production registry, and exact-name production activation kill-switch)', 'backend/test/billing/sandboxProvider.test.mjs (sandbox-only construction and secret-reference isolation)'], 'backend/test/billing/providerRegistry.test.mjs', 'backend/test/billing/sandboxProvider.test.mjs'],
   sourceSolvableClass: 'SOURCE_COMPLETE_EXTERNAL_GATE',
-  externalGate: ['PAYMENT_PROVIDER_SELECTION'],
+  externalGate: ['PAYMENT_PROVIDER_SELECTION', 'PAYMENT_PRODUCTION_CERTIFICATION'],
   currentGap: 'P23-Writer15B (2026-08-24), independently verified by direct source read: this requirement is a negative/guard requirement (no Billing capability may be enabled in production while a Section 19.2 gate remains open), and providerRegistry.ts\'s own doc comment explicitly names "PAYMENT_PROVIDER_SELECTION (Section 19.2)" as the relevant gate. createDefaultProviderRegistry() registers only TEST_SANDBOX, and only when NODE_ENV is test/development; in any other environment the returned registry is verifiably empty. A separately-tested exact-name production kill-switch (PaymentProviderProductionActivationError, requiring PCA_PAYMENT_PROVIDER_PRODUCTION_ACTIVATION=<exact provider name>) guards any future real adapter registration. The guard code is real, correct, and thoroughly tested; no real production payment-provider adapter exists yet because none has been selected.',
   nextAction: 'None for the guard itself. Build and wire a real production adapter once PAYMENT_PROVIDER_SELECTION is decided.',
   notes: 'P23-Writer15B (2026-08-24): confirmed the registry fails closed exactly as required, with the gate this row\'s own code comment already names; reclassified from a stale note with a blank externalGate.',
@@ -1622,7 +1640,7 @@ const sourceCompleteExternalWithoutGate = requirements
 if (sourceCompleteExternalWithoutGate.length > 0) {
   throw new Error(`SOURCE_COMPLETE_EXTERNAL_GATE rows require an explicit external gate: ${sourceCompleteExternalWithoutGate.join(', ')}`);
 }
-await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`, 'utf8');
+await emit(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
 
 const byId = new Map(requirements.map((requirement) => [requirement.requirementId, requirement]));
 const { headers: auditHeaders, rows: auditRows } = objectRows(await readFile(paths.audit, 'utf8'));
@@ -1631,7 +1649,7 @@ for (const row of auditRows) {
   if (!requirement) continue;
   applyDerivedFields(row, requirement);
 }
-await writeFile(paths.audit, csvText(auditHeaders, auditRows), 'utf8');
+await emit(paths.audit, csvText(auditHeaders, auditRows));
 
 const { headers: sourceHeaders, rows: sourceRows } = objectRows(await readFile(paths.source, 'utf8'));
 const sourceBacklogRows = sourceRows
@@ -1641,7 +1659,7 @@ const sourceBacklogRows = sourceRows
     applyDerivedFields(row, requirement);
     return row;
   });
-await writeFile(paths.source, csvText(sourceHeaders, sourceBacklogRows), 'utf8');
+await emit(paths.source, csvText(sourceHeaders, sourceBacklogRows));
 
 const { headers: validationHeaders, rows: validationRows } = objectRows(await readFile(paths.validation, 'utf8'));
 for (const row of validationRows) {
@@ -1655,7 +1673,7 @@ for (const row of validationRows) {
       ? 'EVIDENCE_PRESENT_BUT_STATUS_NOT_SOURCE_COMPLETE'
       : 'NO_TEST_EVIDENCE_RECORDED';
 }
-await writeFile(paths.validation, csvText(validationHeaders, validationRows), 'utf8');
+await emit(paths.validation, csvText(validationHeaders, validationRows));
 
 const ownerByRequirement = new Map([...sourceRows, ...auditRows].map((row) => [row.REQUIREMENT_ID, row.WRITER ?? row.PRIMARY_DOMAIN ?? 'Coordinator']));
 const externalRows = [];
@@ -1671,7 +1689,25 @@ for (const requirement of requirements) {
     });
   }
 }
-await writeFile(paths.external, csvText(['GATE_ID', 'REQUIREMENT_ID', 'STATUS', 'EVIDENCE_REQUIRED', 'OWNER', 'BLOCKING_SCOPE'], externalRows), 'utf8');
+// Registry-only gates (2026-09-08): gates no PCA-* requirement row governs
+// (OWNER_VISUAL_UAT, PUBLIC_REPLY_IDENTITY, ANDROID_RELEASE_SIGNING_CONFIG) are
+// declared in matrix.externalGates with registryOnly/anchorId/evidenceRequired
+// and derived here, so the register never again depends on hand-added rows.
+const requirementGateIds = new Set(externalRows.map((row) => row.GATE_ID));
+for (const gate of matrix.externalGates ?? []) {
+  if (!gate.registryOnly) continue;
+  if (requirementGateIds.has(gate.gateId)) continue;
+  if (!gate.anchorId) throw new Error(`registry-only gate ${gate.gateId} has no anchorId`);
+  externalRows.push({
+    GATE_ID: gate.gateId,
+    REQUIREMENT_ID: gate.anchorId,
+    STATUS: 'OPEN_UNVERIFIED',
+    EVIDENCE_REQUIRED: gate.evidenceRequired ?? `Independent evidence for ${gate.gateId}`,
+    OWNER: 'Coordinator',
+    BLOCKING_SCOPE: 'SOURCE_COMPLETE_EXTERNAL_GATE',
+  });
+}
+await emit(paths.external, csvText(['GATE_ID', 'REQUIREMENT_ID', 'STATUS', 'EVIDENCE_REQUIRED', 'OWNER', 'BLOCKING_SCOPE'], externalRows));
 
 // Every status value a row can actually carry today -- SOURCE_COMPLETE
 // itself now has two finer-grained siblings (SOURCE_COMPLETE_VALIDATION_PENDING,
@@ -1939,7 +1975,17 @@ progress = currentHeadSectionPattern.test(progress)
   ? progress.replace(currentHeadSectionPattern, `\n${currentHeadSection}`)
   : `${progress.trimEnd()}\n\n${currentHeadSection}\n`;
 
-await writeFile(paths.progress, progress, 'utf8');
+await emit(paths.progress, progress, { volatile: true });
+
+if (CHECK_MODE) {
+  if (checkDrift.length > 0) {
+    console.error(`RebuildR3DerivedLedgers --check: FAIL -- ${checkDrift.length} derived file(s) differ from a fresh regeneration:`);
+    for (const path of checkDrift) console.error(` - ${path}`);
+    console.error('Run `node tooling/release/RebuildR3DerivedLedgers.mjs` and commit the result; never hand-edit a derived ledger.');
+    process.exit(1);
+  }
+  console.log('RebuildR3DerivedLedgers --check: OK -- every derived ledger matches a fresh regeneration');
+}
 
 const triageRequired = sourceBacklogRows.filter((row) => row.SOURCE_SOLVABLE_CLASS === 'SOURCE_TRIAGE_REQUIRED').length;
 console.log(JSON.stringify({ total, counts, partialPlusNotStarted, sourceBacklogRows: sourceBacklogRows.length, sourceTriageRequired: triageRequired, externalRegisterRows: externalRows.length }));

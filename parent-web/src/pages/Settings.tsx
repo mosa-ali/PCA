@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { applyDocumentDirection, hasStoredLanguagePreference } from '../i18n';
 import { errorDiagnosticDetail, userFacingErrorKey } from '../i18n/errorMessages';
+import { reportDiagnostic } from '../security/diagnosticConsole';
 import { getApiClients } from '../api/client';
 
 export default function Settings() {
@@ -21,7 +22,7 @@ export default function Settings() {
       void i18n.changeLanguage(preferences.language);
       applyDocumentDirection(preferences.language);
     }).catch((error: unknown) => {
-      console.error('[pca] loading parent preferences failed:', errorDiagnosticDetail(error), error);
+      reportDiagnostic('[pca] loading parent preferences failed:', errorDiagnosticDetail(error), error);
       setPreferencesError(t('settings.loadPreferencesFailed'));
     });
   }, [clients.parentPreferences, i18n, t]);
@@ -36,7 +37,7 @@ export default function Settings() {
       await clients.parentPreferences.update({ language });
       setPreferencesError(null);
     } catch (error) {
-      console.error('[pca] saving language preference failed:', errorDiagnosticDetail(error), error);
+      reportDiagnostic('[pca] saving language preference failed:', errorDiagnosticDetail(error), error);
       // A known, describable failure (untrusted browser endpoint, backend not
       // wired yet) keeps its own honest copy; anything else gets the
       // save-specific sentence rather than a raw `error.message`.

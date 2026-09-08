@@ -1,5 +1,14 @@
 # PCA Current Implementation Status
 
+> **SUPERSEDED FOR CURRENT STATUS (2026-09-08).** The phase matrix in §4 below is the
+> R0 re-derivation of 2026-08-16 and has been overtaken by five further programmes
+> (R3, Round 5–7, DW-W1..W3, the 2026-09-07 readiness passes). Several of its rows
+> are now wrong — e.g. "no boot receiver", "Android tamper detection essentially
+> NOT_STARTED", "camera tier not wired", "no manifest-registered prayer receiver" —
+> all of which have since been built. Use `docs/architecture/30_IMPLEMENTATION_PROGRAMME.md`
+> (re-derived 2026-09-08) and `docs/supervision/PCA_FINAL_GAP_ASSESSMENT_2026-09-08.md`
+> for current status; keep this file only for the R0–R2 historical corrections it records.
+
 ## 1. Document control
 
 | Field | Value |

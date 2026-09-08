@@ -15,7 +15,7 @@ This repository's `docs/architecture/` package (docs 00–34) is the controlled 
 - end-to-end encrypted parent/child synchronization and recovery/trust epochs;
 - locally controlled retention: 14 days, 1, 3, 6, or 9 calendar months;
 - English and Arabic, with true RTL support and independently chosen parent/child languages;
-- a new Platform Administration and Billing programme, specified but not yet implemented, in `docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md`.
+- a Platform Administration and Billing programme, specified in `docs/implementation/addenda/PCA_ADDENDUM_002_PLATFORM_ADMINISTRATION_BILLING.md` and since implemented in source (`backend/src/{platformadmin,billing,entitlements,...}`, `platform-admin-web/`); it is not validated by UAT and not production-ready — its payment/settlement gates are all open (see `docs/release_readiness/EXTERNAL_GATE_MATRIX.md`).
 
 Implementation against this baseline is now underway (see `CURRENT_IMPLEMENTATION` above); the architecture package itself is not source code and remains the authority documents 00–34 describe. The owner accepted A-100 against technical baseline `fda523caacebec4ccc89df3073365d749946ae19`; that acceptance is a historical fact about the architecture *documentation* and is preserved unchanged. It is not, by itself, a claim that any specific implementation phase has been validated or is production-ready — see `docs/architecture/34_ARCHITECTURE_COMPLETION_GATE.md` for the corrected implementation-authorization state.
 

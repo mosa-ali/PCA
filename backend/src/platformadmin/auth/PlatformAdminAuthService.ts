@@ -99,12 +99,20 @@ export class PlatformAdminAuthService {
       emailHash,
       PLATFORM_ADMIN_LOGIN_ATTEMPT_LOOKBACK_LIMIT,
     );
+    // FABLE-A037 (2026-09-08): resolve the account BEFORE the lockout branch so
+    // a lockout on a real APP_OWNER/FINANCE_ADMIN account carries its adminId
+    // and therefore its roles. adminId used to be hard-coded null here, which
+    // made `roles` empty and the PCA-ADD-PA-020 alert unable to fire for
+    // exactly the sustained-brute-force window it exists for. An unknown email
+    // still resolves to null (no account, no roles, no alert), and every
+    // branch still answers with the same PlatformAdminAuthError, so no new
+    // response oracle is introduced.
+    const account = await this.repository.findAccountByEmailHash(emailHash);
     if (isLockedOut(recentFailures, now)) {
-      await this.recordFailureAndMaybeAlert(emailHash, 'LOCKED_OUT', now, correlationId, null);
+      await this.recordFailureAndMaybeAlert(emailHash, 'LOCKED_OUT', now, correlationId, account?.adminId ?? null);
       throw new PlatformAdminAuthError();
     }
 
-    const account = await this.repository.findAccountByEmailHash(emailHash);
     if (!account || account.status !== 'ACTIVE') {
       // PCA-ADMIN-TIMING-1: still run a real scrypt verification against a
       // fixed, never-matching credential so this branch (unknown email /

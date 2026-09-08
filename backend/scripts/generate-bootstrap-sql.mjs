@@ -4,7 +4,7 @@
 // first). This is the one-directional, forward generation step: schema.ts is
 // the input, SQL is the output. It never reads a live database.
 //
-// Table order is alphabetical (PCA_CANONICAL_SCHEMA's own order). All 82
+// Table order is alphabetical (PCA_CANONICAL_SCHEMA's own order). All 83
 // foreign keys reference tables that may sort after their own table
 // alphabetically, so FOREIGN_KEY_CHECKS is disabled for the duration of
 // table creation (the same technique mysqldump itself uses) and restored

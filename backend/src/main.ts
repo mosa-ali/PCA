@@ -38,6 +38,7 @@ import {
   DeviceSyncStatusTracker,
   RejectingDeviceSignatureVerifier,
   RejectingEnvelopeSignatureVerifier,
+  rejectingResolveEnvelopeContext,
 } from './runtime-sync/index.js';
 import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
@@ -850,11 +851,14 @@ async function start(): Promise<void> {
     statusTracker: new DeviceSyncStatusTracker(),
     deleteNowLedger,
     familyAuditService,
-    // FTS/key-epoch resolution is a separate workstream (src/familytrustset)
-    // this lane does not own -- until it is wired in here, every envelope's
-    // signature check runs against RejectingEnvelopeSignatureVerifier above
-    // regardless of what senderPublicKey this returns, so the placeholder
-    // value below is inert, not a real credential.
+    // FTS/key-epoch resolution (src/familytrustset) has no durable
+    // production store yet. Until a real FTS-backed resolver is wired here,
+    // production uses rejectingResolveEnvelopeContext, whose epoch floors are
+    // unattainable, so envelope acceptance fails closed on its own -- it no
+    // longer depends on RejectingEnvelopeSignatureVerifier being the verifier
+    // next to it (the previous inline placeholder returned an empty key with
+    // ZERO epoch floors and would have become a live anti-downgrade hole the
+    // moment a real verifier was activated; see that function's doc comment).
     //
     // PCA-17C RUNTIME-SYNC-ACCEPTANCE-INTEGRITY: `familyId` (the caller's
     // AUTHORITATIVE, session-derived family identity -- see
@@ -867,13 +871,7 @@ async function start(): Promise<void> {
     // threaded straight into the context; see
     // FamilyEnvelopeVerifier.EnvelopeAcceptanceContext's familyId doc
     // comment for the full acceptance-boundary reasoning.
-    resolveEnvelopeContext: (_senderKeyId, familyId, nowUtc) => ({
-      senderPublicKey: '',
-      minimumAcceptedTrustSetEpoch: 0,
-      minimumAcceptedKeyEpoch: 0,
-      familyId,
-      now: nowUtc,
-    }),
+    resolveEnvelopeContext: rejectingResolveEnvelopeContext,
     // PCA-PA-1: independent Platform Administration auth plane -- no
     // shared repository, session type, or RBAC with anything above.
     platformAdminAuthService,

@@ -8,7 +8,7 @@
     "IOS_FUTURE",
     "BILLING_FUTURE"
   ],
-  "lastUpdatedUtc": "2026-09-06T00:00:00.0000000Z",
+  "lastUpdatedUtc": "2026-09-08T00:00:00.0000000Z",
   "gates": [
     {
       "id": "CRYPTO_SECURITY_REVIEW",
@@ -440,6 +440,32 @@
         "BILLING_FUTURE"
       ],
       "conditionalReleaseScope": []
+    },
+    {
+      "id": "ANDROID_RELEASE_SIGNING_CONFIG",
+      "status": "EXTERNAL",
+      "description": "android/app/build.gradle.kts declares only a debug buildType: there is no release buildType, no signingConfig, no keystore, minify/ProGuard are wired to nothing, and CI has only ever built assembleDebug -- so no installable, signed release artifact for ANDROID_D has ever existed. A keystore and Play App Signing decision are owner-held and must never be fabricated in-repo. Recommended and registered by the 2026-09-07 external-readiness report (O-1); added to this register by the 2026-09-08 final assessment so tooling can surface it.",
+      "owner": "Android/release owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": [
+        "ANDROID_D"
+      ],
+      "conditionalReleaseScope": []
+    },
+    {
+      "id": "PRODUCTION_EMAIL_CREDENTIAL_ROTATION",
+      "status": "BLOCKED",
+      "description": "The owner reported on 2026-09-08 that the SMTP relay credential configured for the backend App Service (Key Vault secret PCA-SMTP-PASSWORD, created 2026-09-07) is COMPROMISED. Until the owner has revoked it at the email provider, issued a replacement, and stored the replacement in Key Vault, no deployment of AUTH_B/PARENT_C may proceed -- a compromised outbound-mail credential lets a third party send verification/reset mail as PCA. The repository cannot verify rotation; this gate is closed only by the accountable owner recording the rotation evidence here. Distinct from PRODUCTION_EMAIL_DELIVERY (which covers provider selection and proven delivery), so a proven delivery path cannot mask an unrotated credential.",
+      "owner": "Email delivery provider owner / platform operations owner (not yet assigned)",
+      "evidence": null,
+      "releaseScope": [
+        "AUTH_B",
+        "PARENT_C"
+      ],
+      "conditionalReleaseScope": [
+        "ANDROID_D",
+        "IOS_FUTURE"
+      ]
     }
   ]
 }

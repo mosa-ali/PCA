@@ -6,7 +6,7 @@
 |---|---|
 | Addendum ID | PCA-ADDENDUM-004 |
 | Authority | Owner-approved complimentary-entitlements programme (Round5 Section A) — recorded as part of `PCA-DEC-026`'s decision scope in `docs/architecture/31_RISK_DECISION_REGISTER.md` (complimentary grants are the commercial-capacity counterpart to that decision's identity/registration/free-access scope; they share invariants but are a distinct domain, hence a separate addendum rather than folding into Addendum 003) |
-| Status | AUTHORING COMPLETE; ARCHITECTURE ONLY — NOT YET IMPLEMENTED; no `PCA-ADD-COMP-*` source exists in this repository as of this addendum's authoring date (Round5 pre-flight) |
+| Status | AUTHORING COMPLETE; IMPLEMENTED IN SOURCE — per `docs/implementation/PCA_COMPLETION_V2_MATRIX.json` at the 2026-09-08 final assessment: 25 SOURCE_COMPLETE (incl. external-gate sub-status), 0 PARTIAL, 0 NOT_STARTED, 0 NOT_APPLICABLE of 25; no row is VALIDATED_COMPLETE (no real-device/provider/UAT evidence exists) and no row is PRODUCTION_READY (every applicable external gate is open). Source: `backend/src/entitlements` (complimentary grants, effective-capacity computation consulted by the real consumption gates). (Field read "NOT YET IMPLEMENTED" from 2026-08-15 authoring until 2026-09-08.) |
 | Baseline | A-100 Architecture v1.0, Addendum 001, Addendum 002, and Addendum 003 remain immutable and unamended |
 | Scope | Durable, explicit, audited grants of additional entitlement capacity (and, distinctly, `COMMERCIAL_ACCESS`) to selected accounts/families at no charge |
 | Out of scope | PriceBook/Quote/Payment mechanics (unchanged, Addendum 002), Family Owner commercial authority (unchanged, `PCA-DEC-025`), any HR/staff-directory integration (explicitly not built this round) |
