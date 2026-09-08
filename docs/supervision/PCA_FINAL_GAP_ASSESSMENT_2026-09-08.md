@@ -353,6 +353,23 @@ The only red job is the iOS one (KNOWN_IOS_BLOCKER, byte-identical to every prio
 | Privacy / security / crypto / auth / authz / family RBAC / billing / platform-admin suites | included in the backend unit + MySQL runs above (all PASS) |
 | Accessibility / RTL / responsive | included in the two Playwright runs above (contrast EN+AR, forced colours, keyboard, RTL, responsive) |
 
-**CI:** the run for this commit is recorded in the final response and in the follow-up docs-only commit once observed (the local matrix above is the pre-push evidence).
+**CI run for this commit — `7f379cf`, workflow "Quality gates", run 34226716959, conclusion FAILURE (iOS build and unit tests) (22 of 23 jobs green):**
+
+| Job | Result | Duration |
+|---|---|---|
+| Contracts validation | success | 9 s |
+| Backend build and unit tests | success | 62 s |
+| Repository quality / Security controls / Dependency audit | success / success / success | 44 s / 16 s / 17 s |
+| Release control integrity (incl. the new traceability --check) | success | 67 s |
+| parent-web unit tests (8 shards) / platform-admin-web (4 shards) | success | 27–41 s / success | 17–23 s |
+| public-web build and content gates | success | 8 s |
+| Android build, lint, unit tests + assembleRelease (unsigned artifact asserted) | success | 565 s |
+| Web production demo-mode gate (incl. the new parent-web SBOM step) | success | 59 s |
+| Web real-browser e2e (Playwright, Chromium) | success | 112 s |
+| iOS build and unit tests | failure (**Build and test the inert launch shell**) | 24 s |
+
+Web-e2e annotations: `platform-admin-web Playwright: 20 passed (14.6s)`; `parent-web Playwright: 92 passed (55.1s)`.
+
+The only red job is the iOS one (KNOWN_IOS_BLOCKER, byte-identical to every prior run). Every other job is green on CI for this commit, including the release-control job with the new traceability check, the demo-mode gate job with the new parent-web SBOM step, the Android job building the unsigned release artifact, and the real-browser e2e job executing both consoles' suites to completion.
 
 **Tiers after this pass:** SOURCE_COMPLETE 340 of 369 applicable = 92.1 % (unchanged: the residual gaps closed here lived inside source-complete rows); automated evidence 354 of 369 = 95.9 % (three rows — BILL-004/005/006 — gained their first automated evidence paths this pass); strict VALIDATED_COMPLETE 0 %; PRODUCTION_READY 0 of 6 targets; 0 of 39 external gates closed. Nothing was deployed; Azure and every credential are untouched.
