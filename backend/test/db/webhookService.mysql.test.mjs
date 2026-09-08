@@ -24,6 +24,8 @@ import { PaymentProviderRegistry } from '../../dist/billing/provider/providerReg
 import { CommercialNotificationRepository } from '../../dist/commercialnotifications/CommercialNotificationRepository.js';
 import { MySqlCommercialNotificationPublisher } from '../../dist/commercialnotifications/CommercialNotificationPublisher.js';
 import { WebhookService, WEBHOOK_FRESHNESS_WINDOW_MS } from '../../dist/billing/webhook/WebhookService.js';
+import { FamilyInvoiceReadRepository } from '../../dist/familycommercial/FamilyInvoiceReadRepository.js';
+import { invoiceIdForPaymentTransaction } from '../../dist/billing/invoiceIssuance.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -459,4 +461,105 @@ test('MySQL: PPR1R-D022 -- concurrent redeliveries of a FAILED event re-drive it
 
 test.after(async () => {
   await closePool();
+});
+
+// --- PCA-ADD-BILL-004/005 (2026-09-08): the parent-facing invoice ---
+//
+// Until this change nothing wrote billing_invoices on the payment path, so a
+// family that had genuinely paid for a device-limit increase saw an empty
+// "Invoices and receipts" page in real mode (the DEV fixture issued one, the
+// production pipeline never did). These tests read the invoice back through
+// the SAME repository the family-facing route uses.
+
+test('MySQL: PCA-ADD-BILL-004/005: a confirmed payment issues exactly one PAID invoice the family can read, linked from the transaction and the attempt', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 4990n, 'USD');
+  const [attemptRows] = await getPool().query(`SELECT account_ref FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  const accountRef = attemptRows[0].account_ref;
+
+  const service = buildWebhookService(
+    fakeProvider(providerName, {
+      verifyResult: { verified: true, providerEventId: randomUUID() },
+      queryResult: { providerPaymentRef, status: 'CONFIRMED', amountMinor: 4990n, currencyCode: 'USD' },
+    }),
+  );
+  const result = await service.processWebhook(providerName, Buffer.from(JSON.stringify({ providerPaymentRef })), 'sig');
+  assert.equal(result.outcome, 'ACK');
+
+  const invoices = await new FamilyInvoiceReadRepository().listForFamily(accountRef);
+  assert.equal(invoices.length, 1);
+  assert.equal(invoices[0].status, 'PAID');
+  assert.equal(invoices[0].total.amountMinor, 4990n);
+  assert.equal(invoices[0].total.currencyCode, 'USD');
+  const [txRows] = await getPool().query(`SELECT payment_transaction_id, invoice_id FROM billing_payment_transactions WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  assert.equal(txRows.length, 1);
+  assert.equal(txRows[0].invoice_id, invoices[0].invoiceId);
+  assert.equal(invoices[0].invoiceId, invoiceIdForPaymentTransaction(txRows[0].payment_transaction_id));
+  const [attemptAfter] = await getPool().query(`SELECT invoice_id FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  assert.equal(attemptAfter[0].invoice_id, invoices[0].invoiceId);
+  const [lines] = await getPool().query(`SELECT line_type, amount_minor, quantity FROM billing_invoice_lines WHERE invoice_id = ?`, [invoices[0].invoiceId]);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].line_type, 'DEVICE_LIMIT_INCREASE');
+  assert.equal(BigInt(lines[0].amount_minor), 4990n);
+});
+
+test('MySQL: PCA-ADD-BILL-004/005: a second, differently-identified confirmation event for the same payment never issues a second invoice', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 1500n, 'SAR');
+  const [attemptRows] = await getPool().query(`SELECT account_ref FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  const accountRef = attemptRows[0].account_ref;
+  const queryResult = { providerPaymentRef, status: 'CONFIRMED', amountMinor: 1500n, currencyCode: 'SAR' };
+
+  // Two distinct provider event ids (an out-of-order redelivery the idempotency table
+  // cannot collapse) -- the business logic really runs twice, the invoice must not.
+  const first = buildWebhookService(fakeProvider(providerName, { verifyResult: { verified: true, providerEventId: randomUUID() }, queryResult }));
+  const second = buildWebhookService(fakeProvider(providerName, { verifyResult: { verified: true, providerEventId: randomUUID() }, queryResult }));
+  assert.equal((await first.processWebhook(providerName, Buffer.from(JSON.stringify({ providerPaymentRef })), 'sig')).outcome, 'ACK');
+  assert.equal((await second.processWebhook(providerName, Buffer.from(JSON.stringify({ providerPaymentRef })), 'sig')).outcome, 'ACK');
+
+  const invoices = await new FamilyInvoiceReadRepository().listForFamily(accountRef);
+  assert.equal(invoices.length, 1);
+  const [txRows] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_transactions WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  assert.equal(Number(txRows[0].n), 1);
+});
+
+test('MySQL: PCA-ADD-BILL-004/005: an invoice is never issued for a payment the provider does not confirm', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 2500n, 'USD');
+  const [attemptRows] = await getPool().query(`SELECT account_ref FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  const accountRef = attemptRows[0].account_ref;
+  const service = buildWebhookService(
+    fakeProvider(providerName, { verifyResult: { verified: true, providerEventId: randomUUID() }, queryResult: { providerPaymentRef, status: 'PENDING', amountMinor: 2500n, currencyCode: 'USD' } }),
+  );
+  await service.processWebhook(providerName, Buffer.from(JSON.stringify({ providerPaymentRef })), 'sig');
+  assert.equal((await new FamilyInvoiceReadRepository().listForFamily(accountRef)).length, 0);
+});
+
+test('MySQL: PCA-ADD-BILL-004/005 red team: N concurrent, differently-identified confirmations for the same payment yield exactly one transaction and exactly one invoice', async () => {
+  const providerName = `fake${randomBytes(6).toString('hex')}`;
+  const providerPaymentRef = `pay-${randomUUID()}`;
+  const paymentAttemptId = await seedPendingAttempt(providerName, providerPaymentRef, 3300n, 'USD');
+  const [attemptRows] = await getPool().query(`SELECT account_ref FROM billing_payment_attempts WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  const accountRef = attemptRows[0].account_ref;
+  const queryResult = { providerPaymentRef, status: 'CONFIRMED', amountMinor: 3300n, currencyCode: 'USD' };
+
+  // Eight deliveries with eight distinct provider event ids race through eight independent
+  // service instances: the idempotency table cannot collapse them, so the confirmation and the
+  // invoice issuance genuinely race. Exactly-once must hold on both rows.
+  const services = Array.from({ length: 8 }, () =>
+    buildWebhookService(fakeProvider(providerName, { verifyResult: { verified: true, providerEventId: randomUUID() }, queryResult })),
+  );
+  const outcomes = await Promise.all(services.map((s) => s.processWebhook(providerName, Buffer.from(JSON.stringify({ providerPaymentRef })), 'sig')));
+  assert.ok(outcomes.every((o) => o.outcome === 'ACK'), JSON.stringify(outcomes));
+
+  const [txRows] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_payment_transactions WHERE payment_attempt_id = ?`, [paymentAttemptId]);
+  assert.equal(Number(txRows[0].n), 1);
+  const invoices = await new FamilyInvoiceReadRepository().listForFamily(accountRef);
+  assert.equal(invoices.length, 1);
+  assert.equal(invoices[0].status, 'PAID');
+  const [lineRows] = await getPool().query(`SELECT COUNT(*) AS n FROM billing_invoice_lines WHERE invoice_id = ?`, [invoices[0].invoiceId]);
+  assert.equal(Number(lineRows[0].n), 1);
 });

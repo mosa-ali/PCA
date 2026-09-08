@@ -23,7 +23,7 @@ FABLE-A021,P3,OWNER_ACTION,OWNER_OPEN (not a blocker),--,"Public videos remain h
 FABLE-A022,P1,LEGAL,OWNER_OPEN,--,"OD-13 legal facts still absent"
 FABLE-A023,P1,INFRASTRUCTURE,OPEN,--,"nslookup pcasafe.com (8.8.8.8) returns no A record on 2026-09-08"
 FABLE-A024,P1,INFRASTRUCTURE,OPEN,--,"Verified read-only 2026-09-08: pca app alwaysOn=false http20=false healthCheckPath=null; pcaSafe pulls with UserCredentials (ACR admin) and carries a plaintext MS_CLIENT_SECRET plus a pca-backend:5dacd84 image reference in its own settings"
-FABLE-A025,P1,REPO_SOLVABLE,PARTIAL,this pass (digest),"platform-admin-web and parent-web runtime stages now pinned to nginx-unprivileged@sha256:65e3e85d...; ROLLBACK_CHECKLIST.md still has no container/image/slot rollback path (0 mentions)"
+FABLE-A025,P1,REPO_SOLVABLE,CLOSED (repository side),this pass (programme run),nginx runtime digests pinned (earlier) + App Service container-rollback procedure added to ROLLBACK_CHECKLIST.md for the topology that exists; health-check path still to be configured before first deployment
 FABLE-A026,P1,REPO_SOLVABLE,CLOSED,DW-W1,"PAYMENT_PRODUCTION_CERTIFICATION present in external_gate_matrix.json and now derived into the R3 register from PCA-ADD-BILL-041"
 FABLE-A027,P1,REPO_SOLVABLE,OWNER_DECISION,DW-W3 (gate),"VpnEnforcementPolicy holds the VPN/DNS stack dormant pending ANDROID_VPN_DNS_POLICY"
 FABLE-A028,P2,REPO_SOLVABLE,PARTIAL,DW-W1/W3 + this pass,"15 cross-family MySQL isolation tests execute; eye-protection, child-request decide and cancel/acknowledge oracles closed; the six isolation counters are still prose, not code-asserted"
@@ -34,7 +34,7 @@ FABLE-A032,P2,REPO_SOLVABLE,CLOSED,DW-W3 + this pass,"decide() scoped on the cal
 FABLE-A033,P2,REPO_SOLVABLE,OPEN_NEEDS_XCODE,--,"PCADeviceActivityMonitor still compiles one file referencing host-app-only types; a blind pbxproj/source-set edit was deliberately not made"
 FABLE-A034,P2,REPO_SOLVABLE,OPEN,--,"No DEVELOPMENT_TEAM (external), no app icon asset catalog, no launch screen"
 FABLE-A035,P2,REPO_SOLVABLE,CLOSED,this pass,"Real-browser contrast specs in both web apps (EN + AR) with a script-independent Arabic-text audit; 14 + 2 runs green locally; wired into the new CI job"
-FABLE-A036,P2,REPO_SOLVABLE,OPEN,--,"invoice.ts write functions still have no callers outside read paths (verified 2026-09-08)"
+FABLE-A036,P2,REPO_SOLVABLE,CLOSED,this pass (programme run),"billing_invoices write path: PaymentInvoiceIssuer issues the PAID invoice on confirmed payment, idempotent by construction; MySQL tests incl. 8-way concurrency (G-43)"
 FABLE-A037,P2,REPO_SOLVABLE,CLOSED,this pass,"Lockout alert now carries the locked account's adminId (account resolved before the lockout branch); regression test added"
 FABLE-A038,P2,REPO_SOLVABLE,OPEN_DOCUMENTED,--,"Privilege gate needs PCA_MIGRATION_DATABASE_URL; CI is credential-free by design; ran locally on 2026-09-07 (4/4) and skipped 2026-09-08 (no privileged URL in this session)"
 FABLE-A039,P2,REPO_SOLVABLE,CLOSED,this pass,"R3_FINAL_CURRENT_GAP_REDERIVATION.SUPERSEDED.md marker added"
@@ -48,13 +48,13 @@ FABLE-A046,P3,REPO_SOLVABLE,CLOSED,this pass,"CURRENT_DIRTY_PATHS.txt removed fr
 FABLE-A047,P3,REPO_SOLVABLE,CLOSED,DW-W1,"verify-mysql.mjs asserts UTC/collation/version before migrating"
 FABLE-A048,P3,REPO_SOLVABLE,CLOSED,DW-W2,"scrypt N=2^17 with bounded verification parameters; __Host- cookie work recorded in W2"
 FABLE-A049,P0,REPO_SOLVABLE,CLOSED (false assurance removed; real delivery remains crypto-gated),this pass,"retention-policy route answers 202 validated:true persisted:false with a disclosed state; parent-web copy/types/tests updated; regression test forbids accepted:true"
-FABLE-A050,P0,REPO_SOLVABLE,OPEN_DESIGN,--,"EnrollmentCoordinator.kt still persists familyId=\"\" because the bootstrap DTO never returns one; requires a design decision on device family context (crypto-review-shaped)"
+FABLE-A050,P0,REPO_SOLVABLE,DOCUMENTED_NOT_CHANGED,--,familyId stays blank at bootstrap by design (privacy: the DTO never discloses it); its retention consequence is closed independently by the local-device cycle (G-44)
 FABLE-A051,P0,REPO_SOLVABLE,PARTIAL,this pass,"Bootstrap client now targets https://api.pcasafe.com; APP_LINK_HOST (enroll.pca.app) and the iOS applinks entitlement remain placeholders pending the assetlinks hosting decision"
 FABLE-A052,P1,REPO_SOLVABLE,PARTIAL,this pass,"Parent-visibility copy (EN/AR, regular + simple) now conditioned on the device being connected; 'Protection is active on this device' retained because isLocalProtectionActive is a real runtime field and local engines are connectivity-independent"
 FABLE-A053,P1,REPO_SOLVABLE,OPEN (gate registered),this pass (gate),"No launcher icon; no release buildType/signing; ANDROID_RELEASE_SIGNING_CONFIG now registered so tooling surfaces it"
 FABLE-A054,P1,OWNER_ACTION,OWNER_OPEN,--,"targetSdk 35 vs Play floor unverified"
-FABLE-A055,P1,REPO_SOLVABLE,OPEN,--,"Retention maintenance still uses wall-clock cutoffs; WallClockRollbackMonitor records but does not gate"
-FABLE-A056,P2,REPO_SOLVABLE,OPEN,--,"BidiUtils.isolateLtr/sanitizeBidiControls still have zero production call sites (verified 2026-09-08)"
+FABLE-A055,P1,REPO_SOLVABLE,CLOSED,this pass (programme run),Android retention now clamps expiry to WallClockRollbackMonitor.highWaterMarkMillis (trusted-time floor); rollback cannot postpone deletion; tests (G-44)
+FABLE-A056,P2,REPO_SOLVABLE,CLOSED,this pass (programme run),"BidiUtils wired at the Safe Browser block screen (sanitised + isolated domain, isolated reason code) and enrollment fingerprints; MixedDirectionIsolationStaticTest (G-45)"
 FABLE-A057,P2,REPO_SOLVABLE,CLOSED,this pass,"src/security/diagnosticConsole.ts in both web apps drops raw objects in production; no-console is a lint error; sentinel tests (URL/child name/domain never reach the console in PROD)"
 FABLE-A058,P2,REPO_SOLVABLE,CLOSED,this pass,"device_challenges.nonce -> SECURITY_METADATA; release_packages.signed_metadata -> OPERATIONAL_METADATA"
 FABLE-A059,P2,REPO_SOLVABLE,CLOSED,this pass,"All 39 gate labels declared in PCA_COMPLETION_V2_MATRIX.json externalGates; ValidateR3EvidenceDiscipline fails on undeclared labels; three pipe-joined labels split"
@@ -66,3 +66,8 @@ FABLE-A064,P0,INFRASTRUCTURE,EXTERNAL_OPEN,--,"PUBLIC_REPLY_IDENTITY still BLOCK
 FABLE-A065,P1,REPO_SOLVABLE,CLOSED,this pass (post-push verification),"parent-web PWA: navigateFallback /offline.html answered every worker-controlled reload/deep link with the offline page while online (REAL_PRODUCT_DEFECT, found while reproducing the web-e2e CI failure); replaced by a NetworkOnly navigation route with precacheFallback; parent-web/e2e/pwa-service-worker.spec.ts 3/3 (fail on the old configuration); suite 85/85 retries=0 twice; see assessment §R finding 3 and gap G-39"
 FABLE-A066,P2,REPO_SOLVABLE,CLOSED,this pass (post-push verification),"Devices overview: false 'can't verify' while the family read was pending (honesty) and a 320px overflow in the genuine declined state (layout), plus a spec that sampled the transient state at random; fixed with component + real-browser regressions that fail on the previous code; see assessment §R finding 4 and gap G-40"
 FABLE-A067,P3,REPO_SOLVABLE,CLOSED (web-e2e job green on CI run 34219540299),this pass (post-push verification),"Dashboard child card head overflowed on the Linux CI runner (6px at 320px; wider system font) -- head row now wraps; containment regression that fails on the old stylesheet on every platform; see assessment §R finding 6 and gap G-42"
+FABLE-A068,P2,REPO_SOLVABLE,CLOSED,this pass (programme run),Traceability markdown regenerated from the JSON matrix by RegenerateTraceabilityTables.mjs with a --check step in the release-control CI job (G-47)
+FABLE-A069,P1,REPO_SOLVABLE,CLOSED (repository side),this pass (programme run),"Android release build type (R8, env-supplied signing, unsigned without keystore) + CI assembleRelease; ANDROID_RELEASE_SIGNING_CONFIG stays open for the owner keystore (G-46)"
+FABLE-A070,P2,REPO_SOLVABLE,CLOSED,this pass (programme run),parent-web SBOM generated and validated in CI from the installed tree (G-46)
+FABLE-A071,P3,REPO_SOLVABLE,CLOSED,this pass (programme run),Static boundary test for the ephemeral genesis Ed25519 signer (G-48)
+FABLE-A072,P2,REPO_SOLVABLE,CLOSED,this pass (programme run),Forced-colours / prefers-contrast / reduced-motion rules in both consoles with real-browser specs (G-45)

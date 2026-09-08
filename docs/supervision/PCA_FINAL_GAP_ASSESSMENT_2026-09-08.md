@@ -316,3 +316,43 @@ Run 2 confirms findings 1 and 2 closed by CI (the demo-mode gate ran to completi
 Web-e2e annotations: `platform-admin-web Playwright: 17 passed (14.1s)`; `parent-web Playwright: 88 passed (56.3s)`.
 
 The only red job is the iOS one (KNOWN_IOS_BLOCKER, byte-identical to every prior run). Every other job is green on CI, including the real-browser e2e job with both consoles' suites executed to completion — findings 1, 2, 3, 4 and 6 are closed by CI evidence; finding 5 did not recur.
+
+---
+
+## S. One-session programme pass (2026-09-08, PCA-1 … PCA-17 + Addenda 001/002)
+
+**Premise check.** All 375 controlled requirements were re-triaged against the JSON matrix (`docs/supervision/PCA_REQUIREMENT_MATRIX_2026-09-08.csv`, one row per id, no omissions). Every one of the 29 rows that is not source-complete carries an external gate: 20 crypto (`CRYPTO_ACTIVATION` / `PRODUCTION_CRYPTO_SECURITY_REVIEW`), 2 `PENDING_OWNER_DECISION`, 1 `YOUTUBE_MODE_B_POLICY_REVIEW`, 1 `CLOUD_AI_OWNER_DECISION`, 1 `ANDROID_APP_LINK_ASSETLINKS_HOSTING`, plus 2 validation-pending rows whose remaining evidence is real-device. So the repository-implementable work lived inside source-complete rows and the deferred action list, not in the status counts — and the status counts are unchanged by design (340 of 369 = 92.1 %).
+
+**Implemented, tested, adversarially probed:**
+
+1. **Invoice on confirmed payment (Addendum 002, BILL-004/005/006, FABLE-A036).** Nothing had ever written `billing_invoices` on the payment path; a family that paid saw an empty invoices page in real mode. `PaymentInvoiceIssuer` issues the PAID invoice with an id derived from the payment transaction id, so redelivery, out-of-order events and re-driven failures cannot double-issue; transaction and attempt rows are linked. Red team: eight concurrent, differently-identified confirmations for one payment yield exactly one transaction and one invoice.
+2. **Android local retention on an unpaired device + trusted-time floor (PCA-12, PCA-DATA-024/025, FR-104; FABLE-A055).** The cycle required a family id the bootstrap never discloses, so every locally captured row lived forever before pairing. A local-device cycle keyed by the enrolled device id now runs with `LOCAL_DEVICE_UNPAIRED` receipts, never touching another device's rows, and expiry is judged against the tamper layer's wall-clock high-water mark so a rollback cannot postpone deletion.
+3. **Mixed-direction isolation and high-contrast modes (PCA-16, NFR-041; FABLE-A056).** `BidiUtils` gained its first production call sites (Safe Browser block screen with control-character stripping; enrollment fingerprints). Both consoles gained forced-colours, `prefers-contrast: more` and reduced-motion rules, proven under emulated media in a real browser.
+4. **Android release build type (PCA-17; repository side of `ANDROID_RELEASE_SIGNING_CONFIG`).** R8 minify + shrink with the Tink annotation rules R8 demanded, signing read from `PCA_RELEASE_*` environment values, unsigned when absent; CI builds it every run and asserts the artifact. The keystore and a signed artifact remain external.
+5. **parent-web SBOM in CI (NFR-006)** from the installed tree, validated like the other workspaces.
+6. **Genesis-signer import boundary (NFR-004).** The ephemeral Ed25519 signer is imported only by `ParentAccountService`, its verifier factory has no production call site, and `main.ts` keeps the Rejecting verifiers wired — now a suite-failing static test.
+7. **Traceability markdown derived from the JSON (Phase 27).** `RegenerateTraceabilityTables.mjs` regenerates the status tables, distributions and completion counts (Correction R6) and `--check` runs in the release-control CI job; doc 30's stale statements (usage module, retention, BidiUtils, Playwright-in-CI, webhook test evidence, PA-4/PA-5 workstream view) were corrected; matrix notes for NFR-044 (residual gap already closed) and BILL-030/032/033/034 (direct MySQL tests exist) were reconciled.
+
+**Not implemented, and why (explicit):** the 29 gated rows above; the design decisions A050 (blank familyId at bootstrap is deliberate; its retention consequence is closed independently), A011/A012 (in-memory family audit and web rules, owner privacy decision), A013 (silent Rejecting composers by design), A031 (server-side roles are crypto-gated), A053 (launcher icon asset), A033/A034 (iOS source set and icon, forbidden without Xcode), a real mutation harness, geofence zone authoring UI (design/UX decision), and the Play/App Store metadata (legal facts and owner decisions).
+
+**Test matrix (executed on this machine, PASS/FAIL/SKIP exact):**
+
+| Suite | Result |
+|---|---|
+| Backend unit (`npm test`, incl. double-conformance negative control) | PASS 2344 / 2344 |
+| Backend MySQL 8.4 (`npm run test:db` on a freshly reset disposable database) | PASS 532, SKIP 4 (privilege gate, delegated), FAIL 0 of 536 |
+| Contracts: 4 validators + tests | PASS 5 / 15 / 15 / 14 |
+| parent-web: lint / Vitest / Playwright (`--retries=0 --workers=2`) / demo-mode gate + negative control | PASS / 999 of 999 / 92 of 92 / PASS |
+| platform-admin-web: lint / Vitest / Playwright (`--retries=0`) / demo-mode gate + negative control | PASS / 155 of 155 / 20 of 20 / PASS |
+| public-web build + content gates | PASS |
+| Repository, quality and security checks + their self-tests | PASS (2485 tracked files; 11 privacy sentinels; 8 rejection controls) |
+| Android: lint + JVM tests + assembleDebug + assembleRelease (`--offline`) | PASS 1356 tests, 0 failures, 1 skipped; release APK built unsigned (0 signature blocks) |
+| Release tooling: derived ledgers, gate table, traceability, FABLE parity, external parity, evidence discipline, gate scoping | PASS (all `--check` modes OK) |
+| Release gate, six targets | NOT_READY x 6, exit 1 each (unchanged; no gate weakened) |
+| iOS | EXTERNAL: not built (no Xcode); CI job known red |
+| Privacy / security / crypto / auth / authz / family RBAC / billing / platform-admin suites | included in the backend unit + MySQL runs above (all PASS) |
+| Accessibility / RTL / responsive | included in the two Playwright runs above (contrast EN+AR, forced colours, keyboard, RTL, responsive) |
+
+**CI:** the run for this commit is recorded in the final response and in the follow-up docs-only commit once observed (the local matrix above is the pre-push evidence).
+
+**Tiers after this pass:** SOURCE_COMPLETE 340 of 369 applicable = 92.1 % (unchanged: the residual gaps closed here lived inside source-complete rows); automated evidence 354 of 369 = 95.9 % (three rows — BILL-004/005/006 — gained their first automated evidence paths this pass); strict VALIDATED_COMPLETE 0 %; PRODUCTION_READY 0 of 6 targets; 0 of 39 external gates closed. Nothing was deployed; Azure and every credential are untouched.

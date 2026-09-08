@@ -338,7 +338,8 @@
         "android/app/src/test/java/org/pca/app/runtime/background/RetentionMaintenanceWorkerTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/background/WorkManagerBackgroundExecutionSchedulerTest.kt",
         "android/app/src/test/java/org/pca/app/runtime/graph/PcaAppGraphTest.kt",
-        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt"
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/WallClockRollbackMonitorTest.kt"
       ],
       "externalGate": [],
       "notes": "R3 re-derivation (2026-08-21): was incorrectly NOT_APPLICABLE; real gap now closed and independently verified."
@@ -351,16 +352,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt"
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionMaintenanceCycle.kt"
       ],
       "testEvidence": [
         "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt (general expiry deletion, audit-floor separation, tombstone pruning, and LATEST_ONLY convergence)",
-        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionCutoffCalculatorTest.kt (elapsed, calendar-month, timezone, and audit-floor cutoff boundaries)"
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionCutoffCalculatorTest.kt (elapsed, calendar-month, timezone, and audit-floor cutoff boundaries)",
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionMaintenanceCycleTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/WallClockRollbackMonitorTest.kt"
       ],
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "Local retention scheduling and deletion mechanics have focused Android coverage for general expiry, audit-floor separation, tombstone pruning, LATEST_ONLY convergence, calendar/timezone cutoff boundaries, and the non-sensitive receipt path. This remains PARTIAL because production cryptographic acceptance and external security review are still required before claiming complete end-to-end retention assurance."
+      "notes": "Local retention scheduling and deletion mechanics have focused Android coverage for general expiry, audit-floor separation, tombstone pruning, LATEST_ONLY convergence, calendar/timezone cutoff boundaries, and the non-sensitive receipt path. This remains PARTIAL because production cryptographic acceptance and external security review are still required before claiming complete end-to-end retention assurance. 2026-09-08 (one-session programme pass): Android local retention now runs for an enrolled-but-unpaired device (RetentionEngine.runLocalDeviceCycle, receipts LOCAL_DEVICE_UNPAIRED) -- previously the cycle required a family id the bootstrap never discloses, so locally captured rows lived forever pre-pairing -- and expiry is judged against the tamper layer's trusted-time floor (WallClockRollbackMonitor.highWaterMarkMillis) so a wall-clock rollback cannot postpone deletion."
     },
     {
       "requirementId": "PCA-DATA-026",
@@ -1866,15 +1871,20 @@
       ],
       "status": "PARTIAL",
       "sourceEvidence": [
-        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt + sync/SyncOutboxRepository.kt"
+        "android/app/src/main/java/org/pca/app/persistence/retention/DeleteNowCoordinator.kt + sync/SyncOutboxRepository.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionEngine.kt",
+        "android/app/src/main/java/org/pca/app/persistence/retention/RetentionMaintenanceCycle.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/persistence/retention/"
+        "android/app/src/test/java/org/pca/app/persistence/retention/",
+        "android/app/src/test/java/org/pca/app/persistence/retention/RetentionMaintenanceCycleTest.kt",
+        "android/app/src/test/java/org/pca/app/persistence/RetentionEngineTest.kt",
+        "android/app/src/test/java/org/pca/app/runtime/tamper/WallClockRollbackMonitorTest.kt"
       ],
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "Delete Now is wired from DeleteNowScreen through DeleteNowUseCase to the transaction-scoped coordinator, with focused Android coverage for device/child/family scope isolation, policy snapshot erasure, count-only receipts, tombstones, and request validation. This remains PARTIAL because production cryptographic acceptance and external security review are still required for end-to-end propagation assurance."
+      "notes": "Delete Now is wired from DeleteNowScreen through DeleteNowUseCase to the transaction-scoped coordinator, with focused Android coverage for device/child/family scope isolation, policy snapshot erasure, count-only receipts, tombstones, and request validation. This remains PARTIAL because production cryptographic acceptance and external security review are still required for end-to-end propagation assurance. 2026-09-08 (one-session programme pass): Android local retention now runs for an enrolled-but-unpaired device (RetentionEngine.runLocalDeviceCycle, receipts LOCAL_DEVICE_UNPAIRED) -- previously the cycle required a family id the bootstrap never discloses, so locally captured rows lived forever pre-pairing -- and expiry is judged against the tamper layer's trusted-time floor (WallClockRollbackMonitor.highWaterMarkMillis) so a wall-clock rollback cannot postpone deletion."
     },
     {
       "requirementId": "PCA-FR-105",
@@ -2648,12 +2658,13 @@
         "android/app/src/main/java/org/pca/app/runtime/sync/envelope/EnvelopeSignatureVerifier.kt"
       ],
       "testEvidence": [
-        "android/app/src/test/java/org/pca/app/runtime/sync/"
+        "android/app/src/test/java/org/pca/app/runtime/sync/",
+        "backend/test/security/genesisSignerImportBoundary.test.mjs"
       ],
       "externalGate": [
         "PRODUCTION_CRYPTO_SECURITY_REVIEW"
       ],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Unchanged since first audit. 2026-09-08 (one-session programme pass): a static boundary test (backend/test/security/genesisSignerImportBoundary.test.mjs) pins that the ephemeral genesis Ed25519 signer is imported only by ParentAccountService, that its verifier factory has no production call site, and that main.ts keeps the Rejecting verifiers wired."
     },
     {
       "requirementId": "PCA-NFR-005",
@@ -2687,7 +2698,7 @@
         "QA73 independently ran the SBOM generation command itself and confirmed real CycloneDX 1.6 output (backend 61 components, platform-admin-web 472 components)"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). parent-web excluded: genuine pre-existing lockfile/workspace-hoisting issue (missing @types/node/typescript for @pca/parent-sdk-* packages breaks npm ls), QA73 independently reproduced the same failure, confirmed not invented to avoid work. Documented in the CI comment, left open as a small residual gap. Runtime reachability: Yes -- wired into the real CI job, QA73-verified by running it"
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). parent-web excluded: genuine pre-existing lockfile/workspace-hoisting issue (missing @types/node/typescript for @pca/parent-sdk-* packages breaks npm ls), QA73 independently reproduced the same failure, confirmed not invented to avoid work. Documented in the CI comment, left open as a small residual gap. Runtime reachability: Yes -- wired into the real CI job, QA73-verified by running it 2026-09-08 (one-session programme pass): parent-web's SBOM is now generated and validated in CI from the installed tree (npm sbom in the web-production-demo-mode-gate job); the lockfile-only generator's ESBOMPROBLEMS on the file:-linked SDK packages is documented, not worked around."
     },
     {
       "requirementId": "PCA-NFR-007",
@@ -3078,13 +3089,20 @@
         "parent-web: parent-web/tests/accessibility/axe.test.tsx now imports and renders 23 distinct page components (up from 13), confirmed by direct file read -- cross-referenced against parent-web/src/App.tsx's real route list, all 23 imports correspond to genuinely routed pages. platform-admin-web/tests/accessibility/axe.test.tsx is BRAND NEW this round (previously zero axe test files existed): imports and renders all 19 real routed page components in platform-admin-web/src/App.tsx (Dashboard, AccountsList, AccountDetail, Entitlements x2 variants, EntitlementRequests, ComplimentaryCapacity, FreeAccessPolicy, 5 billing pages, 3 settlement pages, AdminUsers, Audit, Settings) plus NotPermitted and NotFound -- 21 test cases total, verified 1:1 against every non-Login route in App.tsx.",
         "parent-web/tests/accessibility/axe.test.tsx",
         "ios/PCA/Localizable.xcstrings",
-        "ios/PCA/Localization/PCALocalizedStrings.swift"
+        "ios/PCA/Localization/PCALocalizedStrings.swift",
+        "android/app/src/main/java/org/pca/app/feature/webprotection/ui/SafeBrowserScreen.kt",
+        "android/app/src/main/java/org/pca/app/enrollment/ui/EnrollmentScreen.kt",
+        "parent-web/src/styles/global.css",
+        "platform-admin-web/src/styles/global.css"
       ],
       "testEvidence": [
         "parent-web/tests/accessibility/axe.test.tsx (23/39 parent-web pages, ~59%, up from 13/39)",
         "platform-admin-web/tests/accessibility/axe.test.tsx (21 of platform-admin-web's ~21 real routed surfaces -- effectively full coverage, up from 0)",
         "parent-web/tests/accessibility/axe.test.tsx",
-        "ios/PCATests/LocalizationKeyParityTests.swift"
+        "ios/PCATests/LocalizationKeyParityTests.swift",
+        "android/app/src/test/java/org/pca/app/i18n/MixedDirectionIsolationStaticTest.kt",
+        "parent-web/e2e/forced-colors.spec.ts",
+        "platform-admin-web/e2e/forced-colors.spec.ts"
       ],
       "externalGate": [],
       "notes": "P23-Writer15B (2026-08-24): closed by commit 2fcac59 (axe coverage for PermissionsPolicy) plus commit 85b2f4a (iOS localization); reclassified from a stale PARTIAL note mislabeled SOURCE_COMPLETE_OWNER_DECISION_GATE with a blank externalGate."
@@ -3158,7 +3176,7 @@
         "android/app/src/test/java/org/pca/app/feature/eyedistance/shield/EyeRestShieldReadingLevelTest.kt"
       ],
       "externalGate": [],
-      "notes": "R3 update (2026-08-21, base d844987): reading-level (AgeUxTier SIMPLE/CLEAR) copy now covers Enrollment disclosure, ChildHomeScreen, BreakShieldScreen, the Safe Browser block screen, and EyeRestShieldScreen, each reading the real persisted AgeUxTier at render time (not a hardcoded default), with EN/AR parity and safety/privacy/emergency substance preserved identically across tiers, verified by ArabicResourceParityTest/StringResourceCompletenessTest plus per-surface unit tests. iOS remains narrower (enrollment disclosure only). Known residual gap: AdminSecurityActivity PIN-entry surface is child-visible in some flows and has not received this treatment; not yet audited whether other surfaces exist beyond the ones explicitly checked this pass."
+      "notes": "R3 update (2026-08-21, base d844987): reading-level (AgeUxTier SIMPLE/CLEAR) copy now covers Enrollment disclosure, ChildHomeScreen, BreakShieldScreen, the Safe Browser block screen, and EyeRestShieldScreen, each reading the real persisted AgeUxTier at render time (not a hardcoded default), with EN/AR parity and safety/privacy/emergency substance preserved identically across tiers, verified by ArabicResourceParityTest/StringResourceCompletenessTest plus per-surface unit tests. iOS remains narrower (enrollment disclosure only). Known residual gap: AdminSecurityActivity PIN-entry surface is child-visible in some flows and has not received this treatment; not yet audited whether other surfaces exist beyond the ones explicitly checked this pass. 2026-09-08 (one-session programme pass): the residual \"AdminSecurityActivity PIN-entry surface has no reading-level treatment\" gap recorded above is closed -- AdminPinScreen selects tier-appropriate copy (adminPinCopyForTier); what remains pending is real-device/screen-reader evidence, not source."
     },
     {
       "requirementId": "PCA-NFR-045",
@@ -5109,13 +5127,17 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/billing/invoice.ts"
+        "backend/src/billing/invoice.ts",
+        "backend/src/billing/invoiceIssuance.ts",
+        "backend/src/billing/webhook/WebhookService.ts"
       ],
       "testEvidence": [
-        "backend/test/db/billingCore.mysql.test.mjs"
+        "backend/test/db/billingCore.mysql.test.mjs",
+        "backend/test/billing/invoiceIssuance.test.mjs",
+        "backend/test/db/webhookService.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route. 2026-09-08 (one-session programme pass): a confirmed payment now issues the parent-facing PAID invoice (backend/src/billing/invoiceIssuance.ts, wired into WebhookService; invoice id derived from the payment transaction id so redeliveries cannot double-issue; transaction and attempt rows linked). Until then nothing wrote billing_invoices on the payment path and the family invoice page stayed empty in real mode (FABLE-A036)."
     },
     {
       "requirementId": "PCA-ADD-BILL-005",
@@ -5124,13 +5146,17 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/billing/invoice.ts | backend/migrations/0007_billing_core.sql"
+        "backend/src/billing/invoice.ts | backend/migrations/0007_billing_core.sql",
+        "backend/src/billing/invoiceIssuance.ts",
+        "backend/src/billing/webhook/WebhookService.ts"
       ],
       "testEvidence": [
-        "backend/test/db/billingCore.mysql.test.mjs"
+        "backend/test/db/billingCore.mysql.test.mjs",
+        "backend/test/billing/invoiceIssuance.test.mjs",
+        "backend/test/db/webhookService.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing). 2026-09-08 (one-session programme pass): a confirmed payment now issues the parent-facing PAID invoice (backend/src/billing/invoiceIssuance.ts, wired into WebhookService; invoice id derived from the payment transaction id so redeliveries cannot double-issue; transaction and attempt rows linked). Until then nothing wrote billing_invoices on the payment path and the family invoice page stayed empty in real mode (FABLE-A036)."
     },
     {
       "requirementId": "PCA-ADD-BILL-006",
@@ -5139,13 +5165,17 @@
       ],
       "status": "SOURCE_COMPLETE",
       "sourceEvidence": [
-        "backend/src/billing/payment.ts"
+        "backend/src/billing/payment.ts",
+        "backend/src/billing/invoiceIssuance.ts",
+        "backend/src/billing/webhook/WebhookService.ts"
       ],
       "testEvidence": [
-        "backend/test/db/billingCore.mysql.test.mjs"
+        "backend/test/db/billingCore.mysql.test.mjs",
+        "backend/test/billing/invoiceIssuance.test.mjs",
+        "backend/test/db/webhookService.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route. 2026-09-08 (one-session programme pass): a confirmed payment now issues the parent-facing PAID invoice (backend/src/billing/invoiceIssuance.ts, wired into WebhookService; invoice id derived from the payment transaction id so redeliveries cannot double-issue; transaction and attempt rows linked). Until then nothing wrote billing_invoices on the payment path and the family invoice page stayed empty in real mode (FABLE-A036)."
     },
     {
       "requirementId": "PCA-ADD-BILL-007",
@@ -5578,10 +5608,11 @@
         "backend/src/billing/webhook/WebhookService.ts | backend/src/billing/provider/sandboxProvider.ts"
       ],
       "testEvidence": [
-        "backend/test/billing/sandboxProvider.test.mjs"
+        "backend/test/billing/sandboxProvider.test.mjs",
+        "backend/test/db/webhookService.mysql.test.mjs"
       ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing)."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: N/A to AUDIT-C (backend-only evidence; see AUDIT-A for reachability tracing). 2026-09-08 (one-session programme pass): the TEST_EVIDENCE_PARTIAL annotation is superseded -- backend/test/db/webhookService.mysql.test.mjs exercises WebhookService.processWebhook directly (freshness window rejection and re-processing, redelivery idempotency, queryPayment authority over the payload's claimed status, amount and currency mismatch, transient-failure re-drive)."
     },
     {
       "requirementId": "PCA-ADD-BILL-031",
@@ -5607,9 +5638,11 @@
       "sourceEvidence": [
         "backend/src/billing/webhook/WebhookService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/webhookService.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route. 2026-09-08 (one-session programme pass): the TEST_EVIDENCE_PARTIAL annotation is superseded -- backend/test/db/webhookService.mysql.test.mjs exercises WebhookService.processWebhook directly (freshness window rejection and re-processing, redelivery idempotency, queryPayment authority over the payload's claimed status, amount and currency mismatch, transient-failure re-drive)."
     },
     {
       "requirementId": "PCA-ADD-BILL-033",
@@ -5620,9 +5653,11 @@
       "sourceEvidence": [
         "backend/src/billing/webhook/WebhookService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/webhookService.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route. 2026-09-08 (one-session programme pass): the TEST_EVIDENCE_PARTIAL annotation is superseded -- backend/test/db/webhookService.mysql.test.mjs exercises WebhookService.processWebhook directly (freshness window rejection and re-processing, redelivery idempotency, queryPayment authority over the payload's claimed status, amount and currency mismatch, transient-failure re-drive)."
     },
     {
       "requirementId": "PCA-ADD-BILL-034",
@@ -5633,9 +5668,11 @@
       "sourceEvidence": [
         "backend/src/billing/webhook/WebhookService.ts"
       ],
-      "testEvidence": [],
+      "testEvidence": [
+        "backend/test/db/webhookService.mysql.test.mjs"
+      ],
       "externalGate": [],
-      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route."
+      "notes": "PCA-FINAL-SOURCE-COMPLETION-100 second-audit reconciliation (post Writer63-73 integration, base e50a947). Runtime reachability: Wired: instantiated/registered in backend/src/main.ts and backend/src/http/buildServer.ts route registration graph (spot-checked for platformadmin/billing/entitlements/settlement/parentaccount/complimentary lanes); reachable from a real HTTP route. 2026-09-08 (one-session programme pass): the TEST_EVIDENCE_PARTIAL annotation is superseded -- backend/test/db/webhookService.mysql.test.mjs exercises WebhookService.processWebhook directly (freshness window rejection and re-processing, redelivery idempotency, queryPayment authority over the payload's claimed status, amount and currency mismatch, transient-failure re-drive)."
     },
     {
       "requirementId": "PCA-ADD-BILL-035",

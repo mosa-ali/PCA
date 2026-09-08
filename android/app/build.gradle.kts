@@ -44,9 +44,46 @@ android {
     // PCA-16 (lane brief Section 13): en-XA/ar-XB pseudo-locales surface hard-coded strings,
     // truncation and text-expansion issues in debug builds without needing physical Arabic
     // review for every iteration. Debug-only -- never shipped to a release build.
+    // ANDROID_RELEASE_SIGNING_CONFIG (docs/release_readiness/external_gate_matrix.json), the
+    // repository side of that gate. A release build type now exists, shrinks and obfuscates with
+    // R8, and signs with a keystore that is NEVER committed: the four PCA_RELEASE_* values come
+    // from the environment (a CI secret store or the release operator's shell). When they are
+    // absent the release artifact is built UNSIGNED, so R8/lint problems surface on every CI run
+    // without any secret present -- an unsigned release APK is not installable and is never a
+    // release candidate. The gate itself closes only when the owner's keystore exists and a
+    // signed artifact's provenance is recorded in docs/release_readiness/RELEASE_EVIDENCE.md.
+    val releaseKeystorePath: String? = System.getenv("PCA_RELEASE_KEYSTORE_PATH")
+    val releaseKeystorePassword: String? = System.getenv("PCA_RELEASE_KEYSTORE_PASSWORD")
+    val releaseKeyAlias: String? = System.getenv("PCA_RELEASE_KEY_ALIAS")
+    val releaseKeyPassword: String? = System.getenv("PCA_RELEASE_KEY_PASSWORD")
+    val hasReleaseSigning = !releaseKeystorePath.isNullOrBlank() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    } else {
+        logger.warn("PCA release signing: PCA_RELEASE_KEYSTORE_PATH/PCA_RELEASE_KEYSTORE_PASSWORD/PCA_RELEASE_KEY_ALIAS/PCA_RELEASE_KEY_PASSWORD not set -- assembleRelease produces an UNSIGNED artifact (ANDROID_RELEASE_SIGNING_CONFIG gate open).")
+    }
+
     buildTypes {
         debug {
             isPseudoLocalesEnabled = true
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (hasReleaseSigning) signingConfigs.getByName("release") else null
         }
     }
 

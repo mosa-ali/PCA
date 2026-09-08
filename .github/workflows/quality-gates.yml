@@ -158,6 +158,12 @@ jobs:
       # 37 gates by hand. It is now generated from external_gate_matrix.json.
       - name: Check EXTERNAL_GATE_MATRIX.md is generated from external_gate_matrix.json
         run: node tooling/release/GenerateExternalGateMatrixMd.mjs --check
+      # PCA_IMPLEMENTATION_TRACEABILITY.md carried R0/R4 status counts for weeks after the JSON
+      # matrix moved on (doc 30 called them "historical until regenerated"). Its status tables,
+      # distribution tables and completion counts are now derived from the JSON by
+      # RegenerateTraceabilityTables.mjs; this step fails the moment they drift again.
+      - name: Traceability markdown tables match the JSON matrix (regenerated, --check)
+        run: node tooling/release/RegenerateTraceabilityTables.mjs --check
       - name: Validate FABLE release-scope parity (full, non-sampled reconciliation)
         # Same `set +e`/`set -e` wrapping as the step above, and for the
         # identical reason -- GitHub's default `bash -e` would otherwise
@@ -475,7 +481,7 @@ jobs:
           # the instant `tee`'s pipeline reports non-zero, before ever
           # reaching the diagnostic code below.
           set +e
-          ./gradlew --no-daemon --stacktrace lint test assembleDebug 2>&1 | tee gradle-output.log
+          ./gradlew --no-daemon --stacktrace lint test assembleDebug assembleRelease 2>&1 | tee gradle-output.log
           status="${PIPESTATUS[0]}"
           set -e
           if [ "$status" -ne 0 ]; then
@@ -507,6 +513,15 @@ jobs:
             fi
             exit "$status"
           fi
+
+      # ANDROID_RELEASE_SIGNING_CONFIG: the release build type (R8 minify + resource shrink) must
+      # build on every run. Without the PCA_RELEASE_* secrets the artifact is unsigned by design;
+      # its presence proves the shrinker configuration, never a release candidate.
+      - name: Assert the release build type produced its (unsigned) artifact
+        working-directory: android
+        run: |
+          test -f app/build/outputs/apk/release/app-release-unsigned.apk
+          echo "release APK built unsigned -- ANDROID_RELEASE_SIGNING_CONFIG gate stays open until the owner keystore exists"
 
   ios:
     name: iOS build and unit tests
@@ -676,8 +691,10 @@ jobs:
       # `typescript@5.8.3`/`@pca/parent-sdk-wellbeing-control`) -- a pre-existing
       # lockfile/workspace-hoisting inconsistency in that workspace's own dependency tree, not an
       # SBOM-tooling limitation (backend and platform-admin-web both generate a valid, populated
-      # SBOM with the identical command). Fixing parent-web's own dependency-tree inconsistency is
-      # outside this gate's scope; re-add a parent-web step here once that is resolved.
+      # SBOM with the identical command). Resolved 2026-09-08 without touching that tree: the
+      # web-production-demo-mode-gate job, which builds and installs those linked packages anyway,
+      # generates parent-web's SBOM from the installed tree with npm's built-in generator and
+      # validates it the same way -- see "Generate + validate parent-web SBOM" there.
       #
       # Android (Gradle) and iOS (CocoaPods) are out of this step's scope entirely -- no
       # equivalent zero-install CycloneDX generator is already available in this toolchain for
@@ -752,6 +769,23 @@ jobs:
       - name: Install parent-web dependencies
         working-directory: parent-web
         run: npm ci
+      # PCA-NFR-006: parent-web's SBOM. The dependency-audit job's lockfile-only generator
+      # (`cyclonedx-npm --package-lock-only`) cannot resolve the two `file:`-linked
+      # @pca/parent-sdk-* packages' devDependencies (@types/node, typescript), which live in
+      # those packages' own installs, so it reports them missing. npm's built-in generator
+      # reading the INSTALLED tree -- which this job has just built and installed -- produces a
+      # complete, validated CycloneDX document (641 components on 2026-09-08). Same validation
+      # as the other two workspaces: real CycloneDX, at least one component.
+      - name: Generate + validate parent-web SBOM (CycloneDX, from the installed tree)
+        working-directory: parent-web
+        run: |
+          npm sbom --sbom-format cyclonedx --sbom-type application > sbom.cdx.json
+          node -e "
+            const sbom = require('./sbom.cdx.json');
+            if (sbom.bomFormat !== 'CycloneDX') throw new Error('sbom.cdx.json is not a CycloneDX document');
+            if (!Array.isArray(sbom.components) || sbom.components.length === 0) throw new Error('sbom.cdx.json has no components');
+            console.log(`parent-web SBOM: ${sbom.components.length} components, CycloneDX ${sbom.specVersion}`);
+          "
       # PPR-2 (W6): both web apps define a `lint` script that CI had never run.
       # These two steps live in THIS job rather than in a job of their own
       # purely because this job is already paying for `npm ci` in both

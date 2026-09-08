@@ -601,3 +601,46 @@ select {
     padding: 0.6rem 0.75rem;
   }
 }
+
+/* ---------- PCA-16: reduced motion, forced colours and increased contrast (2026-09-08) ----------
+   Same contract as parent-web (see its stylesheet). This console had no reduced-motion rule
+   at all. Proven in a real layout engine by e2e/forced-colors.spec.ts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .badge,
+  .status-badge,
+  .card,
+  .btn {
+    border: 1px solid CanvasText;
+  }
+
+  .btn-primary {
+    border: 2px solid ButtonText;
+  }
+
+  :focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  a:not(.btn) {
+    text-decoration: underline;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: #7c8aa8;
+    --text-muted: var(--text);
+  }
+}

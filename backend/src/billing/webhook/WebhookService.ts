@@ -29,6 +29,7 @@ import { buildBillingAuditEvent } from '../audit.js';
 import type { BillingAuditActorOrSystem } from '../audit.js';
 import type { PlatformAdminAuditService } from '../../platformadmin/audit/PlatformAdminAuditService.js';
 import type { PaymentConfirmationPort } from '../../entitlements/payment/PaymentConfirmationPort.js';
+import { PaymentInvoiceIssuer } from '../invoiceIssuance.js';
 // PCA-COMMERCIAL-NOTIFY-1 composition (Wave 3A correction R1): notification
 // publish calls are placed AFTER each authoritative business commit
 // (never before, never from the raw webhook payload's own claims), using
@@ -142,6 +143,8 @@ export class WebhookService {
     private readonly auditService: PlatformAdminAuditService,
     private readonly notificationPublisher: CommercialNotificationPublisher,
     private readonly now: () => Date = () => new Date(),
+    /** PCA-ADD-BILL-004/005: issues the parent-facing PAID invoice for every confirmed payment (idempotent by construction). */
+    private readonly invoiceIssuer: PaymentInvoiceIssuer = new PaymentInvoiceIssuer(),
   ) {}
 
   async processWebhook(providerName: string, rawPayload: Buffer, signatureHeader: string | undefined): Promise<WebhookProcessResult> {
@@ -307,6 +310,12 @@ export class WebhookService {
     if (queryResult.status === 'CONFIRMED') {
       const now = this.now();
       const transaction = await this.paymentService.confirmPaymentAttempt(attempt.paymentAttemptId, providerName, providerPaymentRef, SYSTEM_WEBHOOK_ACTOR, now);
+
+      // PCA-ADD-BILL-004/005 (2026-09-08): the invoice the family reads on its "Invoices and
+      // receipts" page. Written post-commit like the notifications below and idempotent by
+      // construction (its id is derived from the transaction id), so a redelivery, a second
+      // out-of-order event for the same payment, or a re-driven FAILED event can never double-issue.
+      await this.invoiceIssuer.issuePaidInvoiceForTransaction(transaction, attempt, now);
 
       // PAYMENT_CONFIRMED: dedupeKey is the STABLE payment-transaction
       // identity, NOT providerEventId -- confirmPaymentAttempt above is

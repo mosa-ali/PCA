@@ -23,13 +23,24 @@ import org.pca.app.persistence.entity.RetentionPolicy
  * live enrollment state and delegates here -- one real implementation, never two copies that
  * could drift.
  *
- * [familyId]/[deviceId] are nullable because the production caller resolves them from live,
- * possibly-absent enrollment state (`familyStateStore.currentState()?.familyId` /
- * `enrolledDeviceIdOrNull()`) -- either being null means "not enrolled yet," and this function
- * does nothing rather than fabricate a retention scope, matching this app's established
- * "not enrolled -> skip the cycle" discipline used elsewhere in the composition root (e.g.
- * [org.pca.app.runtime.graph.PcaAppGraph.runUsageLocationIngestionCycle]'s own
+ * [deviceId] is nullable because the production caller resolves it from live, possibly-absent
+ * enrollment state (`enrolledDeviceIdOrNull()`) -- null means "not enrolled yet," and this
+ * function does nothing rather than fabricate a retention scope, matching the composition root's
+ * established "not enrolled -> skip the cycle" discipline
+ * ([org.pca.app.runtime.graph.PcaAppGraph.runUsageLocationIngestionCycle]'s own
  * `enrolledDeviceIdOrNull() == null` guard).
+ *
+ * [familyId] is nullable for a different reason and is NOT a skip condition (changed 2026-09-08):
+ * the bootstrap DTO never discloses the family id to the device (see EnrollmentCoordinator's
+ * documented KNOWN_GAP) and the roster only arrives through the crypto-gated sync path, so a real
+ * enrolled device spends its whole pre-pairing life with a blank family id. Skipping retention
+ * in that state meant every locally captured row lived forever. An enrolled device with no
+ * family roster therefore runs [RetentionEngine.runLocalDeviceCycle] (keyed by its own device id,
+ * receipts stamped [RetentionEngine.LOCAL_DEVICE_SCOPE]); a paired device runs the family cycle.
+ *
+ * [trustedTimeFloorMillis] is the tamper layer's persisted wall-clock high-water mark
+ * ([org.pca.app.runtime.tamper.WallClockRollbackMonitor.highWaterMarkMillis]). [nowUtc] is never
+ * allowed below it, so a rolled-back clock cannot postpone expiry (doc 28 "wall-clock rollback").
  *
  * A single [nowUtc] snapshot is threaded through all three engine calls (never three independent
  * `Instant.now()` reads) so the whole cycle judges every table against the exact same instant --
@@ -63,8 +74,10 @@ suspend fun executeRetentionMaintenanceCycle(
     nowUtc: Instant = Instant.now(),
     generalRetentionPolicy: RetentionPolicy = RetentionPolicy.FOURTEEN_DAYS,
     locationRetentionPolicy: RetentionPolicy = RetentionPolicy.FOURTEEN_DAYS,
+    trustedTimeFloorMillis: Long? = null,
 ) {
-    if (familyId.isNullOrBlank() || deviceId.isNullOrBlank()) return
+    if (deviceId.isNullOrBlank()) return
+    val effectiveNow = clampToTrustedTimeFloor(nowUtc, trustedTimeFloorMillis)
 
     val ctx = DeviceRetentionContext(
         deviceId = deviceId,
@@ -72,7 +85,27 @@ suspend fun executeRetentionMaintenanceCycle(
         locationRetentionPolicy = locationRetentionPolicy,
         zoneId = zoneId,
     )
-    runCatching { engine.runGeneralCycle(familyId, nowUtc, listOf(ctx)) }
-    runCatching { engine.runAuditFloorCycle(familyId, nowUtc, generalRetentionPolicy, zoneId) }
-    runCatching { engine.pruneTombstones(nowUtc, zoneId) }
+    if (familyId.isNullOrBlank()) {
+        runCatching { engine.runLocalDeviceCycle(effectiveNow, ctx) }
+        runCatching { engine.runAuditFloorCycle(RetentionEngine.LOCAL_DEVICE_SCOPE, effectiveNow, generalRetentionPolicy, zoneId) }
+        runCatching { engine.pruneTombstones(effectiveNow, zoneId) }
+        return
+    }
+    runCatching { engine.runGeneralCycle(familyId, effectiveNow, listOf(ctx)) }
+    runCatching { engine.runAuditFloorCycle(familyId, effectiveNow, generalRetentionPolicy, zoneId) }
+    runCatching { engine.pruneTombstones(effectiveNow, zoneId) }
 }
+
+/**
+ * A retention cutoff computed from a rolled-back wall clock would keep expired rows alive for as
+ * long as the clock stays behind. Expiry is therefore never judged against an instant earlier
+ * than the trusted-time floor. Time only ever moves forward here; a `null` floor (no observation
+ * yet) leaves [nowUtc] untouched. Deleted rows are never resurrected by a rollback either way
+ * (per-row deletes plus tombstones); this closes the "rollback postpones deletion" half.
+ */
+internal fun clampToTrustedTimeFloor(nowUtc: Instant, trustedTimeFloorMillis: Long?): Instant =
+    if (trustedTimeFloorMillis != null && nowUtc.toEpochMilli() < trustedTimeFloorMillis) {
+        Instant.ofEpochMilli(trustedTimeFloorMillis)
+    } else {
+        nowUtc
+    }

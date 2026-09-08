@@ -271,6 +271,8 @@ const files = [
   // list stayed hand-maintained instead of becoming a glob).
   "test/scripts/disposableDatabaseTargetGate.test.mjs",
   "test/scripts/disposableBootstrapArtifact.test.mjs",
+  "test/billing/invoiceIssuance.test.mjs",
+  "test/security/genesisSignerImportBoundary.test.mjs",
   "test/meta/testSuiteRegistration.test.mjs",
 ];
 

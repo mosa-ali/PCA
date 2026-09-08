@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.pca.app.R
 import org.pca.app.enrollment.DeviceKeyFingerprints
+import org.pca.app.i18n.BidiUtils
 import org.pca.app.enrollment.EnrollmentState
 
 /** PCA-16B: shared modifier marking a screen's main title as an accessibility heading, so
@@ -155,8 +156,11 @@ private fun KeyFingerprintConfirmation(fingerprints: DeviceKeyFingerprints) {
             modifier = Modifier.semantics { heading() },
         )
         Text(stringResource(R.string.enrollment_fingerprint_confirmation_body))
-        Text(stringResource(R.string.enrollment_dsk_fingerprint_label, fingerprints.signingKeyFingerprint))
-        Text(stringResource(R.string.enrollment_dek_fingerprint_label, fingerprints.encryptionKeyFingerprint))
+        // PCA-16 / PCA-NFR-041: fingerprints are LTR machine tokens embedded in a localized (possibly
+        // RTL) sentence; isolate them so Arabic reordering can never scramble the digits a parent
+        // compares by eye (FABLE-A056).
+        Text(stringResource(R.string.enrollment_dsk_fingerprint_label, BidiUtils.isolateLtr(fingerprints.signingKeyFingerprint)))
+        Text(stringResource(R.string.enrollment_dek_fingerprint_label, BidiUtils.isolateLtr(fingerprints.encryptionKeyFingerprint)))
     }
 }
 

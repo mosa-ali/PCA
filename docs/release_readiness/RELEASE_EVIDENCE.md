@@ -107,3 +107,8 @@ initially read only the first block (8 tests, from
 `Invoke-ReleaseEvidenceCollection.ps1` to sum every TAP block found in the
 combined output (`Get-SummedTapCounts`). Anyone consuming an evidence pack
 from before this fix should treat its `backendUnit` count as unreliable.
+
+
+## Android release build type (2026-09-08)
+
+`android/app/build.gradle.kts` now declares a `release` build type (R8 minify + resource shrink, `proguard-rules.pro`) whose signing configuration is read from `PCA_RELEASE_KEYSTORE_PATH`, `PCA_RELEASE_KEYSTORE_PASSWORD`, `PCA_RELEASE_KEY_ALIAS` and `PCA_RELEASE_KEY_PASSWORD`. CI builds `assembleRelease` on every run; without those values the artifact is **unsigned** (`app-release-unsigned.apk`, built locally on 2026-09-08, 0 signature blocks) and is not a release candidate. No keystore exists in the repository or in this evidence record. `ANDROID_RELEASE_SIGNING_CONFIG` stays open until the owner's keystore produces a signed artifact whose digest is recorded here.

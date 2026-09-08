@@ -66,3 +66,15 @@ Rollback's only acceptable failure mode is safe degradation: a feature
 that cannot be safely restored stays marked unavailable/limited. It must
 never cause lockout, remove emergency calling, force additional data
 collection, or weaken the trust-set/key-epoch model (docs 09-11).
+
+
+## Container rollback on Azure App Service (added 2026-09-08, FABLE-A025)
+
+The deployment topology that actually exists (verified read-only on 2026-09-08) is two single-container Linux App Services in resource group `pca-group`: `pca` (backend) and `pcaSafe` (public site), each running the image named by its container configuration. Nothing PCA has been deployed to either yet; this section is the procedure for the day that changes. Rolling a container back is a configuration change, never a rebuild.
+
+- [ ] Take the last known-good image reference from the immutable release record in `RELEASE_EVIDENCE.md` (git SHA plus image **digest**). A mutable tag is never a rollback target.
+- [ ] Point the App Service at that digest (`az webapp config container set` with the `<registry>/<image>@sha256:<digest>` form) and confirm the site configuration now reports the digest.
+- [ ] Confirm the previous image runs against the **current** schema: migrations are additive and ordered (`database/live-bootstrap`, `backend/scripts` migration-order checks). If the rollback would cross a migration that the older image cannot run against, STOP -- a schema downgrade is not supported (doc 29 §6); mitigate with a feature disable instead of an image rollback.
+- [ ] Verify health after the swap. No health-check path is configured on either App Service today (read-only finding, 2026-09-08); configure one before the first production deployment so this step is a real check and not a page load.
+- [ ] Never roll back to an image or configuration whose credentials are known to be compromised; credential rotation precedes any rollback (the SMTP relay credential is compromised as of 2026-09-08 and gated by `PRODUCTION_EMAIL_CREDENTIAL_ROTATION`).
+- [ ] Record the rollback (digest before and after, time, operator, reason) in `RELEASE_EVIDENCE.md`.

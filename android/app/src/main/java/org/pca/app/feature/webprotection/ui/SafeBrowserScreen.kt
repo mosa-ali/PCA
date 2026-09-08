@@ -42,6 +42,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import org.pca.app.PcaApplication
 import org.pca.app.R
 import org.pca.app.enrollment.AgeUxTier
+import org.pca.app.i18n.BidiUtils
 import org.pca.app.enrollment.ReadingLevel
 import org.pca.app.enrollment.readingLevel
 import org.pca.app.feature.webprotection.policy.WebDecisionOutcome
@@ -236,8 +237,11 @@ private fun HeldPage(held: SafeBrowserScreenState.Held, locale: WebLocale, ageUx
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
-        Text(text = decision.domain, style = MaterialTheme.typography.titleMedium)
-        Text(text = decision.reasonCode, style = MaterialTheme.typography.bodyLarge)
+        // PCA-16 / PCA-NFR-041: a domain is untrusted LTR text rendered inside an Arabic sentence
+        // flow. Strip any bidi control characters an attacker-controlled hostname could carry, then
+        // isolate it so the surrounding RTL layout never reorders its labels (FABLE-A056).
+        Text(text = BidiUtils.isolateLtr(BidiUtils.sanitizeBidiControls(decision.domain)), style = MaterialTheme.typography.titleMedium)
+        Text(text = BidiUtils.isolateLtr(decision.reasonCode), style = MaterialTheme.typography.bodyLarge)
         Text(text = stringResource(copy.explanationRes), style = MaterialTheme.typography.bodyMedium)
 
         if (decision.requestable) {

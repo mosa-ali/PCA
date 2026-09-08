@@ -2699,3 +2699,48 @@ bdi.iso {
     display: none !important;
   }
 }
+
+/* ---------- PCA-16: forced colours and increased contrast (2026-09-08) ----------
+   Windows High Contrast / `forced-colors: active` strips author backgrounds, so every state
+   that was carried by background alone (status pills, freshness markers, KPI tiles, the
+   status dot, buttons, cards) gets a real border or outline in system colours, and keyboard
+   focus uses the system Highlight. `prefers-contrast: more` collapses secondary text onto the
+   primary colour and darkens borders without changing layout. Both are proven in a real
+   layout engine by e2e/forced-colors.spec.ts, never asserted from this text. */
+@media (forced-colors: active) {
+  .status-badge,
+  .freshness-marker,
+  .badge,
+  .kpi-tile,
+  .card,
+  .device-summary-item,
+  .btn {
+    border: 1px solid CanvasText;
+  }
+
+  .btn-primary {
+    border: 2px solid ButtonText;
+  }
+
+  .status-badge .dot {
+    outline: 1px solid CanvasText;
+    outline-offset: 1px;
+  }
+
+  :focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  a:not(.btn) {
+    text-decoration: underline;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: #5a6472;
+    --text-secondary: var(--text-primary);
+    --text-tertiary: var(--text-primary);
+  }
+}

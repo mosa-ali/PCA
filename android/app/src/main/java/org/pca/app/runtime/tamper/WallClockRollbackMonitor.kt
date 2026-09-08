@@ -97,6 +97,15 @@ class WallClockRollbackMonitor(
         notifyParent(CONDITION_CLOCK_ROLLBACK)
     }
 
+    /**
+     * The persisted trusted-time floor: the latest wall-clock reading this monitor has ever
+     * accepted as genuine, or `null` before the first [checkAndHandle]. Consumers that compute
+     * time-based cutoffs -- retention expiry via
+     * [org.pca.app.persistence.retention.executeRetentionMaintenanceCycle] -- clamp their `now`
+     * to it so a rolled-back clock can never move a cutoff into the past.
+     */
+    fun highWaterMarkMillis(): Long? = stateStore.getString(HIGH_WATER_MARK_KEY)?.toLongOrNull()
+
     companion object {
         const val CONDITION_CLOCK_ROLLBACK = "WALL_CLOCK_ROLLBACK_DETECTED"
         private const val HIGH_WATER_MARK_KEY = "wall_clock_high_water_mark_millis"

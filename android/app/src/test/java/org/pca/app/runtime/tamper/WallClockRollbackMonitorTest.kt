@@ -183,4 +183,29 @@ class WallClockRollbackMonitorTest {
         assertTrue(notified.contains(WallClockRollbackMonitor.CONDITION_CLOCK_ROLLBACK))
         assertEquals(0, db.tamperEventDao().count())
     }
+
+    @Test
+    fun `highWaterMarkMillis exposes the persisted trusted-time floor and never moves backwards`() = runTest {
+        val store = InMemoryPersistentStateStore()
+        val monitor = WallClockRollbackMonitor(
+            wallClockTimeSource = wallClock,
+            stateStore = store,
+            deviceIdProvider = { "device-1" },
+            tamperEventRepository = repository,
+            notifyParent = { true },
+        )
+        assertEquals(null, monitor.highWaterMarkMillis())
+
+        wallClock.now = 20_000L
+        monitor.checkAndHandle()
+        assertEquals(20_000L, monitor.highWaterMarkMillis())
+
+        wallClock.now = 5_000L // rollback: the floor must hold
+        monitor.checkAndHandle()
+        assertEquals(20_000L, monitor.highWaterMarkMillis())
+
+        wallClock.now = 30_000L
+        monitor.checkAndHandle()
+        assertEquals(30_000L, monitor.highWaterMarkMillis())
+    }
 }

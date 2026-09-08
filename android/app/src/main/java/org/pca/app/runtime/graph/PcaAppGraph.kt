@@ -994,6 +994,12 @@ class PcaAppGraph private constructor(
             familyId = familyStateStore.currentState()?.familyId,
             deviceId = enrolledDeviceIdOrNull(),
             zoneId = ZoneId.systemDefault(),
+            // PCA-12 / doc 28: never judge expiry against a clock the tamper layer has already
+            // seen roll back -- see clampToTrustedTimeFloor.
+            // Reading the floor goes through the AndroidKeyStore-backed store, which the plain-JVM
+            // test environment does not provide; a floor that cannot be read degrades to "no clamp"
+            // (today's behaviour), never to a skipped cycle.
+            trustedTimeFloorMillis = runCatching { wallClockRollbackMonitor.highWaterMarkMillis() }.getOrNull(),
         )
     }
 

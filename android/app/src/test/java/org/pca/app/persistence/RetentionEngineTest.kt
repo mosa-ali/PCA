@@ -222,4 +222,38 @@ class RetentionEngineTest {
         assertEquals(1, webVisitRepo.getForDevice("device-2").size)
         assertTrue(db.retentionDeletionReceiptDao().getForFamily("family-1").isEmpty())
     }
+
+    @Test
+    fun `local device cycle deletes only the enrolled device's expired rows and receipts under LOCAL_DEVICE_UNPAIRED`() = runTest {
+        db.familyMemberDao().upsert(
+            FamilyMemberEntity("member-2", "family-1", FamilyMemberRole.CHILD, "enc", "iv", FamilyMemberStatus.ACTIVE, "8-12", 1L),
+        )
+        db.deviceDao().upsert(
+            DeviceEntity(
+                "device-2", "member-2", DevicePlatform.ANDROID, "35", "1", "signing", "encryption",
+                1L, 1L, DeviceTrustState.ACTIVE, DeviceEnrollmentState.ACTIVE, 1L, "{}",
+            ),
+        )
+        val webVisitRepo = WebVisitRepository(db.webVisitDao(), PersistenceTestSupport.testCipher())
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        val old = now.minusSeconds(15L * 24 * 60 * 60).toEpochMilli()
+        webVisitRepo.record("device-1", "old-1.example", null, null, "cat", "v1", WebVisitAction.ALLOWED, old, id = "old-1")
+        webVisitRepo.record("device-2", "old-2.example", null, null, "cat", "v1", WebVisitAction.ALLOWED, old, id = "old-2")
+
+        val receipts = engine.runLocalDeviceCycle(now, DeviceRetentionContext("device-1", RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.FOURTEEN_DAYS, zone))
+
+        assertEquals(0, webVisitRepo.getForDevice("device-1").size)
+        assertEquals(1, webVisitRepo.getForDevice("device-2").size)
+        assertTrue(receipts.isNotEmpty())
+        assertTrue(receipts.all { it.familyId == RetentionEngine.LOCAL_DEVICE_SCOPE && it.deviceId == "device-1" })
+        assertEquals(receipts.size, db.retentionDeletionReceiptDao().getForFamily(RetentionEngine.LOCAL_DEVICE_SCOPE).size)
+        assertTrue(db.retentionDeletionReceiptDao().getForFamily("family-1").isEmpty())
+    }
+
+    @Test
+    fun `the family-scoped general cycle still refuses a blank family id -- the local cycle is a separate, explicit path`() = runTest {
+        val ctx = DeviceRetentionContext("device-1", RetentionPolicy.FOURTEEN_DAYS, RetentionPolicy.FOURTEEN_DAYS, zone)
+        val failure = runCatching { engine.runGeneralCycle("", Instant.parse("2026-08-12T00:00:00Z"), listOf(ctx)) }
+        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
+    }
 }

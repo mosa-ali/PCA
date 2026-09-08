@@ -213,6 +213,6 @@ _This section describes one past mutation-testing pass pinned to the commit name
 ### Current mutation validation (Prompt-2/3)
 
 - MUTATION_HEAD_MATCH = FAIL
-- CURRENT_GIT_HEAD = 5dacd8468216fb40a1e3ca819013cc7106d316b3
+- CURRENT_GIT_HEAD = 69c29653ff67ed4160eac99f63f91b64f745ec26
 - REPORT_MUTATION_HEAD = e180e16225ffa41de2062821dde0d0351f7eed79
 - The tooling/mutation/reports/current-head-mutation.json report does not match the current git HEAD (or does not exist). Run `node tooling/mutation/run-mutation.mjs` at the current HEAD (after updating tooling/mutation/mutation-scope.json entrySha to match) to produce a current, re-verifiable result before treating mutation coverage as evidenced at this commit.

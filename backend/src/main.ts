@@ -107,6 +107,8 @@ import { ProviderEventRepository, ProviderEventService } from './billing/provide
 import { createDefaultProviderRegistry } from './billing/provider/providerRegistry.js';
 import { CheckoutService } from './billing/checkout/CheckoutService.js';
 import { WebhookService } from './billing/webhook/WebhookService.js';
+import { PaymentInvoiceIssuer } from './billing/invoiceIssuance.js';
+import { InvoiceRepository } from './billing/invoice.js';
 // PCA-BILL-2A-R1 correction: FIX 2/3 durable+concurrency-safe refund
 // orchestration, and FIX 4's fail-closed family-owner-authority default --
 // see each module's own header for the full rationale.
@@ -530,6 +532,9 @@ async function start(): Promise<void> {
     paymentConfirmationService,
     platformAdminAuditService,
     commercialNotificationPublisher,
+    () => new Date(),
+    // PCA-ADD-BILL-004/005: every confirmed payment issues the parent-facing PAID invoice.
+    new PaymentInvoiceIssuer(new InvoiceRepository()),
   );
 
   // PCA-AUTH-SESSION-1: single shared AuthService instance -- both

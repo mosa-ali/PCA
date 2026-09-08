@@ -29,6 +29,14 @@ data class DeviceRetentionContext(
  * floor (PCA-DATA-021).
  */
 class RetentionEngine(private val database: PcaLocalDatabase) {
+    companion object {
+        /**
+         * Receipt `familyId` stamped by [runLocalDeviceCycle] -- never a real family id, so an audit
+         * can always tell a local-scope deletion apart from a family-scoped one.
+         */
+        const val LOCAL_DEVICE_SCOPE = "LOCAL_DEVICE_UNPAIRED"
+    }
+
 
     suspend fun runGeneralCycle(
         familyId: String,
@@ -83,6 +91,34 @@ class RetentionEngine(private val database: PcaLocalDatabase) {
      * [runGeneralCycle] or [runAuditFloorCycle] -- a tombstone is neither ordinary activity data
      * nor an audit trail, it is proof-of-deletion metadata with its own distinct lifetime rule.
      */
+    /**
+     * PCA-12 / doc 11 local lifecycle: retention for a device that is enrolled locally but has no
+     * delivered family roster yet. The bootstrap DTO never discloses `familyId` to the device and
+     * the roster only arrives through the crypto-gated sync path, so until 2026-09-08
+     * [runGeneralCycle]'s scope validation rejected every unpaired device ("retention scope is
+     * not available") and each locally captured row -- usage sessions, web visits, location
+     * points, block events -- lived forever on a device that had not paired. This cycle is keyed
+     * purely by the enrolled device id: it runs the same per-device deletes the family cycle
+     * runs, touches no other device's rows, needs no roster row, and stamps its receipts
+     * [LOCAL_DEVICE_SCOPE]. The family-scoped [runGeneralCycle] contract is unchanged.
+     */
+    suspend fun runLocalDeviceCycle(
+        nowUtc: Instant,
+        ctx: DeviceRetentionContext,
+    ): List<RetentionDeletionReceiptEntity> {
+        require(ctx.deviceId.isNotBlank()) { "retention scope is not available" }
+        require(RetentionCutoffCalculator.isLocationRetentionAllowed(ctx.generalRetentionPolicy, ctx.locationRetentionPolicy)) {
+            "Location retention must be shorter than or equal to general retention for device ${ctx.deviceId}."
+        }
+        return database.withTransaction {
+            val receipts = mutableListOf<RetentionDeletionReceiptEntity>()
+            receipts += runLocationCleanup(LOCAL_DEVICE_SCOPE, ctx, nowUtc)
+            receipts += runGeneralWindowCleanup(LOCAL_DEVICE_SCOPE, ctx, nowUtc)
+            receipts.forEach { database.retentionDeletionReceiptDao().insert(it) }
+            receipts
+        }
+    }
+
     suspend fun pruneTombstones(nowUtc: Instant, zoneId: ZoneId): Int {
         val cutoffMillis = RetentionCutoffCalculator.tombstoneCutoff(nowUtc, zoneId).toEpochMilli()
         return database.tombstoneRecordDao().deleteOlderThan(cutoffMillis)

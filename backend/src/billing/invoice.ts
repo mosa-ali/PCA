@@ -75,7 +75,17 @@ function toDomain(row: InvoiceSqlRow): InvoiceRow {
 }
 
 export class InvoiceRepository {
-  async createWithLines(conn: PoolConnection, input: CreateInvoiceInput, now: Date): Promise<InvoiceRow> {
+  /**
+   * `options.invoiceId` lets the payment path derive the id from the payment transaction so the
+   * primary key is its idempotency key (see invoiceIssuance.ts); `options.status` lets a
+   * confirmed payment issue directly as PAID. Admin issuance keeps the random-id DRAFT default.
+   */
+  async createWithLines(
+    conn: PoolConnection,
+    input: CreateInvoiceInput,
+    now: Date,
+    options: { readonly invoiceId?: string; readonly status?: InvoiceStatus } = {},
+  ): Promise<InvoiceRow> {
     if (input.lines.some((line) => line.currencyCode !== input.currencyCode)) {
       throw new Error('Every InvoiceLine must share the Invoice currency -- no implicit conversion (PCA-ADD-BILL-031).');
     }
@@ -83,13 +93,14 @@ export class InvoiceRepository {
       input.lines.map((line) => money(line.amountMinor * BigInt(line.quantity), line.currencyCode)),
       input.currencyCode,
     );
-    const invoiceId = randomUUID();
+    const invoiceId = options.invoiceId ?? randomUUID();
+    const status: InvoiceStatus = options.status ?? 'DRAFT';
     await execute(
       conn,
       `INSERT INTO billing_invoices
          (invoice_id, account_ref, subscription_id, status, currency_code, total_amount_minor, created_at, due_at, period_start, period_end)
-       VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?)`,
-      [invoiceId, input.accountRef, input.subscriptionId, input.currencyCode, bigIntToSqlParam(total.amountMinor), now, input.dueAt, input.periodStart, input.periodEnd],
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [invoiceId, input.accountRef, input.subscriptionId, status, input.currencyCode, bigIntToSqlParam(total.amountMinor), now, input.dueAt, input.periodStart, input.periodEnd],
     );
     for (const line of input.lines) {
       await execute(
