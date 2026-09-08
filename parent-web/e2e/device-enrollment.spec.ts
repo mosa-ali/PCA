@@ -83,12 +83,23 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
 
   // Measured against the app shell's own baseline rather than against zero.
   //
-  // The shell header overflows the document by 7px at 375 and 62px at 320 on
-  // EVERY route, /dashboard included -- it is a header-layout defect owned by
-  // the shell, not by this page, and asserting `<= 1` here would either fail
-  // for someone else's reason or tempt a device-page hack that hides it. What
-  // this page owes is: add nothing on top of that, and never scroll its own
-  // content column sideways.
+  // When this spec was written the shell header overflowed the document by
+  // 7px at 375 and 62px at 320 on EVERY route, /dashboard included -- a
+  // header-layout defect owned by the shell, not by this page. That defect is
+  // gone (the /dashboard baseline measured 0 in 34 of 34 probes on
+  // 2026-09-08) but the baseline stays, so a future shell regression fails
+  // for the shell's reason and never tempts a device-page hack that hides it.
+  // What this page owes is: add nothing on top of the shell, and never scroll
+  // its own content column sideways.
+  //
+  // Every section is measured only after its data has settled. Until
+  // 2026-09-08 the overview was measured whenever the tab strip appeared,
+  // which was sometimes the moment between the device list resolving and the
+  // family read resolving -- a moment in which the Offline tile said "we can't
+  // verify this right now" (a false claim for a merely pending read, since
+  // fixed) in a nowrap pill 42px wider than its cell (since fixed). The
+  // declined-read state that legitimately shows that pill is covered by the
+  // dedicated test below, because demo mode cannot decline the family read.
   for (const width of [375, 320]) {
     test(`the device sections add no horizontal overflow at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
@@ -108,6 +119,7 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
       for (const section of ['overview', 'add', 'pending', 'devices', 'protection', 'advanced']) {
         await page.goto(`/family/devices?section=${section}`);
         await expect(page.getByRole('tablist')).toBeVisible();
+        await expect(page.getByText('Loading...')).toHaveCount(0);
         expect(await docOverflow(), `section=${section} adds overflow at ${width}px`).toBeLessThanOrEqual(
           shellBaseline,
         );
@@ -121,6 +133,51 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
       await expect(page.getByTestId('raw-invitation-token')).toBeVisible();
       expect(await docOverflow()).toBeLessThanOrEqual(shellBaseline);
       expect(await columnOverflow()).toBeLessThanOrEqual(1);
+    });
+
+    // The overview's Offline tile has a third state the demo fixtures cannot
+    // produce: the family read DECLINED (fail-closed by design in real mode
+    // until crypto activation), rendered as a dash plus the "we can't verify
+    // this right now" pill. Until 2026-09-08 that pill did not wrap, so the
+    // section was 42px wider than a 320px viewport in exactly the state every
+    // real-mode parent would see. The markup below is the component's own,
+    // pinned by class in tests/component/DeviceEnrollmentSections.test.tsx
+    // ("the overview shows a dash and cannot verify"); this measures it
+    // against the production stylesheet in a real layout engine.
+    test(`the declined family-read state fits the overview summary grid at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 812 });
+      const docOverflow = () =>
+        page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const columnOverflow = () =>
+        page.evaluate(() => {
+          const main = document.querySelector('.main-content');
+          if (!main) return null;
+          return main.scrollWidth - main.clientWidth;
+        });
+      await page.goto('/dashboard');
+      await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+      const shellBaseline = await docOverflow();
+
+      await page.goto('/family/devices?section=overview');
+      await expect(page.getByRole('tablist')).toBeVisible();
+      await expect(page.getByText('Loading...')).toHaveCount(0);
+      const offlineTile = page.locator('.device-summary-item', { has: page.locator('.kpi-label', { hasText: 'Offline' }) });
+      await expect(offlineTile).toHaveCount(1);
+      await offlineTile.evaluate((tile) => {
+        const label = tile.querySelector('.kpi-label');
+        if (!label) throw new Error('offline tile has no label');
+        tile.replaceChildren();
+        const dash = document.createElement('span');
+        dash.className = 'kpi-value kpi-value-unknown';
+        dash.textContent = '\u2014';
+        const note = document.createElement('span');
+        note.className = 'freshness-marker freshness-unavailable';
+        note.textContent = "We can't verify this right now";
+        tile.append(dash, note, label);
+      });
+      await expect(offlineTile.locator('.freshness-unavailable')).toBeVisible();
+      expect(await docOverflow(), `declined state adds overflow at ${width}px`).toBeLessThanOrEqual(shellBaseline);
+      expect(await columnOverflow(), `declined state scrolls the content column at ${width}px`).toBeLessThanOrEqual(1);
     });
   }
 

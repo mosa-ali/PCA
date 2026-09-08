@@ -11,9 +11,17 @@ import type { DevicesSectionId } from './DevicesTabs';
  *
  * THE HONESTY RULE APPLIES PER NUMBER, not per page. Three of these four
  * counts come from `listDeviceStatuses()`; "Offline" is a property of the
- * FAMILY read, which is fail-closed by design in real mode. When that read
- * declined, this shows a dash and "we can't verify this right now" -- it does
- * NOT show 0. `0` may only ever mean "we counted zero".
+ * FAMILY read, which is fail-closed by design in real mode. That read has
+ * three states and the tile says a different thing for each:
+ *
+ *   - resolved  -> the count;
+ *   - pending   -> a dash and "Loading..." (`familyPending`);
+ *   - declined  -> a dash and "we can't verify this right now".
+ *
+ * It does NOT show 0 for either of the last two: `0` may only ever mean "we
+ * counted zero". And it does not say "can't verify" for a read that simply
+ * has not come back yet -- until 2026-09-08 it did, on every visit, because
+ * the device list resolves before the family read (mirrors `KpiTile`).
  */
 export default function OverviewSection({
   devices,
@@ -21,6 +29,7 @@ export default function OverviewSection({
   error,
   onRetry,
   familyChildren,
+  familyPending,
   onGoToSection,
 }: {
   devices: DeviceProtectionStatus[] | null;
@@ -29,6 +38,8 @@ export default function OverviewSection({
   onRetry: () => void;
   /** `null` means the family read declined or has not resolved -- not "empty". */
   familyChildren: ChildSummary[] | null;
+  /** True while the family read is still in flight (and `familyChildren` is therefore null). */
+  familyPending: boolean;
   onGoToSection: (section: DevicesSectionId) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -57,6 +68,8 @@ export default function OverviewSection({
           <SummaryItem
             label={t('devicesPage.summaryOffline')}
             value={offlineCount === null ? null : formatNumber(offlineCount, i18n.language)}
+            pending={familyChildren === null && familyPending}
+            pendingNote={t('common.loading')}
             unverifiedNote={t('dashboard.kpi.cannotVerify')}
           />
         </div>
@@ -83,22 +96,33 @@ export default function OverviewSection({
 function SummaryItem({
   label,
   value,
+  pending = false,
+  pendingNote,
   unverifiedNote,
 }: {
   label: string;
-  /** `null` = the underlying read declined. Renders a dash, never a zero. */
+  /** `null` = the underlying read has not resolved (`pending`) or declined. Renders a dash, never a zero. */
   value: string | null;
+  pending?: boolean;
+  pendingNote?: string;
   unverifiedNote?: string;
 }) {
   return (
     <div className="device-summary-item">
       {value === null ? (
-        <>
-          <span className="kpi-value kpi-value-unknown">—</span>
-          {unverifiedNote && (
-            <span className="freshness-marker freshness-unavailable">{unverifiedNote}</span>
-          )}
-        </>
+        pending ? (
+          <>
+            <span className="kpi-value">—</span>
+            {pendingNote && <span className="kpi-meta">{pendingNote}</span>}
+          </>
+        ) : (
+          <>
+            <span className="kpi-value kpi-value-unknown">—</span>
+            {unverifiedNote && (
+              <span className="freshness-marker freshness-unavailable">{unverifiedNote}</span>
+            )}
+          </>
+        )
       ) : (
         <span className="kpi-value">{value}</span>
       )}

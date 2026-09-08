@@ -2219,6 +2219,16 @@ table.data-table td {
   }
 }
 
+/* The declined-read note ("we can't verify this right now") sits under the
+   dash inside a 2-column cell that is ~138px wide at a 320px viewport. The
+   pill's global `white-space: nowrap` made the section 42px wider than the
+   viewport in that state (measured 2026-09-08 -- and that state is the
+   designed real-mode state until crypto activation). Inside a cell it wraps. */
+.device-summary-item .freshness-marker {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .device-summary-item {
   display: flex;
   flex-direction: column;

@@ -42,7 +42,7 @@ async function switchToArabic(page: Page) {
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   // The language switch re-renders every translated subtree (lazy routes may
   // suspend briefly): audit only once real Arabic text is on screen.
-  await page.waitForFunction(() => /[؀-ۿ]/.test(document.body.innerText) && document.body.innerText.trim().length > 200);
+  await page.waitForFunction(() => /[\u0600-\u06FF]/.test(document.body.innerText) && document.body.innerText.trim().length > 200);
 }
 
 for (const route of ROUTES) {

@@ -219,6 +219,34 @@ describe('Devices page -- a fail-closed family read is not an error and not an e
     // The counts that DID resolve are still real numbers.
     const total = screen.getByText('Devices', { selector: '.kpi-label' }).closest('.device-summary-item');
     expect(total?.textContent).not.toContain('—');
+
+    // The declined markup is pinned by class because the real-browser layout
+    // check in e2e/device-enrollment.spec.ts reproduces exactly this DOM to
+    // prove the note fits a 2-column cell at 320px (it overflowed until
+    // 2026-09-08). Change these classes and that spec together.
+    expect(item.querySelector('.kpi-value.kpi-value-unknown')?.textContent).toBe('—');
+    expect(item.querySelector('.freshness-marker.freshness-unavailable')?.textContent).toBe("We can't verify this right now");
+  });
+
+  it('while the family read is still pending, the offline count says Loading -- never "cannot verify", never 0', async () => {
+    const clients = getApiClients();
+    // A read that never settles: the device list resolves, the family read does not.
+    vi.spyOn(clients.parentFamilyData, 'getDashboard').mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=overview' });
+
+    const offlineLabel = await screen.findByText('Offline');
+    const item = offlineLabel.closest('.device-summary-item') as HTMLElement;
+    expect(item.textContent).toContain('—');
+    expect(item.textContent).toContain('Loading...');
+    expect(item.textContent).not.toContain("We can't verify this right now");
+    expect(item.textContent).not.toContain('0');
+    expect(item.querySelector('.kpi-value-unknown')).toBeNull();
+    expect(item.querySelector('.freshness-unavailable')).toBeNull();
+
+    // The counts that DID resolve are real numbers while the fourth waits.
+    const total = screen.getByText('Devices', { selector: '.kpi-label' }).closest('.device-summary-item');
+    expect(total?.textContent).not.toContain('—');
+    expect(total?.textContent).not.toContain('Loading...');
   });
 });
 

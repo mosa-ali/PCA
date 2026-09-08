@@ -48,7 +48,7 @@ export async function runAxeContrast(page: Page): Promise<AxeContrastSummary> {
 export async function runArabicTextContrast(page: Page): Promise<ArabicContrastSummary> {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   return page.evaluate(() => {
-    const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+    const ARABIC = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/; // Arabic, Supplement, Extended-A, Presentation Forms A/B -- escaped, never raw (U+FEFF trips no-irregular-whitespace)
     const parse = (css: string): [number, number, number, number] | null => {
       const m = css.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/);
       if (!m) return null;

@@ -386,12 +386,59 @@ jobs:
       - name: Install Chromium for Playwright (both apps pin the same @playwright/test version)
         working-directory: parent-web
         run: npx playwright install --with-deps chromium
+      # The job log is not readable without authenticated access to this
+      # repository, so each suite's own pass/fail summary line is re-emitted as
+      # a GitHub notice annotation (visible via the public check-runs API) --
+      # the same technique the Android/iOS/release-control jobs use for
+      # failures. `set +e`/`set -e` bracket the pipeline for the reason
+      # documented on the release-control job: GitHub's default `bash -e`
+      # would abort before the summary is emitted.
+      # CI run 34195289791 (2026-09-08, first execution of this job) failed with
+      # every parent-web spec timing out on page.goto. Root cause, reproduced
+      # locally by removing parent-web/.env: the e2e specs assume DEMO MODE
+      # (fixture-backed clients, the documented dev default in .env.example,
+      # and what vitest.config.ts forces for unit tests), but .env is
+      # gitignored in both consoles, so a clean checkout builds with demo
+      # mode OFF and no API base URL. The variables are therefore forced here
+      # exactly as the web-production-demo-mode-gate job forces them for its
+      # own build -- never inherited from a developer's local .env. The hard
+      # `timeout` bounds a hung suite well inside the job timeout so a hang
+      # fails with its output attached instead of being killed silently.
       - name: parent-web Playwright suite (incl. real-browser contrast gate)
         working-directory: parent-web
-        run: npx playwright test --project=chromium --reporter=list
+        env:
+          VITE_PCA_DEMO_MODE: 'true'
+          VITE_PCA_API_BASE_URL: http://localhost:4001
+        run: |
+          set +e
+          timeout 15m npx playwright test --project=chromium --reporter=list 2>&1 | tee playwright-output.log
+          status="${PIPESTATUS[0]}"
+          set -e
+          summary="$(grep -E '^\s*[0-9]+ (passed|failed|flaky|skipped)' playwright-output.log | tr '\n' ';' | sed 's/;$//')"
+          echo "::notice title=parent-web Playwright::${summary:-no summary line found}"
+          if [ "$status" -ne 0 ]; then
+            grep -E '^\s+[0-9]+\) ' playwright-output.log | head -n 40 | while IFS= read -r line; do echo "::error::${line}"; done
+            escape() { printf '%s' "$1" | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            echo "::error::exit ${status} -- last 30 lines: $(escape "$(tail -n 30 playwright-output.log)")"
+            exit "$status"
+          fi
+      # platform-admin-web has no demo toggle (its e2e specs mock the auth
+      # routes with page.route) and no committed .env; nothing to force here.
       - name: platform-admin-web Playwright suite (incl. real-browser contrast gate)
         working-directory: platform-admin-web
-        run: npx playwright test --project=chromium --reporter=list
+        run: |
+          set +e
+          timeout 10m npx playwright test --project=chromium --reporter=list 2>&1 | tee playwright-output.log
+          status="${PIPESTATUS[0]}"
+          set -e
+          summary="$(grep -E '^\s*[0-9]+ (passed|failed|flaky|skipped)' playwright-output.log | tr '\n' ';' | sed 's/;$//')"
+          echo "::notice title=platform-admin-web Playwright::${summary:-no summary line found}"
+          if [ "$status" -ne 0 ]; then
+            grep -E '^\s+[0-9]+\) ' playwright-output.log | head -n 40 | while IFS= read -r line; do echo "::error::${line}"; done
+            escape() { printf '%s' "$1" | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            echo "::error::exit ${status} -- last 30 lines: $(escape "$(tail -n 30 playwright-output.log)")"
+            exit "$status"
+          fi
 
   android:
     name: Android build, lint, and unit tests

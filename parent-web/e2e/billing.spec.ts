@@ -83,6 +83,14 @@ test.describe('Billing / subscription self-service (real browser)', () => {
     await page.getByRole('link', { name: 'Back' }).click();
     await page.getByRole('link', { name: 'View invoices and receipts' }).click();
 
+
+    // Diagnostics, not a weakening: on 2026-09-08 one zero-retry run failed the
+    // "Paid" assertion below and its trace was lost to the next run's output
+    // cleanup; 30 isolated repeats (idle and under CPU load) did not reproduce
+    // it. Asserting the destination first makes a recurrence say whether the
+    // client-side navigation happened or the invoice was missing.
+    await expect(page).toHaveURL(/\/subscription\/invoices$/);
+    await expect(page.getByRole('heading', { name: 'Invoices and receipts' })).toBeVisible();
     await expect(page.getByText('Paid')).toBeVisible();
     await expect(page.getByText('$4.99')).toBeVisible();
   });

@@ -44,9 +44,30 @@ export default defineConfig(({ mode }) => {
           // may carry encrypted family data) are never precached or runtime
           // cached here -- see docs/architecture/09_SECURITY_PRIVACY_E2EE.md.
           globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
-          navigateFallback: '/offline.html',
-          navigateFallbackDenylist: [/^\/api\//],
-          runtimeCaching: [],
+          // Navigations go to the network (the server's SPA fallback returns
+          // index.html for every deep link and reload); the precached
+          // offline.html is served ONLY when that network request fails.
+          //
+          // Until 2026-09-08 this read `navigateFallback: '/offline.html'`.
+          // Workbox's navigateFallback is the *app-shell* option: it registers
+          // a NavigationRoute that answers EVERY worker-controlled navigation
+          // to a non-precached URL -- i.e. every reload or deep link other
+          // than "/" -- with that document, online or not. So once the worker
+          // had taken control, the console showed "You're offline" on every
+          // hard navigation while the network was fine (confirmed in a real
+          // browser; docs/public/reports/PUBLIC_0_DISCOVERY_REPORT.md had
+          // flagged it as plausible and untested). Regression coverage:
+          // e2e/pwa-service-worker.spec.ts. `null` overrides the plugin's
+          // own default of index.html. NetworkOnly stores nothing, so the
+          // no-runtime-cache rule above still holds.
+          navigateFallback: null,
+          runtimeCaching: [
+            {
+              urlPattern: ({ request, url }) => request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
+              handler: 'NetworkOnly',
+              options: { precacheFallback: { fallbackURL: '/offline.html' } },
+            },
+          ],
         },
         devOptions: {
           enabled: false,

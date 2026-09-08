@@ -82,11 +82,17 @@ export default function DevicesTabs() {
   // Fail-closed by design in real mode (see AddDeviceWizard's step-0 gate).
   // `null` here means "we could not read it", which is NOT the same as "there
   // are no children" -- every consumer below is required to tell them apart.
-  const { data: dashboard, error: dashboardError } = useAsync(
+  const { data: dashboard, loading: dashboardLoading, error: dashboardError } = useAsync(
     () => clients.parentFamilyData.getDashboard(),
     [],
   );
   const familyChildren = dashboardError ? null : dashboard?.children ?? null;
+  // "Not resolved yet" and "declined" both leave `familyChildren` null, and the
+  // overview must say different things for them: a pending read is "Loading",
+  // a declined read is "we can't verify this right now". Conflating them made
+  // the overview flash a false "can't verify" on every visit, because the
+  // device list resolves before this read (found 2026-09-08).
+  const familyPending = dashboardLoading && dashboard === null;
 
   const targets: ProtectionTargetOption[] = (devices ?? []).map((device) => ({
     childId: device.childId,
@@ -136,6 +142,7 @@ export default function DevicesTabs() {
           error={devicesError}
           onRetry={reloadDevices}
           familyChildren={familyChildren}
+          familyPending={familyPending}
           onGoToSection={goToSection}
         />
       )}

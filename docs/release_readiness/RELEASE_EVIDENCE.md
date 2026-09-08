@@ -41,7 +41,7 @@ explicitly instead of omitting the field or guessing a number.
 > it has **zero coverage of `platform-admin-web`** (that package did not exist at that commit, and
 > the collector still does not include it), Android was **skipped**, and every count is superseded
 > — backend 956→2055, DB 159→453, parent-web 35→115 test files. Its captured gate output predates
-> the parity validator and shows 7 of today's 34 gates. `EVIDENCE_REFRESH_REQUIRED = YES`; see
+> the parity validator and shows 7 of the gates registered at the time of PPR-1 (34 then; 39 as of 2026-09-08). `EVIDENCE_REFRESH_REQUIRED = YES`; see
 > `docs/pre-production/PCA_PPR1_RELEASE_READINESS_GAPS.md` §3 for the refresh specification.
 >
 > The parent-web exit-code-1 issue described further below has since been **fixed in source**
