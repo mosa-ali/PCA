@@ -1031,8 +1031,16 @@ a.kpi-tile:hover {
   gap: var(--space-3);
 }
 
+/* The head row WRAPS. The headline pill is `flex: none` (a pill must never be
+   squeezed), so on a 320px card with a wide font family the avatar + gaps +
+   pill alone exceed the row and the pill escaped the viewport: 6px on the
+   Linux CI runner (system-ui resolves to a wider face there) and 5px locally
+   under Verdana, invisible under Segoe UI. Wrapping lets the pill drop onto
+   its own line, end-aligned, instead of pushing the page sideways
+   (2026-09-08, e2e/responsive.spec.ts). */
 .child-card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -1065,10 +1073,21 @@ a.kpi-tile:hover {
   text-decoration: underline;
 }
 
-/* The single headline pill. Pinned to the logical end of the head row. */
+/* The single headline pill. Pinned to the logical end of the head row; on a
+   wrapped row it sits alone on the second line, still end-aligned. Never wider
+   than the card -- if a font ever makes the label wider than the whole card the
+   text wraps inside the pill rather than leaving the viewport. */
 .child-headline-status {
   margin-inline-start: auto;
   flex: none;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.child-headline-status .status-badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .child-metrics {

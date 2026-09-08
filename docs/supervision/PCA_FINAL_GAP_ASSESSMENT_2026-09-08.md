@@ -211,7 +211,7 @@ Corrected: doc 30 (false "no PA/Billing source"), Addenda 001–004 status heade
 | Repo checks / quality / security tooling | PASS (2466 files; 11 privacy sentinels; 8 rejection controls; scanner tests incl. optional-chaining bypasses) |
 | public-web | `--check-only` build + 6 tests pass |
 | Lint (both consoles, `no-console` enforced) | clean |
-| CI | see section R (post-push verification): run 1 on `568a4c7` = 20 of 23 jobs green, iOS known red, two CI findings fixed in the follow-up commit; run 2 recorded there |
+| CI | see section R (post-push verification): run 1 on `568a4c7` = 20 of 23 jobs green (iOS known red; two CI findings); run 2 on `5a2efde` = 21 of 23 green (see R) |
 | iOS | not built (no Xcode); CI job known red |
 
 ---
@@ -273,4 +273,29 @@ Neither CI finding is a product defect and no test or gate was weakened to obtai
 
 **Finding 5 — one unexplained failure, recorded rather than dismissed.** In the first of the two final zero-retry runs (86 / 87), `billing.spec.ts` "a completed device increase produces a paid invoice visible from the Subscription overview" failed at its last step: after the checkout-return page showed **Approved**, the invoices page did not show **Paid** within 5 s. It ran while the repository-quality and security scans were executing on the same machine. What was established: the demo webhook writes APPROVED, the CONFIRMED attempt and the PAID invoice in one synchronous step, so an observed **Approved** implies the invoice exists in memory; both links on that path are router `Link`s, and nothing on the path calls `location.assign`/`reload` (the only such call is the different-origin provider handoff, which the fixture never takes); the second full run passed 87 / 87, and 15 isolated repeats idle plus 15 under equivalent CPU load all passed (30 / 30). The failing run's trace and page snapshot were lost because Playwright clears its output directory at the start of the next run. **Cause not proven.** Action taken: the spec now asserts the invoices URL and the page heading *before* asserting the invoice row, so a recurrence distinguishes "navigation did not happen" from "invoice missing" (no assertion was weakened); the final runs in this pass keep per-run `--output` directories; the item is carried as gap **G-41 (UNRESOLVED, P3)** and CI run 2 is the next datapoint. This is exactly the class of result the mission forbids calling flaky: the label here is *unexplained*, with the evidence and the next step attached.
 
-**CI run 2 — follow-up commit:** recorded below once observed.
+**CI run 2 — `5a2efde` (the follow-up commit), workflow "Quality gates", run 34218368386, conclusion FAILURE (iOS build and unit tests, Web real-browser e2e (Playwright, Chromium)) (21 of 23 jobs green):**
+
+| Job | Result | Duration |
+|---|---|---|
+| Contracts validation | success | 7 s |
+| Backend build and unit tests | success | 52 s |
+| Repository quality / Security controls / Dependency audit | success / success / success | 45 s / 22 s / 30 s |
+| Release control integrity | success | 71 s |
+| parent-web unit tests (8 shards) / platform-admin-web (4 shards) | success | 30–38 s / success | 19–22 s |
+| public-web build and content gates | success | 6 s |
+| Android build, lint, and unit tests | success | 321 s |
+| Web production demo-mode gate | success | 58 s |
+| Web real-browser e2e (Playwright, Chromium) | failure (**parent-web Playwright suite (incl. real-browser contrast gate)**) | 96 s |
+| iOS build and unit tests | failure (**Build and test the inert launch shell**) | 19 s |
+
+Web-e2e annotations (emitted by the job itself because its log is not publicly readable): `parent-web Playwright: 1 failed; 86 passed (54.8s)`. Error annotations: `Process completed with exit code 1.`; `exit 1 -- last 30 lines: Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBeLessThanOrEqual(expected)
+
+    Expected:`; `  1) [chromium] › e2e/responsive.spec.ts:56:1 › an offline device state is visible on the dashboard without horizontal overflow at 320px width `.
+
+Run 2 confirms findings 1 and 2 closed by CI (the demo-mode gate ran to completion in both consoles; the parent-web Playwright suite executed to completion on the runner in 55 s, 86 passed) and surfaced one new, deterministic failure — finding 6. Finding 5 (billing) did not recur.
+
+**Finding 6 — CI run 2 only: REAL_PRODUCT_DEFECT (responsive, platform-dependent) in the dashboard child card at 320 px (fixed).** `responsive.spec.ts` "an offline device state is visible on the dashboard without horizontal overflow at 320px width" failed on the Linux runner on both its attempt and its retry with 6 px of document overflow, while the same spec passes on Windows. Cause, reproduced locally by forcing wider font families: the child card's headline pill (`.child-headline-status`, `flex: none`, `white-space: nowrap`) no longer fits beside the avatar in a 254 px head row once the font is wide — `system-ui` resolves to a wider face on the runner; Verdana locally reproduces 5 px — and the row pushed the page sideways. The row was *already* overflowing its own box under every font (2 px under Segoe UI, 7 px under Arial, 18 px under Tahoma); the card and page padding merely hid it from the viewport on narrow fonts, which is why the failure was platform-specific. Fix: the head row wraps (`flex-wrap: wrap`) so the pill drops to its own end-aligned line when it cannot fit, and the pill is capped at the card width with wrapping text as a last resort. Regression: a new containment test asserts every `.child-card-head` contains its own content at 320 px — platform-independent, and it fails against the previous stylesheet on Windows with the culprit named (`scrollWidth=256 clientWidth=254`); the viewport assertion now reports its culprits in the message so a CI-only recurrence is diagnosable from the annotations. A first attempt at a "10 % wider letter-spacing" stress test passed against the old stylesheet and was discarded — a regression that does not fail on the defect is not a regression. Proofs: containment test fails on the old CSS; responsive spec 27 / 27 on the fix; wide-font probe after the fix: 0 px document overflow and 0 px head overflow under default, Verdana and Tahoma; full parent-web suite 88 / 88 at `--retries=0 --workers=2`.
+
+**CI run 3 — the finding-6 commit:** recorded below once observed.

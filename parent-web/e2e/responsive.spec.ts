@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { describeContainment, describeOverflow, measureContainment, measureOverflow } from './lib/overflow';
 
 const VIEWPORTS: { name: string; width: number; height: number }[] = [
   { name: 'mobile-320', width: 320, height: 568 },
@@ -60,8 +61,27 @@ test('an offline device state is visible on the dashboard without horizontal ove
   // the reading is not LIVE. Both must survive the narrowest viewport.
   await expect(page.getByText('Offline', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Not verified', { exact: true }).first()).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  const report = await measureOverflow(page);
+  expect(report.overflow, describeOverflow('dashboard with an offline device at 320px', report)).toBeLessThanOrEqual(1);
+});
+
+// Containment, not just the viewport. CI run 34218368386 (2026-09-08) failed
+// the test above by 6px on the Linux runner while it passed on Windows:
+// `system-ui` resolves to a wider face there, and the child card's headline
+// pill (`flex: none`, nowrap) no longer fit beside the avatar. The document
+// only overflows once the pill clears the card and page padding, which is
+// why the failure was platform-specific -- but the head row was ALREADY
+// overflowing its own box under every font (2px under Segoe UI, 7px under
+// Arial, 18px under Tahoma). Asserting that the row contains its content is
+// platform-independent and fails on the previous stylesheet everywhere.
+test('every child card head on the dashboard contains its own content at 320px width', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/dashboard');
+  await expect(page.getByText('Offline', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Not verified', { exact: true }).first()).toBeVisible();
+  const heads = await measureContainment(page, '.child-card-head');
+  expect(heads.checked).toBeGreaterThan(0);
+  expect(heads.overflowing, describeContainment('child card heads at 320px', heads)).toEqual([]);
 });
 
 test('PolicyStatusBadge after a save does not cause horizontal overflow or truncation at 320px width', async ({
