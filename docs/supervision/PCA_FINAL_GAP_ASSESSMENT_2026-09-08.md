@@ -211,7 +211,7 @@ Corrected: doc 30 (false "no PA/Billing source"), Addenda 001–004 status heade
 | Repo checks / quality / security tooling | PASS (2466 files; 11 privacy sentinels; 8 rejection controls; scanner tests incl. optional-chaining bypasses) |
 | public-web | `--check-only` build + 6 tests pass |
 | Lint (both consoles, `no-console` enforced) | clean |
-| CI | see section R (post-push verification): run 1 on `568a4c7` = 20 of 23 jobs green (iOS known red; two CI findings); run 2 on `5a2efde` = 21 of 23 green (see R) |
+| CI | see section R (post-push verification): run 1 on `568a4c7` = 20 of 23 jobs green (iOS known red; two CI findings); run 2 on `5a2efde` = 21 of 23 green (see R); run 3 on `0f03c8b` = 22 of 23 green (iOS only red) |
 | iOS | not built (no Xcode); CI job known red |
 
 ---
@@ -298,4 +298,21 @@ Run 2 confirms findings 1 and 2 closed by CI (the demo-mode gate ran to completi
 
 **Finding 6 — CI run 2 only: REAL_PRODUCT_DEFECT (responsive, platform-dependent) in the dashboard child card at 320 px (fixed).** `responsive.spec.ts` "an offline device state is visible on the dashboard without horizontal overflow at 320px width" failed on the Linux runner on both its attempt and its retry with 6 px of document overflow, while the same spec passes on Windows. Cause, reproduced locally by forcing wider font families: the child card's headline pill (`.child-headline-status`, `flex: none`, `white-space: nowrap`) no longer fits beside the avatar in a 254 px head row once the font is wide — `system-ui` resolves to a wider face on the runner; Verdana locally reproduces 5 px — and the row pushed the page sideways. The row was *already* overflowing its own box under every font (2 px under Segoe UI, 7 px under Arial, 18 px under Tahoma); the card and page padding merely hid it from the viewport on narrow fonts, which is why the failure was platform-specific. Fix: the head row wraps (`flex-wrap: wrap`) so the pill drops to its own end-aligned line when it cannot fit, and the pill is capped at the card width with wrapping text as a last resort. Regression: a new containment test asserts every `.child-card-head` contains its own content at 320 px — platform-independent, and it fails against the previous stylesheet on Windows with the culprit named (`scrollWidth=256 clientWidth=254`); the viewport assertion now reports its culprits in the message so a CI-only recurrence is diagnosable from the annotations. A first attempt at a "10 % wider letter-spacing" stress test passed against the old stylesheet and was discarded — a regression that does not fail on the defect is not a regression. Proofs: containment test fails on the old CSS; responsive spec 27 / 27 on the fix; wide-font probe after the fix: 0 px document overflow and 0 px head overflow under default, Verdana and Tahoma; full parent-web suite 88 / 88 at `--retries=0 --workers=2`.
 
-**CI run 3 — the finding-6 commit:** recorded below once observed.
+**CI run 3 — `0f03c8b` (the finding-6 commit), workflow "Quality gates", run 34219540299, conclusion FAILURE (iOS build and unit tests) (22 of 23 jobs green):**
+
+| Job | Result | Duration |
+|---|---|---|
+| Contracts validation | success | 6 s |
+| Backend build and unit tests | success | 57 s |
+| Repository quality / Security controls / Dependency audit | success / success / success | 43 s / 18 s / 16 s |
+| Release control integrity | success | 67 s |
+| parent-web unit tests (8 shards) / platform-admin-web (4 shards) | success | 25–40 s / success | 16–23 s |
+| public-web build and content gates | success | 7 s |
+| Android build, lint, and unit tests | success | 247 s |
+| Web production demo-mode gate | success | 59 s |
+| Web real-browser e2e (Playwright, Chromium) | success | 121 s |
+| iOS build and unit tests | failure (**Build and test the inert launch shell**) | 24 s |
+
+Web-e2e annotations: `platform-admin-web Playwright: 17 passed (14.1s)`; `parent-web Playwright: 88 passed (56.3s)`.
+
+The only red job is the iOS one (KNOWN_IOS_BLOCKER, byte-identical to every prior run). Every other job is green on CI, including the real-browser e2e job with both consoles' suites executed to completion — findings 1, 2, 3, 4 and 6 are closed by CI evidence; finding 5 did not recur.
