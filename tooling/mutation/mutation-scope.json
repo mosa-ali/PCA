@@ -84,8 +84,8 @@
       "requirement": "PCA-FR-137",
       "surface": "backend",
       "source": "src/http/buildServer.ts",
-      "from": "Fastify({ logger: false })",
-      "to": "Fastify({ logger: true })"
+      "from": "Fastify({ logger: false,",
+      "to": "Fastify({ logger: true,"
     },
     {
       "id": "B-FR137-005",

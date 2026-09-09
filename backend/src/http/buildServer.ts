@@ -22,6 +22,7 @@ import { registerPairingRoutes } from './routes/pairingRoutes.js';
 import { registerBrowserEndpointRoutes } from './routes/browserEndpointRoutes.js';
 import type { BrowserEndpointService } from '../device/BrowserEndpointService.js';
 import { registerRuntimeSyncRoutes, type ResolveEnvelopeContext, type ProtectionStatusAlerting } from './routes/runtimeSyncRoutes.js';
+import type { AlertComposeFailureLogger } from '../alerts/AlertComposeFailureLogger.js';
 // PCA runtime-sync parent-facing read gap: PARENT-session-authenticated
 // read-only counterpart to registerRuntimeSyncRoutes' DEVICE-authenticated
 // status route -- see parentRuntimeSyncRoutes.ts's own header. Registered
@@ -248,6 +249,8 @@ export interface ServerDependencies {
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: see registerRuntimeSyncRoutes' own ProtectionStatusAlerting doc comment. */
   protectionStatusAlerting?: ProtectionStatusAlerting;
+  /** FABLE-A013: see runtimeSyncRoutes.ts's RuntimeSyncRoutesDeps.alertComposeFailureLogger doc comment. */
+  alertComposeFailureLogger?: AlertComposeFailureLogger;
   /** PCA-FR-063: optional -- when supplied, POST /v1/families/:familyId/browser-endpoints is registered. See browserEndpointRoutes.ts's own doc comment. */
   browserEndpointService?: BrowserEndpointService;
   /** PCA-FR-130 (Bonus Time): see registerChildRequestRoutes below. */
@@ -486,6 +489,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authAttemptLimiter,
     deviceProtectionStatusRepository: deps.deviceProtectionStatusRepository,
     protectionStatusAlerting: deps.protectionStatusAlerting,
+    alertComposeFailureLogger: deps.alertComposeFailureLogger,
   });
   registerParentRuntimeSyncRoutes(app, {
     authService: deps.authService,

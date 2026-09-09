@@ -37,8 +37,33 @@ file, confirm the following BEFORE attempting Section 1's build:
     `PCAApp.swift`/`ContentView.swift`, plus `PCA.entitlements`.
   - `PCATests/` group: 13 new test files plus the pre-existing
     `PCATests.swift` (14 total).
+  - (FABLE-A034 closure, later than F2 above --
+    `ios/scripts/generate_app_icon.py` +
+    `ios/scripts/wire_app_icon_and_launch_screen.py`) `PCA/` group also
+    contains `Assets.xcassets` (an asset-catalog folder reference, not a
+    single file), holding `AppIcon.appiconset` with one placeholder
+    1024x1024 `AppIcon.png` (teal/shield motif, matching
+    parent-web/public-web's own placeholder icons -- explicitly NOT final
+    branding, swap before shipping). Confirm the PCA target's **Build
+    Settings** show `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` (was
+    empty) and `INFOPLIST_KEY_UILaunchScreen_Generation = YES` (a
+    generated, storyboard-free launch screen -- no `LaunchScreen.storyboard`
+    file exists or is needed). Confirm **Build Phases → Resources** lists
+    `Assets.xcassets` alongside the pre-existing `Localizable.xcstrings`.
   - `PCADeviceActivityMonitor/` group: `DeviceActivityMonitorExtension.swift`,
     `Info.plist`, `PCADeviceActivityMonitor.entitlements`.
+  - `PCADeviceActivityMonitor`'s **Compile Sources** (not its Navigator
+    group -- see the `[ ]` below) must additionally show 7 files it shares
+    with the `PCA` host target (FABLE-A033 closure,
+    `ios/scripts/wire_device_activity_monitor_shared_sources.py`):
+    `CallbackObservationLog.swift`, `DeviceActivityCallbackHealth.swift`,
+    `FamilyActivitySelectionStore.swift`, `ShieldSafetyValidator.swift`,
+    `ScheduleEngine.swift`, `ScheduleModels.swift`, `PolicySyncSchema.swift`
+    -- each a NEW `PBXBuildFile` referencing the SAME existing
+    `PBXFileReference` the `PCA` target already uses (no new file, no
+    duplicate Navigator entry). `DeviceActivityMonitorExtension.swift`
+    references types from all 7; without this the extension target would
+    not compile once a real Xcode session tries it.
   - `PCAShieldConfiguration/` group: `ShieldConfigurationExtension.swift`,
     `Info.plist`, `PCAShieldConfiguration.entitlements`.
   - `PCAShieldAction/` group: `ShieldActionExtension.swift`, `Info.plist`,
@@ -46,9 +71,17 @@ file, confirm the following BEFORE attempting Section 1's build:
 - [ ] For each of the 5 targets, open **Build Phases → Compile Sources**
   and confirm: (a) it lists exactly the files that belong to it per the
   list above, (b) **no test file (`PCATests/**`) appears in any
-  non-test target's Compile Sources**, (c) **no extension's own source
-  file appears in the host `PCA` target's Compile Sources or vice
-  versa**, (d) no file is listed twice in the same phase.
+  non-test target's Compile Sources**, (c) **no extension's own DISTINCT
+  source file (`DeviceActivityMonitorExtension.swift`,
+  `ShieldConfigurationExtension.swift`, `ShieldActionExtension.swift`)
+  appears in the host `PCA` target's Compile Sources or vice versa** --
+  the 7 shared dependency files `PCADeviceActivityMonitor` now also
+  compiles (see the bullet above) are a deliberate, correct EXCEPTION to
+  this rule, not a violation of it: they are meant to appear in BOTH
+  `PCA`'s and `PCADeviceActivityMonitor`'s Compile Sources, each via its
+  own separate `PBXBuildFile` pointing at the same on-disk file, (d) no
+  file is listed twice in the SAME phase (that part of the rule is
+  unchanged).
 - [ ] Confirm `PCA` target's **Build Phases → Embed App Extensions**
   (a Copy Files phase, destination "PlugIns") lists all three `.appex`
   products, each with "Code Sign On Copy" effectively applied (the

@@ -16,6 +16,11 @@ import { SlotReservationError, type SlotReservationService } from '../entitlemen
 import { FreeAccessEnforcementError } from '../parentaccount/freeaccess/types.js';
 import type { ProtectionAlertProducer } from '../alerts/ProtectionAlertProducer.js';
 import type { ChildProfileRegistryRepository } from '../childprofiles/ChildProfileRegistryRepository.js';
+import {
+  alertComposeFailureMessage,
+  CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
+  type AlertComposeFailureLogger,
+} from '../alerts/AlertComposeFailureLogger.js';
 
 /**
  * PCA-ADD-ENR-020 alerting composition, scoped narrowly to this service
@@ -97,6 +102,7 @@ export class InvitationService {
   private readonly slotReservationService: SlotReservationService | null;
   private readonly alerting: InvitationAlerting | null;
   private readonly childProfileMembership: Pick<ChildProfileRegistryRepository, 'resolveMembership'> | null;
+  private readonly alertComposeFailureLogger: AlertComposeFailureLogger;
 
   /**
    * `auditService` defaults to a private, per-instance in-memory reference
@@ -132,6 +138,8 @@ export class InvitationService {
      * registry for the parent-facing HTTP route.
      */
     childProfileMembership: Pick<ChildProfileRegistryRepository, 'resolveMembership'> | null = null,
+    /** FABLE-A013: bounded, best-effort observability for a swallowed alert compose/produce failure in emitAlert below. Defaults to a console-backed logger; never required, never changes the non-blocking outcome. */
+    alertComposeFailureLogger: AlertComposeFailureLogger = CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
   ) {
     this.repository = repository;
     this.now = now;
@@ -139,6 +147,7 @@ export class InvitationService {
     this.slotReservationService = slotReservationService;
     this.alerting = alerting;
     this.childProfileMembership = childProfileMembership;
+    this.alertComposeFailureLogger = alertComposeFailureLogger;
   }
 
   async createInvitation(input: CreateInvitationInput): Promise<CreateInvitationResult> {
@@ -418,8 +427,15 @@ export class InvitationService {
           alertsEnabled: true,
         });
       }
-    } catch {
+    } catch (error) {
       // Alerting is deliberately non-blocking -- see this method's own doc comment.
+      // FABLE-A013: still observable, so an always-failing composer isn't silent forever.
+      this.alertComposeFailureLogger.warn('invitation.protection_alert.compose_failed', {
+        familyId,
+        deviceId,
+        trigger,
+        error: alertComposeFailureMessage(error),
+      });
     }
   }
 }

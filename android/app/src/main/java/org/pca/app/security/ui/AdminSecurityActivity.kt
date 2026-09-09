@@ -213,7 +213,17 @@ class AdminSecurityActivity : FragmentActivity() {
                             )
 
                             val enrolledIdentity = (application as PcaApplication).graph.deviceIdentityProvider.currentIdentity() as? DeviceIdentityState.Enrolled
+                            // EnrollmentCoordinator.persistSuccess() persists familyId = "" as an
+                            // explicitly documented placeholder until the device is paired to a
+                            // family (the bootstrap response carries only deviceId/status) -- a
+                            // non-null LocalFamilyState does NOT by itself mean a usable family
+                            // identity exists. `.isNullOrBlank()` mirrors the same guard
+                            // WebProtectionIdentityContext.current() already applies to this exact
+                            // condition; a bare `!= null` check would render working-looking
+                            // Delete Now / Audit Export controls on an enrolled-but-unpaired device
+                            // that always fail closed with a generic error underneath.
                             val currentFamilyId = (application as PcaApplication).graph.familyStateStore.currentState()?.familyId
+                                ?.takeIf { it.isNotBlank() }
                             if (enrolledIdentity != null && currentFamilyId != null) {
                                 var deleteNowResult by remember { mutableStateOf<DeleteNowUiResult?>(null) }
                                 DeleteNowScreen(

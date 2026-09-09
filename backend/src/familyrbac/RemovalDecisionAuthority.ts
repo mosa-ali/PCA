@@ -330,6 +330,29 @@ export interface RemovalDecisionAlerting {
  *     AuthorizedRecoveryAuthority binding (folded in from the former
  *     ProtectionApprovalService).
  */
+/**
+ * FABLE-A013: `decideWithSignedRemoteParent` swallows a throw from
+ * `signatureVerifier.verify()` into `validSignature = false` -- correctly
+ * fail-closed (the production `RejectingDeviceSignatureVerifier` never
+ * throws, it just `return`s false, so this is defensive/dormant today, not
+ * an active swallow). Kept deliberately stricter than
+ * `AlertComposeFailureLogger`: a FUTURE real crypto verifier's thrown
+ * `error.message` is unreviewed and could in principle embed
+ * key/signature-derived text, so implementations must log only bounded
+ * identifiers and the error's constructor name -- never `error.message` or
+ * the raw error object.
+ */
+export interface SignatureVerificationFailureLogger {
+  warn(event: string, detail: Readonly<Record<string, unknown>>): void;
+}
+
+export const CONSOLE_SIGNATURE_VERIFICATION_FAILURE_LOGGER: SignatureVerificationFailureLogger = {
+  warn(event, detail) {
+    // eslint-disable-next-line no-console -- intentional structured operational log, no signature/error-message content.
+    console.warn(JSON.stringify({ event, ...detail }));
+  },
+};
+
 export class RemovalDecisionAuthority {
   private readonly repository: RemovalDecisionRepository;
   private readonly authorization: ParentActionAuthorizationService;
@@ -342,6 +365,7 @@ export class RemovalDecisionAuthority {
   private readonly auditService: FamilyAuditService;
   private readonly alerting: RemovalDecisionAlerting | null;
   private readonly deviceRevocation: DeviceRevocationExecutor | null;
+  private readonly signatureVerificationFailureLogger: SignatureVerificationFailureLogger;
   private readonly now: () => Date;
 
   constructor(options: {
@@ -356,6 +380,7 @@ export class RemovalDecisionAuthority {
     auditService: FamilyAuditService;
     alerting?: RemovalDecisionAlerting;
     deviceRevocation?: DeviceRevocationExecutor;
+    signatureVerificationFailureLogger?: SignatureVerificationFailureLogger;
     now?: () => Date;
   }) {
     this.deviceRevocation = options.deviceRevocation ?? null;
@@ -369,6 +394,7 @@ export class RemovalDecisionAuthority {
     this.replayLedger = options.replayLedger ?? new InMemoryRemovalDecisionReplayLedger();
     this.auditService = options.auditService;
     this.alerting = options.alerting ?? null;
+    this.signatureVerificationFailureLogger = options.signatureVerificationFailureLogger ?? CONSOLE_SIGNATURE_VERIFICATION_FAILURE_LOGGER;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -497,8 +523,16 @@ export class RemovalDecisionAuthority {
     let validSignature = false;
     try {
       validSignature = await this.signatureVerifier.verify(signingKey.publicKey, canonical, signedDecision.signature);
-    } catch {
+    } catch (error) {
       validSignature = false;
+      // FABLE-A013: bounded-only -- never error.message/the raw error, see
+      // SignatureVerificationFailureLogger's doc comment above.
+      this.signatureVerificationFailureLogger.warn('removal_decision.signature_verification_threw', {
+        requestId: request.requestId,
+        familyId: request.familyId,
+        actorDeviceId: signedDecision.actorDeviceId,
+        errorConstructor: error instanceof Error ? error.constructor.name : typeof error,
+      });
     }
     if (!validSignature) {
       await this.recordDenied(request, signedDecision, 'INVALID_SIGNATURE');

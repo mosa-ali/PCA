@@ -42,7 +42,7 @@ import { InMemoryProtectionAlertLedger } from '../../../dist/alerts/ProtectionAl
 // ledger's clock to the same instant these fixtures use.
 const LEDGER_NOW = new Date('2026-08-21T00:00:00.000Z');
 
-function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting } = {}) {
+function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting, alertComposeFailureLogger } = {}) {
   const deviceRepository = createInMemoryDeviceRepository();
   const relayService = new RelayService(createInMemoryRelayRepository());
   const deviceAuthService = new DeviceAuthService(
@@ -83,6 +83,7 @@ function buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting }
     }),
     deviceProtectionStatusRepository,
     protectionStatusAlerting,
+    alertComposeFailureLogger,
   });
   return { app, deviceRepository };
 }
@@ -452,6 +453,45 @@ test('a report that transitions a device INTO DEGRADED emits PROTECTION_DEGRADED
     events = await ledger.listForFamily(familyId);
     assert.deepEqual(events.map((e) => e.trigger), ['PROTECTION_DEGRADED']);
     assert.equal(events[0].deviceId, deviceId);
+  } finally {
+    await app.close();
+  }
+});
+
+test('FABLE-A013: a swallowed alert compose failure is logged once, bounded, and the report still succeeds', async () => {
+  const deviceProtectionStatusRepository = new InMemoryDeviceProtectionStatusRepository();
+  const composeError = new Error('PCA-DEC-020: no reviewed production alert-payload composer is available yet.');
+  const alerting = {
+    producer: { async produce() { throw composeError; } },
+    alertsEnabled: true,
+    async resolveParentDevices() {
+      return [{ deviceId: 'parent-device-1', keyEpoch: 3 }];
+    },
+  };
+  const warnCalls = [];
+  const alertComposeFailureLogger = { warn: (event, detail) => warnCalls.push({ event, detail }) };
+  const { app, deviceRepository } = buildApp({ deviceProtectionStatusRepository, protectionStatusAlerting: alerting, alertComposeFailureLogger });
+  try {
+    const familyId = `family-${randomUUID()}`;
+    const { deviceId, publicKey } = await registerDevice(deviceRepository, familyId);
+    const token = await authenticateDevice(app, deviceId, publicKey);
+
+    await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'PROTECTED' },
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runtime-sync/protection-status',
+      headers: { authorization: `Bearer ${token}` }, payload: { protectionLevel: 'DEGRADED' },
+    });
+    assert.equal(response.statusCode, 204, 'a swallowed alert failure must never block or reverse the status write');
+
+    assert.equal(warnCalls.length, 1);
+    assert.equal(warnCalls[0].event, 'runtime_sync.protection_degraded_alert.compose_failed');
+    assert.equal(warnCalls[0].detail.familyId, familyId);
+    assert.equal(warnCalls[0].detail.deviceId, deviceId);
+    assert.equal(warnCalls[0].detail.trigger, 'PROTECTION_DEGRADED');
+    assert.equal(warnCalls[0].detail.error, composeError.message);
   } finally {
     await app.close();
   }

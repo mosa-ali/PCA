@@ -26,7 +26,7 @@ function buildService(overrides = {}) {
     advance: (ms) => { currentTime += ms; },
     set: (ms) => { currentTime = ms; },
   };
-  const service = new InvitationService(repository, clock.now, undefined, undefined, overrides.alerting ?? null);
+  const service = new InvitationService(repository, clock.now, undefined, undefined, overrides.alerting ?? null, undefined, overrides.alertComposeFailureLogger);
   return { service, repository, clock };
 }
 
@@ -500,10 +500,11 @@ test('disabled alerting never invokes the composer and never blocks redemption',
   assert.deepEqual(await ledger.listForFamily(record.familyId), []);
 });
 
-test('an alert composer failure never blocks or reverses redemption', async () => {
+test('an alert composer failure never blocks or reverses redemption, and FABLE-A013 logs it once, bounded', async () => {
   const ledger = new InMemoryProtectionAlertLedger(() => LEDGER_NOW);
+  const composeError = new Error('composer unavailable');
   const producer = new ProtectionAlertProducer(ledger, async () => {
-    throw new Error('composer unavailable');
+    throw composeError;
   }, () => new Date(BASE_TIME));
   const alerting = {
     producer,
@@ -512,10 +513,18 @@ test('an alert composer failure never blocks or reverses redemption', async () =
       return [{ deviceId: 'parent-device-1', keyEpoch: 3 }];
     },
   };
-  const { service } = buildService({ alerting });
-  const { rawToken } = await service.createInvitation(baseInput);
+  const warnCalls = [];
+  const alertComposeFailureLogger = { warn: (event, detail) => warnCalls.push({ event, detail }) };
+  const { service } = buildService({ alerting, alertComposeFailureLogger });
+  const { rawToken, record } = await service.createInvitation(baseInput);
   const redeemed = await service.redeemInvitation(rawToken);
   assert.equal(redeemed.status, 'REDEEMED');
+
+  assert.equal(warnCalls.length, 1);
+  assert.equal(warnCalls[0].event, 'invitation.protection_alert.compose_failed');
+  assert.equal(warnCalls[0].detail.familyId, record.familyId);
+  assert.equal(warnCalls[0].detail.trigger, 'INVITATION_REDEEMED');
+  assert.equal(warnCalls[0].detail.error, composeError.message);
 });
 
 // -----------------------------------------------------------------------

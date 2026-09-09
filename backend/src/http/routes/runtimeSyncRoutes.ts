@@ -9,6 +9,11 @@ import { MAX_OUTBOUND_BATCH_SIZE } from '../../runtime-sync/policy.js';
 import { createRateLimiter } from '../rateLimit.js';
 import type { DeviceProtectionStatusRepository, ProtectionLevel } from '../../device/DeviceProtectionStatusRepository.js';
 import type { ProtectionAlertProducer } from '../../alerts/ProtectionAlertProducer.js';
+import {
+  alertComposeFailureMessage,
+  CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
+  type AlertComposeFailureLogger,
+} from '../../alerts/AlertComposeFailureLogger.js';
 
 /**
  * PCA-ADD-ENR-020 alerting composition, scoped to the protection-status
@@ -62,6 +67,8 @@ export interface RuntimeSyncRoutesDeps {
   deviceProtectionStatusRepository?: DeviceProtectionStatusRepository;
   /** PCA-ADD-ENR-020: optional. When supplied alongside deviceProtectionStatusRepository, a report that transitions a device INTO DEGRADED emits a PROTECTION_DEGRADED alert. */
   protectionStatusAlerting?: ProtectionStatusAlerting;
+  /** FABLE-A013: bounded, best-effort observability for a swallowed compose/produce failure below. Defaults to a console-backed logger; never required, never changes the non-blocking outcome. */
+  alertComposeFailureLogger?: AlertComposeFailureLogger;
 }
 
 const PROTECTION_LEVELS: ReadonlySet<string> = new Set(['STANDARD', 'PROTECTED', 'DEGRADED', 'AUTHORIZATION_REQUIRED', 'NOT_SUPPORTED']);
@@ -73,6 +80,7 @@ async function emitProtectionDegradedAlert(
   alerting: ProtectionStatusAlerting | undefined,
   familyId: string,
   deviceId: string,
+  logger: AlertComposeFailureLogger = CONSOLE_ALERT_COMPOSE_FAILURE_LOGGER,
 ): Promise<void> {
   if (!alerting) return;
   const alertsEnabled = typeof alerting.alertsEnabled === 'function' ? alerting.alertsEnabled() : alerting.alertsEnabled;
@@ -89,8 +97,15 @@ async function emitProtectionDegradedAlert(
         alertsEnabled: true,
       });
     }
-  } catch {
+  } catch (error) {
     // Alerting is deliberately non-blocking -- see this function's own doc comment.
+    // FABLE-A013: still observable, so an always-failing composer isn't silent forever.
+    logger.warn('runtime_sync.protection_degraded_alert.compose_failed', {
+      familyId,
+      deviceId,
+      trigger: 'PROTECTION_DEGRADED',
+      error: alertComposeFailureMessage(error),
+    });
   }
 }
 
@@ -313,7 +328,7 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
         const previous = deps.protectionStatusAlerting ? await protectionStatusRepository.findForDevice(familyId, deviceId) : null;
         await protectionStatusRepository.upsert({ deviceId, familyId, protectionLevel: nextLevel, updatedAt: new Date() });
         if (nextLevel === 'DEGRADED' && previous?.protectionLevel !== 'DEGRADED') {
-          await emitProtectionDegradedAlert(deps.protectionStatusAlerting, familyId, deviceId);
+          await emitProtectionDegradedAlert(deps.protectionStatusAlerting, familyId, deviceId, deps.alertComposeFailureLogger);
         }
         return reply.code(204).send();
       },

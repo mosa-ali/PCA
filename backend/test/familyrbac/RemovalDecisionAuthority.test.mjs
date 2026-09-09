@@ -78,6 +78,8 @@ function buildAuthority({
   recoveryAllowed = false,
   alerting,
   deviceRevocation,
+  signatureVerifierOverride,
+  signatureVerificationFailureLogger,
 } = {}) {
   const auditRepository = new InMemoryFamilyAuditRepository();
   const audit = new FamilyAuditService(auditRepository, now);
@@ -114,7 +116,8 @@ function buildAuthority({
     repository,
     authorization,
     signingKeyResolver: signingKeyResolver(),
-    signatureVerifier: signatureVerifier(),
+    signatureVerifier: signatureVerifierOverride ?? signatureVerifier(),
+    signatureVerificationFailureLogger,
     targetDeviceRoleResolver: actorResolver({
       [OWNER]: { familyId: FAMILY, role: 'OWNER' },
       [ADMIN]: { familyId: FAMILY, role: 'ADMINISTRATOR' },
@@ -284,6 +287,28 @@ test('signature binding rejects child/device substitution and invalid signatures
     authority.decideWithSignedRemoteParent(invalid),
     (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_SIGNATURE',
   );
+});
+
+test('FABLE-A013: a throwing signature verifier still fails closed (INVALID_SIGNATURE), and the failure is logged once with no error message content', async () => {
+  const thrownError = new Error('a real verifier could embed key/signature-derived text here');
+  const throwingVerifier = { async verify() { throw thrownError; } };
+  const warnCalls = [];
+  const signatureVerificationFailureLogger = { warn: (event, detail) => warnCalls.push({ event, detail }) };
+  const { authority } = buildAuthority({ signatureVerifierOverride: throwingVerifier, signatureVerificationFailureLogger });
+  const request = await createPending(authority, { requestId: 'request-verifier-throws' });
+
+  await assert.rejects(
+    authority.decideWithSignedRemoteParent(sign(unsignedDecision(request, { actionId: 'action-verifier-throws' }))),
+    (error) => error instanceof RemovalDecisionError && error.code === 'INVALID_SIGNATURE',
+  );
+
+  assert.equal(warnCalls.length, 1);
+  assert.equal(warnCalls[0].event, 'removal_decision.signature_verification_threw');
+  assert.equal(warnCalls[0].detail.requestId, request.requestId);
+  assert.equal(warnCalls[0].detail.familyId, FAMILY);
+  assert.equal(warnCalls[0].detail.errorConstructor, 'Error');
+  const serialized = JSON.stringify(warnCalls[0].detail);
+  assert.ok(!serialized.includes(thrownError.message), 'the raw error message must never be logged for a signature-verification failure');
 });
 
 test('a signed decision from a stale trust-set epoch is rejected before mutation', async () => {

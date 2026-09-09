@@ -1,22 +1,34 @@
 // CURRENT_HEAD_MUTATION runner.
 //
-// !!! WHAT THIS HARNESS IS AND IS NOT (2026-09-08 final assessment, FABLE-A040) !!!
-// It does NOT execute any test suite. Each mutant is classified ONLY by the
-// static string-assertion scripts check-{backend,parent-web,android}-boundaries.mjs
-// (requireText/forbidText over source), and EQUIVALENT/INVALID are read from the
-// manifest's expectedClassification, never derived. "KILLED" therefore means
-// "a hardcoded string assertion noticed the mutated text changed", not "a test
-// failed". Do not cite its VALID_MUTATION_SURVIVORS as test-strength evidence;
-// see tooling/mutation/README.md. The report it writes now carries
-// executesTests: false so no downstream ledger can mistake it for a real
-// mutation-testing run.
+// !!! WHAT THIS HARNESS IS AND IS NOT (2026-09-08, real backend execution
+// added as part of the engineering closure pass -- see git history for the
+// prior static-only version if you need it) !!!
+// BACKEND mutants are now classified by REAL EXECUTION: the mutated source
+// is compiled (tsc) against a full copy of backend/'s installed dependencies
+// and, if it compiles, the entire non-DB backend test suite
+// (scripts/run-tests.mjs, the same one `npm test` runs) is executed against
+// the mutated build. "KILLED" means an actual test failed or the mutated
+// source failed to compile; "SURVIVED" means the real suite passed clean
+// against a mutated program. This is genuine mutation testing for backend.
+//
+// PARENT-WEB and ANDROID mutants are still classified ONLY by the static
+// string-assertion scripts check-{parent-web,android}-boundaries.mjs
+// (requireText/forbidText over source) -- "KILLED" there still only means "a
+// hardcoded string assertion noticed the mutated text changed", not "a test
+// failed". Do not cite parent-web/android VALID_MUTATION_SURVIVORS as
+// test-strength evidence; see tooling/mutation/README.md. EQUIVALENT/INVALID
+// are read from the manifest's expectedClassification only when the mutant's
+// own execution doesn't itself prove otherwise (see classifyBackendMutant's
+// manifestAnomaly handling below) -- never derived for parent-web/android.
+// The report's `executesTests`/`classificationMethod` fields are now
+// per-surface so a reader can't mistake one surface's method for another's.
 //
 // It copies each package to a temporary directory, applies one declared
 // source mutation there, and runs the bounded tests against that copy. The
 // entry worktree is read-only from this script's perspective: no production
 // source, central ledger, release validator, migration, buildServer/main, or
-// feature source is ever edited in D:/PCA/r3-w93.
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+// feature source is ever edited in the real checkout.
+import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -131,9 +143,136 @@ async function copyBackend(tempRoot) {
     recursive: true,
     filter: (source) => !source.includes(`${path.sep}node_modules${path.sep}`) && !source.includes(`${path.sep}dist${path.sep}`),
   });
+  // Real build+test execution (classifyBackendMutant below) needs backend's
+  // installed dependencies (tsc, everything the test files import). These
+  // are never mutated by any mutant, so link rather than copy them (tens of
+  // MB, unchanged) into the temp copy -- a Windows junction needs no
+  // elevated privileges, unlike a symlink. The cp() filter above excludes
+  // node_modules' CONTENTS (every child path contains the separator on both
+  // sides) but not the empty node_modules directory entry itself, which cp
+  // still creates -- remove that stub first or the link creation below
+  // fails with EEXIST.
+  const linkedNodeModules = path.join(destination, 'node_modules');
+  await rm(linkedNodeModules, { recursive: true, force: true });
+  await symlink(
+    path.join(TOOLING_ROOT, 'backend', 'node_modules'),
+    linkedNodeModules,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   const baseline = await checkBackend(destination);
   if (baseline.code !== 0) throw new Error(`backend baseline static checks blocked: ${shortOutput(baseline)}`);
+  const build = await buildBackend(destination);
+  if (build.code !== 0) throw new Error(`backend baseline (unmutated) failed to compile: ${shortOutput(build)}`);
   return destination;
+}
+
+/** Compiles the (possibly mutated) TypeScript copy at `root` -- exactly what `npm run build` does, run directly against the linked-in compiler so no npm/shell wrapper is needed. */
+async function buildBackend(root) {
+  return run('node.exe', [path.join(root, 'node_modules', 'typescript', 'bin', 'tsc')], root);
+}
+
+/** Runs the exact non-DB suite `npm test` runs (scripts/run-tests.mjs), against the (possibly mutated, already-built) copy at `root`. No live database is needed -- this is the same file list `npm test` spawns via scripts/run-tests.mjs, none of which are *.mysql.test.mjs. */
+async function runBackendRealTests(root) {
+  return run('node.exe', ['--env-file=test.env', path.join('scripts', 'run-tests.mjs')], root);
+}
+
+/**
+ * Extracts the set of failing test names from node's `--test` TAP-ish
+ * output (`not ok <n> - <name>`), keyed by name rather than the numeric
+ * index (stable across runs; the index is not, if a file's own internal
+ * subtest count ever shifts).
+ */
+function parseFailingTestNames(output) {
+  const names = new Set();
+  const pattern = /^not ok \d+ - (.+)$/gm;
+  let match;
+  while ((match = pattern.exec(output)) !== null) names.add(match[1].trim());
+  return names;
+}
+
+/**
+ * A handful of backend non-DB tests are genuine cross-package invariant
+ * checks that reach outside anything this harness can put in a throwaway
+ * temp copy -- most concretely, test/tooling/RebuildR3DerivedLedgers.test.mjs
+ * calls `git rev-parse HEAD` unconditionally (RebuildR3DerivedLedgers.mjs's
+ * own drift-detection feature), which fails 100% of the time in a temp
+ * directory that was never `git init`-ed (deliberately -- copying .git would
+ * be pointless for a scratch copy). This is a deterministic ENVIRONMENTAL
+ * gap, discovered by this harness's own first real run, not flakiness and
+ * not something any mutation could ever cause or fix.
+ *
+ * Rather than special-case that one script, run the real suite ONCE against
+ * the pristine (unmutated) copy right after setup and record which test
+ * names already fail there. Every per-mutant classification then diffs its
+ * own failing-test set against this baseline: only NEW failures (present
+ * after mutation, absent from the baseline) count as a kill. A mutant that
+ * merely coexists with the same pre-existing environmental failures did not
+ * get exercised by them and must not be credited with killing anything.
+ */
+async function establishBackendTestBaseline(root) {
+  const result = await runBackendRealTests(root);
+  const failing = parseFailingTestNames(`${result.stdout}\n${result.stderr}`);
+  return { code: result.code, failing, evidence: shortOutput(result) };
+}
+
+/**
+ * Real mutation classification for a backend mutant, at `root` (a temp copy
+ * with `mutant.source` already overwritten with the mutated text -- see
+ * classify() below). Build first: a mutant that doesn't compile is KILLED
+ * (or INVALID, if the manifest declared it should never compile) without
+ * ever running the test suite. A mutant that compiles is run against the
+ * real non-DB suite; a test failure is KILLED, a clean pass is SURVIVED (or
+ * EQUIVALENT, if the manifest declared the mutation semantically inert).
+ *
+ * manifestAnomaly is set whenever the mutant's own real execution
+ * contradicts what mutation-scope.json declared (e.g. a mutant marked
+ * EQUIVALENT that the real suite actually kills, or one marked INVALID that
+ * actually compiles) -- this harness can now detect that class of error,
+ * which the old string-assertion-only version structurally could not, since
+ * it never ran anything capable of contradicting the manifest.
+ */
+async function classifyBackendMutant(root, mutant, testBaseline) {
+  const declaredInvalid = mutant.expectedClassification === 'INVALID';
+  const declaredEquivalent = mutant.expectedClassification === 'EQUIVALENT';
+
+  const build = await buildBackend(root);
+  if (build.code !== 0) {
+    if (declaredInvalid) {
+      return { classification: 'INVALID', method: 'real-tsc-compile', evidence: shortOutput(build) };
+    }
+    const result = { classification: 'KILLED', method: 'real-tsc-compile-error', evidence: shortOutput(build) };
+    if (declaredEquivalent) result.manifestAnomaly = 'declared EQUIVALENT but the mutated source failed to compile';
+    return result;
+  }
+  if (declaredInvalid) {
+    return {
+      classification: 'SURVIVED',
+      method: 'real-tsc-compile',
+      evidence: shortOutput(build),
+      manifestAnomaly: 'declared INVALID but the mutated source compiled successfully',
+    };
+  }
+
+  const tests = await runBackendRealTests(root);
+  const failingNow = parseFailingTestNames(`${tests.stdout}\n${tests.stderr}`);
+  const newFailures = [...failingNow].filter((name) => !testBaseline.failing.has(name));
+  if (newFailures.length > 0) {
+    const result = {
+      classification: 'KILLED',
+      method: 'real-test-suite-execution',
+      evidence: `NEW failures beyond the environmental baseline: ${newFailures.join(' | ')}`,
+    };
+    if (declaredEquivalent) result.manifestAnomaly = 'declared EQUIVALENT but the real backend test suite failed against this mutant (beyond the environmental baseline)';
+    return result;
+  }
+  // tests.code may still be non-zero here (the same pre-existing baseline
+  // failures reproduced, e.g. RebuildR3DerivedLedgers' git-repo dependency)
+  // -- that is not evidence this mutant did anything, so it is not KILLED.
+  return {
+    classification: declaredEquivalent ? 'EQUIVALENT' : 'SURVIVED',
+    method: 'real-test-suite-execution',
+    evidence: shortOutput(tests),
+  };
 }
 
 async function checkParentWeb(root) {
@@ -170,6 +309,37 @@ async function copyAndroid(tempRoot) {
   return destination;
 }
 
+/**
+ * A real backend test run (classifyBackendMutant) needs more than
+ * backend/'s own files: several of its non-DB tests are legitimate
+ * cross-package invariant checks that read/execute sibling top-level
+ * directories by relative path -- e.g.
+ * test/scripts/disposableBootstrapArtifact.test.mjs diffs a generator's
+ * output against docs/database/bootstrap/*.sql, the runtime-schedule-
+ * conformance tests read contracts/schedule-runtime/vectors/*.json,
+ * test/tooling/RebuildR3DerivedLedgers.test.mjs executes
+ * tooling/release/RebuildR3DerivedLedgers.mjs, and
+ * test/security/sdkDisclosure.test.mjs recomputes the SDK disclosure from
+ * every package's real manifest, including platform-admin-web's. Without
+ * these siblings present at the same relative position, ALL of those tests
+ * fail regardless of any mutation -- discovered by this harness's own first
+ * real run, which is exactly the class of thing static string-assertions
+ * could never have caught. parent-web/parent-sdk and android are already
+ * copied as siblings for their own mutants (copyParentWeb/copyAndroid); this
+ * fills in the remaining ones backend's tests reach into.
+ */
+async function copySiblingContext(tempRoot) {
+  for (const name of ['docs', 'contracts', 'tooling', 'platform-admin-web']) {
+    await cp(path.join(TOOLING_ROOT, name), path.join(tempRoot, name), {
+      recursive: true,
+      filter: (source) =>
+        !source.includes(`${path.sep}node_modules${path.sep}`) &&
+        !source.includes(`${path.sep}dist${path.sep}`) &&
+        !source.includes(`${path.sep}build${path.sep}`),
+    });
+  }
+}
+
 function mutateText(source, mutant) {
   const normalized = source.replaceAll('\r\n', '\n');
   const occurrences = normalized.split(mutant.from).length - 1;
@@ -183,18 +353,7 @@ async function classify(mutant, context) {
   await writeFile(sourcePath, mutateText(original, mutant), 'utf8');
   let result;
   if (mutant.surface === 'backend') {
-    const checks = await checkBackend(context.root);
-    if (mutant.expectedClassification === 'INVALID') {
-      result = { classification: checks.code === 0 ? 'SURVIVED' : 'INVALID', checks: checks.code, evidence: shortOutput(checks), method: 'source-shape invalidity check' };
-    } else {
-      result = {
-        classification: checks.code === 0
-          ? (mutant.expectedClassification === 'EQUIVALENT' ? 'EQUIVALENT' : 'SURVIVED')
-          : 'KILLED',
-        checks: checks.code,
-        evidence: shortOutput(checks),
-      };
-    }
+    result = await classifyBackendMutant(context.root, mutant, context.testBaseline);
   } else if (mutant.surface === 'parent-web') {
     const checks = await checkParentWeb(context.root);
     if (mutant.expectedClassification === 'INVALID') {
@@ -254,6 +413,15 @@ try {
   contexts.backend = { root: await copyBackend(tempRoot), originals: new Map() };
   contexts.parentWeb = { root: await copyParentWeb(tempRoot), originals: new Map() };
   contexts.android = { root: await copyAndroid(tempRoot), originals: new Map() };
+  // See copySiblingContext's own doc comment: backend's real test execution
+  // needs these present as siblings, not just backend/ itself.
+  await copySiblingContext(tempRoot);
+  // See establishBackendTestBaseline's own doc comment: some non-DB backend
+  // tests fail deterministically in ANY throwaway temp copy regardless of
+  // mutation (e.g. a git-repo dependency) -- capture that once now so every
+  // mutant below is judged against it, not against a phantom "all green"
+  // expectation this environment can never actually reach.
+  contexts.backend.testBaseline = await establishBackendTestBaseline(contexts.backend.root);
 
   for (const mutant of scope.mutants) {
     const context = mutant.surface === 'backend'
@@ -286,12 +454,19 @@ const counts = Object.fromEntries([...validClassifications].map((classification)
   classification,
   results.filter((result) => result.classification === classification).length,
 ]));
+const manifestAnomalies = results.filter((result) => result.manifestAnomaly).map(({ id, manifestAnomaly }) => ({ id, manifestAnomaly }));
 const report = {
-  // See the file header: every classification below is a static string-assertion
-  // outcome, not a test-suite run. Downstream ledgers must not read this as
+  // See the file header: backend is real execution (build + the actual
+  // non-DB test suite); parent-web/android are still the static
+  // string-assertion check only. Per-surface, not one blanket claim --
+  // downstream ledgers must not read the parent-web/android entries as
   // mutation-testing evidence.
-  executesTests: false,
-  classificationMethod: 'STATIC_STRING_ASSERTION_ONLY',
+  executesTests: { backend: true, 'parent-web': false, android: false },
+  classificationMethod: {
+    backend: 'REAL_BUILD_AND_TEST_SUITE_EXECUTION',
+    'parent-web': 'STATIC_STRING_ASSERTION_ONLY',
+    android: 'STATIC_STRING_ASSERTION_ONLY',
+  },
   mission: scope.mission,
   mutationHead: head,
   entrySha: head,
@@ -308,10 +483,22 @@ const report = {
   counts,
   validSurvivors: counts.SURVIVED,
   environmentBlock,
-  mutationMethod: 'Dependency-free static checks over temporary source copies; native backend, Parent Web, and Android test evidence is run separately and reported with the handoff.',
+  // Non-empty only when a backend mutant's real execution contradicted what
+  // mutation-scope.json declared for it (see classifyBackendMutant) -- a
+  // manifest correction is needed, not silently trusted.
+  manifestAnomalies,
+  // See establishBackendTestBaseline's doc comment: tests that fail even
+  // against the pristine, unmutated backend copy (a temp-directory
+  // environmental limitation, e.g. RebuildR3DerivedLedgers' git-repo
+  // dependency -- never a real defect) so every backend mutant's KILLED/
+  // SURVIVED verdict above is against NEW failures only, not raw exit code.
+  backendTestBaseline: contexts.backend?.testBaseline
+    ? { exitCode: contexts.backend.testBaseline.code, preExistingFailures: [...contexts.backend.testBaseline.failing].sort() }
+    : null,
+  mutationMethod: 'Backend: mutated source is compiled and the real non-DB backend test suite (scripts/run-tests.mjs, the same one `npm test` runs) is executed against it, diffed against a pristine-copy baseline (see backendTestBaseline) so pre-existing environmental failures are never mistaken for a kill -- genuine mutation testing. Parent Web and Android: dependency-free static string-assertion checks over temporary source copies only; native test evidence for those surfaces is run separately and reported with the handoff.',
   mutants: results.map(({ from, to, ...result }) => result),
 };
 await mkdir(path.dirname(REPORT_PATH), { recursive: true });
 await writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-console.log(JSON.stringify({ mutationHead: head, counts, validSurvivors: counts.SURVIVED, environmentBlock }));
-if (environmentBlock || counts.SURVIVED > 0) process.exitCode = 2;
+console.log(JSON.stringify({ mutationHead: head, counts, validSurvivors: counts.SURVIVED, environmentBlock, manifestAnomalies }));
+if (environmentBlock || counts.SURVIVED > 0 || manifestAnomalies.length > 0) process.exitCode = 2;
