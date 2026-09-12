@@ -73,3 +73,25 @@ diagnose it.
 `src/relay/RelayService.ts`, and `src/location/SafeZoneRepository.ts`.
 Extending real execution to Parent Web (Vitest) and Android (JVM/Gradle,
 much heavier per-mutant cost) is future scope, not started.
+
+## Evidence freshness and provenance
+
+The report uses `SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD`.
+`sourceHead` is the checkout SHA captured with the mutation input fingerprint;
+`invocationHead` is the checkout from which the command was run; and
+`evidenceGeneratedAtHead` records the invocation that generated the persisted
+report. `mutationHead` and `entrySha` remain compatibility aliases for
+`sourceHead`. The supervision documents separately record the commit containing
+the evidence package, so the report does not contain a self-referential commit
+hash.
+
+The source fingerprint covers the mutation execution inputs under
+`backend/`, `parent-web/`, `parent-sdk/`, `android/`, `contracts/`,
+`platform-admin-web/`, `tooling/`, and `docs/`, excluding only supervision
+metadata and generated mutation reports. The report also records the scope
+fingerprint and the input-file count. After a documentation-only commit, the
+runner still performs the complete mutation run at the new invocation HEAD; if
+the source and scope fingerprints and classifications match, it retains the
+existing report instead of rewriting it solely because HEAD moved. A source,
+scope, harness, or classification change creates a new report. Explicit
+baseline SHA mismatches continue to fail closed.

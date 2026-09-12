@@ -29,6 +29,7 @@
 // source, central ledger, release validator, migration, buildServer/main, or
 // feature source is ever edited in the real checkout.
 import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -38,6 +39,21 @@ const TOOLING_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const SCOPE_PATH = path.join(TOOLING_ROOT, 'tooling', 'mutation', 'mutation-scope.json');
 const REPORT_PATH = path.join(TOOLING_ROOT, 'tooling', 'mutation', 'reports', 'current-head-mutation.json');
 const scope = JSON.parse(await readFile(SCOPE_PATH, 'utf8'));
+const PROVENANCE_MODEL = 'SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD';
+const MUTATION_INPUT_ROOTS = [
+  'backend/',
+  'parent-web/',
+  'parent-sdk/',
+  'android/',
+  'contracts/',
+  'platform-admin-web/',
+  'tooling/',
+  'docs/',
+];
+const MUTATION_INPUT_EXCLUDED_PREFIXES = [
+  'docs/supervision/',
+  'tooling/mutation/reports/',
+];
 
 const allowedHarnessRoots = [
   'backend/test/mutation/',
@@ -49,6 +65,93 @@ const validClassifications = new Set(['KILLED', 'EQUIVALENT', 'INVALID', 'SURVIV
 
 function fail(message) {
   throw new Error(`mutation configuration error: ${message}`);
+}
+
+function sha256(parts) {
+  const hash = createHash('sha256');
+  for (const part of parts) {
+    hash.update(part);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+async function mutationInputPaths() {
+  const result = await run(
+    'git',
+    ['-C', TOOLING_ROOT, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...MUTATION_INPUT_ROOTS],
+    TOOLING_ROOT,
+  );
+  if (result.code !== 0) fail(`git ls-files failed while building mutation provenance: ${shortOutput(result)}`);
+  return result.stdout
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => file.replaceAll('\\', '/'))
+    .filter((file) => !MUTATION_INPUT_EXCLUDED_PREFIXES.some((prefix) => file.startsWith(prefix)))
+    .sort();
+}
+
+async function fingerprintFiles(files) {
+  const parts = [];
+  for (const file of files) {
+    const contents = await readFile(path.join(TOOLING_ROOT, file));
+    parts.push(file, contents);
+  }
+  return sha256(parts);
+}
+
+async function mutationProvenance() {
+  const inputPaths = await mutationInputPaths();
+  const scopePath = path.relative(TOOLING_ROOT, SCOPE_PATH).replaceAll('\\', '/');
+  return {
+    sourceFingerprint: await fingerprintFiles(inputPaths),
+    sourceFingerprintFileCount: inputPaths.length,
+    scopeFingerprint: await fingerprintFiles([scopePath]),
+  };
+}
+
+function stableClassificationEvidence(report) {
+  return {
+    counts: report.counts,
+    validSurvivors: report.validSurvivors,
+    environmentBlock: report.environmentBlock,
+    manifestAnomalies: report.manifestAnomalies,
+    mutants: report.mutants.map((mutant) => ({
+      id: mutant.id,
+      requirement: mutant.requirement,
+      surface: mutant.surface,
+      source: mutant.source,
+      expectedClassification: mutant.expectedClassification,
+      classification: mutant.classification,
+      method: mutant.method,
+      checks: mutant.checks,
+      manifestAnomaly: mutant.manifestAnomaly,
+    })),
+  };
+}
+
+function classificationDigest(report) {
+  return sha256([JSON.stringify(stableClassificationEvidence(report))]);
+}
+
+async function readExistingReport() {
+  try {
+    return JSON.parse(await readFile(REPORT_PATH, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function canReuseExistingReport(existing, candidate) {
+  return Boolean(
+    existing &&
+    existing.provenanceModel === PROVENANCE_MODEL &&
+    existing.sourceFingerprint === candidate.sourceFingerprint &&
+    existing.scopeFingerprint === candidate.scopeFingerprint &&
+    existing.classificationDigest === candidate.classificationDigest &&
+    existing.worktreeCleanAtRun === candidate.worktreeCleanAtRun,
+  );
 }
 
 function assertScope() {
@@ -400,6 +503,7 @@ if (requestedBaseline !== null && !/^HEAD$/i.test(requestedBaseline) && head.toL
   fail(`runner must execute at baseline ${baseline}, found ${head}. Check that commit out, or pass --baseline ${head} / --baseline HEAD to run against the current one.`);
 }
 const worktreeClean = await gitWorktreeIsClean();
+const provenance = await mutationProvenance();
 
 const tempRoot = await (async () => {
   const prefix = path.join(os.tmpdir(), 'pca-r3-current-head-mutation-');
@@ -467,7 +571,18 @@ const report = {
     'parent-web': 'STATIC_STRING_ASSERTION_ONLY',
     android: 'STATIC_STRING_ASSERTION_ONLY',
   },
+  provenanceModel: PROVENANCE_MODEL,
   mission: scope.mission,
+  // `sourceHead` identifies the exact checkout whose mutation inputs were
+  // fingerprinted. `invocationHead` identifies the checkout from which this
+  // command was invoked. A documentation-only commit may change the latter
+  // without changing the tested source tree; in that case the existing report
+  // is retained after the full mutation run verifies the same fingerprints and
+  // classifications. The evidence-package commit is recorded by the
+  // supervision documents, not self-referentially inside this tracked report.
+  sourceHead: head,
+  invocationHead: head,
+  evidenceGeneratedAtHead: head,
   mutationHead: head,
   entrySha: head,
   // How the baseline for this run was chosen, so a reader of the artifact can tell a
@@ -475,6 +590,11 @@ const report = {
   baseline,
   baselineSource: baselineSource ?? 'current HEAD (default)',
   manifestEntrySha: scope.entrySha,
+  sourceFingerprint: provenance.sourceFingerprint,
+  sourceFingerprintFileCount: provenance.sourceFingerprintFileCount,
+  scopeFingerprint: provenance.scopeFingerprint,
+  sourceFingerprintRoots: MUTATION_INPUT_ROOTS,
+  sourceFingerprintExcludedPrefixes: MUTATION_INPUT_EXCLUDED_PREFIXES,
   // The runner mutates COPIES of the working tree, not of the commit. A dirty worktree
   // therefore means these results describe HEAD plus uncommitted edits, which is a
   // materially different claim -- record it rather than let the report imply otherwise.
@@ -499,7 +619,20 @@ const report = {
   mutationMethod: 'Backend: mutated source is compiled and the real non-DB backend test suite (scripts/run-tests.mjs, the same one `npm test` runs) is executed against it, diffed against a pristine-copy baseline (see backendTestBaseline) so pre-existing environmental failures are never mistaken for a kill -- genuine mutation testing. Parent Web and Android: dependency-free static string-assertion checks over temporary source copies only; native test evidence for those surfaces is run separately and reported with the handoff.',
   mutants: results.map(({ from, to, ...result }) => result),
 };
+report.classificationDigest = classificationDigest(report);
 await mkdir(path.dirname(REPORT_PATH), { recursive: true });
-await writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-console.log(JSON.stringify({ mutationHead: head, counts, validSurvivors: counts.SURVIVED, environmentBlock, manifestAnomalies }));
+const existingReport = await readExistingReport();
+const reportReused = canReuseExistingReport(existingReport, report);
+if (!reportReused) await writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+const persistedReport = reportReused ? existingReport : report;
+console.log(JSON.stringify({
+  provenanceModel: PROVENANCE_MODEL,
+  invocationHead: head,
+  sourceHead: persistedReport.sourceHead,
+  reportWritten: !reportReused,
+  counts,
+  validSurvivors: counts.SURVIVED,
+  environmentBlock,
+  manifestAnomalies,
+}));
 if (environmentBlock || counts.SURVIVED > 0 || manifestAnomalies.length > 0) process.exitCode = 2;
