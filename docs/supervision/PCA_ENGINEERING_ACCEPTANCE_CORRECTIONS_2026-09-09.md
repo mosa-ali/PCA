@@ -54,6 +54,7 @@ The source-under-test checkout and the evidence-package checkout are distinct:
 `MUTATION_SOURCE_INPUT_FILES=2329`
 `MUTATION_REPORT_GENERATED_AT_HEAD=c301900f6988f1b20044d3dd1b1c3613bfa346ad`
 `MUTATION_EVIDENCE_HEAD=4cd262f342c5a6c321253d37d1faf0247dac1d60`
+`EVIDENCE_METADATA_HEAD=4bfaf727c2aea9c20a59a6fae3778cc1f363aa4f (validated by CI run 34724290273 / 284; the final CI-result refresh below is documentation-only)`
 `MUTATION_POST_COMMIT_INVOCATION_HEAD=4cd262f342c5a6c321253d37d1faf0247dac1d60`
 `MUTATION_POST_COMMIT_REPORT_WRITTEN=false`
 `MUTATION_BASELINE_SOURCE=current HEAD (default)`
@@ -84,7 +85,7 @@ Surface counts remain separate: backend `8/1/1/0` (KILLED/EQUIVALENT/INVALID/SUR
 - Android: `testDebugUnitTest` BUILD SUCCESSFUL; 26 actionable tasks, 1 executed.
 - MySQL-backed suite: `BLOCKED/NOT_EXECUTED`, `ECONNREFUSED 127.0.0.1:33061`; no DB PASS is claimed.
 - External/device boundaries: PCA-15 remains blocked by missing macOS/Xcode/physical-device validation; no deployment or Azure action was performed.
-- CI for pushed source/evidence head `4cd262f342c5a6c321253d37d1faf0247dac1d60`: run `34723720821` / `283`, 23 jobs total, 21 green, 2 red, 0 skipped/cancelled. The red jobs were iOS build/unit tests and the dependency vulnerability audit. The dependency audit failure was not reproducible locally across all six audited workspaces (all exited 0 at the HIGH/CRITICAL threshold), and no dependency manifest or lockfile changed in this correction; a fresh metadata-only CI observation is required before final re-review.
+- CI for validated final evidence metadata head `4bfaf727c2aea9c20a59a6fae3778cc1f363aa4f`: run `34724290273` / `284`, 23 jobs total, 22 green, 1 red, 0 skipped/cancelled; the only red job is the known iOS build/unit-test boundary. The prior run 283 dependency-audit red was not reproducible locally across all six audited workspaces and the fresh run passed that gate.
 
 ## G-41
 
