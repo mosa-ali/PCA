@@ -13,9 +13,9 @@ This is a request for independent review of the engineering acceptance correctio
 ## Evidence fields
 
 ```text
-FINAL_IMPLEMENTATION_SHA=15baf12ffb49c79e449f59578d6549e2fa0e7d8c (implementation correction commit; evidence package commit follows)
-REMOTE_HEAD=TO_BE_RECORDED_AFTER_PUSH
-WORKTREE=DIRTY_ONLY_FOR_GENERATED_MUTATION_REPORT_AT_HANDOFF
+FINAL_IMPLEMENTATION_SHA=15baf12ffb49c79e449f59578d6549e2fa0e7d8c (implementation correction commit; evidence package head recorded separately)
+REMOTE_HEAD=32b6636d14235b331d273c1c7e3ceadde0e80b6f (verified origin/pca-dev before this metadata-only update)
+WORKTREE=CLEAN_BEFORE_METADATA_ONLY_UPDATE
 
 A012_BEFORE=PRODUCTION_REACHABLE
 A012_AFTER=NON_PRODUCTION_SCAFFOLDING_OR_TEST_ONLY
@@ -40,7 +40,7 @@ ROOT_CAUSE_PROVEN=NO
 WEB_RULE_TESTS=26/26 PASS focused WebRuleStore/routes/production-wiring tests; backend build PASS
 PRIVACY_SENTINELS=PASS synthetic A012 domain not persisted/logged/audited/telemetered/echoed; repository/security/quality sentinels PASS
 FULL_TEST_RESULTS=backend npm test PASS (run-tests 2349/2349, 0 failed, 0 skipped); parent-web 138 files/999 tests PASS; platform-admin-web 32 files/155 tests PASS; public-web 6/6 PASS; Android testDebugUnitTest BUILD SUCCESSFUL; MySQL BLOCKED ECONNREFUSED 127.0.0.1:33061; validators/contracts/release controls PASS
-CI_RESULTS=TO_BE_RECORDED_AFTER_PUSH; iOS known external blocker remains unchanged
+CI_RESULTS=run 34720435317 / 281 for head 32b6636: 23 jobs, 22 green, 1 red, 0 skipped/cancelled; only red job iOS build and unit tests; Android completed green; iOS external boundary remains unresolved
 
 P0_OPEN=0
 P1_OPEN=0 engineering correction items; external gates remain separately unresolved

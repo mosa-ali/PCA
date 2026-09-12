@@ -66,6 +66,7 @@ Surface counts remain separate: backend `8/1/1/0` (KILLED/EQUIVALENT/INVALID/SUR
 - Android: `testDebugUnitTest` BUILD SUCCESSFUL; 26 actionable tasks, 1 executed.
 - MySQL-backed suite: `BLOCKED/NOT_EXECUTED`, `ECONNREFUSED 127.0.0.1:33061`; no DB PASS is claimed.
 - External/device boundaries: PCA-15 remains blocked by missing macOS/Xcode/physical-device validation; no deployment or Azure action was performed.
+- CI for pushed evidence head `32b6636d14235b331d273c1c7e3ceadde0e80b6f`: run `34720435317` / `281`, 23 jobs total, 22 green, 1 red, 0 skipped/cancelled; the only red job is the known iOS build/unit-test boundary.
 
 ## G-41
 
