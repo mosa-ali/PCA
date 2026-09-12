@@ -13,39 +13,39 @@ This is a request for independent review of the engineering acceptance correctio
 ## Evidence fields
 
 ```text
-FINAL_IMPLEMENTATION_SHA=
-REMOTE_HEAD=
-WORKTREE=
+FINAL_IMPLEMENTATION_SHA=15baf12ffb49c79e449f59578d6549e2fa0e7d8c (implementation correction commit; evidence package commit follows)
+REMOTE_HEAD=TO_BE_RECORDED_AFTER_PUSH
+WORKTREE=DIRTY_ONLY_FOR_GENERATED_MUTATION_REPORT_AT_HANDOFF
 
 A012_BEFORE=PRODUCTION_REACHABLE
 A012_AFTER=NON_PRODUCTION_SCAFFOLDING_OR_TEST_ONLY
-A012_SOURCE_CHANGE_REQUIRED=
-A012_PRODUCTION_READABLE_STORE=
-A012_FAIL_CLOSED=
-A012_PRIVACY_RESULT=
+A012_SOURCE_CHANGE_REQUIRED=YES
+A012_PRODUCTION_READABLE_STORE=0 central backend store; Android local durable working set separate
+A012_FAIL_CLOSED=YES; 503 not_configured without approved service/repository
+A012_PRIVACY_RESULT=FAIL_CLOSED_COMPLIANT_WITH_PCA-SEC-023_PENDING_REVIEWED_ENCRYPTED_IMPLEMENTATION
 
-MUTATION_DEFAULT_AFTER_FINAL_COMMIT=
-MUTATION_BASELINE_MODEL=
-MUTATION_ARTIFACT_HEAD=
-MUTATION_COUNTS=
-MUTATION_SURVIVED=
+MUTATION_DEFAULT_AFTER_FINAL_COMMIT=PASS; no-argument run after implementation commit
+MUTATION_BASELINE_MODEL=current HEAD (default); manifest entry SHA informational only
+MUTATION_ARTIFACT_HEAD=15baf12ffb49c79e449f59578d6549e2fa0e7d8c
+MUTATION_COUNTS=aggregate KILLED:22,EQUIVALENT:3,INVALID:3,SURVIVED:0; backend real 8/1/1/0; parent-web static 8/1/1/0; Android static 6/1/1/0
+MUTATION_SURVIVED=0; valid survivors 0; ENVIRONMENT_BLOCK=null; manifest anomalies []
 
-PCA15=
-ALERT_LOGGER=
-A031=
-G41=
-PRODUCT_DEFECT_REPRODUCED=
-ROOT_CAUSE_PROVEN=
+PCA15=EXTERNALLY_BLOCKED_XCODE_MACOS_DEVICE
+ALERT_LOGGER=BOUNDED_OBSERVABLE_NO_RAW_PAYLOAD
+A031=EXISTING_OWNER_DECISION_RETENTION_OWNER_RBAC_D9
+G41=UNRESOLVED
+PRODUCT_DEFECT_REPRODUCED=NO
+ROOT_CAUSE_PROVEN=NO
 
-WEB_RULE_TESTS=
-PRIVACY_SENTINELS=
-FULL_TEST_RESULTS=
-CI_RESULTS=
+WEB_RULE_TESTS=26/26 PASS focused WebRuleStore/routes/production-wiring tests; backend build PASS
+PRIVACY_SENTINELS=PASS synthetic A012 domain not persisted/logged/audited/telemetered/echoed; repository/security/quality sentinels PASS
+FULL_TEST_RESULTS=backend npm test PASS (run-tests 2349/2349, 0 failed, 0 skipped); parent-web 138 files/999 tests PASS; platform-admin-web 32 files/155 tests PASS; public-web 6/6 PASS; Android testDebugUnitTest BUILD SUCCESSFUL; MySQL BLOCKED ECONNREFUSED 127.0.0.1:33061; validators/contracts/release controls PASS
+CI_RESULTS=TO_BE_RECORDED_AFTER_PUSH; iOS known external blocker remains unchanged
 
-P0_OPEN=
-P1_OPEN=
-P2_OPEN=
-UNEXPLAINED_ENGINEERING_ITEMS=
+P0_OPEN=0
+P1_OPEN=0 engineering correction items; external gates remain separately unresolved
+P2_OPEN=0 for this correction package
+UNEXPLAINED_ENGINEERING_ITEMS=0; G41 is explicitly explained as unresolved/no proven cause
 
 READY_FOR_FABLE_REREVIEW=YES
 ```

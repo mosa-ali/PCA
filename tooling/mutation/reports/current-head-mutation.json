@@ -10,12 +10,13 @@
     "android": "STATIC_STRING_ASSERTION_ONLY"
   },
   "mission": "CURRENT_HEAD_MUTATION",
-  "mutationHead": "f49b55e6e729f03262f9afbf9336191101b28aa6",
-  "entrySha": "f49b55e6e729f03262f9afbf9336191101b28aa6",
-  "baseline": "f49b55e6e729f03262f9afbf9336191101b28aa6",
-  "baselineSource": "--baseline",
+  "mutationHead": "15baf12ffb49c79e449f59578d6549e2fa0e7d8c",
+  "entrySha": "15baf12ffb49c79e449f59578d6549e2fa0e7d8c",
+  "baseline": "15baf12ffb49c79e449f59578d6549e2fa0e7d8c",
+  "baselineSource": "current HEAD (default)",
+  "manifestEntrySha": "d6981411c3e38ba7288b99449afc26022a22e0e7",
   "worktreeCleanAtRun": false,
-  "generatedAtUtc": "2026-09-08T15:07:48.584Z",
+  "generatedAtUtc": "2026-09-12T21:24:30.780Z",
   "boundedRequirements": {
     "PCA-NFR-014": {
       "boundedClaim": "Default-off telemetry and no hidden ingestion surface; separate consent implementation remains out of scope because the entry tree has no shipped opt-in feature.",
@@ -152,7 +153,7 @@
       "equivalenceReason": "Buffer.length is an integer, so < 1025 is identical to <= 1024 over the valid input domain.",
       "classification": "EQUIVALENT",
       "method": "real-test-suite-execution",
-      "evidence": "lied ok 2345 - labelForModeBEvent defaults to the exact pre-existing English label when no locale is supplied --- duration_ms: 0.4037 type: 'test' ... # Subtest: labelForModeBEvent produces a genuine Arabic label for every event type when locale=ar is requested, with no English fallback leaking in ok 2346 - labelForModeBEvent produces a genuine Arabic label for every event type when locale=ar is requested, with no English fallback leaking in --- duration_ms: 1.6756 type: 'test' ... 1..2346 # tests 2346 # suites 0 # pass 2342 # fail 4 # cancelled 0 # skipped 0 # todo 0 # duration_ms 124741.0143"
+      "evidence": "pplied ok 2348 - labelForModeBEvent defaults to the exact pre-existing English label when no locale is supplied --- duration_ms: 0.394 type: 'test' ... # Subtest: labelForModeBEvent produces a genuine Arabic label for every event type when locale=ar is requested, with no English fallback leaking in ok 2349 - labelForModeBEvent produces a genuine Arabic label for every event type when locale=ar is requested, with no English fallback leaking in --- duration_ms: 1.5749 type: 'test' ... 1..2349 # tests 2349 # suites 0 # pass 2345 # fail 4 # cancelled 0 # skipped 0 # todo 0 # duration_ms 49329.2193"
     },
     {
       "id": "B-FR137-INVALID-001",
@@ -172,7 +173,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"visible disclosure key set changed\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"visible disclosure key set changed\"]}"
     },
     {
       "id": "W-NFR060-002",
@@ -181,7 +182,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"not-visible disclosure key set changed\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"not-visible disclosure key set changed\"]}"
     },
     {
       "id": "W-NFR060-003",
@@ -190,7 +191,7 @@
       "source": "src/App.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing transparency route: path=\\\"privacy/transparency\\\" element={<Transparency />}\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing transparency route: path=\\\"privacy/transparency\\\" element={<Transparency />}\"]}"
     },
     {
       "id": "W-NFR014-001",
@@ -199,7 +200,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"hidden browser collection marker: sendBeacon\",\"hidden browser collection marker: navigator.sendBeacon\",\"hidden browser collection marker: telemetry\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"hidden browser collection marker: sendBeacon\",\"hidden browser collection marker: navigator.sendBeacon\",\"hidden browser collection marker: telemetry\"]}"
     },
     {
       "id": "W-NFR060-004",
@@ -208,7 +209,7 @@
       "source": "src/pages/privacy/Transparency.tsx",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing E2EE disclosure: t('transparency.encryptionNote')\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing E2EE disclosure: t('transparency.encryptionNote')\"]}"
     },
     {
       "id": "W-NFR060-EQUIV-001",
@@ -219,7 +220,7 @@
       "equivalenceReason": "Whitespace-only destructuring change preserves the compiled behavior.",
       "classification": "EQUIVALENT",
       "checks": 0,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"status\":\"PASS\"}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"status\":\"PASS\"}"
     },
     {
       "id": "W-NFR060-INVALID-001",
@@ -230,7 +231,7 @@
       "invalidReason": "The malformed function declaration is rejected by the source-shape validator.",
       "classification": "INVALID",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing valid Transparency function declaration: export default function Transparency()\"]}",
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing valid Transparency function declaration: export default function Transparency()\"]}",
       "method": "source-shape invalidity check"
     },
     {
@@ -240,7 +241,7 @@
       "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing non-dismissable monitoring notification: .setOngoing(true)\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing non-dismissable monitoring notification: .setOngoing(true)\"]}"
     },
     {
       "id": "A-NFR060-002",
@@ -249,7 +250,7 @@
       "source": "app/src/main/java/org/pca/app/feature/webprotection/vpn/WebProtectionVpnService.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing DNS-only route: .addRoute(TUNNEL_DNS_ADDRESS, 32)\",\"forbidden general packet route: .addRoute(\\\"0.0.0.0\\\", 0)\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing DNS-only route: .addRoute(TUNNEL_DNS_ADDRESS, 32)\",\"forbidden general packet route: .addRoute(\\\"0.0.0.0\\\", 0)\"]}"
     },
     {
       "id": "A-NFR014-001",
@@ -258,7 +259,7 @@
       "source": "app/src/main/java/org/pca/app/feature/wellbeing/ports/WellbeingFeedbackSyncPort.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"forbidden wellbeing hidden transport/logging marker: println(\",\"forbidden wellbeing hidden transport/logging marker: telemetry\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"forbidden wellbeing hidden transport/logging marker: println(\",\"forbidden wellbeing hidden transport/logging marker: telemetry\"]}"
     },
     {
       "id": "A-NFR060-EQUIV-001",
@@ -269,7 +270,7 @@
       "equivalenceReason": "Both Kotlin constant expressions evaluate to the same notification id and do not change disclosure or privacy behavior.",
       "classification": "EQUIVALENT",
       "checks": 0,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"status\":\"PASS\"}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"status\":\"PASS\"}"
     },
     {
       "id": "A-NFR060-INVALID-001",
@@ -280,7 +281,7 @@
       "invalidReason": "The malformed Kotlin superclass declaration is rejected by the source-shape validator.",
       "classification": "INVALID",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing valid VPN service declaration: class WebProtectionVpnService : VpnService()\"]}",
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing valid VPN service declaration: class WebProtectionVpnService : VpnService()\"]}",
       "method": "source-shape invalidity check"
     },
     {
@@ -308,7 +309,7 @@
       "source": "src/api/real/realSafeZoneClient.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing opaque Safe Zone patch validation: validateOpaqueSafeZonePatch(patch);\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing opaque Safe Zone patch validation: validateOpaqueSafeZonePatch(patch);\"]}"
     },
     {
       "id": "W-FR091-002",
@@ -317,7 +318,7 @@
       "source": "src/api/real/realSafeZoneClient.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing Safe Zone update family binding: async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {\\n assertSafeZoneIdentifier(familyId);\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing Safe Zone update family binding: async update(familyId: string, zoneId: string, patch: SafeZonePatch): Promise<SafeZone> {\\n assertSafeZoneIdentifier(familyId);\"]}"
     },
     {
       "id": "W-FR091-003",
@@ -326,7 +327,7 @@
       "source": "src/api/safeZonePolicyAuthoring.ts",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\parent-web\",\"failures\":[\"missing Safe Zone patch nonce length boundary: if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64))) {\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\parent-web\",\"failures\":[\"missing Safe Zone patch nonce length boundary: if (value.nonceB64 !== undefined && (typeof value.nonceB64 !== 'string' || !/^[A-Za-z0-9_-]{16,86}$/.test(value.nonceB64))) {\"]}"
     },
     {
       "id": "A-FR063-001",
@@ -335,7 +336,7 @@
       "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing Safe Zone payload delimiter rejection: label.contains('|') || label.contains('\\\\n')\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing Safe Zone payload delimiter rejection: label.contains('|') || label.contains('\\\\n')\"]}"
     },
     {
       "id": "A-FR063-002",
@@ -344,7 +345,7 @@
       "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing Safe Zone recipient key-epoch authorization: authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing Safe Zone recipient key-epoch authorization: authority.isRecipientAuthorized(envelope.familyId, localEndpointId, envelope.trustSetEpoch, envelope.keyEpoch)\"]}"
     },
     {
       "id": "A-FR063-003",
@@ -353,7 +354,7 @@
       "source": "app/src/main/java/org/pca/app/runtime/location/geofence/SafeZonePolicyReceiver.kt",
       "classification": "KILLED",
       "checks": 1,
-      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-kCbuAC\\\\android\",\"failures\":[\"missing Safe Zone sender key-epoch authorization: envelope.trustSetEpoch,\\n envelope.keyEpoch,\"]}"
+      "evidence": "{\"root\":\"C:\\\\Users\\\\mdrwe\\\\AppData\\\\Local\\\\Temp\\\\pca-r3-current-head-mutation-S7ZfOd\\\\android\",\"failures\":[\"missing Safe Zone sender key-epoch authorization: envelope.trustSetEpoch,\\n envelope.keyEpoch,\"]}"
     }
   ]
 }
