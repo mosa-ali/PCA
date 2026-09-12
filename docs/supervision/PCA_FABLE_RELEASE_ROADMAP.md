@@ -164,15 +164,16 @@ gates `PARENT_C` family functionality and `ANDROID_D`, and its lead time is long
 
 ### STEP 8 — Durability components and `resolveEnvelopeContext`, then PARENT_C
 
-Six components are wired in-memory in the production composition root with **no
+Five components remain wired in-memory in the production composition root with **no
 MySQL sibling anywhere** — independent build work that crypto activation does not
-fix:
+fix. The backend parent web-rule surface is listed separately because its
+production composition was corrected to fail closed:
 
 | Component | `main.ts` | Consequence on restart |
 |---|---|---|
 | `InMemoryFamilyAuditRepository` | `:278` | The shared audit store evaporates |
 | `InMemoryDeleteNowLedger` | `:279` | **The record of a deletion the parent was told happened is lost** |
-| `InMemoryWebRuleRepository` | `:579` | Parent-authored web filtering rules lost |
+| Backend parent web-rule authoring | production composition intentionally unconfigured | Route returns `503 not_configured`; approved encrypted durable delivery/storage remains externally gated |
 | `InMemoryChildRequestRepository` | `:554` | Bonus-time requests lost |
 | `BonusGrantLedger` | `:556` | Granted bonus time lost |
 | `resolveEnvelopeContext` placeholder | `:793-799` | Empty sender key, zero epochs |

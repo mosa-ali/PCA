@@ -15,14 +15,11 @@
  * web allow/deny rule is a plain, non-E2EE RULE DEFINITION -- exactly like
  * eyeProtectionRoutes.ts's reminders-enabled setting -- so this file never
  * parses or relays an opaque encrypted envelope: it reads/writes the
- * canonical (domain, listType) rule directly through WebRuleService, which
- * already stores it in a real, tested, family-scoped repository
- * (WebRuleStore.ts's own doc comment: "Only a deterministic in-memory
- * implementation exists today -- MySQL persistence is a later slice").
- * WebFilterEngine already consumes this SAME repository for the live
- * domain-decision pipeline (doc 14), so storing the definition here is not
- * a new plaintext exposure -- it is the identical store the read/decision
- * path already safely uses.
+ * canonical (domain, listType) rule directly through WebRuleService. The
+ * service is deliberately absent from production composition because the
+ * only current repository is an in-memory test fixture; this route therefore
+ * fails closed with 503 until reviewed encrypted policy storage and delivery
+ * exist. WebFilterEngine is separately testable and is not wired by main.ts.
  *
  * What this route does NOT do: it never attempts to push the resulting
  * rule set down to a child device for offline VPN/DNS enforcement -- that

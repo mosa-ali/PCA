@@ -113,9 +113,9 @@ async function gitWorktreeIsClean() {
 // baseline could only ever be changed by editing a file.
 //
 // So it is now an input:  --baseline <sha> | --baseline=<sha> | --baseline HEAD
-// or PCA_MUTATION_BASELINE. With nothing supplied it still falls back to the
-// manifest's entrySha, so the default behaviour is unchanged. The resolved baseline
-// and where it came from are both recorded in the report.
+// or PCA_MUTATION_BASELINE. With nothing supplied it resolves to the current
+// HEAD, so a literal manifest SHA cannot become stale after a later commit.
+// The resolved baseline and where it came from are both recorded in the report.
 function resolveRequestedBaseline() {
   const args = process.argv.slice(2);
   let requested = process.env.PCA_MUTATION_BASELINE ?? null;
@@ -391,12 +391,12 @@ const head = await gitHead();
 if (head === null) fail('git rev-parse HEAD failed; this runner requires a git worktree');
 const { requested: requestedBaseline, source: baselineSource } = resolveRequestedBaseline();
 const baseline = requestedBaseline === null
-  ? scope.entrySha
+  ? head
   : (/^HEAD$/i.test(requestedBaseline) ? head : requestedBaseline);
 if (!/^[0-9a-f]{40}$/i.test(baseline)) {
   fail(`baseline must be a full 40-character commit SHA or the literal HEAD, got ${requestedBaseline}`);
 }
-if (head.toLowerCase() !== baseline.toLowerCase()) {
+if (requestedBaseline !== null && !/^HEAD$/i.test(requestedBaseline) && head.toLowerCase() !== baseline.toLowerCase()) {
   fail(`runner must execute at baseline ${baseline}, found ${head}. Check that commit out, or pass --baseline ${head} / --baseline HEAD to run against the current one.`);
 }
 const worktreeClean = await gitWorktreeIsClean();
@@ -473,7 +473,8 @@ const report = {
   // How the baseline for this run was chosen, so a reader of the artifact can tell a
   // manifest-pinned run from an explicitly-parameterised one without re-deriving it.
   baseline,
-  baselineSource: baselineSource ?? 'mutation-scope.json:entrySha',
+  baselineSource: baselineSource ?? 'current HEAD (default)',
+  manifestEntrySha: scope.entrySha,
   // The runner mutates COPIES of the working tree, not of the commit. A dirty worktree
   // therefore means these results describe HEAD plus uncommitted edits, which is a
   // materially different claim -- record it rather than let the report imply otherwise.

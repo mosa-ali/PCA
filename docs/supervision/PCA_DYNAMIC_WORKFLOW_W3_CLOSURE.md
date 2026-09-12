@@ -275,15 +275,15 @@ READABLE_BROWSING_HISTORY_CENTRAL         = 0
 READABLE_PRECISE_LOCATION_HISTORY_CENTRAL = 0
 ```
 
-A candidate durability fix for `WebRuleRepository` (parent-authored web
-allow/deny domain rules) was deliberately **NOT implemented** this wave: its
-`domain` column would collide with `schema-privacy.mysql.test.mjs`'s own
-`PROHIBITED_TERMS` denylist (which includes the literal substring `domain`,
-by design, to catch exactly this class of surface), and persisting raw
-domain names centrally — even as parent-authored policy rather than passive
-history — is a genuine privacy-architecture question, not a mechanical
-fix. Classified `EXTERNAL_DECISION_REQUIRED`, reported rather than
-worked around or silently skipped.
+A durable central `WebRuleRepository` for parent-authored web allow/deny rules
+remains **NOT implemented**: persisting raw domain names centrally is a
+privacy-architecture question, not a mechanical fix. The later A012 correction
+removed the TypeScript in-memory repository from production composition and
+made parent web-rule authoring fail closed with `503 not_configured` until an
+approved encrypted delivery/storage mechanism exists. The Android local
+`PersistentWebRuleRepository` remains device-local and crypto-gated; it is not a
+central readable backend store. Classified `EXTERNAL_DECISION_REQUIRED`,
+reported rather than worked around or silently skipped.
 
 ## Release status
 

@@ -2,7 +2,12 @@
 
 **Backend mutants execute for real; Parent Web and Android mutants do not.**
 `run-mutation.mjs` copies each package to a temp directory and applies one
-declared string mutation. For `surface: "backend"` mutants
+declared string mutation. By default it runs against the current `HEAD` so the
+harness does not go stale the moment the repo moves forward. The manifest's
+`entrySha` is informational provenance only; default execution does not use it
+as a baseline or compare `HEAD` to it. A specific commit
+may still be pinned with `--baseline <sha>` or `--baseline HEAD` when a
+specific provenance is required. For `surface: "backend"` mutants
 (`classifyBackendMutant`), it then compiles the mutated copy (`tsc`, exactly
 what `npm run build` does) and, if it compiles, runs the ENTIRE real non-DB
 backend test suite (`scripts/run-tests.mjs`, the same one `npm test` runs)

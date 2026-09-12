@@ -7,6 +7,9 @@
 **Remote HEAD after push:** `574483852fa9c10a1c59e81399df37970eef310e` (`origin/pca-dev`, fast-forward from `f49b55e`; `origin/main` untouched)
 **Worktree:** clean at final commit; `stash@{0}` (48 files, pre-existing, unrelated to this pass) preserved untouched throughout — never touched, popped, or dropped
 
+## Correction addendum (2026-09-13)
+The historical Section B row that described FABLE-A012 as OWNER_DECISION and the original two-option framing are superseded by this correction package. The verified classification is PRODUCTION_REACHABLE before the source fix and NON_PRODUCTION_SCAFFOLDING_OR_TEST_ONLY after it: production no longer constructs the readable TypeScript in-memory repository, and the route fails closed with 503 not_configured until approved encrypted durable policy delivery/storage exists. See docs/supervision/PCA_ENGINEERING_ACCEPTANCE_CORRECTIONS_2026-09-09.md; the independent FABLE rejection document remains unchanged historical evidence.
+
 ```
 IMPLEMENTER = Claude Sonnet 5 (model id claude-sonnet-5)
 ```
@@ -89,13 +92,14 @@ None of this pass's changes altered a tracked requirement's `SOURCE_COMPLETE`/`V
 | Repository / quality / security tooling | `Invoke-RepositoryChecks.ps1` PASS (2494 files); `Test-RepositoryChecks.mjs` PASS incl. negative control; `Invoke-QualityChecks.ps1` PASS; `Invoke-QualityToolingTests.ps1` PASS; `Invoke-SecurityChecks.ps1 -EmitDependencyInventory` PASS; `Test-SecurityChecks.mjs` PASS incl. 11 negative controls |
 | Dependency audit (6 npm workspaces) | backend / parent-sdk×3: 0 vulnerabilities; parent-web / platform-admin-web: fixed (see section C) — all 6 now pass `npm audit --audit-level=high` |
 | public-web | `npm run check` PASS; `npm test` 6/6 pass |
-| Mutation harness (backend, real execution) | 22 KILLED / 3 EQUIVALENT / 3 INVALID / 0 SURVIVED / 0 manifestAnomalies |
+| Mutation harness — backend (real execution, 10 mutants) | 8 KILLED / 1 EQUIVALENT / 1 INVALID / 0 SURVIVED |
+| Mutation harness — parent-web (static assertions, 10 mutants) + Android (static assertions, 8 mutants) | 14 KILLED / 2 EQUIVALENT / 2 INVALID / 0 SURVIVED; not real test execution |
 
 ---
 
 ## F. G-41 final classification
 
-**FLAKY_WITH_ROOT_CAUSE.**
+**UNRESOLVED.**
 
 - **Code-level proof of no logical defect:** `parent-web/src/api/dev/devBillingClient.ts`'s `simulateServerPaymentConfirmation` sets `state: 'APPROVED'` and creates the invoice (`invoices = [invoice, ...invoices]`) in the same synchronous JS execution block with no `await` between them — it is logically impossible for the fixture to let the UI observe "Approved" while the invoice is missing from its in-memory store. `parent-web/src/hooks/useAsync.ts` has no caching layer that could serve stale invoice data (every mount re-fetches). No confusable "Approved" text exists elsewhere on the `CheckoutReturn` page at the relevant moment (`subscription.requestState.APPROVED` is the only string, and the pending/confirming states use distinct copy).
 - **Reproduction attempt:** ran the full `billing.spec.ts` file 20 times (140 test executions total) at `--retries=0 --workers=2`, deliberately alongside the full backend test suite (~90s, genuinely CPU-heavy) running concurrently in the background — the same class of adversarial condition (repository scans running concurrently) present when the original single failure occurred. **140/140 passed, 0 failures.**
@@ -107,7 +111,7 @@ None of this pass's changes altered a tracked requirement's `SOURCE_COMPLETE`/`V
 
 ## G. Unresolved items (repository-side)
 
-None outstanding from this pass's scope. All 5 IMPLEMENT_NOW items are closed and verified; G-41 is classified with a definitive root cause.
+G-41 remains unresolved because the causal mechanism was not directly captured or proven. The mutation evidence package and A012 production boundary remain correction items for this re-review request.
 
 ## H. External gates (unchanged by this pass)
 

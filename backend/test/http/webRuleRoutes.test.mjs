@@ -47,10 +47,11 @@ function trustedRoleResolver() {
   return new FamilyTrustSetRoleResolver(store);
 }
 
-function buildApp({ webRuleService, authorization, configured = true } = {}) {
+function buildApp({ webRuleService, authorization, configured = true, sideEffectCalls = [], logs = [] } = {}) {
   const sessions = new Map([['session-owner', { accountId: 'acct-owner', familyId: FAMILY }]]);
   const parentAccountService = {
     async readSession(token) {
+      sideEffectCalls.push('parent-account-session-read');
       const session = sessions.get(token);
       if (!session) throw new Error('unauthorized');
       return session;
@@ -62,6 +63,7 @@ function buildApp({ webRuleService, authorization, configured = true } = {}) {
   ]);
   const deviceSessionService = {
     async requireActorDeviceInFamily(token, expectedFamilyId) {
+      sideEffectCalls.push('device-session-read');
       const identity = deviceTokens.get(token);
       if (!identity || identity.familyId !== expectedFamilyId) {
         const err = new Error('unauthorized');
@@ -72,7 +74,7 @@ function buildApp({ webRuleService, authorization, configured = true } = {}) {
     },
   };
 
-  const app = Fastify();
+  const app = Fastify({ logger: { stream: { write(chunk) { logs.push(String(chunk)); } } } });
   registerWebRuleRoutes(app, {
     parentAccountService,
     deviceSessionService,
@@ -267,7 +269,14 @@ test('missing actor-device-session bearer token is rejected with 401, never trea
 
 test('the mutation route fails closed with 503 when not configured, rather than a silent allow', async () => {
   const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
-  const { app } = buildApp({ webRuleService: undefined, authorization, configured: false });
+  const sideEffectCalls = [];
+  const logs = [];
+  const unapprovedService = {
+    async setParentRule() { sideEffectCalls.push('persistence'); },
+    async removeParentRule() { sideEffectCalls.push('persistence'); },
+    async listParentRules() { sideEffectCalls.push('persistence'); return []; },
+  };
+  const { app } = buildApp({ webRuleService: unapprovedService, authorization, configured: false, sideEffectCalls, logs });
   try {
     const response = await app.inject({
       method: 'POST',
@@ -276,6 +285,34 @@ test('the mutation route fails closed with 503 when not configured, rather than 
       payload: { domain: 'example.com', listType: 'DENY' },
     });
     assert.equal(response.statusCode, 503);
+  } finally {
+    await app.close();
+  }
+});
+
+test('production fail-closed boundary does not persist, log, audit, or echo a synthetic domain', async () => {
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const sideEffectCalls = [];
+  const logs = [];
+  const unapprovedService = {
+    async setParentRule() { sideEffectCalls.push('persistence'); },
+    async removeParentRule() { sideEffectCalls.push('persistence'); },
+    async listParentRules() { sideEffectCalls.push('persistence'); return []; },
+  };
+  const { app } = buildApp({ webRuleService: unapprovedService, authorization, configured: false, sideEffectCalls, logs });
+  const sentinel = 'a012-synthetic-never-persisted.invalid';
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/children/child-1/web-rules`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { domain: sentinel, listType: 'DENY' },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.body.includes(sentinel), false);
+    assert.deepEqual(response.json(), { error: 'not_configured' });
+    assert.deepEqual(sideEffectCalls, [], 'fail-closed production boundary must not reach persistence, audit, telemetry, or auth side effects');
+    assert.equal(logs.some((entry) => entry.includes(sentinel)), false, 'Fastify logs must not contain the parent-authored domain');
   } finally {
     await app.close();
   }

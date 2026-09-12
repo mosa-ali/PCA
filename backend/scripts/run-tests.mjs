@@ -83,6 +83,7 @@ const files = [
   "test/web/canonicalize.test.mjs",
   "test/web/policy.test.mjs",
   "test/web/WebRuleStore.test.mjs",
+  "test/web/productionWiring.test.mjs",
   "test/web/SignedRulePackageConsumer.test.mjs",
   "test/web/WebFilterEngine.test.mjs",
   "test/safebrowser/policy.test.mjs",

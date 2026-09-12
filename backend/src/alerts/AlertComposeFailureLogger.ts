@@ -1,18 +1,17 @@
 /**
  * FABLE-A013: `runtimeSyncRoutes.ts`'s `emitProtectionDegradedAlert` and
- * `InvitationService.emitAlert` both swallow a failed `producer.produce()`
- * call with a bare `catch {}` -- deliberately, since alert emission must
- * stay non-blocking/best-effort (see each call site's own doc comment).
- * Today that failure is ALWAYS the same static, variable-free string from
- * `RejectingOpaqueProtectionAlertComposer` (no reviewed production
- * alert-payload composer exists yet, PCA-DEC-020), so every real-world
- * invocation of this best-effort path is currently silently dropped with
- * no operator-visible signal at all. This gives it one, following the same
- * bounded/console-only convention as `CommercialMaintenanceLogger`
- * (commercialmaintenance/types.ts) and `ShutdownLogger`
- * (runtime/gracefulShutdown.ts): only bounded identifiers and
- * `error.message`, never a raw error object (which could carry
- * request-specific detail future composers might attach).
+ * `InvitationService.emitAlert` both swallow a failed alert-emission path
+ * with a best-effort `catch {}`. This logger intentionally records only a
+ * bounded event name plus structured identifiers (for example family and
+ * device IDs) and the surfaced `error.message`; it does not log the raw
+ * error object or any request-specific payload details.
+ *
+ * The exact failure source is not fixed to a single static composer string:
+ * it may arise from the alert composer itself or from an upstream resolve/
+ * persistence step before composition finishes (for example a resolver or
+ * persistence failure that still triggers the same best-effort fallback).
+ * The invariant here is operational safety and bounded logging, not a claim
+ * that every such failure is literally the same literal string.
  */
 export interface AlertComposeFailureLogger {
   warn(event: string, detail: Readonly<Record<string, unknown>>): void;
