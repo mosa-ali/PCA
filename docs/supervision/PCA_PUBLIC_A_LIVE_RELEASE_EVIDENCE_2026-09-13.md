@@ -15,7 +15,7 @@ ROLLBACK_IMAGE_REFERENCE=pcasafe.azurecr.io/pca-backend:5dacd84 (predeploy targe
 
 EN_AR_PARITY=PASS; build reported EN 193 / AR 193 exact key parity; live EN and AR route set returned 200
 ACCESSIBILITY=PASS automated container verifier (301/301); manual in-app-browser session unavailable, so no additional visual claim is made
-RESPONSIVE=PASS automated Chromium-backed container checks; desktop/tablet/mobile visual sign-off remains owner/UAT evidence
+RESPONSIVE=PASS live Chromium checks 48/48 (16 EN/AR routes at 375px, 768px, and 1280px; no horizontal overflow or console errors); visual owner sign-off remains separate
 LIVE_ROUTES=PASS; 16/16 published EN/AR routes returned 200; unknown route returned 404
 HTTPS=PASS; httpsOnly=true, HTTPS origin served successfully, no redirect defect observed
 TLS=PASS; www.pcasafe.com SNI binding active with thumbprint 2E230453442F1A1C59B79FB1CE04AA2C0082B18E, minimum TLS 1.2
