@@ -24,7 +24,6 @@ import { registerPlatformAdminAdminUserRoutes } from './adminUserRoutes.js';
 import { registerPlatformAdminAuditRoutes } from './auditRoutes.js';
 import { registerPlatformAdminSettingsRoutes } from './settingsRoutes.js';
 import { registerPlatformAdminReleaseRoutes } from './releaseRoutes.js';
-import { registerDbRuntimeDiagnosticRoutes } from './dbRuntimeDiagnosticRoutes.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import type { PlatformAdminAccountService } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
 import type { PlatformAdminEntitlementService } from '../../../platformadmin/entitlements/PlatformAdminEntitlementService.js';
@@ -56,7 +55,6 @@ export interface PlatformAdminOperationalRoutesDeps {
 }
 
 export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, deps: PlatformAdminOperationalRoutesDeps): void {
-  registerDbRuntimeDiagnosticRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminEntitlementRoutes(app, {
