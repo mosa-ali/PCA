@@ -350,3 +350,47 @@ pcaSafe=UNCHANGED
 Session 1 remains stopped. Do not start Parent C or redeploy `pcaSafe` until the
 owner supplies the required controlled identity/inbox, an approved DB runtime
 diagnostic path, and successful browser verification of the Public header.
+
+## Supervisor authorization — DB Diagnostic Path B (2026-09-13)
+
+The authorized Path B safety checks were performed without changing either App
+Service. Azure context resolved to subscription `5f5205e2-4e56-4cea-8ce7-3d408ed1507b`
+and tenant `9d94b9fa-8bd6-420a-9d28-bfe2df02562a`. The `pca` site is running in
+resource group `AppWenPlan` (not `pca-group` as specified by the authorization),
+while `pcaSafe` remains in `pca-group`. The discovered `pca` main container is
+the approved backend digest with system-identity pull and port 4001. Health
+endpoints `/health`, `/health/db`, and `/health/email` each returned 200.
+
+The installed Azure CLI does not recognize `az webapp exec`; therefore an
+authenticated shell could not be established against the current healthy main
+container. Per the Path B instruction, no image mutation, SSH enablement,
+diagnostic endpoint, or alternative execution path was attempted.
+
+```text
+REMOTE_HEAD=e4dc6be1d03772dec31b626bfc522a0d55e30584
+WORKTREE=CLEAN
+DB_DIAGNOSTIC_PATH_B=PLATFORM_BLOCKED; az webapp exec unsupported; pca RG is AppWenPlan, not pca-group
+DB_RUNTIME_ACCOUNT=NOT_OBTAINED
+DB_ACTIVE_DATABASE=NOT_OBTAINED
+DB_TLS_VERSION=NOT_OBTAINED
+DB_TLS_CIPHER=NOT_OBTAINED
+DB_PRIVATE_PATH=NOT_PROVEN_RUNTIME
+DB_SCHEMA_COUNTS=NOT_OBTAINED
+DB_SCHEMA_FINGERPRINT=NOT_OBTAINED; expected sha256:278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f
+DB_MIGRATION_COUNT=NOT_OBTAINED
+DB_LATEST_MIGRATION=NOT_OBTAINED
+MIGRATION_0022_STATUS=NOT_OBTAINED; not executed
+DB_LEAST_PRIVILEGE=NOT_PROVEN
+DB_RUNTIME_PROOF=PARTIAL
+BACKEND_HEALTH=PASS
+AUTH_B=OWNER_TEST_IDENTITY_REQUIRED
+OLD_SMTP_CREDENTIAL_STATUS=ENABLED
+PUBLIC_HEADER_BROWSER_UAT=NOT_VERIFIED
+PUBLIC_HEADER_DEPLOYED=NO
+READY_FOR_PARENT_C=NO
+pcaSafe=UNCHANGED
+```
+
+No secret value, database URI, token, private key, schema mutation, grant
+change, or temporary production resource was created or exposed. Parent C
+remains prohibited.
