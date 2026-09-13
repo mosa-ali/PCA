@@ -29,7 +29,6 @@
   color: var(--pw-text);
   text-decoration: none;
   letter-spacing: -0.02em;
-  margin-inline-end: auto;
   padding-block: var(--pw-space-2);
 }
 
@@ -89,6 +88,9 @@
   display: flex;
   align-items: center;
   gap: var(--pw-space-2);
+  /* Keep the brand and primary navigation grouped; the language control and
+   * mobile disclosure occupy the opposite edge in either writing direction. */
+  margin-inline-start: auto;
 }
 
 @media (min-width: 62rem) {

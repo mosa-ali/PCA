@@ -72,3 +72,32 @@ The in-app browser connector had no connected browser in this session; direct
 Chromium was used for the recorded keyboard/focus checks. Manual visual polish
 and owner legal authorization remain separate gates. No deployment was made to
 the backend App Service, and no Azure resource outside `pcaSafe` was changed.
+
+## Public header correction — source-only continuation (2026-09-13)
+
+The owner-reported header alignment issue was corrected in
+`public-web/src/styles/components.css` without changing route order, markup,
+active-state styling, keyboard behavior, or mobile disclosure logic. The brand
+no longer consumes the flexible trailing margin; the actions group now uses
+`margin-inline-start: auto`, so the brand and primary navigation stay grouped
+and the language/menu controls occupy the opposite edge in both LTR and RTL.
+All spacing remains direction-aware and uses logical properties; no absolute
+positioning or language-specific offsets were introduced.
+
+The local Public build completed successfully (EN/AR 193/193 keys, 16 pages,
+30 contrast pairs passing, zero duplicate content and zero internal metadata).
+The generated stylesheet contains the expected logical-margin rule. The static
+Public tests exited successfully. The required real-Chromium UAT could not be
+started because the execution service rejected the browser command after its
+usage limit was reached; therefore screenshots and measured EN/AR desktop,
+tablet, and mobile geometry are not claimed here. Per the owner instruction,
+the corrected Public image was not built, pushed, or redeployed.
+
+```text
+PUBLIC_HEADER_EN=SOURCE_CORRECTED; local build verified
+PUBLIC_HEADER_AR=SOURCE_CORRECTED; same direction-aware CSS under rtl
+PUBLIC_HEADER_RESPONSIVE=NOT_VERIFIED; Chromium UAT blocked by execution quota
+PUBLIC_HEADER_ACCESSIBILITY=NO_SOURCE_REGRESSION_OBSERVED; Chromium keyboard/focus verification pending
+PUBLIC_HEADER_DEPLOYED=NO; pcaSafe remains on the previously approved immutable image
+PUBLIC_A_DEPLOYMENT=NOT_AUTHORIZED_PENDING_CHROMIUM_EVIDENCE
+```
