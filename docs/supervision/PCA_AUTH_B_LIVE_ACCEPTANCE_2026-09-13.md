@@ -7,11 +7,11 @@ Engineering accepted SHA: `96887770a55c8d4cbf44f7cbc4c9cea5681ac8f2`
 ## Decision
 
 `AUTH_B=BLOCKED`  
-`BACKEND_DEPLOYMENT=NOT_STARTED`  
+`BACKEND_DEPLOYMENT=ATTEMPTED_THEN_ROLLED_BACK`  
 `READY_FOR_PARENT_C=NO`  
 `STOP=YES`
 
-The mandatory SMTP rotation gate failed. Read-only Azure Key Vault metadata shows one enabled `PCA-SMTP-PASSWORD` version, created and updated 2026-09-07, with no replacement version. Its identifier is the known compromised historical version `243780f0c811435fb2c5340f566a677b`. No secret value was read, printed, committed, or deployed.
+The initial run stopped at the SMTP gate. That historical finding was superseded by the verified replacement and the later deployment attempt recorded below. No secret value was read, printed, committed, or deployed.
 
 ### Resume attempt (2026-09-13)
 
@@ -19,9 +19,11 @@ After the owner reported rotation, `git fetch origin` reconciled `pca-dev` at `a
 
 ### Owner clarification recheck (2026-09-13)
 
-The owner stated that rotation had already completed. The Azure context was revalidated: the only enabled subscription is `5f5205e2-4e56-4cea-8ce7-3d408ed1507b` in tenant `9d94b9fa-8bd6-420a-9d28-bfe2df02562a`; that subscription contains `pca-key` in `pca-group`. Both Azure CLI metadata and a direct Key Vault REST metadata query return exactly one version, created/updated 2026-09-07, with ID `243780f0c811435fb2c5340f566a677b` and `enabled=true`. No alternate subscription, vault, or secret name is present. The `pca` setting parses to vault `pca-key`, secret `PCA-SMTP-PASSWORD`, unversioned; `pcaSafe` has no SMTP setting names. A distinct replacement version remains unproven, so no restart, SMTP verification, image build, or deployment was performed.
+The earlier owner clarification recheck was superseded by the verified replacement below.
 
-## Required owner action package
+## Original owner action package (superseded)
+
+The following was the action package from the earlier failed verification. It is retained for traceability only; do not create another credential now that version `749c5cf6bd92407794c2d687c2741e99` is present.
 
 1. In the Mailgun account, create a new SMTP credential for the approved sending identity `support@mail.pcasafe.com` (host `smtp.mailgun.org`, port `587`, STARTTLS / `secure=false`).
 2. Store only the new credential in Azure Key Vault `pca-key`, secret `PCA-SMTP-PASSWORD`, as a new active version. Do not paste the password, API key, token, connection string, or any other secret into chat, tickets, commits, or evidence.
@@ -33,24 +35,32 @@ The old credential must not be used. Do not revoke it until replacement function
 ## Reconciliation
 
 ```text
-APPLICATION_SOURCE_SHA=b0c72f0f089833ce82ac2ed86ad5fad7b8f63c1e
-REMOTE_HEAD=b0c72f0f089833ce82ac2ed86ad5fad7b8f63c1e
+APPLICATION_SOURCE_SHA=21d0d9ff648f0ea995dbeddb55e7e327aee06904
+REMOTE_HEAD=21d0d9ff648f0ea995dbeddb55e7e327aee06904
 WORKTREE=CLEAN
-SMTP_ROTATION=OWNER_ACTION_REQUIRED
+SMTP_ROTATION=PASS
 OLD_SMTP_CREDENTIAL_REUSED=NO
 OLD_SMTP_CREDENTIAL_REVOCATION=NOT_YET; wait for replacement proof
-BACKEND_SOURCE_SHA=NOT_BUILT_DUE_SMTP_GATE
-BACKEND_IMAGE_TAG=NOT_BUILT
-BACKEND_IMAGE_DIGEST=NOT_BUILT
+BACKEND_SOURCE_SHA=21d0d9ff648f0ea995dbeddb55e7e327aee06904
+BACKEND_IMAGE_TAG=auth-b-20260913-sp
+BACKEND_IMAGE_DIGEST=sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
 BACKEND_AZURE_TARGET=pca (AppWenPlan)
 ```
 
-The backend App Service `pca` remains on the anonymous static-site placeholder image. No build, ACR push, or deployment mutation was performed. `pcaSafe` was not inspected for mutation and remains out of scope.
+The backend App Service `pca` is currently restored to the anonymous static-site placeholder after the failed pull. `pcaSafe` was not modified and remains out of scope.
+
+## Verified rotation and deployment attempt (2026-09-13)
+
+The owner supplied replacement version `749c5cf6bd92407794c2d687c2741e99`. Independent Azure CLI and direct Key Vault REST metadata checks confirmed both versions exist, the replacement is enabled and newest, and the `pca` setting is an unversioned reference to `pca-key/PCA-SMTP-PASSWORD`. The historical version remains enabled and was not revoked. No secret value was retrieved or logged.
+
+`SMTP_ROTATION=PASS` was therefore established. `pca` was refreshed before deployment. A fresh backend image was built from source `21d0d9ff648f0ea995dbeddb55e7e327aee06904` and pushed to `pcasafe.azurecr.io` with tag `auth-b-20260913-sp`; registry digest was `sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87` (the local OCI index digest was `sha256:40a0d539fbca942aea856aaa1d8ba7fc09e466156d2f38fd2f883bb21bd5ff82`). `AcrPull` was granted to the `pca` system-assigned identity.
+
+The `pca` sitecontainer was pointed to the image using `SystemIdentity` and port 4001, but App Service repeatedly failed image pull/startup (manifest/pull diagnostics); `/health` returned 503 or timed out. A single-platform and tag-based retry produced the same result. To avoid leaving an unhealthy target, `pca` was restored to `mcr.microsoft.com/appsvc/staticsite:latest` on port 80 with `Anonymous` auth. `pcaSafe` was not modified.
 
 ## Database and runtime gates
 
 ```text
-BACKEND_HEALTH=BLOCKED; placeholder /health and /healthz return 404
+BACKEND_HEALTH=FAIL; deployment attempt returned 503/timeout and was rolled back
 PRIVATE_DB_PATH=CONFIGURED_PRIVATE_ENDPOINT_BUT_PUBLIC_ACCESS_ENABLED
 DB_TLS=SERVER_REQUIRE_SECURE_TRANSPORT_ON (TLSv1.2,TLSv1.3)
 DB_RUNTIME_IDENTITY=NOT_PROVEN (expected pca_pro_app)
@@ -80,8 +90,13 @@ Local source/security tests remain prior evidence only; they cannot substitute f
 P0_OPEN=0 (accepted engineering baseline; AUTH_B live gate blocked)
 P1_OPEN=0 (accepted engineering baseline; AUTH_B live gate blocked)
 P2_OPEN=0 (accepted engineering baseline; AUTH_B live gate blocked)
-AUTH_B=BLOCKED
+SMTP_ROTATION=PASS
+BACKEND_SOURCE_SHA=21d0d9ff648f0ea995dbeddb55e7e327aee06904
+BACKEND_IMAGE_TAG=auth-b-20260913-sp
+BACKEND_IMAGE_DIGEST=sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+BACKEND_HEALTH=FAIL; App Service ACR manifest/pull failure after retries; pca rolled back to placeholder
+AUTH_B=BLOCKED_BY_BACKEND_HEALTH
 READY_FOR_PARENT_C=NO
 ```
 
-Resume only after the owner proves a different active SMTP secret version. Then independently verify Key Vault resolution by the `pca` managed identity, build and deploy a fresh backend image only to `pca`, prove private MySQL/TLS/runtime identity/schema, and execute the complete AUTH_B UAT. Do not start Parent C or modify `pcaSafe`.
+Resume with an owner-approved correction to the pca-to-ACR pull path, then prove `/health`, private MySQL/TLS/runtime identity/schema, and execute the complete AUTH_B UAT. Do not start Parent C or modify `pcaSafe`.
