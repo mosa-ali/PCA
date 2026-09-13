@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 async function source(relativePath) {
   return readFile(new URL(`../../${relativePath}`, import.meta.url), 'utf8');
@@ -22,7 +19,6 @@ test('every production container requires and records an exact source SHA', asyn
     assert.match(text, /grep -Eq '\^\[0-9a-f\]\{40\}\$'/, `${dockerfile} must enforce a full lowercase SHA`);
     assert.match(text, /org\.opencontainers\.image\.revision="\$\{PCA_BUILD_SOURCE_SHA\}"/, `${dockerfile} must label the image`);
   }
-  assert.ok(repoRoot.endsWith('pca-app\\') || repoRoot.endsWith('pca-app/'));
 });
 
 test('release identity compares image provenance and covers both claim registers', async () => {
