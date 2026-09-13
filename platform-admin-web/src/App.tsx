@@ -187,23 +187,12 @@ export default function App() {
         <Route
           path="settings"
           element={
-            // Reads on this page (free-starter defaults, currencies, market
-            // mapping, every named settings category) are gated backend-side
-            // by VIEW_SUPPORT_ACCOUNT_METADATA -- ALLOW for all five roles
-            // (backend/src/http/routes/platformadmin/settingsRoutes.ts's
-            // requireView, PlatformAdminSettingsService.requireRead). The
-            // route guard used to require ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS
-            // (APP_OWNER/PLATFORM_ADMIN only), which blocked
-            // FINANCE_ADMIN/SUPPORT_ADMIN/AUDITOR_READ_ONLY from reads the
-            // backend would legitimately serve them -- stricter than the
-            // backend's declared read policy. Matches the VIEW_SUPPORT_ACCOUNT_METADATA
-            // route guard already used for every other read-heavy page
-            // (accounts, entitlements, billing/quotes, etc.); the individual
-            // mutation forms inside Settings.tsx remain independently gated
-            // by PermissionGate(ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS /
-            // ADMINISTER_SENSITIVE_PLATFORM_SETTINGS), exactly mirroring the
-            // backend's requireMutate split.
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
+            // The settings console is an administrative control surface, not
+            // support-scoped metadata. Keep the route itself restricted to
+            // APP_OWNER/PLATFORM_ADMIN; the sensitive PAYMENT_PROVIDER
+            // mutations remain APP_OWNER-only inside Settings.tsx and at the
+            // backend authorization layer.
+            <RouteGuard operation="ADMINISTER_NONSENSITIVE_PLATFORM_SETTINGS">
               <Settings />
             </RouteGuard>
           }
