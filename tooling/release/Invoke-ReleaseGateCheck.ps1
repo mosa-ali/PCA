@@ -194,9 +194,10 @@ $CryptoSuiteInScope = $CryptoSuiteBlockingTargets -contains $ReleaseTarget
 # its own dedicated manual gates, OWNER_VISUAL_UAT and
 # PUBLIC_REPLY_IDENTITY -- see docs/supervision/PCA_DYNAMIC_WORKFLOW_W1_CLOSURE.md's
 # R2 addendum for the full architecture-contradiction writeup rather than
-# fabricating a device UAT case for a page); IOS_FUTURE has no built child-
-# safety functionality yet to UAT (see EXTERNAL_GATE_MATRIX.md's iOS gates
-# -- CI only builds/tests "the inert launch shell"); BILLING_FUTURE has no
+# fabricating a device UAT case for a page); IOS_FUTURE has app/extension
+# source but no accepted Xcode build, entitlement, or physical-device result
+# that a genuine UAT case could execute (see EXTERNAL_GATE_MATRIX.md's iOS
+# gates); BILLING_FUTURE has no
 # selected payment provider yet (PAYMENT_PROVIDER_SELECTION is still
 # EXTERNAL). Per DW-W1-R2 section 7/9, this is the explicitly-sanctioned
 # alternative to fabricating cases: these three targets correctly and

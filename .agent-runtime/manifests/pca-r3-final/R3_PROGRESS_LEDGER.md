@@ -1,6 +1,6 @@
 # PCA R3 Progress Ledger
 
-Generated from the completion matrix and repository evidence on 2026-09-08.
+Generated from the completion matrix and repository evidence on 2026-09-13.
 
 ## Exact requirement counts
 
@@ -196,9 +196,9 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - OWNER_DECISION_REQUIRED_FOR_SOURCE = 0
 - PARENT_REAL_E2E = PASS
 - PLATFORM_ADMIN_REAL_E2E = PASS
-- P23_MUTANTS_TOTAL = NOT_PROVEN_AT_CURRENT_HEAD
-- P23_MUTANTS_KILLED = NOT_PROVEN_AT_CURRENT_HEAD
-- P23_VALID_MUTATION_SURVIVORS = NOT_PROVEN_AT_CURRENT_HEAD
+- P23_MUTANTS_TOTAL = 28
+- P23_MUTANTS_KILLED = 22
+- P23_VALID_MUTATION_SURVIVORS = 0
 - VALID_MUTATION_SURVIVORS = 0
 - PARENT_PRODUCTION_DEMO_MODE_GATE = PASS
 - PARENT_DEMO_MODE_NEGATIVE_CONTROL = PASS
@@ -209,10 +209,19 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
 - FINAL_SOURCE_AUDIT_FINDINGS = 0
 - KNOWN_LOCAL_DEFECTS = 0
-- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read live from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_AT_CURRENT_HEAD if that report does not match today's actual git HEAD. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
+- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_FOR_CURRENT_INPUTS unless its provenance model, source fingerprint, scope fingerprint, classification digest, and anomaly set match the current mutation inputs. A supervision-only HEAD advance does not invalidate identical source evidence. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
 ### Current mutation validation (Prompt-2/3)
 
-- MUTATION_HEAD_MATCH = FAIL
-- CURRENT_GIT_HEAD = 69c29653ff67ed4160eac99f63f91b64f745ec26
-- REPORT_MUTATION_HEAD = e180e16225ffa41de2062821dde0d0351f7eed79
-- The tooling/mutation/reports/current-head-mutation.json report does not match the current git HEAD (or does not exist). Run `node tooling/mutation/run-mutation.mjs` at the current HEAD (after updating tooling/mutation/mutation-scope.json entrySha to match) to produce a current, re-verifiable result before treating mutation coverage as evidenced at this commit.
+- MUTATION_SOURCE_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
+- MUTATION_EVIDENCE_INVOCATION_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
+- CURRENT_GIT_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
+- MUTATION_PROVENANCE_MODEL = SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD
+- MUTATION_SOURCE_FINGERPRINT = 9f0755adde807d9079e77f73457835740d2d241cf052fdf32eb93d07561ba02e
+- MUTATION_SCOPE_FINGERPRINT = 0c7c00d6e81b6e25253801932c27e4c9389d01d536113baaf06fe74a823930a1
+- MUTANTS_TOTAL = 28
+- MUTANTS_KILLED = 22
+- MUTANTS_EQUIVALENT = 3
+- MUTANTS_INVALID = 3
+- VALID_MUTATION_SURVIVORS = 0
+- ENVIRONMENT_BLOCK = null
+- Scope: PCA-NFR-014, PCA-NFR-051, PCA-NFR-060, PCA-FR-137, PCA-FR-063, PCA-FR-091, PCA-FR-135 (tooling/mutation/mutation-scope.json). Generated 2026-09-13T14:38:46.209Z; current inputs match by source and scope fingerprint.

@@ -547,7 +547,7 @@ jobs:
             exit 1
           fi
           echo "PCA_SIMULATOR_DESTINATION=platform=iOS Simulator,id=$device_id" >> "$GITHUB_ENV"
-      - name: Build and test the inert launch shell
+      - name: Build and test the iOS app and extension source
         working-directory: ios
         run: |
           # PCA-DW-W3-H: a bare `xcodebuild test` failure previously surfaced

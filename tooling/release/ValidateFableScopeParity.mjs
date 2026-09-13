@@ -176,8 +176,8 @@ if (csvCrypto || csvRealUat) {
     // explicit escape hatch: "if a target genuinely needs a different
     // existing owner/manual gate rather than REAL_UAT, STOP and report the
     // architecture contradiction instead of silently overriding FABLE") --
-    // none of the three has any built, testable functionality or device/
-    // account surface for this specific plan to exercise yet. AUTH_B is
+    // none of the three has an accepted runnable target or device/account
+    // surface for this specific plan to exercise yet. AUTH_B is
     // deliberately NOT on this list: it has a real, testable identity flow
     // today, so it must have real cases, which it now does (see §4.16).
     // Adding a target to this list without a genuine architecture
@@ -185,7 +185,7 @@ if (csvCrypto || csvRealUat) {
     // mechanism exists to prevent -- do not use it as a convenience.
     const ACKNOWLEDGED_REAL_UAT_PLANNING_GAPS = {
       PUBLIC_A: 'PUBLIC_A is a static informational website with no login, no device, and no account surface -- there is no real-DEVICE UAT case this plan could genuinely exercise. Release-A readiness is already gated by its own dedicated manual gates (OWNER_VISUAL_UAT, PUBLIC_REPLY_IDENTITY in external_gate_matrix.json), which is the correct home for a human-owner sign-off on a static site, not this device-UAT plan.',
-      IOS_FUTURE: 'IOS_FUTURE has no built child-safety functionality to UAT yet -- the iOS CI job builds/tests only "the inert launch shell" (see .github/workflows/quality-gates.yml). A device-UAT case cannot genuinely exercise functionality that does not exist; IOS_FUTURE remains blocked by its own real gates (IOS_MAC_XCODE, IOS_FAMILY_CONTROLS_ENTITLEMENT, IOS_PHYSICAL_DEVICE, REQUIRES_ENTITLEMENT).',
+      IOS_FUTURE: 'IOS_FUTURE contains app and extension source, but it has no accepted Xcode build, entitlement approval, or physical-device result. A genuine device-UAT case cannot execute until those prerequisites exist; IOS_FUTURE remains blocked by IOS_MAC_XCODE, IOS_FAMILY_CONTROLS_ENTITLEMENT, IOS_PHYSICAL_DEVICE, and REQUIRES_ENTITLEMENT.',
       BILLING_FUTURE: 'BILLING_FUTURE has no selected production payment provider yet (PAYMENT_PROVIDER_SELECTION remains EXTERNAL in external_gate_matrix.json) -- there is no real payment flow to UAT. BILLING_FUTURE remains blocked by its own real payment/certification gates.',
     };
     if (json.realUatState === null || json.realUatState === undefined) {
