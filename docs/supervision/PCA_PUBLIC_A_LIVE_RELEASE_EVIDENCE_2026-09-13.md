@@ -48,6 +48,26 @@ also checked all published EN/AR routes, RTL markers, 404 behavior, security
 headers, `robots.txt`, `sitemap.xml`, canonical metadata, and forbidden
 login/signup/store/download patterns.
 
+The authoritative `sitecontainers/main` resource was subsequently verified and
+corrected from the pre-existing `pca-public-web:b2583d6` image to the approved
+digest above. Post-correction checks passed: live verifier `301/301`, responsive
+Chromium matrix `48/48` (375/768/1280px), and keyboard/focus/menu matrix `5/5`.
+
+## Owner-required legal facts
+
+`LEGAL_STATUS=NOT_AUTHORIZED` until the owner/legal reviewer supplies and
+approves the following existing draft inputs: legal operator name; entity type;
+registration number (or confirmation none is required); country; jurisdiction;
+public legal contact and postal address; verified privacy contact/send-as
+mailbox; data-controller wording; effective date; parent/guardian wording;
+child-age boundary; governing regimes; central-data field inventory; retention
+schedule; deletion behavior; provider/subprocessor register; cookies/analytics
+disclosure; log/diagnostic inventory; encryption-boundary wording; feature
+processing disclosures; feedback-retention decision; terms/pricing/entitlement
+plan; liability/disputes; change/suspension/termination terms; consent text;
+and native-Arabic legal sign-off. Privacy Policy and Terms remain provisional
+`noindex,nofollow` drafts and are excluded from the sitemap.
+
 The in-app browser connector had no connected browser in this session; direct
 Chromium was used for the recorded keyboard/focus checks. Manual visual polish
 and owner legal authorization remain separate gates. No deployment was made to
