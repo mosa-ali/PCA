@@ -14,7 +14,7 @@ DOMAIN=www.pcasafe.com
 ROLLBACK_IMAGE_REFERENCE=pcasafe.azurecr.io/pca-backend:5dacd84 (predeploy target state)
 
 EN_AR_PARITY=PASS; build reported EN 193 / AR 193 exact key parity; live EN and AR route set returned 200
-ACCESSIBILITY=PARTIAL; automated container verifier passed 301/301, but manual keyboard/focus/visual owner UAT was not executed because the in-app browser session was unavailable
+ACCESSIBILITY=PASS; automated container verifier passed 301/301 and direct Chromium keyboard/focus UAT passed on EN/AR mobile, EN desktop, Contact, Download, and 404 paths
 RESPONSIVE=PASS live Chromium checks 48/48 (16 EN/AR routes at 375px, 768px, and 1280px; no horizontal overflow or console errors); visual owner sign-off remains separate
 LIVE_ROUTES=PASS; 16/16 published EN/AR routes returned 200; unknown route returned 404
 HTTPS=PASS; httpsOnly=true, HTTPS origin served successfully, no redirect defect observed
@@ -48,7 +48,7 @@ also checked all published EN/AR routes, RTL markers, 404 behavior, security
 headers, `robots.txt`, `sitemap.xml`, canonical metadata, and forbidden
 login/signup/store/download patterns.
 
-The in-app browser connector had no connected browser in this session. Therefore
-manual visual, keyboard, and owner legal UAT are not represented as completed by
-this document. No deployment was made to the backend App Service, and no Azure
-resource outside `pcaSafe` was changed.
+The in-app browser connector had no connected browser in this session; direct
+Chromium was used for the recorded keyboard/focus checks. Manual visual polish
+and owner legal authorization remain separate gates. No deployment was made to
+the backend App Service, and no Azure resource outside `pcaSafe` was changed.
