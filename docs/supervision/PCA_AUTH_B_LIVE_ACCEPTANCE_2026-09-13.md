@@ -157,3 +157,88 @@ READY_FOR_PARENT_C=NO
 ```
 
 Per the supervisor gate, stop here. The next authorized action is an owner/platform correction for the `pca` App Service ACR pull path (or effective role propagation confirmation), followed by redeploying this same digest. Do not switch to plaintext registry credentials, do not revoke the old SMTP version, and do not start database or AUTH_B testing until `BACKEND_HEALTH=PASS`.
+
+## Supervisor continuation — ABAC correction and live backend recovery (2026-09-13)
+
+The preceding stop record is historical and is superseded by this continuation. No application source was changed. The only release mutation after diagnosis was an RBAC correction on the existing `pca` system-assigned identity; `pcaSafe` was not modified.
+
+### Independent Azure verification
+
+```text
+SUBSCRIPTION=5f5205e2-4e56-4cea-8ce7-3d408ed1507b
+TENANT=9d94b9fa-8bd6-420a-9d28-bfe2df02562a
+ACR=pcaSafe (pcasafe.azurecr.io), roleAssignmentMode=AbacRepositoryPermissions
+ACR_NETWORK=publicNetworkAccess=Enabled; anonymousPullEnabled=False; privateEndpointConnections=0
+MANAGED_IDENTITY=SystemAssigned; principal=adc7c8de-7a4c-4f9c-9342-4104125085ab
+ACR_LEGACY_ROLE=AcrPull (retained; not effective for ABAC repository authorization)
+ACR_ABAC_ROLE=Container Registry Repository Reader; roleId=b93aa761-3e63-49ed-ac28-beffa264f7ac; assignment=542c1e8b-d02e-4dd6-8210-26da1a750ff7
+ACR_ABAC_CATALOG_ROLE=Container Registry Repository Catalog Lister; roleId=bfdb9389-c9a5-478a-bb2f-ba9ca092c3c7; assignment=48e60fae-be2d-4a0d-a0f5-292380b1885a
+ACR_ROLE_EFFECTIVE=PASS (subsequent pull and startup succeeded)
+SITECONTAINER_PERSISTED_REGISTRY=pcasafe.azurecr.io
+SITECONTAINER_PERSISTED_IMAGE=pcasafe.azurecr.io/pca-backend@sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+SITECONTAINER_AUTH_TYPE=SystemIdentity
+SITECONTAINER_TARGET_PORT=4001
+SITECONTAINER_MAIN=TRUE
+SITECONTAINER_INHERIT_APP_SETTINGS=TRUE
+```
+
+The exact root cause was `ACR_RBAC_MODE_MISMATCH`: the registry's ABAC mode does not honor the legacy `AcrPull` role for repository pulls. The smallest proven fix was to add the two documented repository-scoped ABAC roles to the existing managed identity, then redeploy the same immutable digest. No registry password or alternate identity was introduced.
+
+### Live backend and database checks
+
+```text
+PLATFORM_LOG_ERROR=HISTORICAL IMAGE_PULL/MANIFEST_NOT_FOUND before ABAC correction; no application crash reached; no current pull error after correction
+BACKEND_HEALTH=PASS; GET https://api.pcasafe.com/health -> 200 {service:pca-backend,status:ok}
+DB_CONNECTIVITY=PASS; GET /health/db -> 200 {status:ok,database:connected} (implementation performs SELECT 1 only)
+EMAIL_PROVIDER_HEALTH=PASS; GET /health/email -> 200 {status:ok,provider:SMTP} (provider configured; no send attempted)
+PCA_DATABASE_TLS_SETTING=REQUIRED (Key Vault-backed URL reference; setting value not exposed)
+MYSQL_REQUIRE_SECURE_TRANSPORT=ON
+MYSQL_TLS_VERSIONS=TLSv1.2,TLSv1.3
+MYSQL_PRIVATE_ENDPOINT=Approved/Ready; private DNS zone group present; pca Swift VNet integration configured
+MYSQL_PUBLIC_NETWORK_ACCESS=Enabled (private path configured, not exclusive)
+DB_RUNTIME_IDENTITY=NOT_PROVEN (expected pca_pro_app; /health/db intentionally exposes no identity)
+DB_SCHEMA=NOT_PROVEN against live pca_pro
+DB_LEAST_PRIVILEGE=NOT_PROVEN at runtime
+MIGRATION_0022_VALIDATION=NOT_EXECUTED; no safe disposable target/credentials authorized
+```
+
+The live health endpoint proves application startup and a database `SELECT 1`, not the negotiated MySQL identity, TLS session, schema fingerprint, grants, or migration state. Those items remain honestly unclaimed.
+
+### AUTH_B live-UAT boundary
+
+Unauthenticated route-contract probes reached the live backend without creating an account or sending mail: the six AUTH_B POST routes returned validation responses (`400` for empty JSON on register, login, verify-email, reset-request, reset-password; `204` for logout), and `/api/parent/session` returned `401` without a cookie. A real provider-backed signup, inbox verification, login, reset, and session-revocation run was not executed because no owner-supplied test identity/inbox and verification/reset codes were available. No token, code, password, or secret was retrieved or recorded.
+
+```text
+SMTP_ROTATION=PASS (versions 243780f0c811435fb2c5340f566a677b and 749c5cf6bd92407794c2d687c2741e99 both enabled; replacement is newer/current; values never retrieved)
+BACKEND_HEALTH=PASS
+DB_RUNTIME_PROOF=PARTIAL (connectivity, server TLS requirement, private endpoint, and app TLS setting proven; runtime identity/schema/grants/migration not proven)
+AUTH_B=NOT_EXECUTED_FULL_LIVE_UAT; route-contract probes only
+READY_FOR_PARENT_C=NO
+OLD_SMTP_CREDENTIAL_STATUS=ENABLED; retain until real SMTP send and owner revocation decision
+pcaSafe=UNCHANGED; image digest sha256:c0b2b1b710adfb3bf9756a1f61c08fb6167a421f7c14efd528d116c5677b8782, target port 80
+```
+
+The backend remains deployed only to `pca`. Parent C is not started.
+
+### Required supervisor fields
+
+```text
+REMOTE_HEAD=f17ce13e206f79bc419b7da6a96c7179789f1104
+LOCAL_EVIDENCE_HEAD=529fd07404e17e578829bcaf00f1ea00f3d6f2f0 (docs-only, not pushed)
+WORKTREE=CLEAN (branch ahead of origin by one evidence-only commit)
+SMTP_ROTATION=PASS
+ACR_AUTHORIZATION_MODE=AbacRepositoryPermissions
+ACR_NETWORK_STATE=publicNetworkAccess=Enabled; anonymousPullEnabled=False; privateEndpointConnections=0
+ACR_ROLE_EFFECTIVE=PASS
+SITECONTAINER_PERSISTED_REGISTRY=pcasafe.azurecr.io
+SITECONTAINER_PERSISTED_IMAGE=pcasafe.azurecr.io/pca-backend@sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+SITECONTAINER_AUTH_TYPE=SystemIdentity
+PLATFORM_LOG_ERROR=RESOLVED; historical IMAGE_PULL/MANIFEST_NOT_FOUND ceased after ABAC roles and redeploy
+ROOT_CAUSE=ACR_RBAC_MODE_MISMATCH (legacy AcrPull not honored by ABAC repository-permissions mode)
+ROOT_CAUSE_FIX=Added Repository Reader and Catalog Lister to existing pca managed identity; redeployed same immutable digest
+BACKEND_HEALTH=PASS
+DB_RUNTIME_PROOF=PARTIAL; identity/schema/grants/migration remain unproven
+AUTH_B=NOT_EXECUTED_FULL_LIVE_UAT; safe route-contract probes only
+READY_FOR_PARENT_C=NO
+pcaSafe=UNCHANGED
+```
