@@ -19,9 +19,57 @@ function readHttpUrl(raw: string | undefined): string | null {
   }
 }
 
+const LOCAL_DEVELOPMENT_API_BASE_URL = 'http://localhost:4001';
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === 'localhost' ||
+    normalized.endsWith('.localhost') ||
+    normalized === '::1' ||
+    normalized === '0.0.0.0' ||
+    normalized.startsWith('127.');
+}
+
+/**
+ * Real (non-demo) production bundles must name their HTTPS API endpoint at build time.
+ * Vite replaces this value while compiling, so accepting the local fallback
+ * in a production build permanently bakes localhost into the shipped JS and
+ * cannot be repaired by changing the container environment afterwards.
+ *
+ * Development, tests, and the explicit fixture-backed demo build retain the
+ * existing localhost default. The demo artifact is independently forbidden by
+ * the production demo-mode gate.
+ */
+export function resolveApiBaseUrl(raw: string | undefined, production: boolean): string {
+  const value = (raw ?? '').trim();
+  if (!production) return value || LOCAL_DEVELOPMENT_API_BASE_URL;
+
+  if (value === '') {
+    throw new Error('Production Parent Web build requires VITE_PCA_API_BASE_URL.');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('Production VITE_PCA_API_BASE_URL must be a valid absolute HTTPS URL.');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Production VITE_PCA_API_BASE_URL must use HTTPS.');
+  }
+  if (isLoopbackHostname(parsed.hostname)) {
+    throw new Error('Production VITE_PCA_API_BASE_URL must not target localhost or a loopback address.');
+  }
+
+  return value.replace(/\/+$/, '');
+}
+
+const demoMode = (import.meta.env.VITE_PCA_DEMO_MODE ?? 'false') === 'true';
+
 export const config = {
-  apiBaseUrl: import.meta.env.VITE_PCA_API_BASE_URL ?? 'http://localhost:4001',
-  demoMode: (import.meta.env.VITE_PCA_DEMO_MODE ?? 'false') === 'true',
+  apiBaseUrl: resolveApiBaseUrl(import.meta.env.VITE_PCA_API_BASE_URL, import.meta.env.PROD && !demoMode),
+  demoMode,
   /**
    * Base URL used to compose the one-time child-device enrollment link
    * (base + '/' + raw invitation token, nothing else -- never familyId,

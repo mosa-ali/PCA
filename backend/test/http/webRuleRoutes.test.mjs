@@ -90,15 +90,67 @@ const parentAuthHeaders = { cookie: 'pca_family_session=session-owner; pca_famil
 test('GET returns an empty rule list for a family with no rules yet', async () => {
   const repo = new InMemoryWebRuleRepository();
   const webRuleService = new WebRuleService(repo, () => T0);
-  const { app } = buildApp({ webRuleService });
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app } = buildApp({ webRuleService, authorization });
   try {
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/children/child-1/web-rules`,
-      headers: parentAuthHeaders,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json().rules, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET rejects cross-family and unknown child profiles indistinguishably without reading rules', async () => {
+  const listCalls = [];
+  const webRuleService = {
+    async listParentRules(familyId) {
+      listCalls.push(familyId);
+      return [];
+    },
+  };
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app } = buildApp({ webRuleService, authorization });
+  try {
+    const responses = await Promise.all([
+      app.inject({
+        method: 'GET',
+        url: `/api/parent/families/${FAMILY}/children/child-in-other-family/web-rules`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      }),
+      app.inject({
+        method: 'GET',
+        url: `/api/parent/families/${FAMILY}/children/child-unknown/web-rules`,
+        headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+      }),
+    ]);
+
+    for (const response of responses) {
+      assert.equal(response.statusCode, 403);
+      assert.deepEqual(response.json(), { error: 'forbidden' });
+    }
+    assert.deepEqual(listCalls, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET remains fail-closed with 503 when the readable rule service is not configured', async () => {
+  const sideEffectCalls = [];
+  const { app } = buildApp({ configured: false, sideEffectCalls });
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/children/child-1/web-rules`,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), { error: 'not_configured' });
+    assert.deepEqual(sideEffectCalls, []);
   } finally {
     await app.close();
   }
@@ -355,12 +407,13 @@ test('a security-feed rule never leaks through the parent-facing GET route', asy
   const repo = new InMemoryWebRuleRepository();
   await repo.put({ domain: 'malware.example', listType: 'DENY', source: 'SECURITY_DENYLIST', familyId: FAMILY, createdAt: T0 });
   const webRuleService = new WebRuleService(repo, () => T0);
-  const { app } = buildApp({ webRuleService });
+  const authorization = buildAuthorization({ roleResolver: trustedRoleResolver() });
+  const { app } = buildApp({ webRuleService, authorization });
   try {
     const response = await app.inject({
       method: 'GET',
       url: `/api/parent/families/${FAMILY}/children/child-1/web-rules`,
-      headers: parentAuthHeaders,
+      headers: { ...parentAuthHeaders, authorization: 'Bearer dev-token-owner' },
     });
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json().rules, []);

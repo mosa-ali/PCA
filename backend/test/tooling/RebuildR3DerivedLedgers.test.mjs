@@ -16,6 +16,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -115,14 +116,20 @@ async function makeFixture(requirements) {
   return root;
 }
 
-async function runGenerator(root) {
+async function runGenerator(root, extraEnv = {}) {
   // The real script hardcodes an expectation of exactly 375 rows (the
   // controlled repository's real requirement count) unless overridden --
   // derive the override from however many rows THIS fixture actually has,
   // so every test below can just call runGenerator(root) uniformly.
   const { requirements } = await readMatrix(root);
   return execFileAsync(process.execPath, [scriptPath], {
-    env: { ...process.env, PCA_R3_TEST_ROOT: root, PCA_R3_TEST_EXPECTED_TOTAL: String(requirements.length) },
+    env: {
+      ...process.env,
+      PCA_R3_TEST_ROOT: root,
+      PCA_R3_TEST_EXPECTED_TOTAL: String(requirements.length),
+      PCA_R3_TEST_GIT_HEAD: '0000000000000000000000000000000000000000',
+      ...extraEnv,
+    },
   });
 }
 
@@ -282,6 +289,53 @@ test('I/J: re-running against an already-converged fixture is deterministic (no-
     await runGenerator(root);
     const secondRun = await readFile(join(root, 'docs', 'implementation', 'PCA_COMPLETION_V2_MATRIX.json'), 'utf8');
     assert.equal(secondRun, firstRun, 'a second run against the same converged fixture must produce byte-identical output');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('K: a supervision-only HEAD advance retains mutation evidence when source and scope fingerprints match', async () => {
+  const root = await makeFixture([
+    baseRequirement('PCA-NFR-021', { status: EXPECTED['PCA-NFR-021'].status, sourceEvidence: EXPECTED['PCA-NFR-021'].sourceEvidence, notes: 'no R3 marker' }),
+  ]);
+  const reportDir = join(root, 'tooling', 'mutation', 'reports');
+  await mkdir(reportDir, { recursive: true });
+  const sourceFingerprint = 'a'.repeat(64);
+  const scopeFingerprint = 'b'.repeat(64);
+  const report = {
+    provenanceModel: 'SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD',
+    sourceHead: '1'.repeat(40),
+    invocationHead: '2'.repeat(40),
+    sourceFingerprint,
+    scopeFingerprint,
+    counts: { KILLED: 22, EQUIVALENT: 3, INVALID: 3, SURVIVED: 0 },
+    validSurvivors: 0,
+    environmentBlock: null,
+    manifestAnomalies: [],
+    mutants: [],
+    boundedRequirements: { 'PCA-NFR-014': {} },
+    generatedAtUtc: '2026-09-13T00:00:00.000Z',
+  };
+  const stableClassification = {
+    counts: report.counts,
+    validSurvivors: report.validSurvivors,
+    environmentBlock: report.environmentBlock,
+    manifestAnomalies: report.manifestAnomalies,
+    mutants: [],
+  };
+  report.classificationDigest = createHash('sha256').update(JSON.stringify(stableClassification)).update('\0').digest('hex');
+  await writeFile(join(reportDir, 'current-head-mutation.json'), JSON.stringify(report, null, 2), 'utf8');
+  try {
+    await runGenerator(root, {
+      PCA_R3_TEST_GIT_HEAD: '3'.repeat(40),
+      PCA_R3_TEST_SOURCE_FINGERPRINT: sourceFingerprint,
+      PCA_R3_TEST_SCOPE_FINGERPRINT: scopeFingerprint,
+    });
+    const progress = await readFile(join(root, '.agent-runtime', 'manifests', 'pca-r3-final', 'R3_PROGRESS_LEDGER.md'), 'utf8');
+    assert.match(progress, /MUTATION_SOURCE_HEAD = 1111111111111111111111111111111111111111/);
+    assert.match(progress, /CURRENT_GIT_HEAD = 3333333333333333333333333333333333333333/);
+    assert.match(progress, /MUTANTS_KILLED = 22/);
+    assert.doesNotMatch(progress, /MUTATION_INPUT_FINGERPRINT_MATCH = FAIL/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

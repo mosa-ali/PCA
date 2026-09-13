@@ -7,7 +7,7 @@
 # both live under docs/public/. A container that could not see them would have
 # to skip the claim gate, which is the one gate that must never be optional.
 #
-#   docker build -f public-web/deploy/Dockerfile -t pca-public:local .
+#   docker build --build-arg PCA_BUILD_SOURCE_SHA=<exact-commit-sha> -f public-web/deploy/Dockerfile -t pca-public:local .
 #   docker run --rm -p 8080:80 pca-public:local
 #   node public-web/deploy/verify-container.mjs http://127.0.0.1:8080
 #
@@ -67,10 +67,15 @@ RUN node deploy/manifest.mjs /artifact/MANIFEST.sha256
 #   docker pull nginx:1.27-alpine && docker image inspect --format '{{index .RepoDigests 0}}' nginx:1.27-alpine
 FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 
+ARG PCA_BUILD_SOURCE_SHA
+RUN printf '%s' "$PCA_BUILD_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$' || \
+    (echo "FATAL: PCA_BUILD_SOURCE_SHA must be the exact 40-character lowercase Git commit SHA" >&2; exit 1)
+
 LABEL org.opencontainers.image.title="PCA Public"
 LABEL org.opencontainers.image.description="PCA Public Release A — prerendered bilingual EN/AR static site"
 LABEL org.opencontainers.image.vendor="PCA"
 LABEL org.opencontainers.image.licenses="UNLICENSED"
+LABEL org.opencontainers.image.revision="${PCA_BUILD_SOURCE_SHA}"
 
 RUN rm /etc/nginx/conf.d/default.conf
 COPY public-web/deploy/nginx.conf /etc/nginx/conf.d/pca-public.conf

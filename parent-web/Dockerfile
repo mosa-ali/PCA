@@ -15,7 +15,9 @@
 # parent-sdk/ directory at all, so THIS image's build context must be the
 # REPOSITORY ROOT, built as:
 #
-#   docker build -f parent-web/Dockerfile -t pca-parent-web:local .
+#   docker build --build-arg VITE_PCA_API_BASE_URL=https://parent.example.invalid \
+#     --build-arg PCA_BUILD_SOURCE_SHA=<exact-commit-sha> \
+#     -f parent-web/Dockerfile -t pca-parent-web:local .
 #   docker run --rm -p 8082:8080 pca-parent-web:local
 #
 # NOT DEPLOYED. Per docker-compose.yml's own topology comment, parent-web had
@@ -60,11 +62,26 @@ RUN npm ci --ignore-scripts
 
 COPY parent-web/. .
 
+# Vite substitutes this value into both the real API clients and their CSP at
+# build time. It cannot be supplied later with `docker run -e`, so the image
+# build requires the release operator to name the real production endpoint:
+#
+#   docker build --build-arg VITE_PCA_API_BASE_URL=https://parent.example.invalid \
+#     --build-arg PCA_BUILD_SOURCE_SHA=<exact-40-character-commit-sha> \
+#     -f parent-web/Dockerfile -t pca-parent-web:local .
+#
+# Missing values fail here with a direct diagnostic. HTTP and loopback values
+# fail inside src/config/env.ts during `npm run build`; focused negative-control
+# tests pin all three cases.
+ARG VITE_PCA_API_BASE_URL
+RUN test -n "$VITE_PCA_API_BASE_URL" || \
+    (echo "FATAL: VITE_PCA_API_BASE_URL is required for a Parent Web production image" >&2; exit 1)
+ENV VITE_PCA_API_BASE_URL=${VITE_PCA_API_BASE_URL}
+
 # `npm run build` is `tsc --noEmit -p tsconfig.json && vite build`, so the type
 # check gates the bundle. securityHeadersPlugin (vite/securityHeadersPlugin.ts)
 # bakes the CSP/referrer <meta> tags into the built index.html at this step,
-# reading VITE_PCA_API_BASE_URL from the build environment -- unset here
-# deliberately (see below).
+# reading VITE_PCA_API_BASE_URL from the required build argument above.
 RUN npm run build
 
 # PRODUCTION_DEMO_MODE_GATE -- proves no fixture-backed client made it into the
@@ -73,12 +90,10 @@ RUN npm run build
 # here means an image can never be produced from a tree that quietly grew one.
 RUN npm run gate:demo-mode
 
-# No VITE_PCA_API_BASE_URL is set, deliberately -- src/config/env.ts falls back
-# to a local-dev default only when the env var is absent; a real production
-# build is expected to set this explicitly (or to the same-origin convention
-# platform-admin-web's own build uses) at the CI/deploy step that actually
-# produces a production image, not baked in here as a placeholder that could
-# be forgotten.
+# VITE_PCA_API_BASE_URL remains present for the demo-mode artifact gate above,
+# which performs a second production build in a temporary directory. It is a
+# build-stage value only and is not copied into the nginx runtime environment;
+# the compiled URL and matching CSP are the intended shipped configuration.
 
 # ---------------------------------------------------------------------------
 # Stage 3 — serve
@@ -89,10 +104,15 @@ RUN npm run gate:demo-mode
 # runs as uid 101 on port 8080, needs no privileged bind.
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 AS runtime
 
+ARG PCA_BUILD_SOURCE_SHA
+RUN printf '%s' "$PCA_BUILD_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$' || \
+    (echo "FATAL: PCA_BUILD_SOURCE_SHA must be the exact 40-character lowercase Git commit SHA" >&2; exit 1)
+
 LABEL org.opencontainers.image.title="PCA Parent Web"
 LABEL org.opencontainers.image.description="PCA Parent console — React/Vite SPA served by nginx"
 LABEL org.opencontainers.image.vendor="PCA"
 LABEL org.opencontainers.image.licenses="UNLICENSED"
+LABEL org.opencontainers.image.revision="${PCA_BUILD_SOURCE_SHA}"
 
 USER root
 RUN rm -f /etc/nginx/conf.d/default.conf

@@ -11,15 +11,12 @@
  * for per-child settings mutations (see ParentActionAuthorizationService's
  * own doc comment: this is an advisory pre-check, not the final authority).
  *
- * Unlike childPolicyRoutes.ts's schedule-policy route, a parent-authored
- * web allow/deny rule is a plain, non-E2EE RULE DEFINITION -- exactly like
- * eyeProtectionRoutes.ts's reminders-enabled setting -- so this file never
- * parses or relays an opaque encrypted envelope: it reads/writes the
- * canonical (domain, listType) rule directly through WebRuleService. The
- * service is deliberately absent from production composition because the
- * only current repository is an in-memory test fixture; this route therefore
- * fails closed with 503 until reviewed encrypted policy storage and delivery
- * exist. WebFilterEngine is separately testable and is not wired by main.ts.
+ * The current WebRuleService shape exposes readable rule definitions and is
+ * therefore test scaffolding only. PCA-SEC-023 does not permit the backend to
+ * hold parent-authored domains in readable form. Production composition omits
+ * the service, so this route fails closed with 503 until reviewed encrypted
+ * policy storage and delivery replace this scaffold. WebFilterEngine remains
+ * separately testable and is not wired by main.ts.
  *
  * What this route does NOT do: it never attempts to push the resulting
  * rule set down to a child device for offline VPN/DNS enforcement -- that
@@ -165,6 +162,10 @@ export function registerWebRuleRoutes(app: FastifyInstance, deps: WebRuleRoutesD
       if (!childProfileId || !OPAQUE_TOKEN.test(childProfileId)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+
+      const actorDeviceId = await requireActorDevice(request, reply, session.familyId);
+      if (!actorDeviceId) return;
+      if (!(await authorizeEditChildPolicy(reply, session.familyId, actorDeviceId, childProfileId))) return;
 
       const rules = await deps.webRuleService.listParentRules(session.familyId);
       return reply.code(200).send({ rules: rules.map(toRuleDto) });

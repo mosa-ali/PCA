@@ -10,7 +10,7 @@
 # enumerated COPY list has to track that array forever. Copying the directory
 # with a .dockerignore beside it is the version that stays correct.
 #
-#   docker build -t pca-platform-admin:local platform-admin-web
+#   docker build --build-arg PCA_BUILD_SOURCE_SHA=<exact-commit-sha> -t pca-platform-admin:local platform-admin-web
 #   docker run --rm -p 8081:8080 pca-platform-admin:local
 #
 # NOT DEPLOYED. platform.pcasafe.com currently serves a placeholder from the
@@ -57,10 +57,15 @@ RUN npm run gate:demo-mode
 # is built to run as uid 101 on port 8080 and needs no privileged bind.
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 AS runtime
 
+ARG PCA_BUILD_SOURCE_SHA
+RUN printf '%s' "$PCA_BUILD_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$' || \
+    (echo "FATAL: PCA_BUILD_SOURCE_SHA must be the exact 40-character lowercase Git commit SHA" >&2; exit 1)
+
 LABEL org.opencontainers.image.title="PCA Platform Admin Web"
 LABEL org.opencontainers.image.description="PCA Platform Admin console — React/Vite SPA served by nginx"
 LABEL org.opencontainers.image.vendor="PCA"
 LABEL org.opencontainers.image.licenses="UNLICENSED"
+LABEL org.opencontainers.image.revision="${PCA_BUILD_SOURCE_SHA}"
 
 USER root
 RUN rm -f /etc/nginx/conf.d/default.conf

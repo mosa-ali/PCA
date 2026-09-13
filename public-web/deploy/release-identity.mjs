@@ -55,7 +55,13 @@ const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
  * identity can be honest about it. Only paths that affect the artifact count --
  * an edited report does not change a single shipped byte.
  */
-const ARTIFACT_PATHS = ['public-web/src', 'public-web/build.mjs', 'public-web/deploy', 'docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv'];
+const ARTIFACT_PATHS = [
+  'public-web/src',
+  'public-web/build.mjs',
+  'public-web/deploy',
+  'docs/public/PCA_PUBLIC_CLAIM_REGISTER.csv',
+  'docs/public/PCA_Public_Programme_Documentation_Package_v0.2/PCA_PUBLIC_CLAIM_REGISTER.csv',
+];
 const dirty = git('status', '--porcelain', '--', ...ARTIFACT_PATHS);
 const isDirty = Boolean(dirty);
 
@@ -75,16 +81,27 @@ try {
 
 let imageDigest = null;
 let imageId = null;
+let imageSourceSha = null;
+const integrityErrors = [];
 if (image) {
   try {
     const out = execFileSync(
       'docker',
-      ['image', 'inspect', image, '--format', '{{.Id}}|{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}'],
+      [
+        'image', 'inspect', image, '--format',
+        '{{.Id}}|{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}|{{index .Config.Labels "org.opencontainers.image.revision"}}',
+      ],
       { encoding: 'utf8' }
     ).trim();
-    [imageId, imageDigest] = out.split('|');
+    [imageId, imageDigest, imageSourceSha] = out.split('|');
+    if (!/^[0-9a-f]{40}$/.test(imageSourceSha ?? '')) {
+      integrityErrors.push('image is missing a valid org.opencontainers.image.revision label');
+    } else if (sha && imageSourceSha !== sha) {
+      integrityErrors.push(`image source label ${imageSourceSha} does not match checkout HEAD ${sha}`);
+    }
   } catch {
     imageDigest = null;
+    integrityErrors.push(`could not inspect image ${image}`);
   }
 }
 
@@ -98,6 +115,7 @@ console.log(`  ARTIFACT_SHA256   ${artifactSha256 ?? '(run: node deploy/manifest
 if (fileCount) console.log(`  artifact          ${fileCount} file(s), ${totalBytes} B`);
 console.log(`  IMAGE_ID          ${imageId ?? '(pass --image <ref>)'}`);
 console.log(`  IMAGE_DIGEST      ${imageDigest || '(none — image has never been pushed to a registry)'}`);
+console.log(`  IMAGE_SOURCE_SHA  ${imageSourceSha || '(no image source label inspected)'}`);
 console.log('');
 console.log('  IMAGE_TAG_RECOMMENDATION');
 console.log(`      ${releaseTag ?? '(needs a commit)'}`);
@@ -110,11 +128,14 @@ console.log('      pcasafe.azurecr.io/pca-public-placeholder:hold-v1');
 console.log('      The image currently on pcaSafe. Record its digest before the first');
 console.log('      deploy; a tag is not a rollback target.');
 
-if (isDirty) {
+if (isDirty || integrityErrors.length > 0) {
   console.error('');
-  console.error('REFUSING TO ISSUE A RELEASE IDENTITY: artifact paths are modified.');
-  console.error('A release identity must name a commit. Modified paths:');
-  for (const line of dirty.split('\n')) console.error('  ' + line);
+  console.error('REFUSING TO ISSUE A RELEASE IDENTITY: provenance checks failed.');
+  if (isDirty) {
+    console.error('A release identity must name a commit. Modified paths:');
+    for (const line of dirty.split('\n')) console.error('  ' + line);
+  }
+  for (const error of integrityErrors) console.error(`  ${error}`);
   console.error('');
   process.exitCode = 1;
 }

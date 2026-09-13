@@ -2,7 +2,7 @@
 
 # PCA Backend — production container.
 #
-#   docker build -t pca-backend:local backend
+#   docker build --build-arg PCA_BUILD_SOURCE_SHA=<exact-commit-sha> -t pca-backend:local backend
 #   docker run --rm -p 4001:4001 -e PCA_DATABASE_URL=... pca-backend:local
 #
 # NOT DEPLOYED. api.pcasafe.com currently serves a placeholder from the `pca`
@@ -43,10 +43,15 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 FROM node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492fd6c6fee9e2c463ed5108da0e34 AS runtime
 
+ARG PCA_BUILD_SOURCE_SHA
+RUN printf '%s' "$PCA_BUILD_SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$' || \
+    (echo "FATAL: PCA_BUILD_SOURCE_SHA must be the exact 40-character lowercase Git commit SHA" >&2; exit 1)
+
 LABEL org.opencontainers.image.title="PCA Backend"
 LABEL org.opencontainers.image.description="PCA backend API — Node 22, Fastify, MySQL"
 LABEL org.opencontainers.image.vendor="PCA"
 LABEL org.opencontainers.image.licenses="UNLICENSED"
+LABEL org.opencontainers.image.revision="${PCA_BUILD_SOURCE_SHA}"
 
 WORKDIR /app
 

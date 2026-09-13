@@ -17,6 +17,7 @@
 # "pca_test_only_not_a_secret" test values -- named that way so nobody mistakes
 # them for something to protect. Nothing here should ever point at Azure.
 #
+#   $env:PCA_BUILD_SOURCE_SHA = git rev-parse HEAD
 #   docker compose up --build
 #   docker compose down -v          # -v also drops the disposable volume
 #
@@ -32,6 +33,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        PCA_BUILD_SOURCE_SHA: ${PCA_BUILD_SOURCE_SHA:?set PCA_BUILD_SOURCE_SHA to the exact git rev-parse HEAD}
     image: pca-backend:local
     environment:
       # PCA_DATABASE_URL is the ONLY database variable src/db/pool.ts reads, and
@@ -78,6 +81,8 @@ services:
   platform-admin-web:
     build:
       context: ./platform-admin-web
+      args:
+        PCA_BUILD_SOURCE_SHA: ${PCA_BUILD_SOURCE_SHA:?set PCA_BUILD_SOURCE_SHA to the exact git rev-parse HEAD}
     image: pca-platform-admin:local
     ports:
       - '8081:8080'
@@ -103,8 +108,8 @@ services:
   # Port 33061 on the host matches README.md's existing local convention and
   # avoids colliding with a MySQL already installed on 3306.
   mysql:
-    image: mysql:8.0
-    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+    image: mysql:8.4.11
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_bin', '--default-time-zone=+00:00']
     environment:
       MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
       MYSQL_DATABASE: pca_test

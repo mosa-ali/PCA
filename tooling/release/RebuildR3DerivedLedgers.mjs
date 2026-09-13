@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -1855,46 +1856,113 @@ progress = mutationSectionPattern.test(progress)
   ? progress.replace(mutationSectionPattern, `\n${mutationSection}`)
   : `${progress.trimEnd()}\n\n${mutationSection}\n`;
 
-// Current mutation validation (Prompt-2/3): read live from
-// tooling/mutation/reports/current-head-mutation.json (produced by
-// tooling/mutation/run-mutation.mjs, which itself refuses to run unless
-// invoked at the exact commit named in tooling/mutation/mutation-scope.json)
-// rather than trusting a caller-supplied claim. If the report's own
-// mutationHead does not match today's actual git HEAD, that report is
-// stale for current-head purposes and this section says so honestly
-// instead of presenting old numbers as current.
+// Current mutation validation (Prompt-2/3): use the same non-self-referential
+// source/scope fingerprint model as tooling/mutation/run-mutation.mjs. A
+// supervision-only metadata commit must not invalidate evidence for identical
+// mutation inputs, while any source, scope, or harness change must fail closed.
 // Git HEAD is a property of the real repository checkout, not of
 // effectiveRoot (which the test suite points at a disposable, non-git
 // fixture directory via PCA_R3_TEST_ROOT) -- always resolve it against the
-// real repo root this script lives in.
-const currentGitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+// real repo root this script lives in. Tests inject a deterministic SHA so
+// their disposable, non-git fixtures never depend on spawning git.
+const currentGitHead = process.env.PCA_R3_TEST_ROOT
+  ? (process.env.PCA_R3_TEST_GIT_HEAD ?? '0000000000000000000000000000000000000000')
+  : execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 let currentMutationReport = null;
 try {
   currentMutationReport = JSON.parse(await readFile(`${effectiveRoot}/tooling/mutation/reports/current-head-mutation.json`, 'utf8'));
 } catch {
   currentMutationReport = null;
 }
-const reportMatchesHead = currentMutationReport?.mutationHead === currentGitHead;
-const currentMutationSection = reportMatchesHead
+const mutationInputRoots = ['backend/', 'parent-web/', 'parent-sdk/', 'android/', 'contracts/', 'platform-admin-web/', 'tooling/', 'docs/'];
+const mutationInputExcludedPrefixes = ['docs/supervision/', 'tooling/mutation/reports/'];
+function fingerprint(parts) {
+  const hash = createHash('sha256');
+  for (const part of parts) {
+    hash.update(part);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+function mutationClassificationDigest(report) {
+  const stable = {
+    counts: report.counts,
+    validSurvivors: report.validSurvivors,
+    environmentBlock: report.environmentBlock,
+    manifestAnomalies: report.manifestAnomalies,
+    mutants: (report.mutants ?? []).map((mutant) => ({
+      id: mutant.id,
+      requirement: mutant.requirement,
+      surface: mutant.surface,
+      source: mutant.source,
+      expectedClassification: mutant.expectedClassification,
+      classification: mutant.classification,
+      method: mutant.method,
+      checks: mutant.checks,
+      manifestAnomaly: mutant.manifestAnomaly,
+    })),
+  };
+  return fingerprint([JSON.stringify(stable)]);
+}
+async function currentMutationFingerprints() {
+  if (process.env.PCA_R3_TEST_ROOT) {
+    return process.env.PCA_R3_TEST_SOURCE_FINGERPRINT && process.env.PCA_R3_TEST_SCOPE_FINGERPRINT
+      ? { source: process.env.PCA_R3_TEST_SOURCE_FINGERPRINT, scope: process.env.PCA_R3_TEST_SCOPE_FINGERPRINT }
+      : null;
+  }
+  const tracked = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...mutationInputRoots],
+    { cwd: root, encoding: 'utf8' },
+  )
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => file.replaceAll('\\', '/'))
+    .filter((file) => !mutationInputExcludedPrefixes.some((prefix) => file.startsWith(prefix)))
+    .sort();
+  const sourceParts = [];
+  for (const file of tracked) sourceParts.push(file, await readFile(`${root}/${file}`));
+  return {
+    source: fingerprint(sourceParts),
+    scope: fingerprint(['tooling/mutation/mutation-scope.json', await readFile(`${root}/tooling/mutation/mutation-scope.json`)]),
+  };
+}
+const liveMutationFingerprints = currentMutationReport ? await currentMutationFingerprints() : null;
+const reportMatchesInputs = Boolean(
+  currentMutationReport
+  && currentMutationReport.provenanceModel === 'SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD'
+  && liveMutationFingerprints
+  && currentMutationReport.sourceFingerprint === liveMutationFingerprints.source
+  && currentMutationReport.scopeFingerprint === liveMutationFingerprints.scope
+  && currentMutationReport.classificationDigest === mutationClassificationDigest(currentMutationReport)
+  && currentMutationReport.manifestAnomalies?.length === 0,
+);
+const currentMutationSection = reportMatchesInputs
   ? [
     '### Current mutation validation (Prompt-2/3)',
     '',
-    `- MUTATION_HEAD = ${currentMutationReport.mutationHead}`,
+    `- MUTATION_SOURCE_HEAD = ${currentMutationReport.sourceHead}`,
+    `- MUTATION_EVIDENCE_INVOCATION_HEAD = ${currentMutationReport.invocationHead}`,
+    `- CURRENT_GIT_HEAD = ${currentGitHead}`,
+    `- MUTATION_PROVENANCE_MODEL = ${currentMutationReport.provenanceModel}`,
+    `- MUTATION_SOURCE_FINGERPRINT = ${currentMutationReport.sourceFingerprint}`,
+    `- MUTATION_SCOPE_FINGERPRINT = ${currentMutationReport.scopeFingerprint}`,
     `- MUTANTS_TOTAL = ${Object.values(currentMutationReport.counts).reduce((sum, n) => sum + n, 0)}`,
     `- MUTANTS_KILLED = ${currentMutationReport.counts.KILLED}`,
     `- MUTANTS_EQUIVALENT = ${currentMutationReport.counts.EQUIVALENT}`,
     `- MUTANTS_INVALID = ${currentMutationReport.counts.INVALID}`,
     `- VALID_MUTATION_SURVIVORS = ${currentMutationReport.validSurvivors}`,
     `- ENVIRONMENT_BLOCK = ${currentMutationReport.environmentBlock ?? 'null'}`,
-    `- Scope: ${Object.keys(currentMutationReport.boundedRequirements ?? {}).join(', ')} (tooling/mutation/mutation-scope.json). Generated ${currentMutationReport.generatedAtUtc}.`,
+    `- Scope: ${Object.keys(currentMutationReport.boundedRequirements ?? {}).join(', ')} (tooling/mutation/mutation-scope.json). Generated ${currentMutationReport.generatedAtUtc}; current inputs match by source and scope fingerprint.`,
   ].join('\n')
   : [
     '### Current mutation validation (Prompt-2/3)',
     '',
-    `- MUTATION_HEAD_MATCH = FAIL`,
+    `- MUTATION_INPUT_FINGERPRINT_MATCH = FAIL`,
     `- CURRENT_GIT_HEAD = ${currentGitHead}`,
-    `- REPORT_MUTATION_HEAD = ${currentMutationReport?.mutationHead ?? 'NO_REPORT_FOUND'}`,
-    '- The tooling/mutation/reports/current-head-mutation.json report does not match the current git HEAD (or does not exist). Run `node tooling/mutation/run-mutation.mjs` at the current HEAD (after updating tooling/mutation/mutation-scope.json entrySha to match) to produce a current, re-verifiable result before treating mutation coverage as evidenced at this commit.',
+    `- REPORT_MUTATION_SOURCE_HEAD = ${currentMutationReport?.sourceHead ?? 'NO_REPORT_FOUND'}`,
+    `- REPORT_MUTATION_SOURCE_FINGERPRINT = ${currentMutationReport?.sourceFingerprint ?? 'NO_REPORT_FOUND'}`,
+    '- The tooling/mutation/reports/current-head-mutation.json report is absent, uses an obsolete provenance model, has an invalid classification digest/manifest anomalies, or does not match the current source/scope fingerprints. Run `node tooling/mutation/run-mutation.mjs` at the current HEAD; mutation-scope.json entrySha is informational provenance and must not be updated merely to follow HEAD.',
   ].join('\n');
 const currentMutationSectionPattern = /\n### Current mutation validation \(Prompt-2\/3\)[\s\S]*?(?=\n### |\n## |$)/;
 progress = currentMutationSectionPattern.test(progress)
@@ -1940,9 +2008,9 @@ const productionDemoModeGate = [parentDemoGate, platformAdminDemoGate].every((v)
 const demoModeNegativeControl = [parentDemoNegativeControl, platformAdminDemoNegativeControl].every((v) => v === 'PASS') ? 'PASS' : 'NOT_ALL_PASS';
 const p23EntrySha = process.env.PCA_R3_P23_ENTRY_SHA ?? progress.match(/- P23_ENTRY_SHA = (\S+)/)?.[1] ?? 'NOT_SUPPLIED';
 const p23FinalImplementationSha = process.env.PCA_R3_P23_FINAL_IMPLEMENTATION_SHA ?? progress.match(/- P23_FINAL_IMPLEMENTATION_SHA = (\S+)/)?.[1] ?? currentGitHead;
-const currentMutationTotal = reportMatchesHead ? Object.values(currentMutationReport.counts).reduce((sum, n) => sum + n, 0) : 'NOT_PROVEN_AT_CURRENT_HEAD';
-const currentMutationKilled = reportMatchesHead ? currentMutationReport.counts.KILLED : 'NOT_PROVEN_AT_CURRENT_HEAD';
-const currentMutationSurvivors = reportMatchesHead ? currentMutationReport.validSurvivors : 'NOT_PROVEN_AT_CURRENT_HEAD';
+const currentMutationTotal = reportMatchesInputs ? Object.values(currentMutationReport.counts).reduce((sum, n) => sum + n, 0) : 'NOT_PROVEN_FOR_CURRENT_INPUTS';
+const currentMutationKilled = reportMatchesInputs ? currentMutationReport.counts.KILLED : 'NOT_PROVEN_FOR_CURRENT_INPUTS';
+const currentMutationSurvivors = reportMatchesInputs ? currentMutationReport.validSurvivors : 'NOT_PROVEN_FOR_CURRENT_INPUTS';
 const currentHeadSection = [
   '### Current-head final state',
   '',
@@ -1970,7 +2038,7 @@ const currentHeadSection = [
   `- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = ${demoGateTestedSha}`,
   `- FINAL_SOURCE_AUDIT_FINDINGS = ${finalSourceAuditFindings}`,
   `- KNOWN_LOCAL_DEFECTS = ${knownLocalDefects}`,
-  '- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read live from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_AT_CURRENT_HEAD if that report does not match today\'s actual git HEAD. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.',
+  '- TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_FOR_CURRENT_INPUTS unless its provenance model, source fingerprint, scope fingerprint, classification digest, and anomaly set match the current mutation inputs. A supervision-only HEAD advance does not invalidate identical source evidence. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.',
 ].join('\n');
 const currentHeadSectionPattern = /\n### Current-head final state[\s\S]*?(?=\n### |\n## |$)/;
 progress = currentHeadSectionPattern.test(progress)
