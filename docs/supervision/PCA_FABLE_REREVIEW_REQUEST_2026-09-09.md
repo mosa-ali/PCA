@@ -15,8 +15,10 @@ This is a request for independent review of the engineering acceptance correctio
 ```text
 IMPLEMENTATION_CORRECTION_SHA=15baf12ffb49c79e449f59578d6549e2fa0e7d8c
 PRIOR_EVIDENCE_HEAD=0631b2f49fc814855054070630e86067a1d7e3b8
-FINAL_EVIDENCE_HEAD=4bfaf727c2aea9c20a59a6fae3778cc1f363aa4f (metadata head validated by CI run 34724290273 / 284; source/evidence report is committed at 4cd262f)
-EVIDENCE_METADATA_HEAD=4bfaf727c2aea9c20a59a6fae3778cc1f363aa4f
+EVIDENCE_PACKAGE_CONTENT_HEAD=4bfaf727c2aea9c20a59a6fae3778cc1f363aa4f (finalized evidence content before metadata-only recording commits; source/evidence report is committed at 4cd262f)
+FINAL_REMOTE_HEAD_AT_REVIEW=9ca380326d5a53a4c960160e37e037d72562edd3 (last independently verified pre-correction head; post-push head is reported externally)
+FINAL_CI_RUN_ID=34724711567
+FINAL_CI_RUN_NUMBER=285
 WORKTREE=CLEAN_AT_SOURCE_EVIDENCE_COMMIT; metadata follow-up remains documentation-only
 
 A012_BEFORE=PRODUCTION_REACHABLE
@@ -49,13 +51,12 @@ ROOT_CAUSE_PROVEN=NO
 WEB_RULE_TESTS=26/26 PASS focused WebRuleStore/routes/production-wiring tests; backend build PASS
 PRIVACY_SENTINELS=PASS synthetic A012 domain not persisted/logged/audited/telemetered/echoed; repository/security/quality sentinels PASS
 FULL_TEST_RESULTS=backend npm test PASS (run-tests 2349/2349, 0 failed, 0 skipped); parent-web 138 files/999 tests PASS; platform-admin-web 32 files/155 tests PASS; public-web 6/6 PASS; Android testDebugUnitTest BUILD SUCCESSFUL; MySQL BLOCKED ECONNREFUSED 127.0.0.1:33061; validators/contracts/release controls PASS
-CI_RUN_FOR_FINAL_EVIDENCE_HEAD=34724290273 / 284 for head 4bfaf72
-CI_RESULTS=run 34724290273 / 284 for head 4bfaf72: 23 jobs, 22 green, 1 red, 0 skipped/cancelled; only red job iOS build and unit tests; Android and dependency audit completed green; iOS external boundary remains unresolved
+CI_RESULTS=content-head run 34724290273 / 284 for head 4bfaf72, then final remote-head run 34724711567 / 285 for head 9ca3803: 23 jobs, 22 green, 1 red, 0 skipped/cancelled; only red job iOS build and unit tests; Android and dependency audit completed green; iOS external boundary remains unresolved
 
 P0_OPEN=0
 P1_OPEN=0 engineering correction items; external gates remain separately unresolved
 P2_1_STATUS=CLOSED; report provenance is source-fingerprint based and post-commit default invocation retained the report without rewriting it
-P2_2_STATUS=CLOSED; stale heads/run references corrected and final evidence metadata was validated by run 284
+P2_2_STATUS=REPAIRED_NON_SELF_REFERENTIAL; content head, final remote head, and final CI are explicitly distinct
 P2_OPEN=0 for this correction package
 UNEXPLAINED_ENGINEERING_ITEMS=0; G41 is explicitly explained as unresolved/no proven cause
 
