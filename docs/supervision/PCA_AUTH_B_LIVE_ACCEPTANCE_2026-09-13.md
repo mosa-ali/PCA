@@ -243,6 +243,36 @@ READY_FOR_PARENT_C=NO
 pcaSafe=UNCHANGED
 ```
 
+## Approved secret-free diagnostic attempt (2026-09-13)
+
+The approved internal method was attempted without a public endpoint, database
+administrator credential, Key Vault read, schema mutation, firewall change, or
+secret-bearing output. A temporary image derived from the approved backend
+digest was run only on `pca`; it pulled successfully but App Service terminated
+the container during startup with exit code 1 before any sanitized diagnostic
+JSON was emitted. The platform log archive contained no usable application
+stack trace or diagnostic payload, so no runtime identity, negotiated TLS,
+private-DNS resolution, schema, migration, or grant result can be asserted.
+
+The approved immutable backend digest was immediately restored to `pca` and
+health returned to 200. The temporary ACR tag, local image tags, diagnostic
+script, and temporary Dockerfile were removed. `pcaSafe` was not changed.
+
+```text
+DIAGNOSTIC_METHOD=INTERNAL_ONE_SHOT_IMAGE; EXECUTION=FAILED_BEFORE_SANITIZED_OUTPUT
+DB_RUNTIME_IDENTITY=NOT_PROVEN
+DB_ACTIVE_DATABASE=NOT_PROVEN
+DB_TLS=NOT_PROVEN_RUNTIME (server/app configuration remains TLS-required)
+DB_PRIVATE_PATH=NOT_PROVEN_RUNTIME
+DB_SCHEMA_COUNTS=NOT_OBTAINED
+DB_SCHEMA_FINGERPRINT=NOT_OBTAINED
+DB_MIGRATION_STATE=NOT_OBTAINED
+MIGRATION_0022=NOT_EXECUTED
+DB_LEAST_PRIVILEGE=NOT_PROVEN
+DB_RUNTIME_PROOF=PARTIAL
+BACKEND_RESTORED=PASS; approved digest restored and /health=200
+```
+
 ## Supervisor decision — Session 1 completion stop (2026-09-13)
 
 The docs-only evidence commit was reconciled with origin and pushed after a secret scan. No application source, container image, Key Vault value, database setting, or `pcaSafe` resource was changed in this step.
