@@ -17,6 +17,10 @@ The mandatory SMTP rotation gate failed. Read-only Azure Key Vault metadata show
 
 After the owner reported rotation, `git fetch origin` reconciled `pca-dev` at `ac10734634c8f90f37932473243346f5ce4d3214` with a clean worktree. A fresh read-only Key Vault check still returned exactly one enabled version, `243780f0c811435fb2c5340f566a677b`; the active secret metadata therefore remains the compromised historical version. The `pca` app setting is present and uses an unversioned Key Vault reference, but no distinct active version exists for it to resolve. `SMTP_ROTATION=BLOCKED; REPLACEMENT_NOT_PROVEN` and the stop-before-deployment rule remains in force.
 
+### Owner clarification recheck (2026-09-13)
+
+The owner stated that rotation had already completed. The Azure context was revalidated: the only enabled subscription is `5f5205e2-4e56-4cea-8ce7-3d408ed1507b` in tenant `9d94b9fa-8bd6-420a-9d28-bfe2df02562a`; that subscription contains `pca-key` in `pca-group`. Both Azure CLI metadata and a direct Key Vault REST metadata query return exactly one version, created/updated 2026-09-07, with ID `243780f0c811435fb2c5340f566a677b` and `enabled=true`. No alternate subscription, vault, or secret name is present. The `pca` setting parses to vault `pca-key`, secret `PCA-SMTP-PASSWORD`, unversioned; `pcaSafe` has no SMTP setting names. A distinct replacement version remains unproven, so no restart, SMTP verification, image build, or deployment was performed.
+
 ## Required owner action package
 
 1. In the Mailgun account, create a new SMTP credential for the approved sending identity `support@mail.pcasafe.com` (host `smtp.mailgun.org`, port `587`, STARTTLS / `secure=false`).
