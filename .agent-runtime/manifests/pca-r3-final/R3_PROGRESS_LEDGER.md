@@ -39,7 +39,7 @@ Evidence correction (2026-08-26): this table previously omitted the SOURCE_COMPL
 - Android lintDebug: PASS.
 - Android assembleDebug: PASS.
 - Android full test: PASS (`testDebugUnitTest` on the integrated head); the SDK XML v4 warning is environment noise and production database policy is unchanged.
-- Parent Web typecheck: PASS; lint: PASS; test: PASS (480/480 tests passing across 65 files; two later full-parallel-suite runs each showed 1-2 unrelated tests fail under heavy environment/resource contention -- DeviceIncreaseRequest.test.tsx and Retention.test.tsx -- both proven to pass cleanly in isolation, re-verified 2026-08-26, classified TEST_ENVIRONMENT_DEFECT/flaky, not a product defect; the prior 12/480-failing RouteGuard/Login/MFA-family claim did NOT reproduce across four independent runs and is corrected as stale); mocked E2E: PASS (41/41, includes RBAC/RouteGuard/step-up specs); production build: PASS; demo-mode gate: PASS; demo-mode negative control: PASS; real-backend E2E: not re-verified this session (Docker unavailable, carried forward from a prior run, not independently re-run).
+- Parent Web typecheck: PASS; env-config tests: PASS (11/11); production build: PASS; demo-mode gate: PASS; demo-mode negative control: PASS; full suite and real-backend E2E: NOT_EXECUTED_AT_1819065.
 - Backend build and focused parent-control tests: PASS; full worker-mode suite is RUNNER_ENVIRONMENT_BLOCKED (spawn EPERM), and disposable MySQL validation is NOT_EXECUTED.
 - iOS/macOS/Xcode and physical-device validation: EXTERNAL_GATE on Windows.
 
@@ -135,12 +135,12 @@ Reviewed commit range 35cb793..9b34f72 and corrected the source slice without ch
 ### Current-head database validation
 
 - PRE_WAVE11_DB_BASELINE = PASS
-- CURRENT_HEAD_0020_DB_VALIDATION = PASS
-- MIGRATION_0020_APPLIED = YES
-- MIGRATION_0020_SCHEMA_VERIFIED = YES
-- MYSQL_STANDARD = PASS
-- MYSQL_PRIVILEGE = PASS
-- DB_CRITICAL_SKIPPED = 0
+- CURRENT_HEAD_0022_DB_VALIDATION = BLOCKED
+- MIGRATION_0022_APPLIED = NOT_EXECUTED
+- MIGRATION_0022_SCHEMA_VERIFIED = NOT_EXECUTED
+- MYSQL_STANDARD = NOT_EXECUTED
+- MYSQL_PRIVILEGE = NOT_EXECUTED
+- DB_CRITICAL_SKIPPED = NOT_EXECUTED
 - Scope: disposable local MySQL 8.4 Compose only; no production or Azure database was used.
 ### Wave 12 source-boundary hardening
 
@@ -186,7 +186,7 @@ _This section describes one past mutation-testing pass pinned to the commit name
 ### Current-head final state
 
 - P23_ENTRY_SHA = 8831316ae4a161fc7941c7b0f3789c9acaf4898d
-- P23_FINAL_IMPLEMENTATION_SHA = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
+- P23_FINAL_IMPLEMENTATION_SHA = 181906501068ba8cf95a509a3771f8cd712b6d30
 - TOTAL_REQUIREMENTS = 375
 - STATUS_BUCKET_SUM = 375
 - REAL_SOURCE_GAP = 0
@@ -194,29 +194,29 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - SOURCE_COMPLETE_EXTERNAL_GATE = 27
 - SOURCE_COMPLETE_OWNER_DECISION_GATE = 2
 - OWNER_DECISION_REQUIRED_FOR_SOURCE = 0
-- PARENT_REAL_E2E = PASS
-- PLATFORM_ADMIN_REAL_E2E = PASS
+- PARENT_REAL_E2E = NOT_EXECUTED_AT_1819065
+- PLATFORM_ADMIN_REAL_E2E = NOT_EXECUTED_AT_1819065
 - P23_MUTANTS_TOTAL = 28
 - P23_MUTANTS_KILLED = 22
 - P23_VALID_MUTATION_SURVIVORS = 0
 - VALID_MUTATION_SURVIVORS = 0
 - PARENT_PRODUCTION_DEMO_MODE_GATE = PASS
 - PARENT_DEMO_MODE_NEGATIVE_CONTROL = PASS
-- PLATFORM_ADMIN_PRODUCTION_DEMO_MODE_GATE = PASS
-- PLATFORM_ADMIN_DEMO_MODE_NEGATIVE_CONTROL = PASS
-- PRODUCTION_DEMO_MODE_GATE = PASS
-- DEMO_MODE_NEGATIVE_CONTROL = PASS
-- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = 31aa6f16f94b15a1d631b07c597fa48f5937ba5f
-- FINAL_SOURCE_AUDIT_FINDINGS = 0
-- KNOWN_LOCAL_DEFECTS = 0
+- PLATFORM_ADMIN_PRODUCTION_DEMO_MODE_GATE = NOT_EXECUTED_AT_1819065
+- PLATFORM_ADMIN_DEMO_MODE_NEGATIVE_CONTROL = NOT_EXECUTED_AT_1819065
+- PRODUCTION_DEMO_MODE_GATE = NOT_ALL_PASS
+- DEMO_MODE_NEGATIVE_CONTROL = NOT_ALL_PASS
+- PRODUCTION_DEMO_MODE_GATE_TESTED_SHA = 181906501068ba8cf95a509a3771f8cd712b6d30
+- FINAL_SOURCE_AUDIT_FINDINGS = 1_PARTIAL_SOURCE_ANDROID_FAMILY_SYNC
+- KNOWN_LOCAL_DEFECTS = 0_REPO_SOLVABLE
 - TOTAL_REQUIREMENTS/STATUS_BUCKET_SUM/REAL_SOURCE_GAP/SOURCE_SOLVABLE_OPEN/the three classification counts are freshly re-derived from the matrix and R3_SOURCE_BACKLOG.csv on every regeneration. P23_MUTANTS_*/P23_VALID_MUTATION_SURVIVORS are read from tooling/mutation/reports/current-head-mutation.json and marked NOT_PROVEN_FOR_CURRENT_INPUTS unless its provenance model, source fingerprint, scope fingerprint, classification digest, and anomaly set match the current mutation inputs. A supervision-only HEAD advance does not invalidate identical source evidence. The remaining evidence fields (E2E, demo-mode gates, audit findings, known defects, P23 SHAs) are caller-supplied and carry forward from the prior run when not re-supplied -- never fabricated, never silently reset. Numbered "Wave N" and other dated sections elsewhere in this file are historical and describe PAST states only.
 ### Current mutation validation (Prompt-2/3)
 
-- MUTATION_SOURCE_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
-- MUTATION_EVIDENCE_INVOCATION_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
-- CURRENT_GIT_HEAD = b2583d6c60efb701c328960d0f694ad8e5cb90da
+- MUTATION_SOURCE_HEAD = 181906501068ba8cf95a509a3771f8cd712b6d30
+- MUTATION_EVIDENCE_INVOCATION_HEAD = 181906501068ba8cf95a509a3771f8cd712b6d30
+- CURRENT_GIT_HEAD = 181906501068ba8cf95a509a3771f8cd712b6d30
 - MUTATION_PROVENANCE_MODEL = SOURCE_FINGERPRINT_V1_WITH_SEPARATE_EVIDENCE_HEAD
-- MUTATION_SOURCE_FINGERPRINT = 9f0755adde807d9079e77f73457835740d2d241cf052fdf32eb93d07561ba02e
+- MUTATION_SOURCE_FINGERPRINT = 880a1f78dc63f127286eddbf49614f63524d443680838f8da6904bfc5d8c4472
 - MUTATION_SCOPE_FINGERPRINT = 0c7c00d6e81b6e25253801932c27e4c9389d01d536113baaf06fe74a823930a1
 - MUTANTS_TOTAL = 28
 - MUTANTS_KILLED = 22
@@ -224,4 +224,4 @@ _This section describes one past mutation-testing pass pinned to the commit name
 - MUTANTS_INVALID = 3
 - VALID_MUTATION_SURVIVORS = 0
 - ENVIRONMENT_BLOCK = null
-- Scope: PCA-NFR-014, PCA-NFR-051, PCA-NFR-060, PCA-FR-137, PCA-FR-063, PCA-FR-091, PCA-FR-135 (tooling/mutation/mutation-scope.json). Generated 2026-09-13T14:38:46.209Z; current inputs match by source and scope fingerprint.
+- Scope: PCA-NFR-014, PCA-NFR-051, PCA-NFR-060, PCA-FR-137, PCA-FR-063, PCA-FR-091, PCA-FR-135 (tooling/mutation/mutation-scope.json). Generated 2026-09-13T14:49:32.694Z; current inputs match by source and scope fingerprint.
