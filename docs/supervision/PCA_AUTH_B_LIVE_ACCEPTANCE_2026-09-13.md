@@ -242,3 +242,42 @@ AUTH_B=NOT_EXECUTED_FULL_LIVE_UAT; safe route-contract probes only
 READY_FOR_PARENT_C=NO
 pcaSafe=UNCHANGED
 ```
+
+## Supervisor decision — Session 1 completion stop (2026-09-13)
+
+The docs-only evidence commit was reconciled with origin and pushed after a secret scan. No application source, container image, Key Vault value, database setting, or `pcaSafe` resource was changed in this step.
+
+The requested DB runtime proof cannot be completed safely from the deployed surface. `/health/db` intentionally performs only `SELECT 1` and does not expose `CURRENT_USER()`, `DATABASE()`, negotiated TLS details, schema metadata, grants, or migration rows. No approved diagnostic channel or database credential was supplied that would allow those metadata queries without retrieving a secret. Static Azure evidence proves the configured private endpoint/VNet path and server-side TLS requirement, but not the path actually used by the running connection.
+
+No owner-controlled disposable inbox/test identity was supplied. Therefore no signup, verification delivery, reset delivery, credential rotation, session revocation, or real SMTP-send test was attempted. The historical SMTP version remains enabled; it must not be disabled until replacement delivery is proven.
+
+```text
+REMOTE_HEAD=0f8455e664530ad9a402cbd9530d3565ebd1b354
+WORKTREE=CLEAN
+SMTP_ROTATION=PASS
+OLD_SMTP_CREDENTIAL_STATUS=ENABLED; pending real replacement-delivery proof
+BACKEND_IMAGE_DIGEST=sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+BACKEND_HEALTH=PASS
+DB_PRIVATE_PATH=CONFIGURED; runtime path not independently proven
+DB_TLS=SERVER REQUIRE_SECURE_TRANSPORT=ON; app PCA_DATABASE_TLS=REQUIRED; negotiated session not independently captured
+DB_RUNTIME_IDENTITY=NOT_PROVEN (expected pca_pro_app; database pca_pro not runtime-reported)
+DB_SCHEMA_FINGERPRINT=NOT_OBTAINED; expected sha256:278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f
+DB_MIGRATION_STATE=NOT_OBTAINED
+MIGRATION_0022=NOT_EXECUTED against live production database
+DB_LEAST_PRIVILEGE=NOT_PROVEN; no runtime grants/prohibited-operation matrix available
+DB_RUNTIME_PROOF=PARTIAL; cannot promote to PASS
+AUTH_B_SIGNUP=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_VERIFY=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_LOGIN=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_LOGOUT=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_RESET=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_SESSION_REVOKE=OWNER_TEST_IDENTITY_REQUIRED
+AUTH_B_RATE_LIMIT=ROUTE_CONTRACT_ONLY; live full flow not executed
+AUTH_B_ENUMERATION_RESISTANCE=ROUTE_CONTRACT_ONLY; live full flow not executed
+AUTH_B_SAFE_ERRORS=ROUTE_CONTRACT_ONLY; live full flow not executed
+AUTH_B=OWNER_TEST_IDENTITY_REQUIRED
+READY_FOR_PARENT_C=NO
+pcaSafe=UNCHANGED
+```
+
+Per the supervisor gate, stop Session 1 here. Do not start Parent C. Resume only after an owner-controlled test identity/inbox and an approved secret-free DB diagnostic path are provided.
