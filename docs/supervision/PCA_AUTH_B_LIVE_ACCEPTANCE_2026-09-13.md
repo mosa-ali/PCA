@@ -281,3 +281,42 @@ pcaSafe=UNCHANGED
 ```
 
 Per the supervisor gate, stop Session 1 here. Do not start Parent C. Resume only after an owner-controlled test identity/inbox and an approved secret-free DB diagnostic path are provided.
+
+## Supervisor next step — final gates rechecked (2026-09-13)
+
+The required live DB proof was attempted through the supported App Service
+diagnostic surface. `az webapp ssh` did not establish an interactive container
+session, and the deployed backend exposes no runtime metadata route beyond
+`/health/db`'s deliberate `SELECT 1`. No DB password, URI, token, private key,
+or secret-bearing setting was retrieved. Adding a new production diagnostic
+endpoint would expand the public attack surface and is not authorized by this
+gate, so the runtime identity, negotiated TLS/cipher, actual private DNS path,
+schema fingerprint, migration journal, and grants remain unproven.
+
+No owner-controlled AUTH_B test identity or inbox was supplied. No account,
+verification/reset email, or SMTP send was created or attempted. The historical
+SMTP version remains enabled pending real replacement-delivery evidence.
+
+```text
+REMOTE_HEAD=d0ef0d87fc08108ac66a8b267ab250b22599df8b
+WORKTREE=CLEAN
+DB_PRIVATE_PATH=CONFIGURED; runtime path not independently proven
+DB_TLS=CONFIGURED; negotiated session not independently captured
+DB_RUNTIME_IDENTITY=NOT_PROVEN
+DB_SCHEMA_COUNTS=NOT_OBTAINED (expected 78/646/78/83/32/119/233)
+DB_SCHEMA_FINGERPRINT=NOT_OBTAINED; expected sha256:278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f
+DB_MIGRATION_STATE=NOT_OBTAINED
+MIGRATION_0022=NOT_EXECUTED
+DB_LEAST_PRIVILEGE=NOT_PROVEN
+DB_RUNTIME_PROOF=PARTIAL
+AUTH_B=OWNER_TEST_IDENTITY_REQUIRED
+OLD_SMTP_CREDENTIAL_STATUS=ENABLED
+PUBLIC_HEADER_BROWSER_UAT=NOT_VERIFIED; Chromium execution blocked by usage limit
+PUBLIC_HEADER_DEPLOYED=NO
+READY_FOR_PARENT_C=NO
+pcaSafe=UNCHANGED
+```
+
+Session 1 remains stopped. Do not start Parent C or redeploy `pcaSafe` until the
+owner supplies the required controlled identity/inbox, an approved DB runtime
+diagnostic path, and successful browser verification of the Public header.
