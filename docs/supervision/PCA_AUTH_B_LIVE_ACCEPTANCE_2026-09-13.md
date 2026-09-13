@@ -13,6 +13,10 @@ Engineering accepted SHA: `96887770a55c8d4cbf44f7cbc4c9cea5681ac8f2`
 
 The mandatory SMTP rotation gate failed. Read-only Azure Key Vault metadata shows one enabled `PCA-SMTP-PASSWORD` version, created and updated 2026-09-07, with no replacement version. Its identifier is the known compromised historical version `243780f0c811435fb2c5340f566a677b`. No secret value was read, printed, committed, or deployed.
 
+### Resume attempt (2026-09-13)
+
+After the owner reported rotation, `git fetch origin` reconciled `pca-dev` at `ac10734634c8f90f37932473243346f5ce4d3214` with a clean worktree. A fresh read-only Key Vault check still returned exactly one enabled version, `243780f0c811435fb2c5340f566a677b`; the active secret metadata therefore remains the compromised historical version. The `pca` app setting is present and uses an unversioned Key Vault reference, but no distinct active version exists for it to resolve. `SMTP_ROTATION=BLOCKED; REPLACEMENT_NOT_PROVEN` and the stop-before-deployment rule remains in force.
+
 ## Required owner action package
 
 1. In the Mailgun account, create a new SMTP credential for the approved sending identity `support@mail.pcasafe.com` (host `smtp.mailgun.org`, port `587`, STARTTLS / `secure=false`).
