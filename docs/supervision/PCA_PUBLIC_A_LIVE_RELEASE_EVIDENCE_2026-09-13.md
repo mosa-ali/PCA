@@ -14,7 +14,7 @@ DOMAIN=www.pcasafe.com
 ROLLBACK_IMAGE_REFERENCE=pcasafe.azurecr.io/pca-backend:5dacd84 (predeploy target state)
 
 EN_AR_PARITY=PASS; build reported EN 193 / AR 193 exact key parity; live EN and AR route set returned 200
-ACCESSIBILITY=PASS automated container verifier (301/301); manual in-app-browser session unavailable, so no additional visual claim is made
+ACCESSIBILITY=PARTIAL; automated container verifier passed 301/301, but manual keyboard/focus/visual owner UAT was not executed because the in-app browser session was unavailable
 RESPONSIVE=PASS live Chromium checks 48/48 (16 EN/AR routes at 375px, 768px, and 1280px; no horizontal overflow or console errors); visual owner sign-off remains separate
 LIVE_ROUTES=PASS; 16/16 published EN/AR routes returned 200; unknown route returned 404
 HTTPS=PASS; httpsOnly=true, HTTPS origin served successfully, no redirect defect observed
