@@ -252,7 +252,7 @@ The requested DB runtime proof cannot be completed safely from the deployed surf
 No owner-controlled disposable inbox/test identity was supplied. Therefore no signup, verification delivery, reset delivery, credential rotation, session revocation, or real SMTP-send test was attempted. The historical SMTP version remains enabled; it must not be disabled until replacement delivery is proven.
 
 ```text
-REMOTE_HEAD=7a773a76bed14363e3f8afb95eefd805a07c771b
+REMOTE_HEAD=bd0d862123cbfda4649754aac133c0cebc91f514
 WORKTREE=CLEAN
 SMTP_ROTATION=PASS
 OLD_SMTP_CREDENTIAL_STATUS=ENABLED; pending real replacement-delivery proof
