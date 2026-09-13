@@ -100,3 +100,60 @@ READY_FOR_PARENT_C=NO
 ```
 
 Resume with an owner-approved correction to the pca-to-ACR pull path, then prove `/health`, private MySQL/TLS/runtime identity/schema, and execute the complete AUTH_B UAT. Do not start Parent C or modify `pcaSafe`.
+
+## Supervisor continuation — ACR/sitecontainer diagnosis (2026-09-13)
+
+Evidence-only commits `94b431c` and `00e3856` were independently audited: the only changed path is this supervision document, with no secret assignments, passwords, connection strings, tokens, private keys, or deployment source changes. They were pushed after reconciliation; `REMOTE_HEAD=00e3856fdd4c2f8f8fbc07ec834ffbead839ffb7`, `WORKTREE=CLEAN`.
+
+`SMTP_ROTATION=PASS` was independently reconfirmed from Key Vault metadata. The new enabled version `749c5cf6bd92407794c2d687c2741e99` is newer than `243780f0c811435fb2c5340f566a677b`; no value was retrieved. The `pca` setting remains an unversioned reference to `pca-key/PCA-SMTP-PASSWORD`.
+
+### ACR and identity findings
+
+```text
+ACR=pcaSafe (pcasafe.azurecr.io), publicNetworkAccess=Enabled, SKU=Basic
+ACR_REPOSITORY=pca-backend
+ACR_TAG=auth-b-20260913-sp
+ACR_IMAGE_EXISTS=YES
+ACR_DIGEST_MATCH=YES; sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+IMAGE_PLATFORM=linux/amd64
+IMAGE_REVISION=21d0d9ff648f0ea995dbeddb55e7e327aee06904
+MANAGED_IDENTITY=SystemAssigned; principal adc7c8de-7a4c-4f9c-9342-4104125085ab
+ACR_PULL_AUTHORIZATION=AcrPull assignment present at registry scope; created 2026-09-13T17:26:17Z
+```
+
+The image exists in the intended registry and resolves to the expected digest/platform. The `pca` sitecontainer was configured as main, port 4001, `SystemIdentity`, with app-setting inheritance enabled and no registry password field. Azure activity confirms sitecontainer writes succeeded. Container-log classification nevertheless reports `IMAGE_PULL`/`MANIFEST_NOT_FOUND` and probe failure before application startup; no Node, MySQL, SMTP, or Key Vault application error was reached. The exact failing layer is therefore the App Service sitecontainer-to-ACR pull/auth path, not the backend image contents or application runtime.
+
+No broad role was granted. The `AcrPull` assignment remains the sole correction applied. Repeated tag, digest, single-platform, and supported CLI `--si` retries produced the same pull failure, so no further blind retries were made. `pca` was restored to `mcr.microsoft.com/appsvc/staticsite:latest` on port 80 with `Anonymous` auth. `pcaSafe` was independently verified unchanged (public digest `sha256:c0b2b1b7…`, port 80).
+
+## Final continuation state
+
+```text
+REMOTE_HEAD=00e3856fdd4c2f8f8fbc07ec834ffbead839ffb7
+WORKTREE=CLEAN
+SMTP_ROTATION=PASS
+BACKEND_SOURCE_SHA=21d0d9ff648f0ea995dbeddb55e7e327aee06904
+BACKEND_IMAGE_TAG=auth-b-20260913-sp
+BACKEND_IMAGE_DIGEST=sha256:a3feb4a8bddec77432f446b8bb00a6e04da9e7bb2f679bc52513a7e43f608d87
+ACR_IMAGE_EXISTS=YES
+ACR_DIGEST_MATCH=YES
+MANAGED_IDENTITY=SystemAssigned (adc7c8de-7a4c-4f9c-9342-4104125085ab)
+ACR_PULL_AUTHORIZATION=ASSIGNED; EFFECTIVE_PULL_NOT_PROVEN
+SITECONTAINER_AUTH_TYPE=SystemIdentity (rolled back to Anonymous placeholder)
+SITECONTAINER_ROOT_CAUSE=IMAGE_PULL / MANIFEST_NOT_FOUND at App Service ACR boundary
+ROOT_CAUSE_FIX=AcrPull assignment and SystemIdentity configuration applied; pull still fails, pca rolled back
+BACKEND_HEALTH=FAIL
+PRIVATE_DB_PATH=NOT_EXECUTED
+DB_TLS=NOT_EXECUTED (Azure server transport requirement remains configured)
+DB_RUNTIME_IDENTITY=NOT_EXECUTED
+DB_SCHEMA=NOT_EXECUTED
+DB_LEAST_PRIVILEGE=NOT_EXECUTED
+MIGRATION_0022_VALIDATION=NOT_EXECUTED
+AUTH_B=BLOCKED_BY_BACKEND_HEALTH
+OLD_SMTP_CREDENTIAL_STATUS=ENABLED; do not revoke before real delivery proof
+P0_OPEN=0 (engineering baseline)
+P1_OPEN=0 (engineering baseline)
+P2_OPEN=0 (engineering baseline)
+READY_FOR_PARENT_C=NO
+```
+
+Per the supervisor gate, stop here. The next authorized action is an owner/platform correction for the `pca` App Service ACR pull path (or effective role propagation confirmation), followed by redeploying this same digest. Do not switch to plaintext registry credentials, do not revoke the old SMTP version, and do not start database or AUTH_B testing until `BACKEND_HEALTH=PASS`.
