@@ -26,6 +26,8 @@ import type { PlatformAdminAuthService } from '../../../platformadmin/auth/Platf
 import { PlatformAdminAuthError } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import type { PlatformAdminAccountService } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
 import { PlatformAdminAccountError } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
+import type { PlatformAdminActivationService } from '../../../platformadmin/auth/PlatformAdminActivationService.js';
+import { PlatformAdminActivationError } from '../../../platformadmin/auth/PlatformAdminActivationService.js';
 import { authorizePlatformAdminOperation } from '../../../platformadmin/auth/rbacPolicy.js';
 import { PLATFORM_ADMIN_ROLES } from '../../../platformadmin/auth/types.js';
 import type { PlatformAdminRole } from '../../../platformadmin/auth/types.js';
@@ -38,6 +40,7 @@ import type { createRateLimiter } from '../../rateLimit.js';
 export interface PlatformAdminAdminUserRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   platformAdminAccountService: PlatformAdminAccountService;
+  platformAdminActivationService?: PlatformAdminActivationService;
   rateLimiter: ReturnType<typeof createRateLimiter>;
 }
 
@@ -151,9 +154,27 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
     const adminId = request.platformAdminId as string;
     try {
       const created = await deps.platformAdminAccountService.createAccount(displayName, hashAdminEmail(email), password, role as PlatformAdminRole, { adminId, roles });
+      if (deps.platformAdminActivationService) await deps.platformAdminActivationService.issueActivation(created.adminId, email, { adminId, roles });
       return reply.code(201).send({ adminId: created.adminId, displayName: created.displayName, status: created.status, createdAt: dateToJson(created.createdAt) });
     } catch (error) {
       if (error instanceof PlatformAdminAccountError) return reply.code(403).send({ error: 'forbidden' });
+      throw error;
+    }
+  });
+
+  app.post('/platform-admin/admin-users/:adminId/activation', { bodyLimit: MAX_BODY_BYTES, preHandler: [mutateLimiter, requirePlatformAdminSession] }, async (request, reply) => {
+    if (!deps.platformAdminActivationService) return reply.code(503).send({ error: 'unavailable' });
+    const { adminId } = request.params as { adminId?: string };
+    const body = request.body;
+    if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH || !isPlainObject(body) || typeof body.email !== 'string' || body.email.length === 0 || body.email.length > EMAIL_MAX_LENGTH || !body.email.includes('@')) return reply.code(400).send({ error: 'invalid_request' });
+    const roles = request.platformAdminRoles ?? [];
+    if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+    if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+    try {
+      await deps.platformAdminActivationService.issueActivation(adminId, body.email, { adminId: request.platformAdminId as string, roles });
+      return reply.code(200).send({ status: 'SENT' });
+    } catch (error) {
+      if (error instanceof PlatformAdminActivationError || error instanceof PlatformAdminAccountError) return reply.code(403).send({ error: 'forbidden' });
       throw error;
     }
   });

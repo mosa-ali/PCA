@@ -213,6 +213,7 @@ export interface ServerDependencies {
   commercialNotificationSupportService: CommercialNotificationSupportService;
   /** PCA-PA-3B: Platform Administration operational/commercial API -- see registerPlatformAdminOperationalRoutes below. */
   platformAdminAccountService: PlatformAdminAccountService;
+  platformAdminActivationService: import('../platformadmin/auth/PlatformAdminActivationService.js').PlatformAdminActivationService;
   platformAdminEntitlementService: PlatformAdminEntitlementService;
   changeRequestRepository: ChangeRequestRepository;
   entitlementRepository: EntitlementRepository;
@@ -546,6 +547,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   registerPlatformAdminOperationalRoutes(app, {
     platformAdminAuthService: deps.platformAdminAuthService,
     platformAdminAccountService: deps.platformAdminAccountService,
+    platformAdminActivationService: deps.platformAdminActivationService,
     platformAdminEntitlementService: deps.platformAdminEntitlementService,
     changeRequestRepository: deps.changeRequestRepository,
     entitlementRepository: deps.entitlementRepository,

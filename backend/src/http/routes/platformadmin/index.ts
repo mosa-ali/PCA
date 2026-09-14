@@ -25,8 +25,10 @@ import { registerPlatformAdminAuditRoutes } from './auditRoutes.js';
 import { registerPlatformAdminSettingsRoutes } from './settingsRoutes.js';
 import { registerPlatformAdminReleaseRoutes } from './releaseRoutes.js';
 import { registerDbRuntimeDiagnosticRoutes } from './dbRuntimeDiagnosticRoutes.js';
+import { registerPlatformAdminActivationRoutes } from './activationRoutes.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import type { PlatformAdminAccountService } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
+import type { PlatformAdminActivationService } from '../../../platformadmin/auth/PlatformAdminActivationService.js';
 import type { PlatformAdminEntitlementService } from '../../../platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import type { ChangeRequestRepository } from '../../../entitlements/requests/ChangeRequestRepository.js';
 import type { EntitlementRepository } from '../../../entitlements/EntitlementRepository.js';
@@ -41,6 +43,7 @@ import type { createRateLimiter } from '../../rateLimit.js';
 export interface PlatformAdminOperationalRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
   platformAdminAccountService: PlatformAdminAccountService;
+  platformAdminActivationService: PlatformAdminActivationService;
   platformAdminEntitlementService: PlatformAdminEntitlementService;
   changeRequestRepository: ChangeRequestRepository;
   entitlementRepository: EntitlementRepository;
@@ -56,6 +59,7 @@ export interface PlatformAdminOperationalRoutesDeps {
 }
 
 export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, deps: PlatformAdminOperationalRoutesDeps): void {
+  registerPlatformAdminActivationRoutes(app, { platformAdminActivationService: deps.platformAdminActivationService, rateLimiter: deps.rateLimiter });
   registerDbRuntimeDiagnosticRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });

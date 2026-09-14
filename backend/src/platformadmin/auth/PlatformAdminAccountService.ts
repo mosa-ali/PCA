@@ -75,12 +75,9 @@ export class PlatformAdminAccountService {
   }
 
   /**
-   * MFA is always seeded PENDING_SETUP here -- there is no self-service
-   * "complete MFA setup" HTTP endpoint in this lane, so an account created
-   * by this method cannot complete login until a future workstream adds
-   * one (see this lane's final report's KNOWN_GAPS: the same limitation
-   * scripts/bootstrap-platform-owner.mjs documents and deliberately avoids
-   * by seeding MFA ACTIVE directly for the bootstrap-created account).
+   * MFA is always seeded PENDING_SETUP here. The first-time activation
+   * ceremony is deliberately separate from normal login and is issued by
+   * PlatformAdminActivationService after this account-management mutation.
    */
   async createAccount(
     displayName: string,

@@ -5,6 +5,7 @@ import { RouteGuard } from './rbac/RouteGuard';
 import { BillingRouteGuard } from './rbac/BillingRouteGuard';
 import { SettlementRouteGuard } from './rbac/SettlementRouteGuard';
 import Login from './pages/Login';
+import Activation from './pages/Activation';
 import Dashboard from './pages/Dashboard';
 import AccountsList from './pages/accounts/AccountsList';
 import AccountDetail from './pages/accounts/AccountDetail';
@@ -30,6 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="login" element={<Login />} />
+      <Route path="activate" element={<Activation />} />
 
       <Route
         element={

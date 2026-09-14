@@ -365,6 +365,11 @@
     "mfaCode": "First authenticator code",
     "activateMfa": "Activate MFA",
     "mfaActivated": "MFA activated.",
+    "firstTimeActivationTitle": "First-time activation",
+    "firstTimeActivationInstructions": "Send a one-time activation link so this administrator can set a new password and enroll MFA.",
+    "sendActivation": "Send activation link",
+    "activationSent": "Activation link sent.",
+    "activationEmailRequired": "Enter the administrator email to send the activation link.",
     "invalidMfaCode": "Enter the current six-digit authenticator code.",
     "active": "Active",
     "disabledStatus": "Disabled",
@@ -387,6 +392,16 @@
     "nameSearchLabel": "Search by name",
     "emailSearchLabel": "Search by email",
     "emailSearchHint": "Exact email match only -- this app never stores a searchable plaintext email."
+  },
+  "activation": {
+    "title": "Activate Platform Admin access",
+    "loading": "Preparing your one-time activation…",
+    "instructions": "Scan this one-time enrollment URI in your authenticator app, then set a new password and enter the first six-digit code.",
+    "uri": "Enrollment URI",
+    "password": "New password",
+    "totp": "First authenticator code",
+    "submit": "Complete activation",
+    "invalid": "This activation link is invalid, expired, or already used."
   },
   "settings": {
     "invalidLimits": "Enter non-negative whole numbers for both limits.",

@@ -131,6 +131,8 @@ import { CommercialNotificationService, CommercialNotificationSupportService } f
 import { MySqlCommercialNotificationPublisher } from './commercialnotifications/CommercialNotificationPublisher.js';
 // PCA-PA-3B: Platform Administration operational/commercial API wiring.
 import { PlatformAdminAccountService } from './platformadmin/auth/PlatformAdminAccountService.js';
+import { PlatformAdminActivationService } from './platformadmin/auth/PlatformAdminActivationService.js';
+import { MySqlPlatformAdminActivationRepository } from './platformadmin/auth/MySqlPlatformAdminActivationRepository.js';
 import { PlatformAdminEntitlementService } from './platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import { SlotReservationService } from './entitlements/slots/SlotReservationService.js';
 import { MySqlSlotReservationRepository } from './entitlements/slots/MySqlSlotReservationRepository.js';
@@ -404,7 +406,8 @@ async function start(): Promise<void> {
   // -- every downstream Platform Admin surface (billing refunds below,
   // PCA-PA-3B operational routes, buildServer's own auth route) reuses
   // this ONE instance rather than each constructing its own.
-  const platformAdminAuthService = new PlatformAdminAuthService(new MySqlPlatformAdminAuthRepository(), new MySqlPlatformAdminAlertAdapter());
+  const platformAdminAuthRepository = new MySqlPlatformAdminAuthRepository();
+  const platformAdminAuthService = new PlatformAdminAuthService(platformAdminAuthRepository, new MySqlPlatformAdminAlertAdapter());
 
   // PCA-BILL-2A wiring -- see this block's own imports above for the
   // external-gate note on PaymentProvider selection.
@@ -476,7 +479,7 @@ async function start(): Promise<void> {
   const paymentConfirmationService = new PaymentConfirmationService(changeRequestRepository, entitlementRepository);
 
   // PCA-PA-3B wiring.
-  const platformAdminAccountService = new PlatformAdminAccountService(new MySqlPlatformAdminAuthRepository());
+  const platformAdminAccountService = new PlatformAdminAccountService(platformAdminAuthRepository);
   const slotReservationService = new SlotReservationService(
     new MySqlSlotReservationRepository(entitlementRepository, complimentaryGrantRepositoryForConsumption),
     () => new Date(),
@@ -543,6 +546,11 @@ async function start(): Promise<void> {
   // SESSION BACKING STORE doc comment).
   const authService = new AuthService(new MySqlAuthRepository());
   const emailInfrastructure = createEmailInfrastructure();
+  const platformAdminActivationService = new PlatformAdminActivationService(
+    platformAdminAuthRepository,
+    new MySqlPlatformAdminActivationRepository(),
+    emailInfrastructure.emailSender,
+  );
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
@@ -881,6 +889,7 @@ async function start(): Promise<void> {
     commercialNotificationSupportService,
     // PCA-PA-3B: Platform Administration operational/commercial API.
     platformAdminAccountService,
+    platformAdminActivationService,
     platformAdminEntitlementService,
     changeRequestRepository,
     entitlementRepository,

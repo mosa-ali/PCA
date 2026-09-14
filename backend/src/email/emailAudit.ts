@@ -9,7 +9,7 @@
 export type EmailAuditOutcome = 'SENT' | 'RETRY_SCHEDULED' | 'DEAD_LETTER';
 
 export interface EmailAuditEvent {
-  readonly kind: 'VERIFICATION' | 'PASSWORD_RESET';
+  readonly kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION';
   readonly providerName: string;
   readonly outcome: EmailAuditOutcome;
   readonly attemptCount: number;

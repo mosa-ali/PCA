@@ -9,7 +9,7 @@
  * message a mail provider, its logs, or any intermediate relay will see.
  */
 
-export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET';
+export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION';
 
 export interface RenderedTemplateContent {
   readonly subject: string;
@@ -39,6 +39,17 @@ export function renderPasswordResetCodeTemplate(code: string): RenderedTemplateC
   };
 }
 
+export function renderPlatformAdminActivationTemplate(url: string): RenderedTemplateContent {
+  const safeUrl = escapeHtml(url);
+  return {
+    subject: 'Complete your PCA Platform Admin activation',
+    text: `Complete your PCA Platform Admin activation by opening this one-time link:\n${url}\n\nThe link expires soon and can only be used once. If you did not expect this message, ignore it.`,
+    html: `<p>Complete your PCA Platform Admin activation using this one-time link:</p><p><a href="${safeUrl}">${safeUrl}</a></p><p>The link expires soon and can only be used once. If you did not expect this message, ignore it.</p>`,
+  };
+}
+
 export function renderEmailTemplate(kind: EmailTemplateKind, code: string): RenderedTemplateContent {
-  return kind === 'VERIFICATION' ? renderVerificationCodeTemplate(code) : renderPasswordResetCodeTemplate(code);
+  if (kind === 'VERIFICATION') return renderVerificationCodeTemplate(code);
+  if (kind === 'PASSWORD_RESET') return renderPasswordResetCodeTemplate(code);
+  return renderPlatformAdminActivationTemplate(code);
 }

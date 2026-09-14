@@ -23,4 +23,6 @@ export interface EmailSenderPort {
    * sendVerificationCode -- see this interface's own header.
    */
   sendPasswordResetCode(email: string, code: string): Promise<void>;
+  /** Sends a one-time Platform Admin first-time activation link. */
+  sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void>;
 }

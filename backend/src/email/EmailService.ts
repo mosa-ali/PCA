@@ -76,7 +76,11 @@ export class EmailService implements EmailSenderPort {
     await this.enqueueAndAttempt('PASSWORD_RESET', email, code);
   }
 
-  private async enqueueAndAttempt(kind: EmailTemplateKind, email: string, code: string): Promise<void> {
+  async sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void> {
+    await this.enqueueAndAttempt('PLATFORM_ADMIN_ACTIVATION', email, activationUrl, token);
+  }
+
+  private async enqueueAndAttempt(kind: EmailTemplateKind, email: string, code: string, idempotencyValue = code): Promise<void> {
     const now = (this.deps.now ?? (() => new Date()))();
     const normalizedEmail = email.trim().toLowerCase();
     // Deterministic (not random) so a genuine duplicate call for the SAME
@@ -88,7 +92,7 @@ export class EmailService implements EmailSenderPort {
     // brute-force all 1,000,000 six-digit candidates offline and recover
     // the exact code from this column alone -- see emailIdempotencyKey.ts's
     // own doc comment for the full reasoning.
-    const idempotencyKey = computeEmailIdempotencyKey(kind, normalizedEmail, code, this.deps.env);
+    const idempotencyKey = computeEmailIdempotencyKey(kind, normalizedEmail, idempotencyValue, this.deps.env);
     const outboxId = (this.deps.idGenerator ?? randomUUID)();
     const payload: OutboxMessagePayload = { toEmail: normalizedEmail, kind, code };
     const encryptedPayload = encryptOutboxContent(JSON.stringify(payload), this.deps.env);

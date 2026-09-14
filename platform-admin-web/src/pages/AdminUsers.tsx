@@ -94,6 +94,7 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
   const [enrollmentUri, setEnrollmentUri] = useState<string | null>(null);
   const [enrollmentCode, setEnrollmentCode] = useState('');
   const [enrollmentBusy, setEnrollmentBusy] = useState(false);
+  const [activationEmail, setActivationEmail] = useState('');
 
   const withStepUp = async (action: (stepUpId: string) => Promise<void>) => {
     setBusy(true);
@@ -175,6 +176,19 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
     }
   };
 
+  const sendActivation = async () => {
+    if (!activationEmail.includes('@')) { notify(t('adminUsers.activationEmailRequired'), 'error'); return; }
+    setEnrollmentBusy(true);
+    try {
+      const stepUpId = await requestStepUp('ADMIN_ROLE_GRANT');
+      if (!stepUpId) return;
+      await platformAdminApi.post(`/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/activation`, { email: activationEmail.trim(), stepUpId });
+      notify(t('adminUsers.activationSent'), 'success');
+      setActivationEmail('');
+    } catch (err) { notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error'); }
+    finally { setEnrollmentBusy(false); }
+  };
+
   return (
     <>
       <tr>
@@ -233,6 +247,9 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
               </div>
               {admin.status === 'ACTIVE' && admin.mfaStatus === 'PENDING_SETUP' && (
                 <div className="card" style={{ margin: 0 }}>
+                  <h4>{t('adminUsers.firstTimeActivationTitle')}</h4>
+                  <p className="field-hint">{t('adminUsers.firstTimeActivationInstructions')}</p>
+                  <div className="actions-row"><label htmlFor={`activation-email-${admin.adminId}`}>{t('login.emailLabel')}</label><input id={`activation-email-${admin.adminId}`} type="email" value={activationEmail} onChange={(e) => setActivationEmail(e.target.value)} maxLength={255} /><button type="button" className="btn" disabled={enrollmentBusy} onClick={sendActivation}>{t('adminUsers.sendActivation')}</button></div>
                   <h4>{t('adminUsers.mfaEnrollmentTitle')}</h4>
                   <p className="field-hint">{t('adminUsers.mfaEnrollmentInstructions')}</p>
                   {!enrollmentUri ? (

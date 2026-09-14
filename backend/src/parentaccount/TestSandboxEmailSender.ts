@@ -11,7 +11,7 @@ export interface SentTestEmail {
   email: string;
   code: string;
   sentAt: Date;
-  kind: 'VERIFICATION' | 'PASSWORD_RESET';
+  kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION';
 }
 
 /**
@@ -39,6 +39,12 @@ export class TestSandboxEmailSender implements EmailSenderPort {
     this.sent.push({ email, code, sentAt: new Date(), kind: 'PASSWORD_RESET' });
     // eslint-disable-next-line no-console -- TEST_SANDBOX-only, never runs in production (see createTestSandboxEmailSender's gate)
     console.log(`[TEST_SANDBOX email] password-reset code sent (email redacted, code redacted, length=${code.length})`);
+  }
+
+  async sendPlatformAdminActivationLink(email: string, activationUrl: string, _token: string): Promise<void> {
+    this.sent.push({ email, code: activationUrl, sentAt: new Date(), kind: 'PLATFORM_ADMIN_ACTIVATION' });
+    // eslint-disable-next-line no-console
+    console.log(`[TEST_SANDBOX email] platform-admin activation link sent (email redacted, link redacted)`);
   }
 
   /** TEST/E2E-only accessor -- reads back the most recently "sent" code of the given kind for a given email, exactly as a real test harness would read a mailbox. Defaults to VERIFICATION for existing callers. */
