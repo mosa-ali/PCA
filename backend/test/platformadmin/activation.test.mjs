@@ -14,7 +14,7 @@ function harness() {
   const tokens = new Map();
   const auth = { findAccountById: async () => account, findActiveRoles: async () => ['PLATFORM_ADMIN'], getMfaState: async () => mfa };
   const repo = {
-    issue: async (input) => { tokens.set(input.tokenHash, { ...input, usedAt: null, revokedAt: null }); },
+    issue: async (input) => { for (const t of tokens.values()) if (t.adminId === input.adminId && !t.usedAt && !t.revokedAt) t.revokedAt = input.createdAt; mfa.totpSecretCiphertext = null; mfa.totpSecretNonce = null; mfa.lastAcceptedTotpCounter = null; tokens.set(input.tokenHash, { ...input, usedAt: null, revokedAt: null }); },
     findUsable: async (hash, now) => { const t = tokens.get(hash); if (!t || t.usedAt || t.revokedAt || t.expiresAt <= now) return null; return { token: t, account, mfa }; },
     beginMfa: async (input) => { const t = tokens.get(input.tokenHash); if (!t) return null; mfa.totpSecretCiphertext = input.ciphertext; mfa.totpSecretNonce = input.nonce; return { token: t, account, mfa }; },
     complete: async (input) => { const t = tokens.get(input.tokenHash); if (!t || t.usedAt) return false; account.passwordCredential = input.passwordCredential; mfa.status = 'ACTIVE'; mfa.lastAcceptedTotpCounter = input.acceptedTotpCounter; t.usedAt = input.now; return true; },
@@ -42,4 +42,17 @@ test('first-time activation establishes scrypt password, encrypted TOTP and sing
   await h.service.complete(token, 'a new owner password', computeTotp(secret, h.now().getTime()));
   assert.equal(h.mfa.status, 'ACTIVE'); assert.equal(await verifyPassword('a new owner password', h.account.passwordCredential), true);
   await assert.rejects(() => h.service.complete(token, 'another password', '000000'), PlatformAdminActivationError);
+});
+
+test('APP_OWNER reissue revokes the old token and invalidates abandoned TOTP enrollment', async () => {
+  const h = harness();
+  await h.service.issueActivation('admin-1', 'mdrwesh@outlook.com', { adminId: 'owner-1', roles: ['APP_OWNER'] });
+  const first = new URL(h.sent[0].url).searchParams.get('token');
+  await h.service.start(first);
+  await h.service.issueActivation('admin-1', 'mdrwesh@outlook.com', { adminId: 'owner-1', roles: ['APP_OWNER'] });
+  const second = new URL(h.sent[1].url).searchParams.get('token');
+  assert.notEqual(first, second);
+  assert.equal(h.mfa.totpSecretCiphertext, null);
+  await assert.rejects(() => h.service.start(first), PlatformAdminActivationError);
+  await assert.doesNotReject(() => h.service.start(second));
 });

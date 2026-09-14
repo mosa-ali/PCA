@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { execute, runInTransaction } from '../../db/pool.js';
+import { execute, runInTransaction, SoftFailure } from '../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../audit/MySqlPlatformAdminAuditRepository.js';
 import type { PlatformAdminActivationRepository, ActivationState } from './PlatformAdminActivationRepository.js';
 import { PLATFORM_ADMIN_ACTIVATION_PURPOSE } from './PlatformAdminActivationRepository.js';
@@ -22,6 +22,11 @@ export class MySqlPlatformAdminActivationRepository implements PlatformAdminActi
   async issue(input: { activationId: string; adminId: PlatformAdminId; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void> {
     await runInTransaction(async (conn) => {
       await execute(conn, `UPDATE platform_admin_activation_tokens SET revoked_at = ? WHERE admin_id = ? AND purpose = ? AND used_at IS NULL AND revoked_at IS NULL`, [input.createdAt, input.adminId, PLATFORM_ADMIN_ACTIVATION_PURPOSE]);
+      // Reissue is also the lost-QR recovery boundary. Pending enrollment
+      // material is invalidated in the same transaction as old-token
+      // revocation, so an abandoned URI can never activate the account after
+      // a replacement link is issued.
+      await execute(conn, `UPDATE platform_admin_mfa_state SET totp_secret_ciphertext = NULL, totp_secret_nonce = NULL, activated_at = NULL, last_accepted_totp_counter = NULL WHERE admin_id = ? AND status = 'PENDING_SETUP'`, [input.adminId]);
       await execute(conn, `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`, [input.activationId, input.adminId, input.tokenHash, PLATFORM_ADMIN_ACTIVATION_PURPOSE, input.createdAt, input.expiresAt]);
     });
   }
@@ -64,13 +69,16 @@ export class MySqlPlatformAdminActivationRepository implements PlatformAdminActi
       const mfa = mfas[0]; const account = accounts[0];
       if (!mfa || !account || account.status !== 'ACTIVE' || mfa.status !== 'PENDING_SETUP' || !mfa.totp_secret_ciphertext || !mfa.totp_secret_nonce) return false;
       const { rowCount } = await execute(conn, `UPDATE platform_admin_accounts SET password_credential = ? WHERE admin_id = ? AND status = 'ACTIVE'`, [input.passwordCredential, token.admin_id]);
-      if (rowCount !== 1) return false;
+      if (rowCount !== 1) throw new SoftFailure('ACTIVATION_ATOMIC_FAILURE');
       const { rowCount: mfaCount } = await execute(conn, `UPDATE platform_admin_mfa_state SET status = 'ACTIVE', activated_at = ?, last_accepted_totp_counter = ? WHERE admin_id = ? AND status = 'PENDING_SETUP' AND (last_accepted_totp_counter IS NULL OR last_accepted_totp_counter < ?)`, [input.now, input.acceptedTotpCounter, token.admin_id, input.acceptedTotpCounter]);
-      if (mfaCount !== 1) return false;
+      if (mfaCount !== 1) throw new SoftFailure('ACTIVATION_ATOMIC_FAILURE');
       const { rowCount: used } = await execute(conn, `UPDATE platform_admin_activation_tokens SET used_at = ? WHERE activation_id = ? AND used_at IS NULL AND revoked_at IS NULL`, [input.now, token.activation_id]);
-      if (used !== 1) return false;
+      if (used !== 1) throw new SoftFailure('ACTIVATION_ATOMIC_FAILURE');
       await insertPlatformAdminAuditEventRow(conn, { eventId: randomUUID(), eventType: 'ADMIN_MFA_ENROLLED', actorAdminId: token.admin_id, actorRole: 'PLATFORM_ADMIN', targetRef: `admin:${token.admin_id}`, result: 'SUCCESS', occurredAt: input.now, correlationId: randomUUID(), metadata: { method: 'EMAIL_FIRST_TIME_ACTIVATION' } });
       return true;
+    }).catch((error) => {
+      if (error instanceof SoftFailure && error.outcome === 'ACTIVATION_ATOMIC_FAILURE') return false;
+      throw error;
     });
   }
 }
