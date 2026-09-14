@@ -3,11 +3,14 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { PlatformAdminAccountService, PlatformAdminAccountError } from '../../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { hashAdminEmail } from '../../dist/platformadmin/auth/emailHash.js';
+import { computeTotp, decryptTotpSecret, loadMfaEncryptionKey } from '../../dist/platformadmin/auth/totp.js';
 import { createInMemoryPlatformAdminAuthRepository } from '../support/inMemoryPlatformAdminAuthRepository.mjs';
 
-function buildService() {
+process.env.PLATFORM_ADMIN_MFA_ENC_KEY ??= 'ab'.repeat(32);
+
+function buildService(now = () => new Date()) {
   const repository = createInMemoryPlatformAdminAuthRepository();
-  const service = new PlatformAdminAccountService(repository);
+  const service = new PlatformAdminAccountService(repository, now);
   return { repository, service };
 }
 
@@ -43,6 +46,53 @@ test('duplicate email is rejected generically (DB unique constraint surfaced thr
     () => service.createAccount('Second', hashAdminEmail(email), 'password-value', 'PLATFORM_ADMIN', 'BOOTSTRAP'),
     PlatformAdminAccountError,
   );
+});
+
+test('MFA enrollment stores an encrypted secret and returns a one-time URI', async () => {
+  const now = new Date('2026-09-14T12:00:00.000Z');
+  const { repository, service } = buildService(() => now);
+  const account = await service.createAccount('Real Platform Admin', hashAdminEmail(`mfa-${randomUUID()}@example.test`), 'password-value', 'PLATFORM_ADMIN', 'BOOTSTRAP');
+
+  const result = await service.beginMfaEnrollment(account.adminId, { adminId: randomUUID(), roles: ['APP_OWNER'] });
+  assert.match(result.otpauthUri, /^otpauth:\/\/totp\//);
+  const state = await repository.getMfaState(account.adminId);
+  assert.equal(state.status, 'PENDING_SETUP');
+  assert.ok(state.totpSecretCiphertext);
+  assert.ok(state.totpSecretNonce);
+  assert.equal(repository._auditEvents.some((event) => event.metadata?.otpauthUri), false);
+  await assert.rejects(
+    () => service.beginMfaEnrollment(account.adminId, { adminId: randomUUID(), roles: ['APP_OWNER'] }),
+    PlatformAdminAccountError,
+  );
+});
+
+test('MFA activation verifies the first TOTP code atomically and audits success', async () => {
+  const now = new Date('2026-09-14T12:00:00.000Z');
+  const { repository, service } = buildService(() => now);
+  const account = await service.createAccount('Real Platform Admin', hashAdminEmail(`activate-${randomUUID()}@example.test`), 'password-value', 'PLATFORM_ADMIN', 'BOOTSTRAP');
+  await service.beginMfaEnrollment(account.adminId, { adminId: randomUUID(), roles: ['APP_OWNER'] });
+  const state = await repository.getMfaState(account.adminId);
+  const secret = decryptTotpSecret(state.totpSecretCiphertext, state.totpSecretNonce, loadMfaEncryptionKey());
+  const code = computeTotp(secret, now.getTime());
+
+  await service.activateMfa(account.adminId, code, { adminId: randomUUID(), roles: ['APP_OWNER'] });
+  assert.equal((await repository.getMfaState(account.adminId)).status, 'ACTIVE');
+  assert.equal(repository._auditEvents.at(-1).eventType, 'ADMIN_MFA_ENROLLED');
+  await assert.rejects(
+    () => service.activateMfa(account.adminId, code, { adminId: randomUUID(), roles: ['APP_OWNER'] }),
+    PlatformAdminAccountError,
+  );
+});
+
+test('MFA activation rejects an invalid code and leaves the factor pending', async () => {
+  const { repository, service } = buildService();
+  const account = await service.createAccount('Real Platform Admin', hashAdminEmail(`invalid-${randomUUID()}@example.test`), 'password-value', 'PLATFORM_ADMIN', 'BOOTSTRAP');
+  await service.beginMfaEnrollment(account.adminId, { adminId: randomUUID(), roles: ['APP_OWNER'] });
+  await assert.rejects(
+    () => service.activateMfa(account.adminId, '000000', { adminId: randomUUID(), roles: ['APP_OWNER'] }),
+    PlatformAdminAccountError,
+  );
+  assert.equal((await repository.getMfaState(account.adminId)).status, 'PENDING_SETUP');
 });
 
 test('assignRole rejects a duplicate ACTIVE (admin, role) grant', async () => {

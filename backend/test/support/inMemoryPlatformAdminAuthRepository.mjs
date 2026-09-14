@@ -146,6 +146,27 @@ export function createInMemoryPlatformAdminAuthRepository() {
       return state ? { ...state } : null;
     },
 
+    async beginMfaEnrollment(input) {
+      const state = mfaStateByAdminId.get(input.adminId);
+      if (!state || state.status !== 'PENDING_SETUP' || state.totpSecretCiphertext || state.totpSecretNonce) return false;
+      state.totpSecretCiphertext = input.totpSecretCiphertext;
+      state.totpSecretNonce = input.totpSecretNonce;
+      state.activatedAt = null;
+      state.lastAcceptedTotpCounter = null;
+      return true;
+    },
+
+    async activateMfa(input) {
+      const state = mfaStateByAdminId.get(input.adminId);
+      if (!state || state.status !== 'PENDING_SETUP' || !state.totpSecretCiphertext || !state.totpSecretNonce) return false;
+      if (state.lastAcceptedTotpCounter != null && state.lastAcceptedTotpCounter >= input.acceptedTotpCounter) return false;
+      state.status = 'ACTIVE';
+      state.activatedAt = input.activatedAt;
+      state.lastAcceptedTotpCounter = input.acceptedTotpCounter;
+      recordAudit(input.auditEvent);
+      return true;
+    },
+
     async createSession(record) {
       sessionsByTokenHash.set(record.tokenHash, { ...record });
     },

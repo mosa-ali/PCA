@@ -327,6 +327,41 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
     return rows[0] ? toMfaState(rows[0]) : null;
   }
 
+  async beginMfaEnrollment(input: { adminId: PlatformAdminId; totpSecretCiphertext: Buffer; totpSecretNonce: Buffer }): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE platform_admin_mfa_state
+            SET totp_secret_ciphertext = ?, totp_secret_nonce = ?, activated_at = NULL, last_accepted_totp_counter = NULL
+          WHERE admin_id = ? AND status = 'PENDING_SETUP' AND totp_secret_ciphertext IS NULL AND totp_secret_nonce IS NULL`,
+        [input.totpSecretCiphertext, input.totpSecretNonce, input.adminId],
+      ),
+    );
+    return rowCount === 1;
+  }
+
+  async activateMfa(input: {
+    adminId: PlatformAdminId;
+    acceptedTotpCounter: number;
+    activatedAt: Date;
+    auditEvent: PlatformAdminAuditEvent;
+  }): Promise<boolean> {
+    return runInTransaction(async (conn) => {
+      const { rowCount } = await execute(
+        conn,
+        `UPDATE platform_admin_mfa_state
+            SET status = 'ACTIVE', activated_at = ?, last_accepted_totp_counter = ?
+          WHERE admin_id = ? AND status = 'PENDING_SETUP'
+            AND totp_secret_ciphertext IS NOT NULL AND totp_secret_nonce IS NOT NULL
+            AND (last_accepted_totp_counter IS NULL OR last_accepted_totp_counter < ?)`,
+        [input.activatedAt, input.acceptedTotpCounter, input.adminId, input.acceptedTotpCounter],
+      );
+      if (rowCount !== 1) return false;
+      await insertPlatformAdminAuditEventRow(conn, input.auditEvent);
+      return true;
+    });
+  }
+
   async createSession(record: PlatformAdminSessionRecord): Promise<void> {
     await runInTransaction((conn) =>
       execute(

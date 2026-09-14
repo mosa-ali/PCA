@@ -85,6 +85,19 @@ export interface ConsumeStepUpInput {
   consumedAt: Date;
 }
 
+export interface BeginMfaEnrollmentInput {
+  adminId: PlatformAdminId;
+  totpSecretCiphertext: Buffer;
+  totpSecretNonce: Buffer;
+}
+
+export interface ActivateMfaInput {
+  adminId: PlatformAdminId;
+  acceptedTotpCounter: number;
+  activatedAt: Date;
+  auditEvent: PlatformAdminAuditEvent;
+}
+
 /**
  * Persistence port for the entire Platform Administration auth domain
  * (accounts, roles, sessions, MFA, step-up, login attempts). Deliberately
@@ -111,6 +124,10 @@ export interface PlatformAdminAuthRepository {
   reactivateAccount(input: { adminId: PlatformAdminId; auditEvent: PlatformAdminAuditEvent }): Promise<void>;
 
   getMfaState(adminId: PlatformAdminId): Promise<PlatformAdminMfaStateRecord | null>;
+  /** Stores the encrypted enrollment secret exactly once while MFA is pending. */
+  beginMfaEnrollment(input: BeginMfaEnrollmentInput): Promise<boolean>;
+  /** Atomically activates a pending factor and claims its first TOTP counter. */
+  activateMfa(input: ActivateMfaInput): Promise<boolean>;
 
   createSession(record: PlatformAdminSessionRecord): Promise<void>;
   findSessionForValidation(tokenHash: string): Promise<SessionValidationLookup | null>;

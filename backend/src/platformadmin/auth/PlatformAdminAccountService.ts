@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDuplicateEntry } from '../../db/pool.js';
 import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
+import { base32Encode, buildOtpauthUri, decryptTotpSecret, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
 import type { PlatformAdminAccountRecord, PlatformAdminId, PlatformAdminRole } from './types.js';
 import type { PlatformAdminAuditEvent } from '../audit/types.js';
@@ -34,6 +35,11 @@ export interface ActingAdmin {
 }
 
 export type Actor = ActingAdmin | 'BOOTSTRAP';
+
+export interface MfaEnrollmentStartResult {
+  /** One-time enrollment URI. Callers must render it only in the authenticated enrollment surface. */
+  otpauthUri: string;
+}
 
 function actorAdminId(actor: Actor): PlatformAdminId | null {
   return actor === 'BOOTSTRAP' ? null : actor.adminId;
@@ -132,6 +138,73 @@ export class PlatformAdminAccountService {
       if (isDuplicateEntry(error)) throw new PlatformAdminAccountError();
       throw error;
     }
+  }
+
+  /**
+   * Starts the one-time enrollment ceremony for an active, pending admin.
+   * The raw TOTP secret exists only in this request's memory and is persisted
+   * as AES-256-GCM ciphertext. The URI is returned once to the authenticated
+   * APP_OWNER surface; it is never logged or written to an audit row.
+   */
+  async beginMfaEnrollment(adminId: PlatformAdminId, actor: Actor): Promise<MfaEnrollmentStartResult> {
+    if (actor !== 'BOOTSTRAP' && authorizePlatformAdminOperation(actor.roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') {
+      throw new PlatformAdminAccountError();
+    }
+    const account = await this.repository.findAccountById(adminId);
+    const mfaState = await this.repository.getMfaState(adminId);
+    if (!account || account.status !== 'ACTIVE' || !mfaState || mfaState.status !== 'PENDING_SETUP') {
+      throw new PlatformAdminAccountError();
+    }
+
+    const key = loadMfaEncryptionKey();
+    const secret = generateTotpSecret();
+    const { ciphertext, nonce } = encryptTotpSecret(secret, key);
+    const stored = await this.repository.beginMfaEnrollment({ adminId, totpSecretCiphertext: ciphertext, totpSecretNonce: nonce });
+    if (!stored) throw new PlatformAdminAccountError();
+
+    // The email is intentionally not stored in plaintext by the account
+    // model, so the enrollment label uses the operator-chosen display name.
+    return { otpauthUri: buildOtpauthUri(account.displayName, base32Encode(secret)) };
+  }
+
+  /**
+   * Confirms the first code from the newly enrolled authenticator. The
+   * repository activates the factor and claims the accepted counter in one
+   * transaction, so a code cannot be replayed or activate twice.
+   */
+  async activateMfa(adminId: PlatformAdminId, totpCode: string, actor: Actor): Promise<void> {
+    if (actor !== 'BOOTSTRAP' && authorizePlatformAdminOperation(actor.roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') {
+      throw new PlatformAdminAccountError();
+    }
+    const account = await this.repository.findAccountById(adminId);
+    const mfaState = await this.repository.getMfaState(adminId);
+    if (!account || account.status !== 'ACTIVE' || !mfaState || mfaState.status !== 'PENDING_SETUP' || !mfaState.totpSecretCiphertext || !mfaState.totpSecretNonce) {
+      throw new PlatformAdminAccountError();
+    }
+
+    const key = loadMfaEncryptionKey();
+    const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
+    const now = this.now();
+    const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
+    if (matchedCounter === null) throw new PlatformAdminAccountError();
+
+    const activated = await this.repository.activateMfa({
+      adminId,
+      acceptedTotpCounter: matchedCounter,
+      activatedAt: now,
+      auditEvent: {
+        eventId: randomUUID(),
+        eventType: 'ADMIN_MFA_ENROLLED',
+        actorAdminId: actorAdminId(actor),
+        actorRole: actorPrimaryRole(actor),
+        targetRef: `admin:${adminId}`,
+        result: 'SUCCESS',
+        occurredAt: now,
+        correlationId: randomUUID(),
+        metadata: { method: 'OWNER_CONFIRMED_TOTP' },
+      },
+    });
+    if (!activated) throw new PlatformAdminAccountError();
   }
 
   async assignRole(adminId: PlatformAdminId, role: PlatformAdminRole, actor: Actor): Promise<void> {

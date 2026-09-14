@@ -19,3 +19,8 @@ export interface CreatedAdminUser {
   status: string;
   createdAt: string | null;
 }
+
+export interface MfaEnrollmentStarted {
+  /** One-time URI returned only from the authenticated enrollment action. */
+  otpauthUri: string;
+}

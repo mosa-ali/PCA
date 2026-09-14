@@ -47,6 +47,7 @@ const EMAIL_MAX_LENGTH = 255;
 const PASSWORD_MIN_LENGTH = 12;
 const PASSWORD_MAX_LENGTH = 256;
 const ADMIN_ID_MAX_LENGTH = 64;
+const TOTP_CODE_SHAPE = /^[0-9]{6}$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -156,6 +157,53 @@ export function registerPlatformAdminAdminUserRoutes(app: FastifyInstance, deps:
       throw error;
     }
   });
+
+  app.post(
+    '/platform-admin/admin-users/:adminId/mfa/enrollment',
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [mutateLimiter, requirePlatformAdminSession] },
+    async (request, reply) => {
+      const { adminId } = request.params as { adminId?: string };
+      if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
+      const body = isPlainObject(request.body) ? request.body : {};
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+
+      try {
+        const actorAdminId = request.platformAdminId as string;
+        const result = await deps.platformAdminAccountService.beginMfaEnrollment(adminId, { adminId: actorAdminId, roles });
+        // This is the sole authenticated response carrying enrollment data.
+        // It is never logged, audited, persisted, or returned by a read route.
+        return reply.code(200).send({ otpauthUri: result.otpauthUri });
+      } catch (error) {
+        if (error instanceof PlatformAdminAccountError) return reply.code(403).send({ error: 'forbidden' });
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/platform-admin/admin-users/:adminId/mfa/activate',
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [mutateLimiter, requirePlatformAdminSession] },
+    async (request, reply) => {
+      const { adminId } = request.params as { adminId?: string };
+      if (typeof adminId !== 'string' || adminId.length === 0 || adminId.length > ADMIN_ID_MAX_LENGTH) return reply.code(400).send({ error: 'invalid_request' });
+      const body = request.body;
+      if (!isPlainObject(body) || typeof body.totpCode !== 'string' || !TOTP_CODE_SHAPE.test(body.totpCode)) return reply.code(400).send({ error: 'invalid_request' });
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'MANAGE_ADMIN_ACCOUNTS') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      if (!(await requireStepUp(request, reply, body.stepUpId))) return;
+
+      try {
+        const actorAdminId = request.platformAdminId as string;
+        await deps.platformAdminAccountService.activateMfa(adminId, body.totpCode, { adminId: actorAdminId, roles });
+        return reply.code(200).send({ status: 'ACTIVE' });
+      } catch (error) {
+        if (error instanceof PlatformAdminAccountError) return reply.code(403).send({ error: 'forbidden' });
+        throw error;
+      }
+    },
+  );
 
   app.post(
     '/platform-admin/admin-users/:adminId/roles',

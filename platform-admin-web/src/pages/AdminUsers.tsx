@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { platformAdminApi, PlatformAdminApiError } from '../api/platformAdminApiClient';
 import type { PagedResult } from '../domain/accounts';
 import { PLATFORM_ADMIN_ROLES, type PlatformAdminRole } from '../domain/roles';
-import type { AdminUserSummary, CreatedAdminUser } from '../domain/adminUsers';
+import type { AdminUserSummary, CreatedAdminUser, MfaEnrollmentStarted } from '../domain/adminUsers';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { PermissionGate } from '../rbac/PermissionGate';
@@ -91,6 +91,9 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
   const [expanded, setExpanded] = useState(false);
   const [grantRole, setGrantRole] = useState<PlatformAdminRole>('SUPPORT_ADMIN');
   const [busy, setBusy] = useState(false);
+  const [enrollmentUri, setEnrollmentUri] = useState<string | null>(null);
+  const [enrollmentCode, setEnrollmentCode] = useState('');
+  const [enrollmentBusy, setEnrollmentBusy] = useState(false);
 
   const withStepUp = async (action: (stepUpId: string) => Promise<void>) => {
     setBusy(true);
@@ -135,6 +138,42 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
       await platformAdminApi.post(`/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/sessions/revoke-all`, { stepUpId });
       notify(t('adminUsers.sessionsRevoked'), 'success');
     });
+
+  const beginMfaEnrollment = async () => {
+    setEnrollmentBusy(true);
+    try {
+      const stepUpId = await requestStepUp('ADMIN_ROLE_GRANT');
+      if (!stepUpId) return;
+      const result = await platformAdminApi.post<MfaEnrollmentStarted>(`/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/mfa/enrollment`, { stepUpId });
+      setEnrollmentUri(result.otpauthUri);
+      notify(t('adminUsers.mfaEnrollmentStarted'), 'success');
+    } catch (err) {
+      notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
+    } finally {
+      setEnrollmentBusy(false);
+    }
+  };
+
+  const activateMfa = async () => {
+    if (!/^[0-9]{6}$/.test(enrollmentCode)) {
+      notify(t('adminUsers.invalidMfaCode'), 'error');
+      return;
+    }
+    setEnrollmentBusy(true);
+    try {
+      const stepUpId = await requestStepUp('ADMIN_ROLE_GRANT');
+      if (!stepUpId) return;
+      await platformAdminApi.post(`/platform-admin/admin-users/${encodeURIComponent(admin.adminId)}/mfa/activate`, { stepUpId, totpCode: enrollmentCode });
+      setEnrollmentUri(null);
+      setEnrollmentCode('');
+      notify(t('adminUsers.mfaActivated'), 'success');
+      onChanged();
+    } catch (err) {
+      notify(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'), 'error');
+    } finally {
+      setEnrollmentBusy(false);
+    }
+  };
 
   return (
     <>
@@ -192,6 +231,28 @@ function AdminRow({ admin, onChanged }: { admin: AdminUserSummary; onChanged: ()
                   {t('adminUsers.revokeSessions')}
                 </button>
               </div>
+              {admin.status === 'ACTIVE' && admin.mfaStatus === 'PENDING_SETUP' && (
+                <div className="card" style={{ margin: 0 }}>
+                  <h4>{t('adminUsers.mfaEnrollmentTitle')}</h4>
+                  <p className="field-hint">{t('adminUsers.mfaEnrollmentInstructions')}</p>
+                  {!enrollmentUri ? (
+                    <button type="button" className="btn" disabled={enrollmentBusy} onClick={beginMfaEnrollment}>
+                      {t('adminUsers.beginMfaEnrollment')}
+                    </button>
+                  ) : (
+                    <>
+                      <label htmlFor={`mfa-uri-${admin.adminId}`}>{t('adminUsers.mfaEnrollmentUri')}</label>
+                      <textarea id={`mfa-uri-${admin.adminId}`} readOnly value={enrollmentUri} rows={3} aria-describedby={`mfa-uri-hint-${admin.adminId}`} />
+                      <p id={`mfa-uri-hint-${admin.adminId}`} className="field-hint">{t('adminUsers.mfaUriOneTime')}</p>
+                      <label htmlFor={`mfa-code-${admin.adminId}`}>{t('adminUsers.mfaCode')}</label>
+                      <input id={`mfa-code-${admin.adminId}`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={enrollmentCode} onChange={(e) => setEnrollmentCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                      <button type="button" className="btn btn-primary" disabled={enrollmentBusy || enrollmentCode.length !== 6} onClick={activateMfa}>
+                        {t('adminUsers.activateMfa')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </td>
         </tr>
