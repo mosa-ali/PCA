@@ -14,40 +14,28 @@
 // duplicate this check with a second source of truth that could disagree
 // with the first.
 //
-// WHY MFA IS PROVISIONED ACTIVE HERE (never PENDING_SETUP): PCA-ADD-PA-016
-// requires MFA to be mandatory with zero bypass -- PlatformAdminAuthService
-// .login refuses to complete authentication for any account whose MFA
-// status is not exactly ACTIVE. There is no unauthenticated "complete MFA
-// setup" HTTP endpoint anywhere in this PCA-PA-1 lane (by design -- see
-// this lane's final report), so if this script left the bootstrap account
-// in PENDING_SETUP, that account would have no way to ever reach ACTIVE
-// and would be permanently unable to log in. Provisioning the TOTP secret
-// and activating MFA in this same one-time, operator-run, already-
-// privileged script closes that gap safely: the operator is already
-// trusted with direct database/environment access at this point, and the
-// otpauth:// URI printed below lets them enroll it into an authenticator
-// app immediately, in the same breath as account creation.
+// MFA intentionally starts PENDING_SETUP. The existing authenticated
+// activation flow establishes the password, encrypts the TOTP secret with
+// AES-256-GCM, and activates MFA only after the first valid code.
 //
-// KNOWN, DOCUMENTED SCOPE BOUNDARY: PlatformAdminAccountService.createAccount
-// (used for any admin account created AFTER bootstrap, by a future
-// workstream's tooling) has this exact same limitation -- it seeds MFA
-// PENDING_SETUP because it has no operator-present TOTP secret to seed
-// ACTIVE with, and there is still no self-service "complete MFA setup" HTTP
-// flow to ever move it to ACTIVE. That is expected for this foundational
-// lane and is flagged explicitly in the implementation report as a
-// SHARED_INTEGRATION_REQUIRED-worthy gap for a later workstream (PCA-PA-3
-// Platform Admin Web, most likely), not an oversight here.
-import { randomBytes, randomUUID } from 'node:crypto';
+// The script is deliberately not a normal login or signup path; once the
+// account exists, reissuance is performed only through the approved,
+// authenticated activation lifecycle.
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
-import { hashPassword } from '../dist/platformadmin/auth/passwordCredential.js';
-import { buildOtpauthUri, base32Encode, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey } from '../dist/platformadmin/auth/totp.js';
+import { PENDING_ACTIVATION_CREDENTIAL } from '../dist/platformadmin/auth/passwordCredential.js';
 import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
+import { MySqlPlatformAdminActivationRepository } from '../dist/platformadmin/auth/MySqlPlatformAdminActivationRepository.js';
+import { generateActivationToken } from '../dist/platformadmin/auth/PlatformAdminActivationService.js';
 import { closePool, getPool } from '../dist/db/pool.js';
+import { EmailService } from '../dist/email/EmailService.js';
+import { MySqlEmailOutboxRepository } from '../dist/email/MySqlEmailOutboxRepository.js';
+import { assertProductionEmailConfigurationComplete, resolveEmailProviderAdapter } from '../dist/email/emailProviderConfig.js';
 
-const SAVE_NOW_BANNER =
-  '\n=================================================================\n' +
-  'SAVE THIS NOW -- IT WILL NOT BE SHOWN AGAIN.\n' +
-  '=================================================================\n';
+export const FIRST_OWNER_BOOTSTRAP_LOCK_NAME = 'pca:first-app-owner-bootstrap';
+const LOCK_TIMEOUT_SECONDS = 30;
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -55,14 +43,29 @@ function requireEnv(name) {
   return value;
 }
 
-function generateRandomPassword() {
-  // 24+ characters of cryptographically random base64url content --
-  // never a hardcoded default password.
-  return randomBytes(24).toString('base64url');
+async function acquireBootstrapLock(pool) {
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query('SELECT GET_LOCK(?, ?) AS acquired', [FIRST_OWNER_BOOTSTRAP_LOCK_NAME, LOCK_TIMEOUT_SECONDS]);
+    if (!rows[0] || Number(rows[0].acquired) !== 1) throw new Error('Unable to acquire first-owner bootstrap lock.');
+    return connection;
+  } catch (error) {
+    connection.release();
+    throw error instanceof Error ? error : new Error('Unable to acquire first-owner bootstrap lock.');
+  }
 }
 
-async function assertNoExistingAppOwner(pool) {
-  const [rows] = await pool.query(
+async function releaseBootstrapLock(connection) {
+  try {
+    const [rows] = await connection.query('SELECT RELEASE_LOCK(?) AS released', [FIRST_OWNER_BOOTSTRAP_LOCK_NAME]);
+    if (!rows[0] || Number(rows[0].released) !== 1) throw new Error('Unable to release first-owner bootstrap lock.');
+  } finally {
+    connection.release();
+  }
+}
+
+async function assertNoExistingAppOwner(connection) {
+  const [rows] = await connection.query(
     `SELECT ra.admin_id
      FROM platform_admin_role_assignments ra
      JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id
@@ -76,44 +79,37 @@ async function assertNoExistingAppOwner(pool) {
   }
 }
 
-async function main() {
+export async function runBootstrap() {
   // PCA_DATABASE_URL is consumed by backend/src/db/pool.ts itself (see
   // getConnectionUri) -- required here up front for a clear, early error
   // rather than an opaque failure deep inside the repository layer.
   requireEnv('PCA_DATABASE_URL');
-  const mfaEncKey = loadMfaEncryptionKey(); // throws synchronously if PLATFORM_ADMIN_MFA_ENC_KEY is absent/malformed -- fail-closed, per totp.ts's contract.
-  const email = requireEnv('PLATFORM_ADMIN_BOOTSTRAP_EMAIL');
-
-  const providedPassword = process.env.PLATFORM_ADMIN_BOOTSTRAP_PASSWORD;
-  const password = providedPassword && providedPassword.length > 0 ? providedPassword : generateRandomPassword();
-  const passwordWasGenerated = !providedPassword;
+  const email = requireEnv('PLATFORM_ADMIN_BOOTSTRAP_EMAIL').trim().toLowerCase();
+  assertProductionEmailConfigurationComplete(process.env);
+  const provider = resolveEmailProviderAdapter(process.env);
+  const base = process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL;
+  if (!base || (process.env.NODE_ENV === 'production' && !/^https:\/\//i.test(base))) throw new Error('PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL must be HTTPS in production.');
 
   const pool = getPool();
-  await assertNoExistingAppOwner(pool);
-
-  const repository = new MySqlPlatformAdminAuthRepository();
-  const adminId = randomUUID();
-  const now = new Date();
-  const emailHash = hashAdminEmail(email);
-  const passwordCredential = await hashPassword(password);
-
-  const totpSecret = generateTotpSecret();
-  const { ciphertext, nonce } = encryptTotpSecret(totpSecret, mfaEncKey);
-  const secretBase32 = base32Encode(totpSecret);
-  const otpauthUri = buildOtpauthUri(email, secretBase32);
-
-  const correlationId = randomUUID();
-  await repository.createAccount({
+  const lock = await acquireBootstrapLock(pool);
+  try {
+    await assertNoExistingAppOwner(lock);
+    const repository = new MySqlPlatformAdminAuthRepository();
+    const adminId = randomUUID();
+    const now = new Date();
+    const emailHash = hashAdminEmail(email);
+    const correlationId = randomUUID();
+    await repository.createAccount({
     adminId,
     emailHash,
     displayName: 'Platform Owner (bootstrap)',
-    passwordCredential,
+    passwordCredential: PENDING_ACTIVATION_CREDENTIAL,
     createdAt: now,
     assignmentId: randomUUID(),
     role: 'APP_OWNER',
     grantedByAdminId: null, // NULL = system/bootstrap-granted, per migration 0005's comment.
     grantedAt: now,
-    initialMfa: { status: 'ACTIVE', totpSecretCiphertext: ciphertext, totpSecretNonce: nonce, activatedAt: now, createdAt: now },
+    initialMfa: { status: 'PENDING_SETUP', totpSecretCiphertext: null, totpSecretNonce: null, activatedAt: null, createdAt: now },
     auditEvents: [
       {
         eventId: randomUUID(),
@@ -138,28 +134,28 @@ async function main() {
         metadata: { action: 'GRANTED', role: 'APP_OWNER', source: 'BOOTSTRAP' },
       },
     ],
-  });
-
-  console.log('Platform Administration APP_OWNER account created.');
-  console.log(`adminId: ${adminId}`);
-  console.log(`email: ${email}`);
-  if (passwordWasGenerated) {
-    console.log(SAVE_NOW_BANNER);
-    console.log(`Generated password: ${password}`);
-    console.log(SAVE_NOW_BANNER);
-  } else {
-    console.log('Password: (supplied via PLATFORM_ADMIN_BOOTSTRAP_PASSWORD)');
+    });
+    const { rawToken, tokenHash } = generateActivationToken();
+    const activationRepository = new MySqlPlatformAdminActivationRepository();
+    const createdAt = new Date();
+    await activationRepository.issue({ activationId: randomUUID(), adminId, tokenHash, createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 60_000) });
+    const emailSender = new EmailService({ repository: new MySqlEmailOutboxRepository(), providerAdapter: provider, env: process.env });
+    const url = `${(base ?? 'http://localhost:4100/platform-admin/activate').replace(/\/$/, '')}?token=${encodeURIComponent(rawToken)}`;
+    await emailSender.sendPlatformAdminActivationLink(email, url, rawToken);
+    return { providerName: provider.providerName };
+  } finally {
+    await releaseBootstrapLock(lock);
   }
-  console.log(SAVE_NOW_BANNER);
-  console.log('MFA enrollment URI (scan/enter into an authenticator app now):');
-  console.log(otpauthUri);
-  console.log(SAVE_NOW_BANNER);
 }
 
-main()
-  .then(() => closePool())
-  .catch(async (error) => {
-    console.error(error.message);
-    await closePool();
-    process.exitCode = 1;
-  });
+const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (invokedDirectly) {
+  runBootstrap()
+    .then((result) => console.log(`FIRST_OWNER_BOOTSTRAP=ACTIVATION_ISSUED PROVIDER=${result.providerName}`))
+    .then(() => closePool())
+    .catch(async (error) => {
+      console.error(error instanceof Error ? error.message : 'First-owner bootstrap failed.');
+      await closePool();
+      process.exitCode = 1;
+    });
+}

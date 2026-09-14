@@ -23,6 +23,9 @@ const SALT_BYTES = 16;
 const DERIVED_KEY_BYTES = 64;
 const CREDENTIAL_PREFIX = 'scrypt';
 
+/** Non-login credential used while first-owner activation is pending. */
+export const PENDING_ACTIVATION_CREDENTIAL = 'PCA_PENDING_FIRST_OWNER_ACTIVATION';
+
 // scrypt's default maxmem (32 MiB) is exactly at the boundary implied by
 // N=32768, r=8 (128 * N * r bytes = 32 MiB) -- pad generously above that so
 // a slightly different libuv/OpenSSL accounting never spuriously rejects
