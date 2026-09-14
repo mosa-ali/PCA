@@ -67,6 +67,7 @@ import * as contactPage from './src/pages/contact.mjs';
 import * as accessibilityPage from './src/pages/accessibility.mjs';
 import * as privacyPolicyPage from './src/pages/privacyPolicy.mjs';
 import * as termsPage from './src/pages/terms.mjs';
+import * as signInPage from './src/pages/signIn.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
@@ -96,6 +97,7 @@ const PAGES = {
   accessibility: accessibilityPage,
   privacyPolicy: privacyPolicyPage,
   terms: termsPage,
+  signIn: signInPage,
 };
 
 const IMPLEMENTED = new Set(Object.keys(PAGES));
@@ -554,11 +556,17 @@ function assertRenderedClaimsAreRegistered(pageId, htmlText, registeredIds) {
 }
 
 function assertInternalLinksResolve(pageId, htmlText, emittedPaths) {
+  // These are deliberate hand-offs to separately deployed authentication
+  // realms. They are not public-web routes and therefore cannot be expected in
+  // this static artifact; keep the allowlist exact so arbitrary dead links still
+  // fail the build.
+  const EXTERNAL_REALM_HANDOFFS = new Set(['/parent/login/', '/platform-admin/login/']);
   const re = /href="(\/[^"#?]*)"/g;
   let match;
   while ((match = re.exec(htmlText)) !== null) {
     const href = match[1];
     if (href.startsWith('/assets/') || href === '/favicon.svg') continue;
+    if (EXTERNAL_REALM_HANDOFFS.has(href)) continue;
     const target = href.endsWith('/') ? `${href.slice(1)}index.html` : href.slice(1);
     if (!emittedPaths.has(target)) {
       fail('internal-link', `${pageId}: links to "${href}" but this build emits no ${target}`);

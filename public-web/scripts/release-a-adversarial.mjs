@@ -82,13 +82,12 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
 }
 
 // ---------------------------------------------------------------------------
-// 1b. Release A converts on DOWNLOAD, never on login
+// 1b. Release A exposes a neutral SIGN-IN chooser and converts on DOWNLOAD
 //
-// Owner ruling: there is no public login in Release A, and the conversion action
-// is downloading the app. Two things have to hold at once, and they pull in
-// opposite directions -- the download area must be VISIBLE, and it must not
-// imply a download that does not exist. CLM-024's register entry states the
-// second half in terms: "NO store badge, NO download action".
+// Owner scope correction: the public site may show a visible chooser linking to
+// the separate Parent and Platform Admin realms. It must not host account forms,
+// signup/recovery routes, or shared sessions here. The conversion action remains
+// downloading the app, and it must not imply a download that does not exist.
 //
 // Auth vocabulary is judged on RENDERED CONTROLS, not on prose. /how-it-works/
 // legitimately describes account creation as a future step, on a page that opens
@@ -97,25 +96,33 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
 // of the point.
 // ---------------------------------------------------------------------------
 {
-  const AUTH_WORDS = /\b(log ?in|sign ?in|sign ?up|create account|get started)\b|تسجيل الدخول|إنشاء حساب/i;
+  const FORBIDDEN_AUTH_WORDS = /\b(log ?in|sign ?up|create account|get started)\b|إنشاء حساب/i;
   const controls = [];
   for (const [rel, body] of htmlFiles) {
     for (const m of body.matchAll(/<(a|button)\b[^>]*>([\s\S]*?)<\/(?:a|button)>/gi)) {
       const text = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      if (AUTH_WORDS.test(text)) controls.push(`${rel}: <${m[1]}> "${text}"`);
+      if (FORBIDDEN_AUTH_WORDS.test(text)) controls.push(`${rel}: <${m[1]}> "${text}"`);
     }
   }
   if (controls.length) {
-    finding('CRITICAL', 'no-public-login', `an auth control is rendered: ${controls.slice(0, 4).join(' | ')}`);
+    finding('CRITICAL', 'public-sign-in', `a signup/account-creation control is rendered: ${controls.slice(0, 4).join(' | ')}`);
   } else {
-    ok('no-public-login', 'no login, sign-in, sign-up or create-account control is rendered anywhere');
+    ok('public-sign-in', 'only the approved sign-in chooser vocabulary is permitted; no signup or account-creation control is rendered');
+  }
+
+  const chooser = corpus.get('/sign-in/index.html') ?? '';
+  const chooserAr = corpus.get('/ar/sign-in/index.html') ?? '';
+  for (const [path, body] of [['/sign-in/', chooser], ['/ar/sign-in/', chooserAr]]) {
+    if (!body) finding('CRITICAL', 'public-sign-in', `${path} chooser was not emitted.`);
+    if (!/parent\/login\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Parent realm hand-off.`);
+    if (!/platform-admin\/login\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Platform Admin realm hand-off.`);
   }
 
   for (const routeId of ['login', 'signup', 'forgotPassword', 'resetPassword', 'verifyEmail']) {
     const route = ROUTES.find((r) => r.id === routeId);
-    if (route?.build) finding('CRITICAL', 'no-public-login', `auth route ${routeId} is built into the artifact.`);
+    if (route?.build) finding('CRITICAL', 'public-sign-in', `auth route ${routeId} is built into the artifact.`);
     if (route && corpus.has(`/${route.path}/index.html`)) {
-      finding('CRITICAL', 'no-public-login', `auth route /${route.path}/ was emitted.`);
+      finding('CRITICAL', 'public-sign-in', `auth route /${route.path}/ was emitted.`);
     }
   }
 

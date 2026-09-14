@@ -226,6 +226,7 @@ function header(ctx) {
   <div class="pw-mobile-menu" id="pw-mobile-menu" data-open="false">
     <div class="pw-container">
       <ul class="pw-mobile-menu__list">${frag(mobileLinks)}</ul>
+      ${login ? ctaLink(ctx, { routeId: login.routeId, label: ctx.t(login.labelKey), variant: 'secondary' }) : ''}
       ${primaryCta(ctx)}
     </div>
   </div>

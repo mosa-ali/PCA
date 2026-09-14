@@ -41,6 +41,8 @@ import privacyPolicyEn from './pages/privacyPolicy.en.mjs';
 import privacyPolicyAr from './pages/privacyPolicy.ar.mjs';
 import termsEn from './pages/terms.en.mjs';
 import termsAr from './pages/terms.ar.mjs';
+import signInEn from './pages/signIn.en.mjs';
+import signInAr from './pages/signIn.ar.mjs';
 
 // --- Video scripts (content only; no route of its own) ----------------------
 import videoEn from './pages/video.en.mjs';
@@ -56,6 +58,7 @@ export const PAGE_CONTENT = {
   accessibility: { en: accessibilityEn, ar: accessibilityAr },
   privacyPolicy: { en: privacyPolicyEn, ar: privacyPolicyAr },
   terms: { en: termsEn, ar: termsAr },
+  signIn: { en: signInEn, ar: signInAr },
   video: { en: videoEn, ar: videoAr },
 };
 

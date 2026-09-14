@@ -64,6 +64,16 @@ export const NEW_COPY = [
   'video.seo.description',
   'video.seo.title',
   'howItWorks.sensitive.body',
+  'signIn.seo.title',
+  'signIn.seo.description',
+  'signIn.hero.title',
+  'signIn.hero.body',
+  'signIn.parent.title',
+  'signIn.parent.body',
+  'signIn.parent.cta',
+  'signIn.admin.title',
+  'signIn.admin.body',
+  'signIn.admin.cta',
 ];
 
 export default {
