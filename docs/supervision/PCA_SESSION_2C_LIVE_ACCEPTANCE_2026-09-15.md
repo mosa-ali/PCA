@@ -167,3 +167,28 @@ NEXT_OWNER_ACTION=run the approved local Platform Admin login/session procedure
 without pasting its token or credentials into chat, then rerun the authorized
 read-only checks
 ```
+
+## Owner-controlled read-only SQL result — 2026-09-15
+
+The owner ran the supplied SELECT-only queries against `pca_pro` and returned
+sanitized results:
+
+```text
+ACTIVE_APP_OWNER_EXISTS=NO
+ACTIVE_APP_OWNER_COUNT=0
+FIRST_APP_OWNER_BOOTSTRAP_REQUIRED=YES
+PLATFORM_ADMIN_EXISTS=YES
+PLATFORM_ADMIN_ROLE=PLATFORM_ADMIN
+PLATFORM_ADMIN_ACCOUNT_STATUS=ACTIVE
+PLATFORM_ADMIN_MFA_STATUS=PENDING_SETUP
+PLATFORM_ADMIN_ACTIVATION_EMAIL=NOT_ATTEMPTED
+SMTP_REPLACEMENT_PATH=NOT_PROVED
+```
+
+The existing Platform Admin shell matches the expected state. Because no active
+APP_OWNER exists, the authorized stop rule applies: `bootstrap-platform-owner.mjs`
+was not run, no activation was issued, and no production mutation occurred.
+
+`BLOCKER=FIRST_APP_OWNER_BOOTSTRAP_REQUIRED`
+`NEXT_OWNER_ACTION=provide separate explicit authorization and supervisor review
+for the first APP_OWNER bootstrap path; do not bootstrap automatically.`
