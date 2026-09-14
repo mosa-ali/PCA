@@ -140,3 +140,30 @@ diagnostic evidence, and unverified public routing/browser acceptance.
 
 `NEXT_ACTION=owner supplies activation authorization and a separate controlled
 Parent test inbox; then run the approved live gates without printing secrets.`
+
+## Authorization continuation check — 2026-09-15
+
+Azure CLI context was confirmed without retrieving secrets:
+
+```text
+AZURE_SUBSCRIPTION_ID=5f5205e2-4e56-4cea-8ce7-3d408ed1507b
+AZURE_TENANT_ID=9d94b9fa-8bd6-420a-9d28-bfe2df02562a
+```
+
+No approved live Platform Admin/APP_OWNER bearer session or production database
+configuration is present in this terminal. No token, credential, Key Vault
+value, email hash, account identifier, or password material was requested or
+printed. Therefore the read-only account checks and activation issuance were
+not attempted.
+
+```text
+ACTIVE_APP_OWNER_EXISTS=UNVERIFIED
+ACTIVE_APP_OWNER_COUNT=UNVERIFIED
+FIRST_APP_OWNER_BOOTSTRAP_REQUIRED=UNVERIFIED
+PLATFORM_ADMIN_EXISTS=UNVERIFIED_THIS_SESSION
+PLATFORM_ADMIN_ACTIVATION_EMAIL=NOT_ATTEMPTED
+SMTP_REPLACEMENT_PATH=NOT_PROVED
+NEXT_OWNER_ACTION=run the approved local Platform Admin login/session procedure
+without pasting its token or credentials into chat, then rerun the authorized
+read-only checks
+```
