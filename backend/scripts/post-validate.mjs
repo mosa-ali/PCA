@@ -25,16 +25,15 @@ import { normalizedFingerprint } from './schema-fingerprint.mjs';
 const execFileP = promisify(execFile);
 
 // PCA-DW-W3-D / SESSION 2D (2026-09-15): was
-// '278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f' (78
-// tables, computed before migrations/0041_platform_admin_activation_tokens.sql
-// existed in PCA_CANONICAL_SCHEMA) -- regenerated after adding
-// platform_admin_activation_tokens (the 79th table, including
-// schema_migrations) to backend/src/db/schema.ts, verified via
-// schema-fingerprint.mjs against a from-zero-migrated disposable database
-// with all 39 migrations applied (compare-schema-snapshots.mjs reported
-// EXACT_MATCH against the canonical-bootstrap build -- see
-// docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
-const EXPECTED_FINGERPRINT = '3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3';
+// '3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3' (79
+// tables) -- regenerated after adding parent_login_step_up_codes (the 80th
+// table) and parent_accounts.first_login_completed_at (migration 0042, the
+// owner authentication-architecture decision's login-risk step-up code) to
+// backend/src/db/schema.ts, verified via schema-fingerprint.mjs against a
+// from-zero-migrated disposable database with all 40 migrations applied
+// (compare-schema-snapshots.mjs reported EXACT_MATCH against the
+// canonical-bootstrap build).
+const EXPECTED_FINGERPRINT = '638155c4f808cd673d31464ef881c42e68b7e493498324d8a1f8b20b9f48f3b1';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

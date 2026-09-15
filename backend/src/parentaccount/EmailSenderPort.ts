@@ -23,6 +23,14 @@ export interface EmailSenderPort {
    * sendVerificationCode -- see this interface's own header.
    */
   sendPasswordResetCode(email: string, code: string): Promise<void>;
+  /**
+   * Owner authentication-architecture decision (2026-09-15): the risk-based
+   * step-up code required for a normal parent/family account's first
+   * successful login. Distinct method (not a reused sendVerificationCode
+   * call) for the same reason sendPasswordResetCode is distinct -- the
+   * email content must be unambiguous about which action triggered it.
+   */
+  sendLoginStepUpCode(email: string, code: string): Promise<void>;
   /** Sends a one-time Platform Admin first-time activation link. */
   sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void>;
 }

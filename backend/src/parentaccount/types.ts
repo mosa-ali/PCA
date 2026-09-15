@@ -30,6 +30,17 @@ export interface ParentAccountRecord {
   createdAt: Date;
   verifiedAt: Date | null;
   disabledAt: Date | null;
+  /**
+   * Owner authentication-architecture decision (2026-09-15): null until
+   * this account has ever completed an authenticated session -- set at
+   * email-verification time (verifyEmail's own auto-session issuance IS an
+   * authentication event: proving control of the mailbox via a code is at
+   * least as strong as a login-time step-up code) and, for any account
+   * that somehow reaches login() before that has happened, at first
+   * successful step-up-verified login. ParentAccountService.login requires
+   * a login-step-up code exactly when this is still null.
+   */
+  firstLoginCompletedAt: Date | null;
 }
 
 /** Output of a successful registration call -- deliberately identical in shape whether the email was new or already pending, so the HTTP layer can never distinguish the two (see ParentAccountService.register). */
@@ -44,7 +55,20 @@ export interface VerifyEmailOutcome {
   sessionExpiresAt: Date;
 }
 
-export interface LoginOutcome {
+/**
+ * Owner authentication-architecture decision (2026-09-15): a first-ever
+ * login (see ParentAccountRecord.firstLoginCompletedAt) does not issue a
+ * session directly -- it durably enqueues a step-up code and returns
+ * STEP_UP_REQUIRED instead. Every account that has already completed one
+ * (which includes every account that has ever verified its email, the
+ * overwhelming common case) gets AUTHENTICATED immediately, unchanged from
+ * this type's pre-existing shape.
+ */
+export type LoginOutcome =
+  | { status: 'AUTHENTICATED'; accountId: ParentAccountId; familyId: OpaqueFamilyId | null; rawSessionToken: string; sessionExpiresAt: Date }
+  | { status: 'STEP_UP_REQUIRED' };
+
+export interface CompleteLoginStepUpOutcome {
   accountId: ParentAccountId;
   familyId: OpaqueFamilyId | null;
   rawSessionToken: string;

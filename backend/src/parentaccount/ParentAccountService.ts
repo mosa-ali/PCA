@@ -10,8 +10,10 @@ import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
 import { hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
 import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
 import {
+  MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE,
   MAX_PASSWORD_RESET_ATTEMPTS_PER_CODE,
   MAX_VERIFICATION_ATTEMPTS_PER_CODE,
+  LOGIN_STEP_UP_CODE_TTL_MS,
   PASSWORD_RESET_CODE_TTL_MS,
   VERIFICATION_CODE_TTL_MS,
   computeFreeAccessExpiry,
@@ -20,6 +22,7 @@ import {
 import type { ParentAccountRepository } from './ParentAccountRepository.js';
 import type { EmailSenderPort } from './EmailSenderPort.js';
 import type {
+  CompleteLoginStepUpOutcome,
   LoginOutcome,
   ParentAccountId,
   RegisterOutcome,
@@ -362,6 +365,74 @@ export class ParentAccountService {
       if (familyStatus === 'SUSPENDED') throw new ParentAccountError('UNAUTHORIZED');
     }
 
+    // Owner authentication-architecture decision (2026-09-15): normal users
+    // get password + risk-based email step-up, never Platform Admin-style
+    // TOTP. The one risk trigger implemented for the current release is
+    // "this account has never completed an authenticated session" -- see
+    // ParentAccountRecord.firstLoginCompletedAt's own doc comment for why
+    // this is already false (step-up already satisfied) for every account
+    // that has ever verified its email, the overwhelming common case.
+    if (account.firstLoginCompletedAt === null) {
+      await this.issueAndSendLoginStepUpCode(account.accountId, email);
+      return { status: 'STEP_UP_REQUIRED' };
+    }
+
+    const issued = await this.issueSessionFor(account.accountId);
+    return {
+      status: 'AUTHENTICATED',
+      accountId: account.accountId,
+      familyId: account.familyId,
+      rawSessionToken: issued.rawToken,
+      sessionExpiresAt: issued.session.expiresAt,
+    };
+  }
+
+  private async issueAndSendLoginStepUpCode(accountId: ParentAccountId, email: string): Promise<void> {
+    const now = this.now();
+    const { code, codeHash } = generateVerificationCode();
+    await this.repository.insertLoginStepUpCode({
+      codeId: randomUUID(),
+      accountId,
+      codeHash,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + LOGIN_STEP_UP_CODE_TTL_MS),
+    });
+    // Best-effort: see issueAndSendVerificationCode's own doc comment -- the same reasoning applies unchanged.
+    try {
+      await this.emailSender.sendLoginStepUpCode(email, code);
+    } catch {
+      // deliberately swallowed
+    }
+  }
+
+  /**
+   * Consumes a login-step-up code and, on success, issues the real session
+   * password verification alone was not enough to grant. Marks the
+   * account's first-login requirement permanently satisfied (idempotent,
+   * only writes if still null) so every later login proceeds directly,
+   * matching the "risk-aware, not on every routine login" model.
+   */
+  async completeLoginStepUp(email: string, code: string): Promise<CompleteLoginStepUpOutcome> {
+    if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    const emailHash = hashParentEmail(email);
+    const account = await this.repository.findByEmailHash(emailHash);
+    if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+
+    const activeCode = await this.repository.findLatestLoginStepUpCode(account.accountId);
+    if (!activeCode || activeCode.consumedAt !== null) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.attemptCount >= MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE) throw new ParentAccountError('UNAUTHORIZED');
+    if (activeCode.expiresAt.getTime() <= this.now().getTime()) throw new ParentAccountError('UNAUTHORIZED');
+
+    await this.repository.incrementLoginStepUpAttempt(activeCode.codeId);
+    const candidateHash = hashVerificationCode(code);
+    if (!verificationCodeHashesMatch(candidateHash, activeCode.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+
+    const won = await this.repository.consumeLoginStepUpCodeIfUnconsumed(activeCode.codeId, this.now());
+    if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent completion race for the same code
+
+    await this.repository.markFirstLoginCompletedIfAbsent(account.accountId, this.now());
     const issued = await this.issueSessionFor(account.accountId);
     return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
   }

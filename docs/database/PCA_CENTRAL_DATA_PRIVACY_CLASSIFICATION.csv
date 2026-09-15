@@ -425,6 +425,7 @@ parent_accounts,default_managed_device_limit,int,OPERATIONAL_METADATA,"Numeric/b
 parent_accounts,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 parent_accounts,verified_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 parent_accounts,disabled_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+parent_accounts,first_login_completed_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 parent_email_verification_codes,code_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 parent_email_verification_codes,account_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 parent_email_verification_codes,code_hash,char(64),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."
@@ -433,6 +434,13 @@ parent_email_verification_codes,created_at,datetime(3),OPERATIONAL_METADATA,Time
 parent_email_verification_codes,expires_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 parent_email_verification_codes,consumed_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
 parent_email_verification_codes,attempt_count,int,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
+parent_login_step_up_codes,code_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+parent_login_step_up_codes,account_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
+parent_login_step_up_codes,code_hash,char(64),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."
+parent_login_step_up_codes,created_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+parent_login_step_up_codes,expires_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+parent_login_step_up_codes,consumed_at,datetime(3),OPERATIONAL_METADATA,Timestamp.
+parent_login_step_up_codes,attempt_count,int,OPERATIONAL_METADATA,"Numeric/boolean operational counter, limit, flag, rate, or version."
 parent_password_reset_codes,code_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 parent_password_reset_codes,account_id,char(36),OPAQUE_IDENTIFIER,Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification).
 parent_password_reset_codes,code_hash,char(64),SECURITY_METADATA,"Authentication/verification/integrity hash material, never a raw secret or raw identifying value."

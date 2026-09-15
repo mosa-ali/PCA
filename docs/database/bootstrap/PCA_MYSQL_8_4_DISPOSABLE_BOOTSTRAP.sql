@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    79 tables
---   654 columns
---    79 primary keys
---    84 foreign keys
+--    80 tables
+--   662 columns
+--    80 primary keys
+--    85 foreign keys
 --    33 unique non-primary-key indexes
---   120 non-unique indexes
+--   121 non-unique indexes
 --   236 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    39 schema_migrations journal rows
+--    40 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1033,7 +1033,7 @@ CREATE TABLE `parent_account_preferences` (
   CONSTRAINT `parent_account_preferences_push_check` CHECK ((`push_requests_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql)
+-- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql)
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `email_hash` binary(32) NOT NULL,
@@ -1049,6 +1049,7 @@ CREATE TABLE `parent_accounts` (
   `default_managed_device_limit` int NULL,
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `verified_at` datetime(3) NULL,
+  `first_login_completed_at` datetime(3) NULL,
   `disabled_at` datetime(3) NULL,
   PRIMARY KEY (`account_id`),
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
@@ -1072,6 +1073,20 @@ CREATE TABLE `parent_email_verification_codes` (
   PRIMARY KEY (`code_id`),
   KEY `parent_email_verification_codes_account_idx` (`account_id`, `created_at`),
   CONSTRAINT `parent_email_verification_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_login_step_up_codes (defined by backend/migrations/0042_parent_login_step_up_codes.sql)
+CREATE TABLE `parent_login_step_up_codes` (
+  `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  `attempt_count` int NOT NULL DEFAULT 0,
+  PRIMARY KEY (`code_id`),
+  KEY `parent_login_step_up_codes_account_idx` (`account_id`, `created_at`),
+  CONSTRAINT `parent_login_step_up_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes (defined by backend/migrations/0029_parent_password_reset_codes.sql)
@@ -1642,4 +1657,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0038_email_outbox.sql'),
   ('0039_profile_protection_mode.sql'),
   ('0040_delete_now_ledger.sql'),
-  ('0041_platform_admin_activation_tokens.sql');
+  ('0041_platform_admin_activation_tokens.sql'),
+  ('0042_parent_login_step_up_codes.sql');

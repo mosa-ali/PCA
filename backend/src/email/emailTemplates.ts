@@ -9,7 +9,7 @@
  * message a mail provider, its logs, or any intermediate relay will see.
  */
 
-export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION';
+export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP';
 
 export interface RenderedTemplateContent {
   readonly subject: string;
@@ -48,8 +48,26 @@ export function renderPlatformAdminActivationTemplate(url: string): RenderedTemp
   };
 }
 
+/**
+ * Owner authentication-architecture decision (2026-09-15): the email sent
+ * when a normal parent/family login requires the "first successful login"
+ * risk-based step-up code -- deliberately distinct wording from both
+ * VERIFICATION (registration) and PASSWORD_RESET, so a recipient never
+ * confuses "someone is trying to sign in" with "someone is registering" or
+ * "someone requested a password reset."
+ */
+export function renderLoginStepUpCodeTemplate(code: string): RenderedTemplateContent {
+  const safeCode = escapeHtml(code);
+  return {
+    subject: 'Your PCA sign-in verification code',
+    text: `Your PCA sign-in verification code is: ${code}\n\nThis code expires soon and can only be used once. If you did not just try to sign in to PCA, you can ignore this email -- your password has not been changed.`,
+    html: `<p>Your PCA sign-in verification code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${safeCode}</p><p>This code expires soon and can only be used once. If you did not just try to sign in to PCA, you can ignore this email -- your password has not been changed.</p>`,
+  };
+}
+
 export function renderEmailTemplate(kind: EmailTemplateKind, code: string): RenderedTemplateContent {
   if (kind === 'VERIFICATION') return renderVerificationCodeTemplate(code);
   if (kind === 'PASSWORD_RESET') return renderPasswordResetCodeTemplate(code);
+  if (kind === 'LOGIN_STEP_UP') return renderLoginStepUpCodeTemplate(code);
   return renderPlatformAdminActivationTemplate(code);
 }

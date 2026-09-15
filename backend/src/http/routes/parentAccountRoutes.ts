@@ -38,6 +38,8 @@ import { isProductionSensitiveRuntime } from '../../runtime/environment.js';
 import {
   LOGIN_EMAIL_RATE_LIMIT,
   LOGIN_IP_RATE_LIMIT,
+  LOGIN_STEP_UP_EMAIL_RATE_LIMIT,
+  LOGIN_STEP_UP_IP_RATE_LIMIT,
   REGISTER_EMAIL_RATE_LIMIT,
   REGISTER_IP_RATE_LIMIT,
   REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT,
@@ -286,11 +288,43 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.login(email, password);
+      if (result.status === 'STEP_UP_REQUIRED') {
+        await reply.code(200).send({ sessionEstablished: false, stepUpRequired: true });
+        return;
+      }
       setSessionCookies(reply, result.rawSessionToken);
       await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
     } catch (error) {
       if (error instanceof ParentAccountError) {
         await reply.code(401).send({ error: 'invalid_credentials' });
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/login/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!isPlainObject(request.body)) {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    const { email, code } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof code !== 'string') {
+      await reply.code(400).send({ error: 'invalid_request' });
+      return;
+    }
+    if (!rateLimited('login-step-up', LOGIN_STEP_UP_IP_RATE_LIMIT, LOGIN_STEP_UP_EMAIL_RATE_LIMIT, request.ip, email)) {
+      await reply.code(429).send({ error: 'rate_limited' });
+      return;
+    }
+    try {
+      const result = await parentAccountService.completeLoginStepUp(email, code);
+      setSessionCookies(reply, result.rawSessionToken);
+      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
+    } catch (error) {
+      if (error instanceof ParentAccountError) {
+        const status = error.code === 'INVALID_INPUT' ? 400 : 401;
+        await reply.code(status).send({ error: error.code === 'INVALID_INPUT' ? 'invalid_request' : 'invalid_code' });
         return;
       }
       throw error;

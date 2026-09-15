@@ -43,6 +43,24 @@ export interface VerifiedTransition {
   freeAccess: FreeAccessSnapshot;
 }
 
+/** Same shape as NewPasswordResetCode/ActivePasswordResetCode, deliberately kept as a separate type against the separate parent_login_step_up_codes table (migration 0042) -- see that migration's header. */
+export interface NewLoginStepUpCode {
+  codeId: string;
+  accountId: ParentAccountId;
+  codeHash: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface ActiveLoginStepUpCode {
+  codeId: string;
+  accountId: ParentAccountId;
+  codeHash: string;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  attemptCount: number;
+}
+
 /** Same shape as NewVerificationCode/ActiveVerificationCode, deliberately kept as a separate type against the separate parent_password_reset_codes table (migration 0029) -- see that migration's header. */
 export interface NewPasswordResetCode {
   codeId: string;
@@ -130,6 +148,15 @@ export interface ParentAccountRepository {
   setServiceAccountIdIfAbsent(accountId: ParentAccountId, serviceAccountId: string): Promise<void>;
 
   revokeAllServiceSessionsFor(serviceAccountId: string, revokedAt: Date): Promise<number>;
+
+  insertLoginStepUpCode(record: NewLoginStepUpCode): Promise<void>;
+  /** Most recent login-step-up code row for the account, regardless of consumed/expired state -- the caller evaluates freshness/consumption itself. */
+  findLatestLoginStepUpCode(accountId: ParentAccountId): Promise<ActiveLoginStepUpCode | null>;
+  incrementLoginStepUpAttempt(codeId: string): Promise<void>;
+  /** Atomic compare-and-swap: marks the code consumed iff it was not already consumed. Returns true iff THIS call won the race. */
+  consumeLoginStepUpCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
+  /** Idempotent: only writes if the column is currently NULL. */
+  markFirstLoginCompletedIfAbsent(accountId: ParentAccountId, completedAt: Date): Promise<void>;
 
   /**
    * Grants (or re-activates) an ACTIVE `service_account_family_scopes` row

@@ -26,6 +26,18 @@ export const REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT: RateLimitPolicy = { window
 export const RESET_PASSWORD_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
 export const RESET_PASSWORD_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
 
+/**
+ * Owner authentication-architecture decision (2026-09-15): the risk-based
+ * step-up code required on a normal parent/family account's first
+ * successful login (migration 0042). Same TTL/attempt-budget shape as its
+ * two siblings (email verification, password reset) -- see migration
+ * 0042's own header for why this is a distinct table/code kind.
+ */
+export const LOGIN_STEP_UP_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+export const MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE = 8;
+export const LOGIN_STEP_UP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
+export const LOGIN_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
+
 export interface FreeAccessDefaults {
   mode: FreeAccessMode;
   durationDays: number | null;

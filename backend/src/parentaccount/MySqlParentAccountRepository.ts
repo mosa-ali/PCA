@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import type {
+  ActiveLoginStepUpCode,
   ActivePasswordResetCode,
   ActiveVerificationCode,
+  NewLoginStepUpCode,
   NewPasswordResetCode,
   NewPendingAccount,
   NewVerificationCode,
@@ -27,6 +29,7 @@ interface AccountRow {
   created_at: Date;
   verified_at: Date | null;
   disabled_at: Date | null;
+  first_login_completed_at: Date | null;
 }
 
 interface CodeRow {
@@ -69,6 +72,7 @@ function rowToRecord(row: AccountRow): ParentAccountRecord {
     createdAt: row.created_at,
     verifiedAt: row.verified_at,
     disabledAt: row.disabled_at,
+    firstLoginCompletedAt: row.first_login_completed_at,
   };
 }
 
@@ -160,10 +164,18 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
         // credential at the same instant the account becomes VERIFIED (see
         // migration 0030). A NULL (pre-0030 row) leaves the existing
         // credential exactly as it was.
+        // first_login_completed_at is set HERE, at verification time: the
+        // auto-session verifyEmail issues right after this call is itself
+        // an authenticated session, proving mailbox control via a code --
+        // at least as strong as the login-time step-up code this column
+        // otherwise gates (see ParentAccountRecord.firstLoginCompletedAt's
+        // own doc comment). Every normally-created account therefore never
+        // sees a step-up prompt on its very next login.
         `UPDATE parent_accounts
          SET status = 'VERIFIED', verified_at = ?, family_id = ?, password_hash = COALESCE(?, password_hash),
              free_access_mode = ?, free_access_duration_days = ?,
-             free_access_started_at = ?, free_access_expires_at = ?, default_parent_member_limit = ?, default_managed_device_limit = ?
+             free_access_started_at = ?, free_access_expires_at = ?, default_parent_member_limit = ?, default_managed_device_limit = ?,
+             first_login_completed_at = ?
          WHERE account_id = ? AND status = 'PENDING_VERIFICATION'`,
         [
           transition.verifiedAt,
@@ -175,6 +187,7 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
           transition.freeAccess.expiresAt,
           transition.freeAccess.defaultParentMemberLimit,
           transition.freeAccess.defaultManagedDeviceLimit,
+          transition.verifiedAt,
           transition.accountId,
         ],
       ),
@@ -262,6 +275,62 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
       ]),
     );
     return rowCount;
+  }
+
+  async insertLoginStepUpCode(record: NewLoginStepUpCode): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `INSERT INTO parent_login_step_up_codes (code_id, account_id, code_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [record.codeId, record.accountId, record.codeHash, record.createdAt, record.expiresAt],
+      ),
+    );
+  }
+
+  async findLatestLoginStepUpCode(accountId: ParentAccountId): Promise<ActiveLoginStepUpCode | null> {
+    const { rows } = await runInTransaction((conn) =>
+      execute<ResetCodeRow>(
+        conn,
+        `SELECT * FROM parent_login_step_up_codes WHERE account_id = ? ORDER BY created_at DESC, code_id DESC LIMIT 1`,
+        [accountId],
+      ),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      codeId: row.code_id,
+      accountId: row.account_id,
+      codeHash: row.code_hash,
+      expiresAt: row.expires_at,
+      consumedAt: row.consumed_at,
+      attemptCount: row.attempt_count,
+    };
+  }
+
+  async incrementLoginStepUpAttempt(codeId: string): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_login_step_up_codes SET attempt_count = attempt_count + 1 WHERE code_id = ?`, [codeId]),
+    );
+  }
+
+  async consumeLoginStepUpCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_login_step_up_codes SET consumed_at = ? WHERE code_id = ? AND consumed_at IS NULL`, [
+        consumedAt,
+        codeId,
+      ]),
+    );
+    return rowCount > 0;
+  }
+
+  async markFirstLoginCompletedIfAbsent(accountId: ParentAccountId, completedAt: Date): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_accounts SET first_login_completed_at = ? WHERE account_id = ? AND first_login_completed_at IS NULL`, [
+        completedAt,
+        accountId,
+      ]),
+    );
   }
 
   /** See ParentAccountRepository.ts's own doc comment: read-only lookup against the SHARED `families` table (owned by platformadmin/accounts) for the login-time suspend check. */

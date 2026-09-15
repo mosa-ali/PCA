@@ -81,6 +81,10 @@ export class EmailService implements EmailSenderPort {
     await this.enqueueAndAttempt('PASSWORD_RESET', email, code);
   }
 
+  async sendLoginStepUpCode(email: string, code: string): Promise<void> {
+    await this.enqueueAndAttempt('LOGIN_STEP_UP', email, code);
+  }
+
   async sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void> {
     await this.enqueueAndAttempt('PLATFORM_ADMIN_ACTIVATION', email, activationUrl, token);
   }

@@ -14,6 +14,8 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
   const codesByAccount = new Map(); // accountId -> [codeId,...] insertion order
   const resetCodesById = new Map();
   const resetCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
+  const stepUpCodesById = new Map();
+  const stepUpCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
 
   function hexOf(buf) {
     return buf.toString('hex');
@@ -42,6 +44,7 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
         createdAt: record.createdAt,
         verifiedAt: null,
         disabledAt: null,
+        firstLoginCompletedAt: null,
       };
       accountsById.set(account.accountId, account);
       accountsByEmailHashHex.set(key, account.accountId);
@@ -108,6 +111,10 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
         account.passwordHash = transition.passwordHash;
       }
       account.freeAccess = { ...transition.freeAccess };
+      // See MySqlParentAccountRepository.markVerified's own comment: the
+      // auto-session this transition leads to is itself an authentication
+      // event, satisfying the login-step-up requirement immediately.
+      account.firstLoginCompletedAt = transition.verifiedAt;
     },
 
     async insertPasswordResetCode(record) {
@@ -135,6 +142,38 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       if (!code || code.consumedAt !== null) return false;
       code.consumedAt = consumedAt;
       return true;
+    },
+
+    async insertLoginStepUpCode(record) {
+      const code = { ...record, consumedAt: null, attemptCount: 0 };
+      stepUpCodesById.set(record.codeId, code);
+      const list = stepUpCodesByAccount.get(record.accountId) ?? [];
+      list.push(record.codeId);
+      stepUpCodesByAccount.set(record.accountId, list);
+    },
+
+    async findLatestLoginStepUpCode(accountId) {
+      const list = stepUpCodesByAccount.get(accountId) ?? [];
+      if (list.length === 0) return null;
+      const code = stepUpCodesById.get(list[list.length - 1]);
+      return { ...code };
+    },
+
+    async incrementLoginStepUpAttempt(codeId) {
+      const code = stepUpCodesById.get(codeId);
+      if (code) code.attemptCount += 1;
+    },
+
+    async consumeLoginStepUpCodeIfUnconsumed(codeId, consumedAt) {
+      const code = stepUpCodesById.get(codeId);
+      if (!code || code.consumedAt !== null) return false;
+      code.consumedAt = consumedAt;
+      return true;
+    },
+
+    async markFirstLoginCompletedIfAbsent(accountId, completedAt) {
+      const account = accountsById.get(accountId);
+      if (account && account.firstLoginCompletedAt === null) account.firstLoginCompletedAt = completedAt;
     },
 
     async updatePasswordHash(accountId, passwordHash) {

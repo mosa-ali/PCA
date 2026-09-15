@@ -635,3 +635,104 @@ CANONICAL_SCHEMA_CHILD_FIELDS_REGRESSION_TEST   = PASS (no prohibited term, zero
 match. `docs/database/PCA_CENTRAL_DATA_PRIVACY_CLASSIFICATION.csv` gained
 the 8 corresponding rows. No migration was added or modified; no production
 or live database was touched. `SCHEMA_CHANGED = NO`, `MIGRATION_ADDED = NO`.
+
+## 21. `parent_login_step_up_codes` + `parent_accounts.first_login_completed_at` (SESSION 2D, 2026-09-16, owner authentication-architecture decision)
+
+**What was added and why**: the owner's authoritative two-tier authentication
+architecture decision (2026-09-16) requires that normal parent/family users
+authenticate with password plus a risk-based email one-time code "when
+required," explicitly never on every routine login, and explicitly never
+coupled to Platform Admin TOTP/MFA/sessions. A source audit of the existing
+`ParentAccountService`/`ParentAccountRepository` implementation classified
+every requirement in that decision; the single genuine gap (`EMAIL_OTP` for a
+login-risk event) was closed narrowly as "step-up required on the account's
+first-ever login," to minimize blast radius on the ~40 pre-existing DB test
+files that already call `.login()`.
+
+Migration `0042_parent_login_step_up_codes.sql` adds:
+- `parent_login_step_up_codes` (new table): `code_id` PK, `account_id` FK →
+  `parent_accounts`, `code_hash` (`char(64)` ascii, SHA-256-shaped HMAC
+  digest — structurally identical to the pre-existing
+  `parent_password_reset_codes.code_hash`, which this table is a direct
+  behavioral and structural copy of: same 15-minute TTL, same 8-attempt
+  limit, same find-latest/check-consumed/check-expired/check-attempts/
+  increment-attempt/hash-compare/atomic-consume-if-unconsumed service-layer
+  pattern), `created_at`/`expires_at`/`consumed_at` (`DATETIME(3)`),
+  `attempt_count` (int).
+- `parent_accounts.first_login_completed_at` (`DATETIME(3) NULL`, added
+  `AFTER verified_at`): set once, at email-verification time (never touched
+  again), because a successful `verifyEmail()` already proves mailbox
+  control by the same mechanism the new step-up code itself uses. `login()`
+  requires the step-up code only when this column is still `NULL` — which
+  is true for zero already-correctly-verified accounts going forward
+  (`verifyEmail()` sets it in the same statement as the existing
+  `markVerified` update) and would be true only for a row that reached
+  `VERIFIED` status by some path other than the normal verification flow.
+
+**Privacy classification, by direct precedent, not invented**: identical
+reasoning to `§20`. `parent_login_step_up_codes.code_hash` is classified
+`SECURITY_METADATA`, matching `parent_password_reset_codes.code_hash` and
+`parent_email_verification_codes.code_hash` exactly (same shape, same
+guarantee: only the hash is ever persisted, the plaintext 6-digit code
+exists only in the issuing request and the encrypted email outbox payload).
+`code_id`/`account_id` follow the existing `OPAQUE_IDENTIFIER` convention;
+`created_at`/`expires_at`/`consumed_at` follow the existing
+`OPERATIONAL_METADATA` timestamp convention; `attempt_count` follows the
+existing `OPERATIONAL_METADATA` numeric-counter convention.
+`parent_accounts.first_login_completed_at` is `OPERATIONAL_METADATA` for the
+identical reason `verified_at`/`disabled_at` already are. No column is, or
+could defensibly be, `READABLE_PARENT_DATA`/`READABLE_CHILD_DATA` —
+re-verified by running
+`backend/test/canonicalSchemaChildFieldsRegression.test.mjs` after the
+change (3/3 passing).
+
+**Re-verified end-to-end, for real, not assumed**:
+
+```
+CANONICAL_TABLE_COUNT (incl. schema_migrations)  = 80   (was 79 before this change)
+MIGRATION_FROM_ZERO                              = PASS (40/40 migrations, disposable MySQL 8.4, from zero)
+CANONICAL_BOOTSTRAP_FROM_ZERO                    = PASS (docs/database/bootstrap/PCA_MYSQL_8_4_DISPOSABLE_BOOTSTRAP.sql, regenerated, applied to a separate fresh disposable database)
+MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP          = EXACT_MATCH (compare-schema-snapshots.mjs, run against both real introspections)
+CANONICAL_SCHEMA_FINGERPRINT = sha256:638155c4f808cd673d31464ef881c42e68b7e493498324d8a1f8b20b9f48f3b1
+  (changed from the previous sha256:3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3
+  -- expected: the schema structurally changed. Independently confirmed IDENTICAL
+  when computed from the migration-built database and from the schema.ts-generated
+  bootstrap-built database. One real bug was caught and fixed during this process:
+  first_login_completed_at was initially appended at the end of schema.ts's column
+  array instead of positioned to match the migration's actual `ADD COLUMN ... AFTER
+  verified_at` placement, which produced a genuine column-order MISMATCH on the
+  first compare-schema-snapshots.mjs run -- fixed by reordering the schema.ts entry,
+  then re-verified to EXACT_MATCH.)
+CANONICAL_SCHEMA_CHILD_FIELDS_REGRESSION_TEST    = PASS (no prohibited term, zero READABLE_CHILD_DATA columns)
+```
+
+**Feature-level real-MySQL proof** (new, dedicated test file
+`backend/test/db/parentLoginStepUp.mysql.test.mjs`, 8/8 passing against
+disposable MySQL 8.4): a normally-registered-and-verified account is never
+prompted (`PASSWORD_AUTH`, `EMAIL_VERIFICATION`); a first-ever login issues a
+hash-only-at-rest 6-digit code and completing it establishes a session
+(`EMAIL_OTP`, `OTP_HASH_ONLY`); a consumed code cannot be reused
+(`OTP_SINGLE_USE`, `OTP_REPLAY_DENIED`); an expired code is rejected
+(`OTP_EXPIRY`); re-issuing a code invalidates the previous one
+(`OTP_REISSUE_INVALIDATION`); a code locks out after 8 wrong attempts, even
+against its own correct value (`OTP_ATTEMPT_LIMIT`); unknown-email and
+wrong-password login attempts fail identically (`ENUMERATION_RESISTANCE`,
+pre-existing behavior, unchanged); and completing step-up never creates or
+touches any `platform_admin_*` row, while ordinary session revocation still
+works afterward (`SESSION_REVOCATION`, `ADMIN_TOTP_NOT_REQUIRED_FOR_PARENT`).
+This test file was added to `backend/package.json`'s `test:db` script and
+`test/meta/testSuiteRegistration.test.mjs`'s anti-orphan gate re-confirmed
+passing (6/6). The full `npm run test:db` suite (562 tests, 558 pass/4
+pre-existing skips) and `npm test` (2364/2364) were both re-run afterward
+with zero regressions, and the pre-existing `test:db:bootstrap` (10/10) and
+`test:db:promotion` (8/8) certification suites were independently
+re-confirmed unaffected.
+
+`backend/scripts/post-validate.mjs`'s `EXPECTED_FINGERPRINT` was updated to
+match. `backend/scripts/verify-mysql.mjs`'s hardcoded expected-table list
+was updated to include `parent_login_step_up_codes` (the same recurring
+class of independent hardcoded-list drift as `§20`).
+`docs/database/PCA_CENTRAL_DATA_PRIVACY_CLASSIFICATION.csv` gained the 8
+corresponding rows. No production or live database was touched.
+`SCHEMA_CHANGED = YES` (one new table, one new column on an existing table),
+`MIGRATION_ADDED = YES` (`0042_parent_login_step_up_codes.sql`).
