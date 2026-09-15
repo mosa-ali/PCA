@@ -15,6 +15,7 @@
     "test:db:pa1": "npm run test:db && npm run test:db:platform-admin-privileges",
     "test:db:pa2": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/verify-mysql.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/platformEntitlementsCore.mysql.test.mjs test/db/platformEntitlementsSlots.mysql.test.mjs",
     "test:db:comp": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/verify-mysql.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/complimentaryGrants.mysql.test.mjs",
+    "test:db:bootstrap": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/reset-test-db.mjs && node --env-file=test.env --env-file=test.db.env scripts/verify-mysql.mjs && node --env-file=test.env --env-file=test.db.env --test --test-concurrency=1 test/db/platformAdminBootstrap.mysql.test.mjs",
     "test:release-stress": "npm run build && node --env-file=test.env --env-file=test.db.env scripts/release-stress.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:verify": "node scripts/verify-mysql.mjs",
