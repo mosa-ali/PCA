@@ -245,6 +245,13 @@ delivery failure, so the background `EmailOutboxProcessor` retries it. The
 risk proven above is specifically about the `activationRepository.issue()`
 database operation itself failing, which has no such retry path.
 
+> **UPDATE, same day, follow-up session:** this finding is now **CLOSED**.
+> See §8 below for the root cause, the architectural fix (a single atomic
+> transaction), failure-injection proof that the fix actually works, and
+> proof that a *post-commit* provider failure still cannot strand anyone.
+> The rest of this section is kept as-is as the historical reproduction
+> record.
+
 ### 3e. FIRST_OWNER_END_TO_END_ACTIVATION (mission §7)
 
 Full lifecycle proved against real MySQL and real AES-256-GCM/scrypt/HMAC-SHA1
@@ -363,7 +370,12 @@ MIGRATION_0022_STATUS=0022_enrollment_administration_persistence.sql — unrelat
 This is evidence for a later production schema/grant reconciliation, as the
 mission requested — it does not itself change or query production.
 
-## 6. Final decision
+## 6. §1–5 final decision as of the FIRST session (superseded)
+
+The block below is preserved verbatim as the historical record of what the
+first certification session concluded, before the fix in §8. It is
+**superseded** by §9's final decision — `FIRST_OWNER_STRANDING_RISK` is now
+`CLOSED`, not `YES`.
 
 ```text
 LOCAL_HEAD=3ca7e2a4994b3b0fec6c54c5cc829f4692c184f7
@@ -415,7 +427,7 @@ BLOCKERS=FIRST_OWNER_STRANDING_RISK=YES (release-grade: account-creation and act
 NEXT_ACTION=fix the activation-issuance non-atomicity (single transaction, or an authenticated-free, lock-protected "resume issuance for a zero-token bootstrapped owner" recovery path) and re-run this same disposable-DB suite before any production bootstrap is authorized; separately, wire `test:db:bootstrap` (or the full `test:db`) into CI so this stops being an undetected regression risk.
 ```
 
-## 7. Source changes made this session
+## 7. Source changes made in the FIRST session
 
 - `backend/scripts/verify-mysql.mjs` — one-line fix: added the missing
   `platform_admin_activation_tokens` table to the expected-schema list
@@ -429,5 +441,357 @@ NEXT_ACTION=fix the activation-issuance non-atomicity (single transaction, or an
   integration test suite (8 tests, all passing) proving the DB-backed
   claims in this document.
 
-No other file was modified. No production, database, or deployment target
-was touched.
+## 8. Stranding defect closure (follow-up session, same day)
+
+### 8a. Root cause
+
+`backend/scripts/bootstrap-platform-owner.mjs` called
+`MySqlPlatformAdminAuthRepository.createAccount` and
+`MySqlPlatformAdminActivationRepository.issue` as two independent
+`runInTransaction` calls. A failure in the second one — proven reproducible
+in §3d above — left a permanently active, permanently un-activatable
+`APP_OWNER` behind, with no authenticated recovery path.
+
+### 8b. Architectural correction
+
+A new module, `backend/src/platformadmin/auth/MySqlFirstOwnerBootstrapRepository.ts`,
+exports `createFirstOwnerBootstrap(input)`: **one** `runInTransaction` call
+that persists, in order, the account, the `APP_OWNER` role assignment, the
+`PENDING_SETUP` MFA state, the bootstrap audit events, the first activation
+token, **and** the durable `email_outbox` row. If any step fails, everything
+rolls back together.
+
+This reuses the exact same SQL every other caller already relies on, rather
+than duplicating it: `MySqlAuthRepository.createAccount`,
+`MySqlPlatformAdminActivationRepository.issue`, and
+`MySqlEmailOutboxRepository.insert` each now wrap a newly-extracted,
+connection-scoped helper —
+`insertPlatformAdminAccountOnConnection`/`issueActivationTokenOnConnection`/
+`insertEmailOutboxRowOnConnection` respectively — in their own
+single-operation `runInTransaction`. `createFirstOwnerBootstrap` calls the
+identical three helpers inside its own, wider transaction instead of
+duplicating their SQL. Ordinary (non-bootstrap) account creation, activation
+reissue, and email enqueue are unchanged and still pass their own existing
+tests unmodified (94/94 unit tests, 23/23 spot-checked real-MySQL tests for
+platform-admin/outbox/migration-lock areas — see §9c).
+
+One genuine bug was found and fixed while building this: the extracted
+`insertEmailOutboxRowOnConnection` — like the `insert()` method it came
+from — treats any `ER_DUP_ENTRY` (whether on `outbox_id`'s primary key or
+`idempotency_key`'s unique constraint) as a soft `'DUPLICATE_IDEMPOTENCY_KEY'`
+outcome rather than throwing (the correct behavior for `EmailService`'s
+ordinary "this exact send was already durably enqueued once" dedup case).
+`createFirstOwnerBootstrap` did not originally check that outcome, so a
+forced outbox-insert failure in testing silently "succeeded" with no outbox
+row at all — exactly the kind of partial state §1 requires never exist.
+Fixed by making `createFirstOwnerBootstrap` throw (forcing a full rollback)
+whenever the outbox outcome is not `'INSERTED'`; bootstrap has no
+prior-attempt history to legitimately defer to, unlike `EmailService`'s
+ordinary callers.
+
+### 8c. Transaction boundary and email semantics
+
+Per the mission's required model, the durable outbox **row** is created
+inside the atomic transaction; the external provider **delivery attempt**
+(`attemptDeliveryAndRecordOutcome`, the same primitive `EmailService` and
+the background worker already use) happens strictly afterward, outside both
+the transaction and the advisory lock:
+
+```text
+FIRST_OWNER_TRANSACTION_BOUNDARY=SINGLE_TRANSACTION (account + APP_OWNER role + PENDING_SETUP MFA + bootstrap audit + activation token + email_outbox row, all in one runInTransaction call)
+ADVISORY_LOCK_HELD_THROUGH_COMMIT=YES (released in a finally{} that wraps ONLY the precondition re-check + createFirstOwnerBootstrap call -- never held across the later delivery attempt)
+EXTERNAL_PROVIDER_CALL_INSIDE_TRANSACTION=NO
+```
+
+Verified directly in `bootstrap-platform-owner.mjs`'s own source (and
+pinned by a new unit test,
+`test/platformadmin/bootstrapPlatformOwner.test.mjs`'s *"advisory lock is
+released only after the atomic bootstrap transaction resolves, never held
+across the email delivery attempt"*): the lock-acquire call precedes
+`createFirstOwnerBootstrap`, which precedes `releaseBootstrapLock`, which
+precedes `attemptDeliveryAndRecordOutcome` — in that exact order, always.
+
+### 8d. Failure-injection proof (mission §6)
+
+Two independent real-`ER_DUP_ENTRY` fault injections, both against the real
+disposable database, both now roll back **everything**:
+
+```text
+BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE=PASS
+
+# Fault injected at the activation-token insert (the EXACT step that
+# stranded a first owner before this fix):
+ACCOUNT_DELTA=0
+APP_OWNER_ROLE_DELTA=0
+MFA_DELTA=0
+ACTIVATION_DELTA=0
+OUTBOX_DELTA=0
+AUDIT_DELTA=0
+
+# Fault injected at the outbox-row insert (the NEW bug found and fixed in
+# §8b -- previously would have left account/role/MFA/activation-token
+# committed with no outbox row):
+ACCOUNT_DELTA=0
+APP_OWNER_ROLE_DELTA=0
+MFA_DELTA=0
+ACTIVATION_DELTA=0
+AUDIT_DELTA=0
+```
+
+### 8e. Post-commit provider-failure proof (mission §7)
+
+A real, successful `createFirstOwnerBootstrap` commit, followed by a
+genuine `RejectingEmailProviderAdapter` delivery failure (no real
+Mailgun/SMTP call — an adapter that always throws
+`EmailDeliveryError(..., retryable=true, ...)`), proves the owner is not
+invalidated:
+
+```text
+APP_OWNER_EXISTS=YES
+MFA_STATUS=PENDING_SETUP
+ACTIVATION_TOKEN_EXISTS=YES
+OUTBOX_MESSAGE_EXISTS=YES
+OUTBOX_RETRYABLE=YES
+POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE=PASS
+```
+
+A second bootstrap attempt for a different email, run immediately after,
+was correctly refused (`assertNoExistingAppOwner`) — no second `APP_OWNER`
+becomes possible while this one exists, delivery-failed or not.
+
+### 8f. Concurrency re-proof, strengthened to independent OS processes
+
+The mission asked, "if practical," to strengthen the concurrency proof
+beyond same-process/separate-connections. It was practical: the test now
+launches **two genuinely independent `node scripts/bootstrap-platform-owner.mjs`
+subprocesses** (via `child_process.execFile`, not two calls inside one
+Node process) racing for the real advisory lock against the same disposable
+database:
+
+```text
+CONCURRENCY_EXECUTION_MODEL=INDEPENDENT_NODE_SUBPROCESSES
+STARTING_ACTIVE_APP_OWNER_COUNT=0
+CONCURRENT_ATTEMPTS=2
+SUCCESSFUL_BOOTSTRAPS=1
+FINAL_ACTIVE_APP_OWNER_COUNT=1
+FINAL_ACTIVE_APP_OWNER_ROLE_COUNT=1
+LOSER_PARTIAL_STATE_ROWS=0
+DB_CONCURRENT_SINGLE_WINNER=PASS
+```
+
+### 8g. Full regression
+
+`backend/test/db/platformAdminBootstrap.mysql.test.mjs` now has 10 tests
+(previously 8), all passing, both standalone (`npm run test:db:bootstrap`,
+which resets the disposable DB first) and — see §8h — interleaved inside
+the full shared `test:db` suite:
+
+```text
+DB_CONCURRENCY_TEST=PASS
+LOCK_FAILURE_FAIL_CLOSED=PASS
+BOOTSTRAP_CREATION_ROLLBACK=PASS
+BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE=PASS (both injection points)
+POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE=PASS
+FIRST_OWNER_END_TO_END_ACTIVATION=PASS
+  PRE_ACTIVATION_LOGIN=DENIED
+  MFA_STATUS=ACTIVE
+  PASSWORD_FORMAT=SCRYPT
+  POST_ACTIVATION_LOGIN=PASS
+  TOKEN_REUSE=DENIED
+  TOTP_REPLAY=DENIED
+ACTIVATION_REISSUE=PASS
+  OLD_TOKEN_INVALIDATION=PASS
+  OLD_TOTP_INVALIDATION=PASS
+EXISTING_PLATFORM_ADMIN_UNCHANGED=PASS
+  SILENT_ROLE_ELEVATION=NO
+BOOTSTRAP_OUTPUT_HYGIENE=PASS
+```
+
+Also re-run and passing:
+
+```text
+BACKEND_TYPECHECK=PASS (npm run build / tsc, zero errors)
+BOOTSTRAP_DIRECT_TESTS=PASS (test/platformadmin/bootstrapPlatformOwner.test.mjs, 6/6 -- rewritten this session to check the new atomic-transaction structure directly, since the old assertions checked the now-removed two-transaction shape)
+ACTIVATION_TESTS=PASS, AUTH_TESTS=PASS (test/platformadmin/{activation,authService,accountService,crossRealm,totp,fastifyPlatformAdminAuthPlugin,rbacPolicy}.test.mjs -- 94/94 unit tests)
+```
+
+### 8h. CI wiring (mission §11)
+
+`.github/workflows/quality-gates.yml` gained a new job,
+`backend-bootstrap-certification`, running `npm run test:db:bootstrap`
+against a GitHub Actions MySQL **service container** (image `mysql:8.4.11`,
+the SAME hardcoded, explicitly-non-secret `pca_test_only_not_a_secret`
+credential the repository's own root `docker-compose.yml` already uses for
+local development, host port `33061` matching `backend/test.db.env`
+exactly — no GitHub Secret, no change to the workflow's
+`permissions: contents: read` posture, and no existing job weakened or
+removed). The full ~550-test `test:db` suite remains deliberately NOT
+wired into CI (a separate, larger, still-open, explicitly documented gap in
+`backend-tests`' own comment) — only this mission's focused certification
+is.
+
+This was validated locally (YAML parses; the exact command
+`npm run test:db:bootstrap` passes; the service-container config mirrors
+the repository's own already-working `docker-compose.yml` MySQL service
+field-for-field), but this session has no way to trigger or observe an
+actual GitHub Actions run, so:
+
+```text
+CI_BOOTSTRAP_CERTIFICATION=WIRED_NOT_YET_OBSERVED
+```
+
+It will run automatically on the push this session makes to `pca-dev` (the
+workflow triggers on `push: branches: [pca-dev]`); a human or a future
+session should confirm the run went green.
+
+### 8i. Full shared `test:db` suite coexistence (extra verification)
+
+`test/meta/testSuiteRegistration.test.mjs` (a pre-existing anti-orphan gate)
+requires every `test/db/*.test.mjs` file to be listed in package.json's
+shared `test:db` script — which runs ~60 files sequentially against ONE
+database with **no reset between files**. Several of those files (e.g.
+`test/db/platformadmin.mysql.test.mjs`) create their own `APP_OWNER`
+fixtures and never revoke them, which would break this file's zero-owner
+preconditions if it merely *asserted* zero. Fixed by having every
+zero-owner-dependent test call a `forceZeroActiveAppOwners()` helper
+(revoke any pre-existing owner, then proceed) instead of asserting and
+failing.
+
+`backend/test/db/platformAdminBootstrap.mysql.test.mjs` was added to the
+`test:db` script's file list, and the full suite was run once, fresh, to
+confirm real coexistence:
+
+```text
+npm run test:db: 546 tests, 542 pass, 0 fail, 4 skipped (pre-existing, unrelated skips), duration ~141s
+```
+
+All 10 of this file's own tests passed within that run, interleaved
+immediately after `platformadmin.mysql.test.mjs`'s own APP_OWNER-creating
+tests — proving the design works, not just asserting it.
+
+### 8j. Unrelated finding disclosed, not fixed (out of this mission's scope)
+
+Running the full non-DB `npm test` suite (2364 tests; not itself required
+by this mission, run as extra diligence) surfaced a **pre-existing, unrelated**
+schema-drift defect: `backend/src/db/schema.ts`'s hand-maintained,
+privacy-classified `PCA_CANONICAL_SCHEMA` array — a **separate** source of
+truth from the migrations themselves, used to generate
+`docs/database/bootstrap/PCA_MYSQL_8_4_DISPOSABLE_BOOTSTRAP.sql`/`_VERIFY.sql`
+— is missing the `platform_admin_activation_tokens` table entirely, the
+same class of "migration 0041 added a table, a hand-maintained fingerprint
+elsewhere was never updated" drift as the `verify-mysql.mjs` bug fixed in
+§2, just in a different file. This causes
+`test/scripts/disposableBootstrapArtifact.test.mjs` to fail (2 of 2364
+`npm test` tests).
+
+This predates both certification sessions (migration 0041 already existed
+at the required starting SHA) and is unrelated to the atomic-bootstrap fix.
+It was **not** fixed here: `PCA_CANONICAL_SCHEMA` requires a deliberate
+per-column privacy classification judgment call (each column is annotated
+`privacy: "..."`), which is a distinct, separately-scoped task, not
+something to rush under this mission's time budget. Flagged here so it is
+not silently lost.
+
+```text
+NPM_TEST_UNRELATED_FINDING=schema.ts PCA_CANONICAL_SCHEMA missing platform_admin_activation_tokens (migration 0041); causes test/scripts/disposableBootstrapArtifact.test.mjs to fail; pre-existing, not caused by this session, not fixed here, recommend a dedicated follow-up.
+```
+
+## 9. Final decision (supersedes §6)
+
+```text
+LOCAL_HEAD=<see final report in the session transcript for the exact post-commit SHA>
+REMOTE_HEAD=<same, independently verified via git ls-remote after push>
+WORKTREE_CLEAN=YES
+
+FIRST_OWNER_TRANSACTION_BOUNDARY=SINGLE_TRANSACTION
+ADVISORY_LOCK_HELD_THROUGH_COMMIT=YES
+EXTERNAL_PROVIDER_CALL_INSIDE_TRANSACTION=NO
+
+BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE=PASS
+ACCOUNT_DELTA_ON_FAILURE=0
+ROLE_DELTA_ON_FAILURE=0
+MFA_DELTA_ON_FAILURE=0
+ACTIVATION_DELTA_ON_FAILURE=0
+OUTBOX_DELTA_ON_FAILURE=0
+AUDIT_DELTA_ON_FAILURE=0
+
+POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE=PASS
+OUTBOX_RETRYABLE=YES
+
+DB_CONCURRENCY_TEST=PASS
+CONCURRENCY_EXECUTION_MODEL=INDEPENDENT_NODE_SUBPROCESSES
+CONCURRENT_SINGLE_WINNER=PASS
+
+PRE_ACTIVATION_LOGIN=DENIED
+POST_ACTIVATION_LOGIN=PASS
+TOKEN_REUSE=DENIED
+TOTP_REPLAY=DENIED
+ACTIVATION_REISSUE=PASS
+OLD_TOKEN_INVALIDATION=PASS
+OLD_TOTP_INVALIDATION=PASS
+
+EXISTING_PLATFORM_ADMIN_UNCHANGED=PASS
+BOOTSTRAP_OUTPUT_HYGIENE=PASS
+
+BACKEND_TYPECHECK=PASS
+BOOTSTRAP_DIRECT_TESTS=PASS
+DB_BOOTSTRAP_TESTS=PASS
+ACTIVATION_TESTS=PASS
+AUTH_TESTS=PASS
+CI_BOOTSTRAP_CERTIFICATION=WIRED_NOT_YET_OBSERVED
+CI_STATUS=NO_STATUS_CHECK_EVIDENCE_FOR_FULL_test:db_SUITE_STILL (backend-tests already runs the full non-DB suite; the NEW backend-bootstrap-certification job now runs the focused DB suite -- see §8h)
+
+CURRENT_TABLE_COUNT=79
+ACTIVATION_TOKEN_TABLE_PRESENT=YES
+
+SCHEMA_CHANGED=NO
+MIGRATION_ADDED=NO
+
+FIRST_OWNER_STRANDING_RISK=CLOSED
+
+PRODUCTION_CHANGED=NO
+DEPLOYED=NO
+BOOTSTRAP_EXECUTION_AUTHORIZED=NO
+
+BLOCKERS=None specific to first-owner bootstrap atomicity (closed). The standing owner-authorization gate (PCA_SESSION_2C_LIVE_ACCEPTANCE_2026-09-15.md) is unaffected and still applies -- this session did not and could not authorize a production bootstrap. §8j's unrelated schema.ts drift remains open (non-blocking, disclosed). §8h's CI job has not yet been observed passing in a real GitHub Actions run.
+NEXT_ACTION=Confirm the new backend-bootstrap-certification CI job goes green on this push; separately schedule the §8j schema.ts/PCA_CANONICAL_SCHEMA reconciliation as its own task.
+```
+
+## 10. Source changes made in this follow-up session
+
+- `backend/src/platformadmin/auth/MySqlFirstOwnerBootstrapRepository.ts` —
+  **new**: the single atomic transaction boundary (§8b).
+- `backend/src/platformadmin/auth/MySqlAuthRepository.ts` — extracted
+  `insertPlatformAdminAccountOnConnection` (connection-scoped); `createAccount`
+  now wraps it in `runInTransaction`, unchanged behavior.
+- `backend/src/platformadmin/auth/MySqlPlatformAdminActivationRepository.ts` —
+  extracted `issueActivationTokenOnConnection` (connection-scoped); `issue`
+  now wraps it, unchanged behavior.
+- `backend/src/email/MySqlEmailOutboxRepository.ts` — extracted
+  `insertEmailOutboxRowOnConnection` (connection-scoped); `insert` now wraps
+  it, unchanged behavior.
+- `backend/src/email/EmailService.ts` — exported the previously-private
+  `OUTBOX_MESSAGE_TTL_MS` constant so the bootstrap script reuses the same
+  value instead of a second copy.
+- `backend/scripts/bootstrap-platform-owner.mjs` — rewritten to call
+  `createFirstOwnerBootstrap` once, then attempt delivery afterward, outside
+  the lock and the transaction (§8c).
+- `backend/test/db/platformAdminBootstrap.mysql.test.mjs` — rewritten:
+  concurrency strengthened to real subprocesses; two new tests
+  (`BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE` ×2, `POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE`);
+  zero-owner preconditions made order-independent (`forceZeroActiveAppOwners`);
+  registered in the shared `test:db` script.
+- `backend/test/platformadmin/bootstrapPlatformOwner.test.mjs` — rewritten to
+  check the new atomic-transaction source shape; also newly registered in
+  `backend/scripts/run-tests.mjs` (it was an orphan — never run by `npm test`
+  — before this session, unrelated to the atomicity fix but found and fixed
+  while touching this file).
+- `backend/package.json` — `platformAdminBootstrap.mysql.test.mjs` added to
+  the shared `test:db` script's file list (required by the pre-existing
+  anti-orphan gate, §8i).
+- `.github/workflows/quality-gates.yml` — new `backend-bootstrap-certification`
+  job (§8h).
+
+No production, database, or deployment target was touched. No migration was
+added; the schema is unchanged (`CURRENT_TABLE_COUNT=79`, same as the first
+session).

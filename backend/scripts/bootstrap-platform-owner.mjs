@@ -18,6 +18,26 @@
 // activation flow establishes the password, encrypts the TOTP secret with
 // AES-256-GCM, and activates MFA only after the first valid code.
 //
+// ATOMIC BOOTSTRAP (SESSION 2C stranding-defect fix): account creation, the
+// APP_OWNER role assignment, PENDING_SETUP MFA state, bootstrap audit
+// events, the first activation token, AND the durable email-outbox row are
+// all persisted by ONE call to createFirstOwnerBootstrap -- a single
+// database transaction (see MySqlFirstOwnerBootstrapRepository.ts). A
+// PRIOR version of this script called account creation and activation
+// issuance as two SEPARATE transactions; a failure in the second one left
+// a permanently active, permanently un-activatable APP_OWNER behind, with
+// no authenticated recovery path (see
+// docs/supervision/PCA_FIRST_APP_OWNER_BOOTSTRAP_DB_CERTIFICATION_2026-09-15.md
+// for the reproduced finding). That gap is now closed: either everything
+// durable this bootstrap needs commits together, or none of it does.
+//
+// The advisory lock is held from BEFORE the zero-owner precondition
+// re-check through the end of that one transaction (commit or rollback),
+// and released immediately after -- never before the transaction resolves,
+// and never held across the network email-delivery attempt below, which
+// happens afterward, outside both the lock and any DB transaction, exactly
+// like any other outbox message's delivery.
+//
 // The script is deliberately not a normal login or signup path; once the
 // account exists, reissuance is performed only through the approved,
 // authenticated activation lifecycle.
@@ -26,16 +46,20 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
 import { PENDING_ACTIVATION_CREDENTIAL } from '../dist/platformadmin/auth/passwordCredential.js';
-import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
-import { MySqlPlatformAdminActivationRepository } from '../dist/platformadmin/auth/MySqlPlatformAdminActivationRepository.js';
+import { createFirstOwnerBootstrap } from '../dist/platformadmin/auth/MySqlFirstOwnerBootstrapRepository.js';
 import { generateActivationToken } from '../dist/platformadmin/auth/PlatformAdminActivationService.js';
 import { closePool, getPool } from '../dist/db/pool.js';
-import { EmailService } from '../dist/email/EmailService.js';
-import { MySqlEmailOutboxRepository } from '../dist/email/MySqlEmailOutboxRepository.js';
 import { assertProductionEmailConfigurationComplete, resolveEmailProviderAdapter } from '../dist/email/emailProviderConfig.js';
+import { MySqlEmailOutboxRepository } from '../dist/email/MySqlEmailOutboxRepository.js';
+import { encryptOutboxContent } from '../dist/email/emailOutboxEncryption.js';
+import { computeEmailIdempotencyKey } from '../dist/email/emailIdempotencyKey.js';
+import { EMAIL_OUTBOX_CLAIM_LEASE_MS } from '../dist/email/emailTimingPolicy.js';
+import { attemptDeliveryAndRecordOutcome } from '../dist/email/EmailOutboxProcessor.js';
+import { OUTBOX_MESSAGE_TTL_MS } from '../dist/email/EmailService.js';
 
 export const FIRST_OWNER_BOOTSTRAP_LOCK_NAME = 'pca:first-app-owner-bootstrap';
 const LOCK_TIMEOUT_SECONDS = 30;
+const ACTIVATION_TTL_MS = 30 * 60_000;
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -90,62 +114,98 @@ export async function runBootstrap() {
   const base = process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL;
   if (!base || (process.env.NODE_ENV === 'production' && !/^https:\/\//i.test(base))) throw new Error('PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL must be HTTPS in production.');
 
+  // Everything below is pure local computation (UUIDs, HMAC/AES-256-GCM) --
+  // deliberately done BEFORE acquiring the advisory lock, so the lock (and
+  // the dedicated pool connection it holds) is held for as short a window
+  // as possible: only the precondition re-check and one DB transaction.
+  const adminId = randomUUID();
+  const now = new Date();
+  const emailHash = hashAdminEmail(email);
+  const correlationId = randomUUID();
+  const { rawToken, tokenHash } = generateActivationToken();
+  const activationExpiresAt = new Date(now.getTime() + ACTIVATION_TTL_MS);
+  const url = `${(base ?? 'http://localhost:4100/platform-admin/activate').replace(/\/$/, '')}?token=${encodeURIComponent(rawToken)}`;
+  // Same payload/idempotency-key shape EmailService.sendPlatformAdminActivationLink
+  // uses -- idempotencyKey is keyed by the raw token (never the URL), matching
+  // enqueueAndAttempt's own `idempotencyValue = token` argument for this call site.
+  const payload = { toEmail: email, kind: 'PLATFORM_ADMIN_ACTIVATION', code: url };
+  const encryptedPayload = encryptOutboxContent(JSON.stringify(payload), process.env);
+  const idempotencyKey = computeEmailIdempotencyKey('PLATFORM_ADMIN_ACTIVATION', email, rawToken, process.env);
+  const outboxId = randomUUID();
+  const outboxExpiresAt = new Date(now.getTime() + OUTBOX_MESSAGE_TTL_MS);
+
   const pool = getPool();
   const lock = await acquireBootstrapLock(pool);
+  let bootstrapResult;
   try {
     await assertNoExistingAppOwner(lock);
-    const repository = new MySqlPlatformAdminAuthRepository();
-    const adminId = randomUUID();
-    const now = new Date();
-    const emailHash = hashAdminEmail(email);
-    const correlationId = randomUUID();
-    await repository.createAccount({
-    adminId,
-    emailHash,
-    displayName: 'Platform Owner (bootstrap)',
-    passwordCredential: PENDING_ACTIVATION_CREDENTIAL,
-    createdAt: now,
-    assignmentId: randomUUID(),
-    role: 'APP_OWNER',
-    grantedByAdminId: null, // NULL = system/bootstrap-granted, per migration 0005's comment.
-    grantedAt: now,
-    initialMfa: { status: 'PENDING_SETUP', totpSecretCiphertext: null, totpSecretNonce: null, activatedAt: null, createdAt: now },
-    auditEvents: [
-      {
-        eventId: randomUUID(),
-        eventType: 'ADMIN_CREATED',
-        actorAdminId: null,
-        actorRole: null,
-        targetRef: `admin:${adminId}`,
-        result: 'SUCCESS',
-        occurredAt: now,
-        correlationId,
-        metadata: { source: 'BOOTSTRAP' },
+    bootstrapResult = await createFirstOwnerBootstrap({
+      account: {
+        adminId,
+        emailHash,
+        displayName: 'Platform Owner (bootstrap)',
+        passwordCredential: PENDING_ACTIVATION_CREDENTIAL,
+        createdAt: now,
+        assignmentId: randomUUID(),
+        role: 'APP_OWNER',
+        grantedByAdminId: null, // NULL = system/bootstrap-granted, per migration 0005's comment.
+        grantedAt: now,
+        initialMfa: { status: 'PENDING_SETUP', totpSecretCiphertext: null, totpSecretNonce: null, activatedAt: null, createdAt: now },
+        auditEvents: [
+          {
+            eventId: randomUUID(),
+            eventType: 'ADMIN_CREATED',
+            actorAdminId: null,
+            actorRole: null,
+            targetRef: `admin:${adminId}`,
+            result: 'SUCCESS',
+            occurredAt: now,
+            correlationId,
+            metadata: { source: 'BOOTSTRAP' },
+          },
+          {
+            eventId: randomUUID(),
+            eventType: 'ADMIN_ROLE_CHANGED',
+            actorAdminId: null,
+            actorRole: null,
+            targetRef: `admin:${adminId}`,
+            result: 'SUCCESS',
+            occurredAt: now,
+            correlationId,
+            metadata: { action: 'GRANTED', role: 'APP_OWNER', source: 'BOOTSTRAP' },
+          },
+        ],
       },
-      {
-        eventId: randomUUID(),
-        eventType: 'ADMIN_ROLE_CHANGED',
-        actorAdminId: null,
-        actorRole: null,
-        targetRef: `admin:${adminId}`,
-        result: 'SUCCESS',
-        occurredAt: now,
-        correlationId,
-        metadata: { action: 'GRANTED', role: 'APP_OWNER', source: 'BOOTSTRAP' },
+      activation: { activationId: randomUUID(), tokenHash, createdAt: now, expiresAt: activationExpiresAt },
+      outboxEmail: {
+        outboxId,
+        idempotencyKey,
+        encryptedPayload,
+        createdAt: now,
+        expiresAt: outboxExpiresAt,
+        initialClaimableAt: new Date(now.getTime() + EMAIL_OUTBOX_CLAIM_LEASE_MS),
       },
-    ],
     });
-    const { rawToken, tokenHash } = generateActivationToken();
-    const activationRepository = new MySqlPlatformAdminActivationRepository();
-    const createdAt = new Date();
-    await activationRepository.issue({ activationId: randomUUID(), adminId, tokenHash, createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 60_000) });
-    const emailSender = new EmailService({ repository: new MySqlEmailOutboxRepository(), providerAdapter: provider, env: process.env });
-    const url = `${(base ?? 'http://localhost:4100/platform-admin/activate').replace(/\/$/, '')}?token=${encodeURIComponent(rawToken)}`;
-    await emailSender.sendPlatformAdminActivationLink(email, url, rawToken);
-    return { providerName: provider.providerName };
   } finally {
+    // Released the moment the atomic bootstrap transaction has committed OR
+    // rolled back -- on a throw above, nothing durable was created, so
+    // there is nothing left to deliver and the function exits here.
     await releaseBootstrapLock(lock);
   }
+
+  // Transaction already committed, lock already released: this immediate
+  // delivery attempt is a real network call and must never happen inside a
+  // DB transaction or while holding the advisory lock. If it fails, the
+  // already-durable outbox row (see above) remains retryable by the
+  // background EmailOutboxWorker -- the APP_OWNER is not stranded.
+  await attemptDeliveryAndRecordOutcome(
+    { repository: new MySqlEmailOutboxRepository(), providerAdapter: provider, env: process.env },
+    { outboxId, attemptCount: 0, expiresAt: outboxExpiresAt },
+    payload,
+    now,
+  );
+
+  return { providerName: provider.providerName, outboxOutcome: bootstrapResult.outboxOutcome };
 }
 
 const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PoolConnection } from 'mysql2/promise';
 import { execute, runInTransaction, SoftFailure } from '../../db/pool.js';
 import { insertPlatformAdminAuditEventRow } from '../audit/MySqlPlatformAdminAuditRepository.js';
 import type { PlatformAdminActivationRepository, ActivationState } from './PlatformAdminActivationRepository.js';
@@ -17,18 +18,29 @@ function state(token: TokenRow, account: AccountRow, mfa: MfaRow): ActivationSta
   };
 }
 
+/**
+ * Connection-scoped activation-token issuance, deliberately NOT wrapped in
+ * its own transaction -- see insertPlatformAdminAccountOnConnection's doc
+ * comment in MySqlAuthRepository.ts for why this shape exists (reuse
+ * inside a LARGER atomic operation without nesting transactions). `issue`
+ * below -- the ordinary reissue entry point every other caller keeps using
+ * -- just wraps this same logic in its own `runInTransaction`.
+ */
+export async function issueActivationTokenOnConnection(conn: PoolConnection, input: { activationId: string; adminId: PlatformAdminId; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void> {
+  await execute(conn, `UPDATE platform_admin_activation_tokens SET revoked_at = ? WHERE admin_id = ? AND purpose = ? AND used_at IS NULL AND revoked_at IS NULL`, [input.createdAt, input.adminId, PLATFORM_ADMIN_ACTIVATION_PURPOSE]);
+  // Reissue is also the lost-QR recovery boundary. Pending enrollment
+  // material is invalidated in the same transaction as old-token
+  // revocation, so an abandoned URI can never activate the account after
+  // a replacement link is issued. A no-op on first-ever issuance (nothing
+  // to revoke/wipe yet).
+  await execute(conn, `UPDATE platform_admin_mfa_state SET totp_secret_ciphertext = NULL, totp_secret_nonce = NULL, activated_at = NULL, last_accepted_totp_counter = NULL WHERE admin_id = ? AND status = 'PENDING_SETUP'`, [input.adminId]);
+  await execute(conn, `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`, [input.activationId, input.adminId, input.tokenHash, PLATFORM_ADMIN_ACTIVATION_PURPOSE, input.createdAt, input.expiresAt]);
+}
+
 export class MySqlPlatformAdminActivationRepository implements PlatformAdminActivationRepository {
 
   async issue(input: { activationId: string; adminId: PlatformAdminId; tokenHash: string; createdAt: Date; expiresAt: Date }): Promise<void> {
-    await runInTransaction(async (conn) => {
-      await execute(conn, `UPDATE platform_admin_activation_tokens SET revoked_at = ? WHERE admin_id = ? AND purpose = ? AND used_at IS NULL AND revoked_at IS NULL`, [input.createdAt, input.adminId, PLATFORM_ADMIN_ACTIVATION_PURPOSE]);
-      // Reissue is also the lost-QR recovery boundary. Pending enrollment
-      // material is invalidated in the same transaction as old-token
-      // revocation, so an abandoned URI can never activate the account after
-      // a replacement link is issued.
-      await execute(conn, `UPDATE platform_admin_mfa_state SET totp_secret_ciphertext = NULL, totp_secret_nonce = NULL, activated_at = NULL, last_accepted_totp_counter = NULL WHERE admin_id = ? AND status = 'PENDING_SETUP'`, [input.adminId]);
-      await execute(conn, `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`, [input.activationId, input.adminId, input.tokenHash, PLATFORM_ADMIN_ACTIVATION_PURPOSE, input.createdAt, input.expiresAt]);
-    });
+    await runInTransaction((conn) => issueActivationTokenOnConnection(conn, input));
   }
 
   async findUsable(tokenHash: string, now: Date): Promise<ActivationState | null> {

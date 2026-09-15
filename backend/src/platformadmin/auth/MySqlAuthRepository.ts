@@ -160,47 +160,60 @@ async function revokeActiveSessionsOnConnection(
   return { revokedSessionIds: sessionIds };
 }
 
+/**
+ * Connection-scoped account+role+MFA+audit insert, deliberately NOT wrapped
+ * in its own transaction -- exported so a caller that needs this as one
+ * step inside a LARGER atomic operation (see
+ * MySqlFirstOwnerBootstrapRepository.ts) can run it on a connection that
+ * already has a transaction open, rather than nesting transactions (MySQL
+ * has no true nested transactions; a naive nested BEGIN/COMMIT would
+ * silently commit the outer one early). `createAccount` below is the
+ * ordinary, self-contained entry point every other caller should keep
+ * using; it just wraps this same logic in its own `runInTransaction`.
+ */
+export async function insertPlatformAdminAccountOnConnection(conn: PoolConnection, input: CreateAccountInput): Promise<PlatformAdminAccountRecord> {
+  await execute(
+    conn,
+    `INSERT INTO platform_admin_accounts (admin_id, email_hash, display_name, password_credential, status, created_at, disabled_at)
+     VALUES (?, ?, ?, ?, 'ACTIVE', ?, NULL)`,
+    [input.adminId, input.emailHash, input.displayName, input.passwordCredential, input.createdAt],
+  );
+  await execute(
+    conn,
+    `INSERT INTO platform_admin_role_assignments (assignment_id, admin_id, role, granted_at, revoked_at, granted_by_admin_id)
+     VALUES (?, ?, ?, ?, NULL, ?)`,
+    [input.assignmentId, input.adminId, input.role, input.grantedAt, input.grantedByAdminId],
+  );
+  await execute(
+    conn,
+    `INSERT INTO platform_admin_mfa_state (admin_id, status, totp_secret_ciphertext, totp_secret_nonce, activated_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      input.adminId,
+      input.initialMfa.status,
+      input.initialMfa.totpSecretCiphertext,
+      input.initialMfa.totpSecretNonce,
+      input.initialMfa.activatedAt,
+      input.initialMfa.createdAt,
+    ],
+  );
+  for (const auditEvent of input.auditEvents) {
+    await insertPlatformAdminAuditEventRow(conn, auditEvent);
+  }
+  return {
+    adminId: input.adminId,
+    emailHash: input.emailHash,
+    displayName: input.displayName,
+    passwordCredential: input.passwordCredential,
+    status: 'ACTIVE',
+    createdAt: input.createdAt,
+    disabledAt: null,
+  };
+}
+
 export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthRepository {
   async createAccount(input: CreateAccountInput): Promise<PlatformAdminAccountRecord> {
-    return runInTransaction(async (conn) => {
-      await execute(
-        conn,
-        `INSERT INTO platform_admin_accounts (admin_id, email_hash, display_name, password_credential, status, created_at, disabled_at)
-         VALUES (?, ?, ?, ?, 'ACTIVE', ?, NULL)`,
-        [input.adminId, input.emailHash, input.displayName, input.passwordCredential, input.createdAt],
-      );
-      await execute(
-        conn,
-        `INSERT INTO platform_admin_role_assignments (assignment_id, admin_id, role, granted_at, revoked_at, granted_by_admin_id)
-         VALUES (?, ?, ?, ?, NULL, ?)`,
-        [input.assignmentId, input.adminId, input.role, input.grantedAt, input.grantedByAdminId],
-      );
-      await execute(
-        conn,
-        `INSERT INTO platform_admin_mfa_state (admin_id, status, totp_secret_ciphertext, totp_secret_nonce, activated_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          input.adminId,
-          input.initialMfa.status,
-          input.initialMfa.totpSecretCiphertext,
-          input.initialMfa.totpSecretNonce,
-          input.initialMfa.activatedAt,
-          input.initialMfa.createdAt,
-        ],
-      );
-      for (const auditEvent of input.auditEvents) {
-        await insertPlatformAdminAuditEventRow(conn, auditEvent);
-      }
-      return {
-        adminId: input.adminId,
-        emailHash: input.emailHash,
-        displayName: input.displayName,
-        passwordCredential: input.passwordCredential,
-        status: 'ACTIVE',
-        createdAt: input.createdAt,
-        disabledAt: null,
-      };
-    });
+    return runInTransaction((conn) => insertPlatformAdminAccountOnConnection(conn, input));
   }
 
   async findAccountByEmailHash(emailHash: Buffer): Promise<PlatformAdminAccountRecord | null> {

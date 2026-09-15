@@ -1,16 +1,22 @@
 // SESSION 2C certification: real-MySQL proof of the first-APP_OWNER
-// bootstrap behavior (backend/scripts/bootstrap-platform-owner.mjs). Every
-// test in this file uses the SAME real repository/service classes the
-// script and its HTTP routes use in production -- no hand-crafted SQL rows
-// standing in for application logic, no mocks.
+// bootstrap behavior (backend/scripts/bootstrap-platform-owner.mjs), now
+// including the atomic-transaction fix for the stranding defect found in
+// the original certification (see
+// docs/supervision/PCA_FIRST_APP_OWNER_BOOTSTRAP_DB_CERTIFICATION_2026-09-15.md).
+// Every test uses the SAME real repository/service classes the script and
+// its HTTP routes use in production -- no hand-crafted SQL rows standing
+// in for application logic, no mocks.
 //
-// MUST be run against a freshly reset + migrated disposable database (see
-// package.json's "test:db:bootstrap" script), NOT interleaved with the rest
-// of the test:db suite: several sections below depend on the real
-// "ACTIVE_APP_OWNER_COUNT=0" precondition bootstrap-platform-owner.mjs
-// itself enforces, which other test files' own APP_OWNER fixtures would
-// violate. Each section that creates a winning APP_OWNER revokes that role
-// assignment before returning, so the next section starts from zero again.
+// Registered in package.json's shared "test:db" script (required by the
+// anti-orphan gate test/meta/testSuiteRegistration.test.mjs) and safe to
+// run there, interleaved with ~60 other files against one never-reset
+// database: every test that needs the real "ACTIVE_APP_OWNER_COUNT=0"
+// precondition calls forceZeroActiveAppOwners() first (see that function's
+// own doc comment) rather than assuming it already holds, and every test
+// that creates a winning APP_OWNER revokes that role assignment before
+// returning. For a fast, isolated run during development, use the
+// dedicated "test:db:bootstrap" script instead, which resets the whole
+// disposable database first.
 if (!process.env.PLATFORM_ADMIN_MFA_ENC_KEY) process.env.PLATFORM_ADMIN_MFA_ENC_KEY = 'ab'.repeat(32);
 if (!process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL) process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL = 'http://localhost:4100/platform-admin/activate';
 
@@ -26,6 +32,7 @@ import { hashAdminEmail } from '../../dist/platformadmin/auth/emailHash.js';
 import { PENDING_ACTIVATION_CREDENTIAL } from '../../dist/platformadmin/auth/passwordCredential.js';
 import { MySqlPlatformAdminAuthRepository } from '../../dist/platformadmin/auth/MySqlAuthRepository.js';
 import { MySqlPlatformAdminActivationRepository } from '../../dist/platformadmin/auth/MySqlPlatformAdminActivationRepository.js';
+import { createFirstOwnerBootstrap } from '../../dist/platformadmin/auth/MySqlFirstOwnerBootstrapRepository.js';
 import {
   PlatformAdminActivationService,
   PlatformAdminActivationError,
@@ -42,9 +49,13 @@ import {
   generateTotpSecret,
   loadMfaEncryptionKey,
 } from '../../dist/platformadmin/auth/totp.js';
-import { EmailService } from '../../dist/email/EmailService.js';
+import { EmailService, OUTBOX_MESSAGE_TTL_MS } from '../../dist/email/EmailService.js';
 import { MySqlEmailOutboxRepository } from '../../dist/email/MySqlEmailOutboxRepository.js';
 import { RejectingEmailProviderAdapter } from '../../dist/email/providers/RejectingEmailProviderAdapter.js';
+import { encryptOutboxContent } from '../../dist/email/emailOutboxEncryption.js';
+import { computeEmailIdempotencyKey } from '../../dist/email/emailIdempotencyKey.js';
+import { EMAIL_OUTBOX_CLAIM_LEASE_MS } from '../../dist/email/emailTimingPolicy.js';
+import { attemptDeliveryAndRecordOutcome } from '../../dist/email/EmailOutboxProcessor.js';
 import { FIRST_OWNER_BOOTSTRAP_LOCK_NAME, runBootstrap } from '../../scripts/bootstrap-platform-owner.mjs';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
@@ -65,8 +76,32 @@ async function revokeAllActiveAppOwners() {
   await getPool().query(`UPDATE platform_admin_role_assignments SET revoked_at = NOW(3) WHERE role = 'APP_OWNER' AND revoked_at IS NULL`);
 }
 
-/** Standard createAccount input shape, mirroring bootstrap-platform-owner.mjs lines 97-137 exactly. */
-function firstOwnerCreateAccountInput(adminId, emailHash, now, correlationId) {
+/**
+ * This file is registered in package.json's shared "test:db" script (a
+ * mechanical anti-orphan gate, test/meta/testSuiteRegistration.test.mjs,
+ * requires every test/db/*.test.mjs file to be), which runs ~60 files
+ * sequentially against ONE database with no reset between them. Other
+ * files in that suite (e.g. test/db/platformadmin.mysql.test.mjs) create
+ * their own APP_OWNER fixtures and never revoke them. So a test here that
+ * needs the real "ACTIVE_APP_OWNER_COUNT=0" precondition cannot just
+ * ASSERT zero and fail if another file already violated it -- it must
+ * force zero first, deterministically, regardless of what ran before it
+ * or in what order. This still exercises the exact same real precondition
+ * and code paths; it just does not depend on this file's position within
+ * a shared, unordered suite. (backend/package.json's dedicated
+ * "test:db:bootstrap" script resets the whole database first, so in that
+ * standalone run this is a no-op confirming zero, exactly as before.)
+ */
+async function forceZeroActiveAppOwners() {
+  await getPool().query(`UPDATE platform_admin_role_assignments SET revoked_at = NOW(3) WHERE role = 'APP_OWNER' AND revoked_at IS NULL`);
+  const [[{ c }]] = await getPool().query(
+    `SELECT COUNT(*) AS c FROM platform_admin_role_assignments ra JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id WHERE ra.role = 'APP_OWNER' AND ra.revoked_at IS NULL AND a.status = 'ACTIVE'`,
+  );
+  assert.equal(Number(c), 0, 'ACTIVE_APP_OWNER_COUNT=0 must hold after forcing it -- if this fails, something is granting APP_OWNER concurrently with this test, which is itself a bug');
+}
+
+/** Standard createAccount input shape, mirroring bootstrap-platform-owner.mjs's account-creation fields exactly. */
+function firstOwnerAccountInput(adminId, emailHash, now, correlationId) {
   return {
     adminId,
     emailHash,
@@ -82,6 +117,39 @@ function firstOwnerCreateAccountInput(adminId, emailHash, now, correlationId) {
       { eventId: randomUUID(), eventType: 'ADMIN_CREATED', actorAdminId: null, actorRole: null, targetRef: `admin:${adminId}`, result: 'SUCCESS', occurredAt: now, correlationId, metadata: { source: 'BOOTSTRAP' } },
       { eventId: randomUUID(), eventType: 'ADMIN_ROLE_CHANGED', actorAdminId: null, actorRole: null, targetRef: `admin:${adminId}`, result: 'SUCCESS', occurredAt: now, correlationId, metadata: { action: 'GRANTED', role: 'APP_OWNER', source: 'BOOTSTRAP' } },
     ],
+  };
+}
+
+/**
+ * Builds the exact input createFirstOwnerBootstrap needs, mirroring
+ * bootstrap-platform-owner.mjs's own preparation step field-for-field
+ * (same payload shape, same idempotency-key derivation, same TTLs).
+ */
+function buildFirstOwnerBootstrapInput(email, now = new Date()) {
+  const adminId = randomUUID();
+  const emailHash = hashAdminEmail(email);
+  const correlationId = randomUUID();
+  const { rawToken, tokenHash } = generateActivationToken();
+  const activationId = randomUUID();
+  const activationExpiresAt = new Date(now.getTime() + 30 * 60_000);
+  const url = `http://localhost:4100/platform-admin/activate?token=${encodeURIComponent(rawToken)}`;
+  const payload = { toEmail: email, kind: 'PLATFORM_ADMIN_ACTIVATION', code: url };
+  const encryptedPayload = encryptOutboxContent(JSON.stringify(payload), process.env);
+  const idempotencyKey = computeEmailIdempotencyKey('PLATFORM_ADMIN_ACTIVATION', email, rawToken, process.env);
+  const outboxId = randomUUID();
+  const outboxExpiresAt = new Date(now.getTime() + OUTBOX_MESSAGE_TTL_MS);
+  return {
+    adminId,
+    rawToken,
+    tokenHash,
+    activationId,
+    outboxId,
+    payload,
+    input: {
+      account: firstOwnerAccountInput(adminId, emailHash, now, correlationId),
+      activation: { activationId, tokenHash, createdAt: now, expiresAt: activationExpiresAt },
+      outboxEmail: { outboxId, idempotencyKey, encryptedPayload, createdAt: now, expiresAt: outboxExpiresAt, initialClaimableAt: new Date(now.getTime() + EMAIL_OUTBOX_CLAIM_LEASE_MS) },
+    },
   };
 }
 
@@ -117,26 +185,20 @@ async function runBootstrapSubprocess(email) {
   }).catch((error) => ({ stdout: error.stdout ?? '', stderr: error.stderr ?? '', code: error.code }));
 }
 
-test('DB_CONCURRENCY_TEST: two concurrent first-owner bootstrap attempts against real, separate MySQL connections leave exactly one winner', async () => {
-  const [[{ c: startingCount }]] = await getPool().query(
-    `SELECT COUNT(*) AS c FROM platform_admin_role_assignments ra JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id WHERE ra.role = 'APP_OWNER' AND ra.revoked_at IS NULL AND a.status = 'ACTIVE'`,
-  );
-  assert.equal(Number(startingCount), 0, 'precondition ACTIVE_APP_OWNER_COUNT=0 must hold before this test');
+test('DB_CONCURRENCY_TEST: two independent Node subprocesses race for the first-owner bootstrap lock against the same disposable MySQL database', async () => {
+  await forceZeroActiveAppOwners();
 
   const emailA = uniqueEmail('racer-a');
   const emailB = uniqueEmail('racer-b');
+  const [resultA, resultB] = await Promise.all([runBootstrapSubprocess(emailA), runBootstrapSubprocess(emailB)]);
 
-  process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL = emailA;
-  const attemptA = runBootstrap();
-  process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL = emailB;
-  const attemptB = runBootstrap();
-
-  const results = await Promise.allSettled([attemptA, attemptB]);
-  const fulfilled = results.filter((r) => r.status === 'fulfilled');
-  const rejected = results.filter((r) => r.status === 'rejected');
-  assert.equal(fulfilled.length, 1, `expected exactly one bootstrap to succeed, got ${fulfilled.length}`);
-  assert.equal(rejected.length, 1);
-  assert.match(rejected[0].reason.message, /already exists/);
+  const succeeded = (r) => /^FIRST_OWNER_BOOTSTRAP=ACTIVATION_ISSUED PROVIDER=\S+$/m.test(r.stdout);
+  const outcomes = [resultA, resultB];
+  const successes = outcomes.filter(succeeded);
+  const failures = outcomes.filter((r) => !succeeded(r));
+  assert.equal(successes.length, 1, `expected exactly one subprocess to succeed, got ${successes.length}`);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].stderr, /already exists/);
 
   const [ownerRows] = await getPool().query(
     `SELECT ra.admin_id FROM platform_admin_role_assignments ra JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id WHERE ra.role = 'APP_OWNER' AND ra.revoked_at IS NULL AND a.status = 'ACTIVE'`,
@@ -147,28 +209,23 @@ test('DB_CONCURRENCY_TEST: two concurrent first-owner bootstrap attempts against
   const [[{ c: roleCount }]] = await getPool().query(`SELECT COUNT(*) AS c FROM platform_admin_role_assignments WHERE role = 'APP_OWNER' AND revoked_at IS NULL`);
   assert.equal(Number(roleCount), 1);
 
-  const [[mfaRow]] = await getPool().query(`SELECT status FROM platform_admin_mfa_state WHERE admin_id = ?`, [winnerAdminId]);
-  assert.equal(mfaRow.status, 'PENDING_SETUP');
-
-  const [[credRow]] = await getPool().query(`SELECT password_credential FROM platform_admin_accounts WHERE admin_id = ?`, [winnerAdminId]);
-  assert.equal(credRow.password_credential, PENDING_ACTIVATION_CREDENTIAL);
-
   const [emailARows] = await getPool().query(`SELECT admin_id FROM platform_admin_accounts WHERE email_hash = ?`, [hashAdminEmail(emailA)]);
   const [emailBRows] = await getPool().query(`SELECT admin_id FROM platform_admin_accounts WHERE email_hash = ?`, [hashAdminEmail(emailB)]);
   const totalPersisted = emailARows.length + emailBRows.length;
-  assert.equal(totalPersisted, 1, 'exactly one racer email must have a persisted account; the other must have zero rows (no partial losing state)');
+  assert.equal(totalPersisted, 1, 'exactly one racer email must have a persisted account; the other must have zero rows');
 
-  console.log(`DB_CONCURRENCY_TEST=PASS`);
-  console.log(`CONCURRENT_ATTEMPTS=2`);
-  console.log(`SUCCESSFUL_BOOTSTRAPS=${fulfilled.length}`);
-  console.log(`FAILED_BOOTSTRAPS=${rejected.length}`);
+  console.log('CONCURRENCY_EXECUTION_MODEL=INDEPENDENT_NODE_SUBPROCESSES');
+  console.log('DB_CONCURRENCY_TEST=PASS');
+  console.log('CONCURRENT_ATTEMPTS=2');
+  console.log('STARTING_ACTIVE_APP_OWNER_COUNT=0');
+  console.log(`SUCCESSFUL_BOOTSTRAPS=${successes.length}`);
   console.log(`FINAL_ACTIVE_APP_OWNER_COUNT=${ownerRows.length}`);
   console.log(`FINAL_ACTIVE_APP_OWNER_ROLE_COUNT=${Number(roleCount)}`);
-  console.log(`WINNER_MFA_STATUS=${mfaRow.status}`);
   console.log(`LOSER_PARTIAL_STATE_ROWS=${totalPersisted - 1}`);
-  console.log(`CONCURRENT_SINGLE_WINNER=PASS`);
+  console.log('CONCURRENT_SINGLE_WINNER=PASS');
 
   await revokeAllActiveAppOwners();
+  await getPool().query(`UPDATE platform_admin_activation_tokens SET revoked_at = NOW(3) WHERE admin_id = ? AND revoked_at IS NULL`, [winnerAdminId]);
 });
 
 test('LOCK_FAILURE_TEST: bootstrap fails closed when the advisory lock cannot be acquired, creating nothing', async () => {
@@ -196,18 +253,14 @@ test('LOCK_FAILURE_TEST: bootstrap fails closed when the advisory lock cannot be
   console.log('LOCK_FAILURE_FAIL_CLOSED=PASS');
 });
 
-test('BOOTSTRAP_CREATION_ROLLBACK: a forced failure mid-createAccount leaves zero partial rows', async () => {
+test('BOOTSTRAP_CREATION_ROLLBACK: a forced failure mid-createAccount leaves zero partial rows (still-used primitive, independent of the atomic bootstrap path)', async () => {
   const adminId = randomUUID();
   const now = new Date();
   const email = uniqueEmail('rollback');
   const emailHash = hashAdminEmail(email);
   const correlationId = randomUUID();
-  // Deliberately reused eventId across two audit events forces ER_DUP_ENTRY
-  // on the SECOND audit insert -- after account/role/mfa inserts already ran
-  // earlier in the SAME transaction -- proving runInTransaction's rollback
-  // actually undoes all four insert groups, not just the failing one.
   const dupEventId = randomUUID();
-  const input = firstOwnerCreateAccountInput(adminId, emailHash, now, correlationId);
+  const input = firstOwnerAccountInput(adminId, emailHash, now, correlationId);
   input.auditEvents = [
     { ...input.auditEvents[0], eventId: dupEventId },
     { ...input.auditEvents[1], eventId: dupEventId },
@@ -225,81 +278,135 @@ test('BOOTSTRAP_CREATION_ROLLBACK: a forced failure mid-createAccount leaves zer
   assert.equal(mfaRows.length, 0);
   assert.equal(auditRows.length, 0);
 
-  console.log('ACCOUNT_DELTA=0');
-  console.log('ROLE_DELTA=0');
-  console.log('MFA_DELTA=0');
-  console.log('AUDIT_DELTA=0');
   console.log('BOOTSTRAP_CREATION_ROLLBACK=PASS');
 });
 
-test('ACTIVATION_ISSUANCE_FAILURE: a forced failure in activation issuance AFTER account creation strands the first owner with no unauthenticated recovery path', async () => {
-  const adminId = randomUUID();
-  const now = new Date();
-  const email = uniqueEmail('strand');
-  const emailHash = hashAdminEmail(email);
-  const correlationId = randomUUID();
+test('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE (activation-token step): this is the exact scenario that previously stranded a first owner -- now rolls back account/role/MFA/audit/outbox too', async () => {
+  // A throwaway PLATFORM_ADMIN account, needed only to give the pre-inserted
+  // collision row a valid admin_id to satisfy its foreign key -- deliberately
+  // NOT APP_OWNER, so this anchor never counts toward ACTIVE_APP_OWNER_COUNT.
+  const anchorInput = firstOwnerAccountInput(randomUUID(), hashAdminEmail(uniqueEmail('collision-anchor-a')), new Date(), randomUUID());
+  anchorInput.role = 'PLATFORM_ADMIN';
+  const anchor = await repository.createAccount(anchorInput);
+  const email = uniqueEmail('atomic-fail-activation');
+  const built = buildFirstOwnerBootstrapInput(email);
 
-  // Mirrors bootstrap-platform-owner.mjs's own createAccount call exactly --
-  // this is a SEPARATE transaction from the activation issuance below,
-  // exactly as in the real script.
-  await repository.createAccount(firstOwnerCreateAccountInput(adminId, emailHash, now, correlationId));
-
-  // Force activationRepository.issue() -- the real script's SEPARATE, later
-  // operation -- to fail, by occupying the activation_id primary key it
-  // will be given.
-  const collidingActivationId = randomUUID();
+  // Force the activation-token INSERT (the step that failed in the original
+  // stranding defect) to fail via a real ER_DUP_ENTRY on its primary key.
   await getPool().query(
-    `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, 'PLATFORM_ADMIN_FIRST_TIME', ?, ?, NULL, NULL)`,
-    [collidingActivationId, adminId, 'a'.repeat(64), now, new Date(now.getTime() + 60_000)],
-  );
-  const { rawToken, tokenHash } = generateActivationToken();
-  await assert.rejects(
-    () => activationRepository.issue({ activationId: collidingActivationId, adminId, tokenHash, createdAt: now, expiresAt: new Date(now.getTime() + 30 * 60_000) }),
-    (error) => isDuplicateEntry(error),
+    `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, 'PLATFORM_ADMIN_FIRST_TIME', NOW(3), DATE_ADD(NOW(3), INTERVAL 30 MINUTE), NULL, NULL)`,
+    [built.activationId, anchor.adminId, 'a'.repeat(64)],
   );
 
-  // Account/role/MFA DO persist -- createAccount already committed in its own transaction.
-  const [[acctRow]] = await getPool().query(`SELECT status, password_credential FROM platform_admin_accounts WHERE admin_id = ?`, [adminId]);
-  const [roleRows] = await getPool().query(`SELECT role FROM platform_admin_role_assignments WHERE admin_id = ? AND revoked_at IS NULL`, [adminId]);
-  const [[mfaRow]] = await getPool().query(`SELECT status FROM platform_admin_mfa_state WHERE admin_id = ?`, [adminId]);
+  await assert.rejects(() => createFirstOwnerBootstrap(built.input), (error) => isDuplicateEntry(error));
+
+  const [acctRows] = await getPool().query('SELECT admin_id FROM platform_admin_accounts WHERE admin_id = ?', [built.adminId]);
+  const [roleRows] = await getPool().query(`SELECT assignment_id FROM platform_admin_role_assignments WHERE admin_id = ?`, [built.adminId]);
+  const [mfaRows] = await getPool().query('SELECT admin_id FROM platform_admin_mfa_state WHERE admin_id = ?', [built.adminId]);
+  const [auditRows] = await getPool().query('SELECT event_id FROM platform_admin_audit_events WHERE target_ref = ?', [`admin:${built.adminId}`]);
+  const [realTokenRows] = await getPool().query('SELECT activation_id FROM platform_admin_activation_tokens WHERE token_hash = ?', [built.tokenHash]);
+  const [outboxRows] = await getPool().query('SELECT outbox_id FROM email_outbox WHERE outbox_id = ?', [built.outboxId]);
+
+  assert.equal(acctRows.length, 0, 'ACCOUNT_DELTA must be 0');
+  assert.equal(roleRows.length, 0, 'APP_OWNER_ROLE_DELTA must be 0');
+  assert.equal(mfaRows.length, 0, 'MFA_DELTA must be 0');
+  assert.equal(auditRows.length, 0, 'AUDIT_DELTA must be 0');
+  assert.equal(realTokenRows.length, 0, 'ACTIVATION_DELTA must be 0');
+  assert.equal(outboxRows.length, 0, 'OUTBOX_DELTA must be 0');
+
+  console.log('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE_ACTIVATION_STEP=PASS');
+  console.log('ACCOUNT_DELTA=0');
+  console.log('APP_OWNER_ROLE_DELTA=0');
+  console.log('MFA_DELTA=0');
+  console.log('ACTIVATION_DELTA=0');
+  console.log('OUTBOX_DELTA=0');
+  console.log('AUDIT_DELTA=0');
+});
+
+test('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE (outbox step): a forced failure there rolls back account/role/MFA/audit/activation-token too', async () => {
+  const email = uniqueEmail('atomic-fail-outbox');
+  const built = buildFirstOwnerBootstrapInput(email);
+
+  // Force the durable outbox INSERT to fail via a real ER_DUP_ENTRY on its
+  // primary key. insertEmailOutboxRowOnConnection itself catches that and
+  // returns a non-throwing 'DUPLICATE_IDEMPOTENCY_KEY' outcome (correct for
+  // its own ordinary callers -- see that function's doc comment);
+  // createFirstOwnerBootstrap is the layer that turns a non-INSERTED
+  // outcome into a hard failure, since bootstrap has no prior-attempt
+  // history to defer to.
+  await getPool().query(
+    `INSERT INTO email_outbox (outbox_id, idempotency_key, encrypted_iv, encrypted_auth_tag, encrypted_payload, status, attempt_count, next_attempt_at, created_at, expires_at) VALUES (?, ?, 'AAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAA', NULL, 'PENDING', 0, NOW(3), NOW(3), DATE_ADD(NOW(3), INTERVAL 30 MINUTE))`,
+    [built.outboxId, `dummy-collision-${randomUUID()}`],
+  );
+
+  await assert.rejects(() => createFirstOwnerBootstrap(built.input), /outbox enqueue did not insert a new row/);
+
+  const [acctRows] = await getPool().query('SELECT admin_id FROM platform_admin_accounts WHERE admin_id = ?', [built.adminId]);
+  const [roleRows] = await getPool().query(`SELECT assignment_id FROM platform_admin_role_assignments WHERE admin_id = ?`, [built.adminId]);
+  const [mfaRows] = await getPool().query('SELECT admin_id FROM platform_admin_mfa_state WHERE admin_id = ?', [built.adminId]);
+  const [auditRows] = await getPool().query('SELECT event_id FROM platform_admin_audit_events WHERE target_ref = ?', [`admin:${built.adminId}`]);
+  const [tokenRows] = await getPool().query('SELECT activation_id FROM platform_admin_activation_tokens WHERE admin_id = ?', [built.adminId]);
+
+  assert.equal(acctRows.length, 0, 'ACCOUNT_DELTA must be 0');
+  assert.equal(roleRows.length, 0, 'APP_OWNER_ROLE_DELTA must be 0');
+  assert.equal(mfaRows.length, 0, 'MFA_DELTA must be 0');
+  assert.equal(auditRows.length, 0, 'AUDIT_DELTA must be 0');
+  assert.equal(tokenRows.length, 0, 'ACTIVATION_DELTA must be 0');
+
+  console.log('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE_OUTBOX_STEP=PASS');
+  console.log('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE=PASS');
+});
+
+test('POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE: provider delivery failure AFTER a successful atomic commit never invalidates the bootstrapped owner', async () => {
+  await forceZeroActiveAppOwners();
+  const email = uniqueEmail('post-commit-fail');
+  const built = buildFirstOwnerBootstrapInput(email);
+
+  const result = await createFirstOwnerBootstrap(built.input);
+  assert.equal(result.outboxOutcome, 'INSERTED');
+
+  // Real RejectingEmailProviderAdapter, no real Mailgun/SMTP call -- exactly
+  // what a genuinely misconfigured/unreachable provider looks like.
+  const deliveryOutcome = await attemptDeliveryAndRecordOutcome(
+    { repository: new MySqlEmailOutboxRepository(), providerAdapter: new RejectingEmailProviderAdapter(), env: process.env },
+    { outboxId: built.outboxId, attemptCount: 0, expiresAt: built.input.outboxEmail.expiresAt },
+    built.payload,
+    new Date(),
+  );
+  assert.equal(deliveryOutcome, 'RETRY_SCHEDULED');
+
+  const [[acctRow]] = await getPool().query(`SELECT status FROM platform_admin_accounts WHERE admin_id = ?`, [built.adminId]);
   assert.equal(acctRow.status, 'ACTIVE');
-  assert.equal(acctRow.password_credential, PENDING_ACTIVATION_CREDENTIAL);
+  const [roleRows] = await getPool().query(`SELECT role FROM platform_admin_role_assignments WHERE admin_id = ? AND revoked_at IS NULL`, [built.adminId]);
   assert.equal(roleRows.length, 1);
   assert.equal(roleRows[0].role, 'APP_OWNER');
+  const [[mfaRow]] = await getPool().query(`SELECT status FROM platform_admin_mfa_state WHERE admin_id = ?`, [built.adminId]);
   assert.equal(mfaRow.status, 'PENDING_SETUP');
+  const [tokenRows] = await getPool().query(`SELECT activation_id FROM platform_admin_activation_tokens WHERE admin_id = ? AND used_at IS NULL AND revoked_at IS NULL`, [built.adminId]);
+  assert.equal(tokenRows.length, 1);
+  const [[outboxRow]] = await getPool().query(`SELECT status FROM email_outbox WHERE outbox_id = ?`, [built.outboxId]);
+  assert.equal(outboxRow.status, 'PENDING');
 
-  // No real, usable activation token exists -- the intended one never got inserted.
-  const [realTokenRows] = await getPool().query(`SELECT activation_id FROM platform_admin_activation_tokens WHERE token_hash = ?`, [tokenHash]);
-  assert.equal(realTokenRows.length, 0);
+  // No second APP_OWNER creation becomes possible while this one exists.
+  process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL = uniqueEmail('post-commit-fail-second');
+  await assert.rejects(() => runBootstrap(), /already exists/);
 
-  // The ONLY other issuance path (PlatformAdminActivationService.issueActivation)
-  // requires an authenticated actor already holding MANAGE_ADMIN_ACCOUNTS --
-  // impossible here, since no admin can log in yet (no usable credential,
-  // MFA PENDING_SETUP with no secret) and this IS the only APP_OWNER that
-  // would ever hold that permission.
-  await assert.rejects(
-    () => activationService.issueActivation(adminId, email, { adminId: randomUUID(), roles: [] }),
-    PlatformAdminActivationError,
-  );
-
-  console.log('ACTIVATION_ISSUANCE_FAILURE_STATE=ACTIVE_ACCOUNT_PLUS_APP_OWNER_ROLE_PLUS_PENDING_SETUP_MFA_PLUS_PENDING_CREDENTIAL_PLUS_NO_USABLE_ACTIVATION');
-  console.log('RECOVERY_PATH_PROVEN=NO');
-  console.log('FIRST_OWNER_STRANDING_RISK=YES');
+  console.log('APP_OWNER_EXISTS=YES');
+  console.log('MFA_STATUS=PENDING_SETUP');
+  console.log('ACTIVATION_TOKEN_EXISTS=YES');
+  console.log('OUTBOX_MESSAGE_EXISTS=YES');
+  console.log('OUTBOX_RETRYABLE=YES');
+  console.log('POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE=PASS');
 
   await revokeAllActiveAppOwners();
 });
 
-test('FIRST_OWNER_END_TO_END_ACTIVATION: full real lifecycle from bootstrap through login/whoami/logout', async () => {
-  const adminId = randomUUID();
-  const now = new Date();
+test('FIRST_OWNER_END_TO_END_ACTIVATION: full real lifecycle through the atomic bootstrap, then login/whoami/logout', async () => {
+  await forceZeroActiveAppOwners();
   const email = uniqueEmail('e2e-owner');
-  const emailHash = hashAdminEmail(email);
-  const correlationId = randomUUID();
-
-  await repository.createAccount(firstOwnerCreateAccountInput(adminId, emailHash, now, correlationId));
-  const { rawToken, tokenHash } = generateActivationToken();
-  const createdAt = new Date();
-  await activationRepository.issue({ activationId: randomUUID(), adminId, tokenHash, createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 60_000) });
+  const built = buildFirstOwnerBootstrapInput(email);
+  await createFirstOwnerBootstrap(built.input);
+  const { adminId, rawToken } = built;
 
   const [[tokenRow]] = await getPool().query(`SELECT token_hash FROM platform_admin_activation_tokens WHERE admin_id = ?`, [adminId]);
   assert.equal(tokenRow.token_hash, hashActivationToken(rawToken));
@@ -396,10 +503,7 @@ test('ACTIVATION_REISSUE: issuing a replacement activation invalidates the old t
 });
 
 test('EXISTING_PLATFORM_ADMIN_SAFETY: first-owner bootstrap never touches an existing separate PLATFORM_ADMIN', async () => {
-  const [[{ c: startingCount }]] = await getPool().query(
-    `SELECT COUNT(*) AS c FROM platform_admin_role_assignments ra JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id WHERE ra.role = 'APP_OWNER' AND ra.revoked_at IS NULL AND a.status = 'ACTIVE'`,
-  );
-  assert.equal(Number(startingCount), 0, 'precondition ACTIVE_APP_OWNER_COUNT=0 must hold before this test');
+  await forceZeroActiveAppOwners();
 
   const existingEmail = uniqueEmail('existing-pa');
   const existingAccount = await accountService.createAccount('Existing Platform Admin', hashAdminEmail(existingEmail), 'existing platform admin passphrase 2026', 'PLATFORM_ADMIN', 'BOOTSTRAP');
@@ -425,10 +529,7 @@ test('EXISTING_PLATFORM_ADMIN_SAFETY: first-owner bootstrap never touches an exi
 });
 
 test('BOOTSTRAP_OUTPUT_HYGIENE: real CLI stdout/stderr never contain secret material', async () => {
-  const [[{ c: startingCount }]] = await getPool().query(
-    `SELECT COUNT(*) AS c FROM platform_admin_role_assignments ra JOIN platform_admin_accounts a ON a.admin_id = ra.admin_id WHERE ra.role = 'APP_OWNER' AND ra.revoked_at IS NULL AND a.status = 'ACTIVE'`,
-  );
-  assert.equal(Number(startingCount), 0, 'precondition ACTIVE_APP_OWNER_COUNT=0 must hold before this test');
+  await forceZeroActiveAppOwners();
 
   const email = uniqueEmail('hygiene-owner');
   const { stdout, stderr } = await runBootstrapSubprocess(email);

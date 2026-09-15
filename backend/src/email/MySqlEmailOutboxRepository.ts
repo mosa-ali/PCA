@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { execute, isDuplicateEntry, runInTransaction } from '../db/pool.js';
 import type {
   ClaimedEmailOutboxRow,
@@ -5,6 +6,40 @@ import type {
   InsertEmailOutboxInput,
   InsertEmailOutboxOutcome,
 } from './EmailOutboxRepository.js';
+
+/**
+ * Connection-scoped outbox insert, deliberately NOT wrapped in its own
+ * transaction -- exported so a caller that needs the durable outbox row
+ * created as one step inside a LARGER atomic operation (see
+ * MySqlFirstOwnerBootstrapRepository.ts) can run it on a connection that
+ * already has a transaction open. `insert` below -- the ordinary entry
+ * point every other caller keeps using -- just wraps this same logic in
+ * its own `runInTransaction`.
+ */
+export async function insertEmailOutboxRowOnConnection(conn: PoolConnection, input: InsertEmailOutboxInput): Promise<InsertEmailOutboxOutcome> {
+  try {
+    await execute(
+      conn,
+      `INSERT INTO email_outbox
+         (outbox_id, idempotency_key, encrypted_iv, encrypted_auth_tag, encrypted_payload, status, attempt_count, next_attempt_at, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, 'PENDING', 0, ?, ?, ?)`,
+      [
+        input.outboxId,
+        input.idempotencyKey,
+        input.encryptedPayload.ivBase64,
+        input.encryptedPayload.authTagBase64,
+        input.encryptedPayload.ciphertextBase64,
+        input.initialClaimableAt,
+        input.createdAt,
+        input.expiresAt,
+      ],
+    );
+    return 'INSERTED';
+  } catch (error) {
+    if (isDuplicateEntry(error)) return 'DUPLICATE_IDEMPOTENCY_KEY';
+    throw error;
+  }
+}
 
 interface ClaimRow {
   outbox_id: string;
@@ -32,30 +67,7 @@ interface ClaimRow {
  */
 export class MySqlEmailOutboxRepository implements EmailOutboxRepository {
   async insert(input: InsertEmailOutboxInput): Promise<InsertEmailOutboxOutcome> {
-    try {
-      await runInTransaction((conn) =>
-        execute(
-          conn,
-          `INSERT INTO email_outbox
-             (outbox_id, idempotency_key, encrypted_iv, encrypted_auth_tag, encrypted_payload, status, attempt_count, next_attempt_at, created_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, 'PENDING', 0, ?, ?, ?)`,
-          [
-            input.outboxId,
-            input.idempotencyKey,
-            input.encryptedPayload.ivBase64,
-            input.encryptedPayload.authTagBase64,
-            input.encryptedPayload.ciphertextBase64,
-            input.initialClaimableAt,
-            input.createdAt,
-            input.expiresAt,
-          ],
-        ),
-      );
-      return 'INSERTED';
-    } catch (error) {
-      if (isDuplicateEntry(error)) return 'DUPLICATE_IDEMPOTENCY_KEY';
-      throw error;
-    }
+    return runInTransaction((conn) => insertEmailOutboxRowOnConnection(conn, input));
   }
 
   async claimDueRows(now: Date, limit: number, leaseMs: number): Promise<ClaimedEmailOutboxRow[]> {

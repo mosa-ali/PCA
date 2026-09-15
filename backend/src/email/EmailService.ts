@@ -27,7 +27,12 @@ export interface EmailServiceDeps {
 // own TTL is always the tighter bound in practice; this only guards
 // against an outbox row surviving indefinitely if something upstream is
 // badly wrong.
-const OUTBOX_MESSAGE_TTL_MS = 30 * 60_000;
+// Exported so a caller that must build an outbox row directly (see
+// scripts/bootstrap-platform-owner.mjs, which enqueues the first-owner
+// activation email inside its own atomic bootstrap transaction rather than
+// through EmailService itself) uses the identical TTL, instead of a second,
+// independently-maintained copy of this number.
+export const OUTBOX_MESSAGE_TTL_MS = 30 * 60_000;
 
 /**
  * PCA-DW-W2-15F -- the SOLE centralized entry point for sending PCA email.
