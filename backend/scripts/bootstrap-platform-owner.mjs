@@ -67,7 +67,13 @@ function requireEnv(name) {
   return value;
 }
 
-async function acquireBootstrapLock(pool) {
+// Exported so scripts/promote-first-app-owner.mjs (the "grant APP_OWNER to
+// an existing, already-ACTIVE Platform Admin" variant of the first-owner
+// problem, per the 2026-09-15 owner architecture decision) reuses the
+// IDENTICAL lock/precondition code, not a duplicate copy -- both scripts
+// mutate the same "does an active owner exist yet" invariant and MUST
+// serialize against each other, not just against themselves.
+export async function acquireBootstrapLock(pool) {
   const connection = await pool.getConnection();
   try {
     const [rows] = await connection.query('SELECT GET_LOCK(?, ?) AS acquired', [FIRST_OWNER_BOOTSTRAP_LOCK_NAME, LOCK_TIMEOUT_SECONDS]);
@@ -79,7 +85,7 @@ async function acquireBootstrapLock(pool) {
   }
 }
 
-async function releaseBootstrapLock(connection) {
+export async function releaseBootstrapLock(connection) {
   try {
     const [rows] = await connection.query('SELECT RELEASE_LOCK(?) AS released', [FIRST_OWNER_BOOTSTRAP_LOCK_NAME]);
     if (!rows[0] || Number(rows[0].released) !== 1) throw new Error('Unable to release first-owner bootstrap lock.');
@@ -88,7 +94,7 @@ async function releaseBootstrapLock(connection) {
   }
 }
 
-async function assertNoExistingAppOwner(connection) {
+export async function assertNoExistingAppOwner(connection) {
   const [rows] = await connection.query(
     `SELECT ra.admin_id
      FROM platform_admin_role_assignments ra
