@@ -24,12 +24,17 @@ import { normalizedFingerprint } from './schema-fingerprint.mjs';
 
 const execFileP = promisify(execFile);
 
-// PCA-DW-W3-D: was 'ee31abcd...' (76 tables) -- regenerated after
-// migrations/0039_profile_protection_mode.sql and
-// migrations/0040_delete_now_ledger.sql added the 77th/78th tables, verified
-// via schema-fingerprint.mjs against a real bootstrap-vs-migration schema
-// comparison (compare-schema-snapshots.mjs reported EXACT_MATCH).
-const EXPECTED_FINGERPRINT = '278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f';
+// PCA-DW-W3-D / SESSION 2D (2026-09-15): was
+// '278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f' (78
+// tables, computed before migrations/0041_platform_admin_activation_tokens.sql
+// existed in PCA_CANONICAL_SCHEMA) -- regenerated after adding
+// platform_admin_activation_tokens (the 79th table, including
+// schema_migrations) to backend/src/db/schema.ts, verified via
+// schema-fingerprint.mjs against a from-zero-migrated disposable database
+// with all 39 migrations applied (compare-schema-snapshots.mjs reported
+// EXACT_MATCH against the canonical-bootstrap build -- see
+// docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
+const EXPECTED_FINGERPRINT = '3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3';
 const REFERENCE_TABLES = new Set(['billing_currencies', 'billing_commercial_markets', 'billing_country_market_rules', 'entitlement_defaults', 'schema_migrations']);
 
 const connectionString = process.env.PCA_DATABASE_URL;

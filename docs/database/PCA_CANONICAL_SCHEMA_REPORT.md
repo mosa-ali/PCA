@@ -565,3 +565,73 @@ instance was made. No migration was run against live infrastructure. No
 live database password was stored anywhere in this repository. No Key Vault
 secret was created or changed. No Azure networking or firewall rule was
 changed. `LIVE_DATABASE_CREATED = NO`, `LIVE_DATABASE_MODIFIED = NO`.
+
+## 20. Scoped catch-up: `platform_admin_activation_tokens` (SESSION 2D, 2026-09-15)
+
+**Important scope note**: this section closes exactly one, narrowly-scoped
+drift item. It does **not** re-verify or re-derive this report's earlier
+`§18` snapshot (35 migrations, 75 tables) against the four migrations that
+landed after it — `0038_email_outbox.sql`, `0039_profile_protection_mode.sql`,
+`0040_delete_now_ledger.sql`, and `0041_platform_admin_activation_tokens.sql`.
+Only `0041`'s omission from `backend/src/db/schema.ts` was investigated and
+fixed here, per the SESSION 2C/2D mission scope. `0038`–`0040` were already
+correctly present in `schema.ts` (confirmed: they were in the array before
+this session touched anything, and this session's own EXACT_MATCH proof
+below covers them incidentally as part of the whole schema, but their
+individual column-level privacy classifications were not independently
+re-audited here). A full catch-up of this report's narrative sections for
+`0038`–`0040` remains open, separate work.
+
+**What was found**: `backend/src/db/schema.ts`'s own header already
+documented its derivation boundary as "migrations 0001 through 0040" —
+`platform_admin_activation_tokens` (migration `0041`) was never added after
+that migration landed. This is mechanical regeneration lag of exactly the
+kind `§17`/`AUTHORITY MODEL` describes ("`FUTURE_CHANGES`: new migration
+files -- this file should then be regenerated/diffed for drift, not
+hand-edited ahead of the migration"), not a considered decision to exclude
+the table. It broke `backend/scripts/verify-mysql.mjs`'s schema-verification
+gate against any fully-migrated database (see
+`docs/supervision/PCA_FIRST_APP_OWNER_BOOTSTRAP_DB_CERTIFICATION_2026-09-15.md`
+§2 for that discovery, and
+`docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md`
+for this fix's full evidence).
+
+**Privacy classification, by direct precedent, not invented**:
+`platform_admin_sessions.token_hash` — structurally identical (`char(64)`
+ascii, a SHA-256 hex digest of a bearer token, unique-keyed, regex-checked)
+— is already classified `SECURITY_METADATA`. `platform_admin_activation_tokens.token_hash`
+is classified identically, for the identical reason: only the hash is ever
+persisted (migration `0041`'s own header: "the bearer token exists only in
+the issuing request and encrypted email outbox payload"), never the raw
+token, a password, a TOTP secret, or any family/child/message content. Its
+`activation_id`/`admin_id` columns follow the existing `OPAQUE_IDENTIFIER`
+convention every other UUID identifier/FK column in this schema uses; its
+`purpose` column follows the existing `OPERATIONAL_METADATA`
+closed-vocabulary convention; its four `DATETIME(3)` columns follow the
+existing `OPERATIONAL_METADATA` timestamp convention. No column is, or
+could defensibly be, `READABLE_PARENT_DATA`/`READABLE_CHILD_DATA` —
+verified by running `backend/test/canonicalSchemaChildFieldsRegression.test.mjs`
+(the actual privacy-aware gate; `compare-schema-snapshots.mjs`/the
+fingerprint have no awareness of the `privacy` field at all, confirmed by
+reading their source) after the change: it passes, and none of this table's
+column names match any prohibited central-child-data term.
+
+**Re-verified end-to-end, for real, not assumed**:
+
+```
+CANONICAL_TABLE_COUNT (incl. schema_migrations) = 79   (was 78 before this fix)
+MIGRATION_FROM_ZERO                             = PASS (39/39 migrations, disposable MySQL 8.4, from zero)
+CANONICAL_BOOTSTRAP_FROM_ZERO                   = PASS (docs/database/bootstrap/PCA_MYSQL_8_4_DISPOSABLE_BOOTSTRAP.sql, regenerated, applied to a separate fresh disposable database)
+MIGRATION_SCHEMA_VS_CANONICAL_BOOTSTRAP         = EXACT_MATCH (compare-schema-snapshots.mjs, run against both real introspections)
+CANONICAL_SCHEMA_FINGERPRINT = sha256:3a736bd2d1d39378f7e83af7fc68164033e38c6b02f292268178c24f5b98ccf3
+  (changed from the previous sha256:278c141ea752ea9a1867693810d2e5380b5c1ca4568b12d4c8952ba4f680329f
+  -- expected: the schema structurally changed. Independently confirmed IDENTICAL
+  when computed from the migration-built database and from the schema.ts-generated
+  bootstrap-built database.)
+CANONICAL_SCHEMA_CHILD_FIELDS_REGRESSION_TEST   = PASS (no prohibited term, zero READABLE_CHILD_DATA columns)
+```
+
+`backend/scripts/post-validate.mjs`'s `EXPECTED_FINGERPRINT` was updated to
+match. `docs/database/PCA_CENTRAL_DATA_PRIVACY_CLASSIFICATION.csv` gained
+the 8 corresponding rows. No migration was added or modified; no production
+or live database was touched. `SCHEMA_CHANGED = NO`, `MIGRATION_ADDED = NO`.

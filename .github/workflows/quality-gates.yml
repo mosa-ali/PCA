@@ -297,6 +297,28 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
+      - name: Set disposable MySQL service to UTC (matches docker-compose.yml's --default-time-zone=+00:00)
+        # GitHub Actions' `services:` schema has no equivalent of
+        # docker-compose's `command:` override to pass mysqld startup flags,
+        # so the container boots with GLOBAL/SESSION time_zone=SYSTEM
+        # instead. scripts/verify-mysql.mjs's assertSupportedEnvironment
+        # requires both to be the literal '+00:00' and fails closed
+        # otherwise (by design -- see that script's own header) -- this
+        # step sets it explicitly before any test connects, using the
+        # backend's own mysql2 dependency (already installed above), not a
+        # second tool. A fresh connection's SESSION time_zone inherits
+        # GLOBAL at connect time, so this must run before, never after,
+        # `npm run test:db:bootstrap`.
+        working-directory: backend
+        run: |
+          node -e "
+            const mysql = require('mysql2/promise');
+            (async () => {
+              const conn = await mysql.createConnection({ host: '127.0.0.1', port: 33061, user: 'root', password: 'pca_test_only_not_a_secret' });
+              await conn.query(\"SET GLOBAL time_zone = '+00:00'\");
+              await conn.end();
+            })().catch((error) => { console.error(error); process.exit(1); });
+          "
       - name: Run first-owner bootstrap certification against disposable MySQL
         working-directory: backend
         run: npm run test:db:bootstrap

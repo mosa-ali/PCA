@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    78 tables
---   646 columns
---    78 primary keys
---    83 foreign keys
---    32 unique non-primary-key indexes
---   119 non-unique indexes
---   233 CHECK constraints
+--    79 tables
+--   654 columns
+--    79 primary keys
+--    84 foreign keys
+--    33 unique non-primary-key indexes
+--   120 non-unique indexes
+--   236 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    38 schema_migrations journal rows
+--    39 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1104,6 +1104,25 @@ CREATE TABLE `platform_admin_accounts` (
   CONSTRAINT `platform_admin_accounts_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'DISABLED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- platform_admin_activation_tokens (defined by backend/migrations/0041_platform_admin_activation_tokens.sql)
+CREATE TABLE `platform_admin_activation_tokens` (
+  `activation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `admin_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `used_at` datetime(3) NULL,
+  `revoked_at` datetime(3) NULL,
+  PRIMARY KEY (`activation_id`),
+  UNIQUE KEY `platform_admin_activation_tokens_hash_key` (`token_hash`),
+  KEY `platform_admin_activation_tokens_admin_idx` (`admin_id`),
+  CONSTRAINT `platform_admin_activation_tokens_admin_fk` FOREIGN KEY (`admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `platform_admin_activation_tokens_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `platform_admin_activation_tokens_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `platform_admin_activation_tokens_purpose_check` CHECK ((`purpose` = _utf8mb4'PLATFORM_ADMIN_FIRST_TIME'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- platform_admin_audit_events (defined by backend/migrations/0005_platform_admin_identity_rbac_audit.sql, altered by 0014_complimentary_entitlement_grants.sql, 0015_settlement_reconciliation.sql)
 CREATE TABLE `platform_admin_audit_events` (
   `event_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1622,4 +1641,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0037_enrollment_bootstrap_attempt_invitation_fk.sql'),
   ('0038_email_outbox.sql'),
   ('0039_profile_protection_mode.sql'),
-  ('0040_delete_now_ledger.sql');
+  ('0040_delete_now_ledger.sql'),
+  ('0041_platform_admin_activation_tokens.sql');

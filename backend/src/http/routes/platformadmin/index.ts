@@ -24,7 +24,6 @@ import { registerPlatformAdminAdminUserRoutes } from './adminUserRoutes.js';
 import { registerPlatformAdminAuditRoutes } from './auditRoutes.js';
 import { registerPlatformAdminSettingsRoutes } from './settingsRoutes.js';
 import { registerPlatformAdminReleaseRoutes } from './releaseRoutes.js';
-import { registerDbRuntimeDiagnosticRoutes } from './dbRuntimeDiagnosticRoutes.js';
 import { registerPlatformAdminActivationRoutes } from './activationRoutes.js';
 import type { PlatformAdminAuthService } from '../../../platformadmin/auth/PlatformAdminAuthService.js';
 import type { PlatformAdminAccountService } from '../../../platformadmin/auth/PlatformAdminAccountService.js';
@@ -60,7 +59,15 @@ export interface PlatformAdminOperationalRoutesDeps {
 
 export function registerPlatformAdminOperationalRoutes(app: FastifyInstance, deps: PlatformAdminOperationalRoutesDeps): void {
   registerPlatformAdminActivationRoutes(app, { platformAdminActivationService: deps.platformAdminActivationService, rateLimiter: deps.rateLimiter });
-  registerDbRuntimeDiagnosticRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
+  // PCA-PA-3B / SESSION 2D (2026-09-15): the temporary Session-1 Path C DB
+  // runtime diagnostic (registerDbRuntimeDiagnosticRoutes) has been removed
+  // here per its own header ("must be removed after the owner captures the
+  // evidence; it is not a product API") -- that evidence was captured
+  // across the prior sessions. Its route file was deleted in the same
+  // commit. This removes it from source for the NEXT deploy; it remains
+  // live in the currently-deployed production container until that deploy
+  // happens (this mission does not deploy -- see
+  // docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
   registerPlatformAdminDashboardRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminAccountsRoutes(app, { platformAdminAuthService: deps.platformAdminAuthService, rateLimiter: deps.rateLimiter });
   registerPlatformAdminEntitlementRoutes(app, {

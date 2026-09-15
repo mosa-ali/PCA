@@ -2,14 +2,14 @@
 // test/childprofiles/noReadableChildFieldsRegression.test.mjs (which guards
 // only family_child_memberships and its dedicated repository/service/route
 // files). This test scans backend/src/db/schema.ts's PCA_CANONICAL_SCHEMA --
-// every column of all 76 tables -- for the same class of prohibited
+// every column of every table -- for the same class of prohibited
 // central-child-data field names, so a FUTURE migration/table cannot
 // silently introduce one without also updating this explicit allowlist.
 //
 // Per the mission that produced schema.ts: "Do not use this token list
 // blindly against unrelated text columns; scope it to central child/family
 // data tables and explicit architectural rules." A bare substring match
-// against 626 real column names produces mostly false positives (e.g.
+// against real column names produces mostly false positives (e.g.
 // "managed_device_limit" contains "age"; "entitlement_type" contains
 // "title"). Every match below was individually verified against the
 // originating migration's own comments (see

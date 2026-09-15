@@ -1,10 +1,19 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 76 tables), derived once by applying every
-// accepted migration (backend/migrations/0001 through 0040; 38 files, 0009/0010 never existed) from an empty
-// database and introspecting the result via
-// backend/scripts/introspect-schema.mjs. It is NOT an ORM and does not
+// central MySQL schema (all 79 tables, including schema_migrations itself),
+// derived by applying every accepted migration (backend/migrations/0001
+// through 0041; 39 files, 0009/0010 never existed) from an empty database
+// and introspecting the result via backend/scripts/introspect-schema.mjs.
+// platform_admin_activation_tokens (migration 0041) was added 2026-09-15 to
+// close a real drift: this file had not been regenerated since migration
+// 0041 landed (this comment's own prior "76 tables" was already stale
+// before that -- the array itself held 78 entries, matching
+// scripts/post-validate.mjs's own "77th/78th tables" comment after
+// migrations 0039/0040), which broke scripts/verify-mysql.mjs's
+// schema-verification tooling against any fully migrated database (see
+// docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
+// It is NOT an ORM and does not
 // introduce a runtime schema-framework dependency -- it is a strongly typed
 // manifest that backend/scripts/generate-bootstrap-sql.mjs reads to
 // deterministically emit the one-time live-bootstrap SQL in
@@ -2204,6 +2213,43 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "platform_admin_accounts_display_name_check", clause: "(char_length(`display_name`) between 1 and 128)" },
       { name: "platform_admin_accounts_password_credential_check", clause: "(char_length(`password_credential`) between 1 and 255)" },
       { name: "platform_admin_accounts_status_check", clause: "(`status` in (_utf8mb4'ACTIVE',_utf8mb4'DISABLED'))" },
+    ],
+    applicationEnforcedRelations: [
+
+    ],
+  },
+  {
+    name: "platform_admin_activation_tokens",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0041_platform_admin_activation_tokens.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/platformadmin",
+    columns: [
+      { name: "activation_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "admin_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "token_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Authentication/verification/integrity hash material, never a raw secret or raw identifying value -- only a SHA-256 digest of the one-time activation bearer token is ever persisted (see migration 0041's own header); same classification as platform_admin_sessions.token_hash." },
+      { name: "purpose", columnType: "varchar(40)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "used_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "revoked_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["activation_id"],
+    uniqueIndexes: [
+      { name: "platform_admin_activation_tokens_hash_key", columns: ["token_hash"], unique: true },
+    ],
+    indexes: [
+      { name: "platform_admin_activation_tokens_admin_idx", columns: ["admin_id"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "platform_admin_activation_tokens_admin_fk", columns: ["admin_id"], referencedTable: "platform_admin_accounts", referencedColumns: ["admin_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "platform_admin_activation_tokens_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "platform_admin_activation_tokens_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "platform_admin_activation_tokens_purpose_check", clause: "(`purpose` = _utf8mb4'PLATFORM_ADMIN_FIRST_TIME')" },
     ],
     applicationEnforcedRelations: [
 
