@@ -88,10 +88,10 @@ final class ScheduleEngineTests: XCTestCase {
         let dailyLimit = DailyAppLimit(appScope: .all, limitMinutes: 30, usedMinutesToday: 30, anchorLocalDate: "2026-01-07")
         let grant = BonusGrant(id: "bonus-1", appScope: .all, extraMinutes: 15, grantedAt: date("2026-01-07T09:00:00Z"), expiresAt: date("2026-01-07T09:15:00Z"))
 
-        let during = ScheduleEngine.evaluate(input(now: date("2026-01-07T09:05:00Z"), dailyLimit: dailyLimit, bonusGrants: [grant]))
+        let during = ScheduleEngine.evaluate(input(now: date("2026-01-07T09:05:00Z"), bonusGrants: [grant], dailyLimit: dailyLimit))
         XCTAssertEqual(during.kind, .allowedBonus)
 
-        let after = ScheduleEngine.evaluate(input(now: date("2026-01-07T09:20:00Z"), dailyLimit: dailyLimit, bonusGrants: [grant]))
+        let after = ScheduleEngine.evaluate(input(now: date("2026-01-07T09:20:00Z"), bonusGrants: [grant], dailyLimit: dailyLimit))
         XCTAssertEqual(after.kind, .blockedLimitReached)
     }
 
