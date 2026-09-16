@@ -640,30 +640,6 @@ jobs:
             exit 1
           fi
           echo "PCA_SIMULATOR_DESTINATION=platform=iOS Simulator,id=$device_id" >> "$GITHUB_ENV"
-      - name: Diagnose resolved test-host build settings for the real destination
-        working-directory: ios
-        # PCA-DW-W3-I: non-fatal, evidence-only. The PCA/PCATests build
-        # graph, TestTargetID, and scheme are all confirmed correct by
-        # direct project-file inspection, yet `xcodebuild build-for-testing`
-        # fails immediately (before any compilation) with "Could not find
-        # test host for PCATests" under CODE_SIGNING_ALLOWED=NO. Dumping
-        # BOTH targets' actually-resolved product/test-host paths for the
-        # REAL destination (not just -sdk iphonesimulator, which doesn't
-        # reflect the specific simulator instance used) turns the next
-        # occurrence, if any, from another guess into a confirmed diagnosis.
-        shell: bash
-        run: |
-          filter='const keys=["TEST_HOST","BUNDLE_LOADER","BUILT_PRODUCTS_DIR","TARGET_BUILD_DIR","EFFECTIVE_PLATFORM_NAME","PRODUCT_NAME","FULL_PRODUCT_NAME","WRAPPER_NAME","EXECUTABLE_PATH","CODE_SIGNING_ALLOWED","CODE_SIGNING_REQUIRED","SDKROOT","SDK_NAME"];let raw="";process.stdin.on("data",d=>{raw+=d});process.stdin.on("end",()=>{let data;try{data=JSON.parse(raw)}catch{console.log(raw);return}for(const entry of data){const s=entry.buildSettings||{};for(const k of keys)if(k in s)console.log(k+" = "+s[k])}})'
-          for target in PCA PCATests; do
-            echo "===== $target ====="
-            xcodebuild -showBuildSettings -json \
-              -project PCA.xcodeproj \
-              -scheme PCA \
-              -target "$target" \
-              -destination "$PCA_SIMULATOR_DESTINATION" \
-              -configuration Debug \
-              CODE_SIGNING_ALLOWED=NO 2>&1 | node -e "$filter"
-          done
       - name: Build and test the iOS app and extension source
         working-directory: ios
         run: |
@@ -687,20 +663,16 @@ jobs:
           #
           # PCA-DW-W3-I: authenticated log access (this session) traced the
           # actual failure -- "xcodebuild: error: ... Could not find test
-          # host for PCATests" -- to a well-documented Xcode behavior, not a
-          # project misconfiguration: the project file's target dependency,
-          # TestTargetID, scheme Build/Test actions, and TEST_HOST setting
-          # are all correct (verified by direct inspection). A single
-          # combined `xcodebuild test` invocation validates the test host's
-          # resolved path BEFORE building anything, and that upfront check
-          # can fail when CODE_SIGNING_ALLOWED=NO (required here since this
-          # CI has no signing identity) -- even though the actual build
-          # would otherwise succeed. Splitting into `build-for-testing`
-          # (which only needs to produce the products) followed by
-          # `test-without-building` (which runs against products that
-          # already exist on disk, sidestepping the same upfront
-          # unsigned-test-host validation) is the standard fix for this
-          # exact Xcode/xcodebuild interaction.
+          # host for PCATests" -- to the project file itself: the PCA and
+          # PCATests targets (unlike every other target in this project)
+          # never set PRODUCT_NAME, so the app's actual built product
+          # directory resolved to ".app" instead of "PCA.app", which could
+          # never match PCATests' TEST_HOST setting (a literal
+          # ".../PCA.app/..." path). Confirmed via a temporary diagnostic
+          # step dumping the actually-resolved build settings, then fixed by
+          # adding PRODUCT_NAME = "$(TARGET_NAME)" to both targets, matching
+          # every other target's own convention (see the pbxproj's own
+          # history for this fix). Not a codesigning or scheme issue.
           surface_failure_annotations() {
             local log_file="$1" status="$2"
             echo "xcodebuild exited with status $status -- surfacing likely error/failure lines as annotations:"
@@ -716,29 +688,16 @@ jobs:
           }
 
           set +e
-          xcodebuild build-for-testing \
+          xcodebuild test \
             -project PCA.xcodeproj \
             -scheme PCA \
             -destination "$PCA_SIMULATOR_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-build-output.log
-          build_status="${PIPESTATUS[0]}"
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-output.log
+          status="${PIPESTATUS[0]}"
           set -e
-          if [ "$build_status" -ne 0 ]; then
-            surface_failure_annotations xcodebuild-build-output.log "$build_status"
-            exit "$build_status"
-          fi
-
-          set +e
-          xcodebuild test-without-building \
-            -project PCA.xcodeproj \
-            -scheme PCA \
-            -destination "$PCA_SIMULATOR_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test-output.log
-          test_status="${PIPESTATUS[0]}"
-          set -e
-          if [ "$test_status" -ne 0 ]; then
-            surface_failure_annotations xcodebuild-test-output.log "$test_status"
-            exit "$test_status"
+          if [ "$status" -ne 0 ]; then
+            surface_failure_annotations xcodebuild-output.log "$status"
+            exit "$status"
           fi
 
   security:
