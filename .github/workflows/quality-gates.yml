@@ -640,6 +640,30 @@ jobs:
             exit 1
           fi
           echo "PCA_SIMULATOR_DESTINATION=platform=iOS Simulator,id=$device_id" >> "$GITHUB_ENV"
+      - name: Diagnose resolved test-host build settings for the real destination
+        working-directory: ios
+        # PCA-DW-W3-I: non-fatal, evidence-only. The PCA/PCATests build
+        # graph, TestTargetID, and scheme are all confirmed correct by
+        # direct project-file inspection, yet `xcodebuild build-for-testing`
+        # fails immediately (before any compilation) with "Could not find
+        # test host for PCATests" under CODE_SIGNING_ALLOWED=NO. Dumping
+        # BOTH targets' actually-resolved product/test-host paths for the
+        # REAL destination (not just -sdk iphonesimulator, which doesn't
+        # reflect the specific simulator instance used) turns the next
+        # occurrence, if any, from another guess into a confirmed diagnosis.
+        shell: bash
+        run: |
+          filter='const keys=["TEST_HOST","BUNDLE_LOADER","BUILT_PRODUCTS_DIR","TARGET_BUILD_DIR","EFFECTIVE_PLATFORM_NAME","PRODUCT_NAME","FULL_PRODUCT_NAME","WRAPPER_NAME","EXECUTABLE_PATH","CODE_SIGNING_ALLOWED","CODE_SIGNING_REQUIRED","SDKROOT","SDK_NAME"];let raw="";process.stdin.on("data",d=>{raw+=d});process.stdin.on("end",()=>{let data;try{data=JSON.parse(raw)}catch{console.log(raw);return}for(const entry of data){const s=entry.buildSettings||{};for(const k of keys)if(k in s)console.log(k+" = "+s[k])}})'
+          for target in PCA PCATests; do
+            echo "===== $target ====="
+            xcodebuild -showBuildSettings -json \
+              -project PCA.xcodeproj \
+              -scheme PCA \
+              -target "$target" \
+              -destination "$PCA_SIMULATOR_DESTINATION" \
+              -configuration Debug \
+              CODE_SIGNING_ALLOWED=NO 2>&1 | node -e "$filter"
+          done
       - name: Build and test the iOS app and extension source
         working-directory: ios
         run: |
