@@ -106,11 +106,12 @@ describe('RealServiceAuthClient', () => {
 
   it('signIn sends credentials only in the request body and never persists them', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', sessionEstablished: true }));
-    const session = await client.signIn('parent@example.test', 'super-secret');
-    expect(session.accountId).toBe('acc-1');
+    const result = await client.signIn('parent@example.test', 'super-secret');
+    if (result.status !== 'AUTHENTICATED') throw new Error('expected AUTHENTICATED');
+    expect(result.session.accountId).toBe('acc-1');
     // Ordinary sign-in gives no server-side role signal (see this file's
     // header) -- least-privilege placeholder, never a fabricated OWNER.
-    expect(session.role).toBe('VIEWER');
+    expect(result.session.role).toBe('VIEWER');
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe('include');
     expect(JSON.parse(init.body as string)).toEqual({ email: 'parent@example.test', password: 'super-secret' });
@@ -128,6 +129,36 @@ describe('RealServiceAuthClient', () => {
   it('signIn surfaces RATE_LIMITED on 429', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate_limited' }));
     await expect(client.signIn('parent@example.test', 'x')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
+
+  it('signIn returns STEP_UP_REQUIRED (never a fabricated session) when the backend reports sessionEstablished: false', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { sessionEstablished: false, stepUpRequired: true }));
+    const result = await client.signIn('parent@example.test', 'correct-password');
+    expect(result).toEqual({ status: 'STEP_UP_REQUIRED' });
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /api/parent/login/step-up
+  // ---------------------------------------------------------------------
+
+  it('completeLoginStepUp posts email/code and returns the established session', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', sessionEstablished: true }));
+    const session = await client.completeLoginStepUp('parent@example.test', '123456');
+    expect(session.accountId).toBe('acc-1');
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${apiBaseUrl}/api/parent/login/step-up`);
+    expect(init.credentials).toBe('include');
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'parent@example.test', code: '123456' });
+  });
+
+  it('completeLoginStepUp surfaces INVALID_CREDENTIALS on 401 (wrong/expired code)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'invalid_code' }));
+    await expect(client.completeLoginStepUp('parent@example.test', '000000')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+  });
+
+  it('completeLoginStepUp surfaces RATE_LIMITED on 429', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate_limited' }));
+    await expect(client.completeLoginStepUp('parent@example.test', '000000')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 
   // ---------------------------------------------------------------------

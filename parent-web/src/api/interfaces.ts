@@ -70,10 +70,23 @@ export interface ResetPasswordResult {
   status: 'PASSWORD_RESET';
 }
 
+/**
+ * PCA-DW-W3-J: a normal login either establishes a session immediately, or
+ * -- for an account whose first-ever login has not yet completed a
+ * risk-based email step-up (backend/src/parentaccount/ParentAccountService.ts's
+ * `login()`) -- requires one more round trip through `completeLoginStepUp`
+ * before a session exists. Modeled as a discriminated result (not a thrown
+ * error) because it is an expected, non-exceptional branch of the flow,
+ * the same way `RegistrationResult`/`RequestPasswordResetResult` are.
+ */
+export type SignInResult = { status: 'AUTHENTICATED'; session: AuthenticatedSession } | { status: 'STEP_UP_REQUIRED' };
+
 /** Service-level (account) authentication -- separate from family authority. */
 export interface ServiceAuthClient {
   getSession(): Promise<AuthenticatedSession | null>;
-  signIn(email: string, password: string): Promise<AuthenticatedSession>;
+  signIn(email: string, password: string): Promise<SignInResult>;
+  /** Consumes the one-time emailed login step-up code issued when signIn() returned STEP_UP_REQUIRED. Establishes the session on success. */
+  completeLoginStepUp(email: string, code: string): Promise<AuthenticatedSession>;
   signOut(): Promise<void>;
   /** Re-authentication for a step-up-protected action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;

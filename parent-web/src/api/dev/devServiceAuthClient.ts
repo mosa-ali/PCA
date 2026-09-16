@@ -1,4 +1,4 @@
-import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult } from '../interfaces';
+import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, SignInResult } from '../interfaces';
 import { buildDevSession, setServiceAuthenticated } from './devState';
 
 const DELAY_MS = 120;
@@ -11,7 +11,16 @@ export class DevServiceAuthClient implements ServiceAuthClient {
     return buildDevSession();
   }
 
-  async signIn(_email: string, _password: string): Promise<AuthenticatedSession> {
+  async signIn(_email: string, _password: string): Promise<SignInResult> {
+    await delay();
+    setServiceAuthenticated(true);
+    // Dev fixture never simulates the risk-based step-up gate -- every dev
+    // sign-in authenticates immediately, matching this fixture's existing
+    // "always succeed" posture for every other flow.
+    return { status: 'AUTHENTICATED', session: buildDevSession() };
+  }
+
+  async completeLoginStepUp(_email: string, _code: string): Promise<AuthenticatedSession> {
     await delay();
     setServiceAuthenticated(true);
     return buildDevSession();

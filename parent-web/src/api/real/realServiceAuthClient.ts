@@ -41,7 +41,7 @@
 // (the least-privileged placeholder) until a real role-resolution capability
 // exists. `displayName`/`memberId` are not resolvable at all yet and are
 // filled with clearly-synthetic placeholders derived from `accountId`.
-import type { AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient } from '../interfaces';
+import type { AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient, SignInResult } from '../interfaces';
 
 export type ServiceAuthErrorCode =
   | 'INVALID_CREDENTIALS'
@@ -74,6 +74,11 @@ interface EstablishedSessionResponseBody {
   accountId: string;
   familyId: string | null;
   sessionEstablished: true;
+}
+
+interface StepUpRequiredResponseBody {
+  sessionEstablished: false;
+  stepUpRequired: true;
 }
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
@@ -232,7 +237,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     return body;
   }
 
-  async signIn(email: string, password: string): Promise<AuthenticatedSession> {
+  async signIn(email: string, password: string): Promise<SignInResult> {
     let response: Response;
     try {
       response = await fetch(this.url('/api/parent/login'), {
@@ -257,13 +262,39 @@ export class RealServiceAuthClient implements ServiceAuthClient {
       throw new ServiceAuthError('UNKNOWN', `Unexpected sign-in status ${response.status}`);
     }
 
-    const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
+    const body = await parseJsonSafe<EstablishedSessionResponseBody | StepUpRequiredResponseBody>(response);
     if (!body) {
       throw new ServiceAuthError('UNKNOWN', 'Sign-in succeeded but the session response was empty.');
+    }
+    if (body.sessionEstablished === false) {
+      return { status: 'STEP_UP_REQUIRED' };
     }
     // Ordinary sign-in gives no server-side role signal at all (see this
     // file's header) -- least-privilege placeholder until a real
     // role-resolution capability exists.
+    return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body, 'VIEWER') };
+  }
+
+  /** Consumes the one-time emailed login step-up code (see signIn's STEP_UP_REQUIRED result). */
+  async completeLoginStepUp(email: string, code: string): Promise<AuthenticatedSession> {
+    let response: Response;
+    try {
+      response = await fetch(this.url('/api/parent/login/step-up'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
+
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That code is incorrect or has expired.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Step-up request was invalid.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected login step-up status ${response.status}`);
+    const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
+    if (!body) throw new ServiceAuthError('UNKNOWN', 'Step-up succeeded but the session response was empty.');
     return toAuthenticatedSession(body, 'VIEWER');
   }
 

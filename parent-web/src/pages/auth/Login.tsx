@@ -76,15 +76,35 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set only once signIn() reports STEP_UP_REQUIRED -- switches the form
+  // below from password entry to the emailed one-time code, without a
+  // route change (the flow is one continuous login attempt, not a
+  // separately-bookmarkable page -- entering this state with no prior
+  // signIn() call would have no code to check against).
+  const [stepUpRequired, setStepUpRequired] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeInvalid, setCodeInvalid] = useState(false);
+
+  function proceedToReturnPath() {
+    // NEVER pass `from` through unvalidated -- see safeReturnPath above.
+    window.location.assign(safeReturnPath((location.state as { from?: unknown } | null)?.from));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      await clients.serviceAuth.signIn(email, password);
-      // NEVER pass `from` through unvalidated -- see safeReturnPath above.
-      window.location.assign(safeReturnPath((location.state as { from?: unknown } | null)?.from));
+      const result = await clients.serviceAuth.signIn(email, password);
+      if (result.status === 'STEP_UP_REQUIRED') {
+        setStepUpRequired(true);
+        setSubmitting(false);
+        return;
+      }
+      // A full page navigation (not client-side router push) is used after
+      // success so AuthProvider's mount-time getSession() call picks up the
+      // freshly issued session cookie.
+      proceedToReturnPath();
     } catch (err) {
       if (err instanceof ServiceAuthError) {
         if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
@@ -95,6 +115,66 @@ export default function Login() {
       }
       setSubmitting(false);
     }
+  }
+
+  async function handleStepUpSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setCodeInvalid(false);
+    setSubmitting(true);
+    try {
+      await clients.serviceAuth.completeLoginStepUp(email, code);
+      proceedToReturnPath();
+    } catch (err) {
+      if (err instanceof ServiceAuthError) {
+        if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
+        else if (err.code === 'INVALID_CREDENTIALS') {
+          setError(t('auth.invalidCode'));
+          setCodeInvalid(true);
+        } else setError(t('auth.genericError'));
+      } else {
+        setError(t('auth.genericError'));
+      }
+      setSubmitting(false);
+    }
+  }
+
+  if (stepUpRequired) {
+    return (
+      <section aria-labelledby="login-step-up-title" className="auth-page">
+        <h1 id="login-step-up-title">{t('auth.loginStepUpTitle')}</h1>
+        <p>{t('auth.loginStepUpBody', { email })}</p>
+        <form onSubmit={handleStepUpSubmit} noValidate>
+          <div className="field">
+            <label htmlFor="login-step-up-code">{t('auth.codeLabel')}</label>
+            <input
+              id="login-step-up-code"
+              name="code"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              autoComplete="one-time-code"
+              required
+              aria-describedby={error ? 'login-step-up-error' : undefined}
+              aria-invalid={codeInvalid || undefined}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+          </div>
+
+          {error && (
+            <p id="login-step-up-error" role="alert" className="field-error">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" className="btn" disabled={submitting} aria-busy={submitting}>
+            {t('auth.loginStepUpSubmit')}
+          </button>
+        </form>
+      </section>
+    );
   }
 
   return (
