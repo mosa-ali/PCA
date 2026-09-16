@@ -654,32 +654,67 @@ jobs:
           # its real error/failure lines as GitHub Actions `::error::`
           # annotations makes future failures diagnosable from the public,
           # unauthenticated check-runs annotations API. `set +e`/`set -e`
-          # bracket the pipeline deliberately: GitHub Actions' default
+          # bracket each invocation deliberately: GitHub Actions' default
           # `bash -e -o pipefail` would otherwise abort this whole script the
           # instant `tee`'s pipeline reports non-zero, before ever reaching
           # the diagnostic code below (the exact bug the W1 closure doc's own
           # "bash -e" root-cause writeup documents for its own release-control
           # steps).
-          set +e
-          xcodebuild test \
-            -project PCA.xcodeproj \
-            -scheme PCA \
-            -destination "$PCA_SIMULATOR_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-output.log
-          status="${PIPESTATUS[0]}"
-          set -e
-          if [ "$status" -ne 0 ]; then
+          #
+          # PCA-DW-W3-I: authenticated log access (this session) traced the
+          # actual failure -- "xcodebuild: error: ... Could not find test
+          # host for PCATests" -- to a well-documented Xcode behavior, not a
+          # project misconfiguration: the project file's target dependency,
+          # TestTargetID, scheme Build/Test actions, and TEST_HOST setting
+          # are all correct (verified by direct inspection). A single
+          # combined `xcodebuild test` invocation validates the test host's
+          # resolved path BEFORE building anything, and that upfront check
+          # can fail when CODE_SIGNING_ALLOWED=NO (required here since this
+          # CI has no signing identity) -- even though the actual build
+          # would otherwise succeed. Splitting into `build-for-testing`
+          # (which only needs to produce the products) followed by
+          # `test-without-building` (which runs against products that
+          # already exist on disk, sidestepping the same upfront
+          # unsigned-test-host validation) is the standard fix for this
+          # exact Xcode/xcodebuild interaction.
+          surface_failure_annotations() {
+            local log_file="$1" status="$2"
             echo "xcodebuild exited with status $status -- surfacing likely error/failure lines as annotations:"
-            found_line=0
+            local found_line=0
             while IFS= read -r line; do
               echo "::error::${line}"
               found_line=1
-            done < <(grep -E "error:|\*\* (BUILD|TEST) FAILED \*\*|fatal error|Testing failed|Fatal error" xcodebuild-output.log || true)
+            done < <(grep -E "error:|\*\* (BUILD|TEST) FAILED \*\*|fatal error|Testing failed|Fatal error" "$log_file" || true)
             if [ "$found_line" -eq 0 ]; then
               echo "::error::xcodebuild failed (exit $status) with no matching error/failure line found by this step's own grep -- see the last 40 lines of raw output below."
-              tail -n 40 xcodebuild-output.log
+              tail -n 40 "$log_file"
             fi
-            exit "$status"
+          }
+
+          set +e
+          xcodebuild build-for-testing \
+            -project PCA.xcodeproj \
+            -scheme PCA \
+            -destination "$PCA_SIMULATOR_DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-build-output.log
+          build_status="${PIPESTATUS[0]}"
+          set -e
+          if [ "$build_status" -ne 0 ]; then
+            surface_failure_annotations xcodebuild-build-output.log "$build_status"
+            exit "$build_status"
+          fi
+
+          set +e
+          xcodebuild test-without-building \
+            -project PCA.xcodeproj \
+            -scheme PCA \
+            -destination "$PCA_SIMULATOR_DESTINATION" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test-output.log
+          test_status="${PIPESTATUS[0]}"
+          set -e
+          if [ "$test_status" -ne 0 ]; then
+            surface_failure_annotations xcodebuild-test-output.log "$test_status"
+            exit "$test_status"
           fi
 
   security:
