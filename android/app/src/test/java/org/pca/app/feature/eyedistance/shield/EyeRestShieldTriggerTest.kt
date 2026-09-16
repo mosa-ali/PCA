@@ -1,5 +1,6 @@
 package org.pca.app.feature.eyedistance.shield
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -16,6 +17,7 @@ import org.pca.app.feature.eyedistance.engine.EyeDistanceState
  * `EyeDistanceCameraPermissionUiStateResolverTest`): exercise the pure decision surface directly,
  * with a fake state stream, never a real platform/Activity dependency.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class EyeRestShieldTriggerTest {
 
     private val config = EyeDistanceConfig()
