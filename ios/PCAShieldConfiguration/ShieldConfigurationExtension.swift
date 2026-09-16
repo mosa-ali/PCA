@@ -18,19 +18,29 @@ import FamilyControls
 /// bodies below; no other PCA-15 file depends on this extension's visual
 /// output.
 final class PCAShieldConfigurationExtension: ShieldConfigurationDataSource {
-    override func configuration(shielding application: ApplicationToken) -> ShieldConfiguration {
+    // ShieldConfigurationDataSource's real superclass signatures take the
+    // resolved `Application`/`ActivityCategory`/`WebDomain` types (which
+    // expose display metadata for rendering the shield UI), NOT the opaque
+    // `*Token` types `ShieldActionDelegate` uses in the sibling extension
+    // (PCAShieldAction/ShieldActionExtension.swift) -- confirmed by CI: the
+    // Token-typed overrides here failed to compile with "method does not
+    // override any method from its superclass" while the sibling's
+    // Token-typed `ShieldActionDelegate` overrides compiled cleanly,
+    // proving these are two genuinely different Apple API shapes, not one
+    // convention applied inconsistently.
+    override func configuration(shielding application: Application) -> ShieldConfiguration {
         ShieldConfiguration()
     }
 
-    override func configuration(shielding application: ApplicationToken, in category: ActivityCategoryToken) -> ShieldConfiguration {
+    override func configuration(shielding application: Application, in category: ActivityCategory) -> ShieldConfiguration {
         ShieldConfiguration()
     }
 
-    override func configuration(shielding webDomain: WebDomainToken) -> ShieldConfiguration {
+    override func configuration(shielding webDomain: WebDomain) -> ShieldConfiguration {
         ShieldConfiguration()
     }
 
-    override func configuration(shielding webDomain: WebDomainToken, in category: ActivityCategoryToken) -> ShieldConfiguration {
+    override func configuration(shielding webDomain: WebDomain, in category: ActivityCategory) -> ShieldConfiguration {
         ShieldConfiguration()
     }
 }
