@@ -6,8 +6,8 @@ import Foundation
 /// implementation owns secret generation and presentation.
 public struct RecoverySecretLossDisclosure: Equatable {
     public static let title = "Protect your Recovery Secret"
-    public static let body = "PCA infrastructure never receives or stores this secret. If you lose the Recovery Secret and all active parent devices, family recovery is permanently impossible. PCA support cannot recover it; start a new family enrollment instead."
 
+    public let body = "PCA infrastructure never receives or stores this secret. If you lose the Recovery Secret and all active parent devices, family recovery is permanently impossible. PCA support cannot recover it; start a new family enrollment instead."
     public let acknowledgementRequired: Bool = true
 
     public init() {}
