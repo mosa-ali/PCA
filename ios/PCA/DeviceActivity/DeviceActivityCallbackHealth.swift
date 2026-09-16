@@ -52,7 +52,11 @@ public enum DeviceActivityCallbackReconciler {
     public static func reconcile(expected: [ExpectedCallback], observed: [ObservedCallback], nowUtc: Date, toleranceSeconds: TimeInterval = 120) -> DeviceActivityCallbackHealth {
         let dueExpectations = expected.filter { nowUtc.timeIntervalSince($0.expectedNoLaterThan) > toleranceSeconds }
         if dueExpectations.isEmpty {
-            return expected.isEmpty ? .unknown : .healthy
+            // Not just "no expectations at all" -- also "expectations exist but
+            // none has come due yet" (including ones still inside the jitter
+            // tolerance window). Neither healthy nor degraded is assertable
+            // yet in either case (see this type's own doc comment on .unknown).
+            return .unknown
         }
         let observedKinds = Set(observed.map(\.kind))
         let missed = dueExpectations.filter { !observedKinds.contains($0.kind) }
