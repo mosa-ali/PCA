@@ -1,18 +1,15 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 79 tables, including schema_migrations itself),
+// central MySQL schema (all 80 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0041; 39 files, 0009/0010 never existed) from an empty database
+// through 0042; 40 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
-// platform_admin_activation_tokens (migration 0041) was added 2026-09-15 to
-// close a real drift: this file had not been regenerated since migration
-// 0041 landed (this comment's own prior "76 tables" was already stale
-// before that -- the array itself held 78 entries, matching
-// scripts/post-validate.mjs's own "77th/78th tables" comment after
-// migrations 0039/0040), which broke scripts/verify-mysql.mjs's
-// schema-verification tooling against any fully migrated database (see
-// docs/supervision/PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md).
+// parent_login_step_up_codes + parent_accounts.first_login_completed_at
+// (migration 0042) were added 2026-09-16 (see
+// docs/database/PCA_CANONICAL_SCHEMA_REPORT.md §21) -- this comment's own
+// prior table/migration counts are kept current at every such change; see
+// git history for this file if an intermediate count is ever needed.
 // It is NOT an ORM and does not
 // introduce a runtime schema-framework dependency -- it is a strongly typed
 // manifest that backend/scripts/generate-bootstrap-sql.mjs reads to

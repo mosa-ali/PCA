@@ -61,17 +61,18 @@ Fastify + MySQL backend process (see `e2e-real/realBackend.spec.ts`'s
 header for the exact bootstrap sequence), not merely against the mocked
 `e2e/*.spec.ts` suite.
 
-Two deliberate exceptions, both honest "unavailable" states rather than
-simulated success (see `ROUND4_INTERFACE_CONTRACTS.md`'s explicit-gaps
+One remaining deliberate exception, an honest "unavailable" state rather
+than simulated success (see `ROUND4_INTERFACE_CONTRACTS.md`'s explicit-gaps
 list):
 
-- **Family-account suspend/reactivate**: no such route exists (no
-  authoritative account-status model). `AccountDetail.tsx` renders disabled
-  Suspend/Reactivate buttons with an explicit "unavailable" message --
-  never a fake success toast.
 - **Refund issuance, subscription subscribe/cancel/modify, settlement
   provider config**: no write routes exist on this surface at all; not
   represented as actionable UI anywhere in this app.
+
+(Family-account suspend/reactivate was implemented after this list was
+first written -- PCA-ADD-PA-017/Writer65 added real
+`POST .../suspend`/`.../reactivate` routes, and `AccountDetail.tsx` now
+calls them for real, not a disabled placeholder.)
 
 Money is handled exclusively via `src/money/money.ts`: every `amountMinor`
 is a wire decimal-integer STRING (never a JS `number`), parsed to an exact

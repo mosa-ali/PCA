@@ -1,6 +1,6 @@
 # PCA Relationship Enforcement Matrix
 
-Every column across the 75-table canonical schema that is shaped like a
+Every column across the 80-table canonical schema that is shaped like a
 reference to another table's identity (`*_id`/`*_ref`) is classified below as
 one of:
 
@@ -45,7 +45,7 @@ within the same bounded subsystem, using matching opaque-ID types. Full
 enumeration is in the generated artifacts, not hand-duplicated here to avoid
 drift between this document and the schema.
 
-## 2. The single dominant pattern: soft `family_id` scoping (30 tables)
+## 2. The single dominant pattern: soft `family_id` scoping (31 tables)
 
 **Classification: APPLICATION_ENFORCED_INTENTIONAL.**
 
@@ -54,7 +54,7 @@ Every family-scoped table in the schema stores `family_id` as
 foreign key into `families.family_id`, which is itself
 `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin` (the opaque identity value).
 Zero of the 83 foreign keys in the schema reference `families`. This is not
-30 independent omissions; it is one deliberate, explicitly-documented,
+31 independent omissions; it is one deliberate, explicitly-documented,
 schema-wide convention, evidenced by:
 
 - **Migration 0036** (`family_child_memberships`), verbatim: *"No FK to
@@ -208,7 +208,7 @@ independently re-verified against fixture data.
 kept for audit history — it originally read as follows, and the decision
 recorded at the end is what happened next.
 
-Exactly one relationship in the entire 75-table schema ever fell into this
+Exactly one relationship in the entire 80-table schema ever fell into this
 bucket:
 
 | Table.Column | Target | Why this was flagged |
@@ -236,7 +236,7 @@ under §1 (`DB_FOREIGN_KEY_REQUIRED`), not here.
   — includes `enrollment_bootstrap_attempts.invitation_id` as of migration
   `0037`, §8).
 - **APPLICATION_ENFORCED_INTENTIONAL**: 56 total — every soft `family_id`
-  reference (30 tables), every opaque device/key/message identifier (§3),
+  reference (31 tables), every opaque device/key/message identifier (§3),
   every cross-plane billing/entitlements reference (§4), the
   family-authority signature chain (§5), the slot-reservation ordering case
   (§6), and the child-profile-registry non-backfill case (§7). Counted
