@@ -74,6 +74,7 @@ import type { CommercialNotificationService, CommercialNotificationSupportServic
 // routes. This lane does not self-register (see its own index.ts header);
 // wired here exactly like every other domain's registerXRoutes call.
 import { registerPlatformAdminOperationalRoutes } from './routes/platformadmin/index.js';
+import { registerTempRuntimeIdentityDiagnosticRoute } from './routes/platformadmin/tempRuntimeIdentityDiagnostic.js';
 import type { PlatformAdminAccountService } from '../platformadmin/auth/PlatformAdminAccountService.js';
 import type { PlatformAdminEntitlementService } from '../platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import type { ChangeRequestRepository } from '../entitlements/requests/ChangeRequestRepository.js';
@@ -447,6 +448,8 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
       return { status: health.providerConfigured ? 'ok' : 'no_provider_configured', provider: health.providerName };
     });
   }
+
+  registerTempRuntimeIdentityDiagnosticRoute(app, { rateLimiter });
 
   registerInvitationRoutes(app, {
     invitationService: deps.invitationService,

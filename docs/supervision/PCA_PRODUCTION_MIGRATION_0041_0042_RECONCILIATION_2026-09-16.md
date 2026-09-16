@@ -190,12 +190,260 @@ mission. Migrating forward from a real production-shaped starting point
 changes nothing about that schema shape, so those results still apply
 unchanged.
 
+## 10. Addendum (2026-09-16, continued): runtime identity proof, fail-closed migration identity, 0042 hardening, execution runbook
+
+### 10.1 Runtime DB identity — positive attribution method
+
+The owner correctly rejected inferring identity from a broad `mysql.user`
+enumeration (proves account existence, not which one the app actually
+uses). Checked both preferred alternatives before falling back to a new
+mechanism:
+
+- **A. Prior authoritative capture**: none exists —
+  `PCA_SESSION_2D_SCHEMA_DB_PREBOOTSTRAP_CERTIFICATION_2026-09-15.md` §G–J
+  itself already records `DB_RUNTIME_ACCOUNT=UNVERIFIED`.
+- **B. Azure/App Service/Key-Vault metadata, without resolving
+  `PCA_DATABASE_URL`**: checked whether `pca-mysql`'s connection/audit logs
+  are shipped anywhere queryable — confirmed, via the ARM diagnostic-settings
+  API (`GET .../flexibleServers/pca-mysql/providers/microsoft.insights/diagnosticSettings`),
+  that **zero** diagnostic settings exist (`{"value": []}`). No connection
+  audit trail exists to attribute the runtime identity from outside the
+  database. Also checked whether the `pca` App Service (Linux,
+  `sitecontainers`/custom-container, Basic tier) supports the Kudu SSH
+  console, which would let the owner run one query using the container's
+  own already-resolved credential without ever displaying it — confirmed,
+  by reading `backend/Dockerfile`, that no SSH server is configured in the
+  image, so that path does not exist today either (adding one would itself
+  be a new permanent piece of attack surface, worse than the alternative
+  below).
+- **C. Minimum authenticated, sanitized runtime proof** — built, since A
+  and B are both genuinely unavailable. `src/http/routes/platformadmin/
+  tempRuntimeIdentityDiagnostic.ts` (new): a route that queries the app's
+  own already-configured pool (`getPool()` — identical TLS posture,
+  identical credential, identical everything a real request uses) for
+  `CURRENT_USER()`/`DATABASE()`/`VERSION()`/`Ssl_version`/`Ssl_cipher`
+  only, returns exactly those five fields and nothing else. Deliberately
+  **not** Platform-Admin-session-gated (no admin can complete
+  activation/MFA and log in yet — that's the very thing this
+  reconciliation is unblocking), so it is gated instead by a dedicated
+  bearer token read from `PCA_TEMP_RUNTIME_IDENTITY_DIAGNOSTIC_TOKEN`,
+  absent by default in every environment including production today — the
+  route does not exist at all unless the token is explicitly configured. A
+  missing/wrong token 404s (never 401), so it cannot even be distinguished
+  from "route removed." Rate-limited (5/hour) in its own bucket.
+  Certified: `test/http/tempRuntimeIdentityDiagnostic.test.mjs` (3/3 —
+  absent by default, wrong-token 404, no-token 404, all without touching
+  the database) and `test/db/tempRuntimeIdentityDiagnostic.mysql.test.mjs`
+  (1/1 — correct token returns exactly the five sanctioned fields, and the
+  response body is scanned to confirm it never contains `DATABASE_URL`,
+  `password`, `PASSWORD`, or a `mysql://` connection string).
+
+  **This route is not deployed.** It ships in source only, ready to be
+  included in the already-required clean backend deployment (§10.5 below),
+  used exactly once immediately after that deploy to capture the identity,
+  and removed in the very next deploy with a 404 proof — never left running
+  as a permanent diagnostic.
+
+Once the identity is known, Task 2's grant classification needs nothing new
+from this session: the owner's own already-authorized admin SQL session can
+simply run `SHOW GRANTS FOR '<returned user>'@'<returned host>';` directly
+and compare it against `backend/scripts/db/runtimeGrantPlan.mjs`'s
+documented shape (table-level `SELECT,INSERT,UPDATE,DELETE` on ordinary
+tables, `SELECT,INSERT`-only on `platform_admin_audit_events`,
+`SELECT`-only on `schema_migrations`, **never** `CREATE`/`ALTER`/`DROP`/
+`GRANT OPTION`/a database-level grant).
+
+### 10.2 Migration identity now fails closed (Task 3 — implemented and tested)
+
+`backend/scripts/migrate.mjs` previously fell back from
+`PCA_MIGRATION_DATABASE_URL` to `PCA_DATABASE_URL` unconditionally. Now
+uses the same `isProductionSensitiveRuntime` authority every other
+production-sensitive gate in this codebase already uses (`src/db/pool.ts`'s
+`PCA_DATABASE_TLS` gate is the direct precedent) — a production-sensitive
+runtime (`NODE_ENV` not exactly `"test"` or `"development"`) with no
+`PCA_MIGRATION_DATABASE_URL` set now refuses to start, before ever
+attempting a connection. Local/dev/CI workflows that only set
+`PCA_DATABASE_URL` are completely unaffected (verified: `NODE_ENV=test`/
+`development` still fall back exactly as before).
+
+Certified via real subprocess execution of the actual script (not a
+reimplementation) in `test/tooling/migrationIdentityFailClosed.test.mjs`
+(5/5): production-sensitive + no dedicated URL → refuses with the exact
+identity-gate error, before any connection attempt; production-sensitive +
+dedicated URL set → proceeds past the gate (fails only on the deliberately
+unreachable connection, proving the gate didn't fire); test/development →
+unchanged fallback behavior.
+
+**Practical consequence for production**: since no
+`PCA_MIGRATION_DATABASE_URL` App Setting exists on `pca` today (confirmed,
+Azure ARM, names-only), migration `0041`/`0042` execution will now refuse
+to run at all until the owner explicitly provisions one — this is the
+intended effect, not a bug. See §10.5's runbook for exactly when to do
+that.
+
+### 10.3 Migration 0042 hardened to be safely resumable (Task 4 — implemented and re-proven)
+
+Migration `0042` is not yet applied anywhere in production, so it was
+edited directly (no already-applied production migration was touched).
+Both its DDL statements are now safely re-runnable:
+
+- `CREATE TABLE parent_login_step_up_codes` → `CREATE TABLE IF NOT EXISTS
+  parent_login_step_up_codes` (standard MySQL syntax).
+- The `ALTER TABLE parent_accounts ADD COLUMN first_login_completed_at`
+  step → MySQL has **no** `ADD COLUMN IF NOT EXISTS` (confirmed by testing:
+  that's a MariaDB-only extension; MySQL 8.4 raises `ER_PARSE_ERROR` on it).
+  Replaced with the standard MySQL conditional-DDL idiom: check
+  `information_schema.columns` for the column, build the `ALTER TABLE`
+  text only if it's genuinely absent (otherwise an inert `SELECT 1`), then
+  `PREPARE`/`EXECUTE`/`DEALLOCATE PREPARE` it.
+
+Re-ran the exact same empirical proofs as §3/§4 against fresh disposable
+databases with the hardened file:
+
+```
+FRESH_EXECUTION                    = PASS (verify-mysql.mjs, 40 migrations, clean)
+PARTIAL_FAILURE_INJECTION_RETRY    = PASS (manually created just the table, simulating the exact interruption window from §4; a resumed run now completes cleanly instead of ER_TABLE_EXISTS_ERROR)
+POST_RESUME_STATE_CORRECT          = PASS (column present, exactly 1 schema_migrations row for 0042)
+IDEMPOTENCY_OF_HARDENED_FILE       = PASS (re-running an already-fully-applied database still applies 0 migrations)
+SCHEMA_FINGERPRINT_UNCHANGED       = PASS (sha256:638155c4... -- identical to before hardening; this was a purely operational fix, not a schema change)
+```
+
+Also re-ran `test:db:bootstrap` (10/10), `test:db:promotion` (8/8),
+`parentLoginStepUp.mysql.test.mjs` (8/8), and the full `test:db` suite
+(558/558, 4 pre-existing skips, 0 failures) against the hardened migration
+— no regression.
+
+### 10.4 Non-DB test suite
+
+`npm test`: 2364 (pre-cbfe77a) → 2369 (after `migrationIdentityFailClosed.test.mjs`'s
+5 new cases) → **2372/2372** (after `tempRuntimeIdentityDiagnostic.test.mjs`'s
+3 non-DB cases). Registered in `scripts/run-tests.mjs`'s explicit list (this repo's anti-orphan gate would
+otherwise flag them as unregistered).
+
+### 10.5 Production execution runbook
+
+```
+PRECHECK
+  - Confirm MIGRATION_0041/0042 still NOT_APPLIED (re-run the owner SQL's
+    migration_0041_present/migration_0042_present checks).
+  - Confirm MFA_KEY_GATE=PASS still holds (already certified; re-check only
+    if any Key Vault/App Service config changed since).
+  - Confirm CI green on the commit being deployed.
+
+RECOVERY/BACKUP CHECKPOINT
+  - Take a verified backup/snapshot of pca-mysql RIGHT BEFORE this window
+    (per database/live-bootstrap/OWNER_RUNBOOK.md's own established
+    convention -- this repo has no per-migration rollback scripts by
+    design; the recovery unit is the whole-database snapshot).
+  - Record the snapshot ID/timestamp in this document's evidence trail.
+
+MIGRATION IDENTITY VERIFICATION
+  - Provision PCA_MIGRATION_DATABASE_URL as a NEW App Setting on `pca`,
+    Key-Vault-referenced exactly like PCA_DATABASE_URL/PCA_SMTP_PASSWORD
+    (same proven pattern), pointing at a credential with ONLY
+    CREATE/ALTER/DROP/REFERENCES/INDEX/INSERT on pca_pro -- never
+    SUPER/GRANT OPTION/CREATE USER. This is a NEW, separate credential from
+    the runtime one; do not reuse the runtime identity for this.
+  - Because of §10.2, migrate.mjs will now refuse to run at all in
+    production without this -- treat that refusal as confirmation the
+    identity gate is working if it fires before this step is done.
+
+0041
+  - Run `node scripts/migrate.mjs` with PCA_MIGRATION_DATABASE_URL set,
+    scoped to apply through 0041 conceptually (the script applies all
+    pending files in order -- 0041 will apply before 0042 in the same run
+    unless deliberately split; running them in one invocation is fine and
+    was exactly what was proven in §3/§10.3, since 0041 has no partial-
+    failure risk of its own -- single DDL statement).
+
+VERIFY 0041
+  - Re-run the owner SQL's platform_admin_activation_tokens presence check.
+
+0042
+  - Already applies in the same invocation as 0041 unless split
+    deliberately. If split, run migrate.mjs again -- idempotent either way
+    per §10.3.
+
+VERIFY 0042
+  - Re-run the owner SQL's parent_login_step_up_codes /
+    first_login_completed_at presence checks.
+
+MIGRATION JOURNAL VERIFICATION
+  - schema_migrations: migration_count=40, latest=0042_parent_login_step_up_codes.sql.
+
+CANONICAL SCHEMA RECONCILIATION
+  - Full owner SQL block (table/column/PK/FK/index/check-constraint counts)
+    must match this document's §3 disposable-MySQL baseline exactly:
+    table_count=80, column_count=662, primary_key_count=80,
+    foreign_key_count=85, unique_non_pk_index_count=33,
+    non_unique_index_count=121, check_constraint_count=236.
+
+BACKEND CLEAN-IMAGE BUILD/DEPLOY
+  - Build from the exact commit that includes this reconciliation.
+  - If runtime-identity evidence (§10.1) has not yet been captured,
+    INCLUDE the temporary diagnostic route in this build (set
+    PCA_TEMP_RUNTIME_IDENTITY_DIAGNOSTIC_TOKEN as a one-time App Setting
+    for this deploy only) and capture the evidence immediately after
+    deploying, before proceeding further in this runbook.
+  - Deploy to `pca` only. Never touch `pcaSafe`.
+
+REMOVE TEMPORARY DIAGNOSTIC ROUTE (if it was used this cycle)
+  - Unset PCA_TEMP_RUNTIME_IDENTITY_DIAGNOSTIC_TOKEN, and in the very next
+    deploy, remove tempRuntimeIdentityDiagnostic.ts and its buildServer.ts
+    wiring from source entirely.
+  - PROVE 404: GET /platform-admin/internal/temp-runtime-identity returns
+    404 with no token header, confirming the route is genuinely gone (not
+    merely token-gated).
+
+HEALTH CHECKS
+  - GET /health = 200
+  - GET /health/db = 200
+  - GET /health/email = 200
+  - GET (the OLD, already-removed-from-source) /platform-admin/internal/db-runtime-diagnostic = 404
+    (re-confirms the SESSION 2D finding that source removal has actually
+    reached the deployed image).
+
+PARENT EMAIL-OTP COMPATIBILITY CHECK
+  - One real registration + verification + first login through the actual
+    deployed API, confirming STEP_UP_REQUIRED fires exactly once and
+    completes normally (mirrors parentLoginStepUp.mysql.test.mjs's own
+    proven flow, now against the real deployment).
+
+PLATFORM ADMIN ACTIVATION COMPATIBILITY CHECK
+  - Confirm platform_admin_activation_tokens is reachable by the runtime
+    identity (SELECT/INSERT only, per runtimeGrantPlan.mjs) before
+    attempting any real activation flow.
+
+ABORT CRITERIA (any one of these stops the run immediately, before
+proceeding to the next step, and triggers restore-from-snapshot if data was
+already touched):
+  - Any owner SQL re-verification after 0041/0042 does not match the
+    expected values above.
+  - migrate.mjs's identity gate fires unexpectedly (proves
+    PCA_MIGRATION_DATABASE_URL misconfigured) -- STOP, do not work around it.
+  - Any health check fails or returns non-200/non-404 as specified.
+  - The temporary diagnostic route (if used) ever returns anything beyond
+    its five sanctioned fields.
+  - 0042's partial-failure state is ever observed mid-run (should not
+    happen post-hardening, but if `parent_login_step_up_codes` exists
+    without `first_login_completed_at`, this is the exact §4/§10.3
+    scenario) -- the hardened migration is safe to simply re-run; this is
+    informational, not an abort trigger, but must be logged as evidence
+    the hardening was exercised for real.
+  - 0042 recovery procedure (still valid even though hardened, as defense
+    in depth): if a resume is ever needed with the OLD unhardened file for
+    any reason, manually run the remaining ALTER TABLE statement, then
+    INSERT the schema_migrations row, then re-run to confirm
+    "Database already up to date."
+
 ## What remains open
 
-1. **Runtime DB identity / least-privilege proof** — needs one more small
-   owner-relayed read-only query (below).
-2. **Execution plan sign-off and actual production migration** — not
-   executed. Per explicit instruction, this remains at the irreversible
-   production-migration authorization boundary until the identity item
-   above closes and the owner explicitly authorizes the migration step
-   itself.
+1. **Runtime DB identity capture** — requires the already-planned clean
+   backend deployment (§10.5); not yet executed.
+2. **`PCA_MIGRATION_DATABASE_URL` provisioning** — a new, dedicated,
+   owner-approved migration credential must be created and configured
+   before migration execution; not yet done. Production migration cannot
+   proceed without it (enforced automatically by §10.2's fail-closed gate).
+3. **Actual production migration execution and clean deployment** — not
+   executed. Remains at the irreversible production-mutation authorization
+   boundary pending items 1–2 above and explicit owner go-ahead.

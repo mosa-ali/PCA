@@ -15,7 +15,19 @@
 -- different actions, and mixing them into one table would make a stale
 -- code from one purpose replayable against another. Identical
 -- single-use/TTL-bounded/attempt-counted shape as its two siblings.
-CREATE TABLE parent_login_step_up_codes (
+-- IF NOT EXISTS / IF EXISTS on both statements below (PCA-DW-W3-E,
+-- 2026-09-16): this file has two DDL statements, and MySQL DDL
+-- auto-commits per statement (not as one transaction, per
+-- scripts/migrate.mjs's own header) -- so a process interrupted between
+-- them would otherwise leave the table created but the column missing,
+-- and a naive retry would then fail with "table already exists" before
+-- ever reaching the ALTER. Making both statements safely re-runnable
+-- closes that gap without changing the intended final schema: a fresh
+-- run creates both exactly as before; a resumed run after a partial
+-- failure skips whatever already succeeded and completes the rest;
+-- scripts/migrate.mjs still only records this file as applied in
+-- schema_migrations after the WHOLE file (both statements) succeeds.
+CREATE TABLE IF NOT EXISTS parent_login_step_up_codes (
   code_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   code_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -33,5 +45,20 @@ CREATE TABLE parent_login_step_up_codes (
 -- routine subsequent logins proceed without one. Deliberately distinct
 -- from `verified_at` (email-verified at registration time is not the same
 -- fact as "has completed at least one step-up-verified login").
-ALTER TABLE parent_accounts
-  ADD COLUMN first_login_completed_at DATETIME(3) NULL AFTER verified_at;
+-- MySQL has no `ADD COLUMN IF NOT EXISTS` (that's a MariaDB-only extension
+-- -- confirmed by testing: MySQL 8.4 raises ER_PARSE_ERROR on it). This is
+-- the standard MySQL idiom for a conditional ALTER: build the statement
+-- text only if the column is genuinely absent, then PREPARE/EXECUTE it; if
+-- it already exists, the prepared statement is an inert `SELECT 1` instead.
+SET @pca_0042_column_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE() AND table_name = 'parent_accounts' AND column_name = 'first_login_completed_at'
+);
+SET @pca_0042_alter_sql = IF(
+  @pca_0042_column_exists = 0,
+  'ALTER TABLE parent_accounts ADD COLUMN first_login_completed_at DATETIME(3) NULL AFTER verified_at',
+  'SELECT 1'
+);
+PREPARE pca_0042_stmt FROM @pca_0042_alter_sql;
+EXECUTE pca_0042_stmt;
+DEALLOCATE PREPARE pca_0042_stmt;

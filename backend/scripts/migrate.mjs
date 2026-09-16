@@ -21,16 +21,38 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
+import { isProductionSensitiveRuntime } from '../dist/runtime/environment.js';
 import { DEFAULT_MIGRATION_LOCK_TIMEOUT_SECONDS, MIGRATION_LOCK_NAME, withMigrationLock } from './migrationAdvisoryLock.mjs';
 
 // PCA_MIGRATION_DATABASE_URL, if set, is a distinct, more-privileged
 // migration/provisioning credential (able to CREATE/ALTER/DROP), separate
 // from the least-privilege runtime credential the application itself uses
 // at runtime (PCA_DATABASE_URL, read by backend/src/db/pool.ts, which this
-// script never touches). Production SHOULD set this to a dedicated
-// credential; local/dev/CI MAY simply not set it and collapse both roles
-// onto PCA_DATABASE_URL -- this fallback keeps every existing workflow that
-// only sets PCA_DATABASE_URL working completely unchanged.
+// script never touches).
+//
+// PCA-DW-W3-E (2026-09-16): falling back to PCA_DATABASE_URL used to be
+// unconditional -- silently letting a production migration run use the
+// least-privilege runtime credential (which, by design, per
+// scripts/db/runtimeGrantPlan.mjs, is never granted CREATE/ALTER/DROP in
+// the first place, so such a fallback would only ever fail loudly with a
+// MySQL permission-denied error, not silently corrupt anything -- but
+// "fails loudly with a confusing permission error mid-migration" is still
+// worse than refusing to start). Now fails closed the same way
+// db/pool.ts's PCA_DATABASE_TLS gate does, using the same
+// isProductionSensitiveRuntime authority (never an independent NODE_ENV
+// check) so this can never silently disagree with every other
+// production-sensitive gate in the codebase: a production-sensitive
+// runtime MUST set PCA_MIGRATION_DATABASE_URL explicitly. Local/dev/test
+// MAY still simply not set it and collapse both roles onto
+// PCA_DATABASE_URL, keeping every existing local/CI workflow unchanged.
+const productionSensitive = isProductionSensitiveRuntime();
+if (productionSensitive && !process.env.PCA_MIGRATION_DATABASE_URL) {
+  throw new Error(
+    'PCA_MIGRATION_DATABASE_URL is required to run migrations in a production-sensitive runtime ' +
+      '(NODE_ENV is not "test" or "development"). Refusing to silently fall back to PCA_DATABASE_URL ' +
+      '-- migrations must use a dedicated migration identity, not the least-privilege application runtime credential.',
+  );
+}
 const connectionString = process.env.PCA_MIGRATION_DATABASE_URL ?? process.env.PCA_DATABASE_URL;
 if (!connectionString) throw new Error('PCA_DATABASE_URL (or PCA_MIGRATION_DATABASE_URL) is required to run migrations.');
 
