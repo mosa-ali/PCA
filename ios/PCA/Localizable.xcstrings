@@ -253,6 +253,24 @@
         }
       }
     },
+    "Protection degraded" : {
+      "comment" : "AntiRemovalClaimCopy.degraded statusHeadline",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحماية متدهورة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protection degraded"
+          }
+        }
+      }
+    },
     "Not yet active" : {
       "comment" : "AntiRemovalClaimCopy.notDetermined statusHeadline",
       "extractionState" : "manual",
