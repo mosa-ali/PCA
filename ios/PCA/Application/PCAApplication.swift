@@ -247,6 +247,7 @@ public final class PCAApplicationModel: ObservableObject {
             }
             applicationState = stateForCurrentData()
             lastError = nil
+            Task { await self.reportProtectionStatusIfPossible() }
             return result
         } catch let error as PCAProtectionPolicyApplicationError {
             lastError = (error == .authorizationRequired) ? .authorization : .securityGate
@@ -367,6 +368,7 @@ public final class PCAApplicationModel: ObservableObject {
                 dependencies.protectionRuntime.recordPolicyApplication(.degraded)
                 applicationState = stateForCurrentData()
             }
+            await reportProtectionStatusIfPossible(session: session)
         } catch let error as PCAAPIError {
             syncConnectionState = (error == .unauthorized) ? .stale : .offline
             if error == .unauthorized { try? dependencies.sessionStore.clearSession() }
@@ -375,6 +377,13 @@ public final class PCAApplicationModel: ObservableObject {
             syncConnectionState = .offline
             applicationState = .offline
         }
+    }
+
+    private func reportProtectionStatusIfPossible(session suppliedSession: PCADeviceSession? = nil) async {
+        guard let runtimeSyncClient = dependencies.runtimeSyncClient,
+              let session = suppliedSession ?? (try? dependencies.sessionStore.loadSession()),
+              session.expiresAt > now() else { return }
+        try? await runtimeSyncClient.reportProtectionStatus(dependencies.protectionRuntime.status, session: session)
     }
 
     private func stateForCurrentData() -> PCAApplicationState {

@@ -16,6 +16,14 @@ public struct PCAInboundRuntimeSyncResponse: Decodable, Equatable {
     public let droppedForListBound: Bool
 }
 
+public enum PCAReportedProtectionLevel: String, Encodable {
+    case standard = "STANDARD"
+    case protected = "PROTECTED"
+    case degraded = "DEGRADED"
+    case authorizationRequired = "AUTHORIZATION_REQUIRED"
+    case notSupported = "NOT_SUPPORTED"
+}
+
 /// Device-session-authenticated runtime-sync adapter. It deliberately stops
 /// at receipt/application input: encrypted payload verification/decryption
 /// remains the approved crypto layer's responsibility, and a received item
@@ -43,6 +51,36 @@ public final class PCADeviceRuntimeSyncClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.sessionToken)", forHTTPHeaderField: "Authorization")
         _ = try await send(request, decodeAs: EmptyPCAResponse.self)
+    }
+
+    /// Reports the host's observed protection state to the existing backend
+    /// reconciliation route. This is deliberately a separate operation from
+    /// pulling inbound envelopes: transport receipt never becomes a claim of
+    /// local enforcement.
+    public func reportProtectionStatus(_ status: PCAProtectionStatus, session: PCADeviceSession) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("v1/runtime-sync/protection-status"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(session.sessionToken)", forHTTPHeaderField: "Authorization")
+        let level: PCAReportedProtectionLevel
+        switch status {
+        case .active: level = .protected
+        case .degraded: level = .degraded
+        case .notReady: level = .standard
+        }
+        request.httpBody = try JSONEncoder().encode(["protectionLevel": level.rawValue])
+        let response: PCAHTTPResponse
+        do { response = try await transport.send(request) }
+        catch let error as PCAHTTPTransportError { throw PCAAPIError.transport(error) }
+        catch { throw PCAAPIError.transport(.network) }
+        switch response.statusCode {
+        case 200...299: return
+        case 401: throw PCAAPIError.unauthorized
+        case 400: throw PCAAPIError.invalidRequest
+        case 404: throw PCAAPIError.unavailable
+        case 408, 429, 500...599: throw PCAAPIError.rejected
+        default: throw PCAAPIError.rejected
+        }
     }
 
     private func send<T: Decodable>(_ request: URLRequest, decodeAs type: T.Type) async throws -> T {

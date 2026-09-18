@@ -37,6 +37,19 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
 
+    func testRuntimeProtectionStatusUsesExistingAuthenticatedRoute() async throws {
+        let transport = InMemoryPCAHTTPTransport { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/v1/runtime-sync/protection-status")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer opaque-session")
+            XCTAssertEqual(request.httpBody, Data(#"{"protectionLevel":"PROTECTED"}"#.utf8))
+            return PCAHTTPResponse(statusCode: 204, data: Data())
+        }
+        let client = try PCADeviceRuntimeSyncClient(baseURL: URL(string: "https://api.example.test")!, transport: transport)
+        let session = PCADeviceSession(deviceId: "device-1", sessionToken: "opaque-session", expiresAt: Date().addingTimeInterval(60))
+        try await client.reportProtectionStatus(.active, session: session)
+    }
+
     func testProductionBaseURLRejectsHTTP() {
         XCTAssertThrowsError(try PCAEnrollmentBootstrapClient(baseURL: URL(string: "http://localhost:4001")!, transport: InMemoryPCAHTTPTransport { _ in fatalError() })) { error in
             XCTAssertEqual(error as? PCAAPIError, .invalidConfiguration)
