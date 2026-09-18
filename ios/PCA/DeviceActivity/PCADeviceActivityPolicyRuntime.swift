@@ -38,6 +38,7 @@ public protocol PCAProtectionPolicyRuntime {
     ) throws -> PCAProtectionPolicyApplicationResult
 
     func clearPolicy(activityId: String)
+    func callbackHealth(now: Date) -> DeviceActivityCallbackHealth
 }
 
 public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime {
@@ -53,6 +54,7 @@ public struct PCAUnavailableProtectionPolicyRuntime: PCAProtectionPolicyRuntime 
     }
 
     public func clearPolicy(activityId: String) {}
+    public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth { .unknown }
 }
 
 #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
@@ -90,16 +92,19 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let authorizationIsApproved: () -> Bool
     private let scheduler: PCADeviceActivityScheduler
     private let blobStore: OpaqueBlobStore
+    private let callbackLog: CallbackObservationLog?
     private let plistDecoder = PropertyListDecoder()
 
     public init(
         authorizationIsApproved: @escaping () -> Bool,
         scheduler: PCADeviceActivityScheduler = SystemPCADeviceActivityScheduler(),
-        blobStore: OpaqueBlobStore
+        blobStore: OpaqueBlobStore,
+        callbackLog: CallbackObservationLog? = nil
     ) {
         self.authorizationIsApproved = authorizationIsApproved
         self.scheduler = scheduler
         self.blobStore = blobStore
+        self.callbackLog = callbackLog
     }
 
     public func applyVerifiedPolicy(
@@ -139,8 +144,11 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         do {
             try blobStore.write(scheduleData, forKey: "schedule.\(policy.activityId)")
             try blobStore.write(applicationTokenData, forKey: "applicationTokens.\(policy.activityId)")
+            try blobStore.write(Data(policy.activityId.utf8), forKey: "activeActivityId")
             if let protectedApplicationTokenData = protectedApplicationTokenData {
                 try blobStore.write(protectedApplicationTokenData, forKey: "protectedApplicationTokens")
+            } else {
+                blobStore.remove(forKey: "protectedApplicationTokens")
             }
         } catch {
             throw PCAProtectionPolicyApplicationError.persistenceFailed
@@ -185,18 +193,54 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
         scheduler.stop(activityId: activityId)
         blobStore.remove(forKey: "schedule.\(activityId)")
         blobStore.remove(forKey: "applicationTokens.\(activityId)")
+        blobStore.remove(forKey: "activeActivityId")
         ManagedSettingsStore().shield.applications = nil
         ManagedSettingsStore().shield.applicationCategories = nil
         ManagedSettingsStore().shield.webDomains = nil
+    }
+
+    public func callbackHealth(now: Date) -> DeviceActivityCallbackHealth {
+        guard let callbackLog = callbackLog,
+              let activityIdData = blobStore.read(forKey: "activeActivityId"),
+              let activityId = String(data: activityIdData, encoding: .utf8),
+              !activityId.isEmpty,
+              let policyData = blobStore.read(forKey: "schedule.\(activityId)"),
+              case .success(let policy) = PolicySyncDecoder.decode(policyData) else {
+            return .unknown
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = policy.timeZone
+        let todayStart = calendar.startOfDay(for: now)
+        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now
+        let todayEnd = calendar.date(byAdding: .second, value: -1, to: tomorrowStart) ?? now
+        let yesterdayEnd = calendar.date(byAdding: .second, value: -1, to: todayStart) ?? now
+        var expected: [ExpectedCallback] = []
+        if now.timeIntervalSince(todayStart) > 120 {
+            expected.append(ExpectedCallback(kind: .intervalDidStart, expectedNoLaterThan: todayStart))
+        }
+        if now > todayEnd.addingTimeInterval(120) {
+            expected.append(ExpectedCallback(kind: .intervalDidEnd, expectedNoLaterThan: todayEnd))
+        } else if now > yesterdayEnd.addingTimeInterval(120) {
+            expected.append(ExpectedCallback(kind: .intervalDidEnd, expectedNoLaterThan: yesterdayEnd))
+        }
+        return DeviceActivityCallbackReconciler.reconcile(
+            expected: expected,
+            observed: callbackLog.readAll().map(\.asObservedCallback),
+            nowUtc: now
+        )
     }
 
     public static func production(
         authorizationIsApproved: @escaping () -> Bool,
         appGroupIdentifier: String
     ) throws -> PCAProductionProtectionPolicyRuntime {
-        try PCAProductionProtectionPolicyRuntime(
+        let blobStore = try AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
+        let callbackLog = try? AppGroupCallbackObservationLog(appGroupIdentifier: appGroupIdentifier)
+        PCAProductionProtectionPolicyRuntime(
             authorizationIsApproved: authorizationIsApproved,
-            blobStore: AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
+            blobStore: blobStore,
+            callbackLog: callbackLog
         )
     }
 }

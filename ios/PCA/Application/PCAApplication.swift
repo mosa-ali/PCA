@@ -177,6 +177,7 @@ public final class PCAApplicationModel: ObservableObject {
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        reconcileCallbackHealth()
         Task { await self.resumeEnrollmentIfPossible() }
         if authorization.permitsEnforcement {
             Task { await self.beginEnrollmentIfPossible() }
@@ -189,6 +190,7 @@ public final class PCAApplicationModel: ObservableObject {
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        reconcileCallbackHealth()
         Task { await self.resumeEnrollmentIfPossible() }
         if authorization.permitsEnforcement {
             Task { await self.beginEnrollmentIfPossible() }
@@ -242,6 +244,13 @@ public final class PCAApplicationModel: ObservableObject {
     public func recordPolicyApplication(_ status: PCAProtectionStatus) {
         dependencies.protectionRuntime.recordPolicyApplication(status)
         applicationState = stateForCurrentData()
+    }
+
+    private func reconcileCallbackHealth() {
+        if case .degraded = dependencies.policyRuntime.callbackHealth(now: now()) {
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = stateForCurrentData()
+        }
     }
 
     /// Entry point for the approved envelope/crypto pipeline once it has
@@ -397,7 +406,9 @@ public final class PCAApplicationModel: ObservableObject {
         applicationState = .recovering
         do {
             let response = try await sessionClient.establishSession(deviceId: deviceId)
-            try dependencies.sessionStore.saveSession(PCADeviceSession(deviceId: deviceId, sessionToken: response.sessionToken, expiresAt: response.expiresAt))
+            let session = PCADeviceSession(deviceId: deviceId, sessionToken: response.sessionToken, expiresAt: response.expiresAt)
+            try dependencies.sessionStore.saveSession(session)
+            await reportProtectionStatusIfPossible(session: session)
             applicationState = stateForCurrentData()
         } catch is PCADeviceProofError {
             applicationState = .enrollmentBlockedBySecurityGate
