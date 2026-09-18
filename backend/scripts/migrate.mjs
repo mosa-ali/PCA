@@ -21,6 +21,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
+import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 import { isProductionSensitiveRuntime } from '../dist/runtime/environment.js';
 import { DEFAULT_MIGRATION_LOCK_TIMEOUT_SECONDS, MIGRATION_LOCK_NAME, withMigrationLock } from './migrationAdvisoryLock.mjs';
 
@@ -74,7 +75,13 @@ async function main() {
   const files = (await readdir(migrationsDir)).filter((file) => file.endsWith('.sql')).sort();
   if (files.length === 0) throw new Error('No migration files found in backend/migrations/.');
 
-  const connection = await mysql.createConnection({ uri: connectionString, multipleStatements: true, timezone: 'Z' });
+  const tls = resolveDatabaseTlsOption(process.env);
+  const connection = await mysql.createConnection({
+    uri: connectionString,
+    ssl: tls === false ? undefined : tls,
+    multipleStatements: true,
+    timezone: 'Z',
+  });
   try {
     // The lock MUST be taken on this same connection -- GET_LOCK is
     // connection-scoped -- and around the read of schema_migrations too,

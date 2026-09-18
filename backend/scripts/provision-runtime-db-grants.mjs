@@ -31,6 +31,7 @@
 //     127.0.0.1 or % (never hardcoded).
 import mysql from 'mysql2/promise';
 import { buildRuntimeGrantPlan, quoteUserAtHost } from './db/runtimeGrantPlan.mjs';
+import { resolveDatabaseTlsOption } from '../dist/db/pool.js';
 
 const AUDIT_TABLE_NAME = 'platform_admin_audit_events';
 const MIGRATIONS_TABLE_NAME = 'schema_migrations';
@@ -51,7 +52,12 @@ function isNoSuchGrant(error) {
 }
 
 async function main() {
-  const connection = await mysql.createConnection({ uri: connectionString, timezone: 'Z' });
+  const tls = resolveDatabaseTlsOption(process.env);
+  const connection = await mysql.createConnection({
+    uri: connectionString,
+    ssl: tls === false ? undefined : tls,
+    timezone: 'Z',
+  });
   try {
     const [dbRows] = await connection.query('SELECT DATABASE() AS db');
     const databaseName = dbRows[0]?.db;
