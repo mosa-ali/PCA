@@ -66,6 +66,18 @@ final class ProductionIntegrationTests: XCTestCase {
         }
     }
 
+    func testPolicyApplicationBoundaryFailsClosedWithoutApprovedRuntime() {
+        let runtime = PCAUnavailableProtectionPolicyRuntime()
+        XCTAssertThrowsError(try runtime.applyVerifiedPolicy(
+            scheduleData: Data("{}".utf8),
+            applicationTokenData: Data(),
+            protectedApplicationTokenData: nil,
+            now: Date()
+        )) { error in
+            XCTAssertEqual(error as? PCAProtectionPolicyApplicationError, .frameworkUnavailable)
+        }
+    }
+
     func testAuthorizationApprovalAloneNeverClaimsProtectionActive() {
         let runtime = PCAHostProtectionRuntime()
         runtime.authorizationChanged(.approved)

@@ -99,6 +99,7 @@ public struct PCAProductionDependencies {
     public let attemptStore: PCAEnrollmentAttemptStore
     public let profileStore: PCAEnrollmentProfileStore
     public let proofProvider: PCADeviceProofProvider
+    public let policyRuntime: PCAProtectionPolicyRuntime
     public let protectionRuntime: PCAHostProtectionRuntime
     public let deviceIdentityStore: PCADeviceIdentityStore
     public let deviceId: String?
@@ -113,6 +114,7 @@ public struct PCAProductionDependencies {
         attemptStore: PCAEnrollmentAttemptStore,
         profileStore: PCAEnrollmentProfileStore,
         proofProvider: PCADeviceProofProvider,
+        policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime(),
         protectionRuntime: PCAHostProtectionRuntime,
         deviceIdentityStore: PCADeviceIdentityStore = UserDefaultsPCADeviceIdentityStore(),
         deviceId: String? = nil
@@ -126,6 +128,7 @@ public struct PCAProductionDependencies {
         self.attemptStore = attemptStore
         self.profileStore = profileStore
         self.proofProvider = proofProvider
+        self.policyRuntime = policyRuntime
         self.protectionRuntime = protectionRuntime
         self.deviceIdentityStore = deviceIdentityStore
         self.deviceId = deviceId
@@ -208,6 +211,54 @@ public final class PCAApplicationModel: ObservableObject {
     public func recordPolicyApplication(_ status: PCAProtectionStatus) {
         dependencies.protectionRuntime.recordPolicyApplication(status)
         applicationState = stateForCurrentData()
+    }
+
+    /// Entry point for the approved envelope/crypto pipeline once it has
+    /// produced a fully verified policy and opaque FamilyControls token
+    /// bytes. Receipt alone never calls this method; the runtime-sync
+    /// transport intentionally stops before decryption/application.
+    @discardableResult
+    public func applyVerifiedPolicy(
+        scheduleData: Data,
+        applicationTokenData: Data,
+        protectedApplicationTokenData: Data? = nil,
+        now: Date? = nil
+    ) -> PCAProtectionPolicyApplicationResult? {
+        guard authorization.permitsEnforcement else {
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = stateForCurrentData()
+            return .degraded
+        }
+
+        do {
+            let result = try dependencies.policyRuntime.applyVerifiedPolicy(
+                scheduleData: scheduleData,
+                applicationTokenData: applicationTokenData,
+                protectedApplicationTokenData: protectedApplicationTokenData,
+                now: now ?? self.now()
+            )
+            switch result {
+            case .applied:
+                dependencies.protectionRuntime.recordPolicyApplication(.active)
+            case .scheduledOnly:
+                dependencies.protectionRuntime.recordPolicyApplication(.notReady)
+            case .degraded:
+                dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            }
+            applicationState = stateForCurrentData()
+            lastError = nil
+            return result
+        } catch let error as PCAProtectionPolicyApplicationError {
+            lastError = (error == .authorizationRequired) ? .authorization : .securityGate
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = error == .authorizationRequired ? .authorizationRequired : .protectionDegraded
+            return nil
+        } catch {
+            lastError = .recoverable
+            dependencies.protectionRuntime.recordPolicyApplication(.degraded)
+            applicationState = .protectionDegraded
+            return nil
+        }
     }
 
     private func restoreEnrolledState() {
@@ -385,6 +436,14 @@ public enum PCAProductionCompositionRoot {
         let sessionClient = try! PCADeviceSessionClient(baseURL: productionAPIBaseURL, transport: transport, proof: PendingPCADeviceProofProvider())
         let runtimeSyncClient = try! PCADeviceRuntimeSyncClient(baseURL: productionAPIBaseURL, transport: transport)
         let profileStore = UserDefaultsPCAEnrollmentProfileStore()
+        #if canImport(DeviceActivity) && canImport(FamilyControls) && canImport(ManagedSettings)
+        let policyRuntime: PCAProtectionPolicyRuntime = (try? PCAProductionProtectionPolicyRuntime.production(
+            authorizationIsApproved: { authorizationCenter.refresh().permitsEnforcement },
+            appGroupIdentifier: "group.org.pca.app"
+        )) ?? PCAUnavailableProtectionPolicyRuntime()
+        #else
+        let policyRuntime: PCAProtectionPolicyRuntime = PCAUnavailableProtectionPolicyRuntime()
+        #endif
         let dependencies = PCAProductionDependencies(
             authorizationCenter: authorizationCenter,
             enrollmentCoordinator: enrollmentCoordinator,
@@ -395,6 +454,7 @@ public enum PCAProductionCompositionRoot {
             attemptStore: stateStore,
             profileStore: profileStore,
             proofProvider: PendingPCADeviceProofProvider(),
+            policyRuntime: policyRuntime,
             protectionRuntime: PCAHostProtectionRuntime(),
             deviceIdentityStore: UserDefaultsPCADeviceIdentityStore()
         )

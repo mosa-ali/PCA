@@ -12,6 +12,18 @@ import ManagedSettings
 /// backend/Android engines it mirrors).
 public enum DeviceActivityScheduleMapper {
     #if canImport(DeviceActivity)
+    /// A full-day repeating callback envelope. The host cannot encode PCA's
+    /// weekday/precedence/exception semantics into DeviceActivitySchedule;
+    /// those semantics remain in ScheduleEngine and are re-evaluated by the
+    /// monitor extension on every callback.
+    public static func monitoringSchedule() -> DeviceActivitySchedule {
+        DeviceActivitySchedule(
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59),
+            repeats: true
+        )
+    }
+
     /// A `BEDTIME`/`SCHOOL_MODE`/`BLOCK_PERIOD` window becomes a
     /// DeviceActivity monitoring interval covering its own active
     /// time-of-day range; cross-midnight windows (end <= start) are

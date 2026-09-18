@@ -41,7 +41,7 @@ def nid():
 PCA_SUBGROUPS = [
     ("Application", ["PCAApplication.swift"]),
     ("AI", ["ClassifierRuntimeBoundary.swift"]),
-    ("DeviceActivity", ["CallbackObservationLog.swift", "DeviceActivityCallbackHealth.swift", "DeviceActivityScheduleMapper.swift"]),
+    ("DeviceActivity", ["CallbackObservationLog.swift", "DeviceActivityCallbackHealth.swift", "DeviceActivityScheduleMapper.swift", "PCADeviceActivityPolicyRuntime.swift"]),
     ("Enrollment", ["ChildEnrollmentCoordinator.swift"]),
     ("FamilyControls", ["ChildAuthorizationCenter.swift", "ChildAuthorizationState.swift", "FamilyActivitySelectionStore.swift"]),
     ("Keychain", ["FamilyKeyMaterialStore.swift", "KeychainStore.swift", "PCADeviceSessionStore.swift"]),
