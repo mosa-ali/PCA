@@ -212,7 +212,6 @@ const files = [
   "test/familyrbac/removalDecisionRoutes.wiring.test.mjs",
   "test/http/buildServer.removalDecisionAndSafeZoneWiring.test.mjs",
   "test/http/buildServerRateLimiting.test.mjs",
-  "test/http/tempRuntimeIdentityDiagnostic.test.mjs",
   "test/tooling/RebuildR3DerivedLedgers.test.mjs",
   "test/alerts/ProtectionAlert.test.mjs",
   "test/alerts/ProtectionAlertProducer.test.mjs",
