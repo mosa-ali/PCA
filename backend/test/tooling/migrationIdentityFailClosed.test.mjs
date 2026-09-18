@@ -24,11 +24,12 @@ const scriptPath = new URL('../../scripts/migrate.mjs', import.meta.url).pathnam
  * must behave identically for both), and applies the given overrides.
  * Omitting a URL key here means "genuinely absent", not "set to ''".
  */
-function childEnv({ nodeEnv, databaseUrl, migrationDatabaseUrl }) {
+function childEnv({ nodeEnv, databaseUrl, migrationDatabaseUrl, databaseTls }) {
   const env = { PATH: process.env.PATH };
   if (nodeEnv !== undefined) env.NODE_ENV = nodeEnv;
   if (databaseUrl !== undefined) env.PCA_DATABASE_URL = databaseUrl;
   if (migrationDatabaseUrl !== undefined) env.PCA_MIGRATION_DATABASE_URL = migrationDatabaseUrl;
+  if (databaseTls !== undefined) env.PCA_DATABASE_TLS = databaseTls;
   return env;
 }
 
@@ -57,7 +58,7 @@ test('production-sensitive runtime (NODE_ENV=production) with no PCA_MIGRATION_D
 });
 
 test('production-sensitive runtime WITH PCA_MIGRATION_DATABASE_URL set proceeds past the identity gate (fails later only on the actual connection attempt)', async () => {
-  const result = await runMigrate({ nodeEnv: 'production', migrationDatabaseUrl: UNREACHABLE_URL });
+  const result = await runMigrate({ nodeEnv: 'production', migrationDatabaseUrl: UNREACHABLE_URL, databaseTls: 'REQUIRED' });
   assert.notEqual(result.code, 0);
   assert.doesNotMatch(result.stderr, /PCA_MIGRATION_DATABASE_URL is required/, 'the identity gate itself must not fire once the dedicated credential is set');
   assert.match(result.stderr, /ECONNREFUSED|ETIMEDOUT/, 'should fail only on the (deliberately unreachable) connection attempt, proving it got past the identity gate');
