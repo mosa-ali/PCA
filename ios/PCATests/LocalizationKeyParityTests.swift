@@ -153,6 +153,15 @@ final class LocalizationKeyParityTests: XCTestCase {
         }
     }
 
+    func testApprovedAuthorizationWithoutAppliedPolicyHasHonestLocalizedCopy() throws {
+        let catalog = try loadCatalog()
+        for status in [PCAProtectionStatus.notReady, .degraded] {
+            let copy = AntiRemovalClaimCopy.current(for: .approved, protectionStatus: status)
+            assertFullyLocalized(copy.statusHeadline, in: catalog, context: "approved authorization with \(status)")
+            assertFullyLocalized(copy.statusDetail, in: catalog, context: "approved authorization with \(status)")
+        }
+    }
+
     // MARK: - Every PCAEnrollmentDisclosure runtime value (PCAChildEnrollmentProfileView)
 
     func testEnrollmentDisclosureStringsAreFullyLocalizedForEveryProfileCombination() throws {

@@ -1,19 +1,15 @@
 import SwiftUI
 
 struct ContentView: View {
-    /// Snapshot-only for this home screen: real-time authorization
-    /// tracking is `ChildAuthorizationCenter`'s job (see
-    /// `FamilyControls/ChildAuthorizationCenter.swift`), which requires
-    /// the `FamilyControls` framework at runtime. This default keeps the
-    /// screen honest ("not yet active") rather than defaulting to
-    /// `.approved`, consistent with doc 07 Section 14's "never silently
-    /// say PROTECTED" rule; a production entry point wires the real
-    /// observed state in here instead of relying on this default.
-    var authorization: ChildAuthorizationState = .notDetermined
+    @ObservedObject private var model: PCAApplicationModel
+
+    init(model: PCAApplicationModel = PCAProductionCompositionRoot.make()) {
+        self.model = model
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "shield")
                     .font(.system(size: 42))
                     .accessibilityHidden(true)
@@ -24,8 +20,24 @@ struct ContentView: View {
                 Text(PCALocalizedStrings.text("Native iOS foundation"))
                     .foregroundStyle(.secondary)
 
+                Text(PCALocalizedStrings.text(AntiRemovalClaimCopy.current(for: model.authorization, protectionStatus: model.dependencies.protectionRuntime.status).statusHeadline))
+                    .font(.headline)
+
+                if let disclosure = model.pendingDisclosure {
+                    PCAChildEnrollmentProfileView(disclosure: disclosure) {
+                        model.confirmPendingProfile()
+                    }
+                } else if !model.authorization.permitsEnforcement {
+                    Button {
+                        Task { await model.requestAuthorization() }
+                    } label: {
+                        Label(PCALocalizedStrings.text("Enrollment"), systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .accessibilityHint(PCALocalizedStrings.text("Confirms the parent-selected settings without changing them"))
+                }
+
                 NavigationLink {
-                    AboutProtectionView(authorization: authorization)
+                    AboutProtectionView(authorization: model.authorization, protectionStatus: model.dependencies.protectionRuntime.status)
                 } label: {
                     Label(PCALocalizedStrings.text("Removal protection"), systemImage: "lock.shield")
                 }
@@ -41,4 +53,3 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
-

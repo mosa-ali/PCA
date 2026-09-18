@@ -80,4 +80,26 @@ public struct AntiRemovalClaimCopy: Equatable {
             )
         }
     }
+
+    /// Host-app composition adds the second fail-closed condition: Family
+    /// Controls approval is necessary but does not prove that a current
+    /// policy was applied. The legacy overload above remains the pure
+    /// authorization contract used by existing tests and copy surfaces.
+    public static func current(for authorization: ChildAuthorizationState, protectionStatus: PCAProtectionStatus) -> AntiRemovalClaimCopy {
+        guard authorization == .approved else { return current(for: authorization) }
+        switch protectionStatus {
+        case .active:
+            return current(for: authorization)
+        case .notReady:
+            return AntiRemovalClaimCopy(
+                statusHeadline: "Not yet active",
+                statusDetail: "Family Controls authorization is approved, but PCA has not confirmed a current policy on this device."
+            )
+        case .degraded:
+            return AntiRemovalClaimCopy(
+                statusHeadline: "Protection degraded",
+                statusDetail: "PCA cannot currently confirm that the latest safety policy is fully applied on this device."
+            )
+        }
+    }
 }

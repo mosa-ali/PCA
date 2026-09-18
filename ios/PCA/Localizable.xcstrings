@@ -630,6 +630,42 @@
           }
         }
       }
+    },
+    "Family Controls authorization is approved, but PCA has not confirmed a current policy on this device." : {
+      "comment" : "AntiRemovalClaimCopy approved authorization without a confirmed applied policy",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمت الموافقة على تفويض Family Controls، لكن PCA لم يؤكد تطبيق سياسة حالية على هذا الجهاز."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Family Controls authorization is approved, but PCA has not confirmed a current policy on this device."
+          }
+        }
+      }
+    },
+    "PCA cannot currently confirm that the latest safety policy is fully applied on this device." : {
+      "comment" : "AntiRemovalClaimCopy degraded protection status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع PCA حاليًا تأكيد تطبيق أحدث سياسة أمان بالكامل على هذا الجهاز."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PCA cannot currently confirm that the latest safety policy is fully applied on this device."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

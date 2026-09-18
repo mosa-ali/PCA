@@ -39,11 +39,12 @@ def nid():
 # ---------------------------------------------------------------------------
 
 PCA_SUBGROUPS = [
+    ("Application", ["PCAApplication.swift"]),
     ("AI", ["ClassifierRuntimeBoundary.swift"]),
     ("DeviceActivity", ["CallbackObservationLog.swift", "DeviceActivityCallbackHealth.swift", "DeviceActivityScheduleMapper.swift"]),
     ("Enrollment", ["ChildEnrollmentCoordinator.swift"]),
     ("FamilyControls", ["ChildAuthorizationCenter.swift", "ChildAuthorizationState.swift", "FamilyActivitySelectionStore.swift"]),
-    ("Keychain", ["FamilyKeyMaterialStore.swift", "KeychainStore.swift"]),
+    ("Keychain", ["FamilyKeyMaterialStore.swift", "KeychainStore.swift", "PCADeviceSessionStore.swift"]),
     ("Location", ["LocationCapabilityAdapter.swift"]),
     ("ManagedSettings", ["EmergencySurface.swift", "ManagedSettingsAdapter.swift", "ShieldSafetyValidator.swift"]),
     ("ParentStatus", ["ChildStatusSnapshot.swift"]),
@@ -51,10 +52,12 @@ PCA_SUBGROUPS = [
     ("Retention", ["RetentionWindow.swift"]),
     ("Schedule", ["ScheduleEngine.swift", "ScheduleModels.swift"]),
     ("Sync", ["PolicyApplicationGate.swift", "PolicySyncSchema.swift", "SyncConnectionState.swift"]),
+    ("Transport", ["PCAHTTPTransport.swift", "PCADeviceAPI.swift", "PCADeviceRuntimeSyncClient.swift"]),
     ("YouTube", ["YouTubeVisibilityMode.swift"]),
 ]
 
 PCATESTS_NEW_FILES = [
+    "ProductionIntegrationTests.swift",
     "CallbackObservationLogTests.swift",
     "ChildAuthorizationCenterTests.swift",
     "DeviceActivityCallbackHealthTests.swift",

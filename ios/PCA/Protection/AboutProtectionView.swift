@@ -7,8 +7,9 @@ import SwiftUI
 /// outside this source tree's scope (no marketing site exists here).
 struct AboutProtectionView: View {
     let authorization: ChildAuthorizationState
+    var protectionStatus: PCAProtectionStatus = .notReady
 
-    private var copy: AntiRemovalClaimCopy { AntiRemovalClaimCopy.current(for: authorization) }
+    private var copy: AntiRemovalClaimCopy { AntiRemovalClaimCopy.current(for: authorization, protectionStatus: protectionStatus) }
 
     var body: some View {
         ScrollView {
