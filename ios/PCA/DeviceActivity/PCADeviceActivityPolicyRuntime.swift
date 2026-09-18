@@ -237,7 +237,7 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     ) throws -> PCAProductionProtectionPolicyRuntime {
         let blobStore = try AppGroupBlobStore(appGroupIdentifier: appGroupIdentifier)
         let callbackLog = try? AppGroupCallbackObservationLog(appGroupIdentifier: appGroupIdentifier)
-        PCAProductionProtectionPolicyRuntime(
+        return PCAProductionProtectionPolicyRuntime(
             authorizationIsApproved: authorizationIsApproved,
             blobStore: blobStore,
             callbackLog: callbackLog
