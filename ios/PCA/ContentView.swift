@@ -23,6 +23,10 @@ struct ContentView: View {
                 Text(PCALocalizedStrings.text(AntiRemovalClaimCopy.current(for: model.authorization, protectionStatus: model.dependencies.protectionRuntime.status).statusHeadline))
                     .font(.headline)
 
+                Text(PCALocalizedStrings.text(model.applicationState.userFacingMessage))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(PCALocalizedStrings.text(model.applicationState.userFacingMessage))
+
                 if let disclosure = model.pendingDisclosure {
                     PCAChildEnrollmentProfileView(disclosure: disclosure) {
                         model.confirmPendingProfile()

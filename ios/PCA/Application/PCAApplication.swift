@@ -24,6 +24,21 @@ public enum PCAApplicationState: Equatable {
     case offline
     case recovering
     case error(PCAApplicationErrorCategory)
+
+    /// Short, non-sensitive UI copy. Detailed security/transport errors stay
+    /// typed in the model and are never rendered raw.
+    var userFacingMessage: String {
+        switch self {
+        case .initializing, .enrollmentInProgress, .recovering: return "Starting settings"
+        case .notEnrolled: return "Enrollment"
+        case .authorizationRequired: return "Apple authorization is required before iOS protection controls can run."
+        case .enrollmentBlockedBySecurityGate: return "Apple approval is needed before safety controls can start."
+        case .enrolled: return "Not yet active"
+        case .protectionActive: return "Active on this device"
+        case .protectionDegraded, .offline: return "Not active"
+        case .error: return "Not available"
+        }
+    }
 }
 
 public enum PCAApplicationErrorCategory: Equatable {
@@ -162,6 +177,10 @@ public final class PCAApplicationModel: ObservableObject {
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        Task { await self.resumeEnrollmentIfPossible() }
+        if authorization.permitsEnforcement {
+            Task { await self.beginEnrollmentIfPossible() }
+        }
         Task { await self.establishSessionIfNeeded() }
         Task { await self.synchronizeRuntime() }
     }
@@ -170,6 +189,10 @@ public final class PCAApplicationModel: ObservableObject {
         authorization = dependencies.authorizationCenter.refresh()
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        Task { await self.resumeEnrollmentIfPossible() }
+        if authorization.permitsEnforcement {
+            Task { await self.beginEnrollmentIfPossible() }
+        }
         Task { await self.establishSessionIfNeeded() }
         Task { await self.synchronizeRuntime() }
     }
@@ -181,6 +204,9 @@ public final class PCAApplicationModel: ObservableObject {
         }
         dependencies.protectionRuntime.authorizationChanged(authorization)
         restoreEnrolledState()
+        if authorization.permitsEnforcement {
+            Task { await self.beginEnrollmentIfPossible() }
+        }
     }
 
     @discardableResult
@@ -204,7 +230,12 @@ public final class PCAApplicationModel: ObservableObject {
             controller.receiveParentAuthorizedProfile(profile)
             profileRuntimeState = controller.confirmChildProfile()
             pendingDisclosure = nil
+            try? dependencies.attemptStore.clearAttempt()
             applicationState = stateForCurrentData()
+            Task {
+                await self.establishSessionIfNeeded()
+                await self.synchronizeRuntime()
+            }
         }
     }
 
@@ -277,6 +308,11 @@ public final class PCAApplicationModel: ObservableObject {
     }
 
     private func beginEnrollmentIfPossible() async {
+        guard authorization.permitsEnforcement else {
+            applicationState = .authorizationRequired
+            lastError = .authorization
+            return
+        }
         guard let link = linkRouter.takePendingLink() else { return }
         guard !dependencies.proofProvider.signingPublicKey.isEmpty,
               !dependencies.proofProvider.encryptionPublicKey.isEmpty else {
@@ -311,6 +347,35 @@ public final class PCAApplicationModel: ObservableObject {
         } catch is PCADeviceProofError {
             lastError = .securityGate
             applicationState = .enrollmentBlockedBySecurityGate
+        } catch {
+            lastError = .recoverable
+            applicationState = .error(.recoverable)
+        }
+    }
+
+    private func resumeEnrollmentIfPossible() async {
+        guard authorization.permitsEnforcement,
+              pendingDeviceId == nil,
+              let attempt = try? dependencies.attemptStore.loadAttempt() else { return }
+        applicationState = .recovering
+        do {
+            let response = try await dependencies.enrollmentClient.recover(
+                attemptId: attempt.attemptId,
+                attemptRecoveryToken: attempt.attemptRecoveryToken
+            )
+            pendingDeviceId = response.deviceId
+            dependencies.deviceIdentityStore.saveDeviceId(response.deviceId)
+            let profile = PCAEnrollmentProfile(
+                childProfileId: response.childProfileId,
+                ageUxTier: response.ageUxTier,
+                initialPolicyProfile: response.initialPolicyProfile
+            )
+            profileRuntimeState = .awaitingChildConfirmation(profile, PCAEnrollmentDisclosure.forProfile(profile))
+            pendingDisclosure = PCAEnrollmentDisclosure.forProfile(profile)
+            applicationState = .enrollmentInProgress
+        } catch let error as PCAAPIError {
+            lastError = Self.category(for: error)
+            applicationState = Self.state(for: error)
         } catch {
             lastError = .recoverable
             applicationState = .error(.recoverable)

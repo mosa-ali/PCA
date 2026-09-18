@@ -91,7 +91,6 @@ public final class PCAProductionProtectionPolicyRuntime: PCAProtectionPolicyRunt
     private let scheduler: PCADeviceActivityScheduler
     private let blobStore: OpaqueBlobStore
     private let plistDecoder = PropertyListDecoder()
-    private let plistEncoder = PropertyListEncoder()
 
     public init(
         authorizationIsApproved: @escaping () -> Bool,
