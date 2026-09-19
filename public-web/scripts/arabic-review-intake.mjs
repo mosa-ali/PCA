@@ -159,6 +159,7 @@ try {
   ledgerApplied = new Map([
     ...(ledger.applied ?? []),
     ...(ledger.postAuditApplied ?? []),
+    ...(ledger.postAuditLegalApplied ?? []),
   ].filter((a) => a.beforeArabic).map((a) => [a.key, a]));
 } catch {
   // No ledger yet: pre-remediation run, every difference is genuinely stale.

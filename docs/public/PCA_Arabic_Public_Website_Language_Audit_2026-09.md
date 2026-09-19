@@ -1,6 +1,6 @@
 # PCA Arabic Public Website Language Audit — 2026-09
 
-Status: source corrections implemented; native Arabic sign-off and live deployment verification remain open.
+Status: final source-language corrections implemented; native Arabic sign-off, mobile visual QA, and live deployment verification remain open.
 
 ## Scope and route inventory
 
@@ -17,7 +17,14 @@ The live Arabic site was reviewed through its primary navigation and footer. Eig
 | `/ar/privacy-policy/` | `public-web/src/content/pages/privacyPolicy.ar.mjs` | Yes | legal prose and technical nouns; PCA repetition | Yes, pending legal review |
 | `/ar/terms/` | `public-web/src/content/pages/terms.ar.mjs` | Yes | legal prose and PCA repetition | Yes, pending legal review |
 
-The source also emits `/ar/sign-in/` as an unlinked utility route. Its Arabic source was corrected in `public-web/src/content/pages/signIn.ar.mjs`, but a direct live navigation attempt did not complete, so live publication of that route remains unverified.
+The source also emits `/ar/sign-in/` as a linked utility route from the shared header. Its Arabic source and neutral realm chooser are present in `public-web/src/content/pages/signIn.ar.mjs`; the live host previously returned a not-found page for direct navigation, so this is a deployment-alignment defect rather than a source-routing gap. No authentication behavior was invented or changed.
+
+## Final internal acceptance pass
+
+- All 203 Arabic keys were read against the English key set and the current source. Thirty-one string/subitem language defects were corrected across the nine Arabic page modules reviewed in this final pass.
+- The final pass covered natural Arabic grammar, technical terminology, privacy wording, safety wording, claim strength, and punctuation. It did not change business logic, privacy behavior, security behavior, route policy, or design.
+- All 29 retained `PCA` references were re-reviewed. They remain because they identify the brand, an official product/app/platform name, an approved technical identifier, or a necessary first-reference locator. No additional PCA reference was removed or changed in this pass.
+- `AR_SIGN_IN_EXPECTED = YES`; source route generation and header linkage are present. `AR_SIGN_IN_404_STATUS = DEFECT` on the live host until the corrected build is published.
 
 ## Terminology decisions
 
@@ -78,6 +85,16 @@ The source also emits `/ar/sign-in/` as an unlinked utility route. Its Arabic so
 - Local desktop browser review: PASS for the corrected Arabic home, how-it-works, and privacy routes; `lang="ar"`, `dir="rtl"`, terminology, FAQ wording, and the corrected `تثبيته` agreement were observed in the rendered accessibility tree.
 - Automated mobile UAT: NOT EXECUTED because this checkout has no resolvable `playwright-core` dependency for `scripts/uat.mjs`; no mobile pass is claimed.
 - Native Arabic reviewer sign-off: OPEN; the repository build intentionally reports all 203 Arabic keys pending OD-12 sign-off.
-- Source publication alignment: PASS for `pca-dev`; commit `67e884a2f6f31da771586620f16b75b308f886d5` is present in `D:\PCA\pca-app` and matches `origin/pca-dev`.
+- Source publication alignment: final commit and exact `origin/pca-dev` equality are recorded in the release handoff after this audit update; no deployment was performed.
 - Live deployment alignment: OPEN; the public host was not redeployed by this audit, so the corrected source is not claimed live.
-- Live `/ar/sign-in/` publication: UNVERIFIED; the source emits the route, but direct live navigation observed a not-found page.
+- Live `/ar/sign-in/` publication: DEFECT; the source emits and links the route, but direct live navigation observed a not-found page. Deployment alignment is required.
+
+## Post-deployment 18-route checklist
+
+Check each English and Arabic route at desktop and 375/390/430px: HTTP 200, trailing-slash/index artifact, `lang`/`dir`, title/meta, no horizontal overflow, navigation/language switcher/footer/CTA links, mixed-direction text, FAQ behavior, console/network errors, CSP and security headers.
+
+`/`, `/how-it-works/`, `/privacy/`, `/download/`, `/contact/`, `/accessibility/`, `/privacy-policy/`, `/terms/`, `/sign-in/`
+
+`/ar/`, `/ar/how-it-works/`, `/ar/privacy/`, `/ar/download/`, `/ar/contact/`, `/ar/accessibility/`, `/ar/privacy-policy/`, `/ar/terms/`, `/ar/sign-in/`
+
+For `/ar/sign-in/`, verify the neutral chooser and only the approved external handoffs to `/parent/login/` and `/platform-admin/login/`; do not add an auth form to the public site. Legal pages remain provisional and noindex expectations must remain intact.

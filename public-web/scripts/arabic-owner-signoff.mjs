@@ -102,6 +102,7 @@ const appliedByKey = new Map([
   ...(ledger.applied ?? []),
   ...(ledger.postAuditApplied ?? []),
 ].map((a) => [a.key, a]));
+const legalLanguageByKey = new Map((ledger.postAuditLegalApplied ?? []).map((a) => [a.key, a]));
 const rejectedByKey = new Map(ledger.rejected.map((a) => [a.key, a]));
 const deferredByKey = new Map(ledger.deferredLegal.map((d) => [d.key, d]));
 
@@ -185,11 +186,12 @@ for (const [key, reasons] of [...selected].sort((a, b) => a[0].localeCompare(b[0
   // Cross-check the ledger against the live corpus, per row. Only meaningful
   // for a row that still ships -- a removed row has no live Arabic to compare
   // against, and neither assertion below can say anything true about it.
+  const languageChangeRecorded = appliedByKey.has(key) || legalLanguageByKey.has(key);
   if (stillInCorpus) {
-    if (ledgerStatus === 'APPLIED' && before === after) {
+    if (languageChangeRecorded && before === after) {
       problems.push(`"${key}" is recorded as APPLIED but the Arabic is unchanged.`);
     }
-    if (ledgerStatus !== 'APPLIED' && before !== after) {
+    if (!languageChangeRecorded && before !== after) {
       problems.push(`"${key}" is ${ledgerStatus} but the Arabic changed anyway.`);
     }
   }
