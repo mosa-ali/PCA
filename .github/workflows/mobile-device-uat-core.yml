@@ -305,19 +305,52 @@ jobs:
             exit 1
           fi
 
-          kvm_present='NO'
-          kvm_usable='UNKNOWN'
-          if [[ -e /dev/kvm ]]; then
-            kvm_present='YES'
-            if [[ -r /dev/kvm && -w /dev/kvm ]]; then
-              kvm_usable='YES'
-            else
-              kvm_usable='NO'
+          record_kvm_state() {
+            local suffix="$1"
+            local present='NO'
+            local readable='NO'
+            local writable='NO'
+            local mode='<absent>'
+            local group='<absent>'
+            if [[ -e /dev/kvm ]]; then
+              present='YES'
+              [[ -r /dev/kvm ]] && readable='YES'
+              [[ -w /dev/kvm ]] && writable='YES'
+              mode="$(stat -c '%a' /dev/kvm 2>/dev/null || printf '<unavailable>')"
+              group="$(stat -c '%G' /dev/kvm 2>/dev/null || printf '<unavailable>')"
             fi
-          else
-            kvm_usable='NO'
+            printf 'KVM_PRESENT_%s=%s\n' "$suffix" "$present" | tee -a "$diagnostic_file"
+            printf 'KVM_READABLE_%s=%s\n' "$suffix" "$readable" | tee -a "$diagnostic_file"
+            printf 'KVM_WRITABLE_%s=%s\n' "$suffix" "$writable" | tee -a "$diagnostic_file"
+            printf 'KVM_MODE_%s=%s\n' "$suffix" "$mode" | tee -a "$diagnostic_file"
+            printf 'KVM_GROUP_%s=%s\n' "$suffix" "$group" | tee -a "$diagnostic_file"
+          }
+
+          record_kvm_state BEFORE
+
+          kvm_rule='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+          if ! printf '%s\n' "$kvm_rule" | sudo -n tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null; then
+            echo 'KVM infrastructure setup failed: could not install the udev rule.' >&2
+            exit 1
           fi
-          printf 'KVM_PRESENT=%s\nKVM_USABLE=%s\n' "$kvm_present" "$kvm_usable" >> "$diagnostic_file"
+          if ! sudo -n udevadm control --reload-rules; then
+            echo 'KVM infrastructure setup failed: could not reload udev rules.' >&2
+            exit 1
+          fi
+          if ! sudo -n udevadm trigger --name-match=kvm; then
+            echo 'KVM infrastructure setup failed: could not trigger the kvm udev rule.' >&2
+            exit 1
+          fi
+
+          record_kvm_state AFTER
+          if [[ ! -e /dev/kvm || ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            echo 'KVM infrastructure unavailable: /dev/kvm must exist and be readable and writable before emulator launch.' >&2
+            exit 1
+          fi
+          kvm_mode="$(stat -c '%a' /dev/kvm 2>/dev/null || printf '<unavailable>')"
+          kvm_group="$(stat -c '%G' /dev/kvm 2>/dev/null || printf '<unavailable>')"
+          printf 'KVM_PRESENT=YES\nKVM_READABLE=YES\nKVM_WRITABLE=YES\nKVM_MODE=%s\nKVM_GROUP=%s\n' \
+            "$kvm_mode" "$kvm_group" >> "$diagnostic_file"
 
           "$emulator_path" -avd pca-api-35 \
             -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect \
