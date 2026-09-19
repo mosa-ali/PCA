@@ -16,6 +16,28 @@ harm the Owner flagged for the Yemen context, or (b) makes real account-administ
 (Family Owner, Family Members, RBAC roles, billing) incorrectly narrow if "family" is mechanically
 swapped for "child" there. Every glossary entry below states both directions explicitly.
 
+## Public and Parent Web product terms
+
+These product-surface terms are authoritative across the public website and the
+authenticated Parent Web. They describe the actual repository architecture;
+they are not literal translations of legacy English marketing labels.
+
+| PRODUCT_SURFACE | ACTUAL_IMPLEMENTATION | ENGLISH_SOURCE_TERM | APPROVED_ARABIC_TERM | USE_RULE |
+|---|---|---|---|---|
+| Overall protection service | Public web and PCA service boundary | PCA / PCA protection system | نظام الحماية الأبوية | Use in explanatory prose when the whole service is meant. |
+| Parent-facing web product | `parent-web`, browser-based React/Vite console | PCA Parent / Parent Web | منصة الوالدين | Do not call this an app or repeat the English product label in Arabic UI. |
+| Child-side installed software | Android and iOS child-side sources | PCA Child | تطبيق حماية الطفل | Use when referring to software installed on a child's device. |
+| Administration product | Separate `platform-admin-web` console | Platform Admin | منصة الإدارة | Use only for the operator/admin surface. |
+
+The consistent Arabic journey is therefore:
+
+`نظام الحماية الأبوية` → `منصة الوالدين` → `تطبيق حماية الطفل`
+
+In normal Arabic UI, retain only concrete technical identifiers that parents
+need to identify or operate, such as `iOS`, `VPN`, `DSK`, `DEK`, and URLs. Brand
+display is limited to the short `PCA` mark; it is not repeated as a sentence
+subject.
+
 ## Terms
 
 | ENGLISH_TERM | ARABIC_TERM | USE_WHEN | DO_NOT_USE_WHEN | EXAMPLE |

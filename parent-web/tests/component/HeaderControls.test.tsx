@@ -74,7 +74,7 @@ describe('header language control', () => {
     // Applies globally: the sidebar, not just the header, is now Arabic.
     expect(screen.getByRole('link', { name: i18n.t('nav.trustedBrowser') })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'English' }));
+    await userEvent.click(screen.getByRole('button', { name: 'الإنجليزية' }));
     await waitFor(() => expect(i18n.language).toBe('en'));
     expect(document.documentElement.getAttribute('dir')).toBe('ltr');
   });

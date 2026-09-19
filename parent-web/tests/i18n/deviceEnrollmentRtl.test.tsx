@@ -56,7 +56,7 @@ describe('Devices page Arabic/RTL', () => {
     expect(await screen.findByRole('heading', { level: 3, name: 'ما نوع الجهاز؟' })).toBeInTheDocument();
     // The Android-only statement is translated, and no iOS control exists.
     expect(
-      screen.getByText('يدعم PCA حاليًا هواتف وأجهزة أندرويد اللوحية. لا يدعم iPhone وiPad بعد.'),
+      screen.getByText('يدعم النظام حاليًا هواتف وأجهزة أندرويد اللوحية. ولا يدعم آيفون وآيباد بعد.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: /iOS/ })).toBeNull();
 

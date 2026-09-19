@@ -119,7 +119,7 @@ describe('PCA-FR-113 honest capability and privacy notices', () => {
     expect(text(en, 'youtube.modeB')).toContain('started inside that player');
     expect(text(en, 'reports.modeBEvents')).toContain('do not claim normal-app watch history');
     expect(text(ar, 'youtube.modeA')).toContain('مدة استخدام التطبيق فقط');
-    expect(text(ar, 'youtube.modeA')).toContain('لا تعرض PCA قائمة فيديوهات دقيقة');
+    expect(text(ar, 'youtube.modeA')).toContain('لا يعرض النظام قائمة فيديوهات دقيقة');
     expect(text(ar, 'youtube.modeB')).toContain('تبدأ داخل ذلك المشغّل');
     expect(text(ar, 'reports.modeBEvents')).toContain('ولا تدعي سجل المشاهدة');
   });
@@ -130,7 +130,7 @@ describe('PCA-FR-113 honest capability and privacy notices', () => {
     expect(text(en, 'reports.locationApproximate')).toContain('not a continuous precise GPS trace');
     expect(text(ar, 'location.safeZoneBoundaryNotice')).toContain('ليست تتبعاً مباشراً مستمراً');
     expect(text(ar, 'reports.unavailable')).toContain('لا يعني عدم وجود نشاط');
-    expect(text(ar, 'reports.locationApproximate')).toContain('وليس مسار GPS دقيقاً');
+    expect(text(ar, 'reports.locationApproximate')).toContain('وليس مساراً دقيقاً ومستمراً لنظام تحديد المواقع');
   });
 
   it('discloses shipped YouTube, wellbeing, and child-request surfaces without widening monitoring claims', () => {
