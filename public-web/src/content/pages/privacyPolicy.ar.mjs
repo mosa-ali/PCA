@@ -25,7 +25,7 @@
  */
 
 export default {
-  "privacyPolicy.seo.title": "سياسة خصوصية نظام الحماية الأبوية PCA",
+  "privacyPolicy.seo.title": "سياسة خصوصية نظام الحماية الأبوية",
   "privacyPolicy.seo.description": "معلومات تفصيلية عن كيفية معالجة نظام الحماية الأبوية لمعلومات الحساب والمعلومات التقنية ومعلومات الحماية. النص القانوني النهائي يحتاج تحققًا فنيًا ومراجعة قانونية.",
   "privacyPolicy.hero.title": "سياسة الخصوصية",
   "privacyPolicy.summary.title": "ملخص",

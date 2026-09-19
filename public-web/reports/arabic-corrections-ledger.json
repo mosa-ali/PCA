@@ -519,6 +519,7 @@
     { "key": "privacy.advanced.lead", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic language audit: use natural Arabic technical wording." },
     { "key": "privacy.faq.items", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic language audit: replace PCA as a sentence subject with نظام الحماية الأبوية or النظام." },
     { "key": "privacy.hero.body", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic language audit: replace unnecessary PCA repetition; privacy meaning unchanged." },
+    { "key": "privacy.hero.title", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic product-language correction: replace the English-brand ending with النظام; privacy meaning unchanged." },
     { "key": "privacy.honesty.body", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic language audit: replace PCA as a sentence subject; privacy claim unchanged." },
     { "key": "privacy.notStored.title", "decision": "REVISE_CONTEXTUAL", "claimId": "NONE", "note": "Arabic language audit: replace PCA with النظام in ordinary prose." },
     { "key": "privacy.retention.body", "decision": "REVISE_CONTEXTUAL", "claimId": "CLM-043", "note": "Arabic language audit: use natural Arabic wording; no deletion capability was added." },

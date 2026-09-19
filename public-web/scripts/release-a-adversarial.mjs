@@ -23,6 +23,7 @@ import { CONTENT } from '../src/content/index.mjs';
 import { VIDEOS } from '../src/content/videos.mjs';
 import { CLAIMS } from '../src/content/claims.mjs';
 import { ROUTES } from '../src/content/routes.mjs';
+import { auditArabicContent, auditArabicPages } from './lib/arabic-latin.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = resolve(ROOT, '..');
@@ -53,6 +54,35 @@ for (const f of files) {
 }
 const allText = [...corpus.values()].join('\n');
 const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
+
+// ---------------------------------------------------------------------------
+// 0. Arabic public copy must not leak unapproved Latin text
+// ---------------------------------------------------------------------------
+{
+  const sourceAudit = auditArabicContent(CONTENT.ar);
+  const renderedPages = htmlFiles
+    .filter(([rel]) => rel.startsWith('/ar/'))
+    .map(([path, html]) => ({ path, html, locale: 'ar' }));
+  const renderedAudit = auditArabicPages(renderedPages);
+  const findings = [
+    ...sourceAudit.unapproved,
+    ...renderedAudit.unapproved,
+    ...sourceAudit.terminologyViolations,
+    ...renderedAudit.terminologyViolations,
+  ];
+  if (findings.length) {
+    finding(
+      'CRITICAL',
+      'arabic-latin',
+      findings.slice(0, 8).map((entry) => `${entry.key ?? entry.route}: ${entry.token}`).join(' | ')
+    );
+  } else {
+    ok(
+      'arabic-latin',
+      `zero unapproved Latin tokens in Arabic source and ${renderedPages.length} rendered Arabic pages; ${sourceAudit.retained.length} exact source allowlisted occurrence(s)`
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 1. Contact addresses must NOT be activated yet

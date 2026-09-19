@@ -52,6 +52,7 @@ import {
 } from './src/content/routes.mjs';
 import { VIDEOS } from './src/content/videos.mjs';
 import { CLAIMS, STATUS_CSS, labelKeyForClaim, PROPOSED_CLAIMS } from './src/content/claims.mjs';
+import { auditArabicContent, auditArabicPages } from './scripts/lib/arabic-latin.mjs';
 import {
   siteOrigin,
   absoluteUrl,
@@ -1306,6 +1307,16 @@ async function main() {
 
   const pages = renderPages(origin, claimRegister.ids);
 
+  const arabicContentLatin = auditArabicContent(CONTENT.ar);
+  const arabicRenderedLatin = auditArabicPages(pages);
+  for (const occurrence of [...arabicContentLatin.unapproved, ...arabicRenderedLatin.unapproved]) {
+    const location = occurrence.key ?? occurrence.route;
+    fail('arabic-latin', `${location}: unapproved Latin token "${occurrence.token}" (${occurrence.classification}).`);
+  }
+  for (const occurrence of [...arabicContentLatin.terminologyViolations, ...arabicRenderedLatin.terminologyViolations]) {
+    fail('arabic-terminology', `${occurrence.key ?? occurrence.route}: prohibited term "${occurrence.term}" (${occurrence.gate}).`);
+  }
+
   assertAllowlistIsLive(pages.map((p) => p.html));
 
   const duplicates = findDuplicateContent(pages);
@@ -1343,6 +1354,14 @@ async function main() {
       Object.values(VIDEOS).map((v) => [v.id, { available: v.available, poster: v.poster, captionsRequired: v.captions }])
     ),
     contentDuplicationFindings: duplicates.length,
+    arabicLatinAudit: {
+      sourceOccurrences: arabicContentLatin.occurrences,
+      renderedOccurrences: arabicRenderedLatin.occurrences,
+      unapprovedSource: arabicContentLatin.unapproved.length,
+      unapprovedRendered: arabicRenderedLatin.unapproved.length,
+      prohibitedSource: arabicContentLatin.terminologyViolations.length,
+      prohibitedRendered: arabicRenderedLatin.terminologyViolations.length,
+    },
     internalClaimMetadataExposed: pages.reduce(
       (n, p) => n + INTERNAL_METADATA_ATTRS.filter((a) => p.html.includes(a + '=')).length,
       0
