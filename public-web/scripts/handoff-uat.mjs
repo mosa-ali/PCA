@@ -43,7 +43,7 @@ try {
         if (consoleErrors.length || failedRequests.length) {
           console.log(`NOTE ${localePath} -> ${target.name} backend/runtime noise: console=${consoleErrors.length} failedRequests=${failedRequests.length}`);
         }
-        console.log(`PASS ${localePath} -> ${target.name} ${page.url()}`);
+        console.log(`PASS ${localePath} -> ${target.name}`);
       } catch (error) {
         failures.push(`${localePath} -> ${target.name}: ${error.message}`);
       } finally {
