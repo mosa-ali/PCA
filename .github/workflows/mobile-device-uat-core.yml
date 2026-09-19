@@ -182,7 +182,7 @@ jobs:
 
           sdkmanager_path="$(command -v sdkmanager || true)"
           avdmanager_path="$(command -v avdmanager || true)"
-          emulator_path="$(command -v emulator || true)"
+          emulator_path=""
           adb_path="$(command -v adb || true)"
           {
             printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root"
@@ -192,7 +192,6 @@ jobs:
             printf 'adb=%s\n' "${adb_path:-<missing>}"
             printf '\nversions:\n'
             [[ -n "$sdkmanager_path" ]] && "$sdkmanager_path" --version 2>&1 || true
-            [[ -n "$avdmanager_path" ]] && "$avdmanager_path" --version 2>&1 | head -n 2 || true
             [[ -n "$emulator_path" ]] && "$emulator_path" -version 2>&1 | head -n 2 || true
             [[ -n "$adb_path" ]] && "$adb_path" version 2>&1 | head -n 2 || true
           } | tee "$diagnostic_file"
@@ -200,10 +199,9 @@ jobs:
           missing_tools=()
           [[ -n "$sdkmanager_path" ]] || missing_tools+=(sdkmanager)
           [[ -n "$avdmanager_path" ]] || missing_tools+=(avdmanager)
-          [[ -n "$emulator_path" ]] || missing_tools+=(emulator)
           [[ -n "$adb_path" ]] || missing_tools+=(adb)
           if (( ${#missing_tools[@]} > 0 )); then
-            printf 'Missing Android SDK tools: %s\n' "${missing_tools[*]}" >&2
+            printf 'Missing pre-install Android SDK tools: %s\n' "${missing_tools[*]}" >&2
             exit 1
           fi
 
@@ -214,6 +212,16 @@ jobs:
             'build-tools;35.0.0' \
             'emulator' \
             'system-images;android-35;google_apis;x86_64'
+          emulator_path="$sdk_root/emulator/emulator"
+          if [[ ! -x "$emulator_path" ]]; then
+            emulator_path="$(command -v emulator || true)"
+          fi
+          if [[ -z "$emulator_path" || ! -x "$emulator_path" ]]; then
+            echo 'Android emulator package installation completed but emulator executable was not found.' >&2
+            exit 1
+          fi
+          printf 'emulator_after_install=%s\n' "$emulator_path" >> "$diagnostic_file"
+
           echo 'no' | "$avdmanager_path" create avd \
             --name pca-api-35 \
             --package 'system-images;android-35;google_apis;x86_64' \
