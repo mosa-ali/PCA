@@ -66,7 +66,7 @@ async function main() {
     const [tableRows] = await connection.query(
       `SELECT table_name AS table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name`,
     );
-    const tableNames = tableRows.map((row) => row.table_name);
+    const tableNames = tableRows.map((row) => row.table_name ?? row.TABLE_NAME);
     if (tableNames.length === 0) {
       throw new Error('provision-runtime-db-grants.mjs: no base tables found -- run `npm run db:migrate` first.');
     }
