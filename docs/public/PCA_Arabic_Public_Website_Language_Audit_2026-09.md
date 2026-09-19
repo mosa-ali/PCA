@@ -85,7 +85,7 @@ The source also emits `/ar/sign-in/` as a linked utility route from the shared h
 - Local desktop browser review: PASS for the corrected Arabic home, how-it-works, and privacy routes; `lang="ar"`, `dir="rtl"`, terminology, FAQ wording, and the corrected `تثبيته` agreement were observed in the rendered accessibility tree.
 - Automated mobile UAT: NOT EXECUTED because this checkout has no resolvable `playwright-core` dependency for `scripts/uat.mjs`; no mobile pass is claimed.
 - Native Arabic reviewer sign-off: OPEN; the repository build intentionally reports all 203 Arabic keys pending OD-12 sign-off.
-- Source publication alignment: final commit and exact `origin/pca-dev` equality are recorded in the release handoff after this audit update; no deployment was performed.
+- Source publication alignment: commit `7efc0820` is the final local source commit and matches `origin/pca-dev`; no deployment was performed.
 - Live deployment alignment: OPEN; the public host was not redeployed by this audit, so the corrected source is not claimed live.
 - Live `/ar/sign-in/` publication: DEFECT; the source emits and links the route, but direct live navigation observed a not-found page. Deployment alignment is required.
 
