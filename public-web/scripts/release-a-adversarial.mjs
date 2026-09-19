@@ -343,8 +343,15 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
     { label: 'later release', en: /later release/i, ar: /إصدار لاحق/ },
     // No \b before the Arabic alternatives: JS \b is ASCII-word based, so it never
     // matches at an Arabic letter boundary and the pattern silently finds nothing.
-    { label: 'not open / not available yet', en: /\bnot (?:open|available|able)\b/i, ar: /(لم تُفتح|غير متاح|لا يمكننا|غير متاحة|لم يُفتح)/ },
-    { label: 'readable (privacy qualifier)', en: /\breadable\b/i, ar: /مقروء/ },
+    // Match the current semantic equivalents, not only one English or Arabic
+    // surface form. The Arabic copy legitimately uses لا يستطيع / لم يفتح and
+    // قابل للقراءة alongside the inflected مقروء forms.
+    {
+      label: 'not open / not available yet',
+      en: /\b(?:not (?:open|available|able)|has not opened|not an active feature)\b/i,
+      ar: /(لم تُفتح|غير متاح|لا يمكننا|غير متاحة|لم يُفتح|لا يستطيع|لم يفتح)/,
+    },
+    { label: 'readable (privacy qualifier)', en: /\breadable\b/i, ar: /(?:مقروء|قابل للقراءة|قابلة للقراءة)/ },
   ];
   for (const p of pairs) {
     const en = countIn('en', p.en);
