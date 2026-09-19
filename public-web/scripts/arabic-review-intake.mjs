@@ -156,7 +156,10 @@ for (const r of corrections) {
 let ledgerApplied = new Map();
 try {
   const ledger = JSON.parse(await readFile(join(ROOT, 'reports/arabic-corrections-ledger.json'), 'utf8'));
-  ledgerApplied = new Map((ledger.applied ?? []).filter((a) => a.beforeArabic).map((a) => [a.key, a]));
+  ledgerApplied = new Map([
+    ...(ledger.applied ?? []),
+    ...(ledger.postAuditApplied ?? []),
+  ].filter((a) => a.beforeArabic).map((a) => [a.key, a]));
 } catch {
   // No ledger yet: pre-remediation run, every difference is genuinely stale.
 }

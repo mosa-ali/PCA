@@ -95,7 +95,13 @@ const reviewerSelection = asObjects(parseCsv(await readFile(join(PACKAGE, 'OWNER
 const ledger = JSON.parse(await readFile(join(ROOT, 'reports/arabic-corrections-ledger.json'), 'utf8'));
 
 const reviewedByKey = new Map(reviewed.map((r) => [r.KEY, r]));
-const appliedByKey = new Map(ledger.applied.map((a) => [a.key, a]));
+// Keep the generated reviewer ledger intact while allowing a later, explicitly
+// recorded language audit to add source corrections. These entries remain
+// OWNER_DECISION=PENDING below; they are not native sign-off.
+const appliedByKey = new Map([
+  ...(ledger.applied ?? []),
+  ...(ledger.postAuditApplied ?? []),
+].map((a) => [a.key, a]));
 const rejectedByKey = new Map(ledger.rejected.map((a) => [a.key, a]));
 const deferredByKey = new Map(ledger.deferredLegal.map((d) => [d.key, d]));
 
