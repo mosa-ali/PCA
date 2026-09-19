@@ -1,8 +1,8 @@
 # PCA Public Website — Release-Blocker Closure Evidence
 
-Date: 2026-09-20  
-Repository: `D:\PCA\pca-app`  
-Branch: `pca-dev`  
+Date: 2026-09-20
+Repository: `D:\PCA\pca-app`
+Branch: `pca-dev`
 Baseline: `7f62afb93d216aa50d58c1a787d0b68e05c6efd3`
 
 ## Gate disposition
@@ -86,8 +86,8 @@ All 29 occurrences were re-derived from the current merged Arabic content corpus
 
 ## 4. Mobile and RTL QA evidence
 
-`MOBILE_375 = NOT_EXECUTED`  
-`MOBILE_390 = NOT_EXECUTED`  
+`MOBILE_375 = NOT_EXECUTED`
+`MOBILE_390 = NOT_EXECUTED`
 `MOBILE_430 = NOT_EXECUTED`
 
 The existing public-web UAT harness requires `playwright-core`, which is not installed in this zero-dependency checkout. The available browser-control surface exposed no viewport-setting capability and timed out while capturing a local/live tab. No dependency was added and no mobile pass is claimed.
@@ -141,8 +141,8 @@ The pack covers the complete 203-key Arabic corpus. The page/key inventory is:
 
 Final-pass corrected strings are grouped in the source diff and include: accessibility grammar; contact request wording; platform/affordability/SEO phrasing; the Home protection heading and scope sentence; setup grammar and preservation of the English “should”; privacy synchronization, central-record, readable-history, camera, retention, transparency, FAQ, RBAC and TLS wording; privacy-policy processing, child/device, readable-collection, retention and provider wording; Arabic quotation marks in Terms; and the video enrollment sentence.
 
-`OD12_NATIVE_REVIEW_PACKAGE = READY`  
-`OD12_NATIVE_SIGNOFF = PENDING`  
+`OD12_NATIVE_REVIEW_PACKAGE = READY`
+`OD12_NATIVE_SIGNOFF = PENDING`
 No owner/native approval is inferred from automated checks.
 
 ## 7. Technical validation
@@ -175,7 +175,7 @@ Run for each of these 18 routes: `/`, `/how-it-works/`, `/privacy/`, `/download/
 
 ## Final handoff
 
-`PRODUCTION_DEPLOYED = NO`  
+`PRODUCTION_DEPLOYED = NO`
 `PRODUCTION_READY = NO`
 
 Remaining blockers are external or owner-controlled: authorized deployment of the PCA artifact to replace the Azure placeholder, live 18-route smoke testing, mobile visual QA at 375/390/430px, OD-12 native Arabic approval, and formal privacy/legal approval.
