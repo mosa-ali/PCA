@@ -66,6 +66,7 @@ The source also emits `/ar/sign-in/` as an unlinked utility route. Its Arabic so
 - Arabic output retains `lang="ar"` and `dir="rtl"`; the build check verifies this for every emitted Arabic page.
 - No bidirectional override characters or layout redesign were introduced.
 - Remaining Latin tokens are official names or technical identifiers and were not translated in a way that would make them harder to locate.
+- The final Arabic corpus contains 29 intentional `PCA` occurrences, including 10 `PCA Parent` and 8 `PCA Child` identifications; no remaining occurrence is an accidental product-name repetition in ordinary Arabic prose.
 - Privacy and security meaning was preserved. No claim status, availability status, encryption limitation, or legal caveat was strengthened.
 - Legal pages remain explicitly provisional and still require legal approval.
 
@@ -73,7 +74,10 @@ The source also emits `/ar/sign-in/` as an unlinked utility route. Its Arabic so
 
 - `npm run check`: PASS.
 - `node build.mjs`: PASS; 18 pages emitted, EN/AR keys 203/203, zero parity failures.
-- `npm test`: BLOCKED by Windows `spawn EPERM` in the repository's two public-web test files.
+- `npm test`: PASS; 9/9 tests passed. The run required elevated execution because the normal sandbox hit Windows `spawn EPERM`; the sign-off drift message printed during the intentional negative-control test and the fixture was restored.
+- Local desktop browser review: PASS for the corrected Arabic home, how-it-works, and privacy routes; `lang="ar"`, `dir="rtl"`, terminology, FAQ wording, and the corrected `تثبيته` agreement were observed in the rendered accessibility tree.
+- Automated mobile UAT: NOT EXECUTED because this checkout has no resolvable `playwright-core` dependency for `scripts/uat.mjs`; no mobile pass is claimed.
 - Native Arabic reviewer sign-off: OPEN; the repository build intentionally reports all 203 Arabic keys pending OD-12 sign-off.
-- Live deployment alignment: OPEN until the corrected `pca-dev` commit is published and local/upstream SHAs are rechecked.
-- Live `/ar/sign-in/` publication: UNVERIFIED because direct navigation did not complete during this audit.
+- Source publication alignment: PASS for `pca-dev`; commit `67e884a2f6f31da771586620f16b75b308f886d5` is present in `D:\PCA\pca-app` and matches `origin/pca-dev`.
+- Live deployment alignment: OPEN; the public host was not redeployed by this audit, so the corrected source is not claimed live.
+- Live `/ar/sign-in/` publication: UNVERIFIED; the source emits the route, but direct live navigation observed a not-found page.
