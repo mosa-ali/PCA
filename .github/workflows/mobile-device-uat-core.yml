@@ -141,26 +141,91 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
+          mkdir -p artifacts/android
+          diagnostic_file="artifacts/android/android-sdk-toolchain.txt"
+
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            for candidate in /usr/local/lib/android/sdk /opt/android-sdk; do
+              if [[ -d "$candidate" ]]; then
+                sdk_root="$candidate"
+                break
+              fi
+            done
+          fi
+          if [[ -z "$sdk_root" || ! -d "$sdk_root" ]]; then
+            printf 'ANDROID_SDK_ROOT=%s\n' "${sdk_root:-<unset>}" | tee "$diagnostic_file"
+            echo 'Android SDK root could not be located from ANDROID_SDK_ROOT, ANDROID_HOME, or known runner locations.' >&2
+            exit 1
+          fi
+
+          export ANDROID_SDK_ROOT="$sdk_root"
+          export ANDROID_HOME="$sdk_root"
+          printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
+          printf 'ANDROID_HOME=%s\n' "$sdk_root" >> "$GITHUB_ENV"
+
+          tool_dirs=()
+          add_tool_dir() {
+            if [[ -d "$1" ]]; then
+              tool_dirs+=("$1")
+              printf '%s\n' "$1" >> "$GITHUB_PATH"
+              export PATH="$1:$PATH"
+            fi
+          }
+          add_tool_dir "$sdk_root/cmdline-tools/latest/bin"
+          for cmdline_dir in "$sdk_root"/cmdline-tools/*/bin; do
+            add_tool_dir "$cmdline_dir"
+          done
+          add_tool_dir "$sdk_root/tools/bin"
+          add_tool_dir "$sdk_root/platform-tools"
+          add_tool_dir "$sdk_root/emulator"
+
+          sdkmanager_path="$(command -v sdkmanager || true)"
+          avdmanager_path="$(command -v avdmanager || true)"
+          emulator_path="$(command -v emulator || true)"
+          adb_path="$(command -v adb || true)"
+          {
+            printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root"
+            printf 'sdkmanager=%s\n' "${sdkmanager_path:-<missing>}"
+            printf 'avdmanager=%s\n' "${avdmanager_path:-<missing>}"
+            printf 'emulator=%s\n' "${emulator_path:-<missing>}"
+            printf 'adb=%s\n' "${adb_path:-<missing>}"
+            printf '\nversions:\n'
+            [[ -n "$sdkmanager_path" ]] && "$sdkmanager_path" --version 2>&1 || true
+            [[ -n "$avdmanager_path" ]] && "$avdmanager_path" --version 2>&1 | head -n 2 || true
+            [[ -n "$emulator_path" ]] && "$emulator_path" -version 2>&1 | head -n 2 || true
+            [[ -n "$adb_path" ]] && "$adb_path" version 2>&1 | head -n 2 || true
+          } | tee "$diagnostic_file"
+
+          missing_tools=()
+          [[ -n "$sdkmanager_path" ]] || missing_tools+=(sdkmanager)
+          [[ -n "$avdmanager_path" ]] || missing_tools+=(avdmanager)
+          [[ -n "$emulator_path" ]] || missing_tools+=(emulator)
+          [[ -n "$adb_path" ]] || missing_tools+=(adb)
+          if (( ${#missing_tools[@]} > 0 )); then
+            printf 'Missing Android SDK tools: %s\n' "${missing_tools[*]}" >&2
+            exit 1
+          fi
+
+          yes | "$sdkmanager_path" --licenses >/dev/null || true
+          "$sdkmanager_path" \
             'platform-tools' \
             'platforms;android-35' \
             'build-tools;35.0.0' \
             'emulator' \
             'system-images;android-35;google_apis;x86_64'
-          echo 'no' | avdmanager create avd \
+          echo 'no' | "$avdmanager_path" create avd \
             --name pca-api-35 \
             --package 'system-images;android-35;google_apis;x86_64' \
             --device 'pixel_2' \
             --force
-          mkdir -p artifacts/android
-          emulator -avd pca-api-35 \
+          "$emulator_path" -avd pca-api-35 \
             -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect \
             > artifacts/android/emulator.log 2>&1 &
           echo $! > artifacts/android/emulator.pid
-          adb wait-for-device
+          "$adb_path" wait-for-device
           for attempt in $(seq 1 60); do
-            booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+            booted="$("$adb_path" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
             if [[ "$booted" == '1' ]]; then
               break
             fi
@@ -170,10 +235,10 @@ jobs:
             fi
             sleep 5
           done
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-          adb devices -l
+          "$adb_path" shell settings put global window_animation_scale 0
+          "$adb_path" shell settings put global transition_animation_scale 0
+          "$adb_path" shell settings put global animator_duration_scale 0
+          "$adb_path" devices -l
 
       - name: Build application and instrumentation APKs
         working-directory: android
