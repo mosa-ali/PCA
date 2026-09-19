@@ -194,12 +194,15 @@
 .pw-menu-toggle__bars::after { inset-block-start: 6px; }
 
 /*
- * 320px header fit. Real-Chromium UAT measured 16px (EN) / 18px (AR) of
- * horizontal overflow at 320px caused by brand + language switcher + labelled
- * menu button competing for 280px of content width. Below 26rem the menu
- * button becomes a 44x44 icon-only control -- its label stays in the
- * accessibility tree via .pw-sr-only, so the accessible name is unchanged --
- * and the language options tighten. Design Guideline section 21 forbids any
+ * Mobile header fit. At 430px the labelled menu button, language switcher and
+ * brand can exceed the usable content width, especially in Arabic. Below
+ * 30rem the menu button becomes a 44x44 icon-only control -- its label stays
+ * in the accessibility tree via .pw-sr-only, so the accessible name is
+ * unchanged -- and the language options tighten. The 30rem threshold is
+ * intentional: 430px is the largest mandated mobile viewport, and the
+ * labelled control does not fit there once the 40px page gutters and RTL
+ * language labels are accounted for. At 320px this also prevents the 16-18px
+ * overflow found by real-Chromium UAT. Design Guideline section 21 forbids
  * horizontal scrolling from content at 320px.
  */
 /*
@@ -212,7 +215,7 @@
   .pw-menu-toggle { display: none; }
 }
 
-@media (max-width: 26rem) {
+@media (max-width: 30rem) {
   .pw-header__bar { gap: var(--pw-space-2); }
 
   .pw-menu-toggle {

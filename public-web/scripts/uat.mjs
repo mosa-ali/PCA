@@ -66,13 +66,15 @@ await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch();
 const results = [];
 
-// Every page at one representative mobile width, plus the full matrix on home.
-const WIDE = [320, 375, 390, 768, 1024, 1280, 1600];
+// Every emitted page at the three mandated mobile widths plus the existing
+// desktop reference. Keeping the same matrix for every route prevents a
+// shared-shell regression from hiding on a utility, legal or auth chooser
+// page that is not the home route.
+const WIDTHS = [375, 390, 430, 1280];
 
 for (const path of urls) {
   const isAr = path.startsWith('/ar/');
-  const widths = path === '/' || path === '/ar/' ? WIDE : [375, 1280];
-  for (const width of widths) {
+  for (const width of WIDTHS) {
     const ctx = await browser.newContext({ viewport: { width, height: 900 } });
     const tab = await ctx.newPage();
     const consoleErrors = [];
@@ -128,6 +130,18 @@ for (const path of urls) {
         internalLinks: [...document.querySelectorAll('a[href^="/"]')].map((a) => a.getAttribute('href')),
         external: [...document.querySelectorAll('a[href^="http"]')].map((a) => a.getAttribute('href')).filter((h) => !h.startsWith('http://127.0.0.1')),
         forms: document.querySelectorAll('form').length,
+        menu: (() => {
+          const toggle = document.getElementById('pw-menu-toggle');
+          const menu = document.getElementById('pw-mobile-menu');
+          if (!toggle || !menu) return null;
+          toggle.click();
+          const opened = toggle.getAttribute('aria-expanded') === 'true'
+            && menu.getAttribute('data-open') === 'true';
+          toggle.click();
+          const closed = toggle.getAttribute('aria-expanded') === 'false'
+            && menu.getAttribute('data-open') === 'false';
+          return { opened, closed };
+        })(),
         imgNoAlt: [...document.querySelectorAll('img')].filter((i) => !i.hasAttribute('alt')).length,
         // A 200 response and the right MIME type prove delivery, not rendering.
         // Both video posters and the favicon once shipped as malformed XML:
@@ -178,6 +192,7 @@ for (const r of results) {
   if (r.small.length) p.push(`small targets: ${r.small.join(', ')}`);
   if (r.external.length) p.push(`external links: ${r.external.join(',')}`);
   if (r.forms) p.push(`${r.forms} <form> (Release A submits none)`);
+  if (r.menu && (!r.menu.opened || !r.menu.closed)) p.push('mobile menu did not open and close cleanly');
   if (r.imgNoAlt) p.push(`${r.imgNoAlt} img without alt`);
   if (r.brokenImages?.length) p.push(`BROKEN IMAGE (naturalWidth 0): ${r.brokenImages.join(', ')}`);
   if (r.internalMetadata) p.push(`${r.internalMetadata} element(s) expose internal claim metadata in production HTML`);
