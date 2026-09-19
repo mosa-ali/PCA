@@ -6,8 +6,8 @@ on:
     branches:
       - pca-dev
 
-# CI only reads the repository. It does not receive credentials, publish artifacts,
-# deploy, or modify repository state.
+# CI only reads the repository. It does not receive credentials, deploy, or modify
+# repository state. The iOS job may upload bounded, 30-day diagnostic artifacts.
 permissions:
   contents: read
 
@@ -633,12 +633,16 @@ jobs:
       - name: Select an available iOS Simulator
         shell: bash
         run: |
+          mkdir -p artifacts/ios
+          xcrun simctl list devices available | tee artifacts/ios/simulator-devices.txt
           device_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ { print $2; exit }')"
           if [[ -z "$device_id" ]]; then
             echo "No available iPhone simulator was found on this macOS runner." >&2
             xcrun simctl list devices available
             exit 1
           fi
+          printf 'Selected simulator id: %s\n' "$device_id" > artifacts/ios/selected-simulator.txt
+          echo "PCA_SIMULATOR_ID=$device_id" >> "$GITHUB_ENV"
           echo "PCA_SIMULATOR_DESTINATION=platform=iOS Simulator,id=$device_id" >> "$GITHUB_ENV"
       - name: Build and test the iOS app and extension source
         working-directory: ios
@@ -688,17 +692,42 @@ jobs:
           }
 
           set +e
+          mkdir -p artifacts/ios
           xcodebuild test \
             -project PCA.xcodeproj \
             -scheme PCA \
             -destination "$PCA_SIMULATOR_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-output.log
+            -resultBundlePath "$PWD/artifacts/ios/PCA-Test.xcresult" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$PWD/artifacts/ios/xcodebuild.log"
           status="${PIPESTATUS[0]}"
           set -e
           if [ "$status" -ne 0 ]; then
-            surface_failure_annotations xcodebuild-output.log "$status"
+            surface_failure_annotations "$PWD/artifacts/ios/xcodebuild.log" "$status"
             exit "$status"
           fi
+
+      - name: Capture iOS simulator diagnostics
+        if: failure()
+        working-directory: ios
+        shell: bash
+        run: |
+          mkdir -p artifacts/ios/simulator-diagnostics
+          xcrun simctl list devices available > artifacts/ios/simulator-diagnostics/devices.txt 2>&1 || true
+          xcrun simctl diagnose > artifacts/ios/simulator-diagnostics/simctl-diagnose.txt 2>&1 || true
+          if [[ -d artifacts/ios/PCA-Test.xcresult ]]; then
+            xcrun xcresulttool get test-results summary \
+              --path artifacts/ios/PCA-Test.xcresult \
+              --format json > artifacts/ios/test-summary.json 2>&1 || true
+          fi
+
+      - name: Upload iOS diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-quality-gate-diagnostics
+          path: ios/artifacts/ios
+          if-no-files-found: warn
+          retention-days: 30
 
   security:
     name: Security controls
