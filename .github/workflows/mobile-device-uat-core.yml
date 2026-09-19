@@ -164,6 +164,17 @@ jobs:
           printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root" >> "$GITHUB_ENV"
           printf 'ANDROID_HOME=%s\n' "$sdk_root" >> "$GITHUB_ENV"
 
+          runner_temp="${RUNNER_TEMP:-/tmp}"
+          android_user_home="$runner_temp/android-user-home"
+          android_avd_home="$runner_temp/android-avd"
+          mkdir -p "$android_user_home" "$android_avd_home" "$android_user_home/avd"
+          export ANDROID_USER_HOME="$android_user_home"
+          export ANDROID_EMULATOR_HOME="$android_user_home"
+          export ANDROID_AVD_HOME="$android_avd_home"
+          printf 'ANDROID_USER_HOME=%s\n' "$android_user_home" >> "$GITHUB_ENV"
+          printf 'ANDROID_EMULATOR_HOME=%s\n' "$android_user_home" >> "$GITHUB_ENV"
+          printf 'ANDROID_AVD_HOME=%s\n' "$android_avd_home" >> "$GITHUB_ENV"
+
           tool_dirs=()
           add_tool_dir() {
             if [[ -d "$1" ]]; then
@@ -186,6 +197,8 @@ jobs:
           adb_path="$(command -v adb || true)"
           {
             printf 'ANDROID_SDK_ROOT=%s\n' "$sdk_root"
+            printf 'ANDROID_USER_HOME=%s\n' "$android_user_home"
+            printf 'ANDROID_AVD_HOME=%s\n' "$android_avd_home"
             printf 'sdkmanager=%s\n' "${sdkmanager_path:-<missing>}"
             printf 'avdmanager=%s\n' "${avdmanager_path:-<missing>}"
             printf 'emulator=%s\n' "${emulator_path:-<missing>}"
@@ -222,31 +235,170 @@ jobs:
           fi
           printf 'emulator_after_install=%s\n' "$emulator_path" >> "$diagnostic_file"
 
-          echo 'no' | "$avdmanager_path" create avd \
+          timeout_path="$(command -v timeout || true)"
+          if [[ -z "$timeout_path" ]]; then
+            echo 'GNU timeout is required for bounded Android emulator startup.' >&2
+            exit 1
+          fi
+
+          avd_data_path="$android_avd_home/pca-api-35.avd"
+          avd_list_file="artifacts/android/avd-list.txt"
+          avd_metadata_file="artifacts/android/avd-metadata-listing.txt"
+          emulator_log="artifacts/android/emulator.log"
+          : > "$avd_list_file"
+          : > "$avd_metadata_file"
+          : > "$emulator_log"
+          set +e
+          echo 'no' | "$timeout_path" 120s "$avdmanager_path" create avd \
             --name pca-api-35 \
             --package 'system-images;android-35;google_apis;x86_64' \
             --device 'pixel_2' \
+            --path "$avd_data_path" \
             --force
+          avd_create_status="${PIPESTATUS[1]}"
+          set -e
+          if [[ "$avd_create_status" -eq 124 ]]; then
+            echo 'AVD creation exceeded the 120-second limit.' >&2
+            exit 1
+          fi
+          if [[ "$avd_create_status" -ne 0 ]]; then
+            echo "avdmanager create avd failed with exit code $avd_create_status." >&2
+            exit "$avd_create_status"
+          fi
+
+          {
+            printf 'ANDROID_USER_HOME=%s\n' "$android_user_home"
+            printf 'ANDROID_AVD_HOME=%s\n' "$android_avd_home"
+            printf 'expected_avd_data=%s\n' "$avd_data_path"
+            printf 'expected_user_metadata=%s\n' "$android_user_home/avd/pca-api-35.ini"
+            printf 'files:\n'
+            find "$android_user_home" "$android_avd_home" -maxdepth 3 -type f -printf '%p\n' 2>/dev/null | sort
+          } > "$avd_metadata_file"
+
+          metadata_path=""
+          if [[ -f "$android_user_home/avd/pca-api-35.ini" ]]; then
+            metadata_path="$android_user_home/avd/pca-api-35.ini"
+          else
+            metadata_path="$(find "$android_user_home" "$android_avd_home" -maxdepth 3 -type f -name 'pca-api-35.ini' -print -quit 2>/dev/null || true)"
+          fi
+          if [[ -z "$metadata_path" || ! -d "$avd_data_path" ]]; then
+            echo 'AVD pca-api-35 was created but its expected metadata or data path is missing.' >&2
+            exit 1
+          fi
+          printf 'metadata_path=%s\n' "$metadata_path" >> "$avd_metadata_file"
+
+          set +e
+          "$timeout_path" 30s "$emulator_path" -list-avds > "$avd_list_file" 2>&1
+          avd_list_status=$?
+          set -e
+          if [[ "$avd_list_status" -eq 124 ]]; then
+            echo 'emulator -list-avds exceeded the 30-second limit.' >&2
+            exit 1
+          fi
+          if [[ "$avd_list_status" -ne 0 ]]; then
+            echo "emulator -list-avds failed with exit code $avd_list_status." >&2
+            exit "$avd_list_status"
+          fi
+          avd_match_count="$(grep -Fx 'pca-api-35' "$avd_list_file" | wc -l | tr -d ' ' || true)"
+          if [[ "$avd_match_count" != '1' ]]; then
+            echo 'AVD pca-api-35 was created but is not discoverable by the Android emulator.' >&2
+            exit 1
+          fi
+
+          kvm_present='NO'
+          kvm_usable='UNKNOWN'
+          if [[ -e /dev/kvm ]]; then
+            kvm_present='YES'
+            if [[ -r /dev/kvm && -w /dev/kvm ]]; then
+              kvm_usable='YES'
+            else
+              kvm_usable='NO'
+            fi
+          else
+            kvm_usable='NO'
+          fi
+          printf 'KVM_PRESENT=%s\nKVM_USABLE=%s\n' "$kvm_present" "$kvm_usable" >> "$diagnostic_file"
+
           "$emulator_path" -avd pca-api-35 \
             -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect \
-            > artifacts/android/emulator.log 2>&1 &
-          echo $! > artifacts/android/emulator.pid
-          "$adb_path" wait-for-device
-          for attempt in $(seq 1 60); do
-            booted="$("$adb_path" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
-            if [[ "$booted" == '1' ]]; then
+            > "$emulator_log" 2>&1 &
+          emulator_pid=$!
+          printf '%s\n' "$emulator_pid" > artifacts/android/emulator.pid
+          sleep 3
+          if ! kill -0 "$emulator_pid" 2>/dev/null; then
+            echo 'Android emulator exited during the startup grace period.' >&2
+            tail -n 120 "$emulator_log" >&2 || true
+            exit 1
+          fi
+
+          fail_emulator_startup() {
+            echo "$1" >&2
+            tail -n 120 "$emulator_log" >&2 || true
+            exit 1
+          }
+
+          adb_serial=''
+          adb_deadline=$((SECONDS + 180))
+          while (( SECONDS < adb_deadline )); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              fail_emulator_startup 'Android emulator exited before adb reported a device.'
+            fi
+            set +e
+            adb_output="$("$timeout_path" 10s "$adb_path" devices 2>&1)"
+            adb_status=$?
+            set -e
+            printf '%s\n' "$adb_output" | awk 'NR == 1 { print "List of devices attached"; next } NF >= 2 { print "<emulator>\t" $2 }' > artifacts/android/adb-devices-startup.txt
+            if [[ "$adb_status" -eq 124 ]]; then
+              sleep 5
+              continue
+            fi
+            ready_count="$(printf '%s\n' "$adb_output" | awk 'NR > 1 && $2 == "device" { count++ } END { print count + 0 }')"
+            if [[ "$adb_status" -eq 0 && "$ready_count" -eq 1 ]]; then
+              adb_serial="$(printf '%s\n' "$adb_output" | awk 'NR > 1 && $2 == "device" { print $1; exit }')"
               break
             fi
-            if [[ "$attempt" == '60' ]]; then
-              echo 'Android emulator did not finish booting.' >&2
-              exit 1
+            if [[ "$ready_count" -gt 1 ]]; then
+              fail_emulator_startup 'Multiple emulator devices were reported during startup.'
             fi
             sleep 5
           done
-          "$adb_path" shell settings put global window_animation_scale 0
-          "$adb_path" shell settings put global transition_animation_scale 0
-          "$adb_path" shell settings put global animator_duration_scale 0
-          "$adb_path" devices -l
+          if [[ -z "$adb_serial" ]]; then
+            fail_emulator_startup 'adb did not report exactly one ready emulator within 180 seconds.'
+          fi
+
+          booted='NO'
+          boot_deadline=$((SECONDS + 240))
+          while (( SECONDS < boot_deadline )); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              fail_emulator_startup 'Android emulator exited before sys.boot_completed reached 1.'
+            fi
+            set +e
+            boot_value="$("$timeout_path" 10s "$adb_path" -s "$adb_serial" shell getprop sys.boot_completed 2>&1 | tr -d '\r')"
+            boot_status=$?
+            set -e
+            printf 'serial=<emulator> status=%s value=%s\n' "$boot_status" "$boot_value" > artifacts/android/boot-status.txt
+            if [[ "$boot_status" -eq 0 && "$boot_value" == '1' ]]; then
+              booted='YES'
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$booted" != 'YES' ]]; then
+            fail_emulator_startup 'Android emulator did not reach sys.boot_completed=1 within 240 seconds.'
+          fi
+
+          "$timeout_path" 30s "$adb_path" -s "$adb_serial" shell settings put global window_animation_scale 0
+          "$timeout_path" 30s "$adb_path" -s "$adb_serial" shell settings put global transition_animation_scale 0
+          "$timeout_path" 30s "$adb_path" -s "$adb_serial" shell settings put global animator_duration_scale 0
+          set +e
+          final_devices="$("$timeout_path" 10s "$adb_path" devices -l 2>&1)"
+          final_devices_status=$?
+          set -e
+          if [[ "$final_devices_status" -eq 124 ]]; then
+            echo 'Final adb device inspection exceeded the 10-second limit.' >&2
+            exit 1
+          fi
+          printf '%s\n' "$final_devices" | awk 'NR == 1 { print "List of devices attached"; next } NF >= 2 { print "<emulator>\t" $2 }' > artifacts/android/adb-devices-final.txt
 
       - name: Build application and instrumentation APKs
         working-directory: android
