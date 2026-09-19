@@ -13,6 +13,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "serve": "node scripts/serve.mjs",
     "uat": "node scripts/uat.mjs",
+    "uat:handoff": "node scripts/handoff-uat.mjs",
     "dev": "node build.mjs && node scripts/serve.mjs"
   },
   "dependencies": {},

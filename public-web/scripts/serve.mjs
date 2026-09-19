@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 import { REQUIRED_RESPONSE_HEADERS } from '../src/lib/seo.mjs';
+import { localAuthHandoffForPath } from '../src/config/handoffs.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
@@ -49,6 +50,13 @@ async function resolveFile(urlPath) {
 createServer(async (req, res) => {
   const headers = { ...REQUIRED_RESPONSE_HEADERS };
   try {
+    const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    const localHandoff = localAuthHandoffForPath(pathname);
+    if (localHandoff) {
+      res.writeHead(302, { ...headers, Location: localHandoff, 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
     const file = await resolveFile(req.url ?? '/');
     const body = await readFile(file);
     res.writeHead(200, { ...headers, 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream' });

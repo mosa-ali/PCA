@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { renderPages } from '../build.mjs';
+import { authHandoffHref, localAuthHandoffForPath } from '../src/config/handoffs.mjs';
 
 function signInPages() {
   return renderPages('https://www.pcasafe.com').filter((page) => page.routeId === 'signIn');
@@ -27,4 +28,19 @@ test('Public Web does not emit duplicate account-auth routes', () => {
   for (const path of ['/login/index.html', '/signup/index.html', '/forgot-password/index.html', '/reset-password/index.html', '/verify-email/index.html']) {
     assert.equal(emittedPaths.has(path), false, `${path} must remain owned by its separate application`);
   }
+});
+
+test('auth handoffs are centrally configurable without changing the approved chooser paths', () => {
+  assert.equal(authHandoffHref('parent', {}), '/parent/login/');
+  assert.equal(authHandoffHref('platformAdmin', {}), '/platform-admin/login/');
+  assert.equal(
+    authHandoffHref('parent', { PUBLIC_PARENT_WEB_ORIGIN: 'https://app.pcasafe.com' }),
+    'https://app.pcasafe.com/login/',
+  );
+  assert.equal(
+    authHandoffHref('platformAdmin', { PUBLIC_PLATFORM_ADMIN_WEB_ORIGIN: 'https://admin.pcasafe.com' }),
+    'https://admin.pcasafe.com/login/',
+  );
+  assert.equal(localAuthHandoffForPath('/parent/login/', {}), 'http://127.0.0.1:4000/login/');
+  assert.equal(localAuthHandoffForPath('/platform-admin/login/', {}), 'http://127.0.0.1:4100/login/');
 });
