@@ -16,16 +16,12 @@
  * (billing/authority/FamilyCommercialAuthorityResolver.ts) before
  * proceeding.
  *
- * PRODUCTION POSTURE (see main.ts wiring): the resolver injected in
- * production is `UnavailableFamilyCommercialAuthorityResolver`, which
- * ALWAYS returns AUTHORITY_UNAVAILABLE -- this codebase does not yet hold
- * a genuine, trustworthy, server-side source of a family's current
- * trust-set owner/role assignments (see that resolver's own header for the
- * full architecture-gap explanation). That means, honestly and as
- * intended: in the current, real, deployed system, checkout-CREATE ALWAYS
- * 403s with `FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE`. This is the correct,
- * fail-closed external gate this mission asked for, not a bug -- see this
- * lane's final report's FAMILY_OWNER_AUTH field.
+ * PRODUCTION POSTURE (see main.ts wiring): the resolver is now the
+ * attestation-chain adapter with active-key registry checks, but production
+ * still injects `RejectingDeviceSignatureVerifier`, and this legacy route
+ * still supplies only actorDeviceId. The R1 engine rejects both conditions
+ * fail-closed, so checkout-CREATE remains 403 until the reviewed verifier and
+ * session-bound request-proof route integration are separately approved.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createRequireServiceSession } from '../../auth/fastifyAuthPlugin.js';
@@ -111,15 +107,10 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       // authority-unresolvable) caller never reaches CheckoutService at
       // all.
       //
-      // PCA-FAMILY-AUTH-1-R1 (PCA-DEC-025/Option A) compile-only extension:
-      // resolveOwnerAuthority is now async (the production candidate
-      // resolver performs a real DB read + live signature re-verification
-      // per call -- see billing/authority/FamilyCommercialAuthorityResolver.ts's
-      // header for why a synchronous, cache-only design was rejected: it
-      // would not be restart/multi-instance durable). STALE_OR_REVOKED and
-      // INVALID_PROOF are new resolution-failure variants that must fail
-      // closed exactly like AUTHORITY_UNAVAILABLE -- never fall through to
-      // checkout. No other line in this handler changed.
+      // The production candidate performs a real DB read + live signature
+      // re-verification per call. Until this route carries a session-bound,
+      // single-use request proof, the resolver receives only an identifier
+      // and returns INVALID_PROOF; no checkout orchestration is reached.
       const authority = await deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(familyId, actorDeviceId);
       if (authority.status === 'ROLE_DENIED') {
         // Same "one generic reason" discipline as AuthzError/

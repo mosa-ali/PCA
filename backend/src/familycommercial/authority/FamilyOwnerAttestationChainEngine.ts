@@ -6,6 +6,8 @@ import { FAMILY_AUTHORITY_PROTOCOL_VERSION, OWNER_ATTESTATION_DOMAIN } from './t
 import type { AttestationId, FamilyAuthorityGenesisAnchor, FamilyOwnerAttestation } from './types.js';
 import type { FamilyAuthorityGenesisStore } from './GenesisAnchorStore.js';
 import type { FamilyAuthorityAttestationChainStore } from './AttestationChainStore.js';
+import type { FamilyAuthorityKeyResolver } from './FamilyAuthorityKeyResolver.js';
+import { canonicalizeFamilyAuthorityRequestProof, type FamilyAuthorityRequestProofFields } from './requestProofProtocol.js';
 
 export interface BootstrapFamilyAuthorityInput {
   anchor: FamilyAuthorityGenesisAnchor;
@@ -31,6 +33,16 @@ export type ResolveCurrentOwnerResult =
   | { readonly status: 'AUTHORITY_UNAVAILABLE' }
   | { readonly status: 'STALE_OR_REVOKED' }
   | { readonly status: 'INVALID_PROOF' };
+
+/** A request-level proof is challenge-bound, not a caller-supplied device ID or message. */
+export interface FamilyAuthorityRequestProof extends FamilyAuthorityRequestProofFields {
+  signature: string;
+}
+
+export interface FamilyAuthorityRequestChallengeVerifier {
+  /** Returns true only when the exact challenge is valid and consumed once. */
+  consume(input: FamilyAuthorityRequestProofFields & { consumedAt: Date }): Promise<boolean>;
+}
 
 /**
  * Bounds the attestation's OWN (issuedAt, expiresAt) duration only --
@@ -72,6 +84,8 @@ export class FamilyOwnerAttestationChainEngine {
     private readonly chainStore: FamilyAuthorityAttestationChainStore,
     private readonly signatureVerifier: DeviceSignatureVerifier,
     private readonly now: () => Date,
+    private readonly keyResolver?: FamilyAuthorityKeyResolver,
+    private readonly requestChallengeVerifier?: FamilyAuthorityRequestChallengeVerifier,
   ) {}
 
   async bootstrapFamilyAuthority(input: BootstrapFamilyAuthorityInput): Promise<BootstrapFamilyAuthorityResult> {
@@ -86,6 +100,14 @@ export class FamilyOwnerAttestationChainEngine {
       anchor.signature,
     );
     if (!anchorValid) return { status: 'INVALID_PROOF', reason: 'GENESIS_SIGNATURE_INVALID' };
+    if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
+      familyId: anchor.familyId,
+      deviceId: anchor.genesisDeviceId,
+      keyId: anchor.genesisDskKeyId,
+      publicKey: anchor.genesisDskPublicKey,
+    }))) {
+      return { status: 'INVALID_PROOF', reason: 'GENESIS_DEVICE_KEY_NOT_ACTIVE' };
+    }
 
     const attestationReason = this.validateGenesisAttestationShape(anchor, genesisAttestation);
     if (attestationReason !== null) return { status: 'INVALID_PROOF', reason: attestationReason };
@@ -130,6 +152,14 @@ export class FamilyOwnerAttestationChainEngine {
 
     const currentAttestation = await this.chainStore.findAttestationById(familyId, head.headAttestationId);
     if (currentAttestation === null) return { status: 'AUTHORITY_UNAVAILABLE' };
+    if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
+      familyId,
+      deviceId: currentAttestation.signerDeviceId,
+      keyId: currentAttestation.signerDskKeyId,
+      publicKey: currentAttestation.signerDskPublicKey,
+    }))) {
+      return { status: 'INVALID_PROOF', reason: 'CURRENT_SIGNER_KEY_NOT_ACTIVE' };
+    }
 
     const currentValid = await this.signatureVerifier.verify(
       currentAttestation.signerDskPublicKey,
@@ -141,6 +171,12 @@ export class FamilyOwnerAttestationChainEngine {
 
     const reason = this.validateTransferShape(familyId, head.headAttestationId, head.headRevision, currentAttestation, nextAttestation);
     if (reason !== null) return { status: 'INVALID_PROOF', reason };
+    if (nextAttestation.trustSetEpoch < head.requiredTrustSetEpoch) {
+      return { status: 'INVALID_PROOF', reason: 'TRUST_SET_EPOCH_DOWNGRADE' };
+    }
+    if (nextAttestation.keyEpoch < head.requiredKeyEpoch) {
+      return { status: 'INVALID_PROOF', reason: 'KEY_EPOCH_DOWNGRADE' };
+    }
     if (!hasSaneTtl(nextAttestation.issuedAt, nextAttestation.expiresAt)) {
       return { status: 'INVALID_PROOF', reason: 'IMPLAUSIBLE_VALIDITY_WINDOW' };
     }
@@ -151,6 +187,14 @@ export class FamilyOwnerAttestationChainEngine {
       nextAttestation.signature,
     );
     if (!nextValid) return { status: 'INVALID_PROOF', reason: 'TRANSFER_SIGNATURE_INVALID' };
+    if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
+      familyId,
+      deviceId: nextAttestation.signerDeviceId,
+      keyId: nextAttestation.signerDskKeyId,
+      publicKey: nextAttestation.signerDskPublicKey,
+    }))) {
+      return { status: 'INVALID_PROOF', reason: 'NEXT_SIGNER_KEY_NOT_ACTIVE' };
+    }
 
     const attestationId = computeAttestationId(nextAttestation);
     const appendResult = await this.chainStore.appendIfCurrentRevision(nextAttestation, attestationId, head.headRevision);
@@ -197,7 +241,17 @@ export class FamilyOwnerAttestationChainEngine {
    * "Administrator can pay" gap PCA-BILL-2A-R1/PCA-FAMILY-AUTH-1-R1 were
    * built to close.
    */
-  async resolveCurrentOwner(familyId: OpaqueFamilyId, actorDeviceId: OpaqueDeviceId): Promise<ResolveCurrentOwnerResult> {
+  async resolveCurrentOwner(
+    familyId: OpaqueFamilyId,
+    actor: OpaqueDeviceId | FamilyAuthorityRequestProof,
+    expectedServiceAccountId?: string,
+  ): Promise<ResolveCurrentOwnerResult> {
+    // Production composition supplies a key resolver. In that mode the old
+    // actorDeviceId-only API is deliberately rejected: an identifier is not
+    // proof of possession. A proof is accepted only when its canonical
+    // challenge is also consumed by an explicitly supplied verifier.
+    if (this.keyResolver && typeof actor === 'string') return { status: 'INVALID_PROOF' };
+    const actorDeviceId = typeof actor === 'string' ? actor : actor.deviceId;
     const head = await this.chainStore.findHead(familyId);
     if (head === null) return { status: 'AUTHORITY_UNAVAILABLE' };
     if (head.status === 'REVOKED') return { status: 'STALE_OR_REVOKED' };
@@ -205,6 +259,14 @@ export class FamilyOwnerAttestationChainEngine {
     const attestation = await this.chainStore.findAttestationById(familyId, head.headAttestationId);
     if (attestation === null) return { status: 'AUTHORITY_UNAVAILABLE' };
     if (attestation.familyId !== familyId || attestation.purpose !== OWNER_ATTESTATION_DOMAIN) {
+      return { status: 'INVALID_PROOF' };
+    }
+    if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
+      familyId,
+      deviceId: attestation.ownerDeviceId,
+      keyId: attestation.ownerDskKeyId,
+      publicKey: attestation.ownerDskPublicKey,
+    }))) {
       return { status: 'INVALID_PROOF' };
     }
 
@@ -216,6 +278,23 @@ export class FamilyOwnerAttestationChainEngine {
     if (!valid) return { status: 'INVALID_PROOF' };
     if (this.now().getTime() > attestation.expiresAt.getTime()) return { status: 'STALE_OR_REVOKED' };
 
+    if (this.keyResolver) {
+      const proof = actor as FamilyAuthorityRequestProof;
+      if (!this.requestChallengeVerifier) return { status: 'INVALID_PROOF' };
+      if (!expectedServiceAccountId || proof.serviceAccountId !== expectedServiceAccountId) return { status: 'INVALID_PROOF' };
+      let proofMessage: string;
+      try {
+        proofMessage = canonicalizeFamilyAuthorityRequestProof(proof);
+      } catch {
+        return { status: 'INVALID_PROOF' };
+      }
+      const proofValid = await this.signatureVerifier.verify(proof.publicKey, proofMessage, proof.signature);
+      if (!proofValid || proof.deviceId !== attestation.ownerDeviceId || proof.keyId !== attestation.ownerDskKeyId || proof.publicKey !== attestation.ownerDskPublicKey) {
+        return { status: 'INVALID_PROOF' };
+      }
+      const challengeConsumed = await this.requestChallengeVerifier.consume({ ...proof, consumedAt: this.now() });
+      if (!challengeConsumed) return { status: 'INVALID_PROOF' };
+    }
     return attestation.ownerDeviceId === actorDeviceId ? { status: 'OWNER_AUTHORIZED' } : { status: 'ROLE_DENIED' };
   }
 

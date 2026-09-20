@@ -88,6 +88,8 @@ export interface FamilyAuthorityChainHead {
   familyId: OpaqueFamilyId;
   headAttestationId: AttestationId;
   headRevision: number;
+  requiredTrustSetEpoch: number;
+  requiredKeyEpoch: number;
   status: FamilyAuthorityChainHeadStatus;
   updatedAt: Date;
 }

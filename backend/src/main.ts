@@ -164,6 +164,7 @@ import { PriceBookQuotePort } from './entitlements/quote/PriceBookQuotePort.js';
 // continuation of that existing posture, not a new gap.
 import { AttestationChainFamilyCommercialAuthorityResolver } from './billing/authority/FamilyCommercialAuthorityResolver.js';
 import { FamilyOwnerAttestationChainEngine } from './familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import { DeviceRepositoryFamilyAuthorityKeyResolver } from './familycommercial/authority/FamilyAuthorityKeyResolver.js';
 import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
 import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/authority/MySqlAttestationChainStore.js';
 // PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent identity +
@@ -171,10 +172,8 @@ import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/au
 // AuthService instance buildServer's Bearer-header requireServiceSession
 // already validates against -- see ParentAccountService.ts's own
 // SESSION BACKING STORE doc comment for why this is one token format, not
-// two. `familyGenesisEngine` reuses the SAME familyAuthorityChainEngine
-// constructed above for PCA-FAMILY-AUTH-1-R1, so a self-registered
-// parent's genesis ceremony and every subsequent Owner-authority check run
-// through the identical, unmodified verification path.
+// two. Email verification no longer performs family genesis; the separate
+// client-key ceremony remains source-only and is not wired into this service.
 import { ParentAccountService } from './parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
@@ -438,6 +437,7 @@ async function start(): Promise<void> {
     familyAuthorityAttestationChainStore,
     new RejectingDeviceSignatureVerifier(),
     () => new Date(),
+    new DeviceRepositoryFamilyAuthorityKeyResolver(deviceRepository),
   );
   const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
 
@@ -557,12 +557,6 @@ async function start(): Promise<void> {
     repository: new MySqlParentAccountRepository(),
     authService,
     emailSender: emailInfrastructure.emailSender,
-    // PCA-FAMILY-AUTH-1-R1: the SAME engine instance constructed above --
-    // a self-registered parent's genesis ceremony and every subsequent
-    // Owner-authority check run through the identical, unmodified
-    // verification path. Still fail-closed today (RejectingDeviceSignatureVerifier),
-    // exactly like every other crypto-gated surface in this file.
-    familyGenesisEngine: familyAuthorityChainEngine,
     familyMembershipRepository,
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();

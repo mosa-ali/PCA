@@ -1,11 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { AuthService } from '../auth/AuthService.js';
-import type { OpaqueFamilyId, OpaqueDeviceId } from '../familytrustset/types.js';
-import type { FamilyOwnerAttestationChainEngine } from '../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { canonicalizeGenesisAnchor, canonicalizeOwnerAttestation } from '../familycommercial/authority/canonicalize.js';
-import { FAMILY_AUTHORITY_PROTOCOL_VERSION, OWNER_ATTESTATION_DOMAIN } from '../familycommercial/authority/types.js';
-import type { FamilyAuthorityGenesisAnchor, FamilyOwnerAttestation } from '../familycommercial/authority/types.js';
-import { generateEphemeralGenesisDeviceKeyPair, signWithGenesisDeviceKey } from './genesisDeviceSigner.js';
+import type { OpaqueFamilyId } from '../familytrustset/types.js';
 import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
 import { hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
 import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
@@ -52,8 +47,6 @@ export class ParentAccountError extends Error {
   }
 }
 
-const GENESIS_DEVICE_ATTESTATION_TTL_MS = 24 * 60 * 60 * 1000; // 24h -- comfortably inside FamilyOwnerAttestationChainEngine's sane-TTL bounds
-
 /**
  * How many of an account's most recent verification-code rows verifyEmail
  * will consider. Bounded work per request, and comfortably above what
@@ -68,16 +61,6 @@ export interface ParentAccountServiceDeps {
   repository: ParentAccountRepository;
   authService: AuthService;
   emailSender: EmailSenderPort;
-  /**
-   * Injected so production (Coordinator-wired, see main.ts's own existing
-   * FamilyOwnerAttestationChainEngine construction) and tests can supply
-   * different DeviceSignatureVerifier policies -- this service never
-   * constructs its own engine instance. `undefined` means "genesis
-   * capability not wired" (treated identically to a genesis attempt that
-   * returns INVALID_PROOF/AUTHORITY_UNAVAILABLE: identity/session issuance
-   * still succeeds, familyId is simply null).
-   */
-  familyGenesisEngine?: FamilyOwnerAttestationChainEngine;
   /** Active family-role persistence. Missing/unresolved membership fails closed. */
   familyMembershipRepository?: FamilyMembershipRepository;
   now?: () => Date;
@@ -97,7 +80,6 @@ export class ParentAccountService {
   private readonly repository: ParentAccountRepository;
   private readonly authService: AuthService;
   private readonly emailSender: EmailSenderPort;
-  private readonly familyGenesisEngine: FamilyOwnerAttestationChainEngine | undefined;
   private readonly familyMembershipRepository: FamilyMembershipRepository | undefined;
   private readonly now: () => Date;
 
@@ -105,7 +87,6 @@ export class ParentAccountService {
     this.repository = deps.repository;
     this.authService = deps.authService;
     this.emailSender = deps.emailSender;
-    this.familyGenesisEngine = deps.familyGenesisEngine;
     // Test-only in-memory repositories may implement the membership port on
     // the same object. Production must pass the explicit durable repository;
     // an absent resolver still fails closed in requireFamilyRole().
@@ -258,7 +239,12 @@ export class ParentAccountService {
     if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent verify-email race for the same code
 
     const now = this.now();
-    const familyId = await this.attemptFamilyGenesis(account.accountId, now);
+    // PCA-DEC-020-R1: email verification establishes account identity only.
+    // It must never generate or silently authorize a cryptographic first
+    // device. Family genesis is now a separate client-key challenge ceremony
+    // whose source protocol lives in genesisProtocol.ts; until that ceremony
+    // completes, the account remains deliberately family-scoped-null.
+    const familyId: OpaqueFamilyId | null = null;
     const defaults = resolveFreeAccessDefaults();
     const expiresAt = computeFreeAccessExpiry(now, defaults);
 
@@ -281,90 +267,8 @@ export class ParentAccountService {
     });
 
     const issued = await this.issueSessionFor(account.accountId);
-    if (familyId !== null) {
-      // PCA-DEC-026: a freshly genesis-anchored Family Owner must actually
-      // be able to reach their own family's commercial data through the
-      // EXISTING, unmodified familyCommercialRoutes.ts/
-      // billingCheckoutRoutes.ts, both of which require an ACTIVE
-      // service_account_family_scopes row before anything else runs -- see
-      // ParentAccountRepository.grantFamilyScopeIfAbsent's own doc comment.
-      await this.repository.grantFamilyScopeIfAbsent(issued.session.accountId, familyId, now);
-      // Without this, Platform Administration's dashboards/account list/
-      // suspend flow (platformadmin/accounts/**) can never see or act on a
-      // family that only ever exists via self-service registration -- see
-      // ParentAccountRepository.createFamilyIfAbsent's own doc comment.
-      await this.repository.createFamilyIfAbsent(familyId, now);
-      if (this.familyMembershipRepository) {
-        await this.familyMembershipRepository.createGenesisAdministrator(account.accountId, issued.session.accountId, familyId, now);
-      }
-    }
-    const role = familyId === null ? null : await this.familyMembershipRepository?.findActiveRole(account.accountId, familyId) ?? null;
+    const role = null;
     return { accountId: account.accountId, familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt, role };
-  }
-
-  /**
-   * PCA-ADD-IDENT-009: every fresh verification creates its OWN new family
-   * (this self-service flow has no "join an existing family" path --
-   * PCA-ADD-IDENT-011 -- so every verified account is, by construction, the
-   * first-and-only verified parent of a brand-new family). Best-effort:
-   * genesis is a bounded external capability (see genesisDeviceSigner.ts's
-   * header) -- a rejected/unavailable signature verifier degrades to
-   * familyId=null, never blocks identity verification or session issuance.
-   */
-  private async attemptFamilyGenesis(accountId: ParentAccountId, now: Date): Promise<OpaqueFamilyId | null> {
-    if (!this.familyGenesisEngine) return null;
-    const familyId: OpaqueFamilyId = randomUUID();
-    // Plain UUIDs, matching every other genesis_device_id/genesis_dsk_key_id
-    // value's real schema column (migration 0011: CHAR(36) CHARACTER SET
-    // ascii) exactly, like every other device id in this codebase -- a
-    // prefixed "web-registration:<accountId>" string (54+ chars) does not
-    // fit that column and previously made this path fail with a genuine
-    // MySQL ER_DATA_TOO_LONG error the first time it ever ran against real
-    // MySQL (caught running the disposable-database seed for this session's
-    // local validation, not previously exercised against a real database).
-    const genesisDeviceId: OpaqueDeviceId = randomUUID();
-    const { publicKeyBase64, privateKey } = generateEphemeralGenesisDeviceKeyPair();
-    const genesisDskKeyId = randomUUID();
-
-    const anchorWithoutSignature: Omit<FamilyAuthorityGenesisAnchor, 'signature'> = {
-      familyId,
-      genesisDeviceId,
-      genesisDskKeyId,
-      genesisDskPublicKey: publicKeyBase64,
-      protocolVersion: FAMILY_AUTHORITY_PROTOCOL_VERSION,
-      createdAt: now,
-    };
-    const anchor: FamilyAuthorityGenesisAnchor = {
-      ...anchorWithoutSignature,
-      signature: signWithGenesisDeviceKey(privateKey, canonicalizeGenesisAnchor(anchorWithoutSignature)),
-    };
-
-    const attestationWithoutSignature: Omit<FamilyOwnerAttestation, 'signature'> = {
-      familyId,
-      purpose: OWNER_ATTESTATION_DOMAIN,
-      attestationRevision: 1,
-      ownerDeviceId: genesisDeviceId,
-      ownerDskKeyId: genesisDskKeyId,
-      ownerDskPublicKey: publicKeyBase64,
-      trustSetEpoch: 1,
-      keyEpoch: 1,
-      issuedAt: now,
-      expiresAt: new Date(now.getTime() + GENESIS_DEVICE_ATTESTATION_TTL_MS),
-      previousAttestationId: null,
-      signerDeviceId: genesisDeviceId,
-      signerDskKeyId: genesisDskKeyId,
-      signerDskPublicKey: publicKeyBase64,
-    };
-    const genesisAttestation: FamilyOwnerAttestation = {
-      ...attestationWithoutSignature,
-      signature: signWithGenesisDeviceKey(privateKey, canonicalizeOwnerAttestation(attestationWithoutSignature)),
-    };
-
-    const result = await this.familyGenesisEngine.bootstrapFamilyAuthority({ anchor, genesisAttestation });
-    if (result.status === 'BOOTSTRAPPED' || result.status === 'ALREADY_BOOTSTRAPPED') {
-      return result.anchor.familyId;
-    }
-    return null; // INVALID_PROOF -- e.g. RejectingDeviceSignatureVerifier in production today; identity/session still proceed.
   }
 
   /** PCA-ADD-IDENT-012: only succeeds against a VERIFIED account; generic failure for every other case (unknown email, wrong password, unverified). */

@@ -1,17 +1,11 @@
 // PCA-AUTH-SESSION-1 -- ParentAccountService unit tests: registration,
-// email verification, family genesis (structural proof under a real
-// Ed25519 test verifier, and the honest fail-closed degrade under
-// RejectingDeviceSignatureVerifier), login, session read, logout,
+// email verification, the separate first-device ceremony boundary, login,
+// session read, logout,
 // revoke-all, and the negative-test matrix WRITER57_ASSIGNMENT.md requires.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { ParentAccountService, ParentAccountError } from '../../dist/parentaccount/ParentAccountService.js';
-import { FamilyOwnerAttestationChainEngine } from '../../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { InMemoryGenesisAnchorStore } from '../../dist/familycommercial/authority/InMemoryGenesisAnchorStore.js';
-import { InMemoryAttestationChainStore } from '../../dist/familycommercial/authority/InMemoryAttestationChainStore.js';
-import { createEd25519DeviceSignatureVerifier } from '../../dist/parentaccount/genesisDeviceSigner.js';
-import { RejectingDeviceSignatureVerifier } from '../../dist/runtime-sync/index.js';
 import { createInMemoryAuthRepository } from '../support/inMemoryAuthRepository.mjs';
 import { createInMemoryParentAccountRepository } from '../support/inMemoryParentAccountRepository.mjs';
 
@@ -35,7 +29,7 @@ class RecordingEmailSender {
   }
 }
 
-function buildHarness({ genesisVerifier } = {}) {
+function buildHarness() {
   let currentTime = BASE_TIME;
   const now = () => new Date(currentTime);
   const advance = (ms) => {
@@ -49,21 +43,10 @@ function buildHarness({ genesisVerifier } = {}) {
   });
   const emailSender = new RecordingEmailSender();
 
-  let familyGenesisEngine;
-  if (genesisVerifier !== null) {
-    familyGenesisEngine = new FamilyOwnerAttestationChainEngine(
-      new InMemoryGenesisAnchorStore(),
-      new InMemoryAttestationChainStore(),
-      genesisVerifier ?? createEd25519DeviceSignatureVerifier(),
-      now,
-    );
-  }
-
   const service = new ParentAccountService({
     repository: parentAccountRepository,
     authService,
     emailSender,
-    familyGenesisEngine,
     now,
   });
 
@@ -282,27 +265,15 @@ test('SECURITY: verify-email for an unverified/nonexistent account never leaks w
   });
 });
 
-test('family genesis: a real signature verifier reaches BOOTSTRAPPED and the returned familyId is durable', async () => {
+test('email verification does not create a family or cryptographic device', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  assert.equal(typeof outcome.familyId, 'string');
-  assert.ok(outcome.familyId.length > 0);
-});
-
-test('family genesis: FAIL CLOSED under RejectingDeviceSignatureVerifier -- identity/session remain unprivileged and familyId/role are null', async () => {
-  const harness = buildHarness({ genesisVerifier: new RejectingDeviceSignatureVerifier() });
   const outcome = await registerAndVerify(harness);
   assert.equal(outcome.familyId, null);
   assert.equal(outcome.role, null);
   const session = await harness.service.readSession(outcome.rawSessionToken);
-  assert.equal(session.emailVerified, true, 'identity verification must not be blocked by an unavailable genesis capability');
-  assert.equal(session.role, null, 'missing genesis must never become ADMINISTRATOR');
-});
-
-test('family genesis: no engine wired at all also degrades to familyId=null without breaking verification', async () => {
-  const harness = buildHarness({ genesisVerifier: null });
-  const outcome = await registerAndVerify(harness);
-  assert.equal(outcome.familyId, null);
+  assert.equal(session.emailVerified, true, 'identity verification must not be blocked by the separate device ceremony');
+  assert.equal(session.familyId, null);
+  assert.equal(session.role, null, 'email verification must never become a Parent Administrator grant');
 });
 
 test('login only succeeds against a VERIFIED account, with a single generic error for every failure mode', async () => {
@@ -332,12 +303,13 @@ test('login succeeds against a VERIFIED account with the correct password and fa
   });
 });
 
-test('SECURITY: a successful genesis session returns the persisted normal Administrator role, never an Owner UI role', async () => {
+test('SECURITY: the pre-genesis session has no Parent RBAC role and never exposes a cryptographic Owner UI role', async () => {
   const harness = buildHarness();
   const outcome = await registerAndVerify(harness);
   const session = await harness.service.readSession(outcome.rawSessionToken);
   assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'role']);
-  assert.equal(session.role, 'ADMINISTRATOR');
+  assert.equal(session.familyId, null);
+  assert.equal(session.role, null);
 });
 
 test('SECURITY: expired session is denied identically to no session (fail closed)', async () => {
@@ -388,62 +360,12 @@ test('SECURITY: revoke-all-sessions itself requires a currently-valid session (a
   });
 });
 
-test('PCA-ADD-PA-017 enforcement: login is rejected with the SAME generic UNAUTHORIZED once the account\'s family is SUSPENDED', async () => {
+test('PCA-ADD-PA-017 enforcement: an account with no familyId yet is never blocked by a family-suspend check', async () => {
   const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  assert.equal(typeof outcome.familyId, 'string', 'a real genesis engine is wired in this harness, so familyId must be present');
-
-  // Sanity: login works normally while the family is ACTIVE (the default).
-  await harness.service.login(EMAIL, PASSWORD);
-
-  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
-  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD), (err) => {
-    assert.ok(err instanceof ParentAccountError);
-    assert.equal(err.code, 'UNAUTHORIZED');
-    return true;
-  });
-});
-
-test('PCA-ADD-PA-017 enforcement: reactivating the family (status back to ACTIVE) restores login', async () => {
-  const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
-  await assert.rejects(() => harness.service.login(EMAIL, PASSWORD));
-
-  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'ACTIVE');
-  const relogin = await harness.service.login(EMAIL, PASSWORD);
-  assert.equal(typeof relogin.rawSessionToken, 'string');
-});
-
-test('PCA-ADD-PA-017 enforcement: an account with no familyId yet (genesis unavailable) is never blocked by the suspend check', async () => {
-  const harness = buildHarness({ genesisVerifier: null });
   const outcome = await registerAndVerify(harness);
   assert.equal(outcome.familyId, null);
   const relogin = await harness.service.login(EMAIL, PASSWORD);
   assert.equal(typeof relogin.rawSessionToken, 'string');
-});
-
-test('SECURITY: a suspended family\'s login failure is indistinguishable in shape/code from a wrong-password failure (no information leak)', async () => {
-  const harness = buildHarness();
-  const outcome = await registerAndVerify(harness);
-  harness.parentAccountRepository._setFamilyStatusForTest(outcome.familyId, 'SUSPENDED');
-
-  let suspendedError;
-  try {
-    await harness.service.login(EMAIL, PASSWORD);
-  } catch (err) {
-    suspendedError = err;
-  }
-  let wrongPasswordError;
-  try {
-    await harness.service.login(EMAIL, 'a totally different wrong password');
-  } catch (err) {
-    wrongPasswordError = err;
-  }
-  assert.ok(suspendedError instanceof ParentAccountError);
-  assert.ok(wrongPasswordError instanceof ParentAccountError);
-  assert.equal(suspendedError.code, wrongPasswordError.code);
-  assert.equal(suspendedError.message, wrongPasswordError.message);
 });
 
 test('CONCURRENCY: two concurrent registrations for the same email never both create distinct accounts (uniqueness race)', async () => {

@@ -2,7 +2,15 @@ import { generateKeyPairSync, createPublicKey, sign as cryptoSign, verify as cry
 import type { DeviceSignatureVerifier } from '../deviceauth/DeviceSignatureVerifier.js';
 
 /**
- * INTERPRETATION NOTE (flagged in WRITER57's final report as an open
+ * TEST/REFERENCE-ONLY legacy signer. PCA-DEC-020-R1 does not use a
+ * server-generated key as a family trust root. The production
+ * ParentAccountService no longer imports this module, and the runtime remains
+ * wired to the rejecting verifier until external human cryptographic review
+ * and a separately authorized activation. The helpers below may be used only
+ * by isolated source tests for historical chain mechanics; they are not an
+ * approved production bootstrap protocol.
+ *
+ * Historical note (retained for test traceability):
  * architecture question, not a unilateral decision): PCA-ADD-IDENT-009/010
  * requires the first verified parent of a new family to trigger the
  * EXISTING genesis-anchored Owner-attestation bootstrap
@@ -34,7 +42,7 @@ import type { DeviceSignatureVerifier } from '../deviceauth/DeviceSignatureVerif
  * correct fail-closed posture, not a bug. `createEd25519DeviceSignatureVerifier`
  * below exists so this lane's OWN tests can prove the bootstrap call
  * genuinely reaches BOOTSTRAPPED under a real verifier -- it is never wired
- * into production by this lane.
+ * into production by this lane. The R1 design supersedes this legacy path.
  */
 export interface GenesisDeviceKeyMaterial {
   publicKeyBase64: string;

@@ -14,7 +14,7 @@ import test from 'node:test';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..', '..', 'src');
-const ALLOWED_IMPORTERS = ['parentaccount/ParentAccountService.ts'];
+const ALLOWED_IMPORTERS = [];
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -27,7 +27,7 @@ function walk(dir, out = []) {
 
 const rel = (p) => relative(SRC, p).replace(/\\/g, '/');
 
-test('only ParentAccountService imports the ephemeral genesis device signer', () => {
+test('no production source imports the server-generated ephemeral genesis signer', () => {
   const importers = walk(SRC)
     .filter((p) => /from\s+['"][^'"]*genesisDeviceSigner(\.js)?['"]/.test(readFileSync(p, 'utf8')))
     .map(rel)
@@ -52,4 +52,10 @@ test('no verifier or acceptance path references the genesis signer, and main.ts 
   assert.match(main, /RejectingEnvelopeSignatureVerifier/);
   assert.doesNotMatch(main, /genesisDeviceSigner/);
   assert.doesNotMatch(main, /createEd25519DeviceSignatureVerifier/);
+});
+
+test('email verification no longer performs server-generated family genesis', () => {
+  const parentAccountService = readFileSync(join(SRC, 'parentaccount', 'ParentAccountService.ts'), 'utf8');
+  assert.doesNotMatch(parentAccountService, /genesisDeviceSigner|attemptFamilyGenesis|familyGenesisEngine/);
+  assert.match(parentAccountService, /const familyId: OpaqueFamilyId \| null = null/);
 });

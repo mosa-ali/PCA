@@ -26,6 +26,8 @@ interface ChainHeadRow {
   family_id: string;
   head_attestation_id: string;
   head_revision: number;
+  required_trust_set_epoch: number;
+  required_key_epoch: number;
   status: FamilyAuthorityChainHeadStatus;
   updated_at: Date;
 }
@@ -55,6 +57,8 @@ function mapHeadRow(row: ChainHeadRow): FamilyAuthorityChainHead {
     familyId: row.family_id,
     headAttestationId: row.head_attestation_id,
     headRevision: row.head_revision,
+    requiredTrustSetEpoch: row.required_trust_set_epoch,
+    requiredKeyEpoch: row.required_key_epoch,
     status: row.status,
     updatedAt: row.updated_at,
   };
@@ -117,9 +121,10 @@ export class MySqlFamilyAuthorityAttestationChainStore implements FamilyAuthorit
           try {
             await execute(
               conn,
-              `INSERT INTO family_authority_chain_heads (family_id, head_attestation_id, head_revision, status, updated_at)
-               VALUES (?, ?, ?, 'ACTIVE', ?)`,
-              [attestation.familyId, attestationId, attestation.attestationRevision, attestation.issuedAt],
+              `INSERT INTO family_authority_chain_heads
+                (family_id, head_attestation_id, head_revision, required_trust_set_epoch, required_key_epoch, status, updated_at)
+               VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)`,
+              [attestation.familyId, attestationId, attestation.attestationRevision, attestation.trustSetEpoch, attestation.keyEpoch, attestation.issuedAt],
             );
           } catch (error) {
             if (isDuplicateEntry(error)) throw new SoftFailure<AppendSoftCode>('REJECTED_STALE_REVISION');
@@ -129,9 +134,9 @@ export class MySqlFamilyAuthorityAttestationChainStore implements FamilyAuthorit
           const updated = await execute(
             conn,
             `UPDATE family_authority_chain_heads
-             SET head_attestation_id = ?, head_revision = ?, status = 'ACTIVE', updated_at = ?
+             SET head_attestation_id = ?, head_revision = ?, required_trust_set_epoch = ?, required_key_epoch = ?, status = 'ACTIVE', updated_at = ?
              WHERE family_id = ? AND head_revision = ?`,
-            [attestationId, attestation.attestationRevision, attestation.issuedAt, attestation.familyId, expectedPreviousRevision],
+            [attestationId, attestation.attestationRevision, attestation.trustSetEpoch, attestation.keyEpoch, attestation.issuedAt, attestation.familyId, expectedPreviousRevision],
           );
           if (updated.rowCount === 0) throw new SoftFailure<AppendSoftCode>('REJECTED_STALE_REVISION');
         }

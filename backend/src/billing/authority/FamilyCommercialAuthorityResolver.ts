@@ -27,10 +27,10 @@
  * traces back to a signature the server only checked, never produced, and
  * it never learns the rest of the family trust set (Administrator/Viewer/
  * Child assignments stay entirely device-side, per doc 09 Section 5.2).
- * `resolveOwnerAuthority` is now `async` (a compile-only signature
- * extension -- see this lane's SHARED_INTEGRATION_REQUIRED report; the one
- * call site in billingCheckoutRoutes.ts needs an `await` added by whoever
- * performs that wiring, since this file does not own that route).
+ * `resolveOwnerAuthority` is async and its current route-facing signature is
+ * intentionally still legacy: actorDeviceId is only an identifier and the
+ * R1 production engine rejects it until a session-bound proof is threaded
+ * through the route.
  *
  * `TrustSetFamilyCommercialAuthorityResolver` (below) remains a TESTS-ONLY
  * reference implementation against the device-local FamilyTrustSetStore --
@@ -66,12 +66,9 @@ export interface FamilyCommercialAuthorityResolver {
 }
 
 /**
- * The safe, PRODUCTION-DEFAULT implementation until a Coordinator binds a
- * real resolver (see this file's header and this lane's
- * SHARED_INTEGRATION_REQUIRED report). Wired as the default in main.ts:
- * forgetting to (or not yet having) inject a real resolver denies every
- * family-checkout-CREATE call rather than silently reopening the
- * Administrator-can-pay gap this correction closes.
+ * The safe fail-closed fallback: forgetting to (or not yet having) inject a
+ * real resolver denies every family-checkout-CREATE call rather than silently
+ * reopening the Administrator-can-pay gap this correction closes.
  */
 export class UnavailableFamilyCommercialAuthorityResolver implements FamilyCommercialAuthorityResolver {
   async resolveOwnerAuthority(_familyId: OpaqueFamilyId, _actorDeviceId: OpaqueDeviceId): Promise<FamilyCommercialAuthorityResult> {
@@ -116,10 +113,10 @@ export class TrustSetFamilyCommercialAuthorityResolver implements FamilyCommerci
  * SAME interface billingCheckoutRoutes.ts already depends on, without that
  * frozen route needing to know the engine exists.
  *
- * NOT yet wired as the production default -- see this lane's
- * SHARED_INTEGRATION_REQUIRED report for the exact main.ts change a
- * Coordinator must apply to replace UnavailableFamilyCommercialAuthorityResolver
- * with this class.
+ * Current production composition wires this adapter behind the active-key
+ * resolver, but the legacy route contract still supplies only actorDeviceId.
+ * FamilyOwnerAttestationChainEngine deliberately rejects that identifier-only
+ * call until the route passes a session-bound, single-use request proof.
  */
 export class AttestationChainFamilyCommercialAuthorityResolver implements FamilyCommercialAuthorityResolver {
   constructor(private readonly chainEngine: FamilyOwnerAttestationChainEngine) {}
