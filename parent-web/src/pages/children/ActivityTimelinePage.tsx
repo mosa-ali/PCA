@@ -13,6 +13,7 @@ import { getApiClients } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/States';
 import type { ActivityTimelineCategory } from '../../domain/activityTimeline';
+import { localizeActivitySummary } from '../../i18n/activitySummary';
 
 const CATEGORY_ICON: Record<ActivityTimelineCategory, string> = {
   APP_USAGE: '📱',
@@ -89,7 +90,7 @@ export default function ActivityTimelinePage() {
               <li key={entry.entryId} className="card" style={{ marginBlockEnd: '0.5rem' }}>
                 <span aria-hidden="true">{CATEGORY_ICON[entry.category]}</span>{' '}
                 <strong>{t(`activityTimeline.category.${entry.category}`)}</strong>
-                <div>{entry.summary}</div>
+                <div>{localizeActivitySummary(entry, t, i18n.language)}</div>
                 <div style={{ color: 'var(--color-text-muted)' }}>
                   {new Date(entry.timestampUtc).toLocaleString(i18n.language)}
                   {entry.detail && ` · ${entry.detail}`}

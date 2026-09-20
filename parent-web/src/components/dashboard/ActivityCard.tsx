@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import type { ActivityTimelineEntry } from '../../domain/activityTimeline';
 import { AsyncStates } from '../common/States';
 import { formatRelative } from '../../i18n/formatters';
+import { localizeActivitySummary } from '../../i18n/activitySummary';
 
 /** Enough to be a glance, not a log. The full log lives at /children/:childId/activity. */
 export const ACTIVITY_PREVIEW_LIMIT = 8;
@@ -43,7 +44,7 @@ export function ActivityCard({ entries, loading, error, onRetry, childNames }: A
             {shown.map((entry) => (
               <li key={entry.entryId} className="child-metric">
                 <span className="child-metric-value">
-                  <bdi className="iso">{entry.summary}</bdi>
+                  <bdi className="iso">{localizeActivitySummary(entry, t, i18n.language)}</bdi>
                 </span>
                 <span className="text-muted">
                   <bdi className="iso">{childNames.get(entry.childId) ?? ''}</bdi>{' '}

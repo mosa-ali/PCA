@@ -4,6 +4,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ActivityTimelinePage from '../../src/pages/children/ActivityTimelinePage';
 import { renderWithProviders } from '../utils/renderWithProviders';
+import i18n from '../../src/i18n';
 
 function TestApp() {
   return (
@@ -24,6 +25,17 @@ describe('ActivityTimelinePage category filter and pagination', () => {
 
     expect(screen.getByText('Asr prayer reminder delivered')).toBeInTheDocument();
     expect(screen.queryByText('Used an Education app for 22 minutes')).not.toBeInTheDocument();
+  });
+
+  it('localizes activity summaries on Arabic surfaces instead of leaking fixture English', async () => {
+    await i18n.changeLanguage('ar');
+    renderWithProviders(<TestApp />, { route: '/children/child-amir/activity', role: 'OWNER' });
+
+    expect(await screen.findByText('استخدام تطبيق من فئة التعليم لمدة 22 دقيقة')).toBeInTheDocument();
+    expect(screen.queryByText('Used an Education app for 22 minutes')).not.toBeInTheDocument();
+    expect(screen.getByText('زيارة موقع ضمن فئة المراجع')).toBeInTheDocument();
+    expect(screen.getByText('حظر موقع ضمن فئة للبالغين')).toBeInTheDocument();
+    await i18n.changeLanguage('en');
   });
 
   it('shows an honest empty state when a category filter matches nothing', async () => {

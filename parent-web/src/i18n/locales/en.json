@@ -1086,6 +1086,27 @@
     "filterLabel": "Filter by category",
     "filterAll": "All categories",
     "showMore": "Show {{count}} more",
+    "summary": {
+      "appUsage": "Used an {{category}} app for {{minutes}} minutes",
+      "webBrowsing": "Visited a site in the {{category}} category",
+      "contentBlock": "A site in the {{category}} category was blocked",
+      "breakSession": "Took a {{minutes}}-minute screen break after continuous use",
+      "eyeProtection": "An eye-rest reminder was shown",
+      "location": "Location updated to the {{zone}} trust zone",
+      "prayerReminder": "{{prayer}} prayer reminder delivered",
+      "unknown": "Activity recorded under the {{category}} category"
+    },
+    "summaryTerms": {
+      "Education": "Education",
+      "Social": "Social",
+      "Reference": "Reference",
+      "Video Streaming": "Video Streaming",
+      "Adult": "Adult",
+      "Gambling": "Gambling",
+      "Home": "Home",
+      "Asr": "Asr",
+      "Dhuhr": "Dhuhr"
+    },
     "category": {
       "APP_USAGE": "App usage",
       "WEB_BROWSING": "Web browsing",

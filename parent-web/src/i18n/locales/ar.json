@@ -1086,6 +1086,27 @@
     "filterLabel": "تصفية حسب الفئة",
     "filterAll": "كل الفئات",
     "showMore": "عرض {{count}} إضافية",
+    "summary": {
+      "appUsage": "استخدام تطبيق من فئة {{category}} لمدة {{minutes}} دقيقة",
+      "webBrowsing": "زيارة موقع ضمن فئة {{category}}",
+      "contentBlock": "حظر موقع ضمن فئة {{category}}",
+      "breakSession": "أخذ استراحة من الشاشة لمدة {{minutes}} دقائق بعد استخدام متواصل",
+      "eyeProtection": "عُرض تذكير براحة العين",
+      "location": "تحديث الموقع إلى منطقة الثقة «{{zone}}»",
+      "prayerReminder": "تسليم تذكير صلاة {{prayer}}",
+      "unknown": "سُجّل نشاط ضمن فئة {{category}}"
+    },
+    "summaryTerms": {
+      "Education": "التعليم",
+      "Social": "التواصل الاجتماعي",
+      "Reference": "المراجع",
+      "Video Streaming": "بث الفيديو",
+      "Adult": "للبالغين",
+      "Gambling": "المقامرة",
+      "Home": "المنزل",
+      "Asr": "العصر",
+      "Dhuhr": "الظهر"
+    },
     "category": {
       "APP_USAGE": "استخدام التطبيقات",
       "WEB_BROWSING": "تصفح الويب",
