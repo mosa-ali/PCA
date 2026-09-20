@@ -21,31 +21,31 @@ SELECT
   actual,
   CASE WHEN expected = actual THEN 'PASS' ELSE 'FAIL' END AS result
 FROM (
-  SELECT 'tables'                   AS check_name, 80 AS expected,
+  SELECT 'tables'                   AS check_name, 81 AS expected,
          (SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE') AS actual
-  UNION ALL SELECT 'columns', 662,
+  UNION ALL SELECT 'columns', 672,
          (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE())
-  UNION ALL SELECT 'primary keys', 80,
+  UNION ALL SELECT 'primary keys', 81,
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'PRIMARY KEY')
   UNION ALL SELECT 'foreign keys', 85,
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'FOREIGN KEY')
-  UNION ALL SELECT 'unique non-PK indexes', 33,
+  UNION ALL SELECT 'unique non-PK indexes', 34,
          (SELECT COUNT(*) FROM (SELECT DISTINCT table_name, index_name
             FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND non_unique = 0 AND index_name <> 'PRIMARY') u)
-  UNION ALL SELECT 'non-unique indexes', 121,
+  UNION ALL SELECT 'non-unique indexes', 123,
          (SELECT COUNT(*) FROM (SELECT DISTINCT table_name, index_name
             FROM information_schema.statistics
             WHERE table_schema = DATABASE() AND non_unique = 1) n)
-  UNION ALL SELECT 'CHECK constraints', 236,
+  UNION ALL SELECT 'CHECK constraints', 240,
          (SELECT COUNT(*) FROM information_schema.table_constraints
             WHERE table_schema = DATABASE() AND constraint_type = 'CHECK')
   UNION ALL SELECT 'reference data rows', 14,
          (SELECT COUNT(*) FROM `billing_currencies`) + (SELECT COUNT(*) FROM `billing_commercial_markets`) + (SELECT COUNT(*) FROM `billing_country_market_rules`) + (SELECT COUNT(*) FROM `entitlement_defaults`)
-  UNION ALL SELECT 'schema_migrations rows', 40,
+  UNION ALL SELECT 'schema_migrations rows', 41,
          (SELECT COUNT(*) FROM `schema_migrations`)
   UNION ALL SELECT 'views (must be 0)', 0,
          (SELECT COUNT(*) FROM information_schema.tables
@@ -59,8 +59,8 @@ FROM (
 -- Journal endpoints, so a truncated paste is visible rather than silent.
 SELECT
   '0001_mysql_baseline.sql' AS expected_first, MIN(version) AS actual_first,
-  '0042_parent_login_step_up_codes.sql' AS expected_last,  MAX(version) AS actual_last,
-  CASE WHEN MIN(version) = '0001_mysql_baseline.sql' AND MAX(version) = '0042_parent_login_step_up_codes.sql' THEN 'PASS' ELSE 'FAIL' END AS result
+  '0043_parent_family_memberships_and_profile.sql' AS expected_last,  MAX(version) AS actual_last,
+  CASE WHEN MIN(version) = '0001_mysql_baseline.sql' AND MAX(version) = '0043_parent_family_memberships_and_profile.sql' THEN 'PASS' ELSE 'FAIL' END AS result
 FROM `schema_migrations`;
 
 -- Environment, which PCA pins independently of the schema. MySQL must be

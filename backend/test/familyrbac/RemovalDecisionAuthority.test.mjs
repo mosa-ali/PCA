@@ -231,18 +231,11 @@ test('Owner can apply KEEP_ACTIVE via signed remote decision and the exact decis
   assert.ok(events.some((event) => event.resultStatus === 'SUCCESS' && event.actionId === result.decisionActionId));
 });
 
-test('Administrator is allowed only when family policy enables it (RBAC denial path)', async () => {
-  const denied = buildAuthority();
-  const deniedRequest = await createPending(denied.authority, { requestId: 'request-admin-denied' });
-  await assert.rejects(
-    denied.authority.decideWithSignedRemoteParent(sign(unsignedDecision(deniedRequest, { actorDeviceId: ADMIN }))),
-    (error) => error instanceof RemovalDecisionError && error.code === 'NOT_AUTHORIZED',
-  );
-
-  const allowed = buildAuthority({ adminEnabled: true });
-  const allowedRequest = await createPending(allowed.authority, { requestId: 'request-admin-allowed' });
-  const result = await allowed.authority.decideWithSignedRemoteParent(
-    sign(unsignedDecision(allowedRequest, { actorDeviceId: ADMIN, decision: 'ALLOW_REMOVAL' })),
+test('Administrator may make the normal device-protection decision without a policy toggle', async () => {
+  const authority = buildAuthority();
+  const request = await createPending(authority.authority, { requestId: 'request-admin-allowed' });
+  const result = await authority.authority.decideWithSignedRemoteParent(
+    sign(unsignedDecision(request, { actorDeviceId: ADMIN, decision: 'ALLOW_REMOVAL' })),
   );
   assert.equal(result.state, 'ALLOW_REMOVAL');
 });

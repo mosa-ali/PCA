@@ -944,6 +944,24 @@ CREATE TABLE `family_member_invitations` (
   CONSTRAINT `family_member_invitations_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'ACCEPTED',_utf8mb4'EXPIRED',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- family_parent_memberships (defined by backend/migrations/0043_parent_family_memberships_and_profile.sql)
+CREATE TABLE `family_parent_memberships` (
+  `membership_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `role` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`membership_id`),
+  UNIQUE KEY `family_parent_memberships_account_family_key` (`account_id`, `family_id`),
+  KEY `family_parent_memberships_family_idx` (`family_id`),
+  KEY `family_parent_memberships_service_account_idx` (`service_account_id`),
+  CONSTRAINT `family_parent_memberships_role_check` CHECK ((`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))),
+  CONSTRAINT `family_parent_memberships_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- family_rbac_policy_config (defined by backend/migrations/0027_family_member_invitations.sql)
 CREATE TABLE `family_rbac_policy_config` (
   `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1003,7 +1021,7 @@ CREATE TABLE `parent_account_preferences` (
   CONSTRAINT `parent_account_preferences_push_check` CHECK ((`push_requests_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql)
+-- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql, 0043_parent_family_memberships_and_profile.sql)
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `email_hash` binary(32) NOT NULL,
@@ -1019,12 +1037,17 @@ CREATE TABLE `parent_accounts` (
   `default_managed_device_limit` int NULL,
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `verified_at` datetime(3) NULL,
+  `first_login_completed_at` datetime(3) NULL,
   `disabled_at` datetime(3) NULL,
+  `account_type` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `estimated_child_count` int unsigned NULL,
   PRIMARY KEY (`account_id`),
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
   UNIQUE KEY `parent_accounts_service_account_id_key` (`service_account_id`),
   CONSTRAINT `parent_accounts_free_access_mode_check` CHECK (((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))),
   CONSTRAINT `parent_accounts_status_check` CHECK ((`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))),
+  CONSTRAINT `parent_accounts_account_type_check` CHECK (((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))),
+  CONSTRAINT `parent_accounts_estimated_child_count_check` CHECK (((`estimated_child_count` is null) or (`estimated_child_count` <= 50))),
   CONSTRAINT `parent_accounts_time_limited_has_duration_check` CHECK (((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))),
   CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null))))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -1042,6 +1065,20 @@ CREATE TABLE `parent_email_verification_codes` (
   PRIMARY KEY (`code_id`),
   KEY `parent_email_verification_codes_account_idx` (`account_id`, `created_at`),
   CONSTRAINT `parent_email_verification_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_login_step_up_codes (defined by backend/migrations/0042_parent_login_step_up_codes.sql)
+CREATE TABLE `parent_login_step_up_codes` (
+  `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  `attempt_count` int NOT NULL DEFAULT 0,
+  PRIMARY KEY (`code_id`),
+  KEY `parent_login_step_up_codes_account_idx` (`account_id`, `created_at`),
+  CONSTRAINT `parent_login_step_up_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes (defined by backend/migrations/0029_parent_password_reset_codes.sql)
@@ -1072,6 +1109,25 @@ CREATE TABLE `platform_admin_accounts` (
   CONSTRAINT `platform_admin_accounts_display_name_check` CHECK ((char_length(`display_name`) between 1 and 128)),
   CONSTRAINT `platform_admin_accounts_password_credential_check` CHECK ((char_length(`password_credential`) between 1 and 255)),
   CONSTRAINT `platform_admin_accounts_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'DISABLED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- platform_admin_activation_tokens (defined by backend/migrations/0041_platform_admin_activation_tokens.sql)
+CREATE TABLE `platform_admin_activation_tokens` (
+  `activation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `admin_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `used_at` datetime(3) NULL,
+  `revoked_at` datetime(3) NULL,
+  PRIMARY KEY (`activation_id`),
+  UNIQUE KEY `platform_admin_activation_tokens_hash_key` (`token_hash`),
+  KEY `platform_admin_activation_tokens_admin_idx` (`admin_id`),
+  CONSTRAINT `platform_admin_activation_tokens_admin_fk` FOREIGN KEY (`admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `platform_admin_activation_tokens_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `platform_admin_activation_tokens_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `platform_admin_activation_tokens_purpose_check` CHECK ((`purpose` = _utf8mb4'PLATFORM_ADMIN_FIRST_TIME'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- platform_admin_audit_events (defined by backend/migrations/0005_platform_admin_identity_rbac_audit.sql, altered by 0014_complimentary_entitlement_grants.sql, 0015_settlement_reconciliation.sql)

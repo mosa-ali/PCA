@@ -114,6 +114,7 @@ const files = [
   "test/familymembers/service.test.mjs",
   "test/familyrbac/FamilyAuditStore.test.mjs",
   "test/familyrbac/auditWiring.test.mjs",
+  "test/security/familyRoleArchitecture.test.mjs",
   "test/retention/retentionRoutes.test.mjs",
   "test/childprofiles/ChildProfileMembershipResolver.test.mjs",
   "test/childrequests/ChildRequestService.test.mjs",

@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    80 tables
---   662 columns
---    80 primary keys
+--    81 tables
+--   672 columns
+--    81 primary keys
 --    85 foreign keys
---    33 unique non-primary-key indexes
---   121 non-unique indexes
---   236 CHECK constraints
+--    34 unique non-primary-key indexes
+--   123 non-unique indexes
+--   240 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    40 schema_migrations journal rows
+--    41 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -974,6 +974,24 @@ CREATE TABLE `family_member_invitations` (
   CONSTRAINT `family_member_invitations_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'ACCEPTED',_utf8mb4'EXPIRED',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- family_parent_memberships (defined by backend/migrations/0043_parent_family_memberships_and_profile.sql)
+CREATE TABLE `family_parent_memberships` (
+  `membership_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `role` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`membership_id`),
+  UNIQUE KEY `family_parent_memberships_account_family_key` (`account_id`, `family_id`),
+  KEY `family_parent_memberships_family_idx` (`family_id`),
+  KEY `family_parent_memberships_service_account_idx` (`service_account_id`),
+  CONSTRAINT `family_parent_memberships_role_check` CHECK ((`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))),
+  CONSTRAINT `family_parent_memberships_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- family_rbac_policy_config (defined by backend/migrations/0027_family_member_invitations.sql)
 CREATE TABLE `family_rbac_policy_config` (
   `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1033,7 +1051,7 @@ CREATE TABLE `parent_account_preferences` (
   CONSTRAINT `parent_account_preferences_push_check` CHECK ((`push_requests_enabled` in (0,1)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql)
+-- parent_accounts (defined by backend/migrations/0013_parent_account_identity.sql, altered by 0042_parent_login_step_up_codes.sql, 0043_parent_family_memberships_and_profile.sql)
 CREATE TABLE `parent_accounts` (
   `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `email_hash` binary(32) NOT NULL,
@@ -1051,11 +1069,15 @@ CREATE TABLE `parent_accounts` (
   `verified_at` datetime(3) NULL,
   `first_login_completed_at` datetime(3) NULL,
   `disabled_at` datetime(3) NULL,
+  `account_type` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  `estimated_child_count` int unsigned NULL,
   PRIMARY KEY (`account_id`),
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
   UNIQUE KEY `parent_accounts_service_account_id_key` (`service_account_id`),
   CONSTRAINT `parent_accounts_free_access_mode_check` CHECK (((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))),
   CONSTRAINT `parent_accounts_status_check` CHECK ((`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))),
+  CONSTRAINT `parent_accounts_account_type_check` CHECK (((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))),
+  CONSTRAINT `parent_accounts_estimated_child_count_check` CHECK (((`estimated_child_count` is null) or (`estimated_child_count` <= 50))),
   CONSTRAINT `parent_accounts_time_limited_has_duration_check` CHECK (((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))),
   CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null))))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -1658,4 +1680,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0039_profile_protection_mode.sql'),
   ('0040_delete_now_ledger.sql'),
   ('0041_platform_admin_activation_tokens.sql'),
-  ('0042_parent_login_step_up_codes.sql');
+  ('0042_parent_login_step_up_codes.sql'),
+  ('0043_parent_family_memberships_and_profile.sql');
