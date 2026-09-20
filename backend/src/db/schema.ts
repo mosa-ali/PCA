@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 80 tables, including schema_migrations itself),
+// central MySQL schema (all 81 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0042; 40 files, 0009/0010 never existed) from an empty database
+// through 0043; 41 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -1925,6 +1925,45 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "family_parent_memberships",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0043_parent_family_memberships_and_profile.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familymembers",
+    columns: [
+      { name: "membership_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier." },
+      { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Family-scoped opaque identifier." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Parent account opaque identifier." },
+      { name: "service_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Optional service-session identity reference." },
+      { name: "role", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed normal family-role vocabulary: ADMINISTRATOR, VIEWER, or CHILD." },
+      { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: "ACTIVE", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed membership lifecycle vocabulary." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["membership_id"],
+    uniqueIndexes: [
+      { name: "family_parent_memberships_account_family_key", columns: ["account_id", "family_id"], unique: true },
+    ],
+    indexes: [
+      { name: "family_parent_memberships_family_idx", columns: ["family_id"], unique: false },
+      { name: "family_parent_memberships_service_account_idx", columns: ["service_account_id"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "family_parent_memberships_role_check", clause: "(`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))" },
+      { name: "family_parent_memberships_status_check", clause: "(`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED'))" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Family membership is relationship-scoped; membership existence is resolved by the family authorization layer.", source: "backend/migrations/0043_parent_family_memberships_and_profile.sql" },
+      { column: "account_id", impliedReferencedTable: "parent_accounts", impliedReferencedColumn: "account_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Account identity is kept separate from family-scoped role membership.", source: "backend/migrations/0043_parent_family_memberships_and_profile.sql" },
+      { column: "service_account_id", impliedReferencedTable: "service_accounts", impliedReferencedColumn: "account_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Optional service-session identity reference; role authority remains the family membership row.", source: "backend/migrations/0043_parent_family_memberships_and_profile.sql" },
+    ],
+  },
+  {
     name: "family_rbac_policy_config",
     engine: 'InnoDB',
     charset: "utf8mb4",
@@ -2070,7 +2109,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0013_parent_account_identity.sql",
-    alteredByMigrations: ["0042_parent_login_step_up_codes.sql"],
+    alteredByMigrations: ["0042_parent_login_step_up_codes.sql", "0043_parent_family_memberships_and_profile.sql"],
     ownerModule: "backend/src/familymembers",
     columns: [
       { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
@@ -2089,6 +2128,8 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "verified_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "first_login_completed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
       { name: "disabled_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "account_type", columnType: "varchar(24)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded signup profile category; never an authority or authentication input." },
+      { name: "estimated_child_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded signup profile estimate, not a child record or authority input." },
     ],
     primaryKey: ["account_id"],
     uniqueIndexes: [
@@ -2104,6 +2145,8 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     checkConstraints: [
       { name: "parent_accounts_free_access_mode_check", clause: "((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))" },
       { name: "parent_accounts_status_check", clause: "(`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))" },
+      { name: "parent_accounts_account_type_check", clause: "((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))" },
+      { name: "parent_accounts_estimated_child_count_check", clause: "((`estimated_child_count` is null) or (`estimated_child_count` <= 50))" },
       { name: "parent_accounts_time_limited_has_duration_check", clause: "((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))" },
       { name: "parent_accounts_verified_has_free_access_check", clause: "(((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null)))" },
     ],

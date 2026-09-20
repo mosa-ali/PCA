@@ -35,22 +35,18 @@ describe('evaluatePermission', () => {
     if (result.allowed) expect(result.requiresStepUp).toBe(true);
   });
 
-  it('denies Administrator from adding another Administrator or changing roles', () => {
-    expect(evaluatePermission('ADMINISTRATOR', 'ADD_ADMINISTRATOR').allowed).toBe(false);
-    expect(evaluatePermission('ADMINISTRATOR', 'CHANGE_ANY_ROLE').allowed).toBe(false);
+  it('allows Administrator to manage normal family roles with step-up', () => {
+    for (const action of ['ADD_ADMINISTRATOR', 'CHANGE_ANY_ROLE'] as const) {
+      const result = evaluatePermission('ADMINISTRATOR', action);
+      expect(result.allowed).toBe(true);
+      if (result.allowed) expect(result.requiresStepUp).toBe(true);
+    }
   });
 
-  it('denies Administrator from adding a Viewer by default (safe default delegation off)', () => {
+  it('allows Administrator to manage normal family members with step-up', () => {
     const result = evaluatePermission('ADMINISTRATOR', 'ADD_VIEWER', SAFE_DEFAULT_DELEGATION);
-    expect(result.allowed).toBe(false);
-  });
-
-  it('allows Administrator to add a Viewer when Owner delegates it', () => {
-    const result = evaluatePermission('ADMINISTRATOR', 'ADD_VIEWER', {
-      administratorsCanManageViewers: true,
-      administratorsCanRevokeDevices: false,
-    });
     expect(result.allowed).toBe(true);
+    if (result.allowed) expect(result.requiresStepUp).toBe(true);
   });
 
   it('only Owner can transfer ownership or reveal recovery material, with step-up', () => {
@@ -94,18 +90,11 @@ describe('evaluatePermission', () => {
       expect(evaluatePermission('CHILD', 'CREATE_DEVICE_INVITATION').allowed).toBe(false);
     });
 
-    it('revoking an invitation or confirming pairing requires Owner, or a delegated Administrator', () => {
+    it('revoking an invitation or confirming pairing is normal Administrator device administration', () => {
       for (const action of ['REVOKE_DEVICE_INVITATION', 'CONFIRM_DEVICE_PAIRING'] as const) {
         expect(evaluatePermission('OWNER', action).allowed).toBe(true);
         expect(evaluatePermission('VIEWER', action).allowed).toBe(false);
-        expect(evaluatePermission('ADMINISTRATOR', action, {
-          administratorsCanManageViewers: false,
-          administratorsCanRevokeDevices: false,
-        }).allowed).toBe(false);
-        expect(evaluatePermission('ADMINISTRATOR', action, {
-          administratorsCanManageViewers: false,
-          administratorsCanRevokeDevices: true,
-        }).allowed).toBe(true);
+        expect(evaluatePermission('ADMINISTRATOR', action).allowed).toBe(true);
       }
     });
   });

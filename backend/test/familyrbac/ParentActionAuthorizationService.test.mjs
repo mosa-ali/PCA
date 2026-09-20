@@ -65,13 +65,12 @@ test('Owner allowed: an ordinary Owner action authorizes', () => {
   assert.deepEqual(decision, { verdict: 'ALLOW' });
 });
 
-test('Admin allowed only configured operations: default config denies ADD_VIEWER for Administrator', () => {
+test('Administrator may manage normal family members with fresh step-up', () => {
   const { service } = makeService();
   const decision = service.authorize(
     baseRequest({ actorDeviceId: 'dev-admin', operation: 'ADD_VIEWER', idempotencyKey: 'idem-2', actionId: 'act-2' }),
   );
-  assert.equal(decision.verdict, 'DENY');
-  assert.equal(decision.reason, 'ROLE_NOT_PERMITTED');
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'STEP_UP_REQUIRED_BUT_ABSENT' });
 });
 
 test('Admin allowed only configured operations: EDIT_CHILD_POLICY is unconditionally allowed for Administrator', () => {
@@ -563,7 +562,7 @@ test('family/members operations: a Viewer is denied every one of them outright (
   }
 });
 
-test('family/members operations: an Administrator is denied ADD_ADMINISTRATOR/CHANGE_ROLE outright -- these are Owner-only regardless of FamilyRbacPolicyConfig', () => {
+test('family/members operations: an Administrator may manage normal roles with fresh step-up', () => {
   const { service } = makeService();
   for (const operation of ['ADD_ADMINISTRATOR', 'CHANGE_ROLE']) {
     const decision = service.authorize(
@@ -576,7 +575,7 @@ test('family/members operations: an Administrator is denied ADD_ADMINISTRATOR/CH
         actionId: `act-fm-admin-${operation}`,
       }),
     );
-    assert.equal(decision.verdict, 'DENY', `expected DENY for Administrator attempting ${operation}`);
+    assert.deepEqual(decision, { verdict: 'ALLOW' }, `expected ALLOW for Administrator attempting ${operation}`);
   }
 });
 
@@ -604,7 +603,7 @@ test('family/members operations: ADD_VIEWER for Owner needs no step-up and no Fa
   assert.deepEqual(decision, { verdict: 'ALLOW' });
 });
 
-test('family/members operations: ADD_VIEWER for Administrator is denied under the default (safe) FamilyRbacPolicyConfig even with fresh step-up', () => {
+test('family/members operations: ADD_VIEWER for Administrator is allowed with fresh step-up', () => {
   const { service } = makeService();
   const decision = service.authorize(
     baseRequest({
@@ -616,16 +615,17 @@ test('family/members operations: ADD_VIEWER for Administrator is denied under th
       actionId: 'act-fm-admin-add-viewer-default',
     }),
   );
-  assert.equal(decision.verdict, 'DENY');
+  assert.deepEqual(decision, { verdict: 'ALLOW' });
 });
 
-test('FamilyRbacPolicyConfigStore integration: real per-family config (not the hardcoded default) genuinely changes the ADD_VIEWER verdict for an Administrator, proving configProvider is called with the REQUEST familyId', async () => {
+test('FamilyRbacPolicyConfigStore remains readable without changing normal Administrator authority', async () => {
   const configStore = new FamilyRbacPolicyConfigStore({
     async getForFamily() { return null; },
     async setForFamily() {},
   });
   await configStore.setForFamily('fam-1', { administratorCanManageViewers: true, administratorCanRevokeDeviceOrDisableProtection: false }, T0);
-  // Sanity: an unconfigured family still gets the safe default, so this isn't just "always ALLOW now".
+  // The configuration remains durable compatibility state; normal role
+  // authority no longer depends on an opt-in delegation flag.
   assert.equal(configStore.snapshotFor('fam-NEVER-CONFIGURED').administratorCanManageViewers, false);
 
   const { service } = makeService(() => T0, undefined, configStore.snapshotFor);
@@ -640,7 +640,7 @@ test('FamilyRbacPolicyConfigStore integration: real per-family config (not the h
       actionId: 'act-fm-rbac-store-fam1',
     }),
   );
-  assert.deepEqual(allowed, { verdict: 'ALLOW' }); // fam-1's real, durable config delegates administratorCanManageViewers -- the default alone would DENY this (see the "default (safe) FamilyRbacPolicyConfig" test above)
+  assert.deepEqual(allowed, { verdict: 'ALLOW' });
 });
 
 // =====================================================================

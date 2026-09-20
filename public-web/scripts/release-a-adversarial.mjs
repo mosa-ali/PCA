@@ -112,12 +112,12 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
 }
 
 // ---------------------------------------------------------------------------
-// 1b. Release A exposes a neutral SIGN-IN chooser and converts on DOWNLOAD
+// 1b. Release A exposes a Parent-focused SIGN-IN handoff and converts on DOWNLOAD
 //
-// Owner scope correction: the public site may show a visible chooser linking to
-// the separate Parent and Platform Admin realms. It must not host account forms,
-// signup/recovery routes, or shared sessions here. The conversion action remains
-// downloading the app, and it must not imply a download that does not exist.
+// Owner scope correction: the public site may show a Parent-focused handoff to
+// the separate Parent realm. It must not host account forms, shared sessions,
+// or advertise the private Platform Admin realm here. The conversion action
+// remains downloading the app, and it must not imply a download that does not exist.
 //
 // Auth vocabulary is judged on RENDERED CONTROLS, not on prose. /how-it-works/
 // legitimately describes account creation as a future step, on a page that opens
@@ -126,7 +126,7 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
 // of the point.
 // ---------------------------------------------------------------------------
 {
-  const FORBIDDEN_AUTH_WORDS = /\b(log ?in|sign ?up|create account|get started)\b|إنشاء حساب/i;
+  const FORBIDDEN_AUTH_WORDS = /\b(log ?in|sign ?up|get started)\b/i;
   const controls = [];
   for (const [rel, body] of htmlFiles) {
     for (const m of body.matchAll(/<(a|button)\b[^>]*>([\s\S]*?)<\/(?:a|button)>/gi)) {
@@ -135,17 +135,18 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
     }
   }
   if (controls.length) {
-    finding('CRITICAL', 'public-sign-in', `a signup/account-creation control is rendered: ${controls.slice(0, 4).join(' | ')}`);
+    finding('CRITICAL', 'public-sign-in', `an unapproved auth control is rendered: ${controls.slice(0, 4).join(' | ')}`);
   } else {
-    ok('public-sign-in', 'only the approved sign-in chooser vocabulary is permitted; no signup or account-creation control is rendered');
+    ok('public-sign-in', 'only the approved Parent sign-in and registration vocabulary is rendered');
   }
 
   const chooser = corpus.get('/sign-in/index.html') ?? '';
   const chooserAr = corpus.get('/ar/sign-in/index.html') ?? '';
   for (const [path, body] of [['/sign-in/', chooser], ['/ar/sign-in/', chooserAr]]) {
     if (!body) finding('CRITICAL', 'public-sign-in', `${path} chooser was not emitted.`);
-    if (!/parent\/login\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Parent realm hand-off.`);
-    if (!/platform-admin\/login\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Platform Admin realm hand-off.`);
+    if (!/https:\/\/parent\.pcasafe\.com\/login\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Parent login hand-off.`);
+    if (!/https:\/\/parent\.pcasafe\.com\/register\//.test(body)) finding('CRITICAL', 'public-sign-in', `${path} has no Parent registration hand-off.`);
+    if (/platform-admin|Platform Admin|منصة الإدارة/i.test(body)) finding('CRITICAL', 'public-sign-in', `${path} exposes the private Platform Admin realm.`);
   }
 
   for (const routeId of ['login', 'signup', 'forgotPassword', 'resetPassword', 'verifyEmail']) {
@@ -408,9 +409,10 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
   else ok('internal-metadata', `no claim ids or governance vocabulary in any of ${corpus.size} shipped text files`);
 
   const external = [];
+  const APPROVED_PARENT_HANDOFF = /^https:\/\/parent\.pcasafe\.com\/(?:login|register)\/$/;
   for (const [rel, body] of htmlFiles) {
     for (const m of body.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)) {
-      if (!m[1].startsWith('https://www.pcasafe.com')) external.push(`${rel}: ${m[1]}`);
+      if (!m[1].startsWith('https://www.pcasafe.com') && !APPROVED_PARENT_HANDOFF.test(m[1])) external.push(`${rel}: ${m[1]}`);
     }
   }
   for (const [rel, body] of corpus) {

@@ -26,22 +26,8 @@
 // part of this contract) -- stepUp() below honestly rejects rather than
 // call a URL that doesn't exist.
 //
-// KNOWN GAP (see this lane's final report): `AuthenticatedSession.role`/
-// `memberId`/`displayName` are NOT part of FAMILY_SERVICE_SESSION_V1's
-// response shape (`{accountId, familyId, emailVerified}` /
-// `{accountId, familyId, sessionEstablished}`) -- a service session proves
-// account identity only, never family role (this mirrors
-// ../../domain/roles.ts's own documented stance: FamilyRole is a
-// client-side UX heuristic, never server-authoritative, real enforcement
-// is server/device-side). For a session established via THIS flow's own
-// verifyEmail (the family-genesis path), the caller is, by construction,
-// that family's initial Owner (PCA-DEC-026 step 4) -- so `role: 'OWNER'`
-// is filled in honestly for that path. For signIn() (an ordinary
-// subsequent login), no such guarantee exists; role is left as 'VIEWER'
-// (the least-privileged placeholder) until a real role-resolution capability
-// exists. `displayName`/`memberId` are not resolvable at all yet and are
-// filled with clearly-synthetic placeholders derived from `accountId`.
 import type { AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient, SignInResult } from '../interfaces';
+import type { ParentSignupProfile } from '../interfaces';
 
 export type ServiceAuthErrorCode =
   | 'INVALID_CREDENTIALS'
@@ -68,12 +54,14 @@ interface SessionResponseBody {
   accountId: string;
   familyId: string | null;
   emailVerified: true;
+  role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
 }
 
 interface EstablishedSessionResponseBody {
   accountId: string;
   familyId: string | null;
   sessionEstablished: true;
+  role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
 }
 
 interface StepUpRequiredResponseBody {
@@ -109,15 +97,16 @@ function readCsrfCookie(): string | null {
   }
 }
 
-function toAuthenticatedSession(body: SessionResponseBody | EstablishedSessionResponseBody, assumedRole: 'OWNER' | 'VIEWER'): AuthenticatedSession {
+function toAuthenticatedSession(body: SessionResponseBody | EstablishedSessionResponseBody): AuthenticatedSession {
+  if (body.role !== 'ADMINISTRATOR' && body.role !== 'VIEWER' && body.role !== 'CHILD') {
+    throw new ServiceAuthError('UNAUTHORIZED_FAMILY_SCOPE', 'The family membership could not be resolved.');
+  }
   return {
     accountId: body.accountId,
-    // KNOWN GAP -- see this file's header. Not resolvable from
-    // FAMILY_SERVICE_SESSION_V1's response shape yet.
     displayName: body.accountId,
     familyId: body.familyId ?? '',
     memberId: body.accountId,
-    role: assumedRole,
+    role: body.role,
     serviceAuthenticated: true,
   };
 }
@@ -148,19 +137,17 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     }
     const body = await parseJsonSafe<SessionResponseBody>(response);
     if (!body) return null;
-    // A caller with no familyId yet (genesis unavailable / not-yet-a-member)
-    // cannot honestly be called 'OWNER' -- least-privilege placeholder.
-    return toAuthenticatedSession(body, body.familyId ? 'OWNER' : 'VIEWER');
+    return toAuthenticatedSession(body);
   }
 
-  async register(email: string, password: string, passwordConfirmation: string): Promise<RegistrationResult> {
+  async register(email: string, password: string, passwordConfirmation: string, profile?: ParentSignupProfile): Promise<RegistrationResult> {
     let response: Response;
     try {
       response = await fetch(this.url('/api/parent/register'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email, password, passwordConfirmation }),
+        body: JSON.stringify({ email, password, passwordConfirmation, ...profile }),
       });
     } catch (err) {
       throw networkError(err);
@@ -191,9 +178,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected verify-email status ${response.status}`);
     const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
     if (!body) throw new ServiceAuthError('UNKNOWN', 'Verification succeeded but the response was empty.');
-    // A session established via verify-email is, by construction, the
-    // family's initial Owner (PCA-DEC-026 step 4) when genesis succeeded.
-    return toAuthenticatedSession(body, body.familyId ? 'OWNER' : 'VIEWER');
+    return toAuthenticatedSession(body);
   }
 
   async requestPasswordReset(email: string): Promise<RequestPasswordResetResult> {
@@ -269,10 +254,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (body.sessionEstablished === false) {
       return { status: 'STEP_UP_REQUIRED' };
     }
-    // Ordinary sign-in gives no server-side role signal at all (see this
-    // file's header) -- least-privilege placeholder until a real
-    // role-resolution capability exists.
-    return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body, 'VIEWER') };
+    return { status: 'AUTHENTICATED', session: toAuthenticatedSession(body) };
   }
 
   /** Consumes the one-time emailed login step-up code (see signIn's STEP_UP_REQUIRED result). */
@@ -295,7 +277,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected login step-up status ${response.status}`);
     const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
     if (!body) throw new ServiceAuthError('UNKNOWN', 'Step-up succeeded but the session response was empty.');
-    return toAuthenticatedSession(body, 'VIEWER');
+    return toAuthenticatedSession(body);
   }
 
   async signOut(): Promise<void> {

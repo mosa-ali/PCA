@@ -1,8 +1,15 @@
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
+import type { FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
 
 export type ParentAccountId = string;
 export type ParentAccountStatus = 'PENDING_VERIFICATION' | 'VERIFIED';
 export type FreeAccessMode = 'TIME_LIMITED' | 'PERPETUAL';
+export type ParentAccountType = 'PARENT_GUARDIAN' | 'OTHER';
+
+export interface ParentSignupProfile {
+  accountType: ParentAccountType;
+  estimatedChildCount: number | null;
+}
 
 /**
  * PCA-ADD-IDENT-017/018: snapshotted onto the account exactly once, at
@@ -41,6 +48,10 @@ export interface ParentAccountRecord {
    * a login-step-up code exactly when this is still null.
    */
   firstLoginCompletedAt: Date | null;
+  /** Profile metadata only; never an authorization input. */
+  accountType: ParentAccountType | null;
+  /** Profile metadata only; nullable and bounded at the HTTP/domain boundary. */
+  estimatedChildCount: number | null;
 }
 
 /** Output of a successful registration call -- deliberately identical in shape whether the email was new or already pending, so the HTTP layer can never distinguish the two (see ParentAccountService.register). */
@@ -53,6 +64,7 @@ export interface VerifyEmailOutcome {
   familyId: OpaqueFamilyId | null;
   rawSessionToken: string;
   sessionExpiresAt: Date;
+  role: FamilyMembershipRole | null;
 }
 
 /**
@@ -65,7 +77,7 @@ export interface VerifyEmailOutcome {
  * this type's pre-existing shape.
  */
 export type LoginOutcome =
-  | { status: 'AUTHENTICATED'; accountId: ParentAccountId; familyId: OpaqueFamilyId | null; rawSessionToken: string; sessionExpiresAt: Date }
+  | { status: 'AUTHENTICATED'; accountId: ParentAccountId; familyId: OpaqueFamilyId | null; rawSessionToken: string; sessionExpiresAt: Date; role: FamilyMembershipRole | null }
   | { status: 'STEP_UP_REQUIRED' };
 
 export interface CompleteLoginStepUpOutcome {
@@ -73,12 +85,14 @@ export interface CompleteLoginStepUpOutcome {
   familyId: OpaqueFamilyId | null;
   rawSessionToken: string;
   sessionExpiresAt: Date;
+  role: FamilyMembershipRole | null;
 }
 
 export interface SessionReadOutcome {
   accountId: ParentAccountId;
   familyId: OpaqueFamilyId | null;
   emailVerified: true;
+  role: FamilyMembershipRole | null;
 }
 
 /** Deliberately identical whether or not the email matches a VERIFIED account -- see ParentAccountService.requestPasswordReset, same enumeration-oracle avoidance as RegisterOutcome. */

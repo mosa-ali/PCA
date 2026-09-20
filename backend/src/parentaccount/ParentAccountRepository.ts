@@ -1,11 +1,13 @@
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
-import type { FreeAccessSnapshot, ParentAccountId, ParentAccountRecord } from './types.js';
+import type { FreeAccessSnapshot, ParentAccountId, ParentAccountRecord, ParentAccountType } from './types.js';
 
 export interface NewPendingAccount {
   accountId: ParentAccountId;
   emailHash: Buffer;
   passwordHash: string;
   createdAt: Date;
+  accountType: ParentAccountType | null;
+  estimatedChildCount: number | null;
 }
 
 export interface NewVerificationCode {

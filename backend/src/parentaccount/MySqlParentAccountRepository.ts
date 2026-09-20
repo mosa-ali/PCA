@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
+import type { PoolConnection } from 'mysql2/promise';
+import type { FamilyMembershipRepository, FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
+import { MySqlFamilyMembershipRepository } from '../familymembers/MySqlFamilyMembershipRepository.js';
+import type { InvitedFamilyRole } from '../familymembers/types.js';
 import type {
   ActiveLoginStepUpCode,
   ActivePasswordResetCode,
@@ -11,7 +15,7 @@ import type {
   ParentAccountRepository,
   VerifiedTransition,
 } from './ParentAccountRepository.js';
-import type { FreeAccessMode, ParentAccountId, ParentAccountRecord, ParentAccountStatus } from './types.js';
+import type { FreeAccessMode, ParentAccountId, ParentAccountRecord, ParentAccountStatus, ParentAccountType } from './types.js';
 
 interface AccountRow {
   account_id: string;
@@ -30,6 +34,8 @@ interface AccountRow {
   verified_at: Date | null;
   disabled_at: Date | null;
   first_login_completed_at: Date | null;
+  account_type: ParentAccountType | null;
+  estimated_child_count: number | null;
 }
 
 interface CodeRow {
@@ -73,17 +79,22 @@ function rowToRecord(row: AccountRow): ParentAccountRecord {
     verifiedAt: row.verified_at,
     disabledAt: row.disabled_at,
     firstLoginCompletedAt: row.first_login_completed_at,
+    accountType: row.account_type,
+    estimatedChildCount: row.estimated_child_count,
   };
 }
 
-export class MySqlParentAccountRepository implements ParentAccountRepository {
+export class MySqlParentAccountRepository implements ParentAccountRepository, FamilyMembershipRepository {
+  private readonly familyMembershipRepository = new MySqlFamilyMembershipRepository();
+
   async createPendingAccount(record: NewPendingAccount): Promise<void> {
     await runInTransaction((conn) =>
       execute(
         conn,
-        `INSERT INTO parent_accounts (account_id, email_hash, password_hash, status, created_at)
-         VALUES (?, ?, ?, 'PENDING_VERIFICATION', ?)`,
-        [record.accountId, record.emailHash, record.passwordHash, record.createdAt],
+        `INSERT INTO parent_accounts
+           (account_id, email_hash, password_hash, status, account_type, estimated_child_count, created_at)
+         VALUES (?, ?, ?, 'PENDING_VERIFICATION', ?, ?, ?)`,
+        [record.accountId, record.emailHash, record.passwordHash, record.accountType, record.estimatedChildCount, record.createdAt],
       ),
     );
   }
@@ -375,5 +386,32 @@ export class MySqlParentAccountRepository implements ParentAccountRepository {
         [familyId, familyReferenceHash, now],
       ),
     );
+  }
+
+  // These three methods expose the same durable membership port to the
+  // identity service for compatibility with existing direct MySQL test
+  // composition. They delegate to the single family_parent_memberships
+  // persistence implementation; no second role store is created.
+  createGenesisAdministrator(accountId: string, serviceAccountId: string, familyId: string, now: Date): Promise<void> {
+    return this.familyMembershipRepository.createGenesisAdministrator(accountId, serviceAccountId, familyId, now);
+  }
+
+  applyAcceptedInvitationRole(accountId: string, serviceAccountId: string | null, familyId: string, role: InvitedFamilyRole, now: Date): Promise<void> {
+    return this.familyMembershipRepository.applyAcceptedInvitationRole(accountId, serviceAccountId, familyId, role, now);
+  }
+
+  applyAcceptedInvitationRoleOnConnection(
+    conn: PoolConnection,
+    accountId: string,
+    serviceAccountId: string | null,
+    familyId: string,
+    role: InvitedFamilyRole,
+    now: Date,
+  ): Promise<void> {
+    return this.familyMembershipRepository.applyAcceptedInvitationRoleOnConnection(conn, accountId, serviceAccountId, familyId, role, now);
+  }
+
+  findActiveRole(accountId: string, familyId: string): Promise<FamilyMembershipRole | null> {
+    return this.familyMembershipRepository.findActiveRole(accountId, familyId);
   }
 }

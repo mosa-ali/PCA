@@ -43,9 +43,9 @@ describe('/not-permitted shows actionable "what to do next" guidance (B016)', ()
     expect(screen.getByText(en.rbac.nextStep.ownerOnly)).toBeInTheDocument();
   });
 
-  it('a not-delegated denial (an Administrator the Owner has not delegated Viewer management to) explains that specifically', () => {
-    renderNotPermitted({ action: 'ADD_VIEWER', from: '/family/members' }, 'ADMINISTRATOR');
-    expect(screen.getByText(en.rbac.nextStep.notDelegated)).toBeInTheDocument();
+  it('an Administrator denied an internal trust-root action is told to ask the Owner', () => {
+    renderNotPermitted({ action: 'TRANSFER_OWNERSHIP', from: '/family/members' }, 'ADMINISTRATOR');
+    expect(screen.getByText(en.rbac.nextStep.ownerOnly)).toBeInTheDocument();
   });
 
   it('a Viewer denied an edit action is told to ask a parent for help', () => {

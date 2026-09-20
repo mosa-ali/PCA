@@ -168,8 +168,8 @@ howItWorks.parent.items,/ar/how-it-works/,How PCA Works,"[1] title: No installat
 [3] title: يبقى التثبيت اختياريًا
 [3] body: لا تحتاج إلى تثبيت PCA Parent حتى تستخدم الخدمة.","[1] title: لا حاجة إلى تثبيت
 [1] body: صُممت منصة الوالدين للعمل في متصفح مدعوم على الهاتف أو الجهاز اللوحي أو الكمبيوتر، دون تثبيت أي شيء.
-[2] title: استخدام منصة الوالدين
-[2] body: عندما يكون التثبيت مدعومًا، يمكنك تثبيته للحصول على تجربة أقرب إلى استخدام التطبيق.
+[2] title: إضافة المنصة إلى الجهاز
+[2] body: عندما يدعم المتصفح تثبيت تجربة المنصة كاختصار، يمكنك إضافتها للوصول إليها بسهولة أكبر.
 [3] title: يبقى التثبيت اختياريًا
 [3] body: لا تحتاج إلى تثبيت شيء لمجرد استخدام الخدمة.",YES,REVISE_LOW,CLM-019; CLM-020; CLM-021,COMING_LATER; COMING_LATER; VERIFIED_AVAILABLE,APPLIED,"Reviewer selected this row for owner attention: CHANGED_STRING | APPLIED and claim-bearing (CLM-019; CLM-020; CLM-021). Restores EN's ""just"" in ""never need to install ... just to use the service""; rest is fluency.",NO,PENDING,
 howItWorks.security.title,/ar/how-it-works/,How PCA Works,Important security distinction,فرق أمني مهم,فرق مهم من ناحية الأمان,YES,REVISE_LOW,NONE,NONE,APPLIED,Reviewer selected this row for owner attention: CHANGED_STRING,NO,PENDING,

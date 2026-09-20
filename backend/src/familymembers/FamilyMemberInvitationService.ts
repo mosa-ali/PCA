@@ -95,7 +95,7 @@ function operationForRole(role: InvitedFamilyRole): 'ADD_ADMINISTRATOR' | 'ADD_V
  */
 export interface FamilyMemberAccountBinder {
   /** Idempotent: must not overwrite an account that is already bound to a (possibly different) family -- accepting an invitation never silently reassigns an existing membership. */
-  bindAccountToFamily(accountId: OpaqueAccountId, familyId: OpaqueFamilyId, now: Date): Promise<void>;
+  bindAccountToFamily(accountId: OpaqueAccountId, familyId: OpaqueFamilyId, now: Date, role: InvitedFamilyRole): Promise<void>;
 }
 
 export class NoopFamilyMemberAccountBinder implements FamilyMemberAccountBinder {
@@ -536,7 +536,7 @@ export class FamilyMemberInvitationService {
     const result = await this.repository.acceptAtomically(invitationId, acceptingAccountId, acceptedAt, consumeParentMemberSeat);
     switch (result.outcome) {
       case 'ACCEPTED':
-        await this.accountBinder.bindAccountToFamily(acceptingAccountId, result.record.familyId, acceptedAt);
+        await this.accountBinder.bindAccountToFamily(acceptingAccountId, result.record.familyId, acceptedAt, result.record.role);
         await this.auditService.record({
           familyId: result.record.familyId,
           actionType: 'ROLE_ACCEPT',

@@ -71,9 +71,8 @@ export const NEW_COPY = [
   'signIn.parent.title',
   'signIn.parent.body',
   'signIn.parent.cta',
-  'signIn.admin.title',
-  'signIn.admin.body',
-  'signIn.admin.cta',
+  'signIn.register.prompt',
+  'signIn.register.cta',
 ];
 
 export default {

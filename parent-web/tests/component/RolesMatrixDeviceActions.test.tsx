@@ -30,19 +30,18 @@ describe('RolesMatrix surfaces device-enrollment actions and plain-language role
     renderWithProviders(<RolesMatrix />, { role: 'OWNER' });
     await screen.findByRole('table');
 
-    expect(screen.getByText(/Full control: can manage every family setting/)).toBeInTheDocument();
     expect(screen.getByText(/Can manage children's policies and approve requests day to day/)).toBeInTheDocument();
     expect(screen.getByText(/Read-only access to family status and device-enrollment information/)).toBeInTheDocument();
     expect(screen.getByText(/Can send requests \(like more screen time\)/)).toBeInTheDocument();
   });
 
-  it('an OWNER is allowed to invite a device; a VIEWER is not (matches evaluatePermission, not a hardcoded guess)', async () => {
+  it('an ADMINISTRATOR is allowed to invite a device; a VIEWER is not (matches evaluatePermission, not a hardcoded guess)', async () => {
     renderWithProviders(<RolesMatrix />, { role: 'OWNER' });
     await screen.findByRole('table');
     const row = screen.getByText('Invite a new child device').closest('tr')!;
     const cells = row.querySelectorAll('td');
-    // ROLES order is OWNER, ADMINISTRATOR, VIEWER, CHILD.
+    // ROLES order is ADMINISTRATOR, VIEWER, CHILD.
     expect(cells[0].textContent).toContain('Yes');
-    expect(cells[2].textContent).toBe('—');
+    expect(cells[1].textContent).toBe('—');
   });
 });

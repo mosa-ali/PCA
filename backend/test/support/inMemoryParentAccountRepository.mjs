@@ -16,6 +16,7 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
   const resetCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
   const stepUpCodesById = new Map();
   const stepUpCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
+  const membershipsByAccountFamily = new Map();
 
   function hexOf(buf) {
     return buf.toString('hex');
@@ -45,6 +46,8 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
         verifiedAt: null,
         disabledAt: null,
         firstLoginCompletedAt: null,
+        accountType: record.accountType ?? null,
+        estimatedChildCount: record.estimatedChildCount ?? null,
       };
       accountsById.set(account.accountId, account);
       accountsByEmailHashHex.set(key, account.accountId);
@@ -205,6 +208,22 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
 
     async createFamilyIfAbsent(familyId) {
       createdFamilies.add(familyId);
+    },
+
+    async createGenesisAdministrator(accountId, serviceAccountId, familyId) {
+      const key = `${accountId}:${familyId}`;
+      const existing = membershipsByAccountFamily.get(key);
+      if (!existing) membershipsByAccountFamily.set(key, { role: 'ADMINISTRATOR', status: 'ACTIVE', serviceAccountId });
+      else if (!existing.serviceAccountId) existing.serviceAccountId = serviceAccountId;
+    },
+
+    async applyAcceptedInvitationRole(accountId, serviceAccountId, familyId, role) {
+      membershipsByAccountFamily.set(`${accountId}:${familyId}`, { role, status: 'ACTIVE', serviceAccountId });
+    },
+
+    async findActiveRole(accountId, familyId) {
+      const membership = membershipsByAccountFamily.get(`${accountId}:${familyId}`);
+      return membership?.status === 'ACTIVE' ? membership.role : null;
     },
 
     // Test-only accessor, not part of the ParentAccountRepository interface.

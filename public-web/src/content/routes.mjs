@@ -40,9 +40,8 @@
 /**
  * Release gates. PUBLIC-0 established account creation remains Release B until
  * its transactional-email and production-readiness gates close. Release A may
- * expose a neutral sign-in chooser, but it must hand off to the separate,
- * already-owned Parent and Platform Admin realms without building auth forms or
- * sharing sessions here.
+ * expose a Parent-focused sign-in handoff, but it must not build auth forms or
+ * expose the private Platform Admin realm from the customer website.
  *
  * Flipping `authLive` to true is the ONLY change needed to turn Get Started and
  * Login into real account actions -- see resolvePrimaryCta()/loginCta().
@@ -75,7 +74,7 @@ export const ROUTES = [
   // --- The four main public pages ------------------------------------------
   //
   // `download` is the fourth, and it is deliberately the fourth rather than an
-  // auth route: Release A exposes only a neutral sign-in chooser. The
+  // auth route: Release A exposes a Parent-focused sign-in handoff. The
   // parent-facing conversion action is getting the app. It exists while nothing is downloadable because a
   // parent looking for the app needs somewhere that answers honestly, and the
   // alternative -- no page at all -- answers nothing.
@@ -110,8 +109,8 @@ export const ROUTES = [
   // decides whether these are hosted here or hand off to the Parent origin --
   // note parent-web implements /register, not /signup, so an alias or redirect
   // is required either way.
-  // Owner scope correction: the public site exposes a chooser, while the
-  // actual Parent and Platform Admin authentication realms remain separate.
+  // Owner scope correction: the public site exposes only the Parent handoff;
+  // the actual Parent and Platform Admin authentication realms remain separate.
   { id: 'signIn',         path: 'sign-in',          kind: 'auth', release: 'A', build: true, indexable: false, priority: null },
   { id: 'login',          path: 'login',           kind: 'auth', release: 'B', build: RELEASE.authLive, indexable: false, priority: null },
   { id: 'signup',         path: 'signup',          kind: 'auth', release: 'B', build: RELEASE.authLive, indexable: false, priority: null },
@@ -187,7 +186,7 @@ export function resolvePrimaryCta() {
     : { routeId: 'howItWorks', labelKey: 'cta.seeHowPcaWorks' };
 }
 
-/** The public header exposes only the neutral sign-in chooser. */
+/** The public header exposes only the Parent-focused sign-in handoff. */
 export function loginCta() {
   return { routeId: 'signIn', labelKey: 'cta.login' };
 }

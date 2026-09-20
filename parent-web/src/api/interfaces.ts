@@ -61,6 +61,12 @@ export interface RegistrationResult {
   status: 'PENDING_VERIFICATION';
 }
 
+export type ParentAccountType = 'PARENT_GUARDIAN' | 'OTHER';
+export interface ParentSignupProfile {
+  accountType: ParentAccountType;
+  estimatedChildCount: number | null;
+}
+
 /** Deliberately identical whether or not the email matches an account -- see requestPasswordReset's own doc comment. */
 export interface RequestPasswordResetResult {
   status: 'RESET_CODE_SENT_IF_ACCOUNT_EXISTS';
@@ -97,7 +103,7 @@ export interface ServiceAuthClient {
    * or already registered -- never an enumeration oracle a caller can
    * branch on.
    */
-  register(email: string, password: string, passwordConfirmation: string): Promise<RegistrationResult>;
+  register(email: string, password: string, passwordConfirmation: string, profile?: ParentSignupProfile): Promise<RegistrationResult>;
   /**
    * Consumes the one-time emailed verification code. On success this
    * establishes the session (same effect as signIn) and returns it --

@@ -24,8 +24,8 @@ describe('RolesMatrix legend and per-cell denial reasons', () => {
     await screen.findByRole('table');
     const row = screen.getByText('Edit child policy').closest('tr')!;
     const cells = row.querySelectorAll('td');
-    // ROLES order is OWNER, ADMINISTRATOR, VIEWER, CHILD -- a VIEWER is denied here.
-    const viewerCell = cells[2].querySelector('span')!;
+    // ROLES order is ADMINISTRATOR, VIEWER, CHILD -- a VIEWER is denied here.
+    const viewerCell = cells[1].querySelector('span')!;
     expect(viewerCell.getAttribute('title')).toBe(en.rbac.denialReason.VIEWER_READ_ONLY_POLICY);
     expect(viewerCell.getAttribute('aria-label')).toContain(en.rbac.denialReason.VIEWER_READ_ONLY_POLICY);
   });

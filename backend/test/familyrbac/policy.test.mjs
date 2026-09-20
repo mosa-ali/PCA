@@ -27,20 +27,19 @@ test('doc 18 table row: EDIT_CHILD_POLICY / approvals -- Owner+Admin allow, View
   }
 });
 
-test('doc 18 table row: ADD_VIEWER / REMOVE_NON_OWNER_PARENT -- Administrator is DENY unless configured, safe default off', () => {
+test('owner architecture: ADD_VIEWER / REMOVE_NON_OWNER_PARENT are normal Administrator administration with step-up', () => {
   for (const op of ['ADD_VIEWER', 'REMOVE_NON_OWNER_PARENT']) {
     assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'DENY');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'ALLOW_WITH_STEP_UP');
+    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
     assert.equal(resolveOperationAuthorization('VIEWER', op, CONFIGURED), 'DENY');
     assert.equal(resolveOperationAuthorization('CHILD', op, CONFIGURED), 'DENY');
   }
 });
 
-test('doc 18 table row: ADD_ADMINISTRATOR / CHANGE_ROLE -- Owner only, with step-up, never Administrator', () => {
+test('owner architecture: ADD_ADMINISTRATOR / CHANGE_ROLE are normal role administration with step-up', () => {
   for (const op of ['ADD_ADMINISTRATOR', 'CHANGE_ROLE']) {
     assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'DENY');
+    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'ALLOW_WITH_STEP_UP');
     assert.equal(resolveOperationAuthorization('VIEWER', op, CONFIGURED), 'DENY');
     assert.equal(resolveOperationAuthorization('CHILD', op, CONFIGURED), 'DENY');
   }
@@ -54,11 +53,10 @@ test('doc 18 table row: CHANGE_RETENTION / DELETE_NOW / EXPORT_FAMILY_DATA -- Ow
   }
 });
 
-test('doc 18 table row: REMOVE_REVOKE_DEVICE / DISABLE_PROTECTION_POLICY -- Administrator configurable, safe default off', () => {
+test('owner architecture: REMOVE_REVOKE_DEVICE / DISABLE_PROTECTION_POLICY are normal Administrator device administration', () => {
   for (const op of ['REMOVE_REVOKE_DEVICE', 'DISABLE_PROTECTION_POLICY']) {
     assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'DENY');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, CONFIGURED), 'ALLOW_WITH_STEP_UP');
+    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
   }
 });
 

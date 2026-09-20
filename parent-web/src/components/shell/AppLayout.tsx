@@ -18,9 +18,9 @@ import { useAuth } from '../../state/AuthContext';
  * visitor in real (non-demo) mode could reach /dashboard and every
  * non-RouteGuard-wrapped route directly (AppLayout had no session check at
  * all), and even RouteGuard-wrapped routes were NOT actually protected:
- * useCurrentRole() falls back to the fixture module's getDevRole() default
- * of 'OWNER' whenever session is null, so an unauthenticated visitor was
- * evaluated as a full Owner rather than denied. Found via a real E2E run
+ * useCurrentRole() fell back to the fixture module's getDevRole() default
+ * whenever session was null, so an unauthenticated visitor was evaluated as
+ * a full Owner rather than denied. Found via a real E2E run
  * against a live backend (a fresh, unauthenticated browser context reached
  * /dashboard directly instead of being redirected to /login) -- fixed
  * here, at the one place already shared by every protected route, rather

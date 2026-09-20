@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
+import type { ParentAccountType } from '../../api/interfaces';
 
 /**
  * PCA-AUTH-SESSION-1 (PCA-DEC-026) self-service registration. Server
@@ -26,6 +27,8 @@ export default function Register() {
   const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  const [accountType, setAccountType] = useState<ParentAccountType>('PARENT_GUARDIAN');
+  const [estimatedChildCount, setEstimatedChildCount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Distinguishes the one genuinely field-scoped error (the two password
@@ -46,7 +49,12 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await clients.serviceAuth.register(email, password, passwordConfirmation);
+      const parsedChildCount = estimatedChildCount.trim() === '' ? null : Number(estimatedChildCount);
+      if (parsedChildCount !== null && (!Number.isInteger(parsedChildCount) || parsedChildCount < 0 || parsedChildCount > 50)) {
+        setError(t('auth.estimatedChildCountInvalid'));
+        return;
+      }
+      await clients.serviceAuth.register(email, password, passwordConfirmation, { accountType, estimatedChildCount: parsedChildCount });
       navigate('/verify-email', { state: { email } });
     } catch (err) {
       if (err instanceof ServiceAuthError && err.code === 'RATE_LIMITED') {
@@ -76,6 +84,29 @@ export default function Register() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+        </div>
+
+        <div className="field">
+          <label htmlFor="register-account-type">{t('auth.accountTypeLabel')}</label>
+          <select id="register-account-type" name="accountType" value={accountType} onChange={(e) => setAccountType(e.target.value as ParentAccountType)}>
+            <option value="PARENT_GUARDIAN">{t('auth.accountTypeParentGuardian')}</option>
+            <option value="OTHER">{t('auth.accountTypeOther')}</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="register-estimated-child-count">{t('auth.estimatedChildCountLabel')}</label>
+          <input
+            id="register-estimated-child-count"
+            name="estimatedChildCount"
+            type="number"
+            min="0"
+            max="50"
+            inputMode="numeric"
+            value={estimatedChildCount}
+            onChange={(e) => setEstimatedChildCount(e.target.value)}
+          />
+          <p className="field-hint">{t('auth.estimatedChildCountHint')}</p>
         </div>
 
         <div className="field">

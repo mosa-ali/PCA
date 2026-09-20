@@ -17,7 +17,10 @@ interface HeaderProps {
   drawerToggleRef?: RefObject<HTMLButtonElement>;
 }
 
-const DEMO_ROLES: FamilyRole[] = ['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'];
+// OWNER is an internal trust-root role, not a normal selectable Parent Web
+// role. Fixture tests may still construct internal Owner sessions directly,
+// but the demo control exposes only the normal family-role surface.
+const DEMO_ROLES: FamilyRole[] = ['ADMINISTRATOR', 'VIEWER', 'CHILD'];
 
 /** Vertical arrow into a tray. Non-directional: it does NOT mirror under RTL. */
 function DownloadIcon() {
@@ -139,7 +142,7 @@ export function Header({
             <select
               className="header-select"
               aria-label={t('shell.demoRoleSwitcher')}
-              value={session?.role ?? 'OWNER'}
+              value={session?.role === 'OWNER' ? 'ADMINISTRATOR' : session?.role ?? 'ADMINISTRATOR'}
               onChange={(e) => setDemoRole(e.target.value as FamilyRole)}
             >
               {DEMO_ROLES.map((r) => (

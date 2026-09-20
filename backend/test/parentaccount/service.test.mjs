@@ -289,12 +289,14 @@ test('family genesis: a real signature verifier reaches BOOTSTRAPPED and the ret
   assert.ok(outcome.familyId.length > 0);
 });
 
-test('family genesis: FAIL CLOSED under RejectingDeviceSignatureVerifier -- identity/session still succeed, familyId is null (the honest, current production posture -- CRYPTO_SUITE pending, PCA-DEC-020)', async () => {
+test('family genesis: FAIL CLOSED under RejectingDeviceSignatureVerifier -- identity/session remain unprivileged and familyId/role are null', async () => {
   const harness = buildHarness({ genesisVerifier: new RejectingDeviceSignatureVerifier() });
   const outcome = await registerAndVerify(harness);
   assert.equal(outcome.familyId, null);
+  assert.equal(outcome.role, null);
   const session = await harness.service.readSession(outcome.rawSessionToken);
   assert.equal(session.emailVerified, true, 'identity verification must not be blocked by an unavailable genesis capability');
+  assert.equal(session.role, null, 'missing genesis must never become ADMINISTRATOR');
 });
 
 test('family genesis: no engine wired at all also degrades to familyId=null without breaking verification', async () => {
@@ -330,11 +332,12 @@ test('login succeeds against a VERIFIED account with the correct password and fa
   });
 });
 
-test('SECURITY: a session established at verify-email time proves identity only -- readSession never returns a role or Owner-authority claim', async () => {
+test('SECURITY: a successful genesis session returns the persisted normal Administrator role, never an Owner UI role', async () => {
   const harness = buildHarness();
   const outcome = await registerAndVerify(harness);
   const session = await harness.service.readSession(outcome.rawSessionToken);
-  assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId']);
+  assert.deepEqual(Object.keys(session).sort(), ['accountId', 'emailVerified', 'familyId', 'role']);
+  assert.equal(session.role, 'ADMINISTRATOR');
 });
 
 test('SECURITY: expired session is denied identically to no session (fail closed)', async () => {

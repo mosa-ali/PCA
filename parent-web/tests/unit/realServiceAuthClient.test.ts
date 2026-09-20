@@ -32,24 +32,22 @@ describe('RealServiceAuthClient', () => {
     expect(fetchMock).toHaveBeenCalledWith(`${apiBaseUrl}/api/parent/session`, expect.objectContaining({ credentials: 'include' }));
   });
 
-  it('getSession maps the real FAMILY_SERVICE_SESSION_V1 response shape ({accountId, familyId, emailVerified}) onto AuthenticatedSession', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true }));
+  it('getSession consumes the server-authoritative normal family role', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true, role: 'ADMINISTRATOR' }));
     const session = await client.getSession();
     expect(session).toEqual({
       accountId: 'acc-1',
       displayName: 'acc-1',
       familyId: 'fam-1',
       memberId: 'acc-1',
-      role: 'OWNER',
+      role: 'ADMINISTRATOR',
       serviceAuthenticated: true,
     });
   });
 
-  it('getSession treats a null familyId (genesis unavailable) as VIEWER, never fabricates OWNER', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true }));
-    const session = await client.getSession();
-    expect(session?.role).toBe('VIEWER');
-    expect(session?.familyId).toBe('');
+  it('getSession rejects an unresolved family role instead of defaulting to Viewer or Owner', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null }));
+    await expect(client.getSession()).rejects.toMatchObject({ code: 'UNAUTHORIZED_FAMILY_SCOPE' });
   });
 
   // ---------------------------------------------------------------------
@@ -80,14 +78,14 @@ describe('RealServiceAuthClient', () => {
   // ---------------------------------------------------------------------
 
   it('verifyEmail posts email/code and, on success, establishes the session (sessionEstablished response shape)', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', sessionEstablished: true }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', role: 'ADMINISTRATOR', sessionEstablished: true }));
     const session = await client.verifyEmail('parent@example.test', '123456');
     expect(session).toEqual({
       accountId: 'acc-1',
       displayName: 'acc-1',
       familyId: 'fam-1',
       memberId: 'acc-1',
-      role: 'OWNER',
+      role: 'ADMINISTRATOR',
       serviceAuthenticated: true,
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -105,13 +103,11 @@ describe('RealServiceAuthClient', () => {
   // ---------------------------------------------------------------------
 
   it('signIn sends credentials only in the request body and never persists them', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', sessionEstablished: true }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', role: 'ADMINISTRATOR', sessionEstablished: true }));
     const result = await client.signIn('parent@example.test', 'super-secret');
     if (result.status !== 'AUTHENTICATED') throw new Error('expected AUTHENTICATED');
     expect(result.session.accountId).toBe('acc-1');
-    // Ordinary sign-in gives no server-side role signal (see this file's
-    // header) -- least-privilege placeholder, never a fabricated OWNER.
-    expect(result.session.role).toBe('VIEWER');
+    expect(result.session.role).toBe('ADMINISTRATOR');
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe('include');
     expect(JSON.parse(init.body as string)).toEqual({ email: 'parent@example.test', password: 'super-secret' });
@@ -142,7 +138,7 @@ describe('RealServiceAuthClient', () => {
   // ---------------------------------------------------------------------
 
   it('completeLoginStepUp posts email/code and returns the established session', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', sessionEstablished: true }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', role: 'ADMINISTRATOR', sessionEstablished: true }));
     const session = await client.completeLoginStepUp('parent@example.test', '123456');
     expect(session.accountId).toBe('acc-1');
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];

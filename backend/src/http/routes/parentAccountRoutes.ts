@@ -55,6 +55,7 @@ import type { ParentPreferenceRepository, ParentPreferencesPatch, ParentLanguage
 import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepository } from '../../location/SafeZoneRepository.js';
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
+import type { ParentSignupProfile } from '../../parentaccount/types.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
@@ -170,7 +171,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    const { email, password, passwordConfirmation } = request.body as Record<string, unknown>;
+    const { email, password, passwordConfirmation, accountType, estimatedChildCount } = request.body as Record<string, unknown>;
     if (typeof email !== 'string' || typeof password !== 'string' || typeof passwordConfirmation !== 'string') {
       await reply.code(400).send({ error: 'invalid_request' });
       return;
@@ -180,7 +181,22 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return;
     }
     try {
-      const result = await parentAccountService.register(email, password, passwordConfirmation);
+      let profile: ParentSignupProfile | undefined;
+      if (accountType !== undefined || estimatedChildCount !== undefined) {
+        const validAccountType = accountType === 'PARENT_GUARDIAN' || accountType === 'OTHER';
+        const validCount =
+          estimatedChildCount === undefined || estimatedChildCount === null ||
+          (typeof estimatedChildCount === 'number' && Number.isInteger(estimatedChildCount) && estimatedChildCount >= 0 && estimatedChildCount <= 50);
+        if (!validAccountType || !validCount) {
+          await reply.code(400).send({ error: 'invalid_request' });
+          return;
+        }
+        profile = {
+          accountType,
+          estimatedChildCount: estimatedChildCount === undefined ? null : estimatedChildCount,
+        };
+      }
+      const result = await parentAccountService.register(email, password, passwordConfirmation, profile ?? undefined);
       await reply.code(202).send(result);
     } catch (error) {
       if (error instanceof ParentAccountError && error.code === 'INVALID_INPUT') {
@@ -208,7 +224,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     try {
       const result = await parentAccountService.verifyEmail(email, code);
       setSessionCookies(reply, result.rawSessionToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
+      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
     } catch (error) {
       if (error instanceof ParentAccountError) {
         const status = error.code === 'INVALID_INPUT' ? 400 : 401;
@@ -293,7 +309,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         return;
       }
       setSessionCookies(reply, result.rawSessionToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
+      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
     } catch (error) {
       if (error instanceof ParentAccountError) {
         await reply.code(401).send({ error: 'invalid_credentials' });
@@ -320,7 +336,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     try {
       const result = await parentAccountService.completeLoginStepUp(email, code);
       setSessionCookies(reply, result.rawSessionToken);
-      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, sessionEstablished: true });
+      await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
     } catch (error) {
       if (error instanceof ParentAccountError) {
         const status = error.code === 'INVALID_INPUT' ? 400 : 401;

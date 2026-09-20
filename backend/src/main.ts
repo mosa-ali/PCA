@@ -65,6 +65,7 @@ import { MySqlEyeProtectionSettingsRepository } from './eyeprotection/MySqlEyePr
 import { EyeProtectionSettingsService } from './eyeprotection/EyeProtectionSettingsService.js';
 import { MySqlFamilyMemberInvitationRepository } from './familymembers/MySqlFamilyMemberInvitationRepository.js';
 import { MySqlFamilyMemberAccountBinder } from './familymembers/MySqlFamilyMemberAccountBinder.js';
+import { MySqlFamilyMembershipRepository } from './familymembers/MySqlFamilyMembershipRepository.js';
 import { FamilyMemberInvitationService } from './familymembers/FamilyMemberInvitationService.js';
 import { BonusGrantLedger } from './childrequests/BonusGrantLedger.js';
 import { MySqlRemovalDecisionRepository } from './familyrbac/MySqlRemovalDecisionRepository.js';
@@ -551,6 +552,7 @@ async function start(): Promise<void> {
     new MySqlPlatformAdminActivationRepository(),
     emailInfrastructure.emailSender,
   );
+  const familyMembershipRepository = new MySqlFamilyMembershipRepository();
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
@@ -561,6 +563,7 @@ async function start(): Promise<void> {
     // verification path. Still fail-closed today (RejectingDeviceSignatureVerifier),
     // exactly like every other crypto-gated surface in this file.
     familyGenesisEngine: familyAuthorityChainEngine,
+    familyMembershipRepository,
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
@@ -677,7 +680,7 @@ async function start(): Promise<void> {
     safeZoneParentActionAuthorization,
     () => new Date(),
     familyAuditService,
-    new MySqlFamilyMemberAccountBinder(),
+    new MySqlFamilyMemberAccountBinder(familyMembershipRepository),
     entitlementRepository,
     freeAccessAcquisitionPolicy,
   );

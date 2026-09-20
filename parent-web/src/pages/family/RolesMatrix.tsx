@@ -3,7 +3,9 @@ import type { FamilyAction, FamilyRole } from '../../domain/roles';
 import { evaluatePermission } from '../../domain/roles';
 import { useCurrentRole } from '../../state/AuthContext';
 
-const ROLES: FamilyRole[] = ['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'];
+// OWNER remains an internal trust-root role for compatibility with the
+// Family Trust Set. It is not a selectable or exposed normal Parent Web role.
+const ROLES: FamilyRole[] = ['ADMINISTRATOR', 'VIEWER', 'CHILD'];
 
 const ACTIONS: FamilyAction[] = [
   'EDIT_CHILD_POLICY',

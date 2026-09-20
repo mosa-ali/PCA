@@ -139,10 +139,10 @@ export function nextStepKey(code: DenialReasonCode): string {
 }
 
 /**
- * Whether an Administrator may perform the "configurable" actions the Owner
- * can delegate (doc 18 table: add/remove Viewer, revoke device). Modeled
- * client-side as a family policy flag; defaults to the documented safe
- * default (off).
+ * Retained as a compatibility shape for older fixture/configuration callers.
+ * Normal family administration is now Administrator authority with step-up;
+ * cryptographic, destructive privacy, platform, and commercial actions remain
+ * Owner-only internally.
  */
 export interface DelegableAdministratorPolicy {
   administratorsCanManageViewers: boolean;
@@ -182,7 +182,7 @@ const STEP_UP_ACTIONS: ReadonlySet<FamilyAction> = new Set<FamilyAction>([
 export function evaluatePermission(
   role: FamilyRole,
   action: FamilyAction,
-  delegation: DelegableAdministratorPolicy = SAFE_DEFAULT_DELEGATION,
+  _delegation: DelegableAdministratorPolicy = SAFE_DEFAULT_DELEGATION,
 ): PermissionResult {
   const requiresStepUp = STEP_UP_ACTIONS.has(action);
   const deny = (code: DenialReasonCode, reason: string): PermissionResult => ({
@@ -207,20 +207,18 @@ export function evaluatePermission(
       return deny('CHILD_CANNOT_EDIT_POLICY', 'A child may only submit requests, not edit policy.');
     case 'ADD_VIEWER':
     case 'REMOVE_NON_OWNER_PARENT':
-      if (role === 'OWNER') return allow();
-      if (role === 'ADMINISTRATOR') {
-        return delegation.administratorsCanManageViewers
-          ? allow()
-          : deny('VIEWER_MANAGEMENT_NOT_DELEGATED', 'Owner has not delegated Viewer management to Administrators.');
-      }
-      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS', 'Only the Owner (or a delegated Administrator) may manage Viewers.');
+      if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_VIEWERS', 'Only a family Administrator may manage normal family members.');
     case 'ADD_ADMINISTRATOR':
     case 'CHANGE_ANY_ROLE':
+      return role === 'OWNER' || role === 'ADMINISTRATOR'
+        ? allow()
+        : deny('OWNER_ONLY_STEP_UP', 'Only a family Administrator may manage normal family roles, with step-up authentication.');
     case 'TRANSFER_OWNERSHIP':
     case 'REVEAL_RECOVERY_MATERIAL':
       return role === 'OWNER'
         ? allow()
-        : deny('OWNER_ONLY_STEP_UP', 'Only the Owner may perform this action, with step-up authentication.');
+        : deny('OWNER_ONLY_STEP_UP', 'Only the internal family trust owner may perform this action, with step-up authentication.');
     case 'CHANGE_RETENTION':
     case 'DELETE_HISTORY':
     case 'EXPORT_DATA':
@@ -229,13 +227,8 @@ export function evaluatePermission(
         : deny('OWNER_ONLY_RETENTION_DELETE_EXPORT', 'Only the Owner may change retention, delete history, or export by default.');
     case 'REMOVE_OR_REVOKE_DEVICE':
     case 'DISABLE_PROTECTION_POLICY':
-      if (role === 'OWNER') return allow();
-      if (role === 'ADMINISTRATOR') {
-        return delegation.administratorsCanRevokeDevices
-          ? allow()
-          : deny('DEVICE_REVOCATION_NOT_DELEGATED', 'Owner has not delegated device revocation to Administrators.');
-      }
-      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES', 'Only the Owner (or a delegated Administrator) may revoke devices or disable protection.');
+      if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_DEVICES', 'Only a family Administrator may manage normal family devices.');
     case 'VIEW_DEVICE_ENROLLMENT':
       if (role === 'OWNER' || role === 'ADMINISTRATOR' || role === 'VIEWER') return allow();
       return deny('ENROLLMENT_NOT_FOR_CHILD', 'Device enrollment status is a parent-management surface, not shown to a Child.');
@@ -244,13 +237,8 @@ export function evaluatePermission(
       return deny('OWNER_OR_ADMIN_ONLY_INVITE_DEVICE', 'Only the Owner or an Administrator may invite a new child device.');
     case 'REVOKE_DEVICE_INVITATION':
     case 'CONFIRM_DEVICE_PAIRING':
-      if (role === 'OWNER') return allow();
-      if (role === 'ADMINISTRATOR') {
-        return delegation.administratorsCanRevokeDevices
-          ? allow()
-          : deny('INVITATION_REVOCATION_NOT_DELEGATED', 'Owner has not delegated device revocation/pairing to Administrators.');
-      }
-      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION', 'Only the Owner (or a delegated Administrator) may revoke an invitation or confirm device pairing.');
+      if (role === 'OWNER' || role === 'ADMINISTRATOR') return allow();
+      return deny('OWNER_OR_DELEGATED_ADMIN_ONLY_INVITATION', 'Only a family Administrator may revoke an invitation or confirm device pairing.');
     case 'VIEW_BILLING':
     case 'REQUEST_DEVICE_INCREASE':
     case 'REQUEST_PARENT_MEMBER_INCREASE':

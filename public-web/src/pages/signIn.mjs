@@ -1,17 +1,16 @@
 import { html, layout, richText } from '../lib/components.mjs';
-import { authHandoffHref } from '../config/handoffs.mjs';
+import { authHandoffHref, parentRegistrationHref } from '../config/handoffs.mjs';
 
 export function render(ctx) {
   const t = ctx.t;
   const parentLogin = authHandoffHref('parent');
-  const platformAdminLogin = authHandoffHref('platformAdmin');
+  const parentRegister = parentRegistrationHref();
   return layout(ctx, { main: html`
     <section class="pw-hero"><div class="pw-container">
       <h1 class="pw-hero__title">${richText(t('signIn.hero.title'))}</h1>
       <p class="pw-hero__lead">${richText(t('signIn.hero.body'))}</p>
     </div></section>
     <section class="pw-section pw-section--raised"><div class="pw-container pw-card-grid">
-      <article class="pw-card"><h2 class="pw-card__title">${richText(t('signIn.parent.title'))}</h2><p class="pw-card__body">${richText(t('signIn.parent.body'))}</p><a class="pw-btn pw-btn--primary" data-auth-handoff="parent" href="${parentLogin}">${t('signIn.parent.cta')}</a></article>
-      <article class="pw-card"><h2 class="pw-card__title">${richText(t('signIn.admin.title'))}</h2><p class="pw-card__body">${richText(t('signIn.admin.body'))}</p><a class="pw-btn pw-btn--primary" data-auth-handoff="platformAdmin" href="${platformAdminLogin}">${t('signIn.admin.cta')}</a></article>
+      <article class="pw-card"><h2 class="pw-card__title">${richText(t('signIn.parent.title'))}</h2><p class="pw-card__body">${richText(t('signIn.parent.body'))}</p><a class="pw-btn pw-btn--primary" data-auth-handoff="parent" href="${parentLogin}">${t('signIn.parent.cta')}</a><p class="pw-card__body pw-card__body--secondary">${t('signIn.register.prompt')} <a href="${parentRegister}">${t('signIn.register.cta')}</a></p></article>
     </div></section>` });
 }

@@ -22,7 +22,8 @@
  *   assertNoRawTokenUse   components never reference a Layer-1 --pca-* token
  *   assertClaimLabels     no status label stronger than the claim register
  *   assertNoForbiddenText unambiguous prohibited claim strings
- *   assertNoExternalRefs  no third-party origin in any href/src
+ *   assertNoExternalRefs  no third-party origin in any href/src; approved
+ *                         application handoffs are allowlisted
  *
  * Scope honesty: assertNoForbiddenText matches only phrases that cannot be
  * anything but a violation. It deliberately does NOT try to distinguish an
@@ -805,7 +806,7 @@ function assertNoExternalRefs(pageId, htmlText, origin) {
       const parsed = new URL(value);
       if (
         CONFIGURED_AUTH_HANDOFF_ORIGINS.has(parsed.origin)
-        && parsed.pathname === '/login/'
+        && ['/login/', '/register/'].includes(parsed.pathname)
         && !parsed.search
         && !parsed.hash
       ) continue;

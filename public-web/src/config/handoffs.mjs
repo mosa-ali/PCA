@@ -1,22 +1,26 @@
 /*
  * Cross-application authentication handoffs.
  *
- * Public Web owns only the chooser. Parent Web and Platform Admin own their
- * separate login realms. Default rendered hrefs stay neutral so a production
- * reverse proxy may mount those applications on the same host. Deployments
- * using separate origins supply the corresponding PUBLIC_*_WEB_ORIGIN value.
- * The local static server uses this same map to reach the two real Vite apps.
+ * Public Web owns only the information handoff. Parent Web and Platform Admin
+ * own their separate login realms. Production links use the authoritative
+ * dedicated origins; local/UAT routing can still override those origins with
+ * PUBLIC_*_WEB_ORIGIN or the local Vite targets.
  */
 const HANDOFFS = Object.freeze({
   parent: Object.freeze({
-    path: '/parent/login/',
+    publicPath: '/parent/login/',
+    path: 'https://parent.pcasafe.com/login/',
     loginPath: '/login/',
+    registerPath: '/register/',
+    productionOrigin: 'https://parent.pcasafe.com',
     originEnv: 'PUBLIC_PARENT_WEB_ORIGIN',
     localOrigin: 'http://127.0.0.1:4000',
   }),
   platformAdmin: Object.freeze({
-    path: '/platform-admin/login/',
+    publicPath: '/platform-admin/login/',
+    path: 'https://platform.pcasafe.com/login/',
     loginPath: '/login/',
+    productionOrigin: 'https://platform.pcasafe.com',
     originEnv: 'PUBLIC_PLATFORM_ADMIN_WEB_ORIGIN',
     localOrigin: 'http://127.0.0.1:4100',
   }),
@@ -48,7 +52,13 @@ function loginUrl(config, origin) {
 
 export function authHandoffHref(key, env = process.env) {
   const config = configFor(key);
-  return loginUrl(config, originOf(env[config.originEnv], config.originEnv));
+  return loginUrl(config, originOf(env[config.originEnv], config.originEnv) ?? config.productionOrigin);
+}
+
+export function parentRegistrationHref(env = process.env) {
+  const config = configFor('parent');
+  const origin = originOf(env[config.originEnv], config.originEnv) ?? config.productionOrigin;
+  return `${origin}${config.registerPath}`;
 }
 
 export function localAuthHandoffTarget(key, env = process.env) {
@@ -59,7 +69,7 @@ export function localAuthHandoffTarget(key, env = process.env) {
 
 export function localAuthHandoffForPath(pathname, env = process.env) {
   for (const [key, config] of Object.entries(HANDOFFS)) {
-    if (config.path === pathname) return localAuthHandoffTarget(key, env);
+    if (config.publicPath === pathname) return localAuthHandoffTarget(key, env);
   }
   return null;
 }
@@ -67,7 +77,7 @@ export function localAuthHandoffForPath(pathname, env = process.env) {
 export function configuredAuthHandoffOrigins(env = process.env) {
   return new Set(
     Object.values(HANDOFFS)
-      .map((config) => originOf(env[config.originEnv], config.originEnv))
+      .map((config) => originOf(env[config.originEnv], config.originEnv) ?? config.productionOrigin)
       .filter(Boolean),
   );
 }

@@ -83,6 +83,9 @@ export function useAuth(): AuthContextValue {
 }
 
 export function useCurrentRole(): FamilyRole {
-  const { session } = useAuth();
-  return session?.role ?? getDevRole();
+  const { session, isFixtureBacked } = useAuth();
+  // Real sessions must carry the server-resolved family role. A missing role
+  // is never promoted through the fixture role helper; CHILD is the
+  // least-privileged rendering fallback for callers outside AppLayout.
+  return session?.role ?? (isFixtureBacked ? getDevRole() : 'CHILD');
 }

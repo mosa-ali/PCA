@@ -15,12 +15,11 @@ export const STEP_UP_MAX_FRESHNESS_MS = 5 * 60 * 1000; // doc 18 Section 4: "re-
 export const ACTION_IDEMPOTENCY_LEDGER_CAPACITY = 4096;
 
 /**
- * doc 18 Section 2's table, transcribed cell-for-cell. `ADMINISTRATOR`
- * entries marked configurable are resolved by resolveOperationAuthorization
- * against FamilyRbacPolicyConfig, never hard-coded to ALLOW here --
- * ALLOW_IF_CONFIGURED_WITH_STEP_UP is the row's base verdict; the config
- * check downgrades it to DENY when the Owner has not opted in (the doc's
- * stated safe default).
+ * doc 18 Section 2's table, transcribed cell-for-cell. Administrator is the
+ * highest normal Parent Web role. Normal family
+ * administration is therefore allowed with step-up; cryptographic/trust,
+ * destructive privacy, platform, and commercial authority remains Owner-only
+ * (OWNER is retained internally for the trust-root plane).
  */
 const OPERATION_MATRIX: Record<ParentOperation, Record<FamilyRole, AuthorizationVerdict>> = {
   VIEW_DASHBOARD: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW', VIEWER: 'ALLOW_READ_ONLY', CHILD: 'ALLOW_OWN_SCOPE_ONLY' },
@@ -29,39 +28,32 @@ const OPERATION_MATRIX: Record<ParentOperation, Record<FamilyRole, Authorization
   APPROVE_UNBLOCK: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW', VIEWER: 'DENY', CHILD: 'REQUEST_ONLY' },
   APPROVE_EXCEPTION: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW', VIEWER: 'DENY', CHILD: 'REQUEST_ONLY' },
   APPROVE_INSTALL: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW', VIEWER: 'DENY', CHILD: 'REQUEST_ONLY' },
-  ADD_VIEWER: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW_IF_CONFIGURED_WITH_STEP_UP', VIEWER: 'DENY', CHILD: 'DENY' },
+  ADD_VIEWER: { OWNER: 'ALLOW', ADMINISTRATOR: 'ALLOW_WITH_STEP_UP', VIEWER: 'DENY', CHILD: 'DENY' },
   REMOVE_NON_OWNER_PARENT: {
     OWNER: 'ALLOW',
-    ADMINISTRATOR: 'ALLOW_IF_CONFIGURED_WITH_STEP_UP',
+    ADMINISTRATOR: 'ALLOW_WITH_STEP_UP',
     VIEWER: 'DENY',
     CHILD: 'DENY',
   },
-  ADD_ADMINISTRATOR: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
-  CHANGE_ROLE: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
+  ADD_ADMINISTRATOR: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'ALLOW_WITH_STEP_UP', VIEWER: 'DENY', CHILD: 'DENY' },
+  CHANGE_ROLE: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'ALLOW_WITH_STEP_UP', VIEWER: 'DENY', CHILD: 'DENY' },
   CHANGE_RETENTION: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
   DELETE_NOW: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
   EXPORT_FAMILY_DATA: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
   REMOVE_REVOKE_DEVICE: {
     OWNER: 'ALLOW_WITH_STEP_UP',
-    ADMINISTRATOR: 'ALLOW_IF_CONFIGURED_WITH_STEP_UP',
+    ADMINISTRATOR: 'ALLOW_WITH_STEP_UP',
     VIEWER: 'DENY',
     CHILD: 'DENY',
   },
   DISABLE_PROTECTION_POLICY: {
     OWNER: 'ALLOW_WITH_STEP_UP',
-    ADMINISTRATOR: 'ALLOW_IF_CONFIGURED_WITH_STEP_UP',
+    ADMINISTRATOR: 'ALLOW_WITH_STEP_UP',
     VIEWER: 'DENY',
     CHILD: 'DENY',
   },
   OWNERSHIP_TRANSFER_INITIATION: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
   RECOVERY_SENSITIVE_ACTION: { OWNER: 'ALLOW_WITH_STEP_UP', ADMINISTRATOR: 'DENY', VIEWER: 'DENY', CHILD: 'DENY' },
-};
-
-const ADMINISTRATOR_CONFIG_GATE: Partial<Record<ParentOperation, keyof FamilyRbacPolicyConfig>> = {
-  ADD_VIEWER: 'administratorCanManageViewers',
-  REMOVE_NON_OWNER_PARENT: 'administratorCanManageViewers',
-  REMOVE_REVOKE_DEVICE: 'administratorCanRevokeDeviceOrDisableProtection',
-  DISABLE_PROTECTION_POLICY: 'administratorCanRevokeDeviceOrDisableProtection',
 };
 
 /**
@@ -82,11 +74,7 @@ export function resolveOperationAuthorization(
   const verdict = row[role];
   if (verdict === undefined) return 'DENY';
 
-  if (verdict === 'ALLOW_IF_CONFIGURED_WITH_STEP_UP') {
-    const configKey = ADMINISTRATOR_CONFIG_GATE[operation];
-    const configured = configKey !== undefined && config[configKey] === true;
-    return configured ? 'ALLOW_WITH_STEP_UP' : 'DENY';
-  }
+  if (verdict === 'ALLOW_IF_CONFIGURED_WITH_STEP_UP') return 'DENY';
   return verdict;
 }
 

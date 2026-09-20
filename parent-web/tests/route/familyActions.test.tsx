@@ -34,15 +34,15 @@ describe('useFamilyAction gateway enforcement', () => {
     renderWithProviders(<ActionButton label="Change role" run={run} />, { role: 'VIEWER' });
     await userEvent.click(screen.getByText('Change role'));
     await waitFor(() => expect(screen.getByTestId('result')).not.toHaveTextContent('idle'));
-    expect(screen.getByTestId('result')).toHaveTextContent(/Owner/i);
+    expect(screen.getByTestId('result')).toHaveTextContent(/Administrator/i);
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('rejects an Administrator attempting a restricted role-change action', async () => {
+  it('requires step-up before an Administrator performs normal role administration', async () => {
     const run = vi.fn().mockResolvedValue(undefined);
     renderWithProviders(<ActionButton label="Change role" run={run} />, { role: 'ADMINISTRATOR' });
     await userEvent.click(screen.getByText('Change role'));
-    await waitFor(() => expect(screen.getByTestId('result')).not.toHaveTextContent('idle'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(run).not.toHaveBeenCalled();
   });
 

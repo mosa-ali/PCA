@@ -20,6 +20,7 @@ import {
   resolveFreeAccessDefaults,
 } from './policy.js';
 import type { ParentAccountRepository } from './ParentAccountRepository.js';
+import type { FamilyMembershipRepository, FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
 import type { EmailSenderPort } from './EmailSenderPort.js';
 import type {
   CompleteLoginStepUpOutcome,
@@ -30,6 +31,7 @@ import type {
   ResetPasswordOutcome,
   SessionReadOutcome,
   VerifyEmailOutcome,
+  ParentSignupProfile,
 } from './types.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
@@ -76,6 +78,8 @@ export interface ParentAccountServiceDeps {
    * still succeeds, familyId is simply null).
    */
   familyGenesisEngine?: FamilyOwnerAttestationChainEngine;
+  /** Active family-role persistence. Missing/unresolved membership fails closed. */
+  familyMembershipRepository?: FamilyMembershipRepository;
   now?: () => Date;
 }
 
@@ -94,6 +98,7 @@ export class ParentAccountService {
   private readonly authService: AuthService;
   private readonly emailSender: EmailSenderPort;
   private readonly familyGenesisEngine: FamilyOwnerAttestationChainEngine | undefined;
+  private readonly familyMembershipRepository: FamilyMembershipRepository | undefined;
   private readonly now: () => Date;
 
   constructor(deps: ParentAccountServiceDeps) {
@@ -101,6 +106,13 @@ export class ParentAccountService {
     this.authService = deps.authService;
     this.emailSender = deps.emailSender;
     this.familyGenesisEngine = deps.familyGenesisEngine;
+    // Test-only in-memory repositories may implement the membership port on
+    // the same object. Production must pass the explicit durable repository;
+    // an absent resolver still fails closed in requireFamilyRole().
+    this.familyMembershipRepository = deps.familyMembershipRepository ??
+      (typeof (deps.repository as ParentAccountRepository & { findActiveRole?: unknown }).findActiveRole === 'function'
+        ? (deps.repository as unknown as FamilyMembershipRepository)
+        : undefined);
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -126,8 +138,16 @@ export class ParentAccountService {
    * verifyEmail), and the account's credential is written exactly once, by
    * whichever code is actually redeemed.
    */
-  async register(email: string, password: string, passwordConfirmation: string): Promise<RegisterOutcome> {
+  async register(email: string, password: string, passwordConfirmation: string, profile?: ParentSignupProfile): Promise<RegisterOutcome> {
     if (!isPlausibleEmail(email) || !isPlausiblePassword(password) || password !== passwordConfirmation) {
+      throw new ParentAccountError('INVALID_INPUT');
+    }
+    if (
+      profile &&
+      ((profile.accountType !== 'PARENT_GUARDIAN' && profile.accountType !== 'OTHER') ||
+        profile.estimatedChildCount !== null &&
+          (!Number.isInteger(profile.estimatedChildCount) || profile.estimatedChildCount < 0 || profile.estimatedChildCount > 50))
+    ) {
       throw new ParentAccountError('INVALID_INPUT');
     }
     const emailHash = hashParentEmail(email);
@@ -138,7 +158,14 @@ export class ParentAccountService {
     if (existing === null) {
       const accountId = randomUUID();
       try {
-        await this.repository.createPendingAccount({ accountId, emailHash, passwordHash, createdAt: now });
+        await this.repository.createPendingAccount({
+          accountId,
+          emailHash,
+          passwordHash,
+          createdAt: now,
+          accountType: profile?.accountType ?? null,
+          estimatedChildCount: profile?.estimatedChildCount ?? null,
+        });
       } catch (error) {
         // A concurrent registration for the same email won the race --
         // fall through to the identical PENDING_VERIFICATION response,
@@ -267,8 +294,12 @@ export class ParentAccountService {
       // family that only ever exists via self-service registration -- see
       // ParentAccountRepository.createFamilyIfAbsent's own doc comment.
       await this.repository.createFamilyIfAbsent(familyId, now);
+      if (this.familyMembershipRepository) {
+        await this.familyMembershipRepository.createGenesisAdministrator(account.accountId, issued.session.accountId, familyId, now);
+      }
     }
-    return { accountId: account.accountId, familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
+    const role = familyId === null ? null : await this.familyMembershipRepository?.findActiveRole(account.accountId, familyId) ?? null;
+    return { accountId: account.accountId, familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt, role };
   }
 
   /**
@@ -365,6 +396,8 @@ export class ParentAccountService {
       if (familyStatus === 'SUSPENDED') throw new ParentAccountError('UNAUTHORIZED');
     }
 
+    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
+
     // Owner authentication-architecture decision (2026-09-15): normal users
     // get password + risk-based email step-up, never Platform Admin-style
     // TOTP. The one risk trigger implemented for the current release is
@@ -384,6 +417,7 @@ export class ParentAccountService {
       familyId: account.familyId,
       rawSessionToken: issued.rawToken,
       sessionExpiresAt: issued.session.expiresAt,
+      role,
     };
   }
 
@@ -434,7 +468,8 @@ export class ParentAccountService {
 
     await this.repository.markFirstLoginCompletedIfAbsent(account.accountId, this.now());
     const issued = await this.issueSessionFor(account.accountId);
-    return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt };
+    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
+    return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt, role };
   }
 
   private async issueSessionFor(accountId: ParentAccountId) {
@@ -454,7 +489,17 @@ export class ParentAccountService {
     }
     const account = await this.repository.findByServiceAccountId(serviceAccountId);
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    return { accountId: account.accountId, familyId: account.familyId, emailVerified: true };
+    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
+    return { accountId: account.accountId, familyId: account.familyId, emailVerified: true, role };
+  }
+
+  private async resolveFamilyRole(accountId: ParentAccountId, familyId: OpaqueFamilyId | null): Promise<FamilyMembershipRole | null> {
+    // Null is an explicit fail-closed role result. Identity/session state is
+    // not promoted to a family role when genesis or membership resolution is
+    // unavailable; the Parent Web client refuses to establish an elevated
+    // session unless this field contains a valid normal role.
+    if (!familyId || !this.familyMembershipRepository) return null;
+    return this.familyMembershipRepository.findActiveRole(accountId, familyId);
   }
 
   /** Idempotent: revoking an unknown/malformed/already-revoked token is never an error. */
