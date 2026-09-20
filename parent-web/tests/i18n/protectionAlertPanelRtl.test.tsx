@@ -17,7 +17,7 @@ describe('ProtectionAlertPanel Arabic/RTL', () => {
     renderWithProviders(<ProtectionAlertPanel alerts={[]} feedState="PENDING_TRUSTED_DECRYPTION" />);
 
     expect(await screen.findByText('تنبيهات الأمان والحماية')).toBeInTheDocument();
-    expect(screen.getByText('التنبيهات بانتظار فك التشفير بواسطة جهاز والد موثوق.')).toBeInTheDocument();
+    expect(screen.getByText('التنبيهات بانتظار التحقق بواسطة جهاز والد موثوق.')).toBeInTheDocument();
     expect(screen.queryByText('Security and protection alerts')).not.toBeInTheDocument();
   });
 

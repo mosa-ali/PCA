@@ -22,16 +22,15 @@ describe('monitored-family terminology boundaries', () => {
     expect(text(ar, 'deviceEnrollment.consentMonitored')).not.toContain('العائلة');
   });
 
-  it('keeps account, authority, and trust-boundary family terminology intact', () => {
-    expect(text(en, 'rbac.deniedBody')).toContain('family authority gateway');
-    expect(text(en, 'trustedBrowser.BROWSER_NOT_TRUSTED')).toContain('family decryption authority');
-    expect(text(en, 'trustedBrowser.PAIRING_REQUIRED')).toContain('family data');
-    expect(text(en, 'retention.description')).toContain('family-level policy');
-    expect(text(en, 'trustedBrowser.trustSetEpoch')).toContain('Trust-set epoch');
+  it('uses Parent account and protection language for account-facing boundaries', () => {
+    expect(text(en, 'nav.family')).toBe('Parent account');
+    expect(text(en, 'nav.familyMembers')).toBe('Parents & Guardians');
+    expect(text(en, 'trustedBrowser.BROWSER_NOT_TRUSTED')).toBe('This browser is not trusted for protected information yet.');
+    expect(text(en, 'trustedBrowser.trustSetEpoch')).toBe('Security status');
 
-    expect(text(ar, 'rbac.deniedBody')).toContain('سلطة العائلة');
-    expect(text(ar, 'trustedBrowser.BROWSER_NOT_TRUSTED')).toContain('بيانات العائلة');
-    expect(text(ar, 'retention.description')).toContain('على مستوى العائلة');
-    expect(text(ar, 'trustedBrowser.trustSetEpoch')).toContain('حقبة');
+    expect(text(ar, 'nav.family')).toBe('حساب الوالدين');
+    expect(text(ar, 'nav.familyMembers')).toBe('الوالدان ومقدمو الرعاية');
+    expect(text(ar, 'trustedBrowser.BROWSER_NOT_TRUSTED')).toBe('هذا المتصفح غير موثوق بعد لعرض المعلومات المحمية.');
+    expect(text(ar, 'trustedBrowser.trustSetEpoch')).toBe('حالة الأمان');
   });
 });

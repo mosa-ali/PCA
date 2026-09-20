@@ -15,7 +15,7 @@ describe('Privacy pages render their authored disclosure copy', () => {
 
   it('Export shows the scope and external-copy notices', async () => {
     renderWithProviders(<Export />, { role: 'OWNER' });
-    expect(await screen.findByText(/The export is limited to the authorized family data/)).toBeInTheDocument();
+    expect(await screen.findByText(/The export contains the protection information and retention details shown when it was created/)).toBeInTheDocument();
     expect(screen.getByText(/Once an encrypted export is saved outside PCA-managed storage/)).toBeInTheDocument();
   });
 
@@ -27,7 +27,7 @@ describe('Privacy pages render their authored disclosure copy', () => {
     expect(dialog).toHaveTextContent('Delete Now removes activity content only.');
     expect(dialog).toHaveTextContent('A child device that stays offline cannot be reported as erased.');
     expect(dialog).toHaveTextContent('Delete Now does not erase encrypted exports or backups outside PCA-managed storage.');
-    expect(dialog).toHaveTextContent('PCA does not promise forensic-grade physical erasure on flash storage.');
+    expect(dialog).toHaveTextContent('PCA cannot promise complete physical erasure from device storage.');
   });
 
   it('DeleteNow surfaces the real returned deletion plan (queued/retained counts) after confirming, not a fabricated "done"', async () => {

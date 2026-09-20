@@ -89,7 +89,7 @@ describe('Members', () => {
   it('shows the member-removal safety notice, separate from Delete Now', async () => {
     renderWithProviders(<Members />, { role: 'OWNER' });
     expect(
-      await screen.findByText("Removing a non-owner parent ends that member's family access. It is separate from removing a child device and from Delete Now."),
+      await screen.findByText("Removing a non-owner parent ends that person's access. It is separate from removing a child device and from Delete Now."),
     ).toBeInTheDocument();
   });
 

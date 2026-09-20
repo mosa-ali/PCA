@@ -70,7 +70,7 @@ describe('Dashboard when the family-data read is fail-closed', () => {
     renderWithProviders(<Dashboard />);
 
     expect(
-      await screen.findByText(/This browser is not trusted with your family's data yet/),
+      await screen.findByText(/This browser is not trusted for your children's protected data yet/),
     ).toBeInTheDocument();
   });
 

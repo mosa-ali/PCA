@@ -277,8 +277,8 @@ describe('Device enrollment -- pairing confirmation', () => {
     expect(await screen.findByText('Setup code A')).toBeInTheDocument();
     expect(screen.getByText('Setup code B')).toBeInTheDocument();
     // The engineer-facing names survive as secondary text for a support call.
-    expect(screen.getByText('Device signing-key (DSK) fingerprint')).toBeInTheDocument();
-    expect(screen.getByText('Device encryption-key (DEK) fingerprint')).toBeInTheDocument();
+    expect(screen.getByText('Device signing fingerprint')).toBeInTheDocument();
+    expect(screen.getByText('Device protection fingerprint')).toBeInTheDocument();
     // The controlled honesty notice is rendered in full at the point of
     // confirmation -- its second and third sentences are the guarantee.
     expect(

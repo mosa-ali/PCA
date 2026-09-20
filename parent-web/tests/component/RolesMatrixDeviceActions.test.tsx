@@ -23,7 +23,7 @@ describe('RolesMatrix surfaces device-enrollment actions and plain-language role
 
   it('discloses that the device-enrollment rows are a client-side heuristic, not the real server authority', async () => {
     renderWithProviders(<RolesMatrix />, { role: 'OWNER' });
-    expect(await screen.findByText(/client-side estimate, not the server's own authority model/)).toBeInTheDocument();
+    expect(await screen.findByText(/guidance about this account's access\. The service makes the final decision/i)).toBeInTheDocument();
   });
 
   it('shows a plain-language explanation for every role', async () => {
@@ -31,8 +31,8 @@ describe('RolesMatrix surfaces device-enrollment actions and plain-language role
     await screen.findByRole('table');
 
     expect(screen.getByText(/Can manage children's policies and approve requests day to day/)).toBeInTheDocument();
-    expect(screen.getByText(/Read-only access to family status and device-enrollment information/)).toBeInTheDocument();
-    expect(screen.getByText(/Can send requests \(like more screen time\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Read-only access to protection status and device-enrollment information/)).toBeInTheDocument();
+    expect(screen.getByText(/Can send requests \(such as more screen time\)/)).toBeInTheDocument();
   });
 
   it('an ADMINISTRATOR is allowed to invite a device; a VIEWER is not (matches evaluatePermission, not a hardcoded guess)', async () => {

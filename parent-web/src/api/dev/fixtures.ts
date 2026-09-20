@@ -384,7 +384,7 @@ export const DEV_CURATED_SUGGESTIONS: CuratedSuggestion[] = [
     curatedId: 'curated-2',
     languageTexts: [
       { languageTag: 'en', text: 'Remember to check in with a family member.' },
-      { languageTag: 'ar', text: 'تذكّر التواصل مع أحد أفراد العائلة.' },
+      { languageTag: 'ar', text: 'تذكّر التواصل مع أحد الوالدين أو مقدمي الرعاية.' },
     ],
     category: 'FAMILY_HELP',
     requiresAdultSupervision: true,

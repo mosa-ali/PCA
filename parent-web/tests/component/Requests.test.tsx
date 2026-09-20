@@ -140,7 +140,7 @@ describe('Requests page -- PCA-FR-131 Install Approval (CAPABILITY_HONEST_INSTAL
     // outcome reported yet) and req-5's own outcome is REQUEST_ONLY, never upgraded.
     expect(document.querySelector('.status-ENFORCED')).toBeNull();
     expect(
-      screen.getByText('This device cannot block installs -- approving or denying only records the family\'s decision; it does not change what is installed on the device.'),
+      screen.getByText("This device cannot block installs -- approving or denying records the parent's decision, but does not change what is installed on the device."),
     ).toBeInTheDocument();
   });
 

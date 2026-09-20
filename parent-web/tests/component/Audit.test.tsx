@@ -39,7 +39,7 @@ describe('Audit renders real human-readable labels, and the honest pending-decry
       renderWithProviders(<Audit />, { role: 'OWNER' });
 
       expect(await screen.findByText('Added viewer')).toBeInTheDocument();
-      expect(screen.getByText('Family')).toBeInTheDocument();
+      expect(screen.getByText('Parent account')).toBeInTheDocument();
       expect(screen.getByText('Success')).toBeInTheDocument();
       expect(screen.queryByText('ADD_VIEWER')).not.toBeInTheDocument();
       expect(screen.queryByText('FAMILY')).not.toBeInTheDocument();
@@ -59,7 +59,7 @@ describe('Audit renders real human-readable labels, and the honest pending-decry
     try {
       renderWithProviders(<Audit />, { role: 'OWNER' });
 
-      expect(await screen.findByText('Audit entries are waiting for decryption by a trusted parent device.')).toBeInTheDocument();
+      expect(await screen.findByText('Audit entries are waiting to be verified by a trusted parent device.')).toBeInTheDocument();
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
     } finally {
       clients.familyAuditDelivery = original;
@@ -78,7 +78,7 @@ describe('Audit renders real human-readable labels, and the honest pending-decry
       renderWithProviders(<Audit />, { role: 'OWNER' });
 
       expect(await screen.findByText('Nothing here yet')).toBeInTheDocument();
-      expect(screen.queryByText('Audit entries are waiting for decryption by a trusted parent device.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Audit entries are waiting to be verified by a trusted parent device.')).not.toBeInTheDocument();
     } finally {
       clients.familyAuditDelivery = original;
     }

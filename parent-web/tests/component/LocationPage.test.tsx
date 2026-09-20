@@ -61,7 +61,7 @@ describe('LocationPage Safe Zone authoring', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('Safe-zone authoring is locked until this browser can create and verify the family-encrypted policy envelope. No readable location policy is sent to PCA.'),
+        screen.getByText('Safe-zone editing is locked until this browser can securely prepare and verify the policy. No readable location policy is sent to PCA.'),
       ).toBeInTheDocument(),
     );
     // A failed create must never look like a success: the empty state remains.

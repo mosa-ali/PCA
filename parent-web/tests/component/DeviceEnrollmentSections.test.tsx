@@ -126,18 +126,18 @@ describe('Devices page sectioning', () => {
     const disclosures = screen.getAllByText('Technical details');
     expect(disclosures.length).toBeGreaterThan(1);
     expect(table.textContent).toContain('Policy revision');
-    expect(table.textContent).toContain('Epoch');
+    expect(table.textContent).toContain('Security status');
   });
 
   it('the removal notice is shown once, on the section that governs it', async () => {
     const { unmount } = renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=devices' });
     await screen.findByRole('table');
-    expect(screen.queryByText(/Removing or revoking a child device changes family trust/)).toBeNull();
+    expect(screen.queryByText(/Removing or revoking a child device changes its protection connection/)).toBeNull();
     unmount();
 
     renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=protection' });
     expect(
-      await screen.findByText(/Removing or revoking a child device changes family trust/),
+      await screen.findByText(/Removing or revoking a child device changes its protection connection/),
     ).toBeInTheDocument();
   });
 });

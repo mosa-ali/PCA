@@ -42,17 +42,15 @@ describe('PermissionsPolicy', () => {
     renderWithProviders(<PermissionsPolicy />);
 
     expect(
-      screen.getByText(/no image or video is ever transmitted anywhere -- processing happens entirely on the device/i),
+      screen.getByText(/no image or video is sent anywhere/i),
     ).toBeInTheDocument();
   });
 
   it('explains that a location fix reaching the parent console is end-to-end encrypted, unreadable by PCA servers', () => {
     renderWithProviders(<PermissionsPolicy />);
 
-    expect(screen.getByText(/PCA's own servers cannot read it/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/PCA's own server infrastructure cannot read it/),
-    ).toBeInTheDocument();
+    const encryptionNote = screen.getByText(/When a permission sends data to your Parent Console/);
+    expect(encryptionNote).toHaveTextContent("PCA's servers cannot read it.");
   });
 
   it('states the list is exhaustive and traceable to the real manifest file', () => {

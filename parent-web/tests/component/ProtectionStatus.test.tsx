@@ -27,7 +27,7 @@ describe('ProtectionStatus renders real protection-alert envelopes, and the hone
       renderWithProviders(<ProtectionStatus />);
 
       expect(await screen.findByText('Protection degraded')).toBeInTheDocument();
-      expect(screen.queryByText('Alerts are waiting for decryption by a trusted parent device.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Alerts are waiting to be verified by a trusted parent device.')).not.toBeInTheDocument();
     } finally {
       clients.protectionAlertDelivery = original;
     }
@@ -44,7 +44,7 @@ describe('ProtectionStatus renders real protection-alert envelopes, and the hone
     try {
       renderWithProviders(<ProtectionStatus />);
 
-      expect(await screen.findByText('Alerts are waiting for decryption by a trusted parent device.')).toBeInTheDocument();
+      expect(await screen.findByText('Alerts are waiting to be verified by a trusted parent device.')).toBeInTheDocument();
     } finally {
       clients.protectionAlertDelivery = original;
     }
@@ -62,7 +62,7 @@ describe('ProtectionStatus renders real protection-alert envelopes, and the hone
       renderWithProviders(<ProtectionStatus />);
 
       expect(await screen.findByText('No security alerts are available.')).toBeInTheDocument();
-      expect(screen.queryByText('Alerts are waiting for decryption by a trusted parent device.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Alerts are waiting to be verified by a trusted parent device.')).not.toBeInTheDocument();
     } finally {
       clients.protectionAlertDelivery = original;
     }
