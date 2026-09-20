@@ -19,6 +19,8 @@ test('Public Web sign-in remains a neutral chooser and never renders authenticat
 
     assert.equal((page.html.match(/href="\/parent\/login\/"/g) ?? []).length, 1);
     assert.equal((page.html.match(/href="\/platform-admin\/login\/"/g) ?? []).length, 1);
+    assert.match(page.html, /data-auth-handoff="parent"[^>]*href="\/parent\/login\/"/);
+    assert.match(page.html, /data-auth-handoff="platformAdmin"[^>]*href="\/platform-admin\/login\/"/);
   }
 });
 

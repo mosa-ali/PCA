@@ -5,17 +5,34 @@
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { authHandoffHref } from '../src/config/handoffs.mjs';
 
-const require = createRequire('file:///D:/PCA/pca-app/parent-web/');
+const parentWebPackage = new URL('../../parent-web/package.json', import.meta.url);
+const require = createRequire(parentWebPackage);
 const { chromium } = require('playwright-core');
 
 const publicBase = process.env.PUBLIC_WEB_UAT_BASE ?? 'http://127.0.0.1:4200';
-const parentOrigin = process.env.PUBLIC_PARENT_WEB_ORIGIN ?? 'http://127.0.0.1:4000';
-const platformAdminOrigin = process.env.PUBLIC_PLATFORM_ADMIN_ORIGIN ?? 'http://127.0.0.1:4100';
 const targets = [
-  { name: 'Parent', href: '/parent/login/', origin: parentOrigin },
-  { name: 'Platform Admin', href: '/platform-admin/login/', origin: platformAdminOrigin },
-];
+  {
+    key: 'parent',
+    name: 'Parent',
+    localOrigin: 'http://127.0.0.1:4000',
+    originEnv: 'PUBLIC_PARENT_WEB_ORIGIN',
+  },
+  {
+    key: 'platformAdmin',
+    name: 'Platform Admin',
+    localOrigin: 'http://127.0.0.1:4100',
+    originEnv: 'PUBLIC_PLATFORM_ADMIN_WEB_ORIGIN',
+  },
+].map((target) => {
+  const configuredOrigin = process.env[target.originEnv]?.trim();
+  return {
+    ...target,
+    expectedHref: authHandoffHref(target.key, process.env),
+    expectedOrigin: configuredOrigin ? new URL(configuredOrigin).origin : target.localOrigin,
+  };
+});
 
 const browser = await chromium.launch();
 const failures = [];
@@ -31,12 +48,13 @@ try {
       page.on('requestfailed', (request) => failedRequests.push(`${request.url()} :: ${request.failure()?.errorText}`));
       try {
         await page.goto(`${publicBase}${localePath}`, { waitUntil: 'networkidle' });
-        const link = page.locator(`a[href*="${target.href}"]`).first();
+        const link = page.locator(`a[data-auth-handoff="${target.key}"]`);
         assert.equal(await link.count(), 1, `${localePath} must expose one ${target.name} chooser link`);
+        assert.equal(await link.getAttribute('href'), target.expectedHref, `${localePath} ${target.name} configured handoff`);
         await link.click();
         await page.waitForLoadState('networkidle');
         const finalUrl = new URL(page.url());
-        assert.equal(finalUrl.origin, target.origin, `${localePath} ${target.name} origin`);
+        assert.equal(finalUrl.origin, target.expectedOrigin, `${localePath} ${target.name} origin`);
         assert.equal(finalUrl.pathname, '/login/', `${localePath} ${target.name} path`);
         assert.equal(await page.locator('form').count(), 1, `${target.name} approved login form must load`);
         assert.ok(await page.locator('input').count() >= 2, `${target.name} approved login inputs must load`);

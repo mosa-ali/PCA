@@ -69,6 +69,7 @@ import * as accessibilityPage from './src/pages/accessibility.mjs';
 import * as privacyPolicyPage from './src/pages/privacyPolicy.mjs';
 import * as termsPage from './src/pages/terms.mjs';
 import * as signInPage from './src/pages/signIn.mjs';
+import { configuredAuthHandoffOrigins } from './src/config/handoffs.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
@@ -104,6 +105,7 @@ const PAGES = {
 const IMPLEMENTED = new Set(Object.keys(PAGES));
 
 const failures = [];
+const CONFIGURED_AUTH_HANDOFF_ORIGINS = configuredAuthHandoffOrigins();
 function fail(gate, message) {
   failures.push(`[${gate}] ${message}`);
 }
@@ -799,6 +801,17 @@ function assertNoExternalRefs(pageId, htmlText, origin) {
     if (!/^https?:\/\//i.test(value)) continue;
     // canonical / hreflang / og:url legitimately name the canonical origin.
     if (value.startsWith(origin)) continue;
+    try {
+      const parsed = new URL(value);
+      if (
+        CONFIGURED_AUTH_HANDOFF_ORIGINS.has(parsed.origin)
+        && parsed.pathname === '/login/'
+        && !parsed.search
+        && !parsed.hash
+      ) continue;
+    } catch {
+      // The generated HTML will still fail the external-reference gate below.
+    }
     fail('external-ref', `${pageId}: references an external origin "${value}". Release A loads no third-party resource.`);
   }
 }

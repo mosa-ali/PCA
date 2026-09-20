@@ -81,9 +81,9 @@ test('no horizontal overflow at 320px in rtl, and the page is Arabic', async ({ 
   await page.getByRole('button', { name: 'العربية' }).click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
 
-  await expect(page.getByRole('heading', { level: 1, name: 'تنزيل تطبيق PCA للطفل' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'تنزيل تطبيق حماية الطفل' })).toBeVisible();
   await expect(page.getByText('لم يُضبط تنزيل تطبيق أندرويد بعد في هذه البيئة.')).toBeVisible();
-  await expect(page.getByText('تطبيق iOS مخطط له في إصدار لاحق.')).toBeVisible();
+  await expect(page.getByText('تطبيق حماية الطفل على iOS مخطط له في إصدار لاحق.')).toBeVisible();
   // Not left in English for an Arabic parent.
   await expect(page.getByText('Android app download is not configured yet')).toHaveCount(0);
 

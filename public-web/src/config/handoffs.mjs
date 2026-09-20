@@ -63,3 +63,11 @@ export function localAuthHandoffForPath(pathname, env = process.env) {
   }
   return null;
 }
+
+export function configuredAuthHandoffOrigins(env = process.env) {
+  return new Set(
+    Object.values(HANDOFFS)
+      .map((config) => originOf(env[config.originEnv], config.originEnv))
+      .filter(Boolean),
+  );
+}
