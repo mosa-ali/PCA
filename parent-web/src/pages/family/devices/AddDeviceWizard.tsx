@@ -136,6 +136,7 @@ export default function AddDeviceWizard({
     data: childProfileDtos,
     loading: childProfilesLoading,
     error: childProfilesError,
+    errorCause: childProfilesErrorCause,
     reload: reloadChildProfiles,
   } = useAsync(() => clients.childProfiles.listChildProfiles(familyId), [familyId]);
   // Every id in the registry is real; whether THIS browser session can show
@@ -297,7 +298,7 @@ export default function AddDeviceWizard({
       // unlike the old getDashboard()-sourced check this replaced, there is
       // no 'ENDPOINT_NOT_TRUSTED'-shaped condition to special-case here.
       // "Something went wrong" is the honest thing to say: something is.
-      return <ErrorState message={childProfilesError} onRetry={reloadChildProfiles} />;
+      return <AsyncStates error={childProfilesErrorCause ?? childProfilesError} onRetry={reloadChildProfiles} />;
     }
 
     if (children.length === 0 && !addingNewChild && !justCreatedChild) {

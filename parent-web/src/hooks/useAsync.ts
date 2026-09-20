@@ -7,6 +7,8 @@ interface AsyncState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** The original typed failure for callers that need semantic state handling. */
+  errorCause: unknown | null;
   reload: () => void;
 }
 
@@ -55,6 +57,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
     data,
     loading,
     error: failure ? describeUserFacingError(failure.cause, t) : null,
+    errorCause: failure?.cause ?? null,
     reload,
   };
 }

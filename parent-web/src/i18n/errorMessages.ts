@@ -46,10 +46,23 @@ const KNOWN_ERROR_NAME_KEYS: Readonly<Record<string, string>> = {
   ServiceUnavailableError: 'errors.serviceUnavailable',
 };
 
+const CHILD_PROFILE_ERROR_KEYS: Readonly<Record<string, string>> = {
+  INVALID_REQUEST: 'deviceEnrollment.errors.invalidRequest',
+  UNAUTHORIZED: 'deviceEnrollment.errors.unauthorized',
+  FORBIDDEN: 'deviceEnrollment.errors.forbidden',
+  RATE_LIMITED: 'deviceEnrollment.errors.rateLimited',
+  NETWORK_ERROR: 'deviceEnrollment.errors.network',
+  SERVICE_SESSION_UNAVAILABLE: 'deviceEnrollment.errors.sessionUnavailable',
+  UNKNOWN: 'deviceEnrollment.errors.unknown',
+};
+
 /** The i18n key for `error`, or `null` when it is not a type we can name. */
 export function userFacingErrorKey(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
   const candidate = error as DiscriminatedError;
+  if (candidate.name === 'ChildProfileError' && typeof candidate.code === 'string') {
+    return CHILD_PROFILE_ERROR_KEYS[candidate.code] ?? 'deviceEnrollment.errors.unknown';
+  }
   if (typeof candidate.code === 'string' && KNOWN_ERROR_MESSAGE_KEYS[candidate.code]) {
     return KNOWN_ERROR_MESSAGE_KEYS[candidate.code];
   }

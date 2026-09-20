@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import Requests from '../../src/pages/Requests';
+import ChildrenList from '../../src/pages/children/ChildrenList';
 import { renderWithProviders } from '../utils/renderWithProviders';
 import { getApiClients } from '../../src/api/client';
 import { ServiceUnavailableError } from '../../src/api/unavailable';
@@ -41,6 +42,19 @@ describe('data-load errors are shown as localized user copy, not developer prose
     expect(await screen.findByText(i18n.t('errors.endpointNotTrusted'))).toBeInTheDocument();
     expect(screen.queryByText(/BROWSER_NOT_TRUSTED/)).not.toBeInTheDocument();
     expect(screen.queryByText(/requires a TRUSTED browser endpoint/)).not.toBeInTheDocument();
+  });
+
+  it('renders the Children trust boundary as action-needed, not a generic failure', async () => {
+    const failure = new EndpointNotTrustedError('BROWSER_NOT_TRUSTED', 'ParentFamilyDataGateway.getDashboard');
+    vi.spyOn(getApiClients().parentFamilyData, 'getDashboard').mockRejectedValue(failure);
+
+    renderWithProviders(<ChildrenList />, { role: 'OWNER', route: '/children' });
+
+    expect(await screen.findByRole('heading', { name: i18n.t('states.browserSetupNeededTitle') })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByText(i18n.t('errors.endpointNotTrusted'))).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('common.errorTitle'))).not.toBeInTheDocument();
   });
 
   it('falls back to the localized generic sentence for an unrecognised error (the old "Unknown error" literal)', async () => {

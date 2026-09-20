@@ -12,6 +12,7 @@ import {
 } from '../../src/i18n/errorMessages';
 import { EndpointNotTrustedError } from '../../src/api/familyDataAccessErrors';
 import { ServiceUnavailableError } from '../../src/api/unavailable';
+import { ChildProfileError } from '../../src/api/childProfileClient';
 import { CryptoReviewRequiredError } from '@pca/parent-sdk-browser-runtime';
 
 const t = i18n.getFixedT('en');
@@ -49,6 +50,18 @@ describe('describeUserFacingError', () => {
     expect(shown).toBe(t('errors.serviceUnavailable'));
     expect(shown).not.toContain('FamilyAuthorityGateway');
     expect(shown).not.toContain('src/api/client.ts');
+  });
+
+  it('maps typed child-profile failures to specific localized enrollment copy', () => {
+    const error = new ChildProfileError(
+      'UNAUTHORIZED',
+      'listChildProfiles: your service session has expired or is invalid. Please sign in again.',
+      401,
+    );
+
+    expect(userFacingErrorKey(error)).toBe('deviceEnrollment.errors.unauthorized');
+    expect(describeUserFacingError(error, t)).toBe(t('deviceEnrollment.errors.unauthorized'));
+    expect(describeUserFacingError(error, t)).not.toContain('listChildProfiles');
   });
 
   it('falls back to a localized generic sentence for an unknown error, never to err.message', () => {

@@ -181,8 +181,9 @@ describe('Devices page -- a fail-closed family read is not an error and not an e
     failChildProfilesListClosed();
     renderWithProviders(<Devices />, { role: 'OWNER', route: '/family/devices?section=add' });
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toBeInTheDocument();
+    const errorCopy = await screen.findByText(i18n.t('deviceEnrollment.errors.unauthorized'));
+    expect(errorCopy).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toContainElement(errorCopy);
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
 
     // And emphatically NOT the old dead end this file's header describes.
