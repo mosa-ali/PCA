@@ -21,7 +21,8 @@
  */
 
 import { html, frag, richText } from '../lib/html.mjs';
-import { layout, card, ctaLink } from '../lib/components.mjs';
+import { layout, card, ctaLink, statusPill } from '../lib/components.mjs';
+import { authHandoffHref, parentRegistrationHref } from '../config/handoffs.mjs';
 
 function section(ctx, { id, label, title, lead, body, modifier }) {
   return html`<section class="pw-section ${modifier ?? ''}"${id ? html` id="${id}"` : ''}>
@@ -32,6 +33,19 @@ function section(ctx, { id, label, title, lead, body, modifier }) {
     ${body}
   </div>
 </section>`;
+}
+
+function platformCard(ctx, item, index) {
+  if (index !== 0) return card(ctx, item);
+  return html`<article class="pw-card">
+    ${statusPill(ctx, item.claimId)}
+    <h3 class="pw-card__title">${richText(item.title)}</h3>
+    <p class="pw-card__body">${richText(item.body)}</p>
+    <div class="pw-cta-row">
+      <a class="pw-btn pw-btn--primary" href="${authHandoffHref('parent')}">${ctx.t('download.parent.openCta')}</a>
+      <a class="pw-btn pw-btn--secondary" href="${parentRegistrationHref()}">${ctx.t('download.parent.registerCta')}</a>
+    </div>
+  </article>`;
 }
 
 export function render(ctx) {
@@ -61,7 +75,7 @@ export function render(ctx) {
     title: t('download.platforms.title'),
     lead: t('download.child.lead'),
     body: html`<div class="pw-grid pw-grid--3">
-        ${frag(t('download.platforms.items').map((item) => card(ctx, item)))}
+        ${frag(t('download.platforms.items').map((item, index) => platformCard(ctx, item, index)))}
       </div>`,
   });
 

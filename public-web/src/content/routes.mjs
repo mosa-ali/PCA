@@ -38,19 +38,19 @@
  */
 
 /**
- * Release gates. PUBLIC-0 established account creation remains Release B until
- * its transactional-email and production-readiness gates close. Release A may
- * expose a Parent-focused sign-in handoff, but it must not build auth forms or
- * expose the private Platform Admin realm from the customer website.
+ * Release gates. Parent account creation, email verification and sign-in are
+ * now available in the separate Parent Web application. Public Web remains a
+ * handoff-only surface: it must not build auth forms or expose the private
+ * Platform Admin realm from the customer website.
  *
  * Flipping `authLive` to true is the ONLY change needed to turn Get Started and
  * Login into real account actions -- see resolvePrimaryCta()/loginCta().
  */
 export const RELEASE = {
-  /** PUBLIC RELEASE B — auth/account entry. Blocked: no email sender. */
+  /** Public Web does not duplicate the separate Parent auth routes. */
   authLive: false,
-  /** PUBLIC RELEASE C — Parent Web + PWA entry. */
-  parentLive: false,
+  /** Parent Web browser access is live, with product limitations. */
+  parentLive: true,
   /** PUBLIC RELEASE D — PCA Child Android distribution. */
   childLive: false,
 };
@@ -105,7 +105,7 @@ export const ROUTES = [
   { id: 'cookies', path: 'cookies', kind: 'legal', release: 'A', build: false, indexable: false, priority: null },
 
   // --- Auth (PUBLIC RELEASE B) ---------------------------------------------
-  // NOT BUILT while RELEASE.authLive is false. Never indexable. PUBLIC-9
+  // NOT BUILT: auth remains owned by the separate Parent application. Never indexable.
   // decides whether these are hosted here or hand off to the Parent origin --
   // note parent-web implements /register, not /signup, so an alias or redirect
   // is required either way.
@@ -170,15 +170,12 @@ export function outputPathFor(routeId, locale) {
 }
 
 /**
- * Where the primary conversion CTA points, given the current release gates.
+ * Where the primary conversion CTA points, given the current public-web gates.
  *
  * The owner's navigation spec lists "Get Started" and "Login". Both stay gated
- * on RELEASE.authLive, because PUBLIC-0 proved the destination is broken:
- * production registration returns 202 while the verification code never leaves
- * the process, so a parent following a live signup CTA today dead-ends at
- * /verify-email with no error and no way to obtain a code. IA section 4
- * explicitly permits routing to an informational start page instead, and
- * /how-it-works/ is now exactly that page -- it walks the whole journey.
+ * on RELEASE.authLive because this site must not duplicate the Parent auth
+ * surface. The handoff page and the download page own the real Parent login
+ * and registration destinations.
  */
 export function resolvePrimaryCta() {
   return RELEASE.authLive

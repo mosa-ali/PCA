@@ -46,16 +46,16 @@ export function routeHref(ctx, routeId) {
   return urlFor(routeId, ctx.locale);
 }
 
-export function statusPill(ctx, claimId) {
-  const labelKey = labelKeyForClaim(claimId);
+export function statusPill(ctx, claimId, labelKeyOverride = null) {
+  const labelKey = labelKeyOverride ?? labelKeyForClaim(claimId);
   if (!labelKey) return raw('');
   const cssClass = STATUS_CSS[labelKey];
   return html`<span class="pw-status ${cssClass}" data-claim="${claimId}">${ctx.t(labelKey)}</span>`;
 }
 
-export function card(ctx, { title, body, claimId }) {
+export function card(ctx, { title, body, claimId, statusKey = null }) {
   return html`<article class="pw-card">
-    ${claimId ? statusPill(ctx, claimId) : ''}
+    ${claimId ? statusPill(ctx, claimId, statusKey) : ''}
     <h3 class="pw-card__title">${richText(title)}</h3>
     <p class="pw-card__body">${richText(body)}</p>
   </article>`;

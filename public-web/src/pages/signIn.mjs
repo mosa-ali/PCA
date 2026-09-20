@@ -11,6 +11,6 @@ export function render(ctx) {
       <p class="pw-hero__lead">${richText(t('signIn.hero.body'))}</p>
     </div></section>
     <section class="pw-section pw-section--raised"><div class="pw-container pw-card-grid">
-      <article class="pw-card"><h2 class="pw-card__title">${richText(t('signIn.parent.title'))}</h2><p class="pw-card__body">${richText(t('signIn.parent.body'))}</p><a class="pw-btn pw-btn--primary" data-auth-handoff="parent" href="${parentLogin}">${t('signIn.parent.cta')}</a><p class="pw-card__body pw-card__body--secondary">${t('signIn.register.prompt')} <a href="${parentRegister}">${t('signIn.register.cta')}</a></p></article>
+      <article class="pw-card"><h2 class="pw-card__title">${richText(t('signIn.parent.title'))}</h2><p class="pw-card__body">${richText(t('signIn.parent.body'))}</p><div class="pw-cta-row"><a class="pw-btn pw-btn--primary" data-auth-handoff="parent" href="${parentLogin}">${t('signIn.parent.cta')}</a><a class="pw-btn pw-btn--secondary" href="${parentRegister}">${t('signIn.register.cta')}</a></div><p class="pw-card__body pw-card__body--secondary">${t('signIn.register.prompt')}</p></article>
     </div></section>` });
 }

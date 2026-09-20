@@ -128,7 +128,10 @@ for (const path of urls) {
           [...el.attributes].some((a) => /^data-(claim|review)/.test(a.name))
         ).length,
         internalLinks: [...document.querySelectorAll('a[href^="/"]')].map((a) => a.getAttribute('href')),
-        external: [...document.querySelectorAll('a[href^="http"]')].map((a) => a.getAttribute('href')).filter((h) => !h.startsWith('http://127.0.0.1')),
+        external: [...document.querySelectorAll('a[href^="http"]')].map((a) => a.getAttribute('href')).filter((h) =>
+          !h.startsWith('http://127.0.0.1')
+          && !/^https:\/\/parent\.pcasafe\.com\/(?:login|register)\/$/.test(h)
+        ),
         forms: document.querySelectorAll('form').length,
         menu: (() => {
           const toggle = document.getElementById('pw-menu-toggle');

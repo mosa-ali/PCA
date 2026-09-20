@@ -21,8 +21,8 @@
  */
 
 export default {
-  "contact.seo.title": "Contact PCA — Channels Opening Before Launch",
-  "contact.seo.description": "PCA is not able to receive messages yet. Support, privacy, accessibility and security contact channels will be published before PCA opens to families.",
+  "contact.seo.title": "Contact PCA — Support and Safety Topics",
+  "contact.seo.description": "PCA Parent is available online, but support, privacy, accessibility and security contact channels are not open yet.",
   "contact.hero.title": "How can we help?",
   "contact.hero.body": "Choose the topic that best matches your question. Please do not include private information about your child unless PCA has specifically requested a safe, necessary detail.",
   "contact.categories.title": "Categories",

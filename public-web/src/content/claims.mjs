@@ -48,6 +48,7 @@ export const STATUS_LABEL_KEY = {
 
 export const STATUS_CSS = {
   'status.available': 'pw-status--available',
+  'status.online': 'pw-status--available',
   'status.limited': 'pw-status--limited',
   'status.platform': 'pw-status--platform',
   'status.later': 'pw-status--later',
@@ -96,7 +97,7 @@ export const CLAIMS = {
   'CLM-035': { status: STATUS.REQUIRES_PLATFORM_SUPPORT, note: 'Device protection integrity.' },
 
   // Parent / PWA
-  'CLM-018': { status: STATUS.VERIFIED_AVAILABLE, note: 'PUBLIC-1-C2: describe the experience; do not imply it is reachable today. app.pcasafe.com serves a placeholder.' },
+  'CLM-018': { status: STATUS.VERIFIED_AVAILABLE, note: 'Owner-verified Parent Web browser access; describe as available online with known product limitations.' },
   'CLM-019': { status: STATUS.COMING_LATER, note: 'PWA installability — Release C.' },
   'CLM-020': { status: STATUS.COMING_LATER, note: 'Installation optional.' },
   'CLM-021': { status: STATUS.VERIFIED_AVAILABLE, note: 'Browser use without installing.' },

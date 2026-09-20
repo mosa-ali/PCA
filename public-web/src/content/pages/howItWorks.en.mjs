@@ -69,9 +69,9 @@
 
 export default {
   "howItWorks.seo.title": "How PCA Works — Parent and Child Protection Flow",
-  "howItWorks.seo.description": "See the planned PCA journey from parent account to child-device protection, status and family requests.",
+  "howItWorks.seo.description": "See the current PCA Parent journey from account creation and email verification to available child-protection settings.",
   "howItWorks.hero.title": "From account setup to everyday protection",
-  "howItWorks.hero.body": "PCA is designed to make the protection journey understandable: set up the parent account, connect the supported child device, choose appropriate rules, and review protection status from PCA Parent.",
+  "howItWorks.hero.body": "Create a PCA Parent account, verify your email, sign in, and begin setting up the child-protection settings and supported devices currently available to you. Some child-device protection workflows are still being completed.",
   "howItWorks.steps.label": "The journey",
   "howItWorks.steps.title": "Eight steps",
   "howItWorks.steps.items": [
@@ -84,29 +84,29 @@ export default {
       "body": "Confirm your email address to activate PCA Parent access."
     },
     {
-      "title": "Set up your child inside PCA Parent",
-      "body": "Child setup belongs within the protected Parent experience."
+      "title": "Review available setup options",
+      "body": "After signing in, review the child-protection setup options currently available to your account."
     },
     {
       "claimId": "CLM-024",
-      "title": "Install PCA Child",
-      "body": "Follow the guidance for the device you are setting up."
+      "title": "Use PCA Child when your platform is supported",
+      "body": "PCA Child mobile apps are still in development and will be listed here after release."
     },
     {
       "title": "Create an enrollment code or link",
-      "body": "In PCA Parent, create the enrollment code or link for that child."
+      "body": "If your supported setup includes enrollment, follow the instructions shown in PCA Parent."
     },
     {
       "title": "Connect the child device",
-      "body": "Use the approved enrollment/pairing flow."
+      "body": "Use the enrollment or pairing flow provided for your supported setup."
     },
     {
-      "title": "Choose protections",
-      "body": "Depending on verified platform capabilities, parents may configure screen-time rules, schedules, app/web controls and other supported protections."
+      "title": "Choose available protections",
+      "body": "Depending on verified platform capabilities, review or configure the screen-time rules, schedules, app/web controls and other protections available to your supported setup."
     },
     {
-      "title": "Review status and respond",
-      "body": "PCA Parent should help the parent understand whether protection is working and respond to supported child requests."
+      "title": "Review available status and requests",
+      "body": "Use the available Parent views to review protection status and respond to supported child requests."
     }
   ],
   "howItWorks.parent.title": "PCA Parent",
@@ -119,12 +119,12 @@ export default {
     {
       "claimId": "CLM-019",
       "title": "Install PCA Parent",
-      "body": "Where installation is supported, you may install it for app-like access."
+      "body": "An app-like install option is planned for a later release."
     },
     {
       "claimId": "CLM-020",
       "title": "Installation remains optional",
-      "body": "You never need to install PCA Parent just to use the service."
+      "body": "You can use PCA Parent in your browser without installing it."
     }
   ],
   "howItWorks.security.title": "Important security distinction",

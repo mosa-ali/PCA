@@ -208,12 +208,17 @@ const htmlFiles = [...corpus].filter(([rel]) => rel.endsWith('.html'));
     ok('download-honesty', 'no store badge, no store URL, no .apk/.ipa/.aab, no fake download link');
   }
 
-  // The download page must say, in both locales, that nothing ships yet.
+// The download page must distinguish live Parent Web from unreleased Child apps.
   for (const path of ['/download/index.html', '/ar/download/index.html']) {
     const body = corpus.get(path) ?? '';
-    const saysNotYet = /nothing to download yet|has not been released|لا يوجد شيء للتنزيل|لم يُطلَق/.test(body);
-    if (!saysNotYet) {
-      finding('CRITICAL', 'download-honesty', `${path} is the download page but does not state that nothing is downloadable yet.`);
+    const parentOnline = /Available online|متاح عبر الإنترنت/.test(body)
+      && /https:\/\/parent\.pcasafe\.com\/login\//.test(body)
+      && /https:\/\/parent\.pcasafe\.com\/register\//.test(body);
+    const childLater = /not released yet|لم يُطلَق/.test(body);
+    if (!parentOnline || !childLater) {
+      finding('CRITICAL', 'download-honesty', `${path} must show Parent Web online access and unreleased Child apps.`);
+    } else {
+      ok('download-honesty', `${path} distinguishes Parent Web online access from unreleased Child apps`);
     }
   }
 }
