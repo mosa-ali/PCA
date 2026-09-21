@@ -56,6 +56,38 @@ export async function hashPassword(password: string): Promise<string> {
   return [CREDENTIAL_PREFIX, SCRYPT_N, SCRYPT_R, SCRYPT_P, salt.toString('hex'), derivedKey.toString('hex')].join('$');
 }
 
+/**
+ * A fixed, never-matching scrypt-shaped credential used ONLY to equalise the
+ * computational cost of login()'s "unknown/unverified account" branch with its
+ * "wrong password" branch, so response timing does not reveal whether an email
+ * address has a live parent account (account-existence timing oracle).
+ *
+ * P1-09 (PCA full read-only assessment, 2026-09-21): this was previously a
+ * hand-written literal encoding N=32768 while real credentials are hashed at
+ * SCRYPT_N=131072, so the branch it existed to equalise actually cost ~4x LESS
+ * -- silently re-opening the exact oracle the surrounding code claims to close.
+ *
+ * It is now derived from the live SCRYPT_* constants instead of being hashed
+ * from a sentinel, which makes that class of drift impossible and costs nothing
+ * at boot. Deriving the *encoded parameters* is sufficient: verifyPassword
+ * derives its work factor from the encoded N/r/p, so an equal encoded cost
+ * yields an equal verification cost. The all-zero salt/key can never be a real
+ * credential's hash, and the calling branch has already established that no
+ * account exists, so a (astronomically improbable) match would still be
+ * rejected.
+ *
+ * test/parentaccount/passwordCredential.test.mjs asserts the encoded cost
+ * parameters here always equal those of a freshly hashed real credential.
+ */
+export const DUMMY_PASSWORD_HASH: string = [
+  CREDENTIAL_PREFIX,
+  SCRYPT_N,
+  SCRYPT_R,
+  SCRYPT_P,
+  '00'.repeat(SALT_BYTES),
+  '00'.repeat(DERIVED_KEY_BYTES),
+].join('$');
+
 /** Never throws; returns false for a malformed/corrupt encoded credential -- callers must still respond with the single generic failure regardless of which branch produced false. */
 export async function verifyPassword(password: string, encoded: string): Promise<boolean> {
   const parts = encoded.split('$');

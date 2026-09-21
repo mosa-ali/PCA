@@ -5,7 +5,7 @@ import {
   isPlausiblePlatformAdminSessionToken,
 } from './token.js';
 import { computeExpiry, isLockedOut, PLATFORM_ADMIN_LOGIN_ATTEMPT_LOOKBACK_LIMIT, PLATFORM_ADMIN_SESSION_TTL_MS, PLATFORM_ADMIN_STEP_UP_TTL_MS } from './policy.js';
-import { verifyPassword } from './passwordCredential.js';
+import { DUMMY_PASSWORD_CREDENTIAL, verifyPassword } from './passwordCredential.js';
 import { hashAdminEmail } from './emailHash.js';
 import { decryptTotpSecret, loadMfaEncryptionKey, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
@@ -53,15 +53,11 @@ export interface PlatformAdminStepUpResult {
 /** Roles whose failed-login/lockout events trigger an immediate PCA-ADD-PA-020 alert. Determined from the ACCOUNT's active roles at the time of the attempt, not from any claim in the request. */
 const ALERT_TRIGGERING_ROLES: ReadonlySet<PlatformAdminRole> = new Set(['APP_OWNER', 'FINANCE_ADMIN']);
 
-// PCA-ADMIN-TIMING-1: a fixed, never-matching scrypt-shaped credential used
-// only to keep login()'s "unknown email / non-ACTIVE account" branch's
-// timing in the same ballpark as its "known account, wrong password"
-// branch -- never a real account's hash. Same shape/cost parameters
-// passwordCredential.ts's hashPassword produces (scrypt N=32768/r=8/p=1,
-// 16-byte salt, 64-byte derived key), matching
-// backend/src/parentaccount/ParentAccountService.ts's DUMMY_PASSWORD_HASH
-// precedent exactly.
-const DUMMY_PASSWORD_CREDENTIAL = `scrypt$32768$8$1$${'00'.repeat(16)}$${'00'.repeat(64)}`;
+// PCA-ADMIN-TIMING-1: the never-matching dummy credential now lives beside
+// the SCRYPT_* constants it must track, in ./passwordCredential.js
+// (DUMMY_PASSWORD_CREDENTIAL), so it can never drift out of sync with the
+// real cost parameters the way the parent plane's literal did (PCA full
+// assessment finding P1-09).
 
 export class PlatformAdminAuthService {
   private readonly repository: PlatformAdminAuthRepository;

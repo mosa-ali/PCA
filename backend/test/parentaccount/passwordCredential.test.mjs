@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { promisify } from 'node:util';
-import { hashPassword, verifyPassword } from '../../dist/parentaccount/passwordCredential.js';
+import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from '../../dist/parentaccount/passwordCredential.js';
 
 const scrypt = promisify(scryptCallback);
 
@@ -78,4 +78,30 @@ test('verifyPassword still accepts credentials at exactly the legitimate N=2^15 
   const derivedKey = await scrypt(password, salt, 64, { N: oldN, r: 8, p: 1, maxmem: 128 * oldN * 8 * 2 });
   const encodedAt15 = ['scrypt', oldN, 8, 1, salt.toString('hex'), derivedKey.toString('hex')].join('$');
   assert.equal(await verifyPassword(password, encodedAt15), true);
+});
+
+// PCA full read-only assessment, finding P1-09. The dummy credential used to
+// equalise login()'s "unknown/unverified account" branch cost with its
+// "wrong password" branch MUST encode the same scrypt cost parameters as a
+// real credential. It previously encoded N=32768 while real credentials use
+// N=131072, so that branch cost roughly 4x less than the branch it was meant
+// to match -- silently re-opening the account-existence timing oracle. It is
+// now derived from the live SCRYPT_* constants so it cannot drift again.
+test('REGRESSION (P1-09): the dummy login credential encodes exactly the same scrypt cost parameters as a real credential', async () => {
+  const real = await hashPassword('any real password');
+  const realParts = real.split('$');
+  const dummyParts = DUMMY_PASSWORD_HASH.split('$');
+  assert.equal(dummyParts.length, 6);
+  assert.equal(dummyParts[0], 'scrypt');
+  assert.equal(dummyParts[1], realParts[1], 'dummy N must equal the real SCRYPT_N (P1-09: this had drifted to 32768 vs 131072)');
+  assert.equal(dummyParts[2], realParts[2], 'dummy r must equal the real SCRYPT_R');
+  assert.equal(dummyParts[3], realParts[3], 'dummy p must equal the real SCRYPT_P');
+  assert.equal(dummyParts[4].length, realParts[4].length, 'dummy salt length must equal the real salt length');
+  assert.equal(dummyParts[5].length, realParts[5].length, 'dummy derived-key length must equal the real derived-key length');
+});
+
+test('SECURITY (P1-09): the dummy login credential never verifies any candidate password', async () => {
+  assert.equal(await verifyPassword('', DUMMY_PASSWORD_HASH), false);
+  assert.equal(await verifyPassword('password', DUMMY_PASSWORD_HASH), false);
+  assert.equal(await verifyPassword('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', DUMMY_PASSWORD_HASH), false);
 });

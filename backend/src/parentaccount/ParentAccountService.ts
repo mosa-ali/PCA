@@ -2,7 +2,7 @@ import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import type { AuthService } from '../auth/AuthService.js';
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
 import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
-import { hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
+import { DUMMY_PASSWORD_HASH, hashPassword, isPlausiblePassword, verifyPassword } from './passwordCredential.js';
 import { generateVerificationCode, hashVerificationCode, isPlausibleVerificationCode, verificationCodeHashesMatch } from './verificationCode.js';
 import {
   MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE,
@@ -675,8 +675,3 @@ function accountReferenceHashFor(accountId: ParentAccountId): Buffer {
 function isDuplicateEntryLike(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ER_DUP_ENTRY';
 }
-
-// A fixed, never-matching scrypt-shaped credential used only to keep
-// login()'s "unknown account" branch's timing in the same ballpark as its
-// "wrong password" branch -- never a real account's hash.
-const DUMMY_PASSWORD_HASH = `scrypt$32768$8$1$${'00'.repeat(16)}$${'00'.repeat(64)}`;
