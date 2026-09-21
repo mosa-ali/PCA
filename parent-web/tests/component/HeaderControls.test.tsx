@@ -74,7 +74,9 @@ describe('header language control', () => {
     // Applies globally: the sidebar, not just the header, is now Arabic.
     expect(screen.getByRole('link', { name: i18n.t('nav.trustedBrowser') })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'الإنجليزية' }));
+    // Endonym, not a translation: still "English" with the UI in Arabic (see
+    // LanguageSwitch.tsx's own contract, and rtl.spec.ts's header).
+    await userEvent.click(screen.getByRole('button', { name: 'English' }));
     await waitFor(() => expect(i18n.language).toBe('en'));
     expect(document.documentElement.getAttribute('dir')).toBe('ltr');
   });

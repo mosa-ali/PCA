@@ -23,6 +23,12 @@ const REVIEW_METADATA_PREFIX = '_arReviewPending';
 
 const LATIN_ALLOWLIST: Readonly<Record<string, RegExp>> = {
   'app.nameShort': /^PCA$/,
+  // Language names are ENDONYMS, not translations: LanguageSwitch.tsx's own
+  // contract is that each option's accessible name is the language's own name,
+  // so that it contains the visible label (WCAG 2.5.3 label-in-name) and does
+  // not change with the UI locale. "English" is therefore correct in ar.json
+  // too -- exactly as "العربية" already is in en.json.
+  'shell.languageEnglish': /^English$/,
   'deviceEnrollment.platformIos': /iOS/,
   'deviceEnrollment.dskFingerprint': /DSK/,
   'deviceEnrollment.dekFingerprint': /DEK/,
@@ -71,7 +77,7 @@ describe('Arabic Parent Web locale contract', () => {
   it('does not copy English values into Arabic except concrete URL/brand identifiers', () => {
     const offenders = Object.entries(AR)
       .filter(([key]) => !key.startsWith(REVIEW_METADATA_PREFIX))
-      .filter(([key, _value]) => AR[key] === EN[key] && !['app.nameShort', 'shell.languageArabic', 'webProtection.addDomainPlaceholder'].includes(key))
+      .filter(([key, _value]) => AR[key] === EN[key] && !['app.nameShort', 'shell.languageArabic', 'shell.languageEnglish', 'webProtection.addDomainPlaceholder'].includes(key))
       .map(([key, value]) => `${key}: ${value}`);
     expect(offenders).toEqual([]);
   });

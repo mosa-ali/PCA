@@ -3,11 +3,12 @@ import type { Page } from '@playwright/test';
 
 /**
  * The header language control is a two-option segmented control, not a
- * `<select>`. Each option's accessible name follows the approved localized
- * label for the language ("English" / "الإنجليزية" in the Arabic locale),
- * whatever the viewport does to the visible label. It replaced a bare
- * `<select>` that had no CSS rule anywhere in global.css and rendered at
- * near-invisible contrast.
+ * `<select>`. Each option's accessible name is the language's own ENDONYM --
+ * "English" and "العربية" -- in EVERY locale, which is what keeps the name
+ * stable whatever the viewport does to the visible label and keeps the name
+ * containing that visible label ("English" contains "EN"), as WCAG 2.5.3
+ * label-in-name requires. It replaced a bare `<select>` that had no CSS rule
+ * anywhere in global.css and rendered at near-invisible contrast.
  */
 async function switchToArabic(page: Page) {
   await page.getByRole('button', { name: 'العربية' }).click();
@@ -38,7 +39,8 @@ test('the header language control is a keyboard-operable, correctly-pressed segm
 
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.getByRole('button', { name: 'العربية' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'الإنجليزية' })).toHaveAttribute('aria-pressed', 'false');
+  // The English option keeps its endonym name in Arabic too -- see this file's header.
+  await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('switching language preserves the current route rather than navigating home', async ({ page }) => {
