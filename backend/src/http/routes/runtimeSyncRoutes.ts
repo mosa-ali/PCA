@@ -75,6 +75,32 @@ const PROTECTION_LEVELS: ReadonlySet<string> = new Set(['STANDARD', 'PROTECTED',
 
 const MAX_CIPHERTEXT_BASE64_LENGTH = 90_000; // headroom over relay's 64 KiB ciphertext cap once base64-inflated
 
+/**
+ * Transport ceiling for /v1/runtime-sync/outbound ONLY.
+ *
+ * This route deliberately does NOT inherit the global `GLOBAL_BODY_LIMIT_BYTES`
+ * ceiling (buildServer.ts): its own contract accepts up to `MAX_OUTBOUND_BATCH_SIZE`
+ * envelopes, each up to `MAX_CIPHERTEXT_BASE64_LENGTH` characters, so a
+ * contract-legal batch is legitimately megabytes. Sized here from those two
+ * constants plus headroom for JSON structure.
+ *
+ * Found by an independent adversarial review: when the global ceiling was
+ * introduced this route silently dropped from Fastify's 1 MiB default to 256 KiB,
+ * so a reconnect batch of as few as three maximum-size envelopes began failing
+ * with 413 -- a runtime-sync break that presents as a client bug. This value is
+ * strictly MORE permissive than the previous 1 MiB default, so it cannot regress
+ * anything that worked before, while still being tighter than the route's own
+ * loose `MAX_OUTBOUND_BATCH_SIZE * 4` input guard.
+ *
+ * Written as the expanded literal rather than the product expression, because
+ * test/http/globalBodyLimit.test.mjs statically evaluates each declared
+ * `MAX_*BODY_BYTES` expression from numeric literals only; an identifier-based
+ * expression would be unparseable there and would have to be skipped, which is
+ * exactly the blind spot that let this route's regression through in the first
+ * place. The derivation is: 25 * 90_000 + 65_536.
+ */
+export const MAX_OUTBOUND_BODY_BYTES = 2315536;
+
 /** PCA-ADD-ENR-020: best-effort alert emission. A composition/delivery failure never blocks or reverses the status write. */
 async function emitProtectionDegradedAlert(
   alerting: ProtectionStatusAlerting | undefined,
@@ -213,7 +239,10 @@ export function registerRuntimeSyncRoutes(app: FastifyInstance, deps: RuntimeSyn
 
   app.post(
     '/v1/runtime-sync/outbound',
-    { preHandler: [deps.authAttemptLimiter, requireDeviceSession, outboundLimiter] },
+    // Explicit, contract-sized bodyLimit -- see MAX_OUTBOUND_BODY_BYTES's own
+    // comment: this route must NOT inherit the global ceiling, because a
+    // legitimate batch of control/policy envelopes is larger than it.
+    { bodyLimit: MAX_OUTBOUND_BODY_BYTES, preHandler: [deps.authAttemptLimiter, requireDeviceSession, outboundLimiter] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const body = request.body as { items?: unknown };
       if (!Array.isArray(body.items) || body.items.length === 0 || body.items.length > MAX_OUTBOUND_BATCH_SIZE * 4) {

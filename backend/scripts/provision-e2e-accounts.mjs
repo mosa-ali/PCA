@@ -82,11 +82,17 @@ if (process.env.NODE_ENV === 'production') {
 const now = new Date();
 
 // --- The verified account -------------------------------------------------
+// ONE sender instance, injected AND queried. TestSandboxEmailSender records mail
+// in a per-INSTANCE array, so constructing a second one to read the code back
+// searches an empty array and always returns null -- which would make this
+// script throw before any browser test ran. bootstrap-e2e-parent-account.mjs and
+// seed-local.mjs both share a single instance for exactly this reason.
+const emailSender = createTestSandboxEmailSender();
 const parentEmail = `${PARENT_KEY}@${TEST_EMAIL_DOMAIN}`;
 const parentAccountService = new ParentAccountService({
   repository: new MySqlParentAccountRepository(),
   authService: new AuthService(new MySqlAuthRepository()),
-  emailSender: createTestSandboxEmailSender(),
+  emailSender,
   familyGenesisEngine: new FamilyOwnerAttestationChainEngine(
     new MySqlFamilyAuthorityGenesisStore(),
     new MySqlFamilyAuthorityAttestationChainStore(),
@@ -96,7 +102,6 @@ const parentAccountService = new ParentAccountService({
 });
 
 await parentAccountService.register(parentEmail, TEST_PASSWORD, TEST_PASSWORD);
-const emailSender = createTestSandboxEmailSender();
 const verificationCode = emailSender.lastCodeFor(parentEmail);
 if (!verificationCode) refuse('no verification code was recorded for the fixture address.');
 const verified = await parentAccountService.verifyEmail(parentEmail, verificationCode);

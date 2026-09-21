@@ -107,25 +107,55 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
         'restart loss errs toward the safer configuration.',
     },
   ],
+  [
+    'BonusGrantLedger',
+    {
+      durableRequired: false,
+      classification:
+        'DOCUMENTED-DELIBERATE, NOT SILENT. Deliberately in-memory per its own class doc comment ' +
+        '(childrequests/BonusGrantLedger.ts:4-16): bonus grants are exactly the E2EE-only family-policy ' +
+        'content contracts/schedule-runtime/SchedulePolicyV1.md protects, so this is a same-posture ' +
+        'bookkeeping store rather than a central plaintext family-policy shortcut, and the ACTUAL ' +
+        'enforcement source of truth is always the device\'s own persisted SchedulePolicyV1 -- losing this ' +
+        'ledger does not silently weaken enforcement. It is listed here because it is constructed in ' +
+        'main.ts:660 and, being named without an "InMemory" prefix, was invisible to the naming-convention ' +
+        'detector until an independent review caught it. It and InMemoryChildRequestRepository share this ' +
+        'rationale, so the P1-04 architecture/privacy determination must confirm BOTH rather than one.',
+    },
+  ],
 ]);
+
+/**
+ * In-memory production stores whose class names do NOT start with "InMemory", and
+ * which the pattern below therefore cannot see. Listed explicitly so the blind
+ * spot is documented rather than hidden -- the detector recognises a NAMING
+ * CONVENTION, not in-memory behaviour, and BonusGrantLedger proved that gap was
+ * real (it sat beside a registered store in main.ts, unclassified).
+ */
+const NON_PREFIXED_IN_MEMORY_STORES = ['BonusGrantLedger'];
 
 const CONSTRUCT_PATTERN = /new\s+(InMemory[A-Za-z0-9_]*)\s*\(/g;
 
 /** Pure text analysis so the detector can be proven non-vacuous against a synthetic source. */
 function inMemoryStoresConstructedIn(source) {
-  return new Set([...source.matchAll(CONSTRUCT_PATTERN)].map((match) => match[1]));
+  const found = new Set([...source.matchAll(CONSTRUCT_PATTERN)].map((match) => match[1]));
+  for (const name of NON_PREFIXED_IN_MEMORY_STORES) {
+    if (new RegExp(`new\\s+${name}\\s*\\(`).test(source)) found.add(name);
+  }
+  return found;
 }
 
-test('NEGATIVE CONTROL: the detector really does find in-memory constructions', () => {
+test('NEGATIVE CONTROL: the detector really does find in-memory constructions, including non-prefixed names', () => {
   const synthetic = [
     'const a = new InMemoryThing();',
     'const b = new InMemoryAnotherRepository(dep);',
     'const c = new MySqlThing();',
+    'const d = new BonusGrantLedger();',
   ].join('\n');
   assert.deepEqual(
     [...inMemoryStoresConstructedIn(synthetic)].sort(),
-    ['InMemoryAnotherRepository', 'InMemoryThing'],
-    'the detector must match in-memory constructions and ignore durable ones',
+    ['BonusGrantLedger', 'InMemoryAnotherRepository', 'InMemoryThing'],
+    'the detector must match in-memory constructions (prefixed AND explicitly listed) and ignore durable ones',
   );
   assert.equal(inMemoryStoresConstructedIn('new MySqlThing();').size, 0);
 });
