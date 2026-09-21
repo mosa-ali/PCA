@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { axe } from 'vitest-axe';
 import i18n, { applyDocumentDirection } from '../../src/i18n';
 import ParentGuide from '../../src/pages/guide/ParentGuide';
 import { GUIDE_CATEGORIES } from '../../src/guide/guideTopics';
@@ -54,5 +55,10 @@ describe('Parent Guide', () => {
     await userEvent.type(search, 'الاسترداد');
     expect(screen.getByText(i18n.t('guide.searchResults', { count: 1 }))).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /الاسترداد/ })).toHaveAttribute('href', '#guide-topic-recovery');
+  });
+
+  it('has no axe violations in the Guide information architecture', async () => {
+    const { container } = renderWithProviders(<ParentGuide />, { route: '/guide' });
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

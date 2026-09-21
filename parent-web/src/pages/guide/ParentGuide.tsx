@@ -154,7 +154,7 @@ export default function ParentGuide() {
   }, [location.hash]);
 
   return (
-    <section className="guide-page" aria-labelledby="parent-guide-title">
+    <div className="guide-page">
       <header className="guide-hero">
         <p className="guide-eyebrow">{t('guide.eyebrow')}</p>
         <h1 id="parent-guide-title">{t('guide.title')}</h1>
@@ -167,7 +167,7 @@ export default function ParentGuide() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('guide.searchPlaceholder')}
-            aria-controls="guide-search-results"
+            aria-controls={query.trim() ? 'guide-search-results' : undefined}
           />
           {query && (
             <button type="button" className="btn btn-secondary guide-clear-search" onClick={() => setQuery('')}>
@@ -225,6 +225,6 @@ export default function ParentGuide() {
           })}
         </div>
       </div>
-    </section>
+    </div>
   );
 }
