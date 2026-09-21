@@ -1,13 +1,70 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
-import { DEFAULT_PARENT_WEB_ORIGIN, registerParentWebCors, resolveParentWebOrigin } from '../../dist/http/parentWebCors.js';
+import {
+  DEFAULT_PARENT_WEB_ORIGIN,
+  InsecureProductionOriginError,
+  MissingParentWebOriginError,
+  registerParentWebCors,
+  resolveParentWebOrigin,
+  resolvePlatformAdminWebOrigin,
+} from '../../dist/http/parentWebCors.js';
 
-test('parent-web CORS defaults to the local parent console origin and rejects malformed configuration', () => {
-  assert.equal(resolveParentWebOrigin({}), DEFAULT_PARENT_WEB_ORIGIN);
-  assert.equal(resolveParentWebOrigin({ PCA_PARENT_WEB_ORIGIN: 'https://parent.example.test' }), 'https://parent.example.test');
-  assert.throws(() => resolveParentWebOrigin({ PCA_PARENT_WEB_ORIGIN: 'https://parent.example.test/path' }));
-  assert.throws(() => resolveParentWebOrigin({ PCA_PARENT_WEB_ORIGIN: '*' }));
+test('parent-web CORS uses the local parent console origin only in non-production runtimes', () => {
+  // Development/test keep the deliberate localhost default so local work needs no configuration.
+  assert.equal(resolveParentWebOrigin({ NODE_ENV: 'test' }), DEFAULT_PARENT_WEB_ORIGIN);
+  assert.equal(resolveParentWebOrigin({ NODE_ENV: 'development' }), DEFAULT_PARENT_WEB_ORIGIN);
+  assert.equal(
+    resolveParentWebOrigin({ NODE_ENV: 'test', PCA_PARENT_WEB_ORIGIN: 'http://localhost:4000' }),
+    DEFAULT_PARENT_WEB_ORIGIN,
+  );
+
+  // Production accepts an explicit https origin.
+  assert.equal(
+    resolveParentWebOrigin({ NODE_ENV: 'production', PCA_PARENT_WEB_ORIGIN: 'https://parent.pcasafe.com' }),
+    'https://parent.pcasafe.com',
+  );
+
+  // Malformed configuration is rejected in every runtime.
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'test', PCA_PARENT_WEB_ORIGIN: 'https://parent.example.test/path' }));
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'test', PCA_PARENT_WEB_ORIGIN: '*' }));
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'test', PCA_PARENT_WEB_ORIGIN: 'ftp://parent.example.test' }));
+});
+
+// PCA full read-only assessment, finding P1-02. An unset or unrecognized
+// NODE_ENV is production-sensitive by design (runtime/environment.ts), so the
+// resolver must fail closed rather than silently trusting a localhost origin.
+test('SECURITY (P1-02): parent-web CORS fails closed in production when PCA_PARENT_WEB_ORIGIN is unset or blank', () => {
+  assert.throws(() => resolveParentWebOrigin({}), MissingParentWebOriginError, 'unset NODE_ENV is production-sensitive');
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'production' }), MissingParentWebOriginError);
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'production', PCA_PARENT_WEB_ORIGIN: '   ' }), MissingParentWebOriginError);
+  assert.throws(() => resolveParentWebOrigin({ NODE_ENV: 'Production' }), MissingParentWebOriginError, 'wrong-case value is not recognized');
+});
+
+test('SECURITY (P1-02): parent-web CORS refuses a plaintext origin in production but allows it locally', () => {
+  assert.throws(
+    () => resolveParentWebOrigin({ NODE_ENV: 'production', PCA_PARENT_WEB_ORIGIN: 'http://parent.pcasafe.com' }),
+    InsecureProductionOriginError,
+  );
+  assert.equal(
+    resolveParentWebOrigin({ NODE_ENV: 'test', PCA_PARENT_WEB_ORIGIN: 'http://localhost:5173' }),
+    'http://localhost:5173',
+    'http remains permitted outside production so local development is unaffected',
+  );
+});
+
+test('platform-admin origin is optional, is never a localhost fallback, and requires https in production', () => {
+  assert.equal(resolvePlatformAdminWebOrigin({ NODE_ENV: 'test' }), null);
+  assert.equal(resolvePlatformAdminWebOrigin({ NODE_ENV: 'production' }), null, 'absent means same-origin deployment, not a fallback');
+  assert.equal(
+    resolvePlatformAdminWebOrigin({ NODE_ENV: 'production', PCA_PLATFORM_ADMIN_WEB_ORIGIN: 'https://platform.pcasafe.com' }),
+    'https://platform.pcasafe.com',
+  );
+  assert.throws(
+    () => resolvePlatformAdminWebOrigin({ NODE_ENV: 'production', PCA_PLATFORM_ADMIN_WEB_ORIGIN: 'http://platform.pcasafe.com' }),
+    InsecureProductionOriginError,
+  );
+  assert.throws(() => resolvePlatformAdminWebOrigin({ NODE_ENV: 'test', PCA_PLATFORM_ADMIN_WEB_ORIGIN: '*' }));
 });
 
 test('parent-web CORS allows credentialed reads and the CSRF preflight from the exact configured origin only', async () => {
@@ -80,6 +137,45 @@ test('parent-web CORS preflights GET/HEAD/POST/PATCH/DELETE and refuses PUT and 
   // ... and PUT is not advertised either, so a browser never caches it as permitted.
   const advertised = (await preflight('POST')).headers['access-control-allow-methods'].split(', ');
   assert.ok(!advertised.includes('PUT'), 'PUT must not be advertised in Access-Control-Allow-Methods');
+
+  await app.close();
+});
+
+// PCA full assessment ARCH-001 / P0-05: the Platform Administration console is a
+// separate authority plane whose documented topology (platform.pcasafe.com ->
+// console, api.pcasafe.com -> API) is cross-origin, but before this change it had
+// no admissible origin at all. It is now expressible -- WITHOUT widening the
+// parent plane, and without a wildcard -- and gets its own method allowlist.
+test('platform-admin origin, when configured, gets its own method allowlist: PUT is granted there and never to the parent origin', async () => {
+  const app = Fastify({ logger: false });
+  registerParentWebCors(app, 'https://parent.pcasafe.com', 'https://platform.pcasafe.com');
+  app.get('/api/parent/session', async () => ({ ok: true }));
+  app.put('/platform-admin/settings', async () => ({ ok: true }));
+  await app.ready();
+
+  const preflight = (origin, requestedMethod) =>
+    app.inject({
+      method: 'OPTIONS',
+      url: '/platform-admin/settings',
+      headers: {
+        origin,
+        'access-control-request-method': requestedMethod,
+        'access-control-request-headers': 'authorization, content-type',
+      },
+    });
+
+  const adminPut = await preflight('https://platform.pcasafe.com', 'PUT');
+  assert.equal(adminPut.statusCode, 204, 'the admin console must be able to PUT its settings once explicitly configured');
+  assert.equal(adminPut.headers['access-control-allow-origin'], 'https://platform.pcasafe.com');
+  assert.ok(adminPut.headers['access-control-allow-methods'].split(', ').includes('PUT'));
+
+  const parentPut = await preflight('https://parent.pcasafe.com', 'PUT');
+  assert.equal(parentPut.statusCode, 403, 'PUT must never be granted to the parent origin');
+  assert.equal(parentPut.headers['access-control-allow-methods'], undefined);
+
+  const unknownOrigin = await preflight('https://evil.example.test', 'GET');
+  assert.equal(unknownOrigin.statusCode, 403);
+  assert.equal(unknownOrigin.headers['access-control-allow-origin'], undefined);
 
   await app.close();
 });
