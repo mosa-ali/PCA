@@ -5,7 +5,7 @@
 // CHECK constraint, and cross-domain compatibility with the SHARED
 // service_sessions table (revoke-all).
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
 import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
@@ -458,9 +458,19 @@ test('MySQL: accepting a family-member invitation consumes exactly one parent-me
 // anything.
 // ---------------------------------------------------------------------
 
-/** Directly sets an account's family_id, standing in for what the real MySqlFamilyMemberAccountBinder durably writes after a genuine acceptance (see FamilyMemberInvitationService.acceptInvitation's own doc comment on why that bind is a separate, best-effort step outside acceptAtomically's own transaction). */
+/** Directly sets an account's family_id, standing in for what the real MySqlFamilyMemberAccountBinder durably writes after a genuine acceptance (see FamilyMemberInvitationService.acceptInvitation's own doc comment on why that bind is a separate, best-effort step outside acceptAtomically's own transaction). The 0043 membership foreign key requires the synthetic family row to exist before the real binder is exercised. */
 async function bindAccountToFamilyForTest(accountId, familyId) {
-  await runInTransaction((conn) => execute(conn, `UPDATE parent_accounts SET family_id = ? WHERE account_id = ?`, [familyId, accountId]));
+  const familyReferenceHash = createHash('sha256').update(familyId, 'utf8').digest();
+  await runInTransaction(async (conn) => {
+    await execute(
+      conn,
+      `INSERT INTO families (family_id, family_reference_hash, created_at)
+       VALUES (?, ?, NOW(3))
+       ON DUPLICATE KEY UPDATE family_id = family_id`,
+      [familyId, familyReferenceHash],
+    );
+    await execute(conn, `UPDATE parent_accounts SET family_id = ? WHERE account_id = ?`, [familyId, accountId]);
+  });
 }
 
 async function readAccountFamilyId(accountId) {
