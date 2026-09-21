@@ -49,13 +49,14 @@ import { test, expect } from '@playwright/test';
  *        VITE_PCA_DEMO_MODE=false
  *        VITE_E2E_REAL_PROXY_TARGET (the backend's own origin, e.g.
  *          http://127.0.0.1:4001)
- *        VITE_PCA_API_BASE_URL="" (empty string, NOT omitted/unset --
+ *        VITE_PCA_API_BASE_URL="/" (relative root, NOT omitted/unset --
  *          RealServiceAuthClient.url() joins this directly onto each request
- *          path; leaving it unset falls back to src/config/env.ts's/.env's
- *          `http://localhost:4001` default, which makes the browser call the
- *          backend's origin DIRECTLY instead of the same-origin `/api/...`
- *          path this config's vite proxy is listening on. Confirmed by
- *          direct reproduction: with this var unset, sign-in fails with a
+ *          path, keeping the browser request same-origin so this config's
+ *          Vite proxy can forward it. Leaving it unset falls back to
+ *          src/config/env.ts's/.env's `http://localhost:4001` default, which
+ *          makes the browser call the backend's origin DIRECTLY instead of
+ *          the same-origin `/api/...` path. Confirmed by direct
+ *          reproduction: with this var unset, sign-in fails with a
  *          generic "Something went wrong" error and the suite never leaves
  *          /login -- the backend has no CORS layer (see vite.config.ts's own
  *          header), so that direct cross-origin fetch is rejected by the

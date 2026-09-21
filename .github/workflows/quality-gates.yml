@@ -621,12 +621,12 @@ jobs:
           fi
           echo "Certified spec set unchanged; realBackend.spec.ts and acceptance-flow.spec.ts are the certified suites."
       - name: Run parent-web real-backend E2E
-        # VITE_PCA_API_BASE_URL is set to an EMPTY STRING, not omitted: the API
-        # client joins it directly onto each path, so empty makes every request
-        # relative (and therefore same-origin, and therefore proxied). Leaving it
-        # unset falls back to an absolute backend origin, which the browser then
-        # blocks because the backend deliberately has no CORS layer. See the
-        # spec's own header -- this was confirmed by direct reproduction.
+        # VITE_PCA_API_BASE_URL is set to the relative root '/', not omitted or
+        # left empty: the API client joins it directly onto each path, so every
+        # request stays same-origin and is handled by this job's Vite proxy.
+        # An empty/unset value falls back to an absolute backend origin, which
+        # the browser blocks because the backend deliberately has no CORS layer.
+        # See the spec's own header -- this was confirmed by direct reproduction.
         #
         # SCOPE, and why this is not the whole e2e-real directory.
         #
@@ -652,7 +652,7 @@ jobs:
         working-directory: parent-web
         env:
           VITE_PCA_DEMO_MODE: 'false'
-          VITE_PCA_API_BASE_URL: ''
+          VITE_PCA_API_BASE_URL: /
         run: npx playwright test --config=playwright.real.config.ts --project=chromium realBackend.spec.ts acceptance-flow.spec.ts
       - name: Assert the parent-web run was not vacuously skipped, and record evidence
         if: always()
