@@ -63,6 +63,15 @@ export interface ActiveLoginStepUpCode {
   attemptCount: number;
 }
 
+export interface NewDailyLoginGrant {
+  grantId: string;
+  accountId: ParentAccountId;
+  tokenHash: string;
+  purpose: 'PARENT_DAILY_LOGIN';
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 /** Same shape as NewVerificationCode/ActiveVerificationCode, deliberately kept as a separate type against the separate parent_password_reset_codes table (migration 0029) -- see that migration's header. */
 export interface NewPasswordResetCode {
   codeId: string;
@@ -159,6 +168,15 @@ export interface ParentAccountRepository {
   consumeLoginStepUpCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
   /** Idempotent: only writes if the column is currently NULL. */
   markFirstLoginCompletedIfAbsent(accountId: ParentAccountId, completedAt: Date): Promise<void>;
+
+  /** Stores only the hash of the opaque browser grant. */
+  insertDailyLoginGrant(record: NewDailyLoginGrant): Promise<void>;
+  /** Atomically validates and records use of a grant, rejecting expired/revoked/cross-account tokens. */
+  validateAndTouchDailyLoginGrant(accountId: ParentAccountId, tokenHash: string, now: Date): Promise<boolean>;
+  /** Revokes only the grant presented by the current browser. */
+  revokeDailyLoginGrant(accountId: ParentAccountId, tokenHash: string, revokedAt: Date): Promise<void>;
+  /** Revokes every browser grant for the account. */
+  revokeAllDailyLoginGrants(accountId: ParentAccountId, revokedAt: Date): Promise<number>;
 
   /** Legacy narrow scope helper retained for invitation/admin-owned flows. The Parent registration/GENESIS_R1 path must not call it independently; genesis uses one atomic repository boundary instead. */
   grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: OpaqueFamilyId, now: Date): Promise<void>;

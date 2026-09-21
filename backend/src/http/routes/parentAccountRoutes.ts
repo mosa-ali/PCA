@@ -32,6 +32,7 @@ import {
   parseCookies,
   serializeCookie,
   serializeExpiredCookie,
+  dailyLoginGrantCookieName,
   sessionCookieName,
 } from '../../parentaccount/cookies.js';
 import { isProductionSensitiveRuntime } from '../../runtime/environment.js';
@@ -50,6 +51,7 @@ import {
   GENESIS_STEP_UP_EMAIL_RATE_LIMIT,
   GENESIS_STEP_UP_IP_RATE_LIMIT,
   VERIFY_IP_RATE_LIMIT,
+  DAILY_LOGIN_GRANT_TTL_MS,
 } from '../../parentaccount/policy.js';
 import { deriveFreeAccessStatus } from '../../parentaccount/freeaccess/deriveFreeAccessStatus.js';
 import type { FreeAccessAccountRepository } from '../../parentaccount/freeaccess/FreeAccessAccountRepository.js';
@@ -125,14 +127,19 @@ function generateCsrfToken(): string {
 
 /** 12h, matching AuthService's own DEFAULT_SESSION_TTL_MS -- kept as a local constant rather than importing auth/policy.ts's internal default, since this module only needs the wall-clock duration to size the cookie's Max-Age, never the TTL enforcement itself (AuthService still owns that). */
 const SESSION_COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
+const DAILY_LOGIN_GRANT_COOKIE_MAX_AGE_SECONDS = Math.floor(DAILY_LOGIN_GRANT_TTL_MS / 1000);
 
-function setSessionCookies(reply: FastifyReply, rawSessionToken: string): string {
+function setSessionCookies(reply: FastifyReply, rawSessionToken: string, rawDailyLoginGrantToken?: string): string {
   const secure = isProductionSensitiveRuntime();
   const csrfToken = generateCsrfToken();
-  reply.header('Set-Cookie', [
+  const cookies = [
     serializeCookie(sessionCookieName(), rawSessionToken, { httpOnly: true, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
     serializeCookie(csrfCookieName(), csrfToken, { httpOnly: false, secure, maxAgeSeconds: SESSION_COOKIE_MAX_AGE_SECONDS }),
-  ]);
+  ];
+  if (rawDailyLoginGrantToken) {
+    cookies.push(serializeCookie(dailyLoginGrantCookieName(), rawDailyLoginGrantToken, { httpOnly: true, secure, maxAgeSeconds: DAILY_LOGIN_GRANT_COOKIE_MAX_AGE_SECONDS }));
+  }
+  reply.header('Set-Cookie', cookies);
   return csrfToken;
 }
 
@@ -141,12 +148,18 @@ function clearSessionCookies(reply: FastifyReply): void {
   reply.header('Set-Cookie', [
     serializeExpiredCookie(sessionCookieName(), { httpOnly: true, secure }),
     serializeExpiredCookie(csrfCookieName(), { httpOnly: false, secure }),
+    serializeExpiredCookie(dailyLoginGrantCookieName(), { httpOnly: true, secure }),
   ]);
 }
 
 function readSessionCookie(request: FastifyRequest): string | null {
   const cookies = parseCookies(request.headers.cookie);
   return cookies.get(sessionCookieName()) ?? null;
+}
+
+function readDailyLoginGrantCookie(request: FastifyRequest): string | null {
+  const cookies = parseCookies(request.headers.cookie);
+  return cookies.get(dailyLoginGrantCookieName()) ?? null;
 }
 
 /** Double-submit CSRF check: the `pca_family_csrf` cookie value must exactly match the `X-PCA-CSRF-Token` header. Cookie presence alone (without the header, or with a mismatched header) never passes -- an attacker's cross-origin form/fetch can trigger the cookie to be sent automatically but cannot read it to also set the matching header, and SameSite=Strict additionally blocks the cookie from even being attached on a cross-site navigation/request. */
@@ -306,7 +319,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return;
     }
     try {
-      const result = await parentAccountService.login(email, password);
+      const result = await parentAccountService.login(email, password, readDailyLoginGrantCookie(request) ?? undefined);
       if (result.status === 'STEP_UP_REQUIRED') {
         await reply.code(200).send({ sessionEstablished: false, stepUpRequired: true });
         return;
@@ -338,7 +351,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.completeLoginStepUp(email, code);
-      setSessionCookies(reply, result.rawSessionToken);
+      setSessionCookies(reply, result.rawSessionToken, result.rawDailyLoginGrantToken);
       await reply.code(200).send({ accountId: result.accountId, familyId: result.familyId, role: result.role, sessionEstablished: true });
     } catch (error) {
       if (error instanceof ParentAccountError) {
@@ -473,7 +486,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       return;
     }
     if (token !== null) {
-      await parentAccountService.logout(token);
+      await parentAccountService.logout(token, readDailyLoginGrantCookie(request) ?? undefined);
     }
     clearSessionCookies(reply);
     await reply.code(204).send();

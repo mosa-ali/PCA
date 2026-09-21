@@ -187,6 +187,7 @@ const files = [
   "test/commercialnotifications/renewalUpcomingSchemaPrivacy.test.mjs",
   "test/commercialnotifications/service.test.mjs",
   "test/parentaccount/service.test.mjs",
+  "test/parentaccount/dailyLoginGrant.test.mjs",
   "test/parentaccount/routes.test.mjs",
   "test/parentaccount/cookies.test.mjs",
   "test/parentaccount/verificationCode.test.mjs",

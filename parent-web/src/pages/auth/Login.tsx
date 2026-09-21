@@ -139,6 +139,37 @@ export default function Login() {
     }
   }
 
+  async function handleResendCode() {
+    setError(null);
+    setCodeInvalid(false);
+    setSubmitting(true);
+    try {
+      const result = await clients.serviceAuth.signIn(email, password);
+      if (result.status === 'STEP_UP_REQUIRED') {
+        setCode('');
+        setSubmitting(false);
+        return;
+      }
+      proceedToReturnPath();
+    } catch (err) {
+      if (err instanceof ServiceAuthError) {
+        if (err.code === 'RATE_LIMITED') setError(t('auth.rateLimited'));
+        else if (err.code === 'INVALID_CREDENTIALS') setError(t('auth.invalidCredentials'));
+        else setError(t('auth.genericError'));
+      } else {
+        setError(t('auth.genericError'));
+      }
+      setSubmitting(false);
+    }
+  }
+
+  function handleBackToLogin() {
+    setStepUpRequired(false);
+    setCode('');
+    setCodeInvalid(false);
+    setError(null);
+  }
+
   if (stepUpRequired) {
     return (
       <section aria-labelledby="login-step-up-title" className="auth-page">
@@ -173,6 +204,16 @@ export default function Login() {
             {t('auth.loginStepUpSubmit')}
           </button>
         </form>
+        <p>
+          <button type="button" className="btn" onClick={handleResendCode} disabled={submitting}>
+            {t('auth.loginStepUpResend')}
+          </button>
+        </p>
+        <p>
+          <button type="button" className="btn" onClick={handleBackToLogin} disabled={submitting}>
+            {t('auth.loginStepUpBack')}
+          </button>
+        </p>
       </section>
     );
   }

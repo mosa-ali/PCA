@@ -23,6 +23,9 @@ class RecordingEmailSender {
   async sendPasswordResetCode(email, code) {
     this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
   }
+  async sendLoginStepUpCode(email, code) {
+    this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
+  }
   lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].kind === kind && this.sent[i].email === email) return this.sent[i].code;
@@ -190,7 +193,7 @@ test('a matching CSRF cookie+header succeeds on revoke-all, and the session is u
   assert.equal(after.statusCode, 401);
 });
 
-test('POST /api/parent/login fails generically for wrong password/unknown email/unverified account, and succeeds for a verified account', async () => {
+test('POST /api/parent/login fails generically for wrong password/unknown email, then requires and completes daily email OTP for a verified account', async () => {
   const { app, emailSender } = buildApp();
   await registerVerifyAndCookies(app, emailSender);
 
@@ -204,7 +207,17 @@ test('POST /api/parent/login fails generically for wrong password/unknown email/
 
   const ok = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: PASSWORD } });
   assert.equal(ok.statusCode, 200);
-  assert.equal(ok.json().sessionEstablished, true);
+  assert.deepEqual(ok.json(), { sessionEstablished: false, stepUpRequired: true });
+  assert.equal(setCookieHeaders(ok).length, 0, 'password verification must not issue a session or daily grant');
+
+  const loginStepUpCode = emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
+  const completed = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: loginStepUpCode } });
+  assert.equal(completed.statusCode, 200);
+  assert.equal(completed.json().sessionEstablished, true);
+  const dailyGrantCookie = setCookieHeaders(completed).find((cookie) => cookie.startsWith('pca_parent_daily_login_grant='));
+  assert.ok(dailyGrantCookie, 'successful OTP must establish the browser daily grant');
+  assert.match(dailyGrantCookie, /HttpOnly/i);
+  assert.match(dailyGrantCookie, /SameSite=Strict/i);
 });
 
 test('registration/verification/login are rate-limited', async () => {
@@ -263,6 +276,11 @@ test('POST /api/parent/reset-password: full request -> reset -> old password rej
 
   const newLogin = await app.inject({ method: 'POST', url: '/api/parent/login', payload: { email: EMAIL, password: NEW_PASSWORD } });
   assert.equal(newLogin.statusCode, 200);
+  assert.deepEqual(newLogin.json(), { sessionEstablished: false, stepUpRequired: true });
+  const loginStepUpCode = emailSender.lastCodeFor(EMAIL, 'LOGIN_STEP_UP');
+  const completed = await app.inject({ method: 'POST', url: '/api/parent/login/step-up', payload: { email: EMAIL, code: loginStepUpCode } });
+  assert.equal(completed.statusCode, 200);
+  assert.equal(completed.json().sessionEstablished, true);
 });
 
 test('POST /api/parent/reset-password rejects an invalid/expired code with 401 invalid_code', async () => {

@@ -23,6 +23,9 @@ class RecordingEmailSender {
   async sendVerificationCode(email, code) {
     this.sent.push({ email, code });
   }
+  async sendLoginStepUpCode(email, code) {
+    this.sent.push({ email, code });
+  }
   lastCodeFor(email) {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].email === email) return this.sent[i].code;
@@ -41,6 +44,13 @@ function buildService() {
 
 function uniqueEmail() {
   return `writer57-${randomUUID()}@example.com`;
+}
+
+async function loginWithOtp(service, emailSender, email, password) {
+  const pending = await service.login(email, password);
+  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' });
+  const stepUpCode = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  return service.completeLoginStepUp(email, stepUpCode);
 }
 
 test('MySQL: registration persists a PENDING_VERIFICATION row, findable by email hash', async () => {
@@ -94,7 +104,7 @@ test('MySQL: revoke-all-sessions revokes every session for the account through t
   await service.register(email, password, password);
   const code = emailSender.lastCodeFor(email);
   const first = await service.verifyEmail(email, code);
-  const second = await service.login(email, password);
+  const second = await loginWithOtp(service, emailSender, email, password);
 
   await service.revokeAllSessions(first.rawSessionToken);
 
@@ -201,7 +211,7 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   assert.equal(familyRows.length, 1, 'disposable suspend fixture must create its family row');
 
   // Sanity: login works before any suspend action.
-  await parentServiceWithGenesis.login(email, password);
+  const preSuspendLogin = await loginWithOtp(parentServiceWithGenesis, emailSender, email, password);
 
   // Real suspend: real RBAC check, real step-up consumption, real audit row.
   adminClockOffsetMs += 31_000; // fresh TOTP counter -- see TOTP-REPLAY-1 in PlatformAdminAuthService.
@@ -223,7 +233,7 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const reactivated = await familyStatusService.reactivate(admin, familyId, reactivateStepUp.stepUpId);
   assert.equal(reactivated.status, 'ACTIVE');
 
-  const relogin = await parentServiceWithGenesis.login(email, password);
+  const relogin = await loginWithOtp(parentServiceWithGenesis, emailSender, email, password);
   assert.equal(typeof relogin.rawSessionToken, 'string');
 });
 
@@ -284,7 +294,7 @@ test('MySQL SECURITY: a hostile re-registration of a still-unverified email cann
     assert.equal(err.code, 'UNAUTHORIZED');
     return true;
   });
-  const login = await service.login(email, ownerPassword);
+  const login = await loginWithOtp(service, emailSender, email, ownerPassword);
   assert.equal(typeof login.rawSessionToken, 'string');
 });
 

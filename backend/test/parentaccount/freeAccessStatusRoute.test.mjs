@@ -19,6 +19,9 @@ class RecordingEmailSender {
   async sendVerificationCode(email, code) {
     this.sent.push({ email, code });
   }
+  async sendLoginStepUpCode(email, code) {
+    this.sent.push({ email, code });
+  }
   lastCodeFor(email) {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].email === email) return this.sent[i].code;

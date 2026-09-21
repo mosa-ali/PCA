@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   csrfCookieName,
+  dailyLoginGrantCookieName,
   parseCookies,
   serializeCookie,
   serializeExpiredCookie,
@@ -19,6 +20,24 @@ import {
 test('sessionCookieName is the bare (unprefixed) name under test/development', () => {
   assert.equal(sessionCookieName({ NODE_ENV: 'test' }), 'pca_family_session');
   assert.equal(sessionCookieName({ NODE_ENV: 'development' }), 'pca_family_session');
+});
+
+test('dailyLoginGrantCookieName is bare outside production and __Host-prefixed in production-sensitive runtimes', () => {
+  assert.equal(dailyLoginGrantCookieName({ NODE_ENV: 'test' }), 'pca_parent_daily_login_grant');
+  assert.equal(dailyLoginGrantCookieName({ NODE_ENV: 'development' }), 'pca_parent_daily_login_grant');
+  assert.equal(dailyLoginGrantCookieName({ NODE_ENV: 'production' }), '__Host-pca_parent_daily_login_grant');
+  assert.equal(dailyLoginGrantCookieName({}), '__Host-pca_parent_daily_login_grant');
+});
+
+test('daily grant cookie has no JavaScript access and satisfies the __Host cookie preconditions', () => {
+  const name = dailyLoginGrantCookieName({ NODE_ENV: 'production' });
+  const header = serializeCookie(name, 'opaque-random-value', { httpOnly: true, secure: true, sameSite: 'Strict', maxAgeSeconds: 86400 });
+  assert.match(header, /^__Host-pca_parent_daily_login_grant=/);
+  assert.match(header, /HttpOnly/i);
+  assert.match(header, /Secure/i);
+  assert.match(header, /SameSite=Strict/i);
+  assert.match(header, /Path=\//i);
+  assert.doesNotMatch(header, /Domain=/i);
 });
 
 test('SECURITY: sessionCookieName adopts the __Host- prefix whenever Secure will be true -- production, and FAIL CLOSED for missing/unrecognized NODE_ENV', () => {

@@ -9,6 +9,7 @@ import type {
   ActivePasswordResetCode,
   ActiveVerificationCode,
   NewLoginStepUpCode,
+  NewDailyLoginGrant,
   NewPasswordResetCode,
   NewPendingAccount,
   NewVerificationCode,
@@ -177,11 +178,9 @@ export class MySqlParentAccountRepository implements ParentAccountRepository, Fa
         // credential exactly as it was.
         // first_login_completed_at is set HERE, at verification time: the
         // auto-session verifyEmail issues right after this call is itself
-        // an authenticated session, proving mailbox control via a code --
-        // at least as strong as the login-time step-up code this column
-        // otherwise gates (see ParentAccountRecord.firstLoginCompletedAt's
-        // own doc comment). Every normally-created account therefore never
-        // sees a step-up prompt on its very next login.
+        // an authenticated session, proving mailbox control via a code. The
+        // current routine-login gate is the separate browser-bound daily
+        // grant; this marker remains historical/legacy authentication data.
         `UPDATE parent_accounts
          SET status = 'VERIFIED', verified_at = ?, family_id = ?, password_hash = COALESCE(?, password_hash),
              free_access_mode = ?, free_access_duration_days = ?,
@@ -342,6 +341,49 @@ export class MySqlParentAccountRepository implements ParentAccountRepository, Fa
         accountId,
       ]),
     );
+  }
+
+  async insertDailyLoginGrant(record: NewDailyLoginGrant): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `INSERT INTO parent_daily_login_grants (grant_id, account_id, token_hash, purpose, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [record.grantId, record.accountId, record.tokenHash, record.purpose, record.createdAt, record.expiresAt],
+      ),
+    );
+  }
+
+  async validateAndTouchDailyLoginGrant(accountId: ParentAccountId, tokenHash: string, now: Date): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE parent_daily_login_grants
+         SET last_used_at = ?
+         WHERE account_id = ? AND token_hash = ? AND purpose = 'PARENT_DAILY_LOGIN'
+           AND revoked_at IS NULL AND expires_at > ?`,
+        [now, accountId, tokenHash, now],
+      ),
+    );
+    return rowCount === 1;
+  }
+
+  async revokeDailyLoginGrant(accountId: ParentAccountId, tokenHash: string, revokedAt: Date): Promise<void> {
+    await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE parent_daily_login_grants SET revoked_at = ?
+         WHERE account_id = ? AND token_hash = ? AND revoked_at IS NULL`,
+        [revokedAt, accountId, tokenHash],
+      ),
+    );
+  }
+
+  async revokeAllDailyLoginGrants(accountId: ParentAccountId, revokedAt: Date): Promise<number> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(conn, `UPDATE parent_daily_login_grants SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL`, [revokedAt, accountId]),
+    );
+    return rowCount;
   }
 
   /** See ParentAccountRepository.ts's own doc comment: read-only lookup against the SHARED `families` table (owned by platformadmin/accounts) for the login-time suspend check. */

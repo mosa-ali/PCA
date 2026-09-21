@@ -2364,6 +2364,41 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
   },
   {
+    name: "parent_daily_login_grants",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0046_parent_daily_login_grants.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount",
+    columns: [
+      { name: "grant_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque application identifier (see PCA_RELATIONSHIP_ENFORCEMENT_MATRIX.md for FK/soft-reference classification)." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "token_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Domain-separated SHA-256 hash of an opaque HttpOnly browser grant; raw bearer material is never stored." },
+      { name: "purpose", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary purpose binding." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "last_used_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "revoked_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["grant_id"],
+    uniqueIndexes: [
+      { name: "parent_daily_login_grants_token_hash_key", columns: ["token_hash"], unique: true },
+    ],
+    indexes: [
+      { name: "parent_daily_login_grants_account_expiry_idx", columns: ["account_id", "expires_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_daily_login_grants_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_daily_login_grants_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "parent_daily_login_grants_hash_check", clause: "regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')" },
+      { name: "parent_daily_login_grants_purpose_check", clause: "(`purpose` = _ascii'PARENT_DAILY_LOGIN')" },
+    ],
+    applicationEnforcedRelations: [],
+  },
+  {
     name: "parent_password_reset_codes",
     engine: 'InnoDB',
     charset: "utf8mb4",

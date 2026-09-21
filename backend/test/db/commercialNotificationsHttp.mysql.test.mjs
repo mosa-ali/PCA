@@ -44,6 +44,9 @@ class RecordingEmailSender {
   async sendVerificationCode(email, code) {
     this.codes.set(email, code);
   }
+  async sendLoginStepUpCode(email, code) {
+    this.codes.set(email, code);
+  }
 
   codeFor(email) {
     return this.codes.get(email);

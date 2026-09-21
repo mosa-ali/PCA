@@ -77,13 +77,11 @@ export interface ResetPasswordResult {
 }
 
 /**
- * PCA-DW-W3-J: a normal login either establishes a session immediately, or
- * -- for an account whose first-ever login has not yet completed a
- * risk-based email step-up (backend/src/parentaccount/ParentAccountService.ts's
- * `login()`) -- requires one more round trip through `completeLoginStepUp`
- * before a session exists. Modeled as a discriminated result (not a thrown
- * error) because it is an expected, non-exceptional branch of the flow,
- * the same way `RegistrationResult`/`RequestPasswordResetResult` are.
+ * A normal login either establishes a session immediately when the browser
+ * presents a valid server-issued daily grant, or requires one more round trip
+ * through `completeLoginStepUp` after the mailbox OTP. The expected
+ * STEP_UP_REQUIRED branch is modeled as a discriminated result rather than a
+ * thrown error, like RegistrationResult and RequestPasswordResetResult.
  */
 export type SignInResult = { status: 'AUTHENTICATED'; session: AuthenticatedSession } | { status: 'STEP_UP_REQUIRED' };
 

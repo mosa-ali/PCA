@@ -16,6 +16,7 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
   const resetCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
   const stepUpCodesById = new Map();
   const stepUpCodesByAccount = new Map(); // accountId -> [codeId,...] insertion order
+  const dailyLoginGrantsById = new Map();
   const membershipsByAccountFamily = new Map();
 
   function hexOf(buf) {
@@ -179,6 +180,43 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       if (account && account.firstLoginCompletedAt === null) account.firstLoginCompletedAt = completedAt;
     },
 
+    async insertDailyLoginGrant(record) {
+      dailyLoginGrantsById.set(record.grantId, { ...record, lastUsedAt: null, revokedAt: null });
+    },
+
+    async validateAndTouchDailyLoginGrant(accountId, tokenHash, now) {
+      for (const grant of dailyLoginGrantsById.values()) {
+        if (
+          grant.accountId === accountId &&
+          grant.tokenHash === tokenHash &&
+          grant.purpose === 'PARENT_DAILY_LOGIN' &&
+          grant.revokedAt === null &&
+          grant.expiresAt.getTime() > now.getTime()
+        ) {
+          grant.lastUsedAt = now;
+          return true;
+        }
+      }
+      return false;
+    },
+
+    async revokeDailyLoginGrant(accountId, tokenHash, revokedAt) {
+      for (const grant of dailyLoginGrantsById.values()) {
+        if (grant.accountId === accountId && grant.tokenHash === tokenHash && grant.revokedAt === null) grant.revokedAt = revokedAt;
+      }
+    },
+
+    async revokeAllDailyLoginGrants(accountId, revokedAt) {
+      let count = 0;
+      for (const grant of dailyLoginGrantsById.values()) {
+        if (grant.accountId === accountId && grant.revokedAt === null) {
+          grant.revokedAt = revokedAt;
+          count += 1;
+        }
+      }
+      return count;
+    },
+
     async updatePasswordHash(accountId, passwordHash) {
       const account = accountsById.get(accountId);
       if (account && account.status === 'VERIFIED') account.passwordHash = passwordHash;
@@ -234,6 +272,18 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
     // Test-only mutator, not part of the ParentAccountRepository interface.
     _setFamilyStatusForTest(familyId, status) {
       familyStatuses.set(familyId, status);
+    },
+
+    // Test-only mutator, not part of the ParentAccountRepository interface.
+    _setFamilyForTest(accountId, familyId) {
+      const account = accountsById.get(accountId);
+      if (account) account.familyId = familyId;
+    },
+
+    // Test-only mutator, not part of the ParentAccountRepository interface.
+    _disableAccountForTest(accountId, disabledAt) {
+      const account = accountsById.get(accountId);
+      if (account) account.disabledAt = disabledAt;
     },
 
     // Test-only accessor, not part of the ParentAccountRepository interface.

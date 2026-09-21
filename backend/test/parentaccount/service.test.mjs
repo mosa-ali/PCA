@@ -21,6 +21,9 @@ class RecordingEmailSender {
   async sendPasswordResetCode(email, code) {
     this.sent.push({ email, code, kind: 'PASSWORD_RESET' });
   }
+  async sendLoginStepUpCode(email, code) {
+    this.sent.push({ email, code, kind: 'LOGIN_STEP_UP' });
+  }
   lastCodeFor(email, kind = 'VERIFICATION') {
     for (let i = this.sent.length - 1; i >= 0; i -= 1) {
       if (this.sent[i].kind === kind && this.sent[i].email === email) return this.sent[i].code;
@@ -61,6 +64,14 @@ async function registerAndVerify(harness, email = EMAIL, password = PASSWORD) {
   const code = harness.emailSender.lastCodeFor(email);
   assert.ok(code, 'a verification code must have been sent');
   return harness.service.verifyEmail(email, code);
+}
+
+async function loginWithDailyGrant(harness, email = EMAIL, password = PASSWORD) {
+  const pending = await harness.service.login(email, password);
+  assert.deepEqual(pending, { status: 'STEP_UP_REQUIRED' });
+  const code = harness.emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  assert.match(code, /^\d{6}$/);
+  return harness.service.completeLoginStepUp(email, code);
 }
 
 test('register returns the identical PENDING_VERIFICATION response for a brand-new email', async () => {
@@ -200,7 +211,7 @@ test('SECURITY: a hostile re-registration of a still-unverified email cannot ins
     assert.equal(err.code, 'UNAUTHORIZED');
     return true;
   });
-  const login = await harness.service.login(EMAIL, ownerPassword);
+  const login = await loginWithDailyGrant(harness, EMAIL, ownerPassword);
   assert.equal(typeof login.rawSessionToken, 'string');
 });
 
@@ -219,7 +230,7 @@ test('SECURITY: each verification code carries the credential IT was issued for 
 
   await harness.service.verifyEmail(EMAIL, secondCode);
   await assert.rejects(() => harness.service.login(EMAIL, firstPassword));
-  assert.equal(typeof (await harness.service.login(EMAIL, secondPassword)).rawSessionToken, 'string');
+  assert.equal(typeof (await loginWithDailyGrant(harness, EMAIL, secondPassword)).rawSessionToken, 'string');
 });
 
 test('SECURITY: a redeemed code is single-use, and every OTHER live code for that account dies with the account leaving PENDING_VERIFICATION', async () => {
@@ -294,7 +305,7 @@ test('login only succeeds against a VERIFIED account, with a single generic erro
 test('login succeeds against a VERIFIED account with the correct password and fails with the SAME generic error for a wrong one', async () => {
   const harness = buildHarness();
   await registerAndVerify(harness);
-  const outcome = await harness.service.login(EMAIL, PASSWORD);
+  const outcome = await loginWithDailyGrant(harness);
   assert.equal(typeof outcome.rawSessionToken, 'string');
 
   await assert.rejects(() => harness.service.login(EMAIL, 'totally wrong password'), (err) => {
@@ -337,14 +348,14 @@ test('logout is idempotent for an already-revoked/unknown/malformed token', asyn
 test('SECURITY: session fixation -- verify-email always mints a FRESH token distinct from any prior caller-supplied value, and each login mints its own new token', async () => {
   const harness = buildHarness();
   const first = await registerAndVerify(harness);
-  const second = await harness.service.login(EMAIL, PASSWORD);
+  const second = await loginWithDailyGrant(harness);
   assert.notEqual(first.rawSessionToken, second.rawSessionToken);
 });
 
 test('revoke-all-sessions revokes every session for the account, requires an already-valid session, and denies reuse of the very token used to call it', async () => {
   const harness = buildHarness();
   const first = await registerAndVerify(harness);
-  const second = await harness.service.login(EMAIL, PASSWORD);
+  const second = await loginWithDailyGrant(harness);
 
   await harness.service.revokeAllSessions(first.rawSessionToken);
 
@@ -364,7 +375,7 @@ test('PCA-ADD-PA-017 enforcement: an account with no familyId yet is never block
   const harness = buildHarness();
   const outcome = await registerAndVerify(harness);
   assert.equal(outcome.familyId, null);
-  const relogin = await harness.service.login(EMAIL, PASSWORD);
+  const relogin = await loginWithDailyGrant(harness);
   assert.equal(typeof relogin.rawSessionToken, 'string');
 });
 
@@ -433,7 +444,7 @@ test('resetPassword replaces the password and the new password works at login', 
     assert.equal(err.code, 'UNAUTHORIZED');
     return true;
   });
-  const loggedIn = await harness.service.login(EMAIL, NEW_PASSWORD);
+  const loggedIn = await loginWithDailyGrant(harness, EMAIL, NEW_PASSWORD);
   assert.ok(loggedIn.rawSessionToken);
 });
 

@@ -6,7 +6,7 @@ import { renderWithProviders } from '../utils/renderWithProviders';
 import Login from '../../src/pages/auth/Login';
 import { ServiceAuthError } from '../../src/api/real/realServiceAuthClient';
 
-// PCA-DW-W3-J: the backend's risk-based first-login email step-up
+// PCA daily-login email OTP: the backend's browser-bound daily email step-up
 // (ParentAccountService.login() returning STEP_UP_REQUIRED) shipped with no
 // corresponding UI at all -- a real user hitting it would submit their
 // password and see nothing happen (the client used to silently
@@ -55,7 +55,7 @@ describe('Login step-up flow', () => {
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('heading', { name: "Confirm it's you" })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
     expect(screen.getByText(/parent@example\.test/)).toBeInTheDocument();
     expect(assignMock).not.toHaveBeenCalled();
     // The old password form is gone, not just hidden alongside the new one.
@@ -77,10 +77,10 @@ describe('Login step-up flow', () => {
     await userEvent.type(screen.getByLabelText('Email address'), 'parent@example.test');
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    await screen.findByRole('heading', { name: "Confirm it's you" });
+    await screen.findByRole('heading', { name: 'Check your email' });
 
     await userEvent.type(screen.getByLabelText('Verification code'), '123456');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm and sign in' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
     expect(completeLoginStepUpMock).toHaveBeenCalledWith('parent@example.test', '123456');
     expect(assignMock).toHaveBeenCalledWith('/dashboard');
@@ -94,10 +94,10 @@ describe('Login step-up flow', () => {
     await userEvent.type(screen.getByLabelText('Email address'), 'parent@example.test');
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    await screen.findByRole('heading', { name: "Confirm it's you" });
+    await screen.findByRole('heading', { name: 'Check your email' });
 
     await userEvent.type(screen.getByLabelText('Verification code'), '000000');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm and sign in' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
     const error = await screen.findByRole('alert');
     expect(error).toHaveTextContent('That verification code is incorrect or has expired.');
@@ -117,6 +117,25 @@ describe('Login step-up flow', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(assignMock).toHaveBeenCalledWith('/dashboard');
-    expect(screen.queryByRole('heading', { name: "Confirm it's you" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Check your email' })).not.toBeInTheDocument();
+  });
+
+  it('can resend the daily code or return to the password form without changing the authentication contract', async () => {
+    signInMock.mockResolvedValue({ status: 'STEP_UP_REQUIRED' });
+    renderWithProviders(<Login />);
+
+    await userEvent.type(screen.getByLabelText('Email address'), 'parent@example.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct-horse-battery');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('heading', { name: 'Check your email' });
+
+    await userEvent.type(screen.getByLabelText('Verification code'), '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Resend code' }));
+    expect(signInMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText('Verification code')).toHaveValue('');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 // Owner authentication-architecture decision (2026-09-15): real-MySQL
-// coverage for the normal-user (Tier B) login-risk step-up code --
+// coverage for the normal-user (Tier B) login-risk step-up code and the
+// browser-bound daily login grant --
 // backend/src/parentaccount/ParentAccountService.js's login()/
 // completeLoginStepUp(), migration 0042's parent_login_step_up_codes
 // table. Proves this is architecturally SEPARATE from Platform Admin
@@ -54,33 +55,35 @@ function uniqueEmail(label) {
 
 const PASSWORD = 'a genuinely long password value 2026';
 
-/** Registers and verifies a real account through the actual service -- this is the ONLY way an account becomes VERIFIED, and it satisfies the login-step-up requirement immediately (see MySqlParentAccountRepository.markVerified's own comment). */
+/** Registers and verifies a real account through the actual service. Registration/email verification remains separate; every password login without a valid browser grant still requires mailbox step-up. */
 async function registerAndVerify(service, emailSender, email) {
   await service.register(email, PASSWORD, PASSWORD);
   const code = emailSender.lastCodeFor(email, 'VERIFICATION');
   await service.verifyEmail(email, code);
 }
 
-test('EMAIL_VERIFICATION + PASSWORD_AUTH: a normally registered-and-verified account never sees a step-up prompt on login (the common case)', async () => {
+test('EMAIL_VERIFICATION + PASSWORD_AUTH: a normally registered-and-verified account requires daily email OTP before a session', async () => {
   const { service, emailSender } = buildService();
   const email = uniqueEmail('normal');
   await registerAndVerify(service, emailSender, email);
 
   const result = await service.login(email, PASSWORD);
-  assert.equal(result.status, 'AUTHENTICATED');
-  assert.ok(result.rawSessionToken);
+  assert.deepEqual(result, { status: 'STEP_UP_REQUIRED' });
+  const code = emailSender.lastCodeFor(email, 'LOGIN_STEP_UP');
+  const completed = await service.completeLoginStepUp(email, code);
+  assert.ok(completed.rawSessionToken);
+  assert.ok(completed.rawDailyLoginGrantToken);
+  assert.equal((await service.login(email, PASSWORD)).status, 'STEP_UP_REQUIRED');
+  assert.equal((await service.login(email, PASSWORD, completed.rawDailyLoginGrantToken)).status, 'AUTHENTICATED');
   console.log('PASSWORD_AUTH=PASS');
   console.log('EMAIL_VERIFICATION=PASS');
 });
 
-test('EMAIL_OTP: a first-ever login (never verified through the normal flow) requires step-up, issues a real hash-only code, and completing it establishes a session', async () => {
+test('EMAIL_OTP: a valid password without a grant requires a real hash-only code, and completing it establishes a session plus a grant', async () => {
   const { service, repository, emailSender } = buildService();
   const email = uniqueEmail('first-login');
   await registerAndVerify(service, emailSender, email);
   const account = await repository.findByEmailHash((await import('../../dist/parentaccount/emailHash.js')).hashParentEmail(email));
-  // Simulate the pre-migration-0042 state directly -- the ONLY way to genuinely reach this state today, since verifyEmail always sets it.
-  await getPool().query(`UPDATE parent_accounts SET first_login_completed_at = NULL WHERE account_id = ?`, [account.accountId]);
-
   const loginResult = await service.login(email, PASSWORD);
   assert.deepEqual(loginResult, { status: 'STEP_UP_REQUIRED' });
 
@@ -94,13 +97,16 @@ test('EMAIL_OTP: a first-ever login (never verified through the normal flow) req
   const completed = await service.completeLoginStepUp(email, code);
   assert.equal(completed.accountId, account.accountId);
   assert.ok(completed.rawSessionToken);
+  assert.ok(completed.rawDailyLoginGrantToken);
 
   const [[after]] = await getPool().query(`SELECT first_login_completed_at FROM parent_accounts WHERE account_id = ?`, [account.accountId]);
   assert.ok(after.first_login_completed_at, 'first_login_completed_at is now set');
 
-  // A subsequent ordinary login no longer requires step-up.
+  // The historical first_login_completed_at marker is not the daily bypass.
   const secondLogin = await service.login(email, PASSWORD);
-  assert.equal(secondLogin.status, 'AUTHENTICATED');
+  assert.equal(secondLogin.status, 'STEP_UP_REQUIRED');
+  const sameBrowserLogin = await service.login(email, PASSWORD, completed.rawDailyLoginGrantToken);
+  assert.equal(sameBrowserLogin.status, 'AUTHENTICATED');
 
   console.log('EMAIL_OTP=PASS');
   console.log('OTP_HASH_ONLY=PASS');

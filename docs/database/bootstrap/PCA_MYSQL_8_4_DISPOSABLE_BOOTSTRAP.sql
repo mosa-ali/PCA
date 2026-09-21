@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    84 tables
---   713 columns
---    84 primary keys
---    94 foreign keys
---    34 unique non-primary-key indexes
---   130 non-unique indexes
---   255 CHECK constraints
+--    85 tables
+--   721 columns
+--    85 primary keys
+--    95 foreign keys
+--    35 unique non-primary-key indexes
+--   131 non-unique indexes
+--   258 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    43 schema_migrations journal rows
+--    44 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -1198,6 +1198,25 @@ CREATE TABLE `parent_login_step_up_codes` (
   CONSTRAINT `parent_login_step_up_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- parent_daily_login_grants (defined by backend/migrations/0046_parent_daily_login_grants.sql)
+CREATE TABLE `parent_daily_login_grants` (
+  `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `last_used_at` datetime(3) NULL,
+  `revoked_at` datetime(3) NULL,
+  PRIMARY KEY (`grant_id`),
+  UNIQUE KEY `parent_daily_login_grants_token_hash_key` (`token_hash`),
+  KEY `parent_daily_login_grants_account_expiry_idx` (`account_id`, `expires_at`),
+  CONSTRAINT `parent_daily_login_grants_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_daily_login_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_daily_login_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_daily_login_grants_purpose_check` CHECK ((`purpose` = _ascii'PARENT_DAILY_LOGIN'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- parent_password_reset_codes (defined by backend/migrations/0029_parent_password_reset_codes.sql)
 CREATE TABLE `parent_password_reset_codes` (
   `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1770,4 +1789,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0042_parent_login_step_up_codes.sql'),
   ('0043_parent_family_memberships_and_profile.sql'),
   ('0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql'),
-  ('0045_pca_dec_020_r2_genesis_step_up.sql');
+  ('0045_pca_dec_020_r2_genesis_step_up.sql'),
+  ('0046_parent_daily_login_grants.sql');

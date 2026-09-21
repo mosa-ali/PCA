@@ -11,6 +11,8 @@ import {
   LOGIN_STEP_UP_CODE_TTL_MS,
   GENESIS_STEP_UP_CODE_TTL_MS,
   MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE,
+  DAILY_LOGIN_GRANT_PURPOSE,
+  DAILY_LOGIN_GRANT_TTL_MS,
   PASSWORD_RESET_CODE_TTL_MS,
   VERIFICATION_CODE_TTL_MS,
   computeFreeAccessExpiry,
@@ -34,6 +36,7 @@ import type { ParentGenesisService, BeginParentGenesisInput, CompleteParentGenes
 import type { GenesisStepUpRepository } from './GenesisStepUpRepository.js';
 import { GENESIS_STEP_UP_OPERATION } from './GenesisStepUpRepository.js';
 import { hashGenesisSessionId } from './sessionBinding.js';
+import { generateDailyLoginGrant, hashDailyLoginGrant, isPlausibleDailyLoginGrant } from './dailyLoginGrant.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
 
@@ -286,7 +289,7 @@ export class ParentAccountService {
   }
 
   /** PCA-ADD-IDENT-012: only succeeds against a VERIFIED account; generic failure for every other case (unknown email, wrong password, unverified). */
-  async login(email: string, password: string): Promise<LoginOutcome> {
+  async login(email: string, password: string, dailyLoginGrantToken?: string): Promise<LoginOutcome> {
     if (!isPlausibleEmail(email) || typeof password !== 'string' || password.length === 0) {
       throw new ParentAccountError('INVALID_INPUT');
     }
@@ -316,27 +319,33 @@ export class ParentAccountService {
 
     const role = await this.resolveFamilyRole(account.accountId, account.familyId);
 
-    // Owner authentication-architecture decision (2026-09-15): normal users
-    // get password + risk-based email step-up, never Platform Admin-style
-    // TOTP. The one risk trigger implemented for the current release is
-    // "this account has never completed an authenticated session" -- see
-    // ParentAccountRecord.firstLoginCompletedAt's own doc comment for why
-    // this is already false (step-up already satisfied) for every account
-    // that has ever verified its email, the overwhelming common case.
-    if (account.firstLoginCompletedAt === null) {
-      await this.issueAndSendLoginStepUpCode(account.accountId, email);
-      return { status: 'STEP_UP_REQUIRED' };
+    // A successful password check is never enough to bypass daily verification
+    // unless this exact browser presents its own opaque, server-issued grant.
+    // The grant is account-bound and validated atomically with last_used_at;
+    // it is never an account-wide "last OTP date" flag.
+    if (typeof this.repository.validateAndTouchDailyLoginGrant !== 'function' || typeof this.repository.insertDailyLoginGrant !== 'function') {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    if (isPlausibleDailyLoginGrant(dailyLoginGrantToken)) {
+      const grantValid = await this.repository.validateAndTouchDailyLoginGrant(account.accountId, hashDailyLoginGrant(dailyLoginGrantToken), this.now());
+      if (grantValid) {
+        const issued = await this.issueSessionFor(account.accountId);
+        return {
+          status: 'AUTHENTICATED',
+          accountId: account.accountId,
+          familyId: account.familyId,
+          rawSessionToken: issued.rawToken,
+          sessionExpiresAt: issued.session.expiresAt,
+          role,
+        };
+      }
     }
 
-    const issued = await this.issueSessionFor(account.accountId);
-    return {
-      status: 'AUTHENTICATED',
-      accountId: account.accountId,
-      familyId: account.familyId,
-      rawSessionToken: issued.rawToken,
-      sessionExpiresAt: issued.session.expiresAt,
-      role,
-    };
+    // No valid grant: issue the existing short-lived, hash-only, single-use
+    // login OTP and do not issue a Parent session yet. This applies to every
+    // explicit login event, while signup/email verification remains unchanged.
+    await this.issueAndSendLoginStepUpCode(account.accountId, email);
+    return { status: 'STEP_UP_REQUIRED' };
   }
 
   private async issueAndSendLoginStepUpCode(accountId: ParentAccountId, email: string): Promise<void> {
@@ -359,10 +368,9 @@ export class ParentAccountService {
 
   /**
    * Consumes a login-step-up code and, on success, issues the real session
-   * password verification alone was not enough to grant. Marks the
-   * account's first-login requirement permanently satisfied (idempotent,
-   * only writes if still null) so every later login proceeds directly,
-   * matching the "risk-aware, not on every routine login" model.
+   * plus a fresh opaque browser grant. The historical first-login marker is
+   * retained for compatibility/audit metadata; it is never an account-wide
+   * bypass for later browsers or later 24-hour windows.
    */
   async completeLoginStepUp(email: string, code: string): Promise<CompleteLoginStepUpOutcome> {
     if (!isPlausibleEmail(email) || !isPlausibleVerificationCode(code)) {
@@ -386,8 +394,31 @@ export class ParentAccountService {
 
     await this.repository.markFirstLoginCompletedIfAbsent(account.accountId, this.now());
     const issued = await this.issueSessionFor(account.accountId);
+    const dailyGrant = generateDailyLoginGrant();
+    try {
+      await this.repository.insertDailyLoginGrant({
+        grantId: randomUUID(),
+        accountId: account.accountId,
+        tokenHash: dailyGrant.tokenHash,
+        purpose: DAILY_LOGIN_GRANT_PURPOSE,
+        createdAt: this.now(),
+        expiresAt: new Date(this.now().getTime() + DAILY_LOGIN_GRANT_TTL_MS),
+      });
+    } catch (error) {
+      // Do not leave an authenticated session without the browser grant that
+      // this successful OTP is supposed to establish.
+      await this.authService.revokeSession(issued.rawToken).catch(() => undefined);
+      throw error;
+    }
     const role = await this.resolveFamilyRole(account.accountId, account.familyId);
-    return { accountId: account.accountId, familyId: account.familyId, rawSessionToken: issued.rawToken, sessionExpiresAt: issued.session.expiresAt, role };
+    return {
+      accountId: account.accountId,
+      familyId: account.familyId,
+      rawSessionToken: issued.rawToken,
+      sessionExpiresAt: issued.session.expiresAt,
+      role,
+      rawDailyLoginGrantToken: dailyGrant.rawToken,
+    };
   }
 
   private async issueSessionFor(accountId: ParentAccountId) {
@@ -515,11 +546,22 @@ export class ParentAccountService {
   }
 
   /** Idempotent: revoking an unknown/malformed/already-revoked token is never an error. */
-  async logout(rawSessionToken: string): Promise<void> {
+  async logout(rawSessionToken: string, rawDailyLoginGrantToken?: string): Promise<void> {
+    let accountId: ParentAccountId | null = null;
+    try {
+      const session = await this.authService.validateSessionRecord(rawSessionToken);
+      const account = await this.repository.findByServiceAccountId(session.accountId);
+      if (account) accountId = account.accountId;
+    } catch {
+      // Logout remains idempotent for malformed, expired, or already-revoked sessions.
+    }
     try {
       await this.authService.revokeSession(rawSessionToken);
     } catch {
       // AuthError from a malformed token -- logout is still a success from the caller's perspective (fail closed on the READ side, not here).
+    }
+    if (accountId && isPlausibleDailyLoginGrant(rawDailyLoginGrantToken)) {
+      await this.repository.revokeDailyLoginGrant(accountId, hashDailyLoginGrant(rawDailyLoginGrantToken), this.now());
     }
   }
 
@@ -531,7 +573,11 @@ export class ParentAccountService {
     } catch {
       throw new ParentAccountError('UNAUTHORIZED');
     }
-    await this.repository.revokeAllServiceSessionsFor(serviceAccountId, this.now());
+    const account = await this.repository.findByServiceAccountId(serviceAccountId);
+    if (!account) throw new ParentAccountError('UNAUTHORIZED');
+    const revokedAt = this.now();
+    await this.repository.revokeAllServiceSessionsFor(serviceAccountId, revokedAt);
+    await this.repository.revokeAllDailyLoginGrants(account.accountId, revokedAt);
   }
 
   /**
@@ -605,11 +651,17 @@ export class ParentAccountService {
     const won = await this.repository.consumePasswordResetCodeIfUnconsumed(activeCode.codeId, this.now());
     if (!won) throw new ParentAccountError('UNAUTHORIZED'); // lost a concurrent reset race for the same code
 
+    // Revoke browser verification before changing the credential. If this
+    // security-side revocation cannot be persisted, fail closed and do not
+    // complete the reset with a surviving daily bypass.
+    const revokedAt = this.now();
+    await this.repository.revokeAllDailyLoginGrants(account.accountId, revokedAt);
+
     const newPasswordHash = await hashPassword(newPassword);
     await this.repository.updatePasswordHash(account.accountId, newPasswordHash);
 
     if (account.serviceAccountId !== null) {
-      await this.repository.revokeAllServiceSessionsFor(account.serviceAccountId, this.now());
+      await this.repository.revokeAllServiceSessionsFor(account.serviceAccountId, revokedAt);
     }
 
     return { status: 'PASSWORD_RESET' };

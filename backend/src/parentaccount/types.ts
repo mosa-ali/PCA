@@ -42,10 +42,11 @@ export interface ParentAccountRecord {
    * this account has ever completed an authenticated session -- set at
    * email-verification time (verifyEmail's own auto-session issuance IS an
    * authentication event: proving control of the mailbox via a code is at
-   * least as strong as a login-time step-up code) and, for any account
-   * that somehow reaches login() before that has happened, at first
-   * successful step-up-verified login. ParentAccountService.login requires
-   * a login-step-up code exactly when this is still null.
+   * least as strong as a login-time step-up code) and, for any legacy account
+   * that reaches login() before that has happened, at first successful
+   * step-up-verified login. Current routine-login assurance is controlled by
+   * the separate browser-bound daily-login grant, not by this account-level
+   * marker.
    */
   firstLoginCompletedAt: Date | null;
   /** Profile metadata only; never an authorization input. */
@@ -69,12 +70,10 @@ export interface VerifyEmailOutcome {
 
 /**
  * Owner authentication-architecture decision (2026-09-15): a first-ever
- * login (see ParentAccountRecord.firstLoginCompletedAt) does not issue a
- * session directly -- it durably enqueues a step-up code and returns
- * STEP_UP_REQUIRED instead. Every account that has already completed one
- * (which includes every account that has ever verified its email, the
- * overwhelming common case) gets AUTHENTICATED immediately, unchanged from
- * this type's pre-existing shape.
+ * login is not complete until the browser has a valid daily-login grant;
+ * without one it durably enqueues the existing step-up code and returns
+ * STEP_UP_REQUIRED. The first-login marker remains historical metadata and
+ * is not a global daily bypass.
  */
 export type LoginOutcome =
   | { status: 'AUTHENTICATED'; accountId: ParentAccountId; familyId: OpaqueFamilyId | null; rawSessionToken: string; sessionExpiresAt: Date; role: FamilyMembershipRole | null }
@@ -86,6 +85,8 @@ export interface CompleteLoginStepUpOutcome {
   rawSessionToken: string;
   sessionExpiresAt: Date;
   role: FamilyMembershipRole | null;
+  /** Raw token is returned only to the HTTP layer so it can be set as an HttpOnly cookie. */
+  rawDailyLoginGrantToken: string;
 }
 
 export interface SessionReadOutcome {

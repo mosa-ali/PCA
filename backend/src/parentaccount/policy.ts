@@ -38,6 +38,10 @@ export const MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE = 8;
 export const LOGIN_STEP_UP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
 export const LOGIN_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
 
+/** A successful login OTP creates a browser-bound verification window, not an account-wide flag. */
+export const DAILY_LOGIN_GRANT_TTL_MS = 24 * 60 * 60 * 1000;
+export const DAILY_LOGIN_GRANT_PURPOSE = 'PARENT_DAILY_LOGIN' as const;
+
 /** Dedicated genesis authorization: deliberately separate from normal login step-up. */
 export const GENESIS_STEP_UP_CODE_TTL_MS = 10 * 60 * 1000;
 export const MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE = 8;

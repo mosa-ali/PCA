@@ -10,6 +10,7 @@ import { isProductionSensitiveRuntime } from '../runtime/environment.js';
 
 const SESSION_COOKIE_BASE_NAME = 'pca_family_session';
 const CSRF_COOKIE_BASE_NAME = 'pca_family_csrf';
+const DAILY_LOGIN_GRANT_COOKIE_BASE_NAME = 'pca_parent_daily_login_grant';
 export const CSRF_HEADER_NAME = 'x-pca-csrf-token';
 
 /**
@@ -54,6 +55,11 @@ export function sessionCookieName(env: NodeJS.ProcessEnv = process.env): string 
 
 export function csrfCookieName(_env: NodeJS.ProcessEnv = process.env): string {
   return CSRF_COOKIE_BASE_NAME;
+}
+
+/** Host-only, HttpOnly browser verification grant. It is never read by Parent Web JavaScript. */
+export function dailyLoginGrantCookieName(env: NodeJS.ProcessEnv = process.env): string {
+  return isProductionSensitiveRuntime(env) ? `__Host-${DAILY_LOGIN_GRANT_COOKIE_BASE_NAME}` : DAILY_LOGIN_GRANT_COOKIE_BASE_NAME;
 }
 
 const MAX_COOKIE_HEADER_LENGTH = 8192;
