@@ -581,10 +581,10 @@ jobs:
       - name: Build parent-sdk and install parent-web dependencies
         working-directory: parent-web
         run: |
-          npm ci --prefix parent-sdk/browser-runtime
-          npm run build --prefix parent-sdk/browser-runtime
-          npm ci --prefix parent-sdk/wellbeing-control
-          npm run build --prefix parent-sdk/wellbeing-control
+          npm ci --prefix ../parent-sdk/browser-runtime
+          npm run build --prefix ../parent-sdk/browser-runtime
+          npm ci --prefix ../parent-sdk/wellbeing-control
+          npm run build --prefix ../parent-sdk/wellbeing-control
           npm ci
       - name: Install platform-admin-web dependencies
         working-directory: platform-admin-web
