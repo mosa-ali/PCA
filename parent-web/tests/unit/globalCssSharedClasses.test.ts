@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, '../../src');
-const CSS = readFileSync(resolve(SRC, 'styles/global.css'), 'utf8');
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -20,6 +19,17 @@ function walk(dir: string, out: string[] = []): string[] {
   }
   return out;
 }
+
+function walkCss(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walkCss(full, out);
+    else if (full.endsWith('.css')) out.push(full);
+  }
+  return out;
+}
+
+const CSS = walkCss(SRC).map((file) => readFileSync(file, 'utf8')).join('\n');
 
 function definedClasses(css: string): Set<string> {
   return new Set([...css.matchAll(/\.([A-Za-z][\w-]*)/g)].map((m) => m[1]));
@@ -47,6 +57,11 @@ function referencedClasses(): Map<string, string[]> {
     }
   }
   return used;
+}
+
+function unstyledClasses(css: string, used: Map<string, string[]>): string[] {
+  const defined = definedClasses(css);
+  return [...used.keys()].filter((name) => !defined.has(name)).sort();
 }
 
 describe('shared CSS classes referenced from TSX', () => {
@@ -85,8 +100,14 @@ describe('shared CSS classes referenced from TSX', () => {
   const KNOWN_UNSTYLED: string[] = [];
 
   it('has no unstyled class beyond the known, design-decision-pending list', () => {
-    const defined = definedClasses(CSS);
-    const unstyled = [...referencedClasses().keys()].filter((name) => !defined.has(name)).sort();
-    expect(unstyled).toEqual([...KNOWN_UNSTYLED].sort());
+    expect(unstyledClasses(CSS, referencedClasses())).toEqual([...KNOWN_UNSTYLED].sort());
+  });
+
+  it('still detects a genuinely undefined class', () => {
+    const used = new Map([
+      ['guide-page', ['Guide.tsx']],
+      ['contract-fake-undefined', ['Guide.tsx']],
+    ]);
+    expect(unstyledClasses(CSS, used)).toEqual(['contract-fake-undefined']);
   });
 });
