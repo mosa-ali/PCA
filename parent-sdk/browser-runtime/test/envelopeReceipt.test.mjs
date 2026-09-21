@@ -3,6 +3,8 @@ import test from 'node:test';
 import { receiveEnvelope, attemptDecrypt } from '../dist/envelopeReceipt.js';
 import { NotReadyDecryptor } from '../dist/cryptoGate.js';
 
+const NOW = new Date('2026-08-12T00:00:00.000Z');
+
 function envelope(overrides = {}) {
   return {
     envelopeId: 'env-1',
@@ -42,6 +44,7 @@ test('an untrusted/non-enrolled endpoint cannot decrypt -- blocked before the FT
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_UNTRUSTED_ENDPOINT');
   assert.equal(result.decryptedPayload, null);
@@ -56,6 +59,7 @@ test('a revoked endpoint is rejected even if it was previously TRUSTED', async (
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_UNTRUSTED_ENDPOINT');
 });
@@ -69,6 +73,7 @@ test('a stale FTS (epoch below acceptedMinEpoch) is rejected even for a TRUSTED 
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_STALE_FTS');
 });
@@ -82,6 +87,7 @@ test('missing FTS is rejected as stale rather than attempting decrypt', async ()
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_STALE_FTS');
 });
@@ -95,6 +101,7 @@ test('an envelope from a different family than the locally-cached FTS is blocked
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_FAMILY_MISMATCH');
   assert.equal(result.decryptedPayload, null);
@@ -109,6 +116,7 @@ test('a same-family envelope+FTS pairing is not blocked by the family check and 
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.notEqual(result.state, 'DECRYPT_BLOCKED_FAMILY_MISMATCH');
   assert.equal(result.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
@@ -123,6 +131,7 @@ test('an envelope claiming a newer ftsEpoch than the locally-verified current FT
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_STALE_FTS');
   assert.equal(result.decryptedPayload, null);
@@ -136,6 +145,7 @@ test('an envelope whose ftsEpoch is at or below the locally-verified current FTS
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(atEpoch.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
 
@@ -146,6 +156,7 @@ test('an envelope whose ftsEpoch is at or below the locally-verified current FTS
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(belowEpoch.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
 });
@@ -159,6 +170,7 @@ test('a TRUSTED endpoint with a current FTS still cannot decrypt today -- surfac
     acceptedMinEpoch: 4,
     localEndpointId: 'endpoint-a',
     decryptor: new NotReadyDecryptor(),
+    nowUtc: NOW,
   });
   assert.equal(result.state, 'DECRYPT_BLOCKED_CRYPTO_REVIEW');
   assert.equal(result.decryptedPayload, null);
