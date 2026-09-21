@@ -542,13 +542,21 @@ jobs:
             const manifest = require('./qa-e2e-manifest.json');
             const account = manifest.parent;
             const operator = manifest.operator;
-            if (!account || !account.dailyLoginGrant || !operator || !operator.totpSecretBase32) {
+            const family = manifest.family;
+            // family is REQUIRED, not optional: the admin suite's suspend/
+            // reactivate step skips itself when E2E_REAL_TEST_FAMILY_ID is
+            // unset, and a skip fails the zero-skip guard below. Making it a
+            // hard requirement here means a provisioning regression fails
+            // loudly at this step rather than silently de-certifying the suite
+            // one skipped test at a time.
+            if (!account || !account.dailyLoginGrant || !operator || !operator.totpSecretBase32 || !family || !family.familyId) {
               process.exit(1);
             }
             fs.appendFileSync(process.env.GITHUB_ENV, [
               'E2E_REAL_PARENT_EMAIL=' + account.email,
               'E2E_REAL_PARENT_PASSWORD=' + account.password,
               'E2E_REAL_PARENT_DAILY_GRANT=' + account.dailyLoginGrant,
+              'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
               'E2E_REAL_ADMIN_TOTP_SECRET=' + operator.totpSecretBase32,
@@ -590,6 +598,28 @@ jobs:
       - name: Install Playwright browsers (platform-admin-web)
         working-directory: platform-admin-web
         run: npx playwright install --with-deps chromium
+      - name: Assert the parent-web certified spec set is exactly what this job certifies
+        # Naming the certified specs explicitly (below) introduces a
+        # SILENT-EXCLUSION hazard: any spec added to e2e-real/ later would simply
+        # never run, and this job would still go green having certified less than
+        # it appears to. This step makes the certified set explicit and fails if
+        # reality diverges in either direction, so an uncertified spec has to be
+        # a conscious, reviewed decision rather than an accident.
+        #
+        # It immediately earned its keep: it caught the author of this very change
+        # asserting a two-file set when e2e-real/ actually holds three.
+        working-directory: parent-web
+        run: |
+          actual=$(ls e2e-real/*.spec.ts | xargs -n1 basename | sort | tr '\n' ' ')
+          expected="acceptance-flow.spec.ts notStartedProgramme.spec.ts realBackend.spec.ts "
+          if [ "$actual" != "$expected" ]; then
+            echo "The e2e-real/ spec set changed since this job's scope was set."
+            echo "  found:    $actual"
+            echo "  expected: $expected"
+            echo "Certify the new spec here, or exclude it with a documented follow-up."
+            exit 1
+          fi
+          echo "Certified spec set unchanged; realBackend.spec.ts and acceptance-flow.spec.ts are the certified suites."
       - name: Run parent-web real-backend E2E
         # VITE_PCA_API_BASE_URL is set to an EMPTY STRING, not omitted: the API
         # client joins it directly onto each path, so empty makes every request
@@ -597,11 +627,33 @@ jobs:
         # unset falls back to an absolute backend origin, which the browser then
         # blocks because the backend deliberately has no CORS layer. See the
         # spec's own header -- this was confirmed by direct reproduction.
+        #
+        # SCOPE, and why this is not the whole e2e-real directory.
+        #
+        # Certified and included: realBackend.spec.ts AND acceptance-flow.spec.ts.
+        # acceptance-flow.spec.ts is kept in deliberately -- it declares no env
+        # dependency and has no skip site at all, so it is deterministic and
+        # excluding it would silently REDUCE coverage below what this job had.
+        #
+        # Excluded, NOT certified: notStartedProgramme.spec.ts. It needs a SECOND
+        # parent account (E2E_TARGETED_PARENT_EMAIL/PASSWORD) to stay inside
+        # LOGIN_EMAIL_RATE_LIMIT across its 7 independent logins, needs its own
+        # pre-issued daily-login grant per login, and contains an in-test
+        # conditional `test.skip` for a device-state branch a fixture stack
+        # cannot reach. Under the zero-skip guard that combination cannot pass --
+        # and loosening the guard to accommodate it would re-open exactly the
+        # vacuous-pass hole the guard exists to close.
+        #
+        # NAMED FOLLOW-UP, NOT CLAIMED COMPLETE: certify notStartedProgramme
+        # .spec.ts by provisioning a second parent account plus grant in
+        # provision-e2e-accounts.mjs and making its N3 device-state branch
+        # deterministic. Until then its N1-N22 checks are UNcertified, and this
+        # job must not be read as evidence for them.
         working-directory: parent-web
         env:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: ''
-        run: npx playwright test --config=playwright.real.config.ts --project=chromium
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium realBackend.spec.ts acceptance-flow.spec.ts
       - name: Assert the parent-web run was not vacuously skipped, and record evidence
         if: always()
         working-directory: parent-web

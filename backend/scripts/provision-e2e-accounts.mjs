@@ -108,9 +108,29 @@ const verified = await parentAccountService.verifyEmail(parentEmail, verificatio
 if (!verified.accountId) refuse('email verification did not yield an accountId.');
 const genesisCompleted = verified.familyId != null;
 
+// --- The family row the platform-admin suite acts on ---------------------
+// The admin suite's suspend/reactivate round-trip needs a REAL families row to
+// operate on: it clicks that family's own link in the accounts list and asserts
+// the ACTIVE -> SUSPENDED -> ACTIVE transition actually persists to MySQL. With
+// no such row, E2E_REAL_TEST_FAMILY_ID stays unset, the spec's own guard skips
+// the step, and the zero-skip anti-vacuous-pass guard then fails the whole job
+// -- so the admin suite could never certify. That is why this exists.
+//
+// Created through the SAME repository method production uses rather than a
+// hand-written INSERT, so families_suspension_pair_check is satisfied by
+// construction: status defaults to ACTIVE with all three suspension columns NULL.
+//
+// A bare row is sufficient and deliberately does NOT need a member, an
+// entitlement or a subscription -- AccountsReadModel.list is a plain
+// `FROM families f` read whose only joins are best-effort lookups AFTER the page
+// of families is already selected.
+const parentAccountRepository = new MySqlParentAccountRepository();
+const testFamilyId = randomUUID();
+await parentAccountRepository.createFamilyIfAbsent(testFamilyId, now);
+
 // --- The browser grant a Playwright process cannot obtain for itself ------
 const grant = generateDailyLoginGrant();
-await new MySqlParentAccountRepository().insertDailyLoginGrant({
+await parentAccountRepository.insertDailyLoginGrant({
   grantId: randomUUID(),
   accountId: verified.accountId,
   tokenHash: grant.tokenHash,
@@ -152,6 +172,7 @@ await writeFile(
       generatedAtUtc: now.toISOString(),
       parent: { email: parentEmail, password: TEST_PASSWORD, dailyLoginGrant: grant.rawToken },
       operator: { email: adminEmail, password: TEST_PASSWORD, role: 'APP_OWNER', totpSecretBase32: base32Encode(totpSecret) },
+      family: { familyId: testFamilyId },
       genesisCompleted,
     },
     null,
