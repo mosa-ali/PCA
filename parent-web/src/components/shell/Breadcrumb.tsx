@@ -66,6 +66,7 @@ const SEGMENT_LABEL_KEYS: Readonly<Record<string, string>> = {
   invoices: 'subscription.invoices.title',
   'checkout-return': 'subscription.checkoutReturn.title',
   settings: 'nav.settings',
+  guide: 'breadcrumb.parentGuide',
   // Deliberately its own short key rather than `rbac.deniedTitle`: the
   // breadcrumb sits directly above the page's own `role="alert"` heading, and
   // reusing that heading's wording would announce the same sentence twice.

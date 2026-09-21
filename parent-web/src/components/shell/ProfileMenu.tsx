@@ -132,6 +132,9 @@ export function ProfileMenu({ session }: ProfileMenuProps) {
             <bdi className="iso">{displayName}</bdi>
           </p>
           <p>{t('shell.role', { role: t(`roles.${session.role.toLowerCase()}`) })}</p>
+          <Link to="/guide" onClick={() => setOpen(false)}>
+            {t('guide.title')}
+          </Link>
           <Link to="/settings" onClick={() => setOpen(false)}>
             {t('nav.settings')}
           </Link>

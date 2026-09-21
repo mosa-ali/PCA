@@ -90,7 +90,8 @@
     "languageArabic": "العربية"
   },
   "breadcrumb": {
-    "notPermitted": "Not permitted"
+    "notPermitted": "Not permitted",
+    "parentGuide": "Parent Guide"
   },
   "settings": {
     "languageSectionTitle": "Language preferences",
@@ -1251,9 +1252,11 @@
     "loginTitle": "Sign in to PCA",
     "loginBody": "Sign in with your email and password to access your PCA parent console.",
     "loginSubmit": "Sign in",
-    "loginStepUpTitle": "Confirm it's you",
-    "loginStepUpBody": "Enter the 6-digit code we sent to {{email}} to finish signing in.",
-    "loginStepUpSubmit": "Confirm and sign in",
+    "loginStepUpTitle": "Check your email",
+    "loginStepUpBody": "We sent a verification code to {{email}}. Enter the code to continue.",
+    "loginStepUpSubmit": "Verify and sign in",
+    "loginStepUpResend": "Resend code",
+    "loginStepUpBack": "Back to sign in",
     "needAccount": "Need an account?",
     "registerLink": "Create one",
     "genericError": "We could not complete that. Please try again.",
@@ -1328,6 +1331,419 @@
     "iosTitle": "iPhone and iPad",
     "iosPlanned": "iOS app is planned for a later release.",
     "honestyNotice": "PCA never sends you to an app-store page that does not exist yet. If a platform above offers no download, the app is not available for it yet -- it is not being hidden from you."
+  },
+  "guide": {
+    "eyebrow": "Practical help for Parents and Guardians",
+    "title": "Parent Guide",
+    "intro": "Learn what each Parent Web page is for, what you need before you start, and what to expect after an action.",
+    "contents": "Guide sections",
+    "searchLabel": "Search the Parent Guide",
+    "searchPlaceholder": "Search topics, pages, or actions",
+    "clearSearch": "Clear search",
+    "searchResults": "Search results ({{count}})",
+    "noResults": "No guide topics match that search.",
+    "openPage": "Open this page",
+    "relatedTopics": "Related topics",
+    "whatFor": "What this page is for",
+    "whenToUse": "When to use it",
+    "whatYouCanDo": "What you can do",
+    "howToUse": "How to use it",
+    "whatHappensNext": "What happens next",
+    "importantToKnow": "Important to know",
+    "availability": {
+      "available": "Available",
+      "setup": "Setup may be required",
+      "permission": "Permission may be required",
+      "unavailable": "Not available yet"
+    },
+    "categories": {
+      "gettingStarted": "Getting Started",
+      "dashboard": "Dashboard",
+      "children": "Children",
+      "devices": "Devices",
+      "requests": "Requests",
+      "members": "Parents & Guardians",
+      "roles": "Roles & Permissions",
+      "protection": "Protection",
+      "safetyPrivacy": "Safety & Privacy",
+      "notifications": "Notifications",
+      "billing": "Subscription & Billing",
+      "settings": "Settings",
+      "download": "Download Child App",
+      "troubleshooting": "Troubleshooting"
+    },
+    "topics": {
+      "gettingStarted": {
+        "title": "Start using PCA",
+        "summary": "Follow the main path from a verified Parent account to the first protection settings.",
+        "purpose": "This is the recommended order for setting up Parent Web and connecting your child's device.",
+        "when": "Use it when you are new to PCA or when setup stopped before a device became ready.",
+        "actions": ["Create a Parent account and verify your email.", "Sign in and open Children.", "Download the Child App when a real Android download is configured.", "Add and pair your child's device, then choose first protection settings."],
+        "steps": ["Create and verify your Parent account.", "Sign in, then open or create a child profile.", "Download the Child App and follow the device pairing instructions.", "Trust this browser if protected information asks for it.", "Review protection settings and remember that delivery to the device can remain pending."],
+        "next": "After setup, Dashboard shows the latest Parent account status that PCA can verify. Open Devices when pairing or delivery needs attention.",
+        "important": "Signing in and trusting a browser are separate steps. A saved setting is not always already applied on the child's device."
+      },
+      "parentAccount": {
+        "title": "Create, verify, and sign in",
+        "summary": "Your verified Parent account is the starting point for managing Parent Web.",
+        "purpose": "Use the account screens to register, verify the email address, sign in, or recover access through the available account flow.",
+        "when": "Use this before managing children or devices, and whenever you need to return to the Parent Web session.",
+        "actions": ["Create an account with your email address.", "Complete email verification.", "Sign in with your Parent account.", "Review account preferences in Settings."],
+        "steps": ["Register, then open the verification message sent to your email.", "Verify the account and return to Sign in.", "If a page asks for protected setup, follow the separate Trusted Browser step."],
+        "next": "A successful sign-in opens the authenticated Parent Web shell. It does not by itself connect a child device or trust the browser.",
+        "important": "Only use the Parent account you intend to use for this Parent account scope. Ask an Administrator if you need another Parent or Guardian added."
+      },
+      "dashboard": {
+        "title": "Dashboard",
+        "summary": "See a compact view of children, devices, protection, requests, alerts, and data freshness.",
+        "purpose": "Dashboard helps you decide what needs attention today without treating unknown information as reassuring.",
+        "when": "Open it for a quick Parent account check, after pairing a device, or when a status looks different from the last visit.",
+        "actions": ["Open a child overview.", "Review device and protection status.", "Follow links to requests and alerts.", "Check whether information is current, pending, or unavailable."],
+        "steps": [],
+        "next": "Choose the relevant child, device, or page for more detail. If information cannot be verified, use the suggested setup or retry step.",
+        "important": "A blank, pending, or unavailable value does not mean that everything is fine. It means PCA cannot currently confirm that information."
+      },
+      "children": {
+        "title": "Children",
+        "summary": "Open a child profile and the child-specific pages available for that child.",
+        "purpose": "The Children area is the starting point for viewing a child's overview and moving to protection, wellbeing, and activity pages.",
+        "when": "Use it when you want to manage one child rather than review the whole Parent account.",
+        "actions": ["Open a child's overview.", "Move between Screen Time, Apps & Games, Web Protection, YouTube, Location, Eye Protection, Prayer, Wellbeing Messages, and Activity Timeline.", "Return to the Parent account page when a child picker is required."],
+        "steps": [],
+        "next": "Choose the child first. Some actions then require your role, a connected device, or trusted-browser setup.",
+        "important": "The child-specific address contains a child identifier selected by the product. Do not replace it with an identifier copied from another child."
+      },
+      "activityTimeline": {
+        "title": "Activity Timeline",
+        "summary": "Review available categories and history of activity for a child.",
+        "purpose": "This page helps you understand the activity information that Parent Web can currently show for the selected child.",
+        "when": "Use it when you need context about recent child activity rather than an account or security event.",
+        "actions": ["Open the selected child's activity history.", "Review the category, time, and available details shown by the product."],
+        "steps": [],
+        "next": "If protected information is not ready, complete the displayed browser or device setup step and try again later.",
+        "important": "Activity Timeline is not the Security Log. The timeline is about child activity; the Security Log is about account, security, and policy actions."
+      },
+      "devices": {
+        "title": "Devices",
+        "summary": "Start pairing, follow pending setup, view connected devices, and manage device protection actions.",
+        "purpose": "Devices brings the child-device journey together: Overview, Add Device, Pending Setup, Devices, Protection, and Advanced sections.",
+        "when": "Use it when adding a device, checking why delivery is pending, reviewing a connected device, or handling device protection.",
+        "actions": ["Choose a child and start Add Device.", "Follow the Child App and pairing instructions.", "Review pending invitations or setup states.", "View connected devices and use protection or removal actions when permitted."],
+        "steps": ["Open Add Device and select the child.", "Choose the available platform and complete the displayed setup steps.", "Keep the setup code or invitation available until pairing completes.", "Check Pending Setup when the child device has not finished connecting."],
+        "next": "A paired device can still be offline or waiting for a setting to be delivered. Recheck the device status before assuming a protection change is active.",
+        "important": "Viewing a device is different from revoking it or removing its protection. Advanced Security shows only current Parent-facing actions; it is not a place to change PCA security design."
+      },
+      "requests": {
+        "title": "Requests",
+        "summary": "Review child or device requests and respond when your role allows the action.",
+        "purpose": "Requests can bring together supported requests such as bonus time, app or website exceptions, device pairing, and app-install approval.",
+        "when": "Open it when a child has asked for an exception or when a device or setup request needs a Parent response.",
+        "actions": ["Review the request type and details.", "Approve or deny when the action is available to you.", "Use a counter-offer or direct bonus-time grant when the current request supports it."],
+        "steps": [],
+        "next": "The requester receives the result through the supported notification or request state. A permission message means another Parent role may need to respond.",
+        "important": "Not every request type or response is available to every role. A request decision is separate from the device applying any resulting policy."
+      },
+      "members": {
+        "title": "Parents & Guardians",
+        "summary": "Invite and manage the Parents and Guardians who share this Parent account scope.",
+        "purpose": "Use this page to review active Parents and Guardians, pending invitations, and the access role attached to each person.",
+        "when": "Use it when another trusted adult needs access, when an invitation needs attention, or when access must be removed.",
+        "actions": ["Invite a Parent or Guardian when permitted.", "Review pending invitations and change a pending role where supported.", "Revoke an invitation or remove an active Parent or Guardian when permitted."],
+        "steps": [],
+        "next": "The invited person must complete the invitation and account steps. Removing an active Parent or Guardian ends their access to this Parent account scope.",
+        "important": "Only invite people you trust. Your role may be read-only or may require an Administrator for member changes."
+      },
+      "roles": {
+        "title": "Roles & Permissions",
+        "summary": "Understand which Parent actions are available to Administrators, Viewers, and children.",
+        "purpose": "This page explains access in Parent language so you can see why an action may be unavailable.",
+        "when": "Open it when you see Not permitted, when inviting a Parent, or before changing protection or privacy settings.",
+        "actions": ["Review the role descriptions shown by the product.", "Check which actions are read-only or require another Parent role.", "Ask an Administrator when your role cannot complete a needed action."],
+        "steps": [],
+        "next": "If your role changes, return to the page and retry. A role description does not bypass a permission check.",
+        "important": "Administrators generally manage day-to-day Parent and protection actions. Viewers are generally read-only. Children can use permitted child-side or request actions but cannot manage Parent protection settings."
+      },
+      "protectionStatus": {
+        "title": "Protection Status",
+        "summary": "See what protection information can currently be verified for the Parent account and devices.",
+        "purpose": "Protection Status separates the protection capability, the device state, policy delivery, and information that is pending or unavailable.",
+        "when": "Use it after setup, when a device changes state, or before relying on a protection result.",
+        "actions": ["Review the current protection state.", "Follow a setup, trust, or retry instruction when information cannot be verified."],
+        "steps": [],
+        "next": "Use Devices for pairing and device delivery, or open the relevant child protection page for a setting.",
+        "important": "PCA does not present protected information as confirmed when it cannot verify it. A pending or unavailable state is not an empty or all-clear result."
+      },
+      "screenTime": {
+        "title": "Screen Time",
+        "summary": "Set screen-time limits, break duration, and related night-protection schedules for a selected child.",
+        "purpose": "Use Screen Time to define the limits and routines you want the selected child's device to follow.",
+        "when": "Use it when setting daily limits, changing break duration, or reviewing a setting that is waiting for delivery.",
+        "actions": ["Choose a child from the Parent account entry.", "Edit the available limits and break settings when permitted.", "Review the status shown after saving."],
+        "steps": ["Open Screen Time and select the child.", "Make the permitted change and save it.", "Read the delivery or offline message before assuming the device has applied it."],
+        "next": "Your change is saved in Parent Web, then the product may need to deliver it to the child's device. The device can be offline or still pending.",
+        "important": "Saving a change does not always mean it has already been applied on the child's device. Schedules and night protection are managed through the Screen Time journey."
+      },
+      "appsGames": {
+        "title": "Apps & Games",
+        "summary": "Review installed-app entries and manage available app rules for a selected child.",
+        "purpose": "Use this area to understand which app controls are available and to allow or disallow an application when your role permits it.",
+        "when": "Use it when a child asks to use an app, or when an app rule needs review.",
+        "actions": ["Open the child picker and choose a child.", "Review installed or known app entries.", "Allow or disallow an available app rule when permitted."],
+        "steps": [],
+        "next": "A saved rule may wait for device delivery. Check the status shown by the page and Devices before expecting the child device to enforce it.",
+        "important": "A Viewer or another restricted role may be able to read the page but not change a rule. The available controls are the source of truth."
+      },
+      "webProtection": {
+        "title": "Web Protection",
+        "summary": "Review filtering status and available allowed or blocked website rules for a selected child.",
+        "purpose": "Use it to understand current web protection and authorise the domain rules that Parent Web actually supports.",
+        "when": "Use it when a website needs review or a web rule is waiting for delivery.",
+        "actions": ["Choose a child from Apps & Web.", "Review the protection state and available rules.", "Create or change a supported rule when your role permits it."],
+        "steps": [],
+        "next": "The saved policy may be a draft, pending delivery, or already delivered. Follow the status rather than assuming a save means enforcement is complete.",
+        "important": "Offline or unavailable information must be treated as unknown. Do not rely on a web rule until the product confirms the relevant device state."
+      },
+      "schedules": {
+        "title": "Schedules",
+        "summary": "Use the Parent account Schedules entry to reach schedule controls on a child's Screen Time page.",
+        "purpose": "There is no separate child schedule page. This entry helps you choose a child and use the existing Screen Time controls.",
+        "when": "Use it when planning quiet hours or night-protection routines for a child.",
+        "actions": ["Open Schedules.", "Choose the child.", "Continue to the relevant Screen Time settings when permitted."],
+        "steps": [],
+        "next": "The selected schedule is subject to the same save and device-delivery states as other Screen Time changes.",
+        "important": "Schedules uses Screen Time; it does not represent a second, hidden schedule capability."
+      },
+      "youtube": {
+        "title": "YouTube",
+        "summary": "Review the YouTube page and the controls or status that are currently available for a child.",
+        "purpose": "This topic points you to the current YouTube surface without promising controls that the product does not show.",
+        "when": "Use it when reviewing a child's YouTube-related status.",
+        "actions": ["Open the child area.", "Read the current status and available controls."],
+        "steps": [],
+        "next": "If a control is not shown, it is not available through the current Parent Web surface.",
+        "important": "Do not assume that a page name means every YouTube control is enabled for every device or role."
+      },
+      "location": {
+        "title": "Location & Safe Zones",
+        "summary": "Review location information and Safe Zones when the child device and service can provide them.",
+        "purpose": "Use this area to understand the latest location state and any supported Safe Zone information.",
+        "when": "Use it when checking a child's location or reviewing whether a Safe Zone feature is available.",
+        "actions": ["Open the child's Location page.", "Check freshness before relying on a location.", "Review Safe Zone status when it is available."],
+        "steps": [],
+        "next": "A stale, offline, or unavailable state needs device or service setup; it is not proof of a current location.",
+        "important": "Safe Zone authoring is not universally operational in every deployment. Use only the controls and status the current product provides."
+      },
+      "eyeProtection": {
+        "title": "Eye Protection",
+        "summary": "Manage reminder settings that encourage healthy screen habits.",
+        "purpose": "Eye Protection is a reminder feature for the selected child, not a forced device lock or screen dimmer.",
+        "when": "Use it when you want to review or adjust available eye-rest reminders.",
+        "actions": ["Open the child's Eye Protection page.", "Review the reminder setting and history shown."],
+        "steps": [],
+        "next": "The child sees the supported reminder experience on the device. Review the page again if you need to change the reminder.",
+        "important": "It does not force screen blocking, force breaks, or dim the device unless a current product surface explicitly says otherwise."
+      },
+      "prayer": {
+        "title": "Prayer",
+        "summary": "Review the current prayer-related settings and status for a selected child.",
+        "purpose": "This page provides the prayer settings that Parent Web currently supports.",
+        "when": "Use it when checking or adjusting an available prayer setting for the child.",
+        "actions": ["Open the child's Prayer page.", "Review the current status and available controls."],
+        "steps": [],
+        "next": "The page shows whether a change was accepted and whether any device delivery state remains.",
+        "important": "The guide does not promise controls that are not present on the current page."
+      },
+      "wellbeing": {
+        "title": "Wellbeing Messages",
+        "summary": "Create or review supported curated and custom messages for children.",
+        "purpose": "Use Wellbeing Messages for supportive messages that can be targeted, previewed, and managed through the available Parent Web controls.",
+        "when": "Use it when you want to send an approved message or review archived and active messages.",
+        "actions": ["Review curated messages.", "Create a supported custom message.", "Choose the child target and preview it.", "Archive or restore a message when the page allows it."],
+        "steps": [],
+        "next": "The message follows the product's supported delivery and display behaviour. It is not presented as an intrusive full-screen device takeover.",
+        "important": "Managing messages may require a specific Parent permission. If the action is unavailable, ask an Administrator."
+      },
+      "alerts": {
+        "title": "Alerts",
+        "summary": "Review protection and security alerts that Parent Web can currently read.",
+        "purpose": "Alerts help you notice events that may need a Parent response.",
+        "when": "Use it from Dashboard or directly when a protection or security status calls for attention.",
+        "actions": ["Open the alerts list.", "Review the available time, category, and status details."],
+        "steps": [],
+        "next": "Follow the related device, protection, or security page when an alert provides a next step.",
+        "important": "If protected alert data is unavailable, that is not the same as an empty alert list. Complete the requested setup or retry when appropriate."
+      },
+      "privacy": {
+        "title": "Data & Privacy",
+        "summary": "Use one hub to reach retention, export, deletion, transparency, and Child App permission information.",
+        "purpose": "The Data & Privacy hub explains and links to the privacy controls available to your Parent role.",
+        "when": "Open it when you need to understand stored data, request an export, manage retention, or review deletion options.",
+        "actions": ["Open Retention, Export, Delete Now, What Parents Can See, or App Permissions.", "Read the consequence and current state before starting a privacy action."],
+        "steps": [],
+        "next": "Each privacy action has its own confirmation, permission, and pending-state rules. Use the linked topic for the action you need.",
+        "important": "Privacy actions can be sensitive or destructive. Read the page's confirmation and status instead of treating a request as completed work."
+      },
+      "retention": {
+        "title": "Retention",
+        "summary": "Review or change supported data-retention settings when your role and service state allow it.",
+        "purpose": "Retention describes how long supported information is kept, including any location-retention setting shown by the product.",
+        "when": "Use it when reviewing privacy choices or when an Administrator asks you to change retention.",
+        "actions": ["Read the current retention values.", "Change an available setting after reviewing its effect."],
+        "steps": [],
+        "next": "The page confirms whether the setting was accepted. A permission or service-availability message means the change cannot be made from this session.",
+        "important": "Retention is role-controlled and may depend on service or setup availability. It does not instantly erase information already pending in another operation."
+      },
+      "export": {
+        "title": "Export",
+        "summary": "Request an export of supported Parent account information and follow its current request state.",
+        "purpose": "Export is for requesting a copy of available information through the current privacy flow.",
+        "when": "Use it when you need a copy of supported data and are ready to wait for the request to be processed.",
+        "actions": ["Review what the export includes.", "Submit an export request when permitted.", "Check the request status shown by the page."],
+        "steps": [],
+        "next": "A request may remain pending. Requesting an export does not necessarily mean the export file has already been generated or is ready to download.",
+        "important": "Do not submit repeated requests just because a file is not immediate. Follow the current request state and ask an Administrator if your role is restricted."
+      },
+      "delete": {
+        "title": "Delete Now",
+        "summary": "Start the supported destructive deletion request after reading the confirmation carefully.",
+        "purpose": "Delete Now is for removing supported Parent account data through an explicit, confirmed privacy action.",
+        "when": "Use it only when you understand the consequence and intend to start deletion.",
+        "actions": ["Read the warning and affected data.", "Complete the explicit confirmation when permitted.", "Track the resulting request or delivery state."],
+        "steps": [],
+        "next": "The request can remain pending while remote devices or services process it. Return to the page for the current status.",
+        "important": "A deletion request does not mean everything disappeared instantly from every remote device. Do not close the request until the product confirms its actual state."
+      },
+      "whatParentsSee": {
+        "title": "What Parents Can See",
+        "summary": "Understand the information Parent Web is designed to show and the categories it does not collect or display.",
+        "purpose": "This transparency page explains the boundaries of Parent visibility in ordinary product language.",
+        "when": "Use it before reviewing a child's information or explaining Parent Web to another Guardian.",
+        "actions": ["Review visible information categories.", "Read which information is intentionally not collected or shown."],
+        "steps": [],
+        "next": "Use Children, Activity Timeline, or the relevant protection page to view information that is actually available for a child.",
+        "important": "Visibility is not the same as permission to change settings. A Parent may be able to see a status while still needing another role to edit it."
+      },
+      "appPermissions": {
+        "title": "App Permissions",
+        "summary": "Read a Parent-friendly explanation of permissions used by the Child App.",
+        "purpose": "This page explains why the Child App may request device access needed for its supported features.",
+        "when": "Use it when installing the Child App or when a device asks why a permission is needed.",
+        "actions": ["Review the human-readable permission explanations.", "Follow the device's own permission controls when setup requires them."],
+        "steps": [],
+        "next": "Return to Devices to continue pairing or setup after completing a required device permission.",
+        "important": "This guide topic is not a technical manifest dump. Grant only permissions you understand and that the current Child App setup requests."
+      },
+      "trustedBrowser": {
+        "title": "Trusted Browser",
+        "summary": "Complete the separate browser-protection step that may be required before protected information is shown.",
+        "purpose": "Trusted Browser helps Parent Web confirm that this browser is an approved place for protected Parent information.",
+        "when": "Use it when the product says the browser is not trusted, pairing is required, setup is pending, or the trust needs refresh.",
+        "actions": ["Review the current browser state.", "Follow the available pairing or refresh step.", "Return to the protected page after the state changes."],
+        "steps": [],
+        "next": "The page may show not trusted, pairing required, pending, trusted, needs refresh, or revoked. Follow the state-specific instruction shown there.",
+        "important": "Signing in confirms your Parent account. Trusting this browser is a separate protection step; signing in does not automatically make a browser trusted."
+      },
+      "recovery": {
+        "title": "Recovery",
+        "summary": "Learn what account recovery is intended to protect, even though the current recovery transaction is not available yet.",
+        "purpose": "Recovery is intended for a sensitive way to regain access under the product's protected account rules.",
+        "when": "Read this topic when planning for account access or when a recovery page explains its current availability.",
+        "actions": ["Read the current recovery availability message.", "Ask the appropriate Administrator or support contact about an access problem."],
+        "steps": [],
+        "next": "There is no recovery transaction to complete in this version. Use the available account sign-in and verification flows instead.",
+        "important": "Recovery is not currently available. This guide does not invent recovery steps or promise that a recovery secret can be revealed."
+      },
+      "securityLog": {
+        "title": "Security Log",
+        "summary": "Review account, security, and policy actions with the actor, result, time, and filters shown.",
+        "purpose": "The Security Log gives Parents a record of important actions affecting the Parent account and protection settings.",
+        "when": "Use it when checking who performed an action, when it happened, or whether a security or policy operation succeeded.",
+        "actions": ["Filter the available log entries.", "Review actor, result, and time details when shown."],
+        "steps": [],
+        "next": "Use Activity Timeline for child activity history. If protected log data is pending or unavailable, follow the setup message instead of assuming no action occurred.",
+        "important": "Security Log and Activity Timeline are different pages with different purposes."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "summary": "Manage notification preferences and review supported notification history.",
+        "purpose": "Notifications brings together preference controls and the history of supported request or commercial notifications.",
+        "when": "Use it when changing email alert preferences, checking unread items, or acknowledging a notification.",
+        "actions": ["Review email and supported request or push preferences.", "Check the email destination shown.", "Filter unread or read items, mark items read, and acknowledge when available."],
+        "steps": [],
+        "next": "The page reflects the notification channels and actions supported by the current deployment. A preference change does not rewrite older history.",
+        "important": "Do not assume a channel is available unless the page lists it."
+      },
+      "subscription": {
+        "title": "Subscription",
+        "summary": "Review plan status, device capacity, Parent and Guardian capacity, requests, and payment state.",
+        "purpose": "Subscription explains the current plan and the capacity available to this Parent account.",
+        "when": "Use it when checking plan status, available device capacity, renewal controls, or open allowance requests.",
+        "actions": ["Review used, reserved, and available device capacity.", "Review Parent and Guardian allowance.", "Check plan, payment-method, renewal, cancel, or resume controls when shown.", "Open an increase request or invoices when available."],
+        "steps": [],
+        "next": "Use the specific allowance or invoice topic for a request or payment question. A browser return from payment is not the final server-confirmed outcome.",
+        "important": "Billing controls may require the billing permission and a configured payment provider. The page's server-confirmed status is authoritative."
+      },
+      "deviceIncrease": {
+        "title": "Increase device allowance",
+        "summary": "Request a higher device limit and follow any quote, payment, and server-confirmation steps.",
+        "purpose": "This flow is for requesting more device capacity than the current plan provides.",
+        "when": "Use it when the available device allowance cannot support another connected child device.",
+        "actions": ["Choose the requested device limit.", "Submit the request and wait for a quote when the flow requires one.", "Complete payment only when the page and provider make it available.", "Check the server-confirmed request status."],
+        "steps": ["Request the new limit.", "Review any quote that becomes available.", "Pay through the supported provider if payment is required.", "Return to the request and wait for approval or an updated allowance."],
+        "next": "Payment can remain pending. Returning from a payment page does not by itself prove that the request was approved or that the allowance changed.",
+        "important": "Provider availability and your billing permission can prevent payment. Do not treat a browser return URL as confirmation."
+      },
+      "parentIncrease": {
+        "title": "Increase Parent and Guardian allowance",
+        "summary": "Request more Parent or Guardian capacity through the separate non-billable allowance flow.",
+        "purpose": "This flow changes the number of Parents or Guardians allowed for the Parent account.",
+        "when": "Use it when your account needs another trusted adult and the current allowance is full.",
+        "actions": ["Request the new Parent or Guardian limit.", "Follow the request status shown by the page."],
+        "steps": [],
+        "next": "The request is reviewed through the product's request state. If approved, return to Parents & Guardians to invite the person.",
+        "important": "Increasing Parent or Guardian allowance is non-billable. This guide does not add a payment step to this flow."
+      },
+      "invoices": {
+        "title": "Invoices, receipts, and payment status",
+        "summary": "Review invoice lists, invoice details, receipts, and the server-confirmed status of billing actions.",
+        "purpose": "Use this area to find billing records and understand whether a payment-related request is still pending or confirmed.",
+        "when": "Use it after a device allowance request, when you need a receipt, or when a payment return needs checking.",
+        "actions": ["Filter and open available invoices.", "Read invoice details and receipt information.", "Check the final payment state returned by Parent Web."],
+        "steps": [],
+        "next": "If the provider or server has not confirmed the result, keep the request as pending and follow the status shown by the product.",
+        "important": "A return from payment is not proof of approval. Only the server-confirmed request or payment state can confirm the outcome."
+      },
+      "settings": {
+        "title": "Settings",
+        "summary": "Manage Parent Web preferences such as language and other account-level settings shown there.",
+        "purpose": "Settings is the place to adjust supported preferences without changing security or authorization rules.",
+        "when": "Use it when changing the display language or reviewing account-level preferences.",
+        "actions": ["Choose a supported language.", "Review the settings currently available to your role."],
+        "steps": [],
+        "next": "The selected language applies across Parent Web, including the Guide and right-to-left layout for Arabic.",
+        "important": "Settings cannot grant permissions or make an unavailable product capability available."
+      },
+      "download": {
+        "title": "Download Child App",
+        "summary": "Check the real Child App download availability for the current deployment and platform.",
+        "purpose": "Use this page to begin Child App setup only when the deployment provides a real download destination.",
+        "when": "Use it before adding a device or when a child device needs the Child App installed.",
+        "actions": ["Open the download page.", "Use a configured Android download when one is actually provided.", "Read the current iOS availability message."],
+        "steps": [],
+        "next": "After installation, return to Devices to continue pairing and setup.",
+        "important": "Android is available only when a real deployment download URL is configured. The iOS Child App is planned for a later release and has no current App Store link here."
+      },
+      "troubleshooting": {
+        "title": "Troubleshooting",
+        "summary": "Find the common reason an action is unavailable and the next practical step.",
+        "purpose": "Use this section to understand permission, setup, delivery, browser, platform, and payment messages.",
+        "when": "Open it when a button is unavailable, a change is pending, protected information is hidden, or payment cannot continue.",
+        "actions": ["If you cannot change a setting, check whether your role is read-only, another Parent role is required, setup is incomplete, browser trust is needed, or the feature is unavailable.", "If you see Not permitted, ask an Administrator or the Parent role responsible for that action.", "If a change is pending, check device delivery or offline state.", "If protected information is hidden, complete the displayed browser or setup requirement.", "If you cannot download the Child App, check platform and deployment availability.", "If you cannot pay, check provider availability and the current request state."],
+        "steps": [],
+        "next": "Return to the specific page after completing the suggested step. If the state remains pending, rely on the status shown rather than repeating a destructive action.",
+        "important": "Not permitted is a permission explanation, not a prompt to bypass access controls. A saved change, payment return, export request, or deletion request is not automatically a completed result."
+      }
+    }
   },
   "_arReviewPending": [
     "deviceEnrollment.creatingChild",

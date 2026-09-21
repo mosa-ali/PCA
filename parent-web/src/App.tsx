@@ -39,6 +39,7 @@ import InvoiceDetail from './pages/billing/InvoiceDetail';
 import CheckoutReturn from './pages/billing/CheckoutReturn';
 import DownloadApp from './pages/download/DownloadApp';
 import Settings from './pages/Settings';
+import ParentGuide from './pages/guide/ParentGuide';
 import NotPermitted from './pages/NotPermitted';
 import NotFound from './pages/NotFound';
 import Register from './pages/auth/Register';
@@ -250,6 +251,7 @@ export default function App() {
             control the same person can see. */}
         <Route path="download" element={<DownloadApp />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="guide" element={<ParentGuide />} />
         <Route path="not-permitted" element={<NotPermitted />} />
         <Route path="*" element={<NotFound />} />
       </Route>
