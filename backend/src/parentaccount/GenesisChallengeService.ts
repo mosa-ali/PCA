@@ -29,6 +29,7 @@ export interface BeginGenesisChallengeInput {
   accountId: ParentAccountId;
   serviceAccountId: string;
   publicKey: string;
+  genesisAuthorizationId: string;
   platform?: Platform;
 }
 
@@ -46,6 +47,9 @@ export class GenesisChallengeService {
   ) {}
 
   async begin(input: BeginGenesisChallengeInput): Promise<GenesisChallengeRecord> {
+    if (typeof input.genesisAuthorizationId !== 'string' || input.genesisAuthorizationId.length === 0) {
+      throw new GenesisChallengeError('INVALID_SIGNATURE');
+    }
     const ids = createGenesisChallengeIds();
     const createdAt = this.now();
     const record: GenesisChallengeRecord = {
@@ -57,6 +61,7 @@ export class GenesisChallengeService {
       candidateKeyId: ids.keyId,
       candidatePublicKey: input.publicKey,
       candidatePlatform: input.platform ?? 'BROWSER',
+      genesisAuthorizationId: input.genesisAuthorizationId,
       nonce: ids.nonce,
       operation: 'GENESIS',
       protocolVersion: 1,

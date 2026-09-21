@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import type { AuthService } from '../auth/AuthService.js';
 import type { OpaqueFamilyId } from '../familytrustset/types.js';
 import { hashParentEmail, isPlausibleEmail } from './emailHash.js';
@@ -9,6 +9,8 @@ import {
   MAX_PASSWORD_RESET_ATTEMPTS_PER_CODE,
   MAX_VERIFICATION_ATTEMPTS_PER_CODE,
   LOGIN_STEP_UP_CODE_TTL_MS,
+  GENESIS_STEP_UP_CODE_TTL_MS,
+  MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE,
   PASSWORD_RESET_CODE_TTL_MS,
   VERIFICATION_CODE_TTL_MS,
   computeFreeAccessExpiry,
@@ -29,6 +31,9 @@ import type {
   ParentSignupProfile,
 } from './types.js';
 import type { ParentGenesisService, BeginParentGenesisInput, CompleteParentGenesisInput } from './ParentGenesisService.js';
+import type { GenesisStepUpRepository } from './GenesisStepUpRepository.js';
+import { GENESIS_STEP_UP_OPERATION } from './GenesisStepUpRepository.js';
+import { hashGenesisSessionId } from './sessionBinding.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
 
@@ -66,6 +71,8 @@ export interface ParentAccountServiceDeps {
   familyMembershipRepository?: FamilyMembershipRepository;
   /** Explicit client-key genesis ceremony; omitted only by test compositions that do not expose genesis routes. */
   parentGenesisService?: ParentGenesisService;
+  /** Durable, exact-session high-assurance authorization for family genesis. */
+  genesisStepUpRepository?: GenesisStepUpRepository;
   now?: () => Date;
 }
 
@@ -85,6 +92,7 @@ export class ParentAccountService {
   private readonly emailSender: EmailSenderPort;
   private readonly familyMembershipRepository: FamilyMembershipRepository | undefined;
   private readonly parentGenesisService: ParentGenesisService | undefined;
+  private readonly genesisStepUpRepository: GenesisStepUpRepository | undefined;
   private readonly now: () => Date;
 
   constructor(deps: ParentAccountServiceDeps) {
@@ -99,6 +107,7 @@ export class ParentAccountService {
         ? (deps.repository as unknown as FamilyMembershipRepository)
         : undefined);
     this.parentGenesisService = deps.parentGenesisService;
+    this.genesisStepUpRepository = deps.genesisStepUpRepository;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -395,32 +404,105 @@ export class ParentAccountService {
     return { accountId: account.accountId, familyId: account.familyId, emailVerified: true, role };
   }
 
-  /** Starts the explicit client-key family genesis ceremony for an authenticated account. */
-  async beginGenesisChallenge(rawSessionToken: string, input: Omit<BeginParentGenesisInput, 'accountId' | 'serviceAccountId'>) {
-    if (!this.parentGenesisService) throw new ParentAccountError('UNAUTHORIZED');
-    const { account, serviceAccountId } = await this.resolveAuthenticatedParent(rawSessionToken);
+  /**
+   * Starts the dedicated high-assurance FAMILY_GENESIS authorization. The
+   * current authenticated session is only a binding; password re-auth plus
+   * a fresh mailbox code are both required. The raw session token never
+   * enters persistence: only a hash of AuthService's opaque sessionId does.
+   */
+  async requestGenesisStepUp(rawSessionToken: string, email: string, password: string): Promise<void> {
+    if (!this.genesisStepUpRepository || typeof email !== 'string' || typeof password !== 'string') throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId, session } = await this.resolveAuthenticatedParent(rawSessionToken);
     if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
-    return this.parentGenesisService.begin({ ...input, accountId: account.accountId, serviceAccountId });
+    const suppliedEmailHash = hashParentEmail(email);
+    if (suppliedEmailHash.length !== account.emailHash.length || !timingSafeEqual(suppliedEmailHash, account.emailHash)) throw new ParentAccountError('UNAUTHORIZED');
+    if (!(await verifyPassword(password, account.passwordHash))) throw new ParentAccountError('UNAUTHORIZED');
+    if (typeof this.emailSender.sendGenesisStepUpCode !== 'function') throw new ParentAccountError('UNAUTHORIZED');
+
+    const now = this.now();
+    const { code, codeHash } = generateVerificationCode();
+    await this.genesisStepUpRepository.create({
+      authorizationId: randomUUID(),
+      accountId: account.accountId,
+      serviceAccountId,
+      sessionIdHash: hashGenesisSessionId(session.sessionId),
+      operation: GENESIS_STEP_UP_OPERATION,
+      codeHash,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + GENESIS_STEP_UP_CODE_TTL_MS),
+    });
+    try {
+      await this.emailSender.sendGenesisStepUpCode(email, code);
+    } catch {
+      // Match the existing email-step-up contract: durable authorization
+      // state remains bounded and the mailbox transport never leaks detail.
+    }
+  }
+
+  /** Completes the fresh mailbox step-up for this exact authenticated session. */
+  async completeGenesisStepUp(rawSessionToken: string, code: string): Promise<void> {
+    if (!this.genesisStepUpRepository || !isPlausibleVerificationCode(code)) throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId, session } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
+    const authorization = await this.genesisStepUpRepository.findLatestForSession({
+      accountId: account.accountId,
+      serviceAccountId,
+      sessionIdHash: hashGenesisSessionId(session.sessionId),
+    });
+    if (!authorization || authorization.operation !== GENESIS_STEP_UP_OPERATION || authorization.consumedAt !== null || authorization.verifiedAt !== null || authorization.expiresAt.getTime() <= this.now().getTime() || authorization.attemptCount >= MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE) {
+      throw new ParentAccountError('UNAUTHORIZED');
+    }
+    await this.genesisStepUpRepository.incrementAttempt(authorization.authorizationId);
+    if (!verificationCodeHashesMatch(hashVerificationCode(code), authorization.codeHash)) throw new ParentAccountError('UNAUTHORIZED');
+    if (!await this.genesisStepUpRepository.verifyCodeAtomically(authorization.authorizationId, this.now())) throw new ParentAccountError('UNAUTHORIZED');
+  }
+
+  /** Starts the explicit client-key family genesis ceremony for an authenticated account. */
+  async beginGenesisChallenge(rawSessionToken: string, input: Omit<BeginParentGenesisInput, 'accountId' | 'serviceAccountId' | 'genesisAuthorizationId'>) {
+    if (!this.parentGenesisService || !this.genesisStepUpRepository) throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId, session } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
+    const authorization = await this.genesisStepUpRepository.findVerifiedForSession({
+      accountId: account.accountId,
+      serviceAccountId,
+      sessionIdHash: hashGenesisSessionId(session.sessionId),
+      now: this.now(),
+    });
+    if (!authorization) throw new ParentAccountError('UNAUTHORIZED');
+    return this.parentGenesisService.begin({ ...input, accountId: account.accountId, serviceAccountId, genesisAuthorizationId: authorization.authorizationId });
   }
 
   /** Completes genesis only when the challenge and authenticated session identify the same account. */
   async completeGenesis(rawSessionToken: string, input: CompleteParentGenesisInput) {
-    if (!this.parentGenesisService) throw new ParentAccountError('UNAUTHORIZED');
-    const { account, serviceAccountId } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (!this.parentGenesisService || !this.genesisStepUpRepository) throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId, session } = await this.resolveAuthenticatedParent(rawSessionToken);
     if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
-    return this.parentGenesisService.complete(input, { accountId: account.accountId, serviceAccountId });
+    const authorization = await this.genesisStepUpRepository.findVerifiedForSession({
+      accountId: account.accountId,
+      serviceAccountId,
+      sessionIdHash: hashGenesisSessionId(session.sessionId),
+      now: this.now(),
+    });
+    if (!authorization) throw new ParentAccountError('UNAUTHORIZED');
+    return this.parentGenesisService.complete(input, {
+      accountId: account.accountId,
+      serviceAccountId,
+      sessionIdHash: hashGenesisSessionId(session.sessionId),
+      genesisAuthorizationId: authorization.authorizationId,
+    });
   }
 
   private async resolveAuthenticatedParent(rawSessionToken: string) {
-    let serviceAccountId: string;
+    let session;
     try {
-      serviceAccountId = await this.authService.validateSession(rawSessionToken);
+      session = await this.authService.validateSessionRecord(rawSessionToken);
     } catch {
       throw new ParentAccountError('UNAUTHORIZED');
     }
+    const serviceAccountId = session.accountId;
     const account = await this.repository.findByServiceAccountId(serviceAccountId);
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    return { account, serviceAccountId };
+    return { account, serviceAccountId, session };
   }
 
   private async resolveFamilyRole(accountId: ParentAccountId, familyId: OpaqueFamilyId | null): Promise<FamilyMembershipRole | null> {

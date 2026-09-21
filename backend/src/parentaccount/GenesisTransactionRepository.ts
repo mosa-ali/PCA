@@ -7,6 +7,9 @@ export interface GenesisCompletionArtifacts {
   readonly attestation: FamilyOwnerAttestation;
   readonly attestationId: string;
   readonly consumedAt: Date;
+  /** Present on the production ParentAccountService path; omitted only by low-level crypto fixtures. */
+  readonly genesisAuthorizationId?: string;
+  readonly sessionIdHash?: string;
 }
 
 export type GenesisTransactionFailureCode =

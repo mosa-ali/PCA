@@ -6,12 +6,14 @@ import type { GenesisChallengeService } from './GenesisChallengeService.js';
 import { GenesisChallengeError } from './GenesisChallengeService.js';
 import type { GenesisTransactionRepository } from './GenesisTransactionRepository.js';
 import type { Platform } from '../device/types.js';
+import { hasSaneAttestationTemporalPolicy } from '../familycommercial/authority/policy.js';
 
 export interface BeginParentGenesisInput {
   accountId: string;
   serviceAccountId: string;
   publicKey: string;
   platform?: Platform;
+  genesisAuthorizationId: string;
 }
 
 export interface CompleteParentGenesisInput {
@@ -23,6 +25,13 @@ export interface CompleteParentGenesisInput {
   keyEpoch: number;
   issuedAt: Date;
   expiresAt: Date;
+}
+
+export interface ParentGenesisExpectedIdentity {
+  accountId: string;
+  serviceAccountId: string;
+  sessionIdHash?: string;
+  genesisAuthorizationId?: string;
 }
 
 export interface ParentGenesisCompletionResult {
@@ -49,9 +58,12 @@ export class ParentGenesisService {
     return this.challengeService.begin(input);
   }
 
-  async complete(input: CompleteParentGenesisInput, expectedIdentity?: { accountId: string; serviceAccountId: string }): Promise<ParentGenesisCompletionResult> {
+  async complete(input: CompleteParentGenesisInput, expectedIdentity?: ParentGenesisExpectedIdentity): Promise<ParentGenesisCompletionResult> {
     const challenge = await this.challengeService.verifyProof(input.challengeId, input.proofSignature);
     if (expectedIdentity && (challenge.accountId !== expectedIdentity.accountId || challenge.serviceAccountId !== expectedIdentity.serviceAccountId)) {
+      throw new GenesisChallengeError('INVALID_SIGNATURE');
+    }
+    if (expectedIdentity?.genesisAuthorizationId !== undefined && challenge.genesisAuthorizationId !== expectedIdentity.genesisAuthorizationId) {
       throw new GenesisChallengeError('INVALID_SIGNATURE');
     }
     if (!Number.isInteger(input.trustSetEpoch) || input.trustSetEpoch < 1 || !Number.isInteger(input.keyEpoch) || input.keyEpoch < 1) {
@@ -60,7 +72,7 @@ export class ParentGenesisService {
     if (!(input.issuedAt instanceof Date) || Number.isNaN(input.issuedAt.getTime()) || !(input.expiresAt instanceof Date) || Number.isNaN(input.expiresAt.getTime())) {
       throw new GenesisChallengeError('INVALID_SIGNATURE');
     }
-    if (input.expiresAt.getTime() <= input.issuedAt.getTime()) throw new GenesisChallengeError('INVALID_SIGNATURE');
+    if (!hasSaneAttestationTemporalPolicy(input.issuedAt, input.expiresAt, this.now())) throw new GenesisChallengeError('INVALID_SIGNATURE');
 
     const anchor = {
       familyId: challenge.familyId,
@@ -99,6 +111,8 @@ export class ParentGenesisService {
       attestation,
       attestationId: computeAttestationId(attestation),
       consumedAt: this.now(),
+      genesisAuthorizationId: expectedIdentity?.genesisAuthorizationId,
+      sessionIdHash: expectedIdentity?.sessionIdHash,
     });
     return { familyId: challenge.familyId, deviceId: challenge.candidateDeviceId, keyId: challenge.candidateKeyId };
   }

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { isCanonicalP256PublicKey } from '../deviceauth/P256DeviceSignatureVerifier.js';
+import { isCanonicalBase64Url, isCanonicalP256PublicKey } from '../deviceauth/P256DeviceSignatureVerifier.js';
 import type { Platform } from '../device/types.js';
 import type { ParentAccountId } from './types.js';
 
@@ -17,6 +17,7 @@ export interface GenesisChallengeRecord {
   candidateKeyId: string;
   candidatePublicKey: string;
   candidatePlatform: Platform;
+  genesisAuthorizationId: string;
   nonce: string;
   operation: typeof GENESIS_OPERATION;
   protocolVersion: typeof GENESIS_PROTOCOL_VERSION;
@@ -78,5 +79,5 @@ export function canonicalizeGenesisProof(input: GenesisProofInput): string {
 }
 
 export function isCanonicalNonce(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
+  return isCanonicalBase64Url(value, 32);
 }

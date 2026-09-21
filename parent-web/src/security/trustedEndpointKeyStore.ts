@@ -20,6 +20,8 @@
 // ./secureStorage.ts (the pre-existing dev-only stub this module replaces
 // for the production code path).
 
+import { canonicalizeP256Signature } from './p256Signature';
+
 const SIGNING_ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 const SIGN_ALGORITHM = { name: 'ECDSA', hash: 'SHA-256' } as const;
 
@@ -95,7 +97,8 @@ export async function signWithEndpointKey(data: BufferSource): Promise<ArrayBuff
   if (!currentKeyMaterial) {
     throw new Error('No trusted-endpoint key material is held in this browser context -- generate one first.');
   }
-  return crypto.subtle.sign(SIGN_ALGORITHM, currentKeyMaterial.privateKey, data);
+  const signature = await crypto.subtle.sign(SIGN_ALGORITHM, currentKeyMaterial.privateKey, data);
+  return canonicalizeP256Signature(signature);
 }
 
 /** Discards the in-memory key handle (e.g. on REVOKED or explicit reset). Does not throw if nothing was held. */

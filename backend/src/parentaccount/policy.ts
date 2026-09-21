@@ -38,6 +38,12 @@ export const MAX_LOGIN_STEP_UP_ATTEMPTS_PER_CODE = 8;
 export const LOGIN_STEP_UP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
 export const LOGIN_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
 
+/** Dedicated genesis authorization: deliberately separate from normal login step-up. */
+export const GENESIS_STEP_UP_CODE_TTL_MS = 10 * 60 * 1000;
+export const MAX_GENESIS_STEP_UP_ATTEMPTS_PER_CODE = 8;
+export const GENESIS_STEP_UP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 30 };
+export const GENESIS_STEP_UP_EMAIL_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 10 };
+
 export interface FreeAccessDefaults {
   mode: FreeAccessMode;
   durationDays: number | null;

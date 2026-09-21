@@ -19,6 +19,7 @@ export class MySqlGenesisTransactionRepository implements GenesisTransactionRepo
         candidate_key_id: string;
         candidate_public_key: string;
         candidate_platform: 'ANDROID' | 'IOS' | 'BROWSER';
+        genesis_authorization_id: string | null;
         nonce: string;
         operation: 'GENESIS';
         protocol_version: 1;
@@ -38,6 +39,7 @@ export class MySqlGenesisTransactionRepository implements GenesisTransactionRepo
         challenge.candidate_key_id !== input.challenge.candidateKeyId ||
         challenge.candidate_public_key !== input.challenge.candidatePublicKey ||
         challenge.candidate_platform !== input.challenge.candidatePlatform ||
+        challenge.genesis_authorization_id !== input.challenge.genesisAuthorizationId ||
         challenge.nonce !== input.challenge.nonce
       ) {
         throw new SoftFailure('INVALID_ATOMIC_STATE');
@@ -52,6 +54,25 @@ export class MySqlGenesisTransactionRepository implements GenesisTransactionRepo
       if (!account || account.status !== 'VERIFIED') throw new SoftFailure('ACCOUNT_NOT_FOUND');
       if (account.service_account_id !== input.challenge.serviceAccountId) throw new SoftFailure('INVALID_ATOMIC_STATE');
       if (account.family_id !== null) throw new SoftFailure('ACCOUNT_ALREADY_BOUND');
+
+      if (!input.genesisAuthorizationId || !input.sessionIdHash || input.challenge.genesisAuthorizationId !== input.genesisAuthorizationId) {
+        throw new SoftFailure('INVALID_ATOMIC_STATE');
+      }
+      const authorization = await execute<{
+        authorization_id: string;
+        account_id: string;
+        service_account_id: string;
+        session_id_hash: string;
+        operation: 'FAMILY_GENESIS';
+        verified_at: Date | null;
+        consumed_at: Date | null;
+        expires_at: Date;
+      }>(conn, `SELECT authorization_id, account_id, service_account_id, session_id_hash, operation, verified_at, consumed_at, expires_at
+        FROM parent_genesis_step_up_authorizations WHERE authorization_id = ? FOR UPDATE`, [input.genesisAuthorizationId]);
+      const stepUp = authorization.rows[0];
+      if (!stepUp || stepUp.account_id !== input.challenge.accountId || stepUp.service_account_id !== input.challenge.serviceAccountId || stepUp.session_id_hash !== input.sessionIdHash || stepUp.operation !== 'FAMILY_GENESIS' || stepUp.verified_at === null || stepUp.consumed_at !== null || stepUp.expires_at.getTime() <= input.consumedAt.getTime()) {
+        throw new SoftFailure('INVALID_ATOMIC_STATE');
+      }
 
       const serviceAccount = await execute<{ account_id: string }>(conn, `SELECT account_id FROM service_accounts WHERE account_id = ? FOR UPDATE`, [
         input.challenge.serviceAccountId,
@@ -148,6 +169,9 @@ export class MySqlGenesisTransactionRepository implements GenesisTransactionRepo
         [input.consumedAt, input.challenge.challengeId, input.consumedAt],
       );
       if (consumed.rowCount !== 1) throw new SoftFailure('CHALLENGE_ALREADY_CONSUMED');
+      const authorizationConsumed = await execute(conn, `UPDATE parent_genesis_step_up_authorizations SET consumed_at = ?
+        WHERE authorization_id = ? AND consumed_at IS NULL AND verified_at IS NOT NULL AND expires_at > ?`, [input.consumedAt, input.genesisAuthorizationId, input.consumedAt]);
+      if (authorizationConsumed.rowCount !== 1) throw new SoftFailure('INVALID_ATOMIC_STATE');
     }).catch((error: unknown) => {
       if (error instanceof SoftFailure) throw new GenesisTransactionError(error.outcome as never);
       throw error;

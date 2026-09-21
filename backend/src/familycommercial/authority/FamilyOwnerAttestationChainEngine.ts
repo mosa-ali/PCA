@@ -88,6 +88,14 @@ export class FamilyOwnerAttestationChainEngine {
     private readonly requestChallengeVerifier?: FamilyAuthorityRequestChallengeVerifier,
   ) {}
 
+  /**
+   * Legacy/test-only bootstrap helper. Production composition MUST NOT route
+   * a parent request here: the production path is ParentGenesisService plus
+   * MySqlGenesisTransactionRepository, with its dedicated exact-session
+   * step-up gate. Keeping this method for deterministic chain-engine tests
+   * prevents the alternate non-atomic path from becoming an accidental
+   * production activation surface.
+   */
   async bootstrapFamilyAuthority(input: BootstrapFamilyAuthorityInput): Promise<BootstrapFamilyAuthorityResult> {
     const { anchor, genesisAttestation } = input;
 

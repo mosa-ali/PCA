@@ -181,6 +181,7 @@ import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccount
 import { ParentGenesisService } from './parentaccount/ParentGenesisService.js';
 import { GenesisChallengeService } from './parentaccount/GenesisChallengeService.js';
 import { MySqlGenesisChallengeRepository } from './parentaccount/MySqlGenesisChallengeRepository.js';
+import { MySqlGenesisStepUpRepository } from './parentaccount/MySqlGenesisStepUpRepository.js';
 import { MySqlGenesisTransactionRepository } from './parentaccount/MySqlGenesisTransactionRepository.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
@@ -574,6 +575,7 @@ async function start(): Promise<void> {
     emailSender: emailInfrastructure.emailSender,
     familyMembershipRepository,
     parentGenesisService,
+    genesisStepUpRepository: new MySqlGenesisStepUpRepository(),
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();

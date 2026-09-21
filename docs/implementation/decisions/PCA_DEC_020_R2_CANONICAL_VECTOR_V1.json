@@ -1,0 +1,22 @@
+{
+  "protocol": "PCA_FAMILY_GENESIS_PROOF_V1",
+  "purpose": "R2 non-production cross-client canonicalization and low-S signature fixture",
+  "privateKeyIncluded": false,
+  "inputFields": {
+    "protocolVersion": 1,
+    "operation": "GENESIS",
+    "accountId": "acct-α",
+    "serviceAccountId": "svc-1",
+    "familyId": "fam-1",
+    "deviceId": "dev-1",
+    "keyId": "key-1",
+    "publicKey": "BEZX-_tVwekTbTREjuRcOOfv9MJzNZglE_9ztv0iI4BbS0ld7O0WlPXkukSwvI6CIwnQ5o6Hmw5Ia1kQrBYlyiU",
+    "challengeId": "challenge-1",
+    "nonce": "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE",
+    "createdAt": "2026-01-02T03:04:05.678Z",
+    "expiresAt": "2026-01-02T03:09:05.678Z"
+  },
+  "canonicalBytesHex": "32373a5043415f46414d494c595f47454e455349535f50524f4f465f5631313a31373a47454e45534953373a616363742dceb1353a7376632d31353a66616d2d31353a6465762d31353a6b65792d3138373a42455a582d5f745677656b54625452456a7552634f4f6676394d4a7a4e5a676c455f397a747630694934426253306c64374f30576c50586b756b53777649364349776e51356f36486d77354961316b517242596c79695531313a6368616c6c656e67652d3134333a4d4445794d7a51314e6a63344f5441784d6a4d304e5459334f446b774d54497a4e4455324e7a67354d444532343a323032362d30312d30325430333a30343a30352e3637385a32343a323032362d30312d30325430333a30393a30352e3637385a",
+  "testSignatureBase64url": "zzFWKExKoXm4kjhiHomSejcUNAcBiZGcWsl9reMg1mxrIW9OY11TiIFi33g3upj-6EzEbcTmF1M2aDmAv6mnSg",
+  "signatureEncoding": "fixed-width IEEE-P1363 r||s, 64 bytes, low-S"
+}

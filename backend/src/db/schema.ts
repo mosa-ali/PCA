@@ -144,7 +144,6 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
 
     ],
     foreignKeys: [
-
     ],
     checkConstraints: [
       { name: "account_entitlements_family_id_check", clause: "(char_length(`family_id`) between 1 and 128)" },
@@ -2000,7 +1999,9 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "family_parent_memberships_service_account_idx", columns: ["service_account_id"], unique: false },
     ],
     foreignKeys: [
-
+      { name: "family_parent_memberships_family_fk", columns: ["family_id"], referencedTable: "families", referencedColumns: ["family_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "family_parent_memberships_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "family_parent_memberships_service_account_fk", columns: ["service_account_id"], referencedTable: "service_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
       { name: "family_parent_memberships_role_check", clause: "(`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))" },
@@ -2244,7 +2245,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     charset: "utf8mb4",
     collation: "utf8mb4_bin",
     createdByMigration: "0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql",
-    alteredByMigrations: [],
+    alteredByMigrations: ["0045_pca_dec_020_r2_genesis_step_up.sql"],
     ownerModule: "backend/src/parentaccount",
     columns: [
       { name: "challenge_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "One-time genesis challenge identifier." },
@@ -2255,6 +2256,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "candidate_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Server-minted candidate DSK identifier." },
       { name: "candidate_public_key", columnType: "varchar(128)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key only; never private key material." },
       { name: "candidate_platform", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: "BROWSER", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed endpoint platform vocabulary." },
+      { name: "genesis_authorization_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Exact-session high-assurance genesis authorization reference." },
       { name: "nonce", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "One-time challenge nonce." },
       { name: "operation", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Genesis operation marker." },
       { name: "protocol_version", columnType: "smallint unsigned", dataType: "smallint", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Protocol version." },
@@ -2270,10 +2272,12 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "parent_genesis_challenges_account_idx", columns: ["account_id", "created_at"], unique: false },
       { name: "parent_genesis_challenges_family_idx", columns: ["family_id"], unique: false },
       { name: "parent_genesis_challenges_service_account_fk", columns: ["service_account_id"], unique: false },
+      { name: "parent_genesis_challenges_authorization_idx", columns: ["genesis_authorization_id"], unique: false },
     ],
     foreignKeys: [
       { name: "parent_genesis_challenges_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
       { name: "parent_genesis_challenges_service_account_fk", columns: ["service_account_id"], referencedTable: "service_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "parent_genesis_challenges_authorization_fk", columns: ["genesis_authorization_id"], referencedTable: "parent_genesis_step_up_authorizations", referencedColumns: ["authorization_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
       { name: "parent_genesis_challenges_expiry_check", clause: "(`expires_at` > `created_at`)" },
@@ -2286,6 +2290,44 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Candidate family id is created and bound by the same atomic genesis transaction.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
       { column: "candidate_device_id", impliedReferencedTable: "devices", impliedReferencedColumn: "device_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Candidate device identity is created only inside the atomic genesis transaction.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
     ],
+  },
+  {
+    name: "parent_genesis_step_up_authorizations",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0045_pca_dec_020_r2_genesis_step_up.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount",
+    columns: [
+      { name: "authorization_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "One-time genesis authorization identifier." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Parent account reference." },
+      { name: "service_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Authenticated service-session identity reference." },
+      { name: "session_id_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "One-way exact-session binding; raw session token is never stored." },
+      { name: "operation", columnType: "varchar(32)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed FAMILY_GENESIS operation marker." },
+      { name: "code_hash", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Keyed one-time code hash; never raw code." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "attempt_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Bounded code-guess counter." },
+      { name: "verified_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+    ],
+    primaryKey: ["authorization_id"],
+    uniqueIndexes: [],
+    indexes: [
+      { name: "parent_genesis_step_up_session_idx", columns: ["account_id", "service_account_id", "session_id_hash", "created_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_genesis_step_up_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "parent_genesis_step_up_service_account_fk", columns: ["service_account_id"], referencedTable: "service_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_genesis_step_up_code_hash_check", clause: "(char_length(`code_hash`) = 64)" },
+      { name: "parent_genesis_step_up_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "parent_genesis_step_up_operation_check", clause: "(`operation` = _ascii'FAMILY_GENESIS')" },
+      { name: "parent_genesis_step_up_session_hash_check", clause: "(char_length(`session_id_hash`) = 64)" },
+    ],
+    applicationEnforcedRelations: [],
   },
   {
     name: "parent_login_step_up_codes",

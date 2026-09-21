@@ -1,4 +1,5 @@
 import { signWithEndpointKey } from './trustedEndpointKeyStore';
+import { isStrictCanonicalBase64Url } from './p256Signature';
 
 export interface GenesisProofFields {
   protocolVersion: 1;
@@ -41,9 +42,6 @@ export interface OwnerAttestationFields {
 }
 
 const DOMAIN = 'PCA_FAMILY_GENESIS_PROOF_V1';
-const NONCE = /^[A-Za-z0-9_-]{43}$/;
-const PUBLIC_KEY = /^[A-Za-z0-9_-]{87}$/;
-
 function lengthPrefixed(fields: readonly string[]): string {
   return fields.map((field) => `${new TextEncoder().encode(field).byteLength}:${field}`).join('');
 }
@@ -51,7 +49,7 @@ function lengthPrefixed(fields: readonly string[]): string {
 /** Browser counterpart of backend/src/parentaccount/genesisProtocol.ts. */
 export function canonicalizeGenesisProof(fields: GenesisProofFields): string {
   if (fields.protocolVersion !== 1 || fields.operation !== 'GENESIS') throw new Error('invalid_genesis_protocol');
-  if (!PUBLIC_KEY.test(fields.publicKey) || !NONCE.test(fields.nonce)) throw new Error('invalid_genesis_encoding');
+  if (!isStrictCanonicalBase64Url(fields.publicKey, 65) || !isStrictCanonicalBase64Url(fields.nonce, 32)) throw new Error('invalid_genesis_encoding');
   return lengthPrefixed([
     DOMAIN,
     String(fields.protocolVersion),
@@ -79,6 +77,7 @@ const OWNER_ATTESTATION_DOMAIN = 'PCA_FAMILY_COMMERCIAL_OWNER_AUTHORITY_V1';
 /** Browser counterpart of backend/src/familycommercial/authority/canonicalize.ts. */
 export function canonicalizeGenesisAnchor(fields: GenesisAnchorFields): string {
   if (fields.protocolVersion < 1) throw new Error('invalid_genesis_anchor_protocol');
+  if (!isStrictCanonicalBase64Url(fields.genesisDskPublicKey, 65)) throw new Error('invalid_genesis_encoding');
   return lengthPrefixed([
     GENESIS_ANCHOR_DOMAIN,
     fields.familyId,
@@ -94,6 +93,9 @@ export function canonicalizeGenesisAnchor(fields: GenesisAnchorFields): string {
 export function canonicalizeOwnerAttestation(fields: OwnerAttestationFields): string {
   if (fields.attestationRevision < 1 || fields.trustSetEpoch < 1 || fields.keyEpoch < 1) {
     throw new Error('invalid_owner_attestation_epoch');
+  }
+  if (!isStrictCanonicalBase64Url(fields.ownerDskPublicKey, 65) || !isStrictCanonicalBase64Url(fields.signerDskPublicKey, 65)) {
+    throw new Error('invalid_genesis_encoding');
   }
   return lengthPrefixed([
     OWNER_ATTESTATION_DOMAIN,

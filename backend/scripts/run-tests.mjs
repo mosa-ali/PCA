@@ -281,6 +281,8 @@ const files = [
   "test/security/genesisTransaction.test.mjs",
   "test/security/r1MigrationReview.test.mjs",
   "test/security/pcaDec020R1.test.mjs",
+  "test/security/pcaDec020R2.test.mjs",
+  "test/security/pcaDec020R2Composition.test.mjs",
   "test/meta/testSuiteRegistration.test.mjs",
 ];
 

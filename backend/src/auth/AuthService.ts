@@ -70,10 +70,19 @@ export class AuthService {
 
   /** Returns the authenticated account id, or throws a single generic AuthError('UNAUTHORIZED') for any failure whatsoever. */
   async validateSession(rawToken: string): Promise<ServiceAccountId> {
+    return (await this.validateSessionRecord(rawToken)).accountId;
+  }
+
+  /**
+   * Validates a session and returns its opaque server-side record. Callers
+   * needing an exact-session security binding may use sessionId, never the
+   * raw bearer/cookie token. Failure remains the same generic AuthError.
+   */
+  async validateSessionRecord(rawToken: string): Promise<ServiceSessionRecord> {
     if (!isPlausibleSessionToken(rawToken)) throw new AuthError('UNAUTHORIZED');
     const result = await this.repository.validateSession(hashSessionToken(rawToken), this.now());
     if (result.outcome !== 'VALID') throw new AuthError('UNAUTHORIZED');
-    return result.session.accountId;
+    return result.session;
   }
 
   /** Idempotent: revoking an unknown, already-revoked, or expired token is never an error. */

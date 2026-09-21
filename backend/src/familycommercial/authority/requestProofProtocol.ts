@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isCanonicalP256PublicKey } from '../../deviceauth/P256DeviceSignatureVerifier.js';
+import { isCanonicalBase64Url as isStrictCanonicalBase64Url, isCanonicalP256PublicKey } from '../../deviceauth/P256DeviceSignatureVerifier.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from '../../familytrustset/types.js';
 
 export const AUTHORITY_REQUEST_PROOF_VERSION = 1 as const;
@@ -50,5 +50,5 @@ export function digestAuthorityRequestBody(body: string | Buffer): string {
 }
 
 function isCanonicalBase64Url(value: unknown, length: number): value is string {
-  return typeof value === 'string' && value.length === length && /^[A-Za-z0-9_-]+$/.test(value);
+  return typeof value === 'string' && value.length === length && isStrictCanonicalBase64Url(value, 32);
 }

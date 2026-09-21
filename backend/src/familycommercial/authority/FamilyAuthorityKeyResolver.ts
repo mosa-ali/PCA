@@ -22,7 +22,10 @@ export class DeviceRepositoryFamilyAuthorityKeyResolver implements FamilyAuthori
     publicKey: string;
   }): Promise<boolean> {
     const device = await this.deviceRepository.findDeviceForFamily(input.familyId, input.deviceId);
-    if (!device || device.status === 'REVOKED') return false;
+    // Authority resolution is fail-closed: only an explicitly ACTIVE device
+    // may contribute an ACTIVE DSK. PAIRED/PENDING/REVOKED devices are not
+    // cryptographic authorities, even when their key row is still ACTIVE.
+    if (!device || device.status !== 'ACTIVE') return false;
     const keys = await this.deviceRepository.findKeysByDeviceForFamily(input.familyId, input.deviceId);
     return keys.some((key) =>
       key.keyId === input.keyId &&

@@ -11,7 +11,7 @@ export interface SentTestEmail {
   email: string;
   code: string;
   sentAt: Date;
-  kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP';
+  kind: 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP' | 'GENESIS_STEP_UP';
 }
 
 /**
@@ -45,6 +45,12 @@ export class TestSandboxEmailSender implements EmailSenderPort {
     this.sent.push({ email, code, sentAt: new Date(), kind: 'LOGIN_STEP_UP' });
     // eslint-disable-next-line no-console -- TEST_SANDBOX-only, never runs in production (see createTestSandboxEmailSender's gate)
     console.log(`[TEST_SANDBOX email] login step-up code sent (email redacted, code redacted, length=${code.length})`);
+  }
+
+  async sendGenesisStepUpCode(email: string, code: string): Promise<void> {
+    this.sent.push({ email, code, sentAt: new Date(), kind: 'GENESIS_STEP_UP' });
+    // eslint-disable-next-line no-console -- TEST_SANDBOX-only, never runs in production
+    console.log(`[TEST_SANDBOX email] genesis step-up code sent (email redacted, code redacted, length=${code.length})`);
   }
 
   async sendPlatformAdminActivationLink(email: string, activationUrl: string, _token: string): Promise<void> {

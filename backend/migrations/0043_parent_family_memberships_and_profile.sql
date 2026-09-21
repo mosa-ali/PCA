@@ -17,6 +17,9 @@ CREATE TABLE family_parent_memberships (
   UNIQUE KEY family_parent_memberships_account_family_key (account_id, family_id),
   KEY family_parent_memberships_family_idx (family_id),
   KEY family_parent_memberships_service_account_idx (service_account_id),
+  CONSTRAINT family_parent_memberships_family_fk FOREIGN KEY (family_id) REFERENCES families (family_id),
+  CONSTRAINT family_parent_memberships_account_fk FOREIGN KEY (account_id) REFERENCES parent_accounts (account_id),
+  CONSTRAINT family_parent_memberships_service_account_fk FOREIGN KEY (service_account_id) REFERENCES service_accounts (account_id),
   CONSTRAINT family_parent_memberships_role_check
     CHECK (role IN ('ADMINISTRATOR', 'VIEWER', 'CHILD')),
   CONSTRAINT family_parent_memberships_status_check

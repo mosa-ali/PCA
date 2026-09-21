@@ -47,6 +47,8 @@ import {
   RESET_PASSWORD_EMAIL_RATE_LIMIT,
   RESET_PASSWORD_IP_RATE_LIMIT,
   VERIFY_EMAIL_RATE_LIMIT,
+  GENESIS_STEP_UP_EMAIL_RATE_LIMIT,
+  GENESIS_STEP_UP_IP_RATE_LIMIT,
   VERIFY_IP_RATE_LIMIT,
 } from '../../parentaccount/policy.js';
 import { deriveFreeAccessStatus } from '../../parentaccount/freeaccess/deriveFreeAccessStatus.js';
@@ -344,6 +346,42 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         await reply.code(status).send({ error: error.code === 'INVALID_INPUT' ? 'invalid_request' : 'invalid_code' });
         return;
       }
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/genesis/step-up', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const { email, password } = request.body as Record<string, unknown>;
+    if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (!rateLimited('genesis-step-up', GENESIS_STEP_UP_IP_RATE_LIMIT, GENESIS_STEP_UP_EMAIL_RATE_LIMIT, request.ip, email)) {
+      return reply.code(429).send({ error: 'rate_limited' });
+    }
+    try {
+      await parentAccountService.requestGenesisStepUp(token, email, password);
+      return reply.code(202).send({ stepUpRequired: true });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/genesis/step-up/complete', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body) || typeof (request.body as Record<string, unknown>).code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
+    if (!rateLimiter.consume('genesis-step-up-complete:ip', request.ip, GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
+      return reply.code(429).send({ error: 'rate_limited' });
+    }
+    try {
+      await parentAccountService.completeGenesisStepUp(token, (request.body as Record<string, unknown>).code as string);
+      return reply.code(200).send({ stepUpCompleted: true });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
       throw error;
     }
   });

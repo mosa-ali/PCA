@@ -9,7 +9,7 @@
  * message a mail provider, its logs, or any intermediate relay will see.
  */
 
-export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP';
+export type EmailTemplateKind = 'VERIFICATION' | 'PASSWORD_RESET' | 'PLATFORM_ADMIN_ACTIVATION' | 'LOGIN_STEP_UP' | 'GENESIS_STEP_UP';
 
 export interface RenderedTemplateContent {
   readonly subject: string;
@@ -65,9 +65,19 @@ export function renderLoginStepUpCodeTemplate(code: string): RenderedTemplateCon
   };
 }
 
+export function renderGenesisStepUpCodeTemplate(code: string): RenderedTemplateContent {
+  const safeCode = escapeHtml(code);
+  return {
+    subject: 'Your PCA family setup verification code',
+    text: `Your PCA family setup verification code is: ${code}\n\nThis code authorizes one family setup attempt, expires soon, and can only be used once. If you did not just start family setup, ignore this email -- your family authority has not changed.`,
+    html: `<p>Your PCA family setup verification code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${safeCode}</p><p>This code authorizes one family setup attempt, expires soon, and can only be used once. If you did not just start family setup, ignore this email -- your family authority has not changed.</p>`,
+  };
+}
+
 export function renderEmailTemplate(kind: EmailTemplateKind, code: string): RenderedTemplateContent {
   if (kind === 'VERIFICATION') return renderVerificationCodeTemplate(code);
   if (kind === 'PASSWORD_RESET') return renderPasswordResetCodeTemplate(code);
   if (kind === 'LOGIN_STEP_UP') return renderLoginStepUpCodeTemplate(code);
+  if (kind === 'GENESIS_STEP_UP') return renderGenesisStepUpCodeTemplate(code);
   return renderPlatformAdminActivationTemplate(code);
 }

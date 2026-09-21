@@ -31,6 +31,8 @@ export interface EmailSenderPort {
    * email content must be unambiguous about which action triggered it.
    */
   sendLoginStepUpCode(email: string, code: string): Promise<void>;
+  /** Dedicated high-assurance authorization immediately before family genesis. */
+  sendGenesisStepUpCode(email: string, code: string): Promise<void>;
   /** Sends a one-time Platform Admin first-time activation link. */
   sendPlatformAdminActivationLink(email: string, activationUrl: string, token: string): Promise<void>;
 }

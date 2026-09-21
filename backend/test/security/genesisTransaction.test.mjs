@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import test from 'node:test';
-import { P256DeviceSignatureVerifier } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
+import { canonicalizeP256Signature, P256DeviceSignatureVerifier } from '../../dist/deviceauth/P256DeviceSignatureVerifier.js';
 import { GenesisChallengeService } from '../../dist/parentaccount/GenesisChallengeService.js';
 import { InMemoryGenesisChallengeRepository } from '../../dist/parentaccount/InMemoryGenesisChallengeRepository.js';
 import { InMemoryGenesisTransactionRepository } from '../../dist/parentaccount/InMemoryGenesisTransactionRepository.js';
@@ -19,7 +19,7 @@ function keyMaterial() {
 }
 
 function sign(privateKey, message) {
-  return cryptoSign('sha256', Buffer.from(message), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  return canonicalizeP256Signature(cryptoSign('sha256', Buffer.from(message), { key: privateKey, dsaEncoding: 'ieee-p1363' })).toString('base64url');
 }
 
 async function ceremony(failurePoint) {
@@ -28,7 +28,7 @@ async function ceremony(failurePoint) {
   const challengeService = new GenesisChallengeService(challengeRepository, new P256DeviceSignatureVerifier(), () => NOW);
   const transactionRepository = new InMemoryGenesisTransactionRepository(failurePoint);
   const service = new ParentGenesisService(challengeService, transactionRepository, new P256DeviceSignatureVerifier(), () => NOW);
-  const challenge = await service.begin({ accountId: 'acct-1', serviceAccountId: 'svc-1', publicKey, platform: 'BROWSER' });
+  const challenge = await service.begin({ accountId: 'acct-1', serviceAccountId: 'svc-1', publicKey, platform: 'BROWSER', genesisAuthorizationId: 'gen-auth-1' });
   const proof = {
     protocolVersion: challenge.protocolVersion,
     operation: challenge.operation,
