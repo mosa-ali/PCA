@@ -8,7 +8,14 @@
 -- The purpose check keeps this artifact separate from session tokens, email
 -- verification codes, password-reset codes, and FAMILY_GENESIS authorization.
 -- Production execution is a later owner-authorized gate.
-CREATE TABLE parent_daily_login_grants (
+--
+-- IDEMPOTENCY (2026-09-21, PCA full assessment finding P1-07): this migration is
+-- NOT YET APPLIED in production (which is at 0040), and scripts/migrate.mjs
+-- records a file as applied only after it succeeds -- so a crash between MySQL
+-- auto-committing this statement and the schema_migrations row being written
+-- would leave the table present but unrecorded, and a retry would fail with
+-- "table already exists". `IF NOT EXISTS` makes that retry a no-op.
+CREATE TABLE IF NOT EXISTS parent_daily_login_grants (
   grant_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

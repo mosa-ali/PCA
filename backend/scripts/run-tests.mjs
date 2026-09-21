@@ -260,6 +260,8 @@ const files = [
   "test/retention/serverCiphertextTtl.test.mjs",
   "test/tooling/migrationAdvisoryLock.test.mjs",
   "test/tooling/migrationIdentityFailClosed.test.mjs",
+  "test/tooling/migrationResumability.test.mjs",
+  "test/tooling/canonicalSchemaDrift.test.mjs",
   "test/invitation/enrollmentProfile.test.mjs",
   "test/location/safeZoneRepository.test.mjs",
   "test/mutation/privacyBoundaries.test.mjs",

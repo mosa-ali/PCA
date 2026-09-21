@@ -7,7 +7,12 @@ const read = (relative) => readFile(new URL(relative, root), 'utf8');
 
 test('family roles are stored in a family-scoped membership table, not parent_accounts', async () => {
   const migration = await read('migrations/0043_parent_family_memberships_and_profile.sql');
-  assert.match(migration, /CREATE TABLE family_parent_memberships/);
+  // The optional guard is accepted deliberately: migration 0043 is not yet
+  // applied in production, so it carries `CREATE TABLE IF NOT EXISTS` to stay
+  // resumable after an interrupted apply (PCA finding P1-07). The assertion's
+  // intent -- that family roles live in their OWN family-scoped table -- is
+  // unchanged.
+  assert.match(migration, /CREATE TABLE (IF NOT EXISTS )?family_parent_memberships/);
   assert.match(migration, /role VARCHAR\(16\) NOT NULL/);
   assert.match(migration, /CHECK \(role IN \('ADMINISTRATOR', 'VIEWER', 'CHILD'\)\)/);
   assert.doesNotMatch(migration, /ALTER TABLE parent_accounts[\s\S]*?ADD COLUMN\s+role\b/i);

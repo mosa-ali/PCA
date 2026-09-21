@@ -6,8 +6,13 @@ const migration = await readFile(new URL('../../migrations/0044_pca_dec_020_r1_g
 const executable = migration.replace(/--[^\n]*/g, '');
 
 test('R1 migration 0044 is additive-only and contains both challenge stores', () => {
-  assert.match(executable, /CREATE TABLE parent_genesis_challenges/i);
-  assert.match(executable, /CREATE TABLE family_authority_request_challenges/i);
+  // The optional guard is accepted deliberately: 0044 is not yet applied in
+  // production, so both CREATEs carry `IF NOT EXISTS` and the ALTER is wrapped
+  // in a conditional PREPARE/EXECUTE, so an interrupted apply can be resumed
+  // (PCA finding P1-07). The intent -- additive-only, both stores present, no
+  // destructive statement -- is unchanged and still asserted below.
+  assert.match(executable, /CREATE TABLE (IF NOT EXISTS )?parent_genesis_challenges/i);
+  assert.match(executable, /CREATE TABLE (IF NOT EXISTS )?family_authority_request_challenges/i);
   assert.match(executable, /ADD COLUMN required_trust_set_epoch/i);
   assert.match(executable, /ADD COLUMN required_key_epoch/i);
   assert.doesNotMatch(executable, /\bDROP\s+(TABLE|COLUMN|DATABASE)\b/i);

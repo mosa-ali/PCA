@@ -33,5 +33,28 @@
 -- selects it. No raw email, password, or other personal datum is added to
 -- this table by this migration -- see migration 0013's own header for this
 -- table's unchanged privacy posture.
-ALTER TABLE parent_email_verification_codes
-  ADD COLUMN password_hash VARCHAR(255) NULL AFTER code_hash;
+--
+-- IDEMPOTENCY (2026-09-21, PCA full assessment finding P1-07 / QA-11):
+-- scripts/migrate.mjs records this file as applied only after the WHOLE file
+-- succeeds, so a process that dies after MySQL auto-commits this statement but
+-- before the schema_migrations row is written would otherwise make a retry fail
+-- with ER_DUP_FIELDNAME ("Duplicate column name"). MySQL has no
+-- `ADD COLUMN IF NOT EXISTS` (that is a MariaDB-only extension -- MySQL 8.4
+-- raises ER_PARSE_ERROR on it), so this uses the same conditional
+-- PREPARE/EXECUTE idiom migration 0042 already established. A fresh run applies
+-- the column exactly as before; a resumed run skips it; the intended final
+-- schema is identical either way.
+SET @pca_0030_column_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+   WHERE table_schema = DATABASE()
+     AND table_name = 'parent_email_verification_codes'
+     AND column_name = 'password_hash'
+);
+SET @pca_0030_alter_sql = IF(
+  @pca_0030_column_exists = 0,
+  'ALTER TABLE parent_email_verification_codes ADD COLUMN password_hash VARCHAR(255) NULL AFTER code_hash',
+  'SELECT 1'
+);
+PREPARE pca_0030_stmt FROM @pca_0030_alter_sql;
+EXECUTE pca_0030_stmt;
+DEALLOCATE PREPARE pca_0030_stmt;

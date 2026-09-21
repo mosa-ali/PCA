@@ -1,15 +1,25 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 83 tables, including schema_migrations itself),
+// central MySQL schema (all 85 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0044; 42 files, 0009/0010 never existed) from an empty database
+// through 0046; 44 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
-// docs/database/PCA_CANONICAL_SCHEMA_REPORT.md §21) -- this comment's own
-// prior table/migration counts are kept current at every such change; see
-// git history for this file if an intermediate count is ever needed.
+// docs/database/PCA_CANONICAL_SCHEMA_REPORT.md §21);
+// parent_genesis_step_up_authorizations (0045) and parent_daily_login_grants
+// (0046) followed.
+//
+// These three numbers are NOT merely kept current by hand. Before 2026-09-21
+// this header claimed "83 tables ... 0001 through 0044; 42 files" while the
+// file's own body already declared 0045/0046 objects and the migrations
+// directory already held 44 files (PCA full assessment finding P1-06), so the
+// counts had silently gone stale while the data stayed correct. They are now
+// enforced by test/tooling/canonicalSchemaDrift.test.mjs, which fails if any
+// of them stops matching this file's actual contents or backend/migrations/.
+// If you add a migration or a table, that test will tell you exactly which
+// number here to update -- do not rely on remembering to do it.
 // It is NOT an ORM and does not
 // introduce a runtime schema-framework dependency -- it is a strongly typed
 // manifest that backend/scripts/generate-bootstrap-sql.mjs reads to

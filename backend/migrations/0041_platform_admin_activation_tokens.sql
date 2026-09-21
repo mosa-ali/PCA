@@ -1,7 +1,14 @@
 -- One-time first activation links for real Platform Admin accounts.
 -- Only a SHA-256 token digest is stored; the bearer token exists only in the
 -- issuing request and encrypted email outbox payload.
-CREATE TABLE platform_admin_activation_tokens (
+--
+-- IDEMPOTENCY (2026-09-21, PCA full assessment finding P1-07): this migration
+-- is NOT YET APPLIED in production (which is at 0040). scripts/migrate.mjs
+-- records a file as applied only after it succeeds, so a crash between MySQL
+-- auto-committing this statement and the schema_migrations row being written
+-- would leave the table present but unrecorded, and a retry would fail with
+-- "table already exists". `IF NOT EXISTS` makes that retry a no-op.
+CREATE TABLE IF NOT EXISTS platform_admin_activation_tokens (
   activation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   admin_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
