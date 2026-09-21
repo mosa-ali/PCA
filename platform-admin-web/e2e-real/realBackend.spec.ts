@@ -82,6 +82,21 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByRole('link', { name: linkName }).click();
   };
 
+  /**
+   * The Overview card on an account's detail page -- the only place THIS
+   * family's own status badge is rendered.
+   *
+   * Deliberately not a bare `page.getByText('Active')`: the accounts LIST stays
+   * mounted behind the detail view and carries one ACTIVE badge per active
+   * family, so a bare text lookup is a Playwright strict-mode violation the
+   * moment the fixture set holds more than one family -- which the two real
+   * parent fixtures this job provisions now do. Reported from CI as
+   * "resolved to 2 elements", one of them a badge inside the list's row for a
+   * DIFFERENT family. Scoping to the card is what makes the assertion about
+   * this family rather than about "some family currently on screen".
+   */
+  const overviewCard = () => page.locator('section.card').filter({ has: page.getByRole('heading', { level: 2, name: 'Overview' }) });
+
   await test.step('an invalid TOTP code against the real server is rejected generically, revealing nothing about which factor failed', async () => {
     await page.goto('/login');
     await page.getByLabel(/email/i).fill(EMAIL!);
@@ -172,7 +187,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
 
     await navigateTo(/^accounts$/i);
     await page.getByRole('link', { name: familyId! }).click();
-    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    await expect(overviewCard().getByText('Active', { exact: true })).toBeVisible();
 
     await page.getByLabel(/reason for suspension/i).fill('E2E real-backend suspend/reactivate check');
     await page.getByRole('button', { name: /^suspend account$/i }).click();
@@ -180,22 +195,22 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!));
     await page.getByRole('button', { name: /confirm/i }).click();
-    await expect(page.getByText('Suspended', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E real-backend suspend/reactivate check')).toBeVisible();
+    await expect(overviewCard().getByText('Suspended', { exact: true })).toBeVisible();
+    await expect(overviewCard().getByText('E2E real-backend suspend/reactivate check')).toBeVisible();
 
     await page.getByRole('button', { name: /^reactivate account$/i }).click();
     await page.waitForTimeout(msUntilNextTotpWindow());
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByLabel(/authenticator code/i).fill(computeTotp(TOTP_SECRET!));
     await page.getByRole('button', { name: /confirm/i }).click();
-    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    await expect(overviewCard().getByText('Active', { exact: true })).toBeVisible();
 
     // Navigate away and back to force a fresh GET, proving both mutations
     // actually persisted to MySQL rather than only local React state.
     await navigateTo(/^dashboard$/i);
     await navigateTo(/^accounts$/i);
     await page.getByRole('link', { name: familyId! }).click();
-    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    await expect(overviewCard().getByText('Active', { exact: true })).toBeVisible();
   });
 
   await test.step('audit log renders the real admin sign-in + admin-created events this session itself just generated, as human-readable labels', async () => {
