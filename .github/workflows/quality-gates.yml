@@ -508,16 +508,23 @@ jobs:
       - name: Apply the full migration chain to the disposable database
         working-directory: backend
         run: npm run db:migrate
-      - name: Seed deterministic accounts (verified parents + admins with known TOTP secrets)
+      - name: Provision the E2E accounts (verified account + ACTIVE operator + browser grant)
+        # Deliberately NOT seed-local.mjs. That is a broad developer fixture whose
+        # family, invitation and billing sections dereference a familyId, which only
+        # exists once family genesis has completed -- so the E2E job's success
+        # depended on a subsystem it was not certifying, and failed for reasons
+        # unrelated to what it proves. The provisioning script creates exactly what
+        # the two suites need and nothing else. See its own header for the full
+        # rationale, including why it must pre-issue a browser grant.
         working-directory: backend
-        run: node scripts/seed-local.mjs
-      - name: Resolve E2E credential environment from the seed manifest
+        run: node scripts/provision-e2e-accounts.mjs
+      - name: Resolve E2E credential environment from the fixture manifest
         # Two deliberate properties here.
         #
-        # CI-01. A seeded account is selected by `accountId`, which verifyEmail
-        # ALWAYS sets, rather than by `familyId`, which is only set once family
-        # genesis completes. Parent login/session testing does not need genesis,
-        # so keying off it made the entire job depend on an unrelated subsystem.
+        # CI-01. Accounts are selected by the fixture manifest's own shape, never by
+        # `familyId`, which is only set once family genesis completes. Parent
+        # login/session testing does not need genesis, so keying off it made the
+        # whole job depend on an unrelated subsystem.
         #
         # CI-04. This step contains NO console-logging call at all, deliberately.
         # The repository's sensitive-logging detector matches a logging call and
@@ -532,22 +539,23 @@ jobs:
         run: |
           node -e "
             const fs = require('node:fs');
-            const manifest = require('./qa-seed-manifest.json');
-            const verifiedAccounts = Object.values(manifest.parentAccounts).filter((entry) => entry.accountId);
-            const operator = manifest.adminAccounts.app_owner;
-            if (verifiedAccounts.length === 0 || !operator || !operator.totpSecretBase32) {
+            const manifest = require('./qa-e2e-manifest.json');
+            const account = manifest.parent;
+            const operator = manifest.operator;
+            if (!account || !account.dailyLoginGrant || !operator || !operator.totpSecretBase32) {
               process.exit(1);
             }
             fs.appendFileSync(process.env.GITHUB_ENV, [
-              'E2E_REAL_PARENT_EMAIL=' + verifiedAccounts[0].email,
-              'E2E_REAL_PARENT_PASSWORD=' + manifest.seedPassword,
+              'E2E_REAL_PARENT_EMAIL=' + account.email,
+              'E2E_REAL_PARENT_PASSWORD=' + account.password,
+              'E2E_REAL_PARENT_DAILY_GRANT=' + account.dailyLoginGrant,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
-              'E2E_REAL_ADMIN_PASSWORD=' + manifest.seedPassword,
+              'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
               'E2E_REAL_ADMIN_TOTP_SECRET=' + operator.totpSecretBase32,
               '',
             ].join('\n'));
-          " || { echo "The seed manifest did not contain the accounts this suite needs."; exit 1; }
-          echo "E2E credential environment resolved from the seed manifest."
+          " || { echo "The fixture manifest did not contain the accounts this suite needs."; exit 1; }
+          echo "E2E credential environment resolved from the fixture manifest."
       - name: Start the real backend and wait for a live health probe
         working-directory: backend
         run: |

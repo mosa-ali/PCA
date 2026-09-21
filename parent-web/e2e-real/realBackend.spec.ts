@@ -43,6 +43,9 @@ import { test, expect } from '@playwright/test';
  *      isolated test database, not secrets worth committing):
  *        E2E_REAL_PARENT_EMAIL
  *        E2E_REAL_PARENT_PASSWORD
+ *        E2E_REAL_PARENT_DAILY_GRANT (the raw daily-login grant token issued by
+ *          backend/scripts/provision-e2e-accounts.mjs -- see that constant's own
+ *          comment above for why this suite cannot log in without it)
  *        VITE_PCA_DEMO_MODE=false
  *        VITE_E2E_REAL_PROXY_TARGET (the backend's own origin, e.g.
  *          http://127.0.0.1:4001)
@@ -70,10 +73,34 @@ import { test, expect } from '@playwright/test';
 
 const EMAIL = process.env.E2E_REAL_PARENT_EMAIL;
 const PASSWORD = process.env.E2E_REAL_PARENT_PASSWORD;
+// Every explicit login now requires a valid daily-login grant or an emailed
+// step-up code -- ParentAccountService.login's own comment: "A successful
+// password check is never enough to bypass daily verification unless this exact
+// browser presents its own opaque, server-issued grant." A Playwright browser
+// process cannot receive that email, and this repository deliberately exposes no
+// verification-code-read route for one to reach, so a password-only UI sign-in
+// can never reach /dashboard against current source.
+//
+// The provisioning step therefore issues a REAL grant through the same
+// repository method production uses (only its domain-separated hash is
+// persisted, exactly as in production) and hands the raw token to this browser
+// as a cookie, precisely as if the user had already completed a step-up here.
+// Nothing about the production grant check is weakened or bypassed; the suite
+// simply starts from the state a returning browser would already be in.
+const DAILY_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
+/** The bare (non-`__Host-`) name: this suite runs with NODE_ENV=development, where the production `__Host-` prefix is deliberately not applied. */
+const DAILY_GRANT_COOKIE = 'pca_parent_daily_login_grant';
 
-test.skip(!EMAIL || !PASSWORD, 'E2E_REAL_PARENT_EMAIL/PASSWORD not set -- real-backend E2E requires a live backend + bootstrapped account (see file header).');
+test.skip(
+  !EMAIL || !PASSWORD || !DAILY_GRANT,
+  'E2E_REAL_PARENT_EMAIL/PASSWORD/DAILY_GRANT not set -- real-backend E2E requires a live backend + provisioned account (see file header).',
+);
 
 test('real backend: a parent signs in and reaches the dashboard and settings page with real, cookie-session-backed data', async ({ page, browser }) => {
+  await test.step('the browser holds the provisioned daily-login grant, as a returning browser that had already completed a step-up would', async () => {
+    await page.context().addCookies([{ name: DAILY_GRANT_COOKIE, value: DAILY_GRANT!, url: 'http://localhost:4002' }]);
+  });
+
   await test.step('wrong credentials against the real server are rejected generically', async () => {
     await page.goto('/login');
     await page.getByLabel(/email/i).fill(EMAIL!);
