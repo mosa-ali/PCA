@@ -238,6 +238,7 @@ const files = [
   "test/enrollment/slotConsumption.test.mjs",
   "test/entitlements/FreeAccessAcquisitionCallSites.test.mjs",
   "test/http/cors.test.mjs",
+  "test/http/globalBodyLimit.test.mjs",
   "test/http/trustProxy.test.mjs",
   "test/http/emailHealthRoute.test.mjs",
   "test/email/emailOutboxEncryption.test.mjs",

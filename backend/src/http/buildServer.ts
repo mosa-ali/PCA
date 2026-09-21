@@ -331,8 +331,33 @@ export interface ServerDependencies {
  * family policy/control routes remain unexposed until their own distinct
  * authentication/authorization requirements are implemented.
  */
+/**
+ * PCA full read-only assessment finding F-17 / P2-13.
+ *
+ * Every mutating route in this service sets its own tight `bodyLimit` (1 KiB to
+ * 96 KiB), but the Fastify instance itself previously declared none -- so a
+ * route that FORGOT to set one silently inherited Fastify's generous 1 MiB
+ * framework default instead of any project-wide ceiling.
+ *
+ * This is that ceiling. It is comfortably above the largest per-route limit
+ * (96 KiB, used by parentAccountRoutes' safe-zone routes and
+ * childPolicyRoutes), so no existing route changes behaviour, and 4x below the
+ * framework default, so a future route that omits its own limit fails safe
+ * rather than accepting a megabyte.
+ *
+ * test/http/globalBodyLimit.test.mjs scans the route sources and fails if this
+ * value ever drops to or below a route's own limit -- so raising a single
+ * route's limit cannot silently start causing that route's requests to be
+ * rejected with 413.
+ */
+export const GLOBAL_BODY_LIMIT_BYTES = 256 * 1024;
+
 export function buildServer(deps: ServerDependencies): FastifyInstance {
-  const app = Fastify({ logger: false, trustProxy: deps.trustProxy ?? resolveTrustProxyOption() });
+  const app = Fastify({
+    logger: false,
+    trustProxy: deps.trustProxy ?? resolveTrustProxyOption(),
+    bodyLimit: GLOBAL_BODY_LIMIT_BYTES,
+  });
   registerParentWebCors(app);
   const rateLimiter = createRateLimiter();
   // Bounds how many session-validation DB round-trips a single IP can force
