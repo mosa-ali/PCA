@@ -511,26 +511,43 @@ jobs:
       - name: Seed deterministic accounts (verified parents + admins with known TOTP secrets)
         working-directory: backend
         run: node scripts/seed-local.mjs
-      - name: Resolve E2E credentials from the seed manifest
+      - name: Resolve E2E credential environment from the seed manifest
+        # Two deliberate properties here.
+        #
+        # CI-01. A seeded account is selected by `accountId`, which verifyEmail
+        # ALWAYS sets, rather than by `familyId`, which is only set once family
+        # genesis completes. Parent login/session testing does not need genesis,
+        # so keying off it made the entire job depend on an unrelated subsystem.
+        #
+        # CI-04. This step contains NO console-logging call at all, deliberately.
+        # The repository's sensitive-logging detector matches a logging call and
+        # then looks 160 characters ahead for terms that include "parent",
+        # "secret" and "token". An inline logging call echoing a seeded account's
+        # email address therefore matches it for real -- that is not a false
+        # positive, and writing test account identifiers into a build log is
+        # precisely the discipline the rest of this repository refuses (see
+        # seed-local.mjs's reportSeeded, which reports purpose-keys only and never
+        # identifiers). Diagnostics go through `echo` and carry no identifiers.
         working-directory: backend
         run: |
           node -e "
             const fs = require('node:fs');
             const manifest = require('./qa-seed-manifest.json');
-            const parent = Object.values(manifest.parentAccounts).find((entry) => entry.familyId);
-            const owner = manifest.adminAccounts.app_owner;
-            if (!parent) { console.error('No VERIFIED parent in the seed manifest (an entry with a familyId).'); process.exit(1); }
-            if (!owner || !owner.totpSecretBase32) { console.error('No app_owner admin with a TOTP secret in the seed manifest.'); process.exit(1); }
+            const verifiedAccounts = Object.values(manifest.parentAccounts).filter((entry) => entry.accountId);
+            const operator = manifest.adminAccounts.app_owner;
+            if (verifiedAccounts.length === 0 || !operator || !operator.totpSecretBase32) {
+              process.exit(1);
+            }
             fs.appendFileSync(process.env.GITHUB_ENV, [
-              'E2E_REAL_PARENT_EMAIL=' + parent.email,
+              'E2E_REAL_PARENT_EMAIL=' + verifiedAccounts[0].email,
               'E2E_REAL_PARENT_PASSWORD=' + manifest.seedPassword,
-              'E2E_REAL_ADMIN_EMAIL=' + owner.email,
+              'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + manifest.seedPassword,
-              'E2E_REAL_ADMIN_TOTP_SECRET=' + owner.totpSecretBase32,
+              'E2E_REAL_ADMIN_TOTP_SECRET=' + operator.totpSecretBase32,
               '',
             ].join('\n'));
-            console.log('Resolved E2E identities: parent=' + parent.email + ', admin=' + owner.email + ' (' + owner.role + ')');
-          "
+          " || { echo "The seed manifest did not contain the accounts this suite needs."; exit 1; }
+          echo "E2E credential environment resolved from the seed manifest."
       - name: Start the real backend and wait for a live health probe
         working-directory: backend
         run: |
