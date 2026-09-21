@@ -626,44 +626,123 @@ jobs:
             exit 1
           fi
           echo "Certified spec set unchanged; realBackend.spec.ts and acceptance-flow.spec.ts are the certified suites."
-      - name: Run parent-web real-backend E2E
-        # VITE_PCA_API_BASE_URL is set to the relative root '/', not omitted or
-        # left empty: the API client joins it directly onto each path, so every
-        # request stays same-origin and is handled by this job's Vite proxy.
-        # An empty/unset value falls back to an absolute backend origin, which
-        # the browser blocks because the backend deliberately has no CORS layer.
-        # See the spec's own header -- this was confirmed by direct reproduction.
+      - name: Run parent-web real-backend E2E -- owner acceptance flow (certified)
+        # TWO CERTIFIED SPECS, TWO RUNS, EACH BEHIND A FRESH BACKEND.
         #
-        # SCOPE, and why this is not the whole e2e-real directory.
+        # buildServer applies ONE SHARED, per-IP anti-flood budget to every
+        # authenticated route -- http/buildServer.ts's authAttemptLimiter,
+        # 60 requests / 60s / IP / 'auth-attempt' bucket -- deliberately, so one
+        # IP cannot force unlimited session-validation DB round-trips. A single
+        # owner acceptance flow makes ~43 of those requests at Playwright's pace.
+        # When realBackend.spec.ts and acceptance-flow.spec.ts ran in ONE
+        # invocation, the second and third specs began inside an
+        # already-consumed window and every request came back 429: the session
+        # bootstrap failed, the browser never left /login, and the symptom was
+        # indistinguishable from a broken login. Measured directly from the
+        # retained traces -- 44 bucketed requests in the first spec alone, then
+        # immediate 429s for the next.
         #
-        # Certified and included: realBackend.spec.ts AND acceptance-flow.spec.ts.
-        # acceptance-flow.spec.ts is kept in deliberately -- it declares no env
-        # dependency and has no skip site at all, so it is deterministic and
-        # excluding it would silently REDUCE coverage below what this job had.
+        # That budget is a real security control at HUMAN pace (a parent browsing
+        # does not approach 60 authenticated requests a minute), so the fix is
+        # isolation on the test side and never a weaker limit: each certified
+        # spec runs on its own, against a freshly restarted backend, and writes
+        # its own evidence manifest.
         #
-        # Excluded, NOT certified: notStartedProgramme.spec.ts. It needs a SECOND
-        # parent account (E2E_TARGETED_PARENT_EMAIL/PASSWORD) to stay inside
-        # LOGIN_EMAIL_RATE_LIMIT across its 7 independent logins, needs its own
-        # pre-issued daily-login grant per login, and contains an in-test
-        # conditional `test.skip` for a device-state branch a fixture stack
-        # cannot reach. Under the zero-skip guard that combination cannot pass --
-        # and loosening the guard to accommodate it would re-open exactly the
-        # vacuous-pass hole the guard exists to close.
-        #
-        # NAMED FOLLOW-UP, NOT CLAIMED COMPLETE: certify notStartedProgramme
-        # .spec.ts by provisioning a second parent account plus grant in
-        # provision-e2e-accounts.mjs and making its N3 device-state branch
-        # deterministic. Until then its N1-N22 checks are UNcertified, and this
-        # job must not be read as evidence for them.
+        # VITE_PCA_API_BASE_URL is the relative root '/', not omitted or left
+        # empty: the API client joins it directly onto each path, so every request
+        # stays same-origin and is handled by this job's Vite proxy. An
+        # empty/unset value falls back to an absolute backend origin, which the
+        # browser blocks because the backend deliberately has no CORS layer. See
+        # the spec's own header -- this was confirmed by direct reproduction.
         working-directory: parent-web
         env:
           VITE_PCA_DEMO_MODE: 'false'
           VITE_PCA_API_BASE_URL: /
-        run: npx playwright test --config=playwright.real.config.ts --project=chromium realBackend.spec.ts acceptance-flow.spec.ts
-      - name: Assert the parent-web run was not vacuously skipped, and record evidence
+          # The json reporter's own output path, overridden per run so the two
+          # certified specs cannot overwrite each other's report (the config
+          # writes test-results/real-e2e-results.json for both apps).
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-acceptance-flow.json
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium acceptance-flow.spec.ts
+      - name: Assert the acceptance-flow run was not vacuously skipped, and record evidence
         if: always()
         working-directory: parent-web
-        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-results.json --label "parent-web real-backend E2E" --manifest-out ../backend/parent-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-acceptance-flow.json --label "parent-web owner acceptance flow real-backend E2E" --manifest-out ../backend/parent-web-acceptance-flow-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Restart the backend so the next certified spec starts with a fresh abuse budget
+        # See the note above: the 'auth-attempt' budget is per backend PROCESS.
+        # Restarting it is what gives the next spec a clean 60-requests-per-minute
+        # window; nothing about the limit itself changes.
+        working-directory: backend
+        run: |
+          pkill -f 'node dist/main.js' || true
+          for attempt in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          nohup node dist/main.js > backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then
+              echo "Backend restarted after ${attempt}s; its in-process abuse budget is fresh."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not come back within 30s. Log follows:"
+          cat backend.log
+          exit 1
+      - name: Run parent-web real-backend E2E -- parent session acceptance (certified)
+        # SCOPE, and why this is not the whole e2e-real directory.
+        #
+        # Certified and included: realBackend.spec.ts AND acceptance-flow.spec.ts.
+        # acceptance-flow.spec.ts declares no skip site for missing fixture
+        # environment (it is driven entirely by the provisioned accounts and
+        # grants this job exports), so it is deterministic and excluding it would
+        # silently REDUCE coverage below what this job had.
+        #
+        # Excluded, NOT certified: notStartedProgramme.spec.ts. It needs a
+        # DIFFERENT parent account per login to stay inside LOGIN_EMAIL_RATE_LIMIT
+        # across its 7 independent logins, needs its own pre-issued daily-login
+        # grant per login, and contains an in-test conditional `test.skip` for a
+        # device-state branch a fixture stack cannot reach. Under the zero-skip
+        # guard that combination cannot pass -- and loosening the guard to
+        # accommodate it would re-open exactly the vacuous-pass hole the guard
+        # exists to close.
+        #
+        # NAMED FOLLOW-UP, NOT CLAIMED COMPLETE: certify notStartedProgramme
+        # .spec.ts by provisioning one parent account plus grant per login and
+        # making its N3 device-state branch deterministic. Until then its N1-N22
+        # checks are UNcertified, and this job must not be read as evidence for
+        # them.
+        working-directory: parent-web
+        env:
+          VITE_PCA_DEMO_MODE: 'false'
+          VITE_PCA_API_BASE_URL: /
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-realBackend.json
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium realBackend.spec.ts
+      - name: Assert the parent-web session run was not vacuously skipped, and record evidence
+        if: always()
+        working-directory: parent-web
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-realBackend.json --label "parent-web real-backend E2E" --manifest-out ../backend/parent-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Restart the backend before the platform-admin suite
+        # Same reason: the platform-admin suite is a third independent consumer of
+        # the same per-IP 'auth-attempt' budget.
+        working-directory: backend
+        run: |
+          pkill -f 'node dist/main.js' || true
+          for attempt in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          nohup node dist/main.js > backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then
+              echo "Backend restarted after ${attempt}s; its in-process abuse budget is fresh."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not come back within 30s. Log follows:"
+          cat backend.log
+          exit 1
       - name: Run platform-admin-web real-backend E2E
         # VITE_PCA_PLATFORM_ADMIN_API_BASE_URL is deliberately UNSET: the app's
         # same-origin default is what makes the Vite proxy work. Setting it to an

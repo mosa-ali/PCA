@@ -170,8 +170,17 @@ const testFamilyId = parent.familyId;
 // self-service MFA-setup HTTP endpoint in this repository slice.
 const adminRepository = new MySqlPlatformAdminAuthRepository();
 const adminEmail = `${ADMIN_KEY}@${TEST_EMAIL_DOMAIN}`;
+// The display name is the SAME one bootstrap-platform-owner.mjs writes, on
+// purpose: platform-admin-web/e2e-real/realBackend.spec.ts's documented
+// precondition is "exactly one bootstrap APP_OWNER account created via
+// backend/scripts/bootstrap-platform-owner.mjs", and its admin-users step
+// asserts that real row is listed. A fixture that created the same authority
+// under a different display name satisfied everything except that assertion,
+// which then failed against a list that was in fact correct. Writing the
+// bootstrap identity here keeps the spec's stated precondition true instead of
+// teaching the spec to expect a fixture-shaped name.
 const adminAccount = await new PlatformAdminAccountService(adminRepository).createAccount(
-  `E2E ${ADMIN_KEY}`,
+  'Platform Owner (bootstrap)',
   hashAdminEmail(adminEmail),
   TEST_PASSWORD,
   'APP_OWNER',

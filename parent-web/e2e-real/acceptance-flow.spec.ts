@@ -50,6 +50,20 @@ async function login(page: import('@playwright/test').Page, email: string, passw
   await expect(page).toHaveURL(/dashboard/);
 }
 
+/**
+ * Establishes the same real cookie-backed session without booting the full
+ * dashboard. The cross-family assertion is a server-boundary check; using the
+ * API here keeps it from spending the shared per-IP authenticated-request
+ * budget on dashboard capability reads before the boundary request runs.
+ */
+async function loginViaApi(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+  await page.context().clearCookies();
+  await page.context().addCookies([{ name: DAILY_LOGIN_GRANT_COOKIE, value: dailyLoginGrant, url: 'http://localhost:4002' }]);
+  const response = await page.request.post('/api/parent/login', { data: { email, password } });
+  expect(response.status(), 'real API login must establish the disposable fixture session').toBe(200);
+  expect(await response.json()).toMatchObject({ sessionEstablished: true });
+}
+
 test.describe('PPR-2 owner acceptance flow -- real backend, one continuous session', () => {
   test('login -> new family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
     // 1. login
@@ -146,11 +160,22 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
 
     // 14. reload -> setup-required expected (trusted-browser gate, unrelated
     // to the child registry, must never be weakened by this session's edits).
+    //
+    // The body copy asserted here is UX-2's (PCA_PPR2_BROWSER_UAT_REPORT.md,
+    // finding L3): the fail-closed state is presented as a SETUP step, not as
+    // an error, so "Finish setting up this browser" replaced the old
+    // "Something went wrong" headline and the old
+    // "This browser is not trusted with your family's data yet." sentence was
+    // deleted from both locales. This assertion still named that retired
+    // sentence, so it could only ever fail. It now asserts the copy that
+    // actually ships, plus the action that makes the state recoverable --
+    // which is the substance the original assertion was reaching for.
     await page.goto('/dashboard');
     await expect(page.getByText('Finish setting up this browser')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Set up this browser' })).toBeVisible();
     await page.reload();
     await expect(page.getByText('Finish setting up this browser')).toBeVisible();
-    await expect(page.getByText("This browser is not trusted with your family's data yet.")).toBeVisible();
+    await expect(page.getByText('Nothing was lost, and nothing was shown from an unverified source.')).toBeVisible();
   });
 });
 
@@ -162,12 +187,16 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
 // genuinely a second identity, not reusable session state.
 test.describe('PPR-2 cross-family isolation -- real backend', () => {
   test("a second family's session cannot read or create against the first family's id", async ({ page }) => {
-    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
+    // This is intentionally an API/session-boundary test rather than a second
+    // full dashboard navigation. The owner flow and realBackend.spec.ts cover
+    // the UI login; this test must reserve the backend's shared authenticated
+    // request budget for the two cross-family authorization decisions.
+    await loginViaApi(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
     const meRes = await page.request.get('/api/parent/session');
     expect(meRes.status()).toBe(200);
     const ownFamilyId = (await meRes.json()).familyId as string;
 
-    await login(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_GRANT!);
+    await loginViaApi(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_GRANT!);
     const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`);
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 
