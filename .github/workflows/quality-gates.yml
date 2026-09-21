@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - pca-dev
+      # PCA full assessment finding P0-07 / ARCH-004: the branch that can
+      # become a release source must be gated too. Before 2026-09-21 `main`
+      # received no quality gate at all, so a green pca-dev run said nothing
+      # about the branch a release would actually be cut from. Adding it here
+      # grants no new authority -- this workflow is `contents: read` and never
+      # deploys, never authenticates, and never mutates repository state.
+      - main
 
 # CI only reads the repository. It does not receive credentials, deploy, or modify
 # repository state. The iOS job may upload bounded, 30-day diagnostic artifacts.
@@ -196,7 +203,13 @@ jobs:
     # `npm test` covers all three of those in one command: `npm run build`
     # (tsc), then the two direct-execution suites (test/schema-privacy.test.mjs,
     # test/server.test.mjs), then the full non-DB suite via
-    # scripts/run-tests.mjs -- 2145 tests as of this commit.
+    # scripts/run-tests.mjs.
+    #
+    # This comment previously pinned a running test count -- "2145 tests as of
+    # this commit" -- which had already drifted to 2421 by 2026-09-21. The
+    # number is deliberately no longer restated here: the authoritative count
+    # is the runner's own output, and test/meta/testSuiteRegistration.test.mjs
+    # is what actually guarantees no test file escapes the list.
     #
     # The full MySQL-backed `test:db` suite (~550 tests, several minutes) is
     # deliberately NOT wired here: this workflow is read-only and
@@ -322,6 +335,85 @@ jobs:
       - name: Run first-owner bootstrap certification against disposable MySQL
         working-directory: backend
         run: npm run test:db:bootstrap
+
+  backend-auth-db-certification:
+    # 2026-09-21, PCA full assessment finding P1-12: the authentication and
+    # migration DB suites were not gated by CI at all, so a credential, session
+    # or migration regression could reach pca-dev behind a fully green run.
+    #
+    # This matters directly for the remediation work on this branch: the
+    # migration files and the parent/platform-admin credential code were
+    # changed, and a local machine here has no MySQL available, so CI is the
+    # ONLY place those changes can actually be exercised against a real
+    # database.
+    #
+    # Deliberately a BOUNDED slice -- the seven auth/authz/deviceauth/migration
+    # suites via `npm run test:db:auth-certification` -- not the full ~550-test
+    # `test:db` suite. backend-tests' own comment explains why the whole suite
+    # stays out of a credential-free workflow on every push; this job closes
+    # the highest-risk part of that documented gap instead of pretending the
+    # gap no longer exists. `scripts/verify-mysql.mjs` runs first and applies
+    # the ENTIRE migration chain from empty to latest, which is also what
+    # proves the resumability/guard edits to migrations 0030 and 0041-0046
+    # still produce a valid schema on a clean database.
+    #
+    # Like the bootstrap job above, this adds NO real credential: the MySQL
+    # service container is ephemeral, destroyed with the runner, reachable only
+    # from this job's own steps, and uses the same explicitly-named test-only
+    # "pca_test_only_not_a_secret" value the repository's own
+    # docker-compose.yml already uses for local development.
+    name: Backend authentication + migration DB certification (disposable MySQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4.11
+        env:
+          MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
+          MYSQL_DATABASE: pca_test
+          MYSQL_USER: pca_test_app
+          MYSQL_PASSWORD: pca_test_only_not_a_secret
+        # Host port 33061, matching backend/test.db.env's own PCA_DATABASE_URL
+        # exactly (127.0.0.1:33061/pca_test), so no override is needed.
+        ports:
+          - 33061:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ppca_test_only_not_a_secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Set disposable MySQL service to UTC (matches docker-compose.yml's --default-time-zone=+00:00)
+        # GitHub Actions' `services:` schema has no docker-compose `command:`
+        # equivalent, so the container boots with time_zone=SYSTEM and
+        # scripts/verify-mysql.mjs's assertSupportedEnvironment fails closed
+        # on anything other than '+00:00'. Set it before any test connects,
+        # using the backend's own mysql2 dependency rather than a second tool.
+        working-directory: backend
+        run: |
+          node -e "
+            const mysql = require('mysql2/promise');
+            (async () => {
+              const conn = await mysql.createConnection({ host: '127.0.0.1', port: 33061, user: 'root', password: 'pca_test_only_not_a_secret' });
+              await conn.query(\"SET GLOBAL time_zone = '+00:00'\");
+              await conn.end();
+            })().catch((error) => { console.error(error); process.exit(1); });
+          "
+      - name: Run authentication + migration DB certification against disposable MySQL
+        working-directory: backend
+        run: npm run test:db:auth-certification
 
   parent-web-unit-tests:
     # PPR-2 (W6): parent-web's 120-file Vitest suite has never been run by CI.
