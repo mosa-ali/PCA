@@ -157,8 +157,12 @@ The default recovery model is not silent password/email replacement. Recovery
 requires either another active trusted device or a separately generated,
 offline recovery envelope/key held by the account owner, plus a fresh,
 high-assurance account step-up. A mailbox+password alone cannot replace the
-root. Zero-trusted-device recovery is an explicit, policy-gated ceremony and
-remains unavailable until its independent security review is complete.
+root. Zero-trusted-device recovery is explicitly policy-gated as
+`ZERO_TRUSTED_DEVICE_RECOVERY=MANUAL_HIGH_ASSURANCE_SUPPORT_PROCESS` for this
+source lane. It is a support-controlled, out-of-band identity ceremony that
+does not issue a root key, accept email/password as root proof, or bypass a
+new genesis ceremony. The support process must be separately approved and
+logged before use; it is not an automatic production capability.
 
 Lost or compromised devices are revoked; their keys cannot authorize new
 attestations. Browser storage loss is treated as device loss, not as permission
@@ -174,11 +178,11 @@ upgrades a session.
 
 ## J. Migration and compatibility
 
-Migration 0043 remains separate and is not executed by R1. R1 drafts a new
-source migration for genesis challenges, operation/request challenge
-consumption, and durable epoch floors. Production migration is a later
-owner-gated operation. Existing null-family accounts are not repaired by this
-lane.
+Migration 0043 remains separate and is not executed by R1. R1 includes source
+migration 0044 for genesis challenges, operation/request challenge
+consumption, and durable epoch floors. It is additive-only source material;
+production migration is a later owner-gated operation. Existing null-family
+accounts are not repaired by this lane.
 
 The existing server-generated `generateEphemeralGenesisDeviceKeyPair()` path
 is test/reference-only and must be removed from the production registration
@@ -195,10 +199,9 @@ account remediation, and reviewed production verifier selection.
 ## R1 implementation gate
 
 Source primitives and negative tests are present, but R1 is **NOT READY** for
-external activation or production approval. The family-genesis challenge
-service currently stops at verified, single-use challenge consumption; the
-family/device/membership genesis commit must still be composed in the same
-durable transaction. The request-proof challenge service is likewise not yet
-threaded through the HTTP session route, so the production resolver rejects
-the legacy `actorDeviceId` contract. Recovery ceremonies, native client
-adapters, and independent human cryptographic review remain open.
+external activation or production approval. The family-genesis ceremony is
+now composed through one atomic repository boundary, and sensitive HTTP
+routes require a session-bound, request-bound proof. Recovery ceremonies,
+native client adapters, disposable-MySQL execution, independent human
+cryptographic review, production migration, account remediation, and reviewed
+production verifier selection remain open.

@@ -20,11 +20,13 @@ test('session role is server-issued and frontend no longer assumes VIEWER or OWN
   assert.doesNotMatch(client, /body\.familyId \? 'OWNER' : 'VIEWER'/);
 });
 
-test('creator membership is unreachable when secure genesis returns no family', async () => {
+test('creator membership is unreachable until the separate secure genesis transaction succeeds', async () => {
   const service = await read('src/parentaccount/ParentAccountService.ts');
-  const genesisBlock = service.match(/if \(familyId !== null\) \{[\s\S]*?createGenesisAdministrator[\s\S]*?\n    \}/)?.[0];
-  assert.ok(genesisBlock, 'creator membership should be inside the successful-genesis branch');
-  assert.match(genesisBlock, /createGenesisAdministrator/);
+  const genesis = await read('src/parentaccount/ParentGenesisService.ts');
+  assert.doesNotMatch(service, /createGenesisAdministrator/);
+  assert.match(service, /const familyId: OpaqueFamilyId \| null = null/);
+  assert.match(genesis, /transactionRepository\.completeAtomically/);
+  assert.match(genesis, /familyId: challenge\.familyId/);
 });
 
 test('signup profile fields are bounded metadata and cannot influence family role resolution', async () => {

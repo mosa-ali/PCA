@@ -28,6 +28,7 @@ import type {
   VerifyEmailOutcome,
   ParentSignupProfile,
 } from './types.js';
+import type { ParentGenesisService, BeginParentGenesisInput, CompleteParentGenesisInput } from './ParentGenesisService.js';
 
 export type ParentAccountErrorCode = 'INVALID_INPUT' | 'UNAUTHORIZED' | 'RATE_LIMITED';
 
@@ -63,6 +64,8 @@ export interface ParentAccountServiceDeps {
   emailSender: EmailSenderPort;
   /** Active family-role persistence. Missing/unresolved membership fails closed. */
   familyMembershipRepository?: FamilyMembershipRepository;
+  /** Explicit client-key genesis ceremony; omitted only by test compositions that do not expose genesis routes. */
+  parentGenesisService?: ParentGenesisService;
   now?: () => Date;
 }
 
@@ -81,6 +84,7 @@ export class ParentAccountService {
   private readonly authService: AuthService;
   private readonly emailSender: EmailSenderPort;
   private readonly familyMembershipRepository: FamilyMembershipRepository | undefined;
+  private readonly parentGenesisService: ParentGenesisService | undefined;
   private readonly now: () => Date;
 
   constructor(deps: ParentAccountServiceDeps) {
@@ -94,6 +98,7 @@ export class ParentAccountService {
       (typeof (deps.repository as ParentAccountRepository & { findActiveRole?: unknown }).findActiveRole === 'function'
         ? (deps.repository as unknown as FamilyMembershipRepository)
         : undefined);
+    this.parentGenesisService = deps.parentGenesisService;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -385,6 +390,28 @@ export class ParentAccountService {
 
   /** GET /api/parent/session -- reads current session state without re-verifying credentials. Fails closed (UNAUTHORIZED) identically for missing/malformed/expired/revoked cookie, disabled account, or an orphaned service-session lookup. */
   async readSession(rawSessionToken: string): Promise<SessionReadOutcome> {
+    const { account } = await this.resolveAuthenticatedParent(rawSessionToken);
+    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
+    return { accountId: account.accountId, familyId: account.familyId, emailVerified: true, role };
+  }
+
+  /** Starts the explicit client-key family genesis ceremony for an authenticated account. */
+  async beginGenesisChallenge(rawSessionToken: string, input: Omit<BeginParentGenesisInput, 'accountId' | 'serviceAccountId'>) {
+    if (!this.parentGenesisService) throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
+    return this.parentGenesisService.begin({ ...input, accountId: account.accountId, serviceAccountId });
+  }
+
+  /** Completes genesis only when the challenge and authenticated session identify the same account. */
+  async completeGenesis(rawSessionToken: string, input: CompleteParentGenesisInput) {
+    if (!this.parentGenesisService) throw new ParentAccountError('UNAUTHORIZED');
+    const { account, serviceAccountId } = await this.resolveAuthenticatedParent(rawSessionToken);
+    if (account.familyId !== null || account.serviceAccountId !== serviceAccountId) throw new ParentAccountError('UNAUTHORIZED');
+    return this.parentGenesisService.complete(input, { accountId: account.accountId, serviceAccountId });
+  }
+
+  private async resolveAuthenticatedParent(rawSessionToken: string) {
     let serviceAccountId: string;
     try {
       serviceAccountId = await this.authService.validateSession(rawSessionToken);
@@ -393,8 +420,7 @@ export class ParentAccountService {
     }
     const account = await this.repository.findByServiceAccountId(serviceAccountId);
     if (!account || account.status !== 'VERIFIED' || account.disabledAt !== null) throw new ParentAccountError('UNAUTHORIZED');
-    const role = await this.resolveFamilyRole(account.accountId, account.familyId);
-    return { accountId: account.accountId, familyId: account.familyId, emailVerified: true, role };
+    return { account, serviceAccountId };
   }
 
   private async resolveFamilyRole(accountId: ParentAccountId, familyId: OpaqueFamilyId | null): Promise<FamilyMembershipRole | null> {

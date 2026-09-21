@@ -438,6 +438,15 @@ CREATE TABLE `complimentary_entitlement_grants` (
   CONSTRAINT `complimentary_entitlement_grants_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED',_utf8mb4'EXPIRED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- delete_now_ledger
+CREATE TABLE `delete_now_ledger` (
+  `action_id` varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `purge_plan` json NOT NULL,
+  `completed_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`action_id`),
+  CONSTRAINT `delete_now_ledger_action_id_check` CHECK ((char_length(`action_id`) between 1 and 300))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- device_challenges
 CREATE TABLE `device_challenges` (
   `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -504,6 +513,27 @@ CREATE TABLE `devices` (
   CONSTRAINT `devices_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `devices_platform_check` CHECK ((`platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS',_utf8mb4'BROWSER'))),
   CONSTRAINT `devices_status_check` CHECK ((`status` in (_utf8mb4'PAIRING_PENDING',_utf8mb4'PAIRED',_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- email_outbox
+CREATE TABLE `email_outbox` (
+  `outbox_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `idempotency_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_iv` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_auth_tag` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `encrypted_payload` text CHARACTER SET ascii COLLATE ascii_bin,
+  `status` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'PENDING',
+  `attempt_count` int NOT NULL DEFAULT '0',
+  `next_attempt_at` datetime(3) NOT NULL,
+  `last_error` varchar(512) COLLATE utf8mb4_bin DEFAULT NULL,
+  `provider_message_id` varchar(255) COLLATE utf8mb4_bin DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `expires_at` datetime(3) NOT NULL,
+  `completed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`outbox_id`),
+  UNIQUE KEY `email_outbox_idempotency_key_key` (`idempotency_key`),
+  KEY `email_outbox_status_next_attempt_idx` (`status`,`next_attempt_at`),
+  CONSTRAINT `email_outbox_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'SENT',_utf8mb4'DEAD_LETTER')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- enrollment_administration_verifiers
@@ -844,11 +874,14 @@ CREATE TABLE `family_authority_chain_heads` (
   `head_revision` int unsigned NOT NULL,
   `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `updated_at` datetime(3) NOT NULL,
+  `required_trust_set_epoch` int unsigned NOT NULL DEFAULT '1',
+  `required_key_epoch` int unsigned NOT NULL DEFAULT '1',
   PRIMARY KEY (`family_id`),
   KEY `family_authority_chain_heads_attestation_fk` (`family_id`,`head_attestation_id`),
   CONSTRAINT `family_authority_chain_heads_attestation_fk` FOREIGN KEY (`family_id`, `head_attestation_id`) REFERENCES `family_authority_attestations` (`family_id`, `attestation_id`),
   CONSTRAINT `family_authority_chain_heads_genesis_fk` FOREIGN KEY (`family_id`) REFERENCES `family_authority_genesis_anchors` (`family_id`),
-  CONSTRAINT `family_authority_chain_heads_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
+  CONSTRAINT `family_authority_chain_heads_epoch_check` CHECK (((`required_trust_set_epoch` >= 1) and (`required_key_epoch` >= 1))),
+  CONSTRAINT `family_authority_chain_heads_status_check` CHECK ((`status` in (_ascii'ACTIVE',_ascii'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_authority_genesis_anchors
@@ -863,6 +896,31 @@ CREATE TABLE `family_authority_genesis_anchors` (
   PRIMARY KEY (`family_id`),
   CONSTRAINT `family_authority_genesis_anchors_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `family_authority_genesis_anchors_protocol_version_check` CHECK ((`protocol_version` between 1 and 100))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- family_authority_request_challenges
+CREATE TABLE `family_authority_request_challenges` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `public_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `protocol_version` smallint unsigned NOT NULL,
+  `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `request_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `issued_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `family_authority_request_challenges_scope_idx` (`service_account_id`,`family_id`,`issued_at`),
+  CONSTRAINT `family_authority_request_challenges_service_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
+  CONSTRAINT `family_authority_request_challenges_digest_check` CHECK ((char_length(`request_digest`) = 43)),
+  CONSTRAINT `family_authority_request_challenges_expiry_check` CHECK ((`expires_at` > `issued_at`)),
+  CONSTRAINT `family_authority_request_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
+  CONSTRAINT `family_authority_request_challenges_operation_check` CHECK (regexp_like(`operation`,_utf8mb4'^[A-Z][A-Z0-9_]{0,63}$')),
+  CONSTRAINT `family_authority_request_challenges_protocol_check` CHECK ((`protocol_version` = 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_child_memberships
@@ -899,6 +957,24 @@ CREATE TABLE `family_member_invitations` (
   KEY `family_member_invitations_email_hash_idx` (`invited_email_hash`),
   CONSTRAINT `family_member_invitations_role_check` CHECK ((`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER'))),
   CONSTRAINT `family_member_invitations_status_check` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'ACCEPTED',_utf8mb4'EXPIRED',_utf8mb4'REVOKED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- family_parent_memberships
+CREATE TABLE `family_parent_memberships` (
+  `membership_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `role` varchar(16) COLLATE utf8mb4_bin NOT NULL,
+  `status` varchar(16) COLLATE utf8mb4_bin NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`membership_id`),
+  UNIQUE KEY `family_parent_memberships_account_family_key` (`account_id`,`family_id`),
+  KEY `family_parent_memberships_family_idx` (`family_id`),
+  KEY `family_parent_memberships_service_account_idx` (`service_account_id`),
+  CONSTRAINT `family_parent_memberships_role_check` CHECK ((`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))),
+  CONSTRAINT `family_parent_memberships_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_rbac_policy_config
@@ -976,10 +1052,15 @@ CREATE TABLE `parent_accounts` (
   `default_managed_device_limit` int DEFAULT NULL,
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `verified_at` datetime(3) DEFAULT NULL,
+  `first_login_completed_at` datetime(3) DEFAULT NULL,
   `disabled_at` datetime(3) DEFAULT NULL,
+  `account_type` varchar(24) COLLATE utf8mb4_bin DEFAULT NULL,
+  `estimated_child_count` int unsigned DEFAULT NULL,
   PRIMARY KEY (`account_id`),
   UNIQUE KEY `parent_accounts_email_hash_key` (`email_hash`),
   UNIQUE KEY `parent_accounts_service_account_id_key` (`service_account_id`),
+  CONSTRAINT `parent_accounts_account_type_check` CHECK (((`account_type` is null) or (`account_type` in (_utf8mb4'PARENT_GUARDIAN',_utf8mb4'OTHER')))),
+  CONSTRAINT `parent_accounts_estimated_child_count_check` CHECK (((`estimated_child_count` is null) or (`estimated_child_count` <= 50))),
   CONSTRAINT `parent_accounts_free_access_mode_check` CHECK (((`free_access_mode` is null) or (`free_access_mode` in (_utf8mb4'TIME_LIMITED',_utf8mb4'PERPETUAL')))),
   CONSTRAINT `parent_accounts_status_check` CHECK ((`status` in (_utf8mb4'PENDING_VERIFICATION',_utf8mb4'VERIFIED'))),
   CONSTRAINT `parent_accounts_time_limited_has_duration_check` CHECK (((`free_access_mode` <> _utf8mb4'TIME_LIMITED') or (`free_access_duration_days` is not null))),
@@ -999,6 +1080,49 @@ CREATE TABLE `parent_email_verification_codes` (
   PRIMARY KEY (`code_id`),
   KEY `parent_email_verification_codes_account_idx` (`account_id`,`created_at`),
   CONSTRAINT `parent_email_verification_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_genesis_challenges
+CREATE TABLE `parent_genesis_challenges` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_public_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_platform` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'BROWSER',
+  `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `protocol_version` smallint unsigned NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `parent_genesis_challenges_account_idx` (`account_id`,`created_at`),
+  KEY `parent_genesis_challenges_family_idx` (`family_id`),
+  KEY `parent_genesis_challenges_service_account_fk` (`service_account_id`),
+  CONSTRAINT `parent_genesis_challenges_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_genesis_challenges_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
+  CONSTRAINT `parent_genesis_challenges_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_genesis_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
+  CONSTRAINT `parent_genesis_challenges_operation_check` CHECK ((`operation` = _utf8mb4'GENESIS')),
+  CONSTRAINT `parent_genesis_challenges_platform_check` CHECK ((`candidate_platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS',_utf8mb4'BROWSER'))),
+  CONSTRAINT `parent_genesis_challenges_protocol_check` CHECK ((`protocol_version` = 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_login_step_up_codes
+CREATE TABLE `parent_login_step_up_codes` (
+  `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  `attempt_count` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`code_id`),
+  KEY `parent_login_step_up_codes_account_idx` (`account_id`,`created_at`),
+  CONSTRAINT `parent_login_step_up_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_password_reset_codes
@@ -1029,6 +1153,25 @@ CREATE TABLE `platform_admin_accounts` (
   CONSTRAINT `platform_admin_accounts_display_name_check` CHECK ((char_length(`display_name`) between 1 and 128)),
   CONSTRAINT `platform_admin_accounts_password_credential_check` CHECK ((char_length(`password_credential`) between 1 and 255)),
   CONSTRAINT `platform_admin_accounts_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'DISABLED')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- platform_admin_activation_tokens
+CREATE TABLE `platform_admin_activation_tokens` (
+  `activation_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `admin_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `used_at` datetime(3) DEFAULT NULL,
+  `revoked_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`activation_id`),
+  UNIQUE KEY `platform_admin_activation_tokens_hash_key` (`token_hash`),
+  KEY `platform_admin_activation_tokens_admin_idx` (`admin_id`),
+  CONSTRAINT `platform_admin_activation_tokens_admin_fk` FOREIGN KEY (`admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`),
+  CONSTRAINT `platform_admin_activation_tokens_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `platform_admin_activation_tokens_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `platform_admin_activation_tokens_purpose_check` CHECK ((`purpose` = _utf8mb4'PLATFORM_ADMIN_FIRST_TIME'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- platform_admin_audit_events
@@ -1167,6 +1310,19 @@ CREATE TABLE `platform_admin_step_up_sessions` (
   CONSTRAINT `platform_admin_step_up_sessions_admin_id_fk` FOREIGN KEY (`admin_id`) REFERENCES `platform_admin_accounts` (`admin_id`),
   CONSTRAINT `platform_admin_step_up_sessions_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `platform_admin_sessions` (`session_id`),
   CONSTRAINT `platform_admin_step_up_sessions_scope_check` CHECK ((`scope` in (_utf8mb4'REFUND',_utf8mb4'SETTLEMENT_BANK_CONFIG',_utf8mb4'ADMIN_ROLE_GRANT',_utf8mb4'FAMILY_ACCOUNT_SUSPEND',_utf8mb4'FAMILY_ACCOUNT_REACTIVATE',_utf8mb4'ENTITLEMENT_LIMIT_OVERRIDE',_utf8mb4'COMPLIMENTARY_GRANT_MUTATION')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- profile_protection_mode
+CREATE TABLE `profile_protection_mode` (
+  `profile_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `mode` varchar(1) COLLATE utf8mb4_bin NOT NULL DEFAULT 'A',
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`profile_id`),
+  KEY `profile_protection_mode_family_idx` (`family_id`),
+  CONSTRAINT `profile_protection_mode_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
+  CONSTRAINT `profile_protection_mode_mode_check` CHECK ((`mode` in (_utf8mb4'A',_utf8mb4'B'))),
+  CONSTRAINT `profile_protection_mode_profile_id_check` CHECK ((char_length(`profile_id`) between 1 and 128))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- protection_alerts

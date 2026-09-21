@@ -12,10 +12,6 @@ import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
 import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
-import { createEd25519DeviceSignatureVerifier } from '../../dist/parentaccount/genesisDeviceSigner.js';
-import { FamilyOwnerAttestationChainEngine } from '../../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { InMemoryGenesisAnchorStore } from '../../dist/familycommercial/authority/InMemoryGenesisAnchorStore.js';
-import { InMemoryAttestationChainStore } from '../../dist/familycommercial/authority/InMemoryAttestationChainStore.js';
 import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
@@ -119,34 +115,24 @@ test('MySQL: a login-issued session Bearer-authenticates against the EXISTING, u
   assert.equal(typeof serviceAccountId, 'string');
 });
 
-test('MySQL: verify-email under a REAL (test-only Ed25519) signature verifier durably grants an ACTIVE service_account_family_scopes row for the new Owner', async () => {
+test('MySQL: verify-email does not create family authority or a service scope before the separate DSK genesis ceremony', async () => {
   const parentAccountRepository = new MySqlParentAccountRepository();
   const authService = new AuthService(new MySqlAuthRepository());
   const emailSender = new RecordingEmailSender();
-  const engine = new FamilyOwnerAttestationChainEngine(
-    new InMemoryGenesisAnchorStore(),
-    new InMemoryAttestationChainStore(),
-    createEd25519DeviceSignatureVerifier(),
-    () => new Date(),
-  );
-  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender, familyGenesisEngine: engine });
+  const service = new ParentAccountService({ repository: parentAccountRepository, authService, emailSender });
 
   const email = uniqueEmail();
   const password = 'a genuinely long password';
   await service.register(email, password, password);
   const code = emailSender.lastCodeFor(email);
   const outcome = await service.verifyEmail(email, code);
-  assert.equal(typeof outcome.familyId, 'string');
+  assert.equal(outcome.familyId, null);
 
   const account = await parentAccountRepository.findById(outcome.accountId);
   const { rows } = await runInTransaction((conn) =>
-    execute(conn, `SELECT status FROM service_account_family_scopes WHERE account_id = ? AND family_id = ?`, [
-      account.serviceAccountId,
-      outcome.familyId,
-    ]),
+    execute(conn, `SELECT COUNT(*) AS count FROM service_account_family_scopes WHERE account_id = ?`, [account.serviceAccountId]),
   );
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].status, 'ACTIVE');
+  assert.equal(Number(rows[0].count), 0);
 });
 
 // PCA-ADD-PA-017 enforcement (Writer73): end-to-end proof, against real
@@ -190,35 +176,29 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   const adminIdentity = await adminAuthService.validateSession(adminRawToken);
   const admin = { adminId: adminAccount.adminId, roles: ['PLATFORM_ADMIN'], sessionId: adminIdentity.sessionId };
 
-  // Real parent, real family genesis (this file's own test above already
-  // proves the Ed25519 verifier reaches BOOTSTRAPPED durably).
+  // Real parent identity plus an explicitly prepared disposable family. The
+  // account-to-family binding is test setup for the suspend gate; production
+  // genesis remains the separate client-held DSK ceremony.
   const emailSender = new RecordingEmailSender();
   const parentAccountRepository = new MySqlParentAccountRepository();
-  const engine = new FamilyOwnerAttestationChainEngine(
-    new InMemoryGenesisAnchorStore(),
-    new InMemoryAttestationChainStore(),
-    createEd25519DeviceSignatureVerifier(),
-    () => new Date(),
-  );
   const parentServiceWithGenesis = new ParentAccountService({
     repository: parentAccountRepository,
     authService: new AuthService(new MySqlAuthRepository()),
     emailSender,
-    familyGenesisEngine: engine,
   });
   const email = uniqueEmail();
   const password = 'a genuinely long password';
   await parentServiceWithGenesis.register(email, password, password);
   const code = emailSender.lastCodeFor(email);
   const verifyOutcome = await parentServiceWithGenesis.verifyEmail(email, code);
-  assert.equal(typeof verifyOutcome.familyId, 'string');
-
-  // ParentAccountService.verifyEmail now calls
-  // ParentAccountRepository.createFamilyIfAbsent itself on a successful
-  // genesis -- no manual INSERT needed here any more (this used to be a
-  // documented workaround; confirm the real row actually exists instead).
-  const [familyRows] = await getPool().query(`SELECT family_id FROM families WHERE family_id = ?`, [verifyOutcome.familyId]);
-  assert.equal(familyRows.length, 1, 'registration must create the families row itself');
+  assert.equal(verifyOutcome.familyId, null);
+  const familyId = randomUUID();
+  await parentAccountRepository.createFamilyIfAbsent(familyId, new Date());
+  await bindAccountToFamilyForTest(verifyOutcome.accountId, familyId);
+  const boundAccount = await parentAccountRepository.findById(verifyOutcome.accountId);
+  await parentAccountRepository.grantFamilyScopeIfAbsent(boundAccount.serviceAccountId, familyId, new Date());
+  const [familyRows] = await getPool().query(`SELECT family_id FROM families WHERE family_id = ?`, [familyId]);
+  assert.equal(familyRows.length, 1, 'disposable suspend fixture must create its family row');
 
   // Sanity: login works before any suspend action.
   await parentServiceWithGenesis.login(email, password);
@@ -227,7 +207,7 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   adminClockOffsetMs += 31_000; // fresh TOTP counter -- see TOTP-REPLAY-1 in PlatformAdminAuthService.
   const suspendStepUpCode = computeTotp(secret, adminClock().getTime());
   const suspendStepUp = await adminAuthService.assertStepUp(admin.adminId, admin.sessionId, 'FAMILY_ACCOUNT_SUSPEND', suspendStepUpCode, admin.roles[0]);
-  const suspended = await familyStatusService.suspend(admin, verifyOutcome.familyId, 'Writer73 DB-level enforcement proof', suspendStepUp.stepUpId);
+  const suspended = await familyStatusService.suspend(admin, familyId, 'Writer73 DB-level enforcement proof', suspendStepUp.stepUpId);
   assert.equal(suspended.status, 'SUSPENDED');
 
   // The negative case this item exists to prove: login now genuinely fails.
@@ -240,7 +220,7 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
   adminClockOffsetMs += 31_000;
   const reactivateStepUpCode = computeTotp(secret, adminClock().getTime());
   const reactivateStepUp = await adminAuthService.assertStepUp(admin.adminId, admin.sessionId, 'FAMILY_ACCOUNT_REACTIVATE', reactivateStepUpCode, admin.roles[0]);
-  const reactivated = await familyStatusService.reactivate(admin, verifyOutcome.familyId, reactivateStepUp.stepUpId);
+  const reactivated = await familyStatusService.reactivate(admin, familyId, reactivateStepUp.stepUpId);
   assert.equal(reactivated.status, 'ACTIVE');
 
   const relogin = await parentServiceWithGenesis.login(email, password);
@@ -248,31 +228,20 @@ test('PCA-ADD-PA-017 enforcement E2E: a real Platform Admin suspend of the famil
 });
 
 // PCA-ADD-IDENT-011: a second/subsequent registration under a DISTINCT
-// email address never auto-joins an existing family -- family joining
-// remains governed entirely by the separate invitation/enrollment
-// architecture. attemptFamilyGenesis() has no lookup-by-email path at all
-// (confirmed by direct source read), so this is a real-DB proof of that
-// structural guarantee, not merely a restatement of the source comment.
-test('MySQL: two DISTINCT emails each verifying independently land in two DISTINCT, unjoined families', async () => {
-  const engine = new FamilyOwnerAttestationChainEngine(
-    new InMemoryGenesisAnchorStore(),
-    new InMemoryAttestationChainStore(),
-    createEd25519DeviceSignatureVerifier(),
-    () => new Date(),
-  );
+// email address never auto-joins an existing family. Both identities remain
+// unbound until their own client-held genesis ceremony.
+test('MySQL: two DISTINCT emails verify independently and remain unbound', async () => {
   const emailSenderA = new RecordingEmailSender();
   const serviceA = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService: new AuthService(new MySqlAuthRepository()),
     emailSender: emailSenderA,
-    familyGenesisEngine: engine,
   });
   const emailSenderB = new RecordingEmailSender();
   const serviceB = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService: new AuthService(new MySqlAuthRepository()),
     emailSender: emailSenderB,
-    familyGenesisEngine: engine,
   });
 
   const emailA = uniqueEmail();
@@ -283,9 +252,8 @@ test('MySQL: two DISTINCT emails each verifying independently land in two DISTIN
   const outcomeA = await serviceA.verifyEmail(emailA, emailSenderA.lastCodeFor(emailA));
   const outcomeB = await serviceB.verifyEmail(emailB, emailSenderB.lastCodeFor(emailB));
 
-  assert.equal(typeof outcomeA.familyId, 'string');
-  assert.equal(typeof outcomeB.familyId, 'string');
-  assert.notEqual(outcomeA.familyId, outcomeB.familyId, 'two distinct emails must never land in the same family');
+  assert.equal(outcomeA.familyId, null);
+  assert.equal(outcomeB.familyId, null);
   assert.notEqual(outcomeA.accountId, outcomeB.accountId);
 });
 

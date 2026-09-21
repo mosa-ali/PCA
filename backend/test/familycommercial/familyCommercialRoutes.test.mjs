@@ -17,6 +17,7 @@ import { createInMemoryEntitlementRepository } from '../support/inMemoryEntitlem
 import { createInMemoryChangeRequestRepository } from '../support/inMemoryChangeRequestRepository.mjs';
 import { createStubChangeRequestService } from '../support/stubChangeRequestService.mjs';
 import { verifyTestOnlyIdentity } from '../support/testOnlyIdentityProvider.mjs';
+import { digestAuthorityRequestBody } from '../../dist/familycommercial/authority/requestProofProtocol.js';
 
 function fakeRunQuery(fn) {
   return fn(undefined);
@@ -75,6 +76,33 @@ function buildHarness({ resolver } = {}) {
     authAttemptLimiter: rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' }),
   });
   return { app, authService, authzRepository, changeRequestRepository, subscriptionsByFamily };
+}
+
+// The route now requires the same session-bound request-proof shape that the
+// production client obtains from /authority/challenge. These HTTP tests use a
+// shaped fixture because their resolver is intentionally a route-level test
+// double; cryptographic verification and single-use replay are covered by the
+// dedicated authority-engine tests.
+function mutationPayload(familyId, operation, payload) {
+  const requestDigest = digestAuthorityRequestBody(JSON.stringify(payload));
+  return {
+    ...payload,
+    authorityProof: {
+      protocolVersion: 1,
+      operation,
+      familyId,
+      serviceAccountId: 'test-service-account',
+      deviceId: payload.actorDeviceId,
+      keyId: 'test-key',
+      publicKey: 'test-public-key',
+      challengeId: 'test-challenge',
+      nonce: 'test-nonce',
+      requestDigest,
+      signature: 'test-signature',
+      issuedAt: '2026-06-01T00:00:00.000Z',
+      expiresAt: '2026-06-01T00:05:00.000Z',
+    },
+  };
 }
 
 async function issueToken(authService, subject) {
@@ -141,7 +169,7 @@ test('AUTHORITY_UNAVAILABLE is NEVER treated as authorized -- device-limit reque
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().code, 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE');
@@ -157,7 +185,7 @@ test('Administrator role: ROLE_DENIED, generic 403 (never distinguishable from a
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-admin' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-admin' }),
   });
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().code, undefined);
@@ -173,7 +201,7 @@ test('Viewer role: ROLE_DENIED, generic 403', async () => {
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-viewer' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-viewer' }),
   });
   assert.equal(response.statusCode, 403);
 });
@@ -188,7 +216,7 @@ test('Owner authorized via injected trusted resolver: device-limit request is cr
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 201);
   assert.equal(response.json().targetLimit, 5);
@@ -204,7 +232,7 @@ test('Owner authorized but NO active license: device-limit (billable) request de
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'MANAGED_DEVICE_LIMIT', targetLimit: 5, actorDeviceId: 'dev-owner' }),
   });
   assert.equal(deviceResponse.statusCode, 403);
 
@@ -212,7 +240,7 @@ test('Owner authorized but NO active license: device-limit (billable) request de
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' }),
   });
   assert.equal(parentResponse.statusCode, 201);
 });
@@ -229,7 +257,7 @@ test('cross-family IDOR on cancel: family B cannot cancel family A\'s request', 
     method: 'POST',
     url: '/v1/families/family-A/commercial/requests',
     headers: { authorization: `Bearer ${tokenA}` },
-    payload: { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_REQUEST_CREATE', { limitType: 'PARENT_MEMBER_LIMIT', targetLimit: 3, actorDeviceId: 'dev-owner' }),
   });
   assert.equal(created.statusCode, 201);
   const { requestId } = created.json();
@@ -240,7 +268,7 @@ test('cross-family IDOR on cancel: family B cannot cancel family A\'s request', 
     method: 'POST',
     url: `/v1/families/family-B/commercial/requests/${requestId}/cancel`,
     headers: { authorization: `Bearer ${tokenB}` },
-    payload: { actorDeviceId: 'dev-owner-b' },
+    payload: mutationPayload('family-B', 'FAMILY_COMMERCIAL_REQUEST_CANCEL', { actorDeviceId: 'dev-owner-b' }),
   });
   // family-B has no scope-row visibility of family-A's request at all --
   // the ownership check inside FamilyCommercialService.cancelRequest maps
@@ -280,7 +308,7 @@ test('auto-renew cancel: Owner authorized turns auto_renew off and returns an au
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 200);
   assert.equal(typeof response.json().auditEventId, 'string');
@@ -305,7 +333,7 @@ test('auto-renew resume: Owner authorized turns auto_renew back on -- cancel and
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/resume',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME', { actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 200);
   assert.equal(typeof response.json().auditEventId, 'string');
@@ -330,7 +358,7 @@ test('auto-renew cancel: idempotent -- calling it twice in a row both succeed (2
       method: 'POST',
       url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
       headers: { authorization: `Bearer ${rawToken}` },
-      payload: { actorDeviceId: 'dev-owner' },
+      payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
     });
     assert.equal(response.statusCode, 200, `call ${i + 1} must succeed, never error on a repeat`);
   }
@@ -348,7 +376,7 @@ test('auto-renew cancel: AUTHORITY_UNAVAILABLE is never treated as authorized (d
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().code, 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE');
@@ -365,7 +393,7 @@ test('auto-renew cancel: a FREE_STARTER family with no active subscription row g
     method: 'POST',
     url: '/v1/families/family-A/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-A', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 404);
 });
@@ -381,7 +409,7 @@ test('cross-family IDOR on auto-renew: a caller scoped to family A cannot toggle
     method: 'POST',
     url: '/v1/families/family-B/commercial/subscription/auto-renew/cancel',
     headers: { authorization: `Bearer ${rawToken}` },
-    payload: { actorDeviceId: 'dev-owner' },
+    payload: mutationPayload('family-B', 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL', { actorDeviceId: 'dev-owner' }),
   });
   assert.equal(response.statusCode, 403, 'no ACTIVE family-scope row for family-B -- rejected before the Owner gate or the service is ever reached');
   assert.equal(subscriptionsByFamily.get('family-B').autoRenew, true, 'family B\'s subscription must be untouched');

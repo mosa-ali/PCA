@@ -278,6 +278,9 @@ const files = [
   "test/scripts/disposableBootstrapArtifact.test.mjs",
   "test/billing/invoiceIssuance.test.mjs",
   "test/security/genesisSignerImportBoundary.test.mjs",
+  "test/security/genesisTransaction.test.mjs",
+  "test/security/r1MigrationReview.test.mjs",
+  "test/security/pcaDec020R1.test.mjs",
   "test/meta/testSuiteRegistration.test.mjs",
 ];
 

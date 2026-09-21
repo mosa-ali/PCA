@@ -56,6 +56,7 @@ import { SafeZoneError, type NewSafeZone, type SafeZonePatch, type SafeZoneRepos
 import type { SafeZonePolicyAuthorizer } from '../../location/SafeZonePolicyAuthorization.js';
 import { RuntimeSyncAuthError, type DeviceSessionService } from '../../runtime-sync/DeviceSessionService.js';
 import type { ParentSignupProfile } from '../../parentaccount/types.js';
+import { isGenesisPlatform } from '../../parentaccount/genesisProtocol.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_SAFE_ZONE_BODY_BYTES = 96 * 1024;
@@ -358,6 +359,72 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(200).send(result);
     } catch {
       await reply.code(401).send({ error: 'unauthorized' });
+    }
+  });
+
+  app.post('/api/parent/genesis/challenge', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!deps.parentAccountService || !isPlainObject(request.body)) return reply.code(503).send({ error: 'not_configured' });
+    const body = request.body as Record<string, unknown>;
+    if (typeof body.publicKey !== 'string' || !isGenesisPlatform(body.platform)) return reply.code(400).send({ error: 'invalid_request' });
+    try {
+      const challenge = await deps.parentAccountService.beginGenesisChallenge(token, { publicKey: body.publicKey, platform: body.platform });
+      return reply.code(201).send({
+        protocolVersion: challenge.protocolVersion,
+        operation: challenge.operation,
+        accountId: challenge.accountId,
+        serviceAccountId: challenge.serviceAccountId,
+        familyId: challenge.familyId,
+        deviceId: challenge.candidateDeviceId,
+        keyId: challenge.candidateKeyId,
+        publicKey: challenge.candidatePublicKey,
+        platform: challenge.candidatePlatform,
+        challengeId: challenge.challengeId,
+        nonce: challenge.nonce,
+        createdAt: challenge.createdAt.toISOString(),
+        expiresAt: challenge.expiresAt.toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      throw error;
+    }
+  });
+
+  app.post('/api/parent/genesis/complete', { bodyLimit: MAX_BODY_BYTES }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const token = readSessionCookie(request);
+    if (token === null) return reply.code(401).send({ error: 'unauthorized' });
+    if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+    const body = request.body as Record<string, unknown>;
+    const issuedAt = typeof body.issuedAt === 'string' ? new Date(body.issuedAt) : null;
+    const expiresAt = typeof body.expiresAt === 'string' ? new Date(body.expiresAt) : null;
+    if (
+      typeof body.challengeId !== 'string' ||
+      typeof body.proofSignature !== 'string' ||
+      typeof body.anchorSignature !== 'string' ||
+      typeof body.attestationSignature !== 'string' ||
+      typeof body.trustSetEpoch !== 'number' ||
+      typeof body.keyEpoch !== 'number' ||
+      issuedAt === null ||
+      expiresAt === null
+    ) return reply.code(400).send({ error: 'invalid_request' });
+    try {
+      const result = await deps.parentAccountService.completeGenesis(token, {
+        challengeId: body.challengeId,
+        proofSignature: body.proofSignature,
+        anchorSignature: body.anchorSignature,
+        attestationSignature: body.attestationSignature,
+        trustSetEpoch: body.trustSetEpoch,
+        keyEpoch: body.keyEpoch,
+        issuedAt,
+        expiresAt,
+      });
+      return reply.code(200).send({ ...result, genesisCompleted: true });
+    } catch (error) {
+      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      return reply.code(401).send({ error: 'invalid_genesis_proof' });
     }
   });
 

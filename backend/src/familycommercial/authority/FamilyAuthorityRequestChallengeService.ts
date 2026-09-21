@@ -18,7 +18,7 @@ export interface IssueFamilyAuthorityRequestChallengeInput {
   requestDigest: string;
 }
 
-/** Source-only operation challenge service; production route wiring is intentionally absent in R1. */
+/** Operation challenge service. Production routes remain fail-closed unless this repository-backed issuer is explicitly composed. */
 export class FamilyAuthorityRequestChallengeService {
   constructor(
     private readonly repository: FamilyAuthorityRequestChallengeRepository,

@@ -38,6 +38,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthzRepository } from '../authz/AuthzRepository.js';
 import type { FamilyCommercialAuthorityResolver, FamilyCommercialAuthorityResult } from '../billing/authority/FamilyCommercialAuthorityResolver.js';
+import type { FamilyAuthorityRequestProof } from './authority/FamilyOwnerAttestationChainEngine.js';
 
 const MAX_FAMILY_ID_LENGTH = 128;
 const MAX_ACTOR_DEVICE_ID_LENGTH = 128;
@@ -162,8 +163,12 @@ export async function checkOwnerAuthority(
   resolver: FamilyCommercialAuthorityResolver,
   familyId: string,
   actorDeviceId: string,
+  proof: FamilyAuthorityRequestProof,
+  serviceAccountId: string,
+  operation: string,
+  requestDigest: string,
 ): Promise<OwnerAuthorityCheckOutcome> {
-  const result = await resolver.resolveOwnerAuthority(familyId, actorDeviceId);
+  const result = await resolver.resolveOwnerAuthority(familyId, actorDeviceId, proof, serviceAccountId, operation, requestDigest);
   if (result.status === 'OWNER_AUTHORIZED') return { authorized: true };
   return { authorized: false, denialStatus: result.status };
 }

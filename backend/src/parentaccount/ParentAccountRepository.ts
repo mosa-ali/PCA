@@ -135,7 +135,7 @@ export interface ParentAccountRepository {
   /** Atomic compare-and-swap: marks the code consumed iff it was not already consumed. Returns true iff THIS call won the race. */
   consumeVerificationCodeIfUnconsumed(codeId: string, consumedAt: Date): Promise<boolean>;
 
-  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the consumed code's bound credential, the FREE_ACCESS snapshot and (if genesis succeeded) familyId in the same statement -- see migration 0013's CHECK constraint requiring these to move together. */
+  /** Atomically transitions PENDING_VERIFICATION -> VERIFIED, writing the consumed code's bound credential and FREE_ACCESS snapshot. Family binding is deliberately null here and belongs to the separate atomic DSK genesis repository. */
   markVerified(transition: VerifiedTransition): Promise<void>;
 
   insertPasswordResetCode(record: NewPasswordResetCode): Promise<void>;
@@ -160,39 +160,9 @@ export interface ParentAccountRepository {
   /** Idempotent: only writes if the column is currently NULL. */
   markFirstLoginCompletedIfAbsent(accountId: ParentAccountId, completedAt: Date): Promise<void>;
 
-  /**
-   * Grants (or re-activates) an ACTIVE `service_account_family_scopes` row
-   * for (serviceAccountId, familyId) -- idempotent. Necessary so a freshly
-   * registered Family Owner can actually reach their own family's
-   * commercial reads/mutations through the EXISTING, unmodified
-   * familyCommercialRoutes.ts/billingCheckoutRoutes.ts
-   * (createRequireFamilyCommercialAuthorization/
-   * createRequireFamilyAuthorization both require an ACTIVE scope row
-   * before anything else runs); without this, a newly genesis-anchored
-   * Owner could authenticate but could never reach their own family's
-   * data. `backend/src/authz/**` (this table's owning domain) is outside
-   * this lane's ownership and exposes no public "grant" method on
-   * AuthzRepository -- this is a narrowly-scoped, additive INSERT directly
-   * against the SAME existing table, identical in spirit to
-   * `revokeAllServiceSessionsFor` above, not a reimplementation or edit of
-   * any authz/** source file.
-   */
+  /** Legacy narrow scope helper retained for invitation/admin-owned flows. The Parent registration/GENESIS_R1 path must not call it independently; genesis uses one atomic repository boundary instead. */
   grantFamilyScopeIfAbsent(serviceAccountId: string, familyId: OpaqueFamilyId, now: Date): Promise<void>;
 
-  /**
-   * Idempotent INSERT of a `families` row (migration 0001, `status`/
-   * suspend columns added by migration 0017) for a freshly genesis-anchored
-   * family -- same "narrowly-scoped direct write against a shared table
-   * this domain does not own" precedent as `grantFamilyScopeIfAbsent`
-   * above. Without this, self-service registration produced a real,
-   * working family (attemptFamilyGenesis/service session/family-commercial
-   * access all succeed) that Platform Administration's dashboards, account
-   * list/detail, and suspend/reactivate flow (platformadmin/accounts/**)
-   * could never see or act on -- confirmed by running real registration
-   * against a real database for the first time in this session's local
-   * validation (previously only ever exercised via tests that manually
-   * INSERTed this row themselves as a documented workaround; see
-   * FamilyAccountStatusService.ts's own former header note on this gap).
-   */
+  /** Legacy idempotent family-row helper retained for separately authorized admin/test setup. Parent GENESIS_R1 uses its own all-or-none repository and never calls this helper as a partial commit. */
   createFamilyIfAbsent(familyId: OpaqueFamilyId, now: Date): Promise<void>;
 }

@@ -167,6 +167,8 @@ import { FamilyOwnerAttestationChainEngine } from './familycommercial/authority/
 import { DeviceRepositoryFamilyAuthorityKeyResolver } from './familycommercial/authority/FamilyAuthorityKeyResolver.js';
 import { MySqlFamilyAuthorityGenesisStore } from './familycommercial/authority/MySqlGenesisAnchorStore.js';
 import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/authority/MySqlAttestationChainStore.js';
+import { FamilyAuthorityRequestChallengeService } from './familycommercial/authority/FamilyAuthorityRequestChallengeService.js';
+import { MySqlFamilyAuthorityRequestChallengeRepository } from './familycommercial/authority/MySqlFamilyAuthorityRequestChallengeRepository.js';
 // PCA-AUTH-SESSION-1 (PCA-DEC-026): browser-reachable parent identity +
 // FAMILY_SERVICE_SESSION_V1 session issuance wiring. Reuses the SAME
 // AuthService instance buildServer's Bearer-header requireServiceSession
@@ -176,6 +178,10 @@ import { MySqlFamilyAuthorityAttestationChainStore } from './familycommercial/au
 // client-key ceremony remains source-only and is not wired into this service.
 import { ParentAccountService } from './parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from './parentaccount/MySqlParentAccountRepository.js';
+import { ParentGenesisService } from './parentaccount/ParentGenesisService.js';
+import { GenesisChallengeService } from './parentaccount/GenesisChallengeService.js';
+import { MySqlGenesisChallengeRepository } from './parentaccount/MySqlGenesisChallengeRepository.js';
+import { MySqlGenesisTransactionRepository } from './parentaccount/MySqlGenesisTransactionRepository.js';
 import { MySqlParentPreferenceRepository } from './parentaccount/MySqlParentPreferenceRepository.js';
 import { MySqlSafeZoneRepository } from './location/MySqlSafeZoneRepository.js';
 import { ParentActionSafeZonePolicyAuthorizer } from './location/SafeZonePolicyAuthorization.js';
@@ -440,6 +446,7 @@ async function start(): Promise<void> {
     new DeviceRepositoryFamilyAuthorityKeyResolver(deviceRepository),
   );
   const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
+  const familyAuthorityRequestChallengeService = new FamilyAuthorityRequestChallengeService(new MySqlFamilyAuthorityRequestChallengeRepository());
 
   // PCA-COMMERCIAL-NOTIFY-1 wiring, constructed early so it can be threaded
   // into ChangeRequestService/WebhookService below (Wave 3A correction R1:
@@ -553,11 +560,20 @@ async function start(): Promise<void> {
     emailInfrastructure.emailSender,
   );
   const familyMembershipRepository = new MySqlFamilyMembershipRepository();
+  // PCA-DEC-020-R1: the first-family ceremony is a single explicit source
+  // boundary. The active production verifier remains rejecting until the
+  // external human cryptographic review authorizes a real verifier.
+  const parentGenesisService = new ParentGenesisService(
+    new GenesisChallengeService(new MySqlGenesisChallengeRepository(), new RejectingDeviceSignatureVerifier()),
+    new MySqlGenesisTransactionRepository(),
+    new RejectingDeviceSignatureVerifier(),
+  );
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
     emailSender: emailInfrastructure.emailSender,
     familyMembershipRepository,
+    parentGenesisService,
   });
   const parentPreferenceRepository = new MySqlParentPreferenceRepository();
   const safeZoneRepository = new MySqlSafeZoneRepository();
@@ -900,6 +916,7 @@ async function start(): Promise<void> {
     disputeService,
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
+    familyAuthorityRequestChallengeService,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
     parentAccountService,
     parentPreferenceRepository,

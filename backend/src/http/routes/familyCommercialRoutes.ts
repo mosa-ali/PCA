@@ -76,6 +76,9 @@ import {
 // Writer60's own backward-compatible design for the underlying services.
 import type { ComplimentaryEntitlementService } from '../../entitlements/complimentary/ComplimentaryEntitlementService.js';
 import { buildEffectiveEntitlementDto } from '../../entitlements/complimentary/MyKidsComplimentaryReadModel.js';
+import { digestAuthorityRequestBody } from '../../familycommercial/authority/requestProofProtocol.js';
+import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import type { FamilyAuthorityRequestChallengeService } from '../../familycommercial/authority/FamilyAuthorityRequestChallengeService.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -94,6 +97,8 @@ export interface FamilyCommercialRoutesDeps {
   authAttemptLimiter: ReturnType<ReturnType<typeof createRateLimiter>>;
   /** PCA-COMPLIMENTARY-CONSUMPTION-1 (Round6): optional -- absent means the entitlement response omits the additive complimentaryEntitlement field entirely, never a partial/broken shape. */
   complimentaryEntitlementService?: ComplimentaryEntitlementService;
+  /** Source-complete request-proof challenge issuer. Omission fails the challenge route closed. */
+  familyAuthorityRequestChallengeService?: FamilyAuthorityRequestChallengeService;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -102,6 +107,26 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isLimitType(value: unknown): value is LimitType {
   return value === 'MANAGED_DEVICE_LIMIT' || value === 'PARENT_MEMBER_LIMIT';
+}
+
+function authorityProofForRequest(body: Record<string, unknown>, familyId: string, operation: string): FamilyAuthorityRequestProof | null {
+  const raw = body.authorityProof;
+  const actorDeviceId = body.actorDeviceId;
+  if (!isPlainObject(raw) || typeof actorDeviceId !== 'string' || raw.deviceId !== actorDeviceId) return null;
+  if (
+    raw.protocolVersion !== 1 || raw.operation !== operation || raw.familyId !== familyId ||
+    typeof raw.serviceAccountId !== 'string' || typeof raw.deviceId !== 'string' || typeof raw.keyId !== 'string' ||
+    typeof raw.publicKey !== 'string' || typeof raw.challengeId !== 'string' || typeof raw.nonce !== 'string' ||
+    typeof raw.requestDigest !== 'string' || typeof raw.signature !== 'string' ||
+    typeof raw.issuedAt !== 'string' || typeof raw.expiresAt !== 'string'
+  ) return null;
+  const unsignedBody = { ...body };
+  delete unsignedBody.authorityProof;
+  if (raw.requestDigest !== digestAuthorityRequestBody(JSON.stringify(unsignedBody))) return null;
+  const issuedAt = new Date(raw.issuedAt);
+  const expiresAt = new Date(raw.expiresAt);
+  if (Number.isNaN(issuedAt.getTime()) || Number.isNaN(expiresAt.getTime())) return null;
+  return { ...raw, issuedAt, expiresAt } as FamilyAuthorityRequestProof;
 }
 
 function familyCommercialErrorToHttpStatus(code: FamilyCommercialError['code']): number {
@@ -129,12 +154,28 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
   const requireMutateSubscription = createRequireFamilyCommercialAuthorization(deps.authzRepository, 'MUTATE_SUBSCRIPTION');
 
   /** Shared inline Owner-authority gate for every mutation route -- see this file's header. */
-  async function resolveOwnerOrReject(reply: FastifyReply, familyId: string, actorDeviceId: unknown): Promise<boolean> {
-    if (!isValidActorDeviceId(actorDeviceId)) {
+  async function resolveOwnerOrReject(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    familyId: string,
+    body: Record<string, unknown>,
+    operation: string,
+  ): Promise<boolean> {
+    const actorDeviceId = body.actorDeviceId;
+    const proof = authorityProofForRequest(body, familyId, operation);
+    if (!isValidActorDeviceId(actorDeviceId) || !proof) {
       reply.code(400).send({ error: 'invalid_request' });
       return false;
     }
-    const outcome = await checkOwnerAuthority(deps.familyCommercialAuthorityResolver, familyId, actorDeviceId);
+    const outcome = await checkOwnerAuthority(
+      deps.familyCommercialAuthorityResolver,
+      familyId,
+      actorDeviceId,
+      proof,
+      request.accountId as string,
+      operation,
+      proof.requestDigest,
+    );
     if (!outcome.authorized) {
       if (outcome.denialStatus === 'AUTHORITY_UNAVAILABLE') {
         reply.code(403).send({ error: 'forbidden', code: 'FAMILY_COMMERCIAL_AUTHORITY_UNAVAILABLE' });
@@ -145,6 +186,37 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
     }
     return true;
   }
+
+  app.post(
+    '/v1/families/:familyId/authority/challenge',
+    {
+      bodyLimit: MAX_BODY_BYTES,
+      preHandler: [deps.authAttemptLimiter, requireServiceSession, deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'family-authority-challenge' }), requireViewEntitlement],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!deps.familyAuthorityRequestChallengeService) return reply.code(503).send({ error: 'not_configured' });
+      const { familyId } = request.params as { familyId: string };
+      if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
+      const body = request.body;
+      if (
+        typeof body.operation !== 'string' ||
+        typeof body.deviceId !== 'string' ||
+        typeof body.keyId !== 'string' ||
+        typeof body.publicKey !== 'string' ||
+        typeof body.requestDigest !== 'string'
+      ) return reply.code(400).send({ error: 'invalid_request' });
+      const challenge = await deps.familyAuthorityRequestChallengeService.issue({
+        serviceAccountId: request.accountId as string,
+        familyId,
+        deviceId: body.deviceId,
+        keyId: body.keyId,
+        publicKey: body.publicKey,
+        operation: body.operation,
+        requestDigest: body.requestDigest,
+      });
+      return reply.code(201).send({ ...challenge, issuedAt: challenge.issuedAt.toISOString(), expiresAt: challenge.expiresAt.toISOString() });
+    },
+  );
 
   // -- A. Entitlement read ---------------------------------------------------
   app.get(
@@ -214,7 +286,7 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
       const { familyId } = request.params as { familyId: string };
       const body = request.body;
       if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
-      const { limitType, targetLimit, commercialMarket, currencyCode, actorDeviceId } = body;
+      const { limitType, targetLimit, commercialMarket, currencyCode } = body;
       if (!isLimitType(limitType)) return reply.code(400).send({ error: 'invalid_request' });
       if (typeof targetLimit !== 'number' || !Number.isInteger(targetLimit) || targetLimit < 0 || targetLimit > MAX_TARGET_LIMIT) {
         return reply.code(400).send({ error: 'invalid_request' });
@@ -225,7 +297,7 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
       if (currencyCode !== undefined && (typeof currencyCode !== 'string' || currencyCode.length === 0 || currencyCode.length > MAX_CURRENCY_LENGTH)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
+      if (!(await resolveOwnerOrReject(request, reply, familyId, body, 'FAMILY_COMMERCIAL_REQUEST_CREATE'))) return;
 
       // See this file's header (item 4): only the billable managed-device
       // path requires an active license -- checked here, inline, against
@@ -263,8 +335,8 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
         return reply.code(400).send({ error: 'invalid_request' });
       }
       const body = request.body;
-      const actorDeviceId = isPlainObject(body) ? body.actorDeviceId : undefined;
-      if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (!(await resolveOwnerOrReject(request, reply, familyId, body, 'FAMILY_COMMERCIAL_REQUEST_CANCEL'))) return;
       try {
         const record = await svc.cancelRequest(familyId, requestId);
         return changeRequestToJson(record);
@@ -298,8 +370,9 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
   async function handleAutoRenewToggle(request: FastifyRequest, reply: FastifyReply, autoRenew: boolean): Promise<unknown> {
     const { familyId } = request.params as { familyId: string };
     const body = request.body;
-    const actorDeviceId = isPlainObject(body) ? body.actorDeviceId : undefined;
-    if (!(await resolveOwnerOrReject(reply, familyId, actorDeviceId))) return;
+    if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+    const operation = autoRenew ? 'FAMILY_COMMERCIAL_AUTO_RENEW_RESUME' : 'FAMILY_COMMERCIAL_AUTO_RENEW_CANCEL';
+    if (!(await resolveOwnerOrReject(request, reply, familyId, body, operation))) return;
     try {
       await svc.updateAutoRenew(familyId, autoRenew);
       // No persisted, queryable audit-log entry is written for this

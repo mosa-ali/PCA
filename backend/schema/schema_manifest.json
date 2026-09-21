@@ -2397,6 +2397,43 @@
         }
       ]
     },
+    "delete_now_ledger": {
+      "columns": [
+        {
+          "name": "action_id",
+          "type": "varchar(300)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "purge_plan",
+          "type": "json",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "action_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
     "device_challenges": {
       "columns": [
         {
@@ -2746,6 +2783,141 @@
           "referencedColumn": "account_id"
         }
       ]
+    },
+    "email_outbox": {
+      "columns": [
+        {
+          "name": "outbox_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "encrypted_iv",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "encrypted_auth_tag",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "encrypted_payload",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "PENDING",
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "next_attempt_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "last_error",
+          "type": "varchar(512)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "provider_message_id",
+          "type": "varchar(255)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "email_outbox_idempotency_key_key",
+          "unique": true,
+          "column": "idempotency_key",
+          "seq": 1
+        },
+        {
+          "name": "email_outbox_status_next_attempt_idx",
+          "unique": false,
+          "column": "status",
+          "seq": 1
+        },
+        {
+          "name": "email_outbox_status_next_attempt_idx",
+          "unique": false,
+          "column": "next_attempt_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "outbox_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
     },
     "enrollment_administration_verifiers": {
       "columns": [
@@ -4474,6 +4646,22 @@
           "default": null,
           "key": "",
           "extra": ""
+        },
+        {
+          "name": "required_trust_set_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "required_key_epoch",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "1",
+          "key": "",
+          "extra": ""
         }
       ],
       "indexes": [
@@ -4585,6 +4773,148 @@
         }
       ],
       "foreignKeys": []
+    },
+    "family_authority_request_challenges": {
+      "columns": [
+        {
+          "name": "challenge_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "service_account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "operation",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protocol_version",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "request_digest",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_authority_request_challenges_scope_idx",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 1
+        },
+        {
+          "name": "family_authority_request_challenges_scope_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 2
+        },
+        {
+          "name": "family_authority_request_challenges_scope_idx",
+          "unique": false,
+          "column": "issued_at",
+          "seq": 3
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "challenge_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "family_authority_request_challenges_service_fk",
+          "column": "service_account_id",
+          "referencedTable": "service_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
     },
     "family_child_memberships": {
       "columns": [
@@ -4785,6 +5115,107 @@
           "name": "PRIMARY",
           "unique": true,
           "column": "invitation_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    "family_parent_memberships": {
+      "columns": [
+        {
+          "name": "membership_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "service_account_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "role",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "status",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "ACTIVE",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "family_parent_memberships_account_family_key",
+          "unique": true,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "family_parent_memberships_account_family_key",
+          "unique": true,
+          "column": "family_id",
+          "seq": 2
+        },
+        {
+          "name": "family_parent_memberships_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "family_parent_memberships_service_account_idx",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "membership_id",
           "seq": 1
         }
       ],
@@ -5202,8 +5633,32 @@
           "extra": ""
         },
         {
+          "name": "first_login_completed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
           "name": "disabled_at",
           "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "account_type",
+          "type": "varchar(24)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "estimated_child_count",
+          "type": "int unsigned",
           "nullable": true,
           "default": null,
           "key": "",
@@ -5322,6 +5777,256 @@
       "foreignKeys": [
         {
           "constraint": "parent_email_verification_codes_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_genesis_challenges": {
+      "columns": [
+        {
+          "name": "challenge_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "service_account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "candidate_device_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "candidate_key_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "candidate_public_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "candidate_platform",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": "BROWSER",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "nonce",
+          "type": "varchar(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "operation",
+          "type": "varchar(16)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "protocol_version",
+          "type": "smallint unsigned",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_genesis_challenges_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_genesis_challenges_account_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "parent_genesis_challenges_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_genesis_challenges_service_account_fk",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "challenge_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_genesis_challenges_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "parent_genesis_challenges_service_account_fk",
+          "column": "service_account_id",
+          "referencedTable": "service_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_login_step_up_codes": {
+      "columns": [
+        {
+          "name": "code_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "code_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP(3)",
+          "key": "",
+          "extra": "DEFAULT_GENERATED"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_login_step_up_codes_account_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_login_step_up_codes_account_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "code_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_login_step_up_codes_account_fk",
           "column": "account_id",
           "referencedTable": "parent_accounts",
           "referencedColumn": "account_id"
@@ -5490,6 +6195,102 @@
         }
       ],
       "foreignKeys": []
+    },
+    "platform_admin_activation_tokens": {
+      "columns": [
+        {
+          "name": "activation_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "admin_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "token_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "purpose",
+          "type": "varchar(40)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "used_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "platform_admin_activation_tokens_admin_idx",
+          "unique": false,
+          "column": "admin_id",
+          "seq": 1
+        },
+        {
+          "name": "platform_admin_activation_tokens_hash_key",
+          "unique": true,
+          "column": "token_hash",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "activation_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "platform_admin_activation_tokens_admin_fk",
+          "column": "admin_id",
+          "referencedTable": "platform_admin_accounts",
+          "referencedColumn": "admin_id"
+        }
+      ]
     },
     "platform_admin_audit_events": {
       "columns": [
@@ -6235,6 +7036,57 @@
           "referencedColumn": "session_id"
         }
       ]
+    },
+    "profile_protection_mode": {
+      "columns": [
+        {
+          "name": "profile_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "family_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "mode",
+          "type": "varchar(1)",
+          "nullable": false,
+          "default": "A",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "profile_id",
+          "seq": 1
+        },
+        {
+          "name": "profile_protection_mode_family_idx",
+          "unique": false,
+          "column": "family_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": []
     },
     "protection_alerts": {
       "columns": [

@@ -10,6 +10,7 @@ interface GenesisChallengeRow {
   candidate_device_id: string;
   candidate_key_id: string;
   candidate_public_key: string;
+  candidate_platform: 'ANDROID' | 'IOS' | 'BROWSER';
   nonce: string;
   operation: 'GENESIS';
   protocol_version: 1;
@@ -27,6 +28,7 @@ function mapRow(row: GenesisChallengeRow): GenesisChallengeRecord {
     candidateDeviceId: row.candidate_device_id,
     candidateKeyId: row.candidate_key_id,
     candidatePublicKey: row.candidate_public_key,
+    candidatePlatform: row.candidate_platform,
     nonce: row.nonce,
     operation: row.operation,
     protocolVersion: row.protocol_version,
@@ -40,10 +42,10 @@ export class MySqlGenesisChallengeRepository implements GenesisChallengeReposito
   async create(record: GenesisChallengeRecord): Promise<void> {
     await runInTransaction((conn) => execute(conn, `INSERT INTO parent_genesis_challenges
       (challenge_id, account_id, service_account_id, family_id, candidate_device_id, candidate_key_id,
-       candidate_public_key, nonce, operation, protocol_version, created_at, expires_at, consumed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+       candidate_public_key, candidate_platform, nonce, operation, protocol_version, created_at, expires_at, consumed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
       record.challengeId, record.accountId, record.serviceAccountId, record.familyId, record.candidateDeviceId,
-      record.candidateKeyId, record.candidatePublicKey, record.nonce, record.operation, record.protocolVersion,
+      record.candidateKeyId, record.candidatePublicKey, record.candidatePlatform, record.nonce, record.operation, record.protocolVersion,
       record.createdAt, record.expiresAt, record.consumedAt,
     ]));
   }

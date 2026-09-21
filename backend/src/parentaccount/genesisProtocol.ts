@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { isCanonicalP256PublicKey } from '../deviceauth/P256DeviceSignatureVerifier.js';
+import type { Platform } from '../device/types.js';
 import type { ParentAccountId } from './types.js';
 
 export const GENESIS_PROTOCOL_VERSION = 1 as const;
@@ -15,6 +16,7 @@ export interface GenesisChallengeRecord {
   candidateDeviceId: string;
   candidateKeyId: string;
   candidatePublicKey: string;
+  candidatePlatform: Platform;
   nonce: string;
   operation: typeof GENESIS_OPERATION;
   protocolVersion: typeof GENESIS_PROTOCOL_VERSION;
@@ -46,6 +48,10 @@ export function createGenesisChallengeIds(): { challengeId: string; familyId: st
     keyId: randomUUID(),
     nonce: randomBytes(32).toString('base64url'),
   };
+}
+
+export function isGenesisPlatform(value: unknown): value is Platform {
+  return value === 'ANDROID' || value === 'IOS' || value === 'BROWSER';
 }
 
 /** Fixed-order UTF-8 netstrings; never JSON.stringify. */

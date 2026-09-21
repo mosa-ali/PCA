@@ -114,6 +114,9 @@ export class FamilyOwnerAttestationChainEngine {
     if (!hasSaneTtl(genesisAttestation.issuedAt, genesisAttestation.expiresAt)) {
       return { status: 'INVALID_PROOF', reason: 'IMPLAUSIBLE_VALIDITY_WINDOW' };
     }
+    if (genesisAttestation.trustSetEpoch < 1 || genesisAttestation.keyEpoch < 1) {
+      return { status: 'INVALID_PROOF', reason: 'INVALID_EPOCH' };
+    }
     const attestationValid = await this.signatureVerifier.verify(
       genesisAttestation.signerDskPublicKey,
       canonicalizeOwnerAttestation(genesisAttestation),
@@ -245,6 +248,8 @@ export class FamilyOwnerAttestationChainEngine {
     familyId: OpaqueFamilyId,
     actor: OpaqueDeviceId | FamilyAuthorityRequestProof,
     expectedServiceAccountId?: string,
+    expectedOperation?: string,
+    expectedRequestDigest?: string,
   ): Promise<ResolveCurrentOwnerResult> {
     // Production composition supplies a key resolver. In that mode the old
     // actorDeviceId-only API is deliberately rejected: an identifier is not
@@ -269,6 +274,17 @@ export class FamilyOwnerAttestationChainEngine {
     }))) {
       return { status: 'INVALID_PROOF' };
     }
+    if (this.keyResolver && !(await this.keyResolver.isActiveDsk({
+      familyId,
+      deviceId: attestation.signerDeviceId,
+      keyId: attestation.signerDskKeyId,
+      publicKey: attestation.signerDskPublicKey,
+    }))) {
+      return { status: 'INVALID_PROOF' };
+    }
+    if (attestation.trustSetEpoch < head.requiredTrustSetEpoch || attestation.keyEpoch < head.requiredKeyEpoch) {
+      return { status: 'STALE_OR_REVOKED' };
+    }
 
     const valid = await this.signatureVerifier.verify(
       attestation.signerDskPublicKey,
@@ -282,6 +298,8 @@ export class FamilyOwnerAttestationChainEngine {
       const proof = actor as FamilyAuthorityRequestProof;
       if (!this.requestChallengeVerifier) return { status: 'INVALID_PROOF' };
       if (!expectedServiceAccountId || proof.serviceAccountId !== expectedServiceAccountId) return { status: 'INVALID_PROOF' };
+      if (!expectedOperation || proof.operation !== expectedOperation) return { status: 'INVALID_PROOF' };
+      if (!expectedRequestDigest || proof.requestDigest !== expectedRequestDigest) return { status: 'INVALID_PROOF' };
       let proofMessage: string;
       try {
         proofMessage = canonicalizeFamilyAuthorityRequestProof(proof);

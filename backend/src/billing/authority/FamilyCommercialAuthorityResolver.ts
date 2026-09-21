@@ -43,6 +43,7 @@ import type { ActorResolutionFailure, TrustSetRoleResolver } from '../../familyr
 import { isActorResolutionFailure } from '../../familyrbac/TrustSetRoleResolver.js';
 import type { OpaqueDeviceId, OpaqueFamilyId } from '../../familytrustset/types.js';
 import type { FamilyOwnerAttestationChainEngine } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
 
 export type FamilyCommercialAuthorityResult =
   | { readonly status: 'OWNER_AUTHORIZED' }
@@ -62,7 +63,14 @@ export type FamilyCommercialAuthorityResult =
   | { readonly status: 'INVALID_PROOF' };
 
 export interface FamilyCommercialAuthorityResolver {
-  resolveOwnerAuthority(familyId: OpaqueFamilyId, actorDeviceId: OpaqueDeviceId): Promise<FamilyCommercialAuthorityResult>;
+  resolveOwnerAuthority(
+    familyId: OpaqueFamilyId,
+    actorDeviceId: OpaqueDeviceId,
+    proof?: FamilyAuthorityRequestProof,
+    expectedServiceAccountId?: string,
+    expectedOperation?: string,
+    expectedRequestDigest?: string,
+  ): Promise<FamilyCommercialAuthorityResult>;
 }
 
 /**
@@ -121,8 +129,21 @@ export class TrustSetFamilyCommercialAuthorityResolver implements FamilyCommerci
 export class AttestationChainFamilyCommercialAuthorityResolver implements FamilyCommercialAuthorityResolver {
   constructor(private readonly chainEngine: FamilyOwnerAttestationChainEngine) {}
 
-  async resolveOwnerAuthority(familyId: OpaqueFamilyId, actorDeviceId: OpaqueDeviceId): Promise<FamilyCommercialAuthorityResult> {
-    const result = await this.chainEngine.resolveCurrentOwner(familyId, actorDeviceId);
+  async resolveOwnerAuthority(
+    familyId: OpaqueFamilyId,
+    actorDeviceId: OpaqueDeviceId,
+    proof?: FamilyAuthorityRequestProof,
+    expectedServiceAccountId?: string,
+    expectedOperation?: string,
+    expectedRequestDigest?: string,
+  ): Promise<FamilyCommercialAuthorityResult> {
+    const result = await this.chainEngine.resolveCurrentOwner(
+      familyId,
+      proof ?? actorDeviceId,
+      expectedServiceAccountId,
+      expectedOperation,
+      expectedRequestDigest,
+    );
     switch (result.status) {
       case 'OWNER_AUTHORIZED':
         return { status: 'OWNER_AUTHORIZED' };

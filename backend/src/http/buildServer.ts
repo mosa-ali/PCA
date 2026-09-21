@@ -227,6 +227,7 @@ export interface ServerDependencies {
   disputeService: DisputeService;
   /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
   familyCommercialService: FamilyCommercialService;
+  familyAuthorityRequestChallengeService?: import('../familycommercial/authority/FamilyAuthorityRequestChallengeService.js').FamilyAuthorityRequestChallengeService;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
   parentAccountService: ParentAccountService;
   parentPreferenceRepository?: ParentPreferenceRepository;
@@ -567,6 +568,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     rateLimiter,
     authAttemptLimiter,
     complimentaryEntitlementService: deps.complimentaryEntitlementService,
+    familyAuthorityRequestChallengeService: deps.familyAuthorityRequestChallengeService,
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,

@@ -10,10 +10,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTestOnlyDeviceSignatureVerifier } from '../../support/testOnlyDeviceSignatureVerifier.mjs';
+import { signTestOnlyChallenge } from '../../support/testOnlyDeviceSignatureVerifier.mjs';
 import { InMemoryGenesisAnchorStore } from '../../../dist/familycommercial/authority/InMemoryGenesisAnchorStore.js';
 import { InMemoryAttestationChainStore } from '../../../dist/familycommercial/authority/InMemoryAttestationChainStore.js';
 import { FamilyOwnerAttestationChainEngine } from '../../../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
 import { buildGenesisAnchor, buildGenesisAttestation, buildTransferAttestation, signOwnerAttestation } from './fixtures.mjs';
+import { canonicalizeFamilyAuthorityRequestProof, digestAuthorityRequestBody } from '../../../dist/familycommercial/authority/requestProofProtocol.js';
 
 function buildEngine(now = () => new Date('2026-01-03T00:00:00Z')) {
   return new FamilyOwnerAttestationChainEngine(
@@ -40,6 +42,63 @@ async function bootstrapped(now) {
 test('bootstrap: valid genesis anchor + self-certified revision-1 attestation -> BOOTSTRAPPED, then resolves OWNER_AUTHORIZED for the genesis device', async () => {
   const { engine, anchor } = await bootstrapped();
   assert.deepEqual(await engine.resolveCurrentOwner(anchor.familyId, anchor.genesisDeviceId), { status: 'OWNER_AUTHORIZED' });
+});
+
+test('request proof: guessed actor ID is rejected; a session-bound digest proof authorizes once and replay is denied', async () => {
+  const expectedPublicKey = 'BArQn4mGDfD8WbmEr3y436L0C_MxjRuPMWujop0xjrNt-dHBPBuGdWziFXdjHW1d322DsGA0CNg8uqRRdViMd5E';
+  const consumed = new Set();
+  const keyResolver = {
+    async isActiveDsk({ familyId, deviceId, keyId, publicKey }) {
+      return familyId === 'fam-1' && deviceId === 'dev-genesis-owner' && keyId === 'gk-1' && publicKey === expectedPublicKey;
+    },
+  };
+  const requestChallengeVerifier = {
+    async consume(proof) {
+      if (consumed.has(proof.challengeId)) return false;
+      consumed.add(proof.challengeId);
+      return proof.serviceAccountId === 'svc-1' && proof.familyId === 'fam-1' && proof.deviceId === 'dev-genesis-owner';
+    },
+  };
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    createTestOnlyDeviceSignatureVerifier(),
+    () => new Date('2026-01-03T00:00:00Z'),
+    keyResolver,
+    requestChallengeVerifier,
+  );
+  const anchor = buildGenesisAnchor({ genesisDskPublicKey: expectedPublicKey });
+  await engine.bootstrapFamilyAuthority({ anchor, genesisAttestation: buildGenesisAttestation(anchor) });
+
+  assert.deepEqual(await engine.resolveCurrentOwner('fam-1', 'dev-genesis-owner'), { status: 'INVALID_PROOF' });
+
+  const unsignedProof = {
+    protocolVersion: 1,
+    operation: 'FAMILY_COMMERCIAL_REQUEST_CREATE',
+    serviceAccountId: 'svc-1',
+    familyId: 'fam-1',
+    deviceId: 'dev-genesis-owner',
+    keyId: 'gk-1',
+    publicKey: expectedPublicKey,
+    challengeId: 'challenge-1',
+    nonce: '0123456789012345678901234567890123456789abc',
+    requestDigest: digestAuthorityRequestBody('{"targetLimit":5}'),
+    issuedAt: new Date('2026-01-03T00:00:00Z'),
+    expiresAt: new Date('2026-01-03T00:05:00Z'),
+  };
+  const proof = { ...unsignedProof, signature: signTestOnlyChallenge(unsignedProof.publicKey, canonicalizeFamilyAuthorityRequestProof(unsignedProof)) };
+  assert.deepEqual(
+    await engine.resolveCurrentOwner('fam-1', proof, 'svc-1', unsignedProof.operation, unsignedProof.requestDigest),
+    { status: 'OWNER_AUTHORIZED' },
+  );
+  assert.deepEqual(
+    await engine.resolveCurrentOwner('fam-1', proof, 'svc-1', unsignedProof.operation, unsignedProof.requestDigest),
+    { status: 'INVALID_PROOF' },
+  );
+  assert.deepEqual(
+    await engine.resolveCurrentOwner('fam-1', proof, 'svc-1', unsignedProof.operation, digestAuthorityRequestBody('{"targetLimit":6}')),
+    { status: 'INVALID_PROOF' },
+  );
 });
 
 test('bootstrap: repeated identical bootstrap is idempotent -> ALREADY_BOOTSTRAPPED, never a second root', async () => {
@@ -207,6 +266,21 @@ test('chain-head race: two conflicting transitions from the same prior revision 
   ]);
   const statuses = [resultA.status, resultB.status].sort();
   assert.deepEqual(statuses, ['REJECTED_STALE_REVISION', 'TRANSFERRED']);
+});
+
+test('epoch floors: accepted increments become the new floor and stale or downgraded transitions are rejected', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped();
+  const next = buildTransferAttestation(genesisAttestation, attestationId, { trustSetEpoch: 2, keyEpoch: 2 });
+  const first = await engine.transferOwnerAuthority(anchor.familyId, next);
+  assert.equal(first.status, 'TRANSFERRED');
+
+  const nextHead = buildTransferAttestation(next, first.attestationId, { trustSetEpoch: 1, keyEpoch: 2 });
+  const trustDowngrade = await engine.transferOwnerAuthority(anchor.familyId, nextHead);
+  assert.deepEqual(trustDowngrade, { status: 'INVALID_PROOF', reason: 'TRUST_SET_EPOCH_DOWNGRADE' });
+
+  const keyDowngrade = buildTransferAttestation(next, first.attestationId, { trustSetEpoch: 2, keyEpoch: 1 });
+  const keyResult = await engine.transferOwnerAuthority(anchor.familyId, keyDowngrade);
+  assert.deepEqual(keyResult, { status: 'INVALID_PROOF', reason: 'KEY_EPOCH_DOWNGRADE' });
 });
 
 // ---------------------------------------------------------------------------

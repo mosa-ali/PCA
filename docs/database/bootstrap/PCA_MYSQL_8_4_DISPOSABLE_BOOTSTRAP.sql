@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    81 tables
---   672 columns
---    81 primary keys
---    85 foreign keys
+--    83 tables
+--   701 columns
+--    83 primary keys
+--    88 foreign keys
 --    34 unique non-primary-key indexes
---   123 non-unique indexes
---   240 CHECK constraints
+--   128 non-unique indexes
+--   251 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    41 schema_migrations journal rows
+--    42 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -917,10 +917,13 @@ CREATE TABLE `family_authority_chain_heads` (
   `head_revision` int unsigned NOT NULL,
   `status` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `updated_at` datetime(3) NOT NULL,
+  `required_trust_set_epoch` int unsigned NOT NULL DEFAULT 1,
+  `required_key_epoch` int unsigned NOT NULL DEFAULT 1,
   PRIMARY KEY (`family_id`),
   KEY `family_authority_chain_heads_attestation_fk` (`family_id`, `head_attestation_id`),
   CONSTRAINT `family_authority_chain_heads_attestation_fk` FOREIGN KEY (`family_id`, `head_attestation_id`) REFERENCES `family_authority_attestations` (`family_id`, `attestation_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   CONSTRAINT `family_authority_chain_heads_genesis_fk` FOREIGN KEY (`family_id`) REFERENCES `family_authority_genesis_anchors` (`family_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `family_authority_chain_heads_epoch_check` CHECK (((`required_trust_set_epoch` >= 1) and (`required_key_epoch` >= 1))),
   CONSTRAINT `family_authority_chain_heads_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
@@ -936,6 +939,32 @@ CREATE TABLE `family_authority_genesis_anchors` (
   PRIMARY KEY (`family_id`),
   CONSTRAINT `family_authority_genesis_anchors_family_id_check` CHECK ((char_length(`family_id`) between 1 and 128)),
   CONSTRAINT `family_authority_genesis_anchors_protocol_version_check` CHECK ((`protocol_version` between 1 and 100))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- family_authority_request_challenges (defined by backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql)
+CREATE TABLE `family_authority_request_challenges` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `public_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `protocol_version` smallint unsigned NOT NULL,
+  `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `request_digest` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `issued_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `family_authority_request_challenges_scope_idx` (`service_account_id`, `family_id`, `issued_at`),
+  KEY `family_authority_request_challenges_service_fk` (`service_account_id`),
+  CONSTRAINT `family_authority_request_challenges_service_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `family_authority_request_challenges_digest_check` CHECK ((char_length(`request_digest`) = 43)),
+  CONSTRAINT `family_authority_request_challenges_expiry_check` CHECK ((`expires_at` > `issued_at`)),
+  CONSTRAINT `family_authority_request_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
+  CONSTRAINT `family_authority_request_challenges_operation_check` CHECK (regexp_like(`operation`,_utf8mb4'^[A-Z][A-Z0-9_]{0,63}$')),
+  CONSTRAINT `family_authority_request_challenges_protocol_check` CHECK ((`protocol_version` = 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- family_child_memberships (defined by backend/migrations/0036_family_child_memberships.sql)
@@ -1095,6 +1124,35 @@ CREATE TABLE `parent_email_verification_codes` (
   PRIMARY KEY (`code_id`),
   KEY `parent_email_verification_codes_account_idx` (`account_id`, `created_at`),
   CONSTRAINT `parent_email_verification_codes_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_genesis_challenges (defined by backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql)
+CREATE TABLE `parent_genesis_challenges` (
+  `challenge_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_device_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_public_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `candidate_platform` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'BROWSER',
+  `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `protocol_version` smallint unsigned NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `consumed_at` datetime(3) NULL,
+  PRIMARY KEY (`challenge_id`),
+  KEY `parent_genesis_challenges_account_idx` (`account_id`, `created_at`),
+  KEY `parent_genesis_challenges_family_idx` (`family_id`),
+  KEY `parent_genesis_challenges_service_account_fk` (`service_account_id`),
+  CONSTRAINT `parent_genesis_challenges_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_genesis_challenges_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
+  CONSTRAINT `parent_genesis_challenges_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_genesis_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
+  CONSTRAINT `parent_genesis_challenges_operation_check` CHECK ((`operation` = _utf8mb4'GENESIS')),
+  CONSTRAINT `parent_genesis_challenges_platform_check` CHECK ((`candidate_platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS',_utf8mb4'BROWSER'))),
+  CONSTRAINT `parent_genesis_challenges_protocol_check` CHECK ((`protocol_version` = 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_login_step_up_codes (defined by backend/migrations/0042_parent_login_step_up_codes.sql)
@@ -1681,4 +1739,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0040_delete_now_ledger.sql'),
   ('0041_platform_admin_activation_tokens.sql'),
   ('0042_parent_login_step_up_codes.sql'),
-  ('0043_parent_family_memberships_and_profile.sql');
+  ('0043_parent_family_memberships_and_profile.sql'),
+  ('0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql');

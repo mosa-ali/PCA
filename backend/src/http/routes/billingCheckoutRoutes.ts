@@ -31,6 +31,8 @@ import { CheckoutError, type CheckoutService } from '../../billing/checkout/Chec
 import type { AuthService } from '../../auth/AuthService.js';
 import type { AuthzService } from '../../authz/AuthzService.js';
 import type { FamilyCommercialAuthorityResolver } from '../../billing/authority/FamilyCommercialAuthorityResolver.js';
+import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
+import { digestAuthorityRequestBody } from '../../familycommercial/authority/requestProofProtocol.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -51,6 +53,26 @@ export interface BillingCheckoutRoutesDeps {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function authorityProofForRequest(body: Record<string, unknown>, familyId: string, operation: string): FamilyAuthorityRequestProof | null {
+  const raw = body.authorityProof;
+  const actorDeviceId = body.actorDeviceId;
+  if (!isPlainObject(raw) || typeof actorDeviceId !== 'string' || raw.deviceId !== actorDeviceId) return null;
+  if (
+    raw.protocolVersion !== 1 || raw.operation !== operation || raw.familyId !== familyId ||
+    typeof raw.serviceAccountId !== 'string' || typeof raw.deviceId !== 'string' || typeof raw.keyId !== 'string' ||
+    typeof raw.publicKey !== 'string' || typeof raw.challengeId !== 'string' || typeof raw.nonce !== 'string' ||
+    typeof raw.requestDigest !== 'string' || typeof raw.signature !== 'string' ||
+    typeof raw.issuedAt !== 'string' || typeof raw.expiresAt !== 'string'
+  ) return null;
+  const unsignedBody = { ...body };
+  delete unsignedBody.authorityProof;
+  if (raw.requestDigest !== digestAuthorityRequestBody(JSON.stringify(unsignedBody))) return null;
+  const issuedAt = new Date(raw.issuedAt);
+  const expiresAt = new Date(raw.expiresAt);
+  if (Number.isNaN(issuedAt.getTime()) || Number.isNaN(expiresAt.getTime())) return null;
+  return { ...raw, issuedAt, expiresAt } as FamilyAuthorityRequestProof;
 }
 
 function checkoutErrorToHttpStatus(code: CheckoutError['code']): number {
@@ -101,6 +123,8 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       if (typeof actorDeviceId !== 'string' || actorDeviceId.length === 0 || actorDeviceId.length > MAX_ACTOR_DEVICE_ID_LENGTH) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
+      const authorityProof = authorityProofForRequest(body, familyId, 'BILLING_CHECKOUT_CREATE');
+      if (!authorityProof) return reply.code(400).send({ error: 'invalid_request' });
 
       // FIX 4: Family-Owner-only gate. Resolved BEFORE any checkout
       // orchestration runs -- an Administrator/Viewer-scoped (or
@@ -111,7 +135,14 @@ export function registerBillingCheckoutRoutes(app: FastifyInstance, deps: Billin
       // re-verification per call. Until this route carries a session-bound,
       // single-use request proof, the resolver receives only an identifier
       // and returns INVALID_PROOF; no checkout orchestration is reached.
-      const authority = await deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(familyId, actorDeviceId);
+      const authority = await deps.familyCommercialAuthorityResolver.resolveOwnerAuthority(
+        familyId,
+        actorDeviceId,
+        authorityProof,
+        request.accountId as string,
+        'BILLING_CHECKOUT_CREATE',
+        authorityProof.requestDigest,
+      );
       if (authority.status === 'ROLE_DENIED') {
         // Same "one generic reason" discipline as AuthzError/
         // ParentActionAuthorizationService's CROSS_FAMILY_TARGET -- never

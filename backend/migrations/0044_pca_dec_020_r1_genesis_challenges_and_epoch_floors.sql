@@ -9,6 +9,7 @@ CREATE TABLE parent_genesis_challenges (
   candidate_device_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   candidate_key_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   candidate_public_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  candidate_platform VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'BROWSER',
   nonce VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   operation VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   protocol_version SMALLINT UNSIGNED NOT NULL,
@@ -22,6 +23,7 @@ CREATE TABLE parent_genesis_challenges (
   CONSTRAINT parent_genesis_challenges_service_account_fk FOREIGN KEY (service_account_id) REFERENCES service_accounts (account_id),
   CONSTRAINT parent_genesis_challenges_operation_check CHECK (operation = 'GENESIS'),
   CONSTRAINT parent_genesis_challenges_protocol_check CHECK (protocol_version = 1),
+  CONSTRAINT parent_genesis_challenges_platform_check CHECK (candidate_platform IN ('ANDROID', 'IOS', 'BROWSER')),
   CONSTRAINT parent_genesis_challenges_nonce_check CHECK (CHAR_LENGTH(nonce) = 43),
   CONSTRAINT parent_genesis_challenges_expiry_check CHECK (expires_at > created_at)
 ) ENGINE=InnoDB;

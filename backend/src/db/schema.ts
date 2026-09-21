@@ -1,9 +1,9 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 81 tables, including schema_migrations itself),
+// central MySQL schema (all 83 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0043; 41 files, 0009/0010 never existed) from an empty database
+// through 0044; 42 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
@@ -1795,6 +1795,8 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "head_revision", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
       { name: "status", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary status/type/category/currency/market column." },
       { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "required_trust_set_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "1", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Minimum accepted Family Trust Set epoch." },
+      { name: "required_key_epoch", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "1", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Minimum accepted device-signing-key epoch." },
     ],
     primaryKey: ["family_id"],
     uniqueIndexes: [
@@ -1808,6 +1810,7 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
       { name: "family_authority_chain_heads_genesis_fk", columns: ["family_id"], referencedTable: "family_authority_genesis_anchors", referencedColumns: ["family_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
     ],
     checkConstraints: [
+      { name: "family_authority_chain_heads_epoch_check", clause: "((`required_trust_set_epoch` >= 1) and (`required_key_epoch` >= 1))" },
       { name: "family_authority_chain_heads_status_check", clause: "(`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED'))" },
     ],
     applicationEnforcedRelations: [
@@ -1848,6 +1851,52 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
       { column: "genesis_device_id", impliedReferencedTable: "devices", impliedReferencedColumn: "device_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Integrity is cryptographic (signature verification by FamilyOwnerAttestationChainEngine), not referential; a dangling id would fail signature verification before being written.", source: "backend/migrations/0011_family_commercial_authority.sql:6-16" },
+    ],
+  },
+  {
+    name: "family_authority_request_challenges",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familycommercial/authority",
+    columns: [
+      { name: "challenge_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "One-time request challenge identifier." },
+      { name: "service_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Authenticated service-session identity reference." },
+      { name: "family_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Family-scoped opaque identifier." },
+      { name: "device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Proof-bound device identifier." },
+      { name: "key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Proof-bound device-signing-key identifier." },
+      { name: "public_key", columnType: "varchar(128)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key only; never private key material." },
+      { name: "operation", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed operation vocabulary." },
+      { name: "protocol_version", columnType: "smallint unsigned", dataType: "smallint", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Protocol version." },
+      { name: "nonce", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "One-time challenge nonce." },
+      { name: "request_digest", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Digest of the unsigned request body." },
+      { name: "issued_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+    ],
+    primaryKey: ["challenge_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "family_authority_request_challenges_scope_idx", columns: ["service_account_id", "family_id", "issued_at"], unique: false },
+      { name: "family_authority_request_challenges_service_fk", columns: ["service_account_id"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "family_authority_request_challenges_service_fk", columns: ["service_account_id"], referencedTable: "service_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "family_authority_request_challenges_digest_check", clause: "(char_length(`request_digest`) = 43)" },
+      { name: "family_authority_request_challenges_expiry_check", clause: "(`expires_at` > `issued_at`)" },
+      { name: "family_authority_request_challenges_nonce_check", clause: "(char_length(`nonce`) = 43)" },
+      { name: "family_authority_request_challenges_operation_check", clause: "regexp_like(`operation`,_utf8mb4'^[A-Z][A-Z0-9_]{0,63}$')" },
+      { name: "family_authority_request_challenges_protocol_check", clause: "(`protocol_version` = 1)" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Family scope is validated by the authenticated request path; this challenge table stores no readable family data.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
+      { column: "device_id", impliedReferencedTable: "devices", impliedReferencedColumn: "device_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Device/key identity is cryptographically checked by the authority engine.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
     ],
   },
   {
@@ -2187,6 +2236,55 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     ],
     applicationEnforcedRelations: [
 
+    ],
+  },
+  {
+    name: "parent_genesis_challenges",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/parentaccount",
+    columns: [
+      { name: "challenge_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "One-time genesis challenge identifier." },
+      { name: "account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Verified Parent account reference." },
+      { name: "service_account_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Authenticated service-session identity reference." },
+      { name: "family_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Server-minted candidate family identifier." },
+      { name: "candidate_device_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Server-minted candidate device identifier." },
+      { name: "candidate_key_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Server-minted candidate DSK identifier." },
+      { name: "candidate_public_key", columnType: "varchar(128)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Public signing key only; never private key material." },
+      { name: "candidate_platform", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: "BROWSER", autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed endpoint platform vocabulary." },
+      { name: "nonce", columnType: "varchar(64)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "One-time challenge nonce." },
+      { name: "operation", columnType: "varchar(16)", dataType: "varchar", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Genesis operation marker." },
+      { name: "protocol_version", columnType: "smallint unsigned", dataType: "smallint", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Protocol version." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "expires_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "consumed_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "One-time consumption timestamp." },
+    ],
+    primaryKey: ["challenge_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "parent_genesis_challenges_account_idx", columns: ["account_id", "created_at"], unique: false },
+      { name: "parent_genesis_challenges_family_idx", columns: ["family_id"], unique: false },
+      { name: "parent_genesis_challenges_service_account_fk", columns: ["service_account_id"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "parent_genesis_challenges_account_fk", columns: ["account_id"], referencedTable: "parent_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+      { name: "parent_genesis_challenges_service_account_fk", columns: ["service_account_id"], referencedTable: "service_accounts", referencedColumns: ["account_id"], onDelete: "NO ACTION", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "parent_genesis_challenges_expiry_check", clause: "(`expires_at` > `created_at`)" },
+      { name: "parent_genesis_challenges_nonce_check", clause: "(char_length(`nonce`) = 43)" },
+      { name: "parent_genesis_challenges_operation_check", clause: "(`operation` = _utf8mb4'GENESIS')" },
+      { name: "parent_genesis_challenges_platform_check", clause: "(`candidate_platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS',_utf8mb4'BROWSER'))" },
+      { name: "parent_genesis_challenges_protocol_check", clause: "(`protocol_version` = 1)" },
+    ],
+    applicationEnforcedRelations: [
+      { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Candidate family id is created and bound by the same atomic genesis transaction.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
+      { column: "candidate_device_id", impliedReferencedTable: "devices", impliedReferencedColumn: "device_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Candidate device identity is created only inside the atomic genesis transaction.", source: "backend/migrations/0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql" },
     ],
   },
   {

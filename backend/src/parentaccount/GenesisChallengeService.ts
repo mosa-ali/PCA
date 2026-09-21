@@ -7,6 +7,7 @@ import {
 } from './genesisProtocol.js';
 import type { DeviceSignatureVerifier } from '../deviceauth/DeviceSignatureVerifier.js';
 import type { ParentAccountId } from './types.js';
+import type { Platform } from '../device/types.js';
 
 export type GenesisChallengeErrorCode =
   | 'INVALID_PUBLIC_KEY'
@@ -28,6 +29,7 @@ export interface BeginGenesisChallengeInput {
   accountId: ParentAccountId;
   serviceAccountId: string;
   publicKey: string;
+  platform?: Platform;
 }
 
 /**
@@ -54,6 +56,7 @@ export class GenesisChallengeService {
       candidateDeviceId: ids.deviceId,
       candidateKeyId: ids.keyId,
       candidatePublicKey: input.publicKey,
+      candidatePlatform: input.platform ?? 'BROWSER',
       nonce: ids.nonce,
       operation: 'GENESIS',
       protocolVersion: 1,
@@ -85,6 +88,16 @@ export class GenesisChallengeService {
   }
 
   async complete(challengeId: string, signature: string): Promise<GenesisChallengeRecord> {
+    await this.verifyProof(challengeId, signature);
+    const consumed = await this.repository.consumeAtomically(challengeId, this.now());
+    if (consumed.outcome === 'NOT_FOUND') throw new GenesisChallengeError('NOT_FOUND');
+    if (consumed.outcome === 'EXPIRED') throw new GenesisChallengeError('EXPIRED');
+    if (consumed.outcome === 'ALREADY_CONSUMED') throw new GenesisChallengeError('ALREADY_CONSUMED');
+    return consumed.challenge;
+  }
+
+  /** Verifies the client proof without consuming the challenge. The atomic genesis coordinator calls this before handing the exact record to its single transaction. */
+  async verifyProof(challengeId: string, signature: string): Promise<GenesisChallengeRecord> {
     const record = await this.repository.findById(challengeId);
     if (!record) throw new GenesisChallengeError('NOT_FOUND');
     const now = this.now();
@@ -108,11 +121,6 @@ export class GenesisChallengeService {
     if (!(await this.signatureVerifier.verify(record.candidatePublicKey, message, signature))) {
       throw new GenesisChallengeError('INVALID_SIGNATURE');
     }
-
-    const consumed = await this.repository.consumeAtomically(challengeId, now);
-    if (consumed.outcome === 'NOT_FOUND') throw new GenesisChallengeError('NOT_FOUND');
-    if (consumed.outcome === 'EXPIRED') throw new GenesisChallengeError('EXPIRED');
-    if (consumed.outcome === 'ALREADY_CONSUMED') throw new GenesisChallengeError('ALREADY_CONSUMED');
-    return consumed.challenge;
+    return record;
   }
 }
