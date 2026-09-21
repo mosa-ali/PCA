@@ -159,7 +159,7 @@ test('every first-level sidebar row leads to a real page, not a dead end', async
   // The IA regrouping must not have left a row pointing at an unregistered
   // route: that would render NotFound with no error anywhere.
   const rows = [
-    'Dashboard', 'Children', 'Devices', 'Requests', 'Family Members', 'Roles & Permissions',
+    'Dashboard', 'Children', 'Devices', 'Requests', 'Parents & Guardians', 'Roles & Permissions',
     'Protection Status', 'Screen Time', 'Apps & Web', 'Schedules', 'Wellbeing Messages',
     'Alerts', 'Data & Privacy', 'Recovery', 'Security Log', 'Trusted Browser',
     'Notifications', 'Subscription', 'Settings',

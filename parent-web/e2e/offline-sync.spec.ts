@@ -43,24 +43,24 @@ test.describe('offline / reconnect / policy status UX', () => {
   }) => {
     await page.goto('/security/trusted-browser');
     await page.getByRole('button', { name: "Reset this browser's trust" }).click();
-    await expect(page.getByText('This browser is not yet trusted with family decryption authority.')).toBeVisible();
+    await expect(page.getByText('This browser is not trusted for protected information yet.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.getByText(/Pairing this browser with the family is required/)).toBeVisible();
+    await expect(page.getByText('You are signed in. Pair this browser with your Parent account before viewing protected information.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Request pairing' }).click();
-    await expect(page.getByText(/Waiting for parent approval/)).toBeVisible();
+    await expect(page.getByText('Pairing request sent. Waiting for parent approval on an already-trusted device.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Simulate parent approval (demo mode)' }).click();
-    await expect(page.getByText('This browser is trusted and can decrypt family data.')).toBeVisible();
+    await expect(page.getByText('This browser is trusted and can show protected information.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Simulate epoch gone stale (demo mode)' }).click();
-    await expect(page.getByText(/out of date \(stale epoch\)/)).toBeVisible();
+    await page.getByRole('button', { name: 'Simulate an out-of-date security status (demo mode)' }).click();
+    await expect(page.getByText("This browser's security status is out of date. Some information may not be shown until it syncs again.")).toBeVisible();
 
     await page.getByRole('button', { name: 'Resync (demo mode)' }).click();
-    await expect(page.getByText('This browser is trusted and can decrypt family data.')).toBeVisible();
+    await expect(page.getByText('This browser is trusted and can show protected information.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Simulate revoke (demo mode)' }).click();
-    await expect(page.getByText(/trust has been revoked/)).toBeVisible();
+    await expect(page.getByText("This browser's trust has been revoked. Pair again to regain access.")).toBeVisible();
   });
 });

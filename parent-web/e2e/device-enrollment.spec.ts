@@ -210,6 +210,6 @@ test.describe('Device enrollment (invitations / pairing) -- real browser', () =>
 
     await page.goto('/family/devices?section=protection');
     await expect(page.getByRole('tab', { name: 'Protection & removal' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText(/Removing or revoking a child device changes family trust/)).toBeVisible();
+    await expect(page.getByText(/Removing or revoking a child device changes its protection connection/)).toBeVisible();
   });
 });
