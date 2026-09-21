@@ -21,6 +21,9 @@ Thumbs.db
 # SBOM output (PCA-NFR-006) -- generated fresh by CI/local script, never committed
 sbom.cdx.json
 
+# Disposable real-backend E2E manifest -- contains test-only credentials/tokens
+backend/qa-e2e-manifest.json
+
 # Local configuration, credentials, and generated environment files
 .env
 .env.*

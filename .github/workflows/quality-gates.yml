@@ -508,7 +508,7 @@ jobs:
       - name: Apply the full migration chain to the disposable database
         working-directory: backend
         run: npm run db:migrate
-      - name: Provision the E2E accounts (verified account + ACTIVE operator + browser grant)
+      - name: Provision the E2E accounts (two verified parents + ACTIVE operator + browser grants)
         # Deliberately NOT seed-local.mjs. That is a broad developer fixture whose
         # family, invitation and billing sections dereference a familyId, which only
         # exists once family genesis has completed -- so the E2E job's success
@@ -521,10 +521,9 @@ jobs:
       - name: Resolve E2E credential environment from the fixture manifest
         # Two deliberate properties here.
         #
-        # CI-01. Accounts are selected by the fixture manifest's own shape, never by
-        # `familyId`, which is only set once family genesis completes. Parent
-        # login/session testing does not need genesis, so keying off it made the
-        # whole job depend on an unrelated subsystem.
+        # CI-01. Accounts are selected by the fixture manifest's own shape. Both
+        # parent browser suites require real family-scoped sessions, so the
+        # provisioner completes the disposable genesis ceremony for each parent.
         #
         # CI-04. This step contains NO console-logging call at all, deliberately.
         # The repository's sensitive-logging detector matches a logging call and
@@ -552,10 +551,17 @@ jobs:
             if (!account || !account.dailyLoginGrant || !operator || !operator.totpSecretBase32 || !family || !family.familyId) {
               process.exit(1);
             }
+            const second = manifest.secondParent;
+            if (!second || !second.dailyLoginGrant) {
+              process.exit(1);
+            }
             fs.appendFileSync(process.env.GITHUB_ENV, [
               'E2E_REAL_PARENT_EMAIL=' + account.email,
               'E2E_REAL_PARENT_PASSWORD=' + account.password,
               'E2E_REAL_PARENT_DAILY_GRANT=' + account.dailyLoginGrant,
+              'E2E_REAL_SECOND_PARENT_EMAIL=' + second.email,
+              'E2E_REAL_SECOND_PARENT_PASSWORD=' + second.password,
+              'E2E_REAL_SECOND_PARENT_DAILY_GRANT=' + second.dailyLoginGrant,
               'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,

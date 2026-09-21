@@ -5,13 +5,23 @@
 //
 // Uses the SAME real service/repository classes backend/src/main.ts wires
 // in production (ParentAccountService + MySqlParentAccountRepository +
-// AuthService + FamilyOwnerAttestationChainEngine + PlatformAdminAccountService),
-// so every seeded account is created through the actual business logic
-// (real password hashing, real email-verification-code flow, real
-// server-side family genesis) rather than hand-crafted SQL rows. The one
-// substitution is the email sender: TestSandboxEmailSender (NODE_ENV=test
+// AuthService + ParentGenesisService/GenesisChallengeService +
+// PlatformAdminAccountService), so every seeded account is created through the
+// actual business logic (real password hashing, real email-verification-code
+// flow, real server-side family genesis) rather than hand-crafted SQL rows. The
+// one substitution is the email sender: TestSandboxEmailSender (NODE_ENV=test
 // or development only) so this script can read back the verification code
 // it "sent", exactly like backend/test/parentaccount/e2e.*.test.mjs does.
+//
+// GENESIS IS DRIVEN EXPLICITLY (repair). This script used to read a familyId
+// straight out of `verifyEmail`'s result. PCA-DEC-020-R1 (commit 109f280d)
+// changed email verification to establish account IDENTITY ONLY -- verifyEmail
+// now always returns `familyId: null`, and genesis became its own client-key
+// ceremony. That change silently broke this whole script: `registerAndVerify
+// Family` threw 'did not receive a genesis familyId' on its first account, so
+// no seed account and no dependent Playwright spec could ever be produced. The
+// ceremony is now run for real, once per seeded parent, through
+// ./lib/completeFamilyGenesis.mjs.
 //
 // Coordinator B QA-harness-isolation pass: every auth-sensitive Playwright
 // test gets its OWN dedicated account (parent or platform-admin), never a
@@ -29,24 +39,18 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { getPool, closePool } from '../dist/db/pool.js';
-import { AuthService } from '../dist/auth/AuthService.js';
-import { MySqlAuthRepository } from '../dist/auth/MySqlAuthRepository.js';
-import { ParentAccountService } from '../dist/parentaccount/ParentAccountService.js';
 import { MySqlParentAccountRepository } from '../dist/parentaccount/MySqlParentAccountRepository.js';
 import { createTestSandboxEmailSender } from '../dist/parentaccount/TestSandboxEmailSender.js';
-import { FamilyOwnerAttestationChainEngine } from '../dist/familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
-import { MySqlFamilyAuthorityGenesisStore } from '../dist/familycommercial/authority/MySqlGenesisAnchorStore.js';
-import { MySqlFamilyAuthorityAttestationChainStore } from '../dist/familycommercial/authority/MySqlAttestationChainStore.js';
-// PCA-DEC-020: production wires RejectingDeviceSignatureVerifier here
-// (unconditional fail-closed, pending human security review of the real
-// CRYPTO_SUITE) -- registering an account in real production today
-// therefore never actually completes family genesis. This script instead
-// uses the SAME sanctioned test-only substitution
-// backend/test/parentaccount/e2e.registrationToOwnerMutation.test.mjs
-// already established: a genuinely real Ed25519 verifier (not a fake
-// "always allow"), just not the one selected for production pending that
-// review. See genesisDeviceSigner.ts's own header for the full rationale.
-import { createEd25519DeviceSignatureVerifier } from '../dist/parentaccount/genesisDeviceSigner.js';
+// PCA-DEC-020-R1: production wires RejectingDeviceSignatureVerifier into the
+// genesis ceremony (unconditional fail-closed, pending human security review of
+// the real CRYPTO_SUITE), so a real production registration never completes
+// family genesis today. This script instead uses the SAME sanctioned test-only
+// substitution backend/test/security/genesisTransaction.test.mjs already
+// established for this exact ceremony: a genuinely real P-256 verifier (not a
+// fake "always allow"), just not the one selected for production pending that
+// review. See ./lib/completeFamilyGenesis.mjs.
+import { P256DeviceSignatureVerifier } from '../dist/deviceauth/P256DeviceSignatureVerifier.js';
+import { completeFamilyGenesis, createDisposableGenesisParentAccountService, issueDailyLoginGrant } from './lib/completeFamilyGenesis.mjs';
 import { PlatformAdminAccountService } from '../dist/platformadmin/auth/PlatformAdminAccountService.js';
 import { MySqlPlatformAdminAuthRepository } from '../dist/platformadmin/auth/MySqlAuthRepository.js';
 import { hashAdminEmail } from '../dist/platformadmin/auth/emailHash.js';
@@ -98,19 +102,11 @@ function reportSeeded(label, detail) {
   console.log(detail ? `Seeded ${label} (${detail}).` : `Seeded ${label}.`);
 }
 
-const authService = new AuthService(new MySqlAuthRepository());
 const emailSender = createTestSandboxEmailSender();
-const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
-  new MySqlFamilyAuthorityGenesisStore(),
-  new MySqlFamilyAuthorityAttestationChainStore(),
-  createEd25519DeviceSignatureVerifier(),
-  () => new Date(),
-);
-const parentAccountService = new ParentAccountService({
-  repository: new MySqlParentAccountRepository(),
-  authService,
+const parentAccountRepository = new MySqlParentAccountRepository();
+const parentAccountService = createDisposableGenesisParentAccountService({
   emailSender,
-  familyGenesisEngine: familyAuthorityChainEngine,
+  verifier: new P256DeviceSignatureVerifier(),
 });
 
 async function registerAndVerifyFamily(key) {
@@ -119,9 +115,31 @@ async function registerAndVerifyFamily(key) {
   const code = emailSender.lastCodeFor(email);
   if (!code) throw new Error(`Seed failed: no verification code recorded for ${email}`);
   const outcome = await parentAccountService.verifyEmail(email, code);
-  if (!outcome.familyId) throw new Error(`Seed failed: ${email} did not receive a genesis familyId`);
-  manifest.parentAccounts[key] = { email, accountId: outcome.accountId, familyId: outcome.familyId };
-  return outcome;
+  // verifyEmail no longer completes genesis (PCA-DEC-020-R1) -- run the real
+  // ceremony for this account's own session. Its familyId is what every
+  // downstream section of this seed (invitations, billing, child profiles)
+  // dereferences, so a seed without it is not a seed at all.
+  const genesis = await completeFamilyGenesis({
+    parentAccountService,
+    emailSender,
+    sessionToken: outcome.rawSessionToken,
+    email,
+    password: SEED_PASSWORD,
+  });
+  // A PRE-ISSUED DAILY-LOGIN GRANT, for the same reason provision-e2e-accounts
+  // .mjs issues one: every EXPLICIT parent login now requires either this grant
+  // or an emailed step-up code (ParentAccountService.login), and a Playwright
+  // process cannot receive that email. Without it every seeded account can
+  // authenticate with the right password and still be told STEP_UP_REQUIRED,
+  // so no browser spec that logs in through /login could ever pass. The token is
+  // written only to the QA seed manifest (never stdout), and expires in 24h like
+  // production.
+  const dailyLoginGrant = await issueDailyLoginGrant({
+    repository: parentAccountRepository,
+    accountId: outcome.accountId,
+  });
+  manifest.parentAccounts[key] = { email, accountId: outcome.accountId, familyId: genesis.familyId, dailyLoginGrant };
+  return { ...outcome, familyId: genesis.familyId };
 }
 
 const familyA = await registerAndVerifyFamily('owner-a');

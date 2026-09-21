@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-
 /**
  * PPR-2 Step 5: the owner's exact acceptance flow, against the REAL local
  * backend (fresh MySQL, migrated from zero, seeded) -- not demo fixtures.
@@ -13,20 +12,37 @@ import { test, expect } from '@playwright/test';
  * in ONCE per describe block and reuses that page across steps, exactly as
  * a real parent's continuous session would, rather than a fresh login per
  * assertion.
+ *
+ * PREREQUISITE (disposable fixture manifest, and why the login helper sets a
+ * cookie). The fixture provisions real family genesis for both parent
+ * identities: since PCA-DEC-020-R1, email verification establishes identity
+ * only, so a verified account without genesis has no family role and the
+ * Parent Web client correctly refuses the session. It also issues one daily
+ * login grant per account, representing the state a returning browser would
+ * hold after completing step-up. Nothing in the production login path is
+ * weakened to make this pass.
  */
 test.use({ serviceWorkers: 'block' });
 
-const SEED_PASSWORD = 'Correct Horse Battery Staple 2026!';
+const PRIMARY_EMAIL = process.env.E2E_REAL_PARENT_EMAIL;
+const PRIMARY_PASSWORD = process.env.E2E_REAL_PARENT_PASSWORD;
+const PRIMARY_GRANT = process.env.E2E_REAL_PARENT_DAILY_GRANT;
+const SECOND_EMAIL = process.env.E2E_REAL_SECOND_PARENT_EMAIL;
+const SECOND_PASSWORD = process.env.E2E_REAL_SECOND_PARENT_PASSWORD;
+const SECOND_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
+test.skip(
+  !PRIMARY_EMAIL || !PRIMARY_PASSWORD || !PRIMARY_GRANT || !SECOND_EMAIL || !SECOND_PASSWORD || !SECOND_GRANT,
+  'real-backend acceptance flow requires both disposable parent fixtures and their daily-login grants.',
+);
+/** The bare (non-`__Host-`) name: this suite runs under NODE_ENV=development, where the production `__Host-` prefix is deliberately not applied. */
+const DAILY_LOGIN_GRANT_COOKIE = 'pca_parent_daily_login_grant';
 // owner-a/owner-b are pre-seeded with an existing enrollment_invitations row
-// each (for OTHER, unrelated billing/device-management specs) -- a real
-// managed-device-slot reservation under the FREE_STARTER 1-device limit, so
-// this flow's own invitation-creation step would see a genuine, correct
-// MANAGED_DEVICE_LIMIT_REACHED for either of them, unrelated to the license
-// decision this file exists to prove. owner-login-ok has no such fixture.
-const PRIMARY_EMAIL = 'owner-login-ok@pca-seed.test';
-const SECOND_EMAIL = 'owner-cp-dashboard@pca-seed.test';
-
-async function login(page: import('@playwright/test').Page, email: string, password: string) {
+async function login(page: import('@playwright/test').Page, email: string, password: string, dailyLoginGrant: string) {
+  // See this file's header: the seeded grant stands in for a step-up this
+  // browser completed on an earlier visit, which is a real state a real parent
+  // browser reaches -- not a bypass of any production control.
+  await page.context().clearCookies();
+  await page.context().addCookies([{ name: DAILY_LOGIN_GRANT_COOKIE, value: dailyLoginGrant, url: 'http://localhost:4002' }]);
   await page.goto('/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
@@ -37,7 +53,7 @@ async function login(page: import('@playwright/test').Page, email: string, passw
 test.describe('PPR-2 owner acceptance flow -- real backend, one continuous session', () => {
   test('login -> new family/zero children -> add first child -> child selectable -> Download App -> invitation attempt -> Arabic/RTL -> reload', async ({ page }) => {
     // 1. login
-    await login(page, PRIMARY_EMAIL, SEED_PASSWORD);
+    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
 
     // 8. Download App action visible -- on every page's header.
     await expect(page.getByRole('link', { name: 'Download App' })).toBeVisible();
@@ -146,12 +162,12 @@ test.describe('PPR-2 owner acceptance flow -- real backend, one continuous sessi
 // genuinely a second identity, not reusable session state.
 test.describe('PPR-2 cross-family isolation -- real backend', () => {
   test("a second family's session cannot read or create against the first family's id", async ({ page }) => {
-    await login(page, PRIMARY_EMAIL, SEED_PASSWORD);
+    await login(page, PRIMARY_EMAIL!, PRIMARY_PASSWORD!, PRIMARY_GRANT!);
     const meRes = await page.request.get('/api/parent/session');
     expect(meRes.status()).toBe(200);
     const ownFamilyId = (await meRes.json()).familyId as string;
 
-    await login(page, SECOND_EMAIL, SEED_PASSWORD);
+    await login(page, SECOND_EMAIL!, SECOND_PASSWORD!, SECOND_GRANT!);
     const crossList = await page.request.get(`/v1/families/${ownFamilyId}/children`);
     expect(crossList.status(), "cross-family LIST must be 403, not 200 with someone else's rows").toBe(403);
 
