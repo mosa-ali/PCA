@@ -415,6 +415,202 @@ jobs:
         working-directory: backend
         run: npm run test:db:auth-certification
 
+  real-backend-e2e:
+    # 2026-09-21, PCA full assessment findings P1-13 and P1-14.
+    #
+    # parent-web and platform-admin-web EACH ship a real-backend Playwright suite
+    # (e2e-real/, driven by playwright.real.config.ts) that drives a live Fastify
+    # process backed by real MySQL, and NEITHER was ever run by CI. Every
+    # historical PARENT_REAL_E2E / PLATFORM_ADMIN_REAL_E2E "PASS" was therefore
+    # unbacked by any reproducible artifact -- and both configs write their JSON
+    # report into test-results/, which is gitignored in both apps.
+    #
+    # DISPOSABLE ONLY. The MySQL instance is an ephemeral Actions service
+    # container. The backend runs under NODE_ENV=development so mail goes through
+    # the in-process TestSandboxEmailSender, which CANNOT deliver anything; the
+    # only payment provider reachable is the sandbox provider; and nothing here
+    # touches Azure, DNS, TLS or any production system. Real SMTP delivery is
+    # NOT exercised -- the evidence manifest therefore records
+    # REAL_SMTP=NOT_TESTED rather than letting a green job imply it.
+    #
+    # THE VACUOUS-PASS GUARD -- this is the important part. Both specs open with
+    # `test.skip(!EMAIL || !PASSWORD, ...)`, so if the environment is not wired
+    # the suite reports SUCCESS with every test SKIPPED: a naive `playwright
+    # test` step would go green having exercised nothing. That is the most likely
+    # way a first-time real-E2E wiring can lie. tooling/e2e-real/
+    # assertRealE2eResults.mjs therefore fails the job on ANY skipped or flaky
+    # result (and on a missing/malformed report, which means the suite did not
+    # complete), and emits the bounded P1-14 evidence manifest.
+    name: Real-backend browser E2E (disposable MySQL + live Fastify)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4.11
+        env:
+          MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
+          MYSQL_DATABASE: pca_test
+          MYSQL_USER: pca_test_app
+          MYSQL_PASSWORD: pca_test_only_not_a_secret
+        # Host port 33061, matching backend/test.db.env's own PCA_DATABASE_URL
+        # exactly (127.0.0.1:33061/pca_test).
+        ports:
+          - 33061:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ppca_test_only_not_a_secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+    env:
+      # Disposable-database credentials, using the repository's own explicitly
+      # named test-only values (see backend/test.db.env and docker-compose.yml).
+      # Not GitHub Secrets, and never a production credential.
+      PCA_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
+      PCA_DATABASE_TLS: DISABLED
+      NODE_ENV: development
+      # seed-local.mjs defaults this to 'ab'.repeat(32); the RUNNING BACKEND must
+      # use the identical value or the TOTP secrets it seeds into the disposable
+      # database cannot be decrypted, and the admin suite would fail to log in.
+      # Disposable, test-only, and never a real secret.
+      PLATFORM_ADMIN_MFA_ENC_KEY: abababababababababababababababababababababababababababababababab
+      # Both suites proxy same-origin through the Vite dev server, so the backend
+      # needs no CORS layer for this run (it has none by design).
+      VITE_E2E_REAL_PROXY_TARGET: http://127.0.0.1:4001
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            parent-web/package-lock.json
+            platform-admin-web/package-lock.json
+      - name: Install and build the backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+      - name: Set disposable MySQL service to UTC (matches docker-compose.yml's --default-time-zone=+00:00)
+        working-directory: backend
+        run: |
+          node -e "
+            const mysql = require('mysql2/promise');
+            (async () => {
+              const conn = await mysql.createConnection({ host: '127.0.0.1', port: 33061, user: 'root', password: 'pca_test_only_not_a_secret' });
+              await conn.query(\"SET GLOBAL time_zone = '+00:00'\");
+              await conn.end();
+            })().catch((error) => { console.error(error); process.exit(1); });
+          "
+      - name: Apply the full migration chain to the disposable database
+        working-directory: backend
+        run: npm run db:migrate
+      - name: Seed deterministic accounts (verified parents + admins with known TOTP secrets)
+        working-directory: backend
+        run: node scripts/seed-local.mjs
+      - name: Resolve E2E credentials from the seed manifest
+        working-directory: backend
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const manifest = require('./qa-seed-manifest.json');
+            const parent = Object.values(manifest.parentAccounts).find((entry) => entry.familyId);
+            const owner = manifest.adminAccounts.app_owner;
+            if (!parent) { console.error('No VERIFIED parent in the seed manifest (an entry with a familyId).'); process.exit(1); }
+            if (!owner || !owner.totpSecretBase32) { console.error('No app_owner admin with a TOTP secret in the seed manifest.'); process.exit(1); }
+            fs.appendFileSync(process.env.GITHUB_ENV, [
+              'E2E_REAL_PARENT_EMAIL=' + parent.email,
+              'E2E_REAL_PARENT_PASSWORD=' + manifest.seedPassword,
+              'E2E_REAL_ADMIN_EMAIL=' + owner.email,
+              'E2E_REAL_ADMIN_PASSWORD=' + manifest.seedPassword,
+              'E2E_REAL_ADMIN_TOTP_SECRET=' + owner.totpSecretBase32,
+              '',
+            ].join('\n'));
+            console.log('Resolved E2E identities: parent=' + parent.email + ', admin=' + owner.email + ' (' + owner.role + ')');
+          "
+      - name: Start the real backend and wait for a live health probe
+        working-directory: backend
+        run: |
+          nohup node dist/main.js > backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then
+              echo "Backend healthy after ${attempt}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not become healthy within 30s. Log follows:"
+          cat backend.log
+          exit 1
+      - name: Build parent-sdk and install parent-web dependencies
+        working-directory: parent-web
+        run: |
+          npm ci --prefix parent-sdk/browser-runtime
+          npm run build --prefix parent-sdk/browser-runtime
+          npm ci --prefix parent-sdk/wellbeing-control
+          npm run build --prefix parent-sdk/wellbeing-control
+          npm ci
+      - name: Install platform-admin-web dependencies
+        working-directory: platform-admin-web
+        run: npm ci
+      - name: Install Playwright browsers
+        # Both apps use Chromium; browsers are cached per-user, but each app
+        # pins its own @playwright/test version, so each is installed from its
+        # own dependency tree rather than assuming the two agree.
+        working-directory: parent-web
+        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers (platform-admin-web)
+        working-directory: platform-admin-web
+        run: npx playwright install --with-deps chromium
+      - name: Run parent-web real-backend E2E
+        # VITE_PCA_API_BASE_URL is set to an EMPTY STRING, not omitted: the API
+        # client joins it directly onto each path, so empty makes every request
+        # relative (and therefore same-origin, and therefore proxied). Leaving it
+        # unset falls back to an absolute backend origin, which the browser then
+        # blocks because the backend deliberately has no CORS layer. See the
+        # spec's own header -- this was confirmed by direct reproduction.
+        working-directory: parent-web
+        env:
+          VITE_PCA_DEMO_MODE: 'false'
+          VITE_PCA_API_BASE_URL: ''
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium
+      - name: Assert the parent-web run was not vacuously skipped, and record evidence
+        if: always()
+        working-directory: parent-web
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-results.json --label "parent-web real-backend E2E" --manifest-out ../backend/parent-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Run platform-admin-web real-backend E2E
+        # VITE_PCA_PLATFORM_ADMIN_API_BASE_URL is deliberately UNSET: the app's
+        # same-origin default is what makes the Vite proxy work. Setting it to an
+        # absolute origin defeats the proxy and the backend's absent CORS layer
+        # blocks the request. See that spec's own header.
+        working-directory: platform-admin-web
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium
+      - name: Assert the platform-admin-web run was not vacuously skipped, and record evidence
+        if: always()
+        working-directory: platform-admin-web
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-results.json --label "platform-admin-web real-backend E2E" --manifest-out ../backend/platform-admin-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Upload real-E2E evidence (bounded, avoids committing transient browser output)
+        # P1-14: the bulky, machine-specific and transient parts of a Playwright
+        # run (traces, video, screenshots, retry data, absolute paths) belong in
+        # a bounded CI artifact, never in source history. The small deterministic
+        # manifests written above are what a release gate can read years later.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: real-backend-e2e-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            parent-web/test-results/**
+            parent-web/playwright-report/**
+            platform-admin-web/test-results/**
+            platform-admin-web/playwright-report/**
+            backend/*-real-e2e-evidence.json
+            backend/backend.log
+
   parent-web-unit-tests:
     # PPR-2 (W6): parent-web's 120-file Vitest suite has never been run by CI.
     #
