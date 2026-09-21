@@ -16,7 +16,7 @@
 | R2-12 regression | Backend 2391/2391; Parent Web 143/1031; targeted R1/R2 suites | PASS | No deployment |
 | R2-13 production composition | 2/2 composition tests; Rejecting verifier still wired | PASS | Fail-closed |
 | R2-14 evidence package | R2 manifest, closure matrix, canonical vector, native status | PASS | Independent review pending |
-| R2-15 publication | Source commit `54680a0d8ffaef1eaf425b5ba727e64fb987e328` | PENDING PUSH | No production effect |
+| R2-15 publication | Source commit `54680a0d8ffaef1eaf425b5ba727e64fb987e328` and closure commit `9fb726f5fdfea946735f50c11748359dce9317b7` | PASS | Published on `origin/pca-dev`; no production effect |
 
 ## Explicit non-goals
 
