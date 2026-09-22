@@ -52,6 +52,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
+import { evaluateCertificationRun } from '../../scripts/lib/certificationRunVerdict.mjs';
+
 const BACKEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const MAIN_PATH = fileURLToPath(new URL('../../src/main.ts', import.meta.url));
 const PACKAGE_PATH = fileURLToPath(new URL('../../package.json', import.meta.url));
@@ -200,17 +202,6 @@ function durableStoresConstructedIn(mainSource) {
   return names;
 }
 
-/** Constructed stores with no register row. Pure, so the negative control below can exercise it on synthetic input. */
-function unregisteredStores(constructedStores, register) {
-  const registered = new Set([...register.keys()]);
-  return [...constructedStores].filter((name) => !registered.has(name)).sort();
-}
-
-/** Register rows describing something the production root no longer constructs. Pure, same reason. */
-function staleRegisterRows(constructedStores, register) {
-  return [...register.keys()].filter((name) => !constructedStores.has(name)).sort();
-}
-
 /**
  * Which test files CI actually executes. Resolved transitively on purpose: a
  * workflow that calls `npm run test:db:pa1` does not execute the DB suite unless
@@ -247,112 +238,238 @@ function ciExecutedTestFiles() {
   return { invoked, files };
 }
 
+// ---------------------------------------------------------------------------
+// PURE CHECKERS. Each returns a list of problem strings; empty means the input
+// satisfies that gate. They are pure and take their file-reading and CI-file-set
+// as PARAMETERS specifically so the negative control below can feed them input
+// that SHOULD fail. A gate that cannot be shown to fail on the defect class it
+// claims to prevent is not known to enforce anything.
+// ---------------------------------------------------------------------------
+
+/** Gate 12: stores the production root constructs with no register row. */
+function registrationProblems(constructedStores, register) {
+  const registered = new Set([...register.keys()]);
+  return [...constructedStores]
+    .filter((name) => !registered.has(name))
+    .sort()
+    .map((name) => `${name} is constructed in src/main.ts but has no register row`);
+}
+
+/** Gate 12: register rows describing a store the production root no longer constructs. */
+function staleRowProblems(constructedStores, register) {
+  return [...register.keys()]
+    .filter((name) => !constructedStores.has(name))
+    .sort()
+    .map((name) => `${name} has a register row but is no longer constructed in src/main.ts`);
+}
+
+/**
+ * Gates 1-5 for ONE certified row: the five claims must be stated, the file must
+ * exist, the named test must appear in it verbatim, CI must execute it, and it
+ * must not contain an unconditional skip.
+ */
+function certifiedRowProblems(store, entry, { readFile, ciFiles }) {
+  const problems = [];
+  for (const field of ['realWriter', 'realReader', 'hostileCase', 'testFile', 'testName']) {
+    if (typeof entry[field] !== 'string') {
+      problems.push(`${store} is CERTIFIED but does not state '${field}'`);
+    } else if (entry[field].length <= 10) {
+      problems.push(`${store}.${field} is too short to be a real claim`);
+    }
+  }
+  if (problems.length > 0) return problems; // nothing below can be evaluated meaningfully
+
+  let contents;
+  try {
+    contents = readFile(entry.testFile);
+  } catch {
+    return [`${store} names ${entry.testFile}, which does not exist`];
+  }
+  if (!contents.includes(entry.testName)) {
+    problems.push(`${store} names a test that does not appear in ${entry.testFile}: "${entry.testName}"`);
+  }
+  if (!ciFiles.has(entry.testFile)) {
+    problems.push(`${store}'s test file ${entry.testFile} is not executed by any script CI invokes`);
+  }
+  if (/\btest\.skip\s*\(|\bit\.skip\s*\(|\bdescribe\.skip\s*\(|\btest\.todo\s*\(/.test(contents)) {
+    problems.push(`${store}'s certified test file contains an unconditional skip path`);
+  }
+  return problems;
+}
+
+/** Gates 8/11 for one gap row: a category from the fixed set, and a note that states a real reason. */
+function gapRowProblems(store, entry, gapCategories) {
+  const problems = [];
+  if (!gapCategories.has(entry.category)) {
+    problems.push(`${store} has category '${entry.category}', which is not one of ${[...gapCategories].join(', ')}`);
+  }
+  if (typeof entry.note !== 'string' || entry.note.length <= 30) {
+    problems.push(`${store} is a GAP with no real note stating why`);
+  }
+  return problems;
+}
+
+/** The ratchet: the gap count must equal the recorded baseline exactly. */
+function ratchetProblems(register, baselineGapCount) {
+  const gaps = [...register.values()].filter((entry) => entry.status === 'GAP');
+  return gaps.length === baselineGapCount
+    ? []
+    : [`the uncertified gap count is ${gaps.length} but the baseline is ${baselineGapCount}`];
+}
+
 const mainSource = readFileSync(MAIN_PATH, 'utf8');
 const constructed = durableStoresConstructedIn(mainSource);
 const ci = ciExecutedTestFiles();
+const readRealFile = (testFile) => readFileSync(`${BACKEND_ROOT}${testFile}`, 'utf8');
 
-test('NEGATIVE CONTROL: the register checks really do detect an unregistered store and a stale row', () => {
-  // Without this, the two checks above could pass because they inspect nothing.
-  // Same discipline the in-memory-store register uses: prove the detector fires
-  // on input that SHOULD be caught, not just that it is silent on real input.
-  const syntheticRegister = new Map([
-    ['MySqlKept', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'synthetic control row' }],
-    ['MySqlRemoved', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'synthetic control row' }],
-  ]);
-  assert.deepEqual(unregisteredStores(new Set(['MySqlKept', 'MySqlBrandNew']), syntheticRegister), ['MySqlBrandNew']);
-  assert.deepEqual(staleRegisterRows(new Set(['MySqlKept']), syntheticRegister), ['MySqlRemoved']);
-  assert.deepEqual(unregisteredStores(new Set(['MySqlKept']), syntheticRegister), []);
-  assert.deepEqual(staleRegisterRows(new Set(['MySqlKept', 'MySqlRemoved']), syntheticRegister), []);
+test('GATE SELF-TEST: every check in this file is demonstrated to FAIL on the defect class it claims to prevent', () => {
+  // The permanent principle: an enforcement gate must itself be shown to fail.
+  // This file's first version broke exactly this rule -- it enforced a LEXICAL
+  // proxy (the absence of a skip STRING) rather than the property (SKIP_COUNT =
+  // 0), looked stricter, and produced a false positive on a correctly-conditional
+  // skip. A gate whose failure modes are untested is indistinguishable from a
+  // gate that cannot fail.
+  //
+  // Each block below feeds a checker input that MUST be rejected, and asserts the
+  // rejection names the right thing. `readFile` and `ciFiles` are injected so the
+  // certified-row checks can be exercised without touching the real filesystem.
+  const ciFiles = new Set(['test/db/ok.mysql.test.mjs']);
+  // Fixture contents deliberately CONTAIN the verbatim test name, so each case
+  // isolates the one gate under test instead of tripping gate 3 as a side effect.
+  const okContents = 'test("a real test name", () => {});';
+  const baseCertified = {
+    status: 'CERTIFIED',
+    realWriter: 'RealWriter.method',
+    realReader: 'RealReader.method',
+    hostileCase: 'a hostile case is asserted',
+    testFile: 'test/db/ok.mysql.test.mjs',
+    testName: 'a real test name',
+  };
+  const certProblems = (overrides = {}, fileContents, options = {}) =>
+    certifiedRowProblems('MySqlSynthetic', { ...baseCertified, ...overrides }, {
+      readFile: options.missingFile ? () => { throw new Error('ENOENT'); } : () => fileContents ?? okContents,
+      ciFiles: options.ciFiles ?? ciFiles,
+    });
+
+  // Gate 1: a missing or too-short claim.
+  assert.ok(certProblems({ realWriter: undefined }).some((p) => p.includes("does not state 'realWriter'")), 'gate 1 must catch a missing claim');
+  assert.ok(certProblems({ hostileCase: 'too short' }).some((p) => p.includes('too short')), 'gate 1 must catch a non-claim');
+
+  // Gate 2: the named file does not exist.
+  assert.ok(certProblems({}, undefined, { missingFile: true }).some((p) => p.includes('does not exist')), 'gate 2 must catch a missing file');
+
+  // Gate 3: the named test is not in the file.
+  assert.ok(certProblems({}, 'nothing resembling the name').some((p) => p.includes('does not appear in')), 'gate 3 must catch an absent test name');
+
+  // Gate 4: the file is not executed by any CI-invoked script.
+  assert.ok(certProblems({}, undefined, { ciFiles: new Set() }).some((p) => p.includes('not executed by any script CI invokes')), 'gate 4 must catch a file CI never runs');
+
+  // Gate 5: an unconditional skip.
+  assert.ok(certProblems({}, 'test.skip("a real test name", () => {});').some((p) => p.includes('unconditional skip')), 'gate 5 must catch test.skip');
+  assert.ok(certProblems({}, 'describe.skip("a real test name", () => {});').some((p) => p.includes('unconditional skip')), 'gate 5 must catch describe.skip');
+  // ...and must NOT flag the legitimate conditional form that this gate's first
+  // version wrongly rejected.
+  assert.deepEqual(certProblems({}, 'test("a real test name", { skip: reason }, () => {});'), [], 'gate 5 must not flag a legitimate conditional skip');
+
+  // Gates 8/11: a bad category, and a note that states nothing.
+  assert.ok(gapRowProblems('MySqlSynthetic', { status: 'GAP', category: 'MADE_UP', note: 'a note long enough to pass the length floor' }, GAP_CATEGORIES).some((p) => p.includes('MADE_UP')), 'the category check must catch an unknown category');
+  assert.ok(gapRowProblems('MySqlSynthetic', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'too short' }, GAP_CATEGORIES).some((p) => p.includes('no real note')), 'the note check must catch an unexplained gap');
+
+  // Gate 12: an unregistered store, a stale row, and the ratchet.
+  assert.ok(registrationProblems(new Set(['MySqlBrandNew']), new Map()).length === 1, 'registration must catch an unregistered store');
+  assert.ok(staleRowProblems(new Set(), new Map([['MySqlGone', { status: 'GAP' }]])).length === 1, 'stale-row detection must catch a removed store');
+  assert.ok(ratchetProblems(new Map([['MySqlGone', { status: 'GAP' }]]), 2).length === 1, 'the ratchet must catch a count that does not match the baseline');
+  assert.deepEqual(ratchetProblems(new Map([['MySqlGone', { status: 'GAP' }]]), 1), [], 'the ratchet must accept a matching count');
+
+  // And the checkers must be silent on healthy input, or the self-test above
+  // would be satisfied by a checker that rejects everything.
+  assert.deepEqual(certProblems(), [], 'a healthy certified row must produce no problems');
+  assert.deepEqual(gapRowProblems('MySqlSynthetic', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'a real note with evidence pointing at the store' }, GAP_CATEGORIES), [], 'a healthy gap row must produce no problems');
+  assert.deepEqual(registrationProblems(new Set(['MySqlKept']), new Map([['MySqlKept', { status: 'GAP' }]])), [], 'a fully registered store set must produce no problems');
+});
+
+test('GATE SELF-TEST: the empirical runner verdict FAILS on skipped, failed, empty and unparseable runs', () => {
+  // The other half of the control -- scripts/run-certified-production-paths.mjs --
+  // decides PASS/FAIL from the runner's summary. Those verdicts are the ones that
+  // actually gate a certification, so each is attacked here with synthetic runner
+  // output. Without this the runner could be permanently green through an inverted
+  // comparison and nothing would notice: a real skip with the check inverted looks
+  // identical to a clean run from the outside.
+  const tap = ({ pass, fail, skipped }) =>
+    `TAP version 13\n# tests ${pass + fail + skipped}\n# pass ${pass}\n# fail ${fail}\n# skipped ${skipped}\n`;
+
+  // The happy path must pass, or every assertion below is satisfied by a verdict
+  // function that rejects everything.
+  const clean = evaluateCertificationRun({ output: tap({ pass: 57, fail: 0, skipped: 0 }), exitStatus: 0 });
+  assert.deepEqual(clean.problems, [], 'a clean run must produce no problems');
+  assert.equal(clean.passed, 57);
+
+  // Gate 5: any skip at all, however small, must fail.
+  const skipped = evaluateCertificationRun({ output: tap({ pass: 55, fail: 0, skipped: 2 }), exitStatus: 0 });
+  assert.ok(skipped.problems.some((p) => p.includes('SKIPPED')), 'one skipped test must fail the certification');
+  assert.equal(skipped.skipped, 2, 'the observed skip count must be reported, not just the fact of failure');
+
+  // A real failure must fail, even when the exit status is 0.
+  const failedRun = evaluateCertificationRun({ output: tap({ pass: 56, fail: 1, skipped: 0 }), exitStatus: 0 });
+  assert.ok(failedRun.problems.some((p) => p.includes('FAILED')), 'a failed test must fail the certification');
+
+  // An empty pass is not a certification -- a runner that selects nothing from the
+  // certified scope must not be able to report success.
+  const empty = evaluateCertificationRun({ output: tap({ pass: 0, fail: 0, skipped: 0 }), exitStatus: 0 });
+  assert.ok(empty.problems.some((p) => p.includes('zero certified tests passed')), 'an empty pass must fail');
+
+  // Unparseable output must be refused, NOT read as zeros: a crashed run has no
+  // summary line, and 'no counts found' must never be treated as 'all counts are 0'.
+  const unparseable = evaluateCertificationRun({ output: 'Error: cannot find module\n', exitStatus: 1 });
+  assert.ok(unparseable.problems.some((p) => p.includes('unparseable')), 'unparseable output must be refused');
+  assert.equal(unparseable.passed, null, 'absent counts must read as null, never as 0');
+
+  // A non-zero exit is caught even when the summary looks healthy.
+  const crashedAfterSummary = evaluateCertificationRun({ output: tap({ pass: 57, fail: 0, skipped: 0 }), exitStatus: 1 });
+  assert.ok(crashedAfterSummary.problems.some((p) => p.includes('exited 1')), 'a non-zero exit must fail');
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 12: every durable store the production root constructs is registered', () => {
-  const unregistered = unregisteredStores(constructed, REGISTER);
+  const problems = registrationProblems(constructed, REGISTER);
   assert.deepEqual(
-    unregistered,
+    problems,
     [],
-    'a durable MySQL-backed store is constructed in src/main.ts with no entry in this register. Add one: either\n' +
-      'CERTIFIED (naming the real writer, the real reader, a hostile case, and a CI-executed test that drives it)\n' +
-      'or GAP with one of the fixed categories. Do NOT add a GAP row merely to make this pass -- a new durable\n' +
-      'store with no production-path test is precisely what this gate exists to stop:\n' +
-      unregistered.join(', '),
+    `${problems.join('\n')}\n\na durable MySQL-backed store is constructed in src/main.ts with no entry in this register. Add\n` +
+      'one: either CERTIFIED (naming the real writer, the real reader, a hostile case, and a CI-executed test that\n' +
+      'drives it) or GAP with one of the fixed categories. Do NOT add a GAP row merely to make this pass -- a new\n' +
+      'durable store with no production-path test is precisely what this gate exists to stop.',
   );
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 12: every register row still describes something the production root constructs (no stale rows)', () => {
-  const stale = staleRegisterRows(constructed, REGISTER);
-  assert.deepEqual(stale, [], `register rows no longer constructed in main.ts: ${stale.join(', ')}`);
+  const problems = staleRowProblems(constructed, REGISTER);
+  assert.deepEqual(problems, [], problems.join('\n'));
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 1-5: every CERTIFIED row names a real test that CI really executes, with no skip path', () => {
   const certified = [...REGISTER.entries()].filter(([, entry]) => entry.status === 'CERTIFIED');
   assert.ok(certified.length > 0, 'the certified set must not be empty -- an empty set would make this gate vacuous');
 
-  for (const [store, entry] of certified) {
-    for (const field of ['realWriter', 'realReader', 'hostileCase', 'testFile', 'testName']) {
-      assert.equal(
-        typeof entry[field],
-        'string',
-        `${store} is CERTIFIED but does not state '${field}'. All five are required, because the reviewer has to be able to read the claim and the evidence for it.`,
-      );
-      assert.ok(entry[field].length > 10, `${store}.${field} is too short to be a real claim`);
-    }
-
-    // Gate 2: the file exists and is where it says it is.
-    let contents;
-    try {
-      contents = readFileSync(`${BACKEND_ROOT}${entry.testFile}`, 'utf8');
-    } catch {
-      assert.fail(`${store} names ${entry.testFile}, which does not exist`);
-    }
-
-    // Gate 3: the named test is really in that file, verbatim.
-    assert.ok(
-      contents.includes(entry.testName),
-      `${store} names a test that does not appear in ${entry.testFile}: "${entry.testName}"`,
-    );
-
-    // Gate 4: CI executes that file.
-    assert.ok(
-      ci.files.has(entry.testFile),
-      `${store}'s test file ${entry.testFile} is not executed by any script CI invokes. ` +
-        `Scripts CI invokes: ${[...ci.invoked].sort().join(', ')}`,
-    );
-
-    // Gate 5 (static half): no UNCONDITIONAL skip. A certified suite that can
-    // unconditionally report itself skipped is not certified.
-    //
-    // The empirical half is the one that matters and it lives in
-    // scripts/run-certified-production-paths.mjs, which re-runs every certified
-    // file against the SAME populated database and fails unless it reports
-    // `# skipped 0` and `# fail 0`. It is empirical because a static literal
-    // check cannot tell a legitimate conditional skip from a hiding place: this
-    // gate's first version flagged platformAdminAuditPrivileges.mysql.test.mjs,
-    // whose `{ skip: reason }` branch is CORRECT -- that file runs for real in CI
-    // (the job sets PCA_MIGRATION_DATABASE_URL) and only skips in a credential-free
-    // local run. Asserting on the absence of a skip STRING would have forced a
-    // choice between a false failure and weakening the gate; asserting on the
-    // OBSERVED skip COUNT enforces the requirement as actually stated.
-    assert.doesNotMatch(
-      contents,
-      /\btest\.skip\s*\(|\bit\.skip\s*\(|\bdescribe\.skip\s*\(|\btest\.todo\s*\(/,
-      `${store}'s certified test file contains an unconditional skip path. A certified suite must not be able to report itself skipped.`,
-    );
-  }
+  const problems = certified.flatMap(([store, entry]) => certifiedRowProblems(store, entry, { readFile: readRealFile, ciFiles: ci.files }));
+  assert.deepEqual(
+    problems,
+    [],
+    `${problems.join('\n')}\n\nA CERTIFIED row is a claim that a named test drives the real production writer into the\n` +
+      `real dependency and reads back through the real consumer, and that CI executes it without skipping.\n` +
+      `Scripts CI invokes: ${[...ci.invoked].sort().join(', ')}`,
+  );
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 8/11: every GAP row carries a category from the fixed set and a real note', () => {
-  for (const [store, entry] of REGISTER) {
-    if (entry.status !== 'GAP') continue;
-    assert.ok(
-      GAP_CATEGORIES.has(entry.category),
-      `${store} has category '${entry.category}', which is not one of ${[...GAP_CATEGORIES].join(', ')}. ` +
-        'A free-text category cannot be audited or counted.',
-    );
-    assert.ok(
-      typeof entry.note === 'string' && entry.note.length > 30,
-      `${store} is a GAP with no real note. State WHY, with evidence -- an unexplained gap is indistinguishable from an oversight.`,
-    );
-  }
+  const problems = [...REGISTER.entries()]
+    .filter(([, entry]) => entry.status === 'GAP')
+    .flatMap(([store, entry]) => gapRowProblems(store, entry, GAP_CATEGORIES));
+  assert.deepEqual(
+    problems,
+    [],
+    `${problems.join('\n')}\n\nA gap must carry a category from the fixed set (a free-text category cannot be audited\n` +
+      'or counted) and a note stating WHY with evidence -- an unexplained gap is indistinguishable from an oversight.',
+  );
 });
 
 test('PCA_PRODUCTION_PATH_CERTIFICATION 4: the certified file list in the runner matches this register exactly', () => {
@@ -374,22 +491,28 @@ test('PCA_PRODUCTION_PATH_CERTIFICATION 4: the certified file list in the runner
   );
 });
 
-test('PCA_PRODUCTION_PATH_CERTIFICATION: the uncertified count may only go DOWN (ratchet)', () => {
-  // The ratchet is the control, not the count. Equality rather than `<=` on
-  // purpose: closing a gap then requires LOWERING this number, so progress is
-  // always a deliberate, reviewable edit; and ADDING a gap requires RAISING it,
-  // which is a visible red flag in review rather than a silent regression. A
-  // `<=' would let the baseline sit stale forever while gaps accumulated under it.
-  const gaps = [...REGISTER.values()].filter((entry) => entry.status === 'GAP');
-  assert.equal(
-    gaps.length,
-    BASELINE_GAP_COUNT,
-    `the uncertified gap count changed (${gaps.length} vs baseline ${BASELINE_GAP_COUNT}). ` +
-      'If you CERTIFIED a store: lower BASELINE_GAP_COUNT in the same commit -- that is the record of progress. ' +
-      'If you ADDED a store: it must arrive CERTIFIED, not as a new gap.',
+test('PCA_PRODUCTION_PATH_CERTIFICATION: the uncertified count may only go DOWN (ratchet), and only by real certification', () => {
+  // The ratchet tracks QUANTITY AND QUALITY, not just the number. Equality rather
+  // than `<=' on purpose: closing a gap requires LOWERING this baseline, so
+  // progress is always a deliberate, reviewable edit, and adding a gap requires
+  // RAISING it, which is a visible red flag rather than a silent regression.
+  //
+  // Crucially, a row can only leave the gap count by becoming CERTIFIED, and a
+  // CERTIFIED row must pass every check above -- five stated claims, an existing
+  // file, a verbatim test name, CI execution, no unconditional skip -- AND appear
+  // in the certified-paths runner, which enforces zero skips against a populated
+  // database. A number cannot improve while assurance weakens: lowering the
+  // baseline without actually certifying the row leaves the count mismatched and
+  // fails here.
+  const problems = ratchetProblems(REGISTER, BASELINE_GAP_COUNT);
+  assert.deepEqual(
+    problems,
+    [],
+    `${problems.join('\n')}\n\nIf you CERTIFIED a store: lower BASELINE_GAP_COUNT in the same commit -- that is the record\n` +
+      'of progress, and it must be accompanied by a CERTIFIED row passing every check in this file. If you ADDED a\n' +
+      'store: it must arrive CERTIFIED, not as a new gap.',
   );
-  // And the breakdown, so the shape of the remaining work is visible in CI output
-  // rather than inferable only by reading the table.
+  const gaps = [...REGISTER.values()].filter((entry) => entry.status === 'GAP');
   const byCategory = {};
   for (const entry of gaps) byCategory[entry.category] = (byCategory[entry.category] ?? 0) + 1;
   console.log(

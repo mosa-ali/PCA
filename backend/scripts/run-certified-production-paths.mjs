@@ -30,6 +30,8 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { evaluateCertificationRun } from './lib/certificationRunVerdict.mjs';
+
 const BACKEND_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // THE SINGLE SOURCE OF TRUTH for the certified scope. Certifying a store means
@@ -70,28 +72,13 @@ const result = spawnSync(
 const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
 process.stdout.write(output);
 
-const summary = (label) => {
-  const match = output.match(new RegExp(`^# ${label} (\\d+)$`, 'm'));
-  return match ? Number(match[1]) : null;
-};
-const skipped = summary('skipped');
-const failed = summary('fail');
-const passed = summary('pass');
-
-const problems = [];
-if (skipped === null || failed === null || passed === null) {
-  problems.push('could not read the runner summary -- refusing to infer success from unparseable output');
-} else {
-  if (skipped !== 0) problems.push(`${skipped} certified test(s) reported themselves SKIPPED (gate 5 requires 0)`);
-  if (failed !== 0) problems.push(`${failed} certified test(s) FAILED`);
-  if (passed === 0) problems.push('zero certified tests passed -- an empty pass is not a certification');
-}
-if (result.status !== 0 && problems.length === 0) problems.push(`the test runner exited ${result.status}`);
+const { problems, passed, skipped, failed } = evaluateCertificationRun({ output, exitStatus: result.status });
 
 if (problems.length > 0) {
   console.error(`\nPRODUCTION PATH CERTIFICATION FAILED:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
   process.exit(1);
 }
 console.log(
-  `\nPRODUCTION PATH CERTIFICATION PASSED: ${passed} certified test(s) passed against a populated database, 0 skipped, 0 failed.`,
+  `\nPRODUCTION PATH CERTIFICATION PASSED: ${passed} certified test(s) passed against a populated database, ` +
+    `${skipped} skipped, ${failed} failed.`,
 );
