@@ -89,8 +89,18 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
     {
       durableRequired: true,
       classification:
-        'TRACKED DEBT, NOT ACCEPTED. Child requests and the associated bonus-time grants evaporate on ' +
-        'restart. Requires a MySQL-backed repository plus a migration.',
+        'TRACKED DEBT, NOT ACCEPTED -- but the remedy this row used to state was WRONG and would have ' +
+        'built the store the module forbids. It said "Requires a MySQL-backed repository plus a ' +
+        'migration"; ChildRequest carries real family content (reasonNote free text, requestedAppScope, ' +
+        'installTargetPackageName, installTargetAppLabel), so a plaintext table for it is exactly what ' +
+        'ChildRequestRepository.ts\'s own contract calls "never a central readable store of child ' +
+        'request content". The debt is genuine and stays tracked: restart loss makes a parent\'s request ' +
+        'list silently EMPTY, which reads as "no requests" rather than as unavailable. What is ' +
+        'undecided is the SHAPE of the fix, not whether one is needed -- an opaque crypto-bound ' +
+        'envelope with the authoritative record on family devices (the shape familyrbac/audit-events ' +
+        'already uses) versus accepting plaintext to an authenticated parent session. That is ' +
+        'PCA-DEC-028, an owner/architecture decision, deliberately not taken unilaterally. Binding ' +
+        'either way: do NOT satisfy this row with a plaintext table.',
     },
   ],
   [
@@ -130,15 +140,21 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
     {
       durableRequired: false,
       classification:
-        'DOCUMENTED-DELIBERATE, NOT SILENT. Deliberately in-memory per its own class doc comment ' +
-        '(childrequests/BonusGrantLedger.ts:4-16): bonus grants are exactly the E2EE-only family-policy ' +
-        'content contracts/schedule-runtime/SchedulePolicyV1.md protects, so this is a same-posture ' +
-        'bookkeeping store rather than a central plaintext family-policy shortcut, and the ACTUAL ' +
-        'enforcement source of truth is always the device\'s own persisted SchedulePolicyV1 -- losing this ' +
-        'ledger does not silently weaken enforcement. It is listed here because it is constructed in ' +
-        'main.ts:660 and, being named without an "InMemory" prefix, was invisible to the naming-convention ' +
-        'detector until an independent review caught it. It and InMemoryChildRequestRepository share this ' +
-        'rationale, so the P1-04 architecture/privacy determination must confirm BOTH rather than one.',
+        'DOCUMENTED-DELIBERATE, NOT SILENT, and now separately determined from the store it used to ' +
+        'share a rationale with. Deliberately in-memory per its own class doc comment: bonus-grant ' +
+        'content (which app, how many minutes, for how long) is family-policy content, so this is a ' +
+        'same-posture bookkeeping store rather than a plaintext family-policy shortcut. The ' +
+        'determination the previous wording demanded ("must confirm BOTH rather than one") is ' +
+        'COMPLETE, and the two answers DIFFER: the enforcement source of truth is always the ' +
+        'device\'s own persisted SchedulePolicyV1, so losing this ledger cannot grant time that was ' +
+        'never granted or silently weaken enforcement -- it loses only the server\'s ability to reason ' +
+        'about overlap until the next grant, so durability is NOT required here. Contrast ' +
+        'InMemoryChildRequestRepository, where the loss is user-visible as a confident-looking empty ' +
+        'state and durability IS required. Note the E2EE claim in this class\'s comment is a TARGET ' +
+        'rather than a description of the running system (the content is process-local plaintext and ' +
+        'the parent-web DTO serves it in the clear) -- see PCA-DEC-028; it is listed here because it ' +
+        'is constructed in main.ts and, being named without an "InMemory" prefix, was invisible to ' +
+        'the naming-convention detector until an independent review caught it.',
     },
   ],
 ]);

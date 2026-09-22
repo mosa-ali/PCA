@@ -660,10 +660,25 @@ async function start(): Promise<void> {
   // family-policy content contracts/schedule-runtime/SchedulePolicyV1.md
   // treats as E2EE-only, so this lane does not introduce a new central
   // plaintext MySQL table for it -- the same posture as familyrbac's own
-  // FamilyAuditRepository reference implementation above. NOTE that
-  // ActionIdempotencyLedger is no longer in that list: it holds no family
-  // content or personal data at all (an opaque verdict plus identifiers), so
-  // it is durable as of migration 0047 -- see its own comment above.
+  // FamilyAuditRepository reference implementation above.
+  //
+  // SCOPE OF THAT CLAIM, tightened after it was read as more than it says: "no
+  // new plaintext MySQL TABLE" is literally true and is all this note ever
+  // established. It is NOT a claim that the content is E2EE, and it should not
+  // have been read as one -- ChildRequestRepository is a process-local
+  // PLAINTEXT store and registerChildRequestRoutes' parent-web DTO serialises
+  // reasonNote/app identity straight to the browser. That gap between the
+  // module comments' stated target and the running behaviour is
+  // PCA-DEC-028, deliberately left as an owner/architecture decision rather
+  // than closed unilaterally here, because the two available fixes (an opaque
+  // envelope path like the audit-event one, vs. accepting plaintext to an
+  // authenticated parent session) are not equivalent in cost or in what they
+  // promise. What remains binding regardless of that decision: P1-04's
+  // "make it durable" must NOT be satisfied with a plaintext table.
+  //
+  // NOTE that ActionIdempotencyLedger is no longer in that list: it holds no
+  // family content or personal data at all (an opaque verdict plus identifiers),
+  // so it is durable as of migration 0047 -- see its own comment above.
   const childRequestRepository = new InMemoryChildRequestRepository();
   const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
   const bonusGrantLedger = new BonusGrantLedger();

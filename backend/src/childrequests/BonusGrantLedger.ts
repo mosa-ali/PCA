@@ -11,8 +11,18 @@ import type { AppScope, BonusGrant } from '../schedule/types.js';
  * this ledger is a same-posture reference/bookkeeping store, never a new
  * central plaintext family-policy shortcut (see this feature's own report
  * for the full "why in-memory" rationale) -- the actual enforcement source
- * of truth is always the device's own persisted SchedulePolicyV1.
- *
+ * of truth is always the device's own persisted SchedulePolicyV1. *
+ * ON THE E2EE CLAIM: "same posture" means same as the child-request store,
+ * which -- as that file's comment now states explicitly -- is NOT currently
+ * E2EE: the content is process-local plaintext, and the parent-web DTO serves
+ * it in the clear (PCA-DEC-028). Restart loss here is nevertheless the SAFEST
+ * of the two, and the two must not be conflated when that decision is made:
+ * because the enforcement source of truth is always the device's own persisted
+ * SchedulePolicyV1, losing this ledger cannot silently weaken enforcement or
+ * grant time that was never granted -- it loses only the server's ability to
+ * reason about overlap until the next grant. That is a weaker failure than the
+ * child-request store's (a parent's empty list reads as a fact), which is why
+ * the two are classified separately below rather than sharing one row. *
  * Overlap policy (PCA-FR-130 "overlapping grants handled sanely"): a NEW
  * grant for a given (childProfileId, appScope) SUPERSEDES -- does not
  * additively stack with -- any still-active prior grant for the SAME
