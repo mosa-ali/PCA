@@ -31,11 +31,16 @@
 //         forever before this was noticed)
 //      8/11. the register's own structure forces the writer, the reader and the
 //         hostile-case question to be answered per entry
-//     6/7. order- and emptiness-dependence is enforced EMPIRICALLY by the
-//         `test:db:certified-twice` script, which re-runs the certified suites
-//         against the SAME populated database. A test that only passes because
-//         a table was near-empty fails there. This file cannot detect that
-//         statically, and does not pretend to.
+//     6/7. order- and emptiness-dependence is enforced EMPIRICALLY by
+//         `npm run test:db:certified-paths`
+//         (scripts/run-certified-production-paths.mjs), which re-runs the
+//         certified scope against the SAME populated database. A test that only
+//         passes because a table was near-empty fails there. This file cannot
+//         detect that statically, and does not pretend to. (An earlier revision
+//         of this header named a `test:db:certified-twice` script that has never
+//         existed -- a documentation claim in a control, which is the same
+//         false-assurance pattern the control exists to remove. The names in
+//         this header are now taken from package.json.)
 //
 //   REVIEW-ONLY (documented here, judged by a human, NOT enforced):
 //      9. writer output shape equals reader expectation
@@ -44,6 +49,19 @@
 //     really drives the REAL writer rather than a double. No static check can
 //     prove that; it is the reviewer's job, and the `realWriter` field is the
 //     claim being reviewed.
+//
+// WHY THE `NOT_EXECUTED_IN_CI` CATEGORY NOW NEEDS READING CAREFULLY. It was
+// accurate when the register was written: most of the 62 DB suites had no CI
+// job at all. Wiring the full suite into the FULL DB job (PCA-DEC-033) fixed
+// that, so for those rows the category name is now literally FALSE -- their
+// files do execute in CI. It survives only as shorthand for "execution is no
+// longer the missing property; the missing property is proof that the named
+// test drives the real writer and the real consumer", and every such row must
+// end either CERTIFIED (proof present) or re-categorised (`SYNTHETIC_ONLY` when
+// the only coverage is a double, `NO_PRODUCTION_WRITER` when nothing writes the
+// store in production at all). It is being retired row by row on evidence, NOT
+// reclassified in bulk: renaming 24 rows would change the count without changing
+// the assurance, which is precisely what the ratchet is written to forbid.
 //
 // DB-free and fast, deliberately: it runs in the plain `npm test` pipeline, so
 // the control is exercised on every push without needing MySQL.
