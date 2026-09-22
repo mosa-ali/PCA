@@ -165,6 +165,74 @@ implements `accept`, but no page calls it), so this pass covers the client error
 MAPPING and locale copy, not a user-facing accept flow. Recorded here so the gap
 is not mistaken for coverage.
 
+## Owner ruling — 2026-09-22: `FAMILY_MEMBERSHIP_REPOSITORY_OWNER_DECISION = DELETE_DEAD_WRAPPERS`
+
+Closes the question left open by PCA-DEC-036's burn-down: what to do about the two
+`MySqlFamilyMembershipRepository` methods with no production caller.
+
+**Ruling: DELETE, not "repoint genesis at `createGenesisAdministrator()`".** The
+owner gave the source reason explicitly: `createGenesisAdministrator()` and
+`applyAcceptedInvitationRole()` each open their **own** transaction via
+`runInTransaction`, whereas the production invitation path correctly uses
+`applyAcceptedInvitationRoleOnConnection(conn, ...)` so membership persistence
+participates in the caller's existing atomic transaction. Repointing the genesis
+transaction at the existing `createGenesisAdministrator()` would therefore risk
+splitting one atomic genesis operation into a second independently committed
+transaction — reducing integrity, not improving it.
+
+- **DELETE:** `MySqlFamilyMembershipRepository.createGenesisAdministrator`,
+  `MySqlFamilyMembershipRepository.applyAcceptedInvitationRole`, the corresponding
+  interface methods, and `MySqlParentAccountRepository`'s compatibility forwarding
+  wrappers.
+- **KEEP:** `applyAcceptedInvitationRoleOnConnection`, `findActiveRole`.
+- **GENESIS_WRITE:** `MySqlGenesisTransactionRepository`'s current in-transaction
+  `family_parent_memberships` write stays authoritative for now.
+- **DO_NOT:** repoint genesis at the current `createGenesisAdministrator` wrapper
+  merely to claim "one writer".
+
+**A finding made during the deletion, recorded because it changes the reading of
+the old code:** `MySqlParentAccountRepository` declared
+`implements ParentAccountRepository, FamilyMembershipRepository`. The forwarding
+wrappers were not just "test compatibility" — they were that class's conformance
+to the membership port, and claiming an interface it never used is precisely what
+let a test-only surface read as a production port. The class no longer claims the
+membership port; it keeps `findActiveRole` alone, which is genuinely live through
+`ParentAccountService`'s duck-typed fallback (reached via an explicit cast, so the
+interface claim was never needed for that path).
+
+**Future cleanup, to be done properly rather than during this burn-down:** if PCA
+later wants one reusable membership-SQL implementation, introduce
+`createGenesisAdministratorOnConnection(conn, ...)` (or a private
+connection-scoped helper) and have the genesis transaction call it **on its own
+connection**. That consolidates SQL without splitting the transaction.
+
+**Re-certification instruction:** do NOT auto-promote `MySqlFamilyMembershipRepository`
+merely because the dead methods disappeared. It may move to CERTIFIED only if its
+complete remaining production surface (`applyAcceptedInvitationRoleOnConnection`,
+`findActiveRole`) satisfies the full PCA-DEC-033 requirements — real writer, real
+dependency, real consumer, hostile/failure case, CI execution, and a populated-state
+pass — and only then does `BASELINE_GAP_COUNT` move.
+
+### Doctrine adopted the same day (process, enforced by discipline not by a gate)
+
+```
+SHARED_TEST_DB_CONCURRENT_WRITERS = FORBIDDEN
+AUTHORITATIVE_LOCAL_DB_EVIDENCE   requires EXCLUSIVE_DB_OWNERSHIP = YES
+IF PARALLEL_DB_TESTING IS NEEDED  -> UNIQUE_DATABASE_OR_CONTAINER_PER_SESSION = REQUIRED
+CONTENDED_SHARED_DB_RESULT        -> PASS = INVALID_EVIDENCE, FAIL = INVALID_EVIDENCE
+CI_DISPOSABLE_DB                  = AUTHORITATIVE_INTEGRATION_GATE
+```
+
+This does not license ignoring failures. It requires reproducing them under
+isolated ownership before classifying them as regressions — the 8 → 1 → 0 failure
+pattern recorded in commits `776a8eda`/`3cbb3238` is the worked example. Related:
+**one PCA writer at a time** (parallel read-only analysis is fine; simultaneous
+writers in one checkout are not — a parallel session removed an overlapping test
+and rewrote the same register note between two reads during this work), and a
+search cannot prove absence unless it actually traversed the scope it claims to
+have searched (PowerShell's `Select-String -Path src/**/*.ts` is **not**
+recursive; it matches one directory level only).
+
 ## Residual risks
 
 | Risk | Impact | Mitigation / gate |

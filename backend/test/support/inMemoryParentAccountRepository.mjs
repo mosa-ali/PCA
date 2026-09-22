@@ -248,20 +248,26 @@ export function createInMemoryParentAccountRepository({ revokeAllSessionsForAcco
       createdFamilies.add(familyId);
     },
 
-    async createGenesisAdministrator(accountId, serviceAccountId, familyId) {
-      const key = `${accountId}:${familyId}`;
-      const existing = membershipsByAccountFamily.get(key);
-      if (!existing) membershipsByAccountFamily.set(key, { role: 'ADMINISTRATOR', status: 'ACTIVE', serviceAccountId });
-      else if (!existing.serviceAccountId) existing.serviceAccountId = serviceAccountId;
-    },
-
-    async applyAcceptedInvitationRole(accountId, serviceAccountId, familyId, role) {
-      membershipsByAccountFamily.set(`${accountId}:${familyId}`, { role, status: 'ACTIVE', serviceAccountId });
-    },
-
+    // The membership WRITER the production port declares is
+    // applyAcceptedInvitationRoleOnConnection(conn, ...), which this double
+    // cannot model -- it has no transaction connection, the same limitation its
+    // own header notes for every other connection-scoped hook. The two
+    // non-connection writers that used to live here (createGenesisAdministrator,
+    // applyAcceptedInvitationRole) were DELETED with them under owner ruling
+    // FAMILY_MEMBERSHIP_REPOSITORY_OWNER_DECISION = DELETE_DEAD_WRAPPERS, because
+    // they had no production caller AND opened their own transactions.
+    //
+    // Seeding therefore goes through the test-only mutator below, following this
+    // file's existing `_set...ForTest` convention (familyStatuses, accountsById),
+    // rather than through any production-shaped API.
     async findActiveRole(accountId, familyId) {
       const membership = membershipsByAccountFamily.get(`${accountId}:${familyId}`);
       return membership?.status === 'ACTIVE' ? membership.role : null;
+    },
+
+    // Test-only mutator, not part of the ParentAccountRepository interface.
+    _setMembershipForTest(accountId, familyId, role, status = 'ACTIVE') {
+      membershipsByAccountFamily.set(`${accountId}:${familyId}`, { role, status, serviceAccountId: null });
     },
 
     // Test-only accessor, not part of the ParentAccountRepository interface.

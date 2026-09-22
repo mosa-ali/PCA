@@ -8,31 +8,6 @@ interface RoleRow {
 }
 
 export class MySqlFamilyMembershipRepository implements FamilyMembershipRepository {
-  async createGenesisAdministrator(accountId: OpaqueAccountId, serviceAccountId: string, familyId: OpaqueFamilyId, now: Date): Promise<void> {
-    await runInTransaction((conn) =>
-      execute(
-        conn,
-        `INSERT INTO family_parent_memberships
-           (membership_id, family_id, account_id, service_account_id, role, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'ADMINISTRATOR', 'ACTIVE', ?, ?)
-         ON DUPLICATE KEY UPDATE
-           service_account_id = COALESCE(VALUES(service_account_id), service_account_id),
-           updated_at = VALUES(updated_at)`,
-        [randomUUID(), familyId, accountId, serviceAccountId, now, now],
-      ),
-    );
-  }
-
-  async applyAcceptedInvitationRole(
-    accountId: OpaqueAccountId,
-    serviceAccountId: string | null,
-    familyId: OpaqueFamilyId,
-    role: InvitedFamilyRole,
-    now: Date,
-  ): Promise<void> {
-    await runInTransaction((conn) => this.applyAcceptedInvitationRoleOnConnection(conn, accountId, serviceAccountId, familyId, role, now));
-  }
-
   async applyAcceptedInvitationRoleOnConnection(
     conn: import('mysql2/promise').PoolConnection,
     accountId: OpaqueAccountId,

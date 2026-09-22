@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execute, runInTransaction } from '../db/pool.js';
 import type { PoolConnection } from 'mysql2/promise';
-import type { FamilyMembershipRepository, FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
+import type { FamilyMembershipRole } from '../familymembers/FamilyMembershipRepository.js';
 import { MySqlFamilyMembershipRepository } from '../familymembers/MySqlFamilyMembershipRepository.js';
 import type { InvitedFamilyRole } from '../familymembers/types.js';
 import type {
@@ -85,7 +85,24 @@ function rowToRecord(row: AccountRow): ParentAccountRecord {
   };
 }
 
-export class MySqlParentAccountRepository implements ParentAccountRepository, FamilyMembershipRepository {
+/**
+ * This class used to declare `implements ParentAccountRepository,
+ * FamilyMembershipRepository`. It no longer claims the membership port, because
+ * the two methods that made the claim possible without a caller
+ * (createGenesisAdministrator, applyAcceptedInvitationRole) are DELETED under
+ * owner ruling FAMILY_MEMBERSHIP_REPOSITORY_OWNER_DECISION =
+ * DELETE_DEAD_WRAPPERS, and the third (applyAcceptedInvitationRoleOnConnection)
+ * had no caller either. Claiming an interface it does not use is what allowed a
+ * test-only surface to read as a production port in the first place.
+ *
+ * `findActiveRole` is KEPT and is genuinely live: ParentAccountService resolves a
+ * signed-in parent's family role through this class's duck-typed fallback (see
+ * its constructor, which feature-detects `findActiveRole` on the repository
+ * object). The fallback reaches it through an explicit cast, so the class never
+ * needed to satisfy the interface to serve that path -- it needed one method with
+ * the right shape.
+ */
+export class MySqlParentAccountRepository implements ParentAccountRepository {
   private readonly familyMembershipRepository = new MySqlFamilyMembershipRepository();
 
   async createPendingAccount(record: NewPendingAccount): Promise<void> {
@@ -430,29 +447,20 @@ export class MySqlParentAccountRepository implements ParentAccountRepository, Fa
     );
   }
 
-  // These three methods expose the same durable membership port to the
-  // identity service for compatibility with existing direct MySQL test
-  // composition. They delegate to the single family_parent_memberships
-  // persistence implementation; no second role store is created.
-  createGenesisAdministrator(accountId: string, serviceAccountId: string, familyId: string, now: Date): Promise<void> {
-    return this.familyMembershipRepository.createGenesisAdministrator(accountId, serviceAccountId, familyId, now);
-  }
-
-  applyAcceptedInvitationRole(accountId: string, serviceAccountId: string | null, familyId: string, role: InvitedFamilyRole, now: Date): Promise<void> {
-    return this.familyMembershipRepository.applyAcceptedInvitationRole(accountId, serviceAccountId, familyId, role, now);
-  }
-
-  applyAcceptedInvitationRoleOnConnection(
-    conn: PoolConnection,
-    accountId: string,
-    serviceAccountId: string | null,
-    familyId: string,
-    role: InvitedFamilyRole,
-    now: Date,
-  ): Promise<void> {
-    return this.familyMembershipRepository.applyAcceptedInvitationRoleOnConnection(conn, accountId, serviceAccountId, familyId, role, now);
-  }
-
+  // `findActiveRole` is deliberately the ONLY membership method kept here: it is
+  // the port ParentAccountService resolves a parent's role through (see its own
+  // constructor fallback), so it is a live production path.
+  //
+  // The three compatibility forwarding wrappers that used to sit beside it
+  // (createGenesisAdministrator, applyAcceptedInvitationRole,
+  // applyAcceptedInvitationRoleOnConnection) are DELETED under owner ruling
+  // FAMILY_MEMBERSHIP_REPOSITORY_OWNER_DECISION = DELETE_DEAD_WRAPPERS. Their own
+  // comment described them as existing "for compatibility with existing direct
+  // MySQL test composition", and nothing in src/ called any of them -- so they
+  // were a test-only surface presented as a production port. Membership is
+  // written through MySqlFamilyMemberAccountBinder ->
+  // MySqlFamilyMembershipRepository.applyAcceptedInvitationRoleOnConnection, and
+  // genesis through MySqlGenesisTransactionRepository's own in-transaction write.
   findActiveRole(accountId: string, familyId: string): Promise<FamilyMembershipRole | null> {
     return this.familyMembershipRepository.findActiveRole(accountId, familyId);
   }
