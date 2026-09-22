@@ -209,6 +209,29 @@ test('NEGATIVE CONTROL: the detector really does find in-memory constructions, i
   assert.equal(inMemoryStoresConstructedIn('new MySqlThing();').size, 0);
 });
 
+test('the production composition root never wires the no-op FamilyMemberAccountBinder', () => {
+  // A no-op binder is the one dependency whose failure mode is a SILENT success:
+  // accepting an invitation whose account is never bound throws nothing, logs
+  // nothing, and leaves the account unbound, so no amount of "it did not reject"
+  // testing can catch a composition that injects the wrong one. The real binder
+  // takes a repository and writes parent_accounts; the no-op is a default
+  // parameter value, which means forgetting the injection is a one-character
+  // mistake with no error. So the boundary is enforced against the composition
+  // root itself, where it can actually fail, rather than asserted about the
+  // class's own (vacuous) no-op behaviour in isolation.
+  const mainSource = readFileSync(MAIN_PATH, 'utf8');
+  assert.doesNotMatch(
+    mainSource,
+    /new\s+NoopFamilyMemberAccountBinder\s*\(/,
+    'main.ts must never construct NoopFamilyMemberAccountBinder -- accepting an invitation through it binds nothing and reports success',
+  );
+  assert.match(
+    mainSource,
+    /new\s+MySqlFamilyMemberAccountBinder\s*\(/,
+    'main.ts must construct the real, durable binder; its absence would leave every accepted invitation silently unbound',
+  );
+});
+
 test('P1-04: every in-memory store in the production composition root carries an explicit classification', () => {
   const actual = inMemoryStoresConstructedIn(readFileSync(MAIN_PATH, 'utf8'));
   const declared = new Set(PRODUCTION_IN_MEMORY_STORES.keys());

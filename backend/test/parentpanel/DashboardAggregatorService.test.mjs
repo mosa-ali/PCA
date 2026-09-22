@@ -61,8 +61,33 @@ test('an OWN_CHILD_ONLY scope never even requests a parent-administrative card k
   assert.equal(cards.some((c) => c.kind === 'SCREEN_TIME'), true);
 });
 
-test('a missing provider for a requested kind resolves to UNAVAILABLE, never throws', async () => {
+test('the visible card set IS the registered provider set -- with none registered the dashboard is empty, and there is no "requested kind" the API could report', async () => {
+  // This replaces a test named "a missing provider for a requested kind resolves
+  // to UNAVAILABLE, never throws", which asserted `cards === []` against an
+  // aggregator with zero providers. getDashboard(familyId, scope) has no kinds
+  // parameter, so no "requested kind without a provider" can occur: the two
+  // halves of that name were both wrong and the assertion could not tell.
   const aggregator = new DashboardAggregatorService([]);
   const cards = await aggregator.getDashboard('fam-1', { kind: 'FULL_FAMILY' });
   assert.deepEqual(cards, []);
+});
+
+test('KNOWN GAP: an unregistered capability is ABSENT, not an UNAVAILABLE card -- a parent cannot tell "not available" from "not in this build"', async () => {
+  // Pins the real behaviour so it cannot be mistaken for the honest-unavailable
+  // behaviour the sibling card providers implement, and so that whoever closes
+  // PCA-DEC-029 sees exactly this assertion change. Note this is NOT a
+  // regression guard for a bug: it is the current, deliberate behaviour, and it
+  // is recorded as a decision precisely because fixing it is a product/UX choice
+  // (13 new UNAVAILABLE tiles), not an implementation tidy-up.
+  const aggregator = new DashboardAggregatorService([
+    provider('SCREEN_TIME', { kind: 'SCREEN_TIME', capabilityState: 'AVAILABLE', lastAcknowledgedPolicyRevision: 1, pendingOrOfflineStatus: 'NONE', summaryLabel: 'ok' }),
+  ]);
+  const cards = await aggregator.getDashboard('fam-1', { kind: 'FULL_FAMILY' });
+
+  assert.deepEqual(cards.map((c) => c.kind), ['SCREEN_TIME']);
+  // LOCATION IS a declared DashboardCardKind (doc 18 Section 6's navigation
+  // list) and simply has no provider here. It produces no card at all -- there
+  // is no UNAVAILABLE tile standing in for it.
+  assert.equal(cards.some((c) => c.kind === 'LOCATION'), false);
+  assert.equal(cards.some((c) => c.capabilityState === 'UNAVAILABLE'), false);
 });

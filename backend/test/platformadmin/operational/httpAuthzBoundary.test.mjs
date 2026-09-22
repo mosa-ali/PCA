@@ -111,13 +111,24 @@ test('GET /platform-admin/billing/plans (bare, browse-all) with a valid session 
   }
 });
 
-test('GET /platform-admin/billing/plans (bare, browse-all) with a malformed pagination query does not 401/403 (bounded fallback, not rejection)', async () => {
+test('GET /platform-admin/billing/plans (bare, browse-all) with a malformed pagination query is not rejected as invalid input', async () => {
   const sessions = new Map();
   const token = registerSession(sessions, ['APP_OWNER']);
   const app = buildApp(sessions);
   const response = await app.inject({ method: 'GET', url: '/platform-admin/billing/plans?limit=not-a-number&offset=-99', headers: { authorization: `Bearer ${token}` } });
+  // WHAT THIS CAN AND CANNOT PROVE, stated rather than implied. This harness builds the real
+  // route without the test env files, so the repository is unreachable and the request dies at the
+  // DB pool with a 500 -- the pagination path is never reached. The old assertion
+  // (`notEqual(401)` + `notEqual(403)`) therefore passed on a database error and proved nothing
+  // about pagination at all. What IS worth asserting here is the negative that the test name
+  // claims: the malformed query must not be turned into a VALIDATION REJECTION. A 400 would be
+  // exactly that; the sandbox's 500 from the repository is not. The DEFAULT-APPLICATION behaviour
+  // itself is asserted directly, against the real parser, in this directory's pagination.test.mjs.
+  assert.equal(response.statusCode === 200 || response.statusCode >= 500, true, `expected a success or a repository 5xx, never a 4xx validation rejection; got ${response.statusCode}: ${response.body}`);
+  assert.notEqual(response.statusCode, 400, 'a malformed limit/offset must fall back to the defaults, not be rejected as invalid');
   assert.notEqual(response.statusCode, 401);
   assert.notEqual(response.statusCode, 403);
+  if (response.statusCode === 200) assert.equal(response.json().error, undefined, 'a bounded fallback is a success response, not an error envelope');
   await app.close();
 });
 
@@ -171,13 +182,18 @@ test('GET /platform-admin/dashboard: any recognized role (including SUPPORT_ADMI
   }
 });
 
-test('GET /platform-admin/audit with a valid session but a malformed pagination query does not 401/403 (bounded fallback, not rejection)', async () => {
+test('GET /platform-admin/audit with a valid session but a malformed pagination query is not rejected as invalid input', async () => {
   const sessions = new Map();
   const token = registerSession(sessions, ['AUDITOR_READ_ONLY']);
   const app = buildApp(sessions);
   const response = await app.inject({ method: 'GET', url: '/platform-admin/audit?limit=not-a-number&offset=-99', headers: { authorization: `Bearer ${token}` } });
+  // Same correction, and the same limitation, as the billing/plans case above: the invariant worth
+  // pinning is that a malformed query is not converted into a 4xx validation rejection.
+  assert.equal(response.statusCode === 200 || response.statusCode >= 500, true, `expected a success or a repository 5xx, never a 4xx validation rejection; got ${response.statusCode}: ${response.body}`);
+  assert.notEqual(response.statusCode, 400, 'a malformed limit/offset must fall back to the defaults, not be rejected as invalid');
   assert.notEqual(response.statusCode, 401);
   assert.notEqual(response.statusCode, 403);
+  if (response.statusCode === 200) assert.equal(response.json().error, undefined, 'a bounded fallback is a success response, not an error envelope');
   await app.close();
 });
 

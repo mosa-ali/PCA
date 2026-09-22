@@ -15,6 +15,24 @@ import { createRejectingOpaqueFamilyAuditEventComposer } from '../../dist/family
 // ledger's clock to the same instant the fixtures use.
 const LEDGER_NOW = new Date('2026-01-01T00:00:00.000Z');
 
+/**
+ * Runs `fn` with console.warn captured. The producer's return value alone
+ * cannot distinguish "resolved to no recipients" from "could not resolve
+ * recipients at all" -- both are `[]` -- so the warning IS the observable
+ * difference, and asserting on it is the only way to test that the two are
+ * no longer conflated.
+ */
+async function withCapturedWarnings(fn) {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.map(String).join(' '));
+  try {
+    return { result: await fn(), warnings };
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
 function sampleRecord(overrides = {}) {
   return {
     eventId: 'event-1',
@@ -66,14 +84,17 @@ test('delivers one opaque envelope per resolved parent device', async () => {
   assert.equal(forA[0].encryptedPayloadB64, 'ZW5jcnlwdGVk');
 });
 
-test('a family with zero resolved parent devices delivers to no one and never throws', async () => {
+test('a family with zero resolved parent devices delivers to no one, never throws, and does NOT log a failure', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(ledger, async () => {
     throw new Error('composer must never be called with zero recipients');
   }, async () => []);
 
-  const outcomes = await producer.deliver(sampleRecord());
+  const { result: outcomes, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
   assert.deepEqual(outcomes, []);
+  // The other half of the pair below: no recipients is a NORMAL state and must
+  // stay silent, or the warning would lose all diagnostic value.
+  assert.deepEqual(warnings, [], 'legitimately having no parent devices must not log a delivery failure');
 });
 
 test('a per-device composer failure is isolated -- other devices still receive delivery', async () => {
@@ -93,7 +114,26 @@ test('a per-device composer failure is isolated -- other devices still receive d
   assert.equal(byDevice['parent-device-ok'], 'DELIVERED');
 });
 
-test('resolveParentDevices throwing resolves to zero deliveries rather than propagating', async () => {
+test('a per-device delivery failure is OBSERVABLE -- the returned outcomes array is discarded by the real caller, so silence would leave the failure existing only in a value nobody reads', async () => {
+  const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
+  const composer = async (input) => {
+    if (input.parentDeviceId === 'parent-device-fails') throw new Error('composition rejected');
+    return { encryptedPayloadB64: 'b2s', nonceB64: 'bm9uY2U' };
+  };
+  const producer = new FamilyAuditEventProducer(ledger, composer, async () => [
+    { deviceId: 'parent-device-fails', keyEpoch: 1 },
+    { deviceId: 'parent-device-ok', keyEpoch: 1 },
+  ]);
+
+  const { result: outcomes, warnings } = await withCapturedWarnings(() => producer.deliver(sampleRecord()));
+  assert.equal(outcomes.find((o) => o.parentDeviceId === 'parent-device-fails').outcome, 'FAILED');
+  assert.equal(warnings.length, 1, 'a device that did not receive the event must be observable');
+  assert.match(warnings[0], /family_audit_event_device_delivery_failed/);
+  assert.match(warnings[0], /parent-device-fails/);
+  assert.match(warnings[0], /composition rejected/);
+});
+
+test('a resolver failure resolves to zero deliveries rather than propagating, AND is distinguishable from an empty recipient list', async () => {
   const ledger = new InMemoryFamilyAuditEventLedger(() => LEDGER_NOW);
   const producer = new FamilyAuditEventProducer(
     ledger,
@@ -102,8 +142,19 @@ test('resolveParentDevices throwing resolves to zero deliveries rather than prop
       throw new Error('resolver unavailable');
     },
   );
-  const outcomes = await producer.deliver(sampleRecord());
-  assert.deepEqual(outcomes, []);
+  // Delivering twice on purpose: the log must be emitted ONCE PER INSTANCE, not
+  // once per record, or a resolver outage floods the log for its whole duration.
+  const { result: outcomes, warnings } = await withCapturedWarnings(async () => [
+    await producer.deliver(sampleRecord()),
+    await producer.deliver(sampleRecord()),
+  ]);
+  assert.deepEqual(outcomes, [[], []]);
+  assert.equal(warnings.length, 1, 'the warning must be bounded to once per producer instance, not once per event');
+  assert.match(warnings[0], /family_audit_event_recipient_resolution_failed/);
+  assert.match(warnings[0], /resolver unavailable/);
+  // The property the whole change exists for: the same `[]` now means two
+  // different things depending on whether this line was emitted.
+  assert.match(warnings[0], /NOT reaching this family/);
 });
 
 test('the production default (createRejectingOpaqueFamilyAuditEventComposer) fails closed -- delivery FAILS, never a fabricated payload', async () => {

@@ -243,14 +243,57 @@ test('ATTACK: malformed recovery envelope proof -- garbage/empty transaction id 
 
   const attempt = await acceptRecoveryEpoch(legitimateRecoveryEpoch(), malformedOpened, store, verifier, ledger);
 
-  // -1 <= 1 for both bound epochs, so the epoch-mismatch check passes; the
-  // request proceeds and is judged purely on the candidate epoch's own
-  // merits (which are otherwise legitimate here) -- the important
-  // property is that it doesn't crash and, if accepted, the empty-string
-  // transaction id is itself now permanently claimed (so a genuine future
-  // recovery could never accidentally reuse an empty id either).
-  assert.doesNotThrow(() => {});
-  assert.equal(typeof attempt.accepted, 'boolean');
+  // -1 <= 1 for both bound epochs, so the epoch-mismatch check passes and the
+  // request is judged on the candidate epoch's own merits (which are otherwise
+  // legitimate here).
+  //
+  // The two assertions this replaces were `assert.doesNotThrow(() => {})` -- a
+  // literal no-op -- and `typeof attempt.accepted === 'boolean'`, which every
+  // boolean satisfies including `true`. So the test's own name ("do not grant
+  // authority") was asserted NOWHERE, and a mutation making a malformed proof
+  // grant authority passed it. Pin the property the name claims, and report the
+  // actual outcome in the message so a failure is self-diagnosing.
+  assert.equal(
+    attempt.accepted,
+    false,
+    `a malformed recovery-envelope proof (empty recoveryEnvelopeId/recoveryTransactionId, negative bound epochs) must not grant authority; got accepted=${attempt.accepted} reason=${attempt.reason}`,
+  );
+});
+
+test('ATTACK: every malformed proof SHAPE is rejected with a precise reason, and none of them may mutate the trust set', async () => {
+  // Each row is a distinct way the proof's own fields can fail to be what the
+  // engine assumes. They are listed together because they share one root cause:
+  // the engine trusts whatever OpenedRecoveryEnvelope carries, and the only
+  // epoch check is `bound > current`, which -1 (and NaN, and any fraction below
+  // current) can never trip -- so a value that cannot possibly be an epoch used
+  // to satisfy the check that exists to prove the envelope was bound to a real
+  // epoch. NaN is the sharpest case: every NaN comparison is false, so the check
+  // is defeated outright rather than merely weakened.
+  const { store, verifier, ledger } = await establishedFamily();
+  const validEpoch = legitimateRecoveryEpoch();
+  const signed = { ...validEpoch, signature: signTestOnlyEpoch('new-owner-dsk-pub', canonicalizeTrustSetEpoch(validEpoch)) };
+  const before = store.getCurrentEpoch();
+
+  const cases = [
+    ['empty recoveryTransactionId', opened({ recoveryTransactionId: '' }), 'MALFORMED_RECOVERY_PROOF'],
+    ['empty recoveryEnvelopeId', opened({ recoveryEnvelopeId: '' }), 'MALFORMED_RECOVERY_PROOF'],
+    ['over-long recoveryTransactionId', opened({ recoveryTransactionId: 't'.repeat(129) }), 'MALFORMED_RECOVERY_PROOF'],
+    ['over-long recoveryEnvelopeId', opened({ recoveryEnvelopeId: 'e'.repeat(129) }), 'MALFORMED_RECOVERY_PROOF'],
+    ['negative boundTrustSetEpoch', opened({ boundTrustSetEpoch: -1 }), 'INVALID_BOUND_EPOCH'],
+    ['negative boundKeyEpoch', opened({ boundKeyEpoch: -1 }), 'INVALID_BOUND_EPOCH'],
+    ['NaN boundTrustSetEpoch', opened({ boundTrustSetEpoch: Number.NaN }), 'INVALID_BOUND_EPOCH'],
+    ['NaN boundKeyEpoch', opened({ boundKeyEpoch: Number.NaN }), 'INVALID_BOUND_EPOCH'],
+    ['fractional boundTrustSetEpoch', opened({ boundTrustSetEpoch: 0.5 }), 'INVALID_BOUND_EPOCH'],
+  ];
+
+  for (const [label, malformed, expectedReason] of cases) {
+    const verdict = await acceptRecoveryEpoch(signed, malformed, store, verifier, ledger);
+    assert.deepEqual(verdict, { accepted: false, reason: expectedReason }, `${label} must be rejected as ${expectedReason}`);
+  }
+
+  // A rejected proof must leave no trace: the trust set is untouched, so no
+  // malformed request can half-apply a recovery.
+  assert.deepEqual(store.getCurrentEpoch(), before, 'no malformed proof may mutate the current trust set');
 });
 
 test('ATTACK: clock manipulation -- acceptance never reads issuedAt against wall-clock time; only epoch numbers gate acceptance', async () => {

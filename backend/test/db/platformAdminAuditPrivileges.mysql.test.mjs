@@ -51,6 +51,15 @@ const SKIP_REASON =
   'privileged audit-grant verification requires PCA_MIGRATION_DATABASE_URL; run npm run ' +
   'test:db:platform-admin-privileges for the mandatory privilege gate.';
 
+/**
+ * Registered under this exact name in BOTH modes, from one constant rather than
+ * two literals: the skip mode's whole job is to advertise accurately what the
+ * privileged mode would have run, and duplicated names are how the two silently
+ * drift apart.
+ */
+const PRODUCTION_PATH_TEST_NAME =
+  'PRODUCTION PATH: the real MySqlPlatformAdminAuditRepository writer and its queryForRole reader both work under the exact runtime grant plan production uses';
+
 if (!process.env.PCA_MIGRATION_DATABASE_URL) {
   // STANDARD DB REGRESSION mode: no admin/provisioning credential was
   // supplied, so this file does not attempt any connection, CREATE USER, or
@@ -73,6 +82,7 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
     { skip: SKIP_REASON },
     () => {},
   );
+  test(PRODUCTION_PATH_TEST_NAME, { skip: SKIP_REASON }, () => {});
 } else {
   // PRIVILEGE ACCEPTANCE GATE mode: PCA_MIGRATION_DATABASE_URL is set --
   // this is a real, mandatory run. Never fall back to PCA_DATABASE_URL for
@@ -185,6 +195,104 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
     await assert.doesNotReject(() =>
       runtimeConnection.query(`DELETE FROM platform_admin_login_attempts WHERE attempt_id = ?`, [attemptId]),
     );
+  });
+
+  test(PRODUCTION_PATH_TEST_NAME, async () => {
+    // WHY THIS CASE EXISTS AT ALL. Every case above drives RAW SQL. That proves
+    // the grant plan rejects mutation, and it proves nothing about whether the
+    // real writer can write: if MySqlPlatformAdminAuditRepository's INSERT, or
+    // queryForRole's SELECT, needed a privilege the runtime plan does not grant,
+    // the whole file would still pass while production failed with 1142 on the
+    // first admin action. STORE_TEST_PASS != PRODUCTION_PATH_PASS unless the
+    // real writer-to-reader path is certified too.
+    //
+    // The real repository takes its connection from db/pool.js, which reads
+    // PCA_DATABASE_URL when that module is first evaluated. Nothing imported
+    // earlier in this file pulls it in, so repointing the variable immediately
+    // before a DYNAMIC import genuinely creates the pool as the throwaway
+    // least-privilege principal rather than as the admin connection.
+    const runtimeUrlString =
+      `${adminUrl.protocol}//${encodeURIComponent(runtimeUsername)}:${encodeURIComponent(runtimePassword)}` +
+      `@${adminUrl.hostname}:${adminUrl.port ? adminUrl.port : 3306}/${databaseName}`;
+    process.env.PCA_DATABASE_URL = runtimeUrlString;
+
+    const { MySqlPlatformAdminAuditRepository } = await import('../../dist/platformadmin/audit/MySqlPlatformAdminAuditRepository.js');
+    const { closePool, getPool } = await import('../../dist/db/pool.js');
+    try {
+      // NON-VACUITY GUARD, and it is the difference between a real certification
+      // and a self-congratulatory one: if the repoint above silently failed to
+      // take effect (say db/pool.js had already been pulled in by an earlier
+      // import), the pool would be the ADMIN connection, every assertion below
+      // would still pass, and the test would claim to certify a least-privilege
+      // writer while certifying nothing. Ask the database who the pool actually
+      // is, and require it to be the throwaway principal.
+      const [whoRows] = await getPool().query('SELECT CURRENT_USER() AS db_principal');
+      assert.match(
+        String(whoRows[0]?.db_principal),
+        new RegExp(`^${runtimeUsername}@`),
+        'the pool must genuinely be the throwaway least-privilege principal -- not the admin connection',
+      );
+
+      const repository = new MySqlPlatformAdminAuditRepository();
+      const eventId = randomUUID();
+      const correlationId = randomUUID();
+      const occurredAt = new Date('2026-01-01T00:00:00.000Z');
+
+      // 1. THE REAL WRITER, as the real principal. This is the assertion that
+      //    would have caught an INSERT needing a column the plan omits.
+      await repository.insert({
+        eventId,
+        eventType: 'ADMIN_LOGIN',
+        actorAdminId: null,
+        actorRole: null,
+        targetRef: null,
+        result: 'SUCCESS',
+        occurredAt,
+        correlationId,
+        metadata: { probe: 'production-path' },
+      });
+
+      // 2. THE REAL READER, not the table: proves queryForRole's SELECT is also
+      //    inside the grant, and that the exact value/semantics survive the
+      //    round trip (timestamp and the JSON-typed metadata column).
+      const rows = await repository.queryForRole(['APP_OWNER'], 'probe-admin', { limit: 50 });
+      const readBack = rows.find((row) => row.eventId === eventId);
+      assert.ok(readBack, 'the real consumer must see the row the real writer just inserted');
+      assert.equal(readBack.correlationId, correlationId);
+      assert.equal(readBack.eventType, 'ADMIN_LOGIN');
+      assert.equal(readBack.result, 'SUCCESS');
+      assert.equal(readBack.occurredAt.getTime(), occurredAt.getTime());
+      assert.deepEqual(readBack.metadata, { probe: 'production-path' });
+
+      // 3. HOSTILE-INPUT PATH: the same writer must refuse a malformed event at
+      //    the writer, rather than persisting something the reader then has to
+      //    cope with. Asserting the throw is the point -- an audit writer that
+      //    silently accepted an unknown type would be an unauditable action.
+      await assert.rejects(
+        () =>
+          repository.insert({
+            eventId: randomUUID(),
+            eventType: 'NOT_A_REAL_AUDIT_EVENT_TYPE',
+            actorAdminId: null,
+            actorRole: null,
+            targetRef: null,
+            result: 'SUCCESS',
+            occurredAt,
+            correlationId: randomUUID(),
+            metadata: null,
+          }),
+        /Unknown Platform Administration audit event type/,
+      );
+
+      // 4. AND THE BOUNDARY STILL HOLDS FOR THE SAME PRINCIPAL that just wrote
+      //    the row through the real writer: writing is not editing.
+      await assert.rejects(
+        () => runtimeConnection.query(`UPDATE platform_admin_audit_events SET result = 'FAILURE' WHERE event_id = ?`, [eventId]),
+        isTableAccessDenied,
+      );
+    } finally {
+      await closePool().catch(() => {});
+    }
   });
 
   test.after(async () => {

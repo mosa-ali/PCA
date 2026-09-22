@@ -169,9 +169,20 @@ test('acceptInvitation calls the injected FamilyMemberAccountBinder exactly once
   assert.deepEqual(calls[0].familyId, 'fam-1');
 });
 
-test('the default NoopFamilyMemberAccountBinder is a real, safe no-op (never throws, never mutates anything observable)', async () => {
+test('the default NoopFamilyMemberAccountBinder does nothing at all -- and nothing may treat "it did not throw" as evidence an account was bound', async () => {
+  // The previous version of this test asserted only `doesNotReject`, while its
+  // NAME additionally claimed "never mutates anything observable" -- a property
+  // it never checked. That second claim also cannot be checked positively: the
+  // class holds no state, so there is nothing it could mutate, and "it did not
+  // throw" is exactly what a silently non-binding acceptance looks like.
   const binder = new NoopFamilyMemberAccountBinder();
-  await assert.doesNotReject(() => binder.bindAccountToFamily('acct-1', 'fam-1', new Date()));
+  assert.equal(await binder.bindAccountToFamily('acct-1', 'fam-1', new Date()), undefined);
+  // Idempotent by vacuity, and it never throws -- which is precisely why a
+  // composition that forgot to inject the real binder would not notice. The
+  // guarantee that this cannot happen in production is enforced where it can
+  // actually fail: test/tooling/productionInMemoryStores.test.mjs asserts the
+  // production composition root never constructs this class.
+  assert.equal(await binder.bindAccountToFamily('acct-1', 'fam-1', new Date()), undefined);
 });
 
 test('acceptInvitation is idempotent-safe: accepting an already-ACCEPTED invitation fails honestly, not silently', async () => {

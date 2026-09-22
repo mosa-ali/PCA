@@ -8,6 +8,8 @@ import type { OpenedRecoveryEnvelope } from '../recovery/RecoveryEnvelopeCipher.
 import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
 
 export type RecoveryFtsRejectionReason =
+  | 'MALFORMED_RECOVERY_PROOF'
+  | 'INVALID_BOUND_EPOCH'
   | 'NO_ESTABLISHED_FAMILY'
   | 'FAMILY_MISMATCH'
   | 'ENVELOPE_EPOCH_MISMATCH'
@@ -26,6 +28,25 @@ export type RecoveryFtsRejectionReason =
 export type RecoveryFtsVerdict =
   | { accepted: true }
   | { accepted: false; reason: RecoveryFtsRejectionReason };
+
+/**
+ * Bound on the OpaqueIdentifier-shaped fields of a recovery proof, mirroring this
+ * codebase's 128-character convention for opaque identifiers (audit targetRef,
+ * the action/message idempotency-key CHECKs).
+ */
+const MAX_RECOVERY_PROOF_IDENTIFIER_LENGTH = 128;
+
+/**
+ * A recovery proof's envelope id and one-time transaction id are OPAQUE
+ * IDENTIFIERS: non-empty and bounded. An empty one is not an identifier, and
+ * accepting one is not harmless -- `recoveryTransactionId` is exactly the value
+ * the one-time claim is keyed on, so an empty id makes every malformed request
+ * share a single claim slot instead of each representing a distinct, unguessable
+ * transaction.
+ */
+function isPlausibleRecoveryProofIdentifier(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_RECOVERY_PROOF_IDENTIFIER_LENGTH;
+}
 
 /**
  * The dedicated recovery-authorized FTS epoch acceptance path (doc 09
@@ -63,6 +84,41 @@ export async function acceptRecoveryEpoch(
   verifier: TrustSetSignatureVerifier,
   ledger: RecoveryTransactionLedger,
 ): Promise<RecoveryFtsVerdict> {
+  // THE PROOF'S OWN SHAPE IS VALIDATED BEFORE IT IS TRUSTED FOR ANYTHING --
+  // before the store is even consulted -- and this is not defensive
+  // boilerplate, it closes a real hole.
+  //
+  // OpenedRecoveryEnvelope's doc comment says a caller "MUST NOT hand-construct
+  // one from unverified input". That is a convention TypeScript cannot enforce:
+  // the type is a plain interface, and THIS FUNCTION is the authorization
+  // boundary that trusts it. A proof carrying an EMPTY one-time
+  // recoveryTransactionId and NEGATIVE bound epochs was accepted as genuine
+  // recovery authority, because the only epoch check is `bound > current` and
+  // -1 (like NaN, and like any fraction below current) can never trip it -- so
+  // the check that exists to prove "this envelope was bound to an epoch this
+  // device has actually reached" was satisfiable by a value that cannot be an
+  // epoch at all. NaN also defeats it outright, since every NaN comparison is
+  // false. This is the same failure shape as a durable column whose CHECK is
+  // only as good as the values its writer sends, so the ranges this proof
+  // depends on are enforced here rather than assumed of the caller.
+  //
+  // Ordered FIRST, ahead of the family checks, deliberately: a malformed proof
+  // then learns nothing about family state at all.
+  if (
+    !isPlausibleRecoveryProofIdentifier(opened.recoveryEnvelopeId) ||
+    !isPlausibleRecoveryProofIdentifier(opened.recoveryTransactionId)
+  ) {
+    return { accepted: false, reason: 'MALFORMED_RECOVERY_PROOF' };
+  }
+  if (
+    !Number.isInteger(opened.boundTrustSetEpoch) ||
+    !Number.isInteger(opened.boundKeyEpoch) ||
+    opened.boundTrustSetEpoch < 0 ||
+    opened.boundKeyEpoch < 0
+  ) {
+    return { accepted: false, reason: 'INVALID_BOUND_EPOCH' };
+  }
+
   // Recovery is a controlled trust TRANSITION for an already-established
   // family (doc 09 Section 10's opening line: "Recovery is a controlled
   // trust transition, not a support reset"). A family with no prior epoch

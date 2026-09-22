@@ -277,7 +277,7 @@ jobs:
     # why that remains a separate, larger, still-open gap.
     name: Backend first-owner bootstrap certification (disposable MySQL)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       mysql:
         image: mysql:8.4.11
@@ -335,6 +335,36 @@ jobs:
       - name: Run first-owner bootstrap certification against disposable MySQL
         working-directory: backend
         run: npm run test:db:bootstrap
+      - name: Run platform-admin audit privilege gate against disposable MySQL
+        # 2026-09-22: this gate proved the DATABASE ITSELF refuses UPDATE/DELETE
+        # on platform_admin_audit_events for a principal holding exactly the
+        # production runtime grant plan -- the replacement for the CREATE
+        # TRIGGER enforcement that cannot be used under a least-privilege MySQL
+        # 8 user with binary logging on. It was asserted by
+        # `npm run test:db:platform-admin-privileges`, which NO workflow ever
+        # invoked: outside this repository's own manual/local runs it reported
+        # `# SKIP` forever, and an assertion that never executes is not a
+        # certification. A green run therefore said nothing about the
+        # append-only guarantee on the platform-admin audit trail, and an
+        # over-privileged runtime credential could rewrite audit rows with CI
+        # reporting success.
+        #
+        # It runs HERE, immediately after `test:db:bootstrap` in the same job,
+        # because that step has just reset and fully migrated this job's
+        # disposable database, which is the only precondition the gate needs.
+        # PCA_MIGRATION_DATABASE_URL is deliberately the service container's
+        # root credential -- the same hardcoded, explicitly test-only value the
+        # rest of this job already uses, never a GitHub Secret: the gate must
+        # CREATE USER a throwaway principal, apply the production grant plan to
+        # it, and then connect AS that principal, which is impossible from the
+        # least-privilege runtime credential by design (that is the very
+        # property under test). The gate's own require-privileged-db-env.mjs
+        # hard-fails rather than falling back, so a missing or wrong value can
+        # never be mistaken for a pass.
+        working-directory: backend
+        env:
+          PCA_MIGRATION_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
+        run: npm run test:db:platform-admin-privileges
 
   backend-auth-db-certification:
     # 2026-09-21, PCA full assessment finding P1-12: the authentication and
