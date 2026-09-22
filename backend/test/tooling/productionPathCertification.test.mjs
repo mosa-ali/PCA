@@ -169,6 +169,14 @@ const REGISTER = new Map([
   ['MySqlDeviceProtectionStatusRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes; the real service is not driven.' }],
   ['MySqlProfileModeRepository', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'repository-direct writes in profileProtectionMode.mysql.test.mjs; the real service that owns the transition is not driven.' }],
   ['MySqlDeleteNowLedger', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'the delete PLAN is hand-built in 5 of 6 cases; the real planner is not driven into it.' }],
+  ['MySqlFamilyMemberAccountBinder', {
+    status: 'CERTIFIED',
+    realWriter: 'FamilyMemberInvitationService.acceptInvitation -> MySqlFamilyMemberAccountBinder.bindAccountToFamily, the real binder injected into the real service',
+    realReader: 'readAccountFamilyId reads parent_accounts.family_id back after acceptance, and the membership row is read back from family_parent_memberships',
+    hostileCase: 'BINDER CONTAINMENT (added to close this row): an account already bound to family A accepts a second, genuinely-addressed invitation for family B. The binder must refuse to move it -- the UPDATE is `WHERE family_id IS NULL` so it is a no-op, and the membership role is applied only when the row read back already carries the TARGET family. Asserts family_id is still A, that NO membership row exists for B, and that A\'s existing VIEWER membership survives with its role NOT silently upgraded to the ADMINISTRATOR the second invitation offered. Recorded as an observation, not endorsed: the family-B invitation IS consumed despite the refused bind, because acceptAtomically commits before the binder runs and the service does not pre-check family_id (see PCA-DEC-036).',
+    testFile: 'test/db/parentAccount.mysql.test.mjs',
+    testName: 'MySQL SECURITY: an account already bound to ONE family cannot be rebound by accepting a second family invitation, and gains no membership in it',
+  }],
   ['MySqlInvitationRepository', {
     status: 'CERTIFIED',
     realWriter: 'InvitationService.createInvitation/redeemInvitation/revokeInvitation, holding the real repository (buildService() injects it)',
@@ -327,11 +335,10 @@ const REGISTER = new Map([
   ['MySqlPlatformAdminAlertAdapter', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in platformAdminAlerts.mysql.test.mjs.' }],
   ['MySqlOwnerParentDeviceResolver', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'resolves the Owner device only (documented KNOWN GAP, PCA-DEC-031); coverage in protectionAlerts.mysql.test.mjs.' }],
   ['MySqlFamilyMembershipRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'CORRECTED NOTE (the previous one named parentAccount.mysql.test.mjs as its coverage; that file never names or constructs this class). It has ZERO direct test coverage -- searching every test/**/*.mjs finds it only in the certification register itself. Production-reachable in two places: MySqlParentAccountRepository holds a private instance and forwards createGenesisAdministrator/applyAcceptedInvitationRole/applyAcceptedInvitationRoleOnConnection/findActiveRole to it, and MySqlFamilyMemberAccountBinder default-constructs it. So coverage is at best INDIRECT, through the delegating parent-account repository, and the genesis delegate is not indirect-covered at all: the one suite that would exercise it, parentAccount.mysql.test.mjs, contains an explicit test that verify-email does NOT create family authority before the separate DSK genesis ceremony. Needs a real DB suite that drives the delegating caller, not a note that claims one exists.' }],
-  ['MySqlFamilyMemberAccountBinder', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'VERIFIED CLOSER TO CERTIFIED THAN THE PREVIOUS NOTE SUGGESTED, but blocked on one specific missing property rather than on CI execution. parentAccount.mysql.test.mjs DOES construct the real MySqlFamilyMemberAccountBinder, inject it into the real FamilyMemberInvitationService, and assert its durable effect through a direct DB read of parent_accounts.family_id ("the real MySqlFamilyMemberAccountBinder must have durably bound the member"). What it lacks is a hostile or failure-path case: the binder is exercised only on the success path (the documented best-effort bind outside acceptAtomically\'s transaction), so nothing tests what a failed or partial bind leaves behind. Certify it once a failure-path assertion exists, not before.' }],
 ]);
 
 /** The gap count may only go DOWN. See the ratchet test. */
-const BASELINE_GAP_COUNT = 27;
+const BASELINE_GAP_COUNT = 26;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',

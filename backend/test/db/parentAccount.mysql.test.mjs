@@ -12,7 +12,7 @@ import { MySqlAuthRepository } from '../../dist/auth/MySqlAuthRepository.js';
 import { MySqlParentAccountRepository } from '../../dist/parentaccount/MySqlParentAccountRepository.js';
 import { ParentAccountService } from '../../dist/parentaccount/ParentAccountService.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
-import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
+import { closePool, execute, getPool, runInTransaction } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
@@ -625,6 +625,107 @@ test('MySQL: after a real removal frees a parent-member seat, a new invitation c
   await memberService.acceptInvitation(secondInvitation.invitationId, secondMember.accountId);
   assert.equal(await readAccountFamilyId(secondMember.accountId), familyId);
   assert.equal((await entitlementRepository.getForFamily(familyId)).parentMemberUsedCount, 1);
+});
+
+// PCA-FAMILY-BINDER-CONTAINMENT: the HOSTILE half of the binder contract.
+//
+// MySqlFamilyMemberAccountBinder only ever writes family_id when it is
+// currently NULL, and only applies the membership role when the row it reads
+// back already carries the TARGET family. That guard is the whole reason a
+// second invitation cannot move an account between families -- and until this
+// test it was exercised only on the success path, where the account is
+// unbound and the guard never has to refuse anything. A success-path-only test
+// cannot distinguish "the guard works" from "the guard is absent", which is
+// the classic shape of a security property that reads as covered and is not.
+test('MySQL SECURITY: an account already bound to ONE family cannot be rebound by accepting a second family invitation, and gains no membership in it', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { MySqlFamilyMemberAccountBinder } = await import('../../dist/familymembers/MySqlFamilyMemberAccountBinder.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+
+  const repository = new MySqlFamilyMemberInvitationRepository();
+  const entitlementRepository = new MySqlEntitlementRepository();
+  const authorization = { authorize: () => ({ verdict: 'ALLOW' }) };
+  const memberService = new FamilyMemberInvitationService(
+    repository,
+    authorization,
+    () => new Date(),
+    undefined,
+    new MySqlFamilyMemberAccountBinder(),
+    entitlementRepository,
+  );
+
+  // The account that will end up in TWO competing invitations. It is registered
+  // and verified for real, and its OWN email is the address both invitations
+  // are sent to, so the repository's identity binding accepts it in both cases.
+  const memberEmail = uniqueEmail();
+  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
+
+  // FAMILY A -- bound through the REAL production path, not a helper.
+  const familyA = randomUUID();
+  const ownerA = await registerAndVerifyRealAccount(service, emailSender, uniqueEmail(), password);
+  await bindAccountToFamilyForTest(ownerA.accountId, familyA);
+  const invitationA = await memberService.createInvitation({
+    familyId: familyA,
+    invitedEmail: memberEmail,
+    role: 'VIEWER',
+    invitedByAccountId: ownerA.accountId,
+    actorDeviceId: 'dev-owner-a',
+  });
+  await memberService.acceptInvitation(invitationA.invitationId, member.accountId);
+  assert.equal(await readAccountFamilyId(member.accountId), familyA, 'precondition: family A bound this account through the real accept path');
+
+  // FAMILY B -- a completely separate family invites the SAME account.
+  const familyB = randomUUID();
+  const ownerB = await registerAndVerifyRealAccount(service, emailSender, uniqueEmail(), password);
+  await bindAccountToFamilyForTest(ownerB.accountId, familyB);
+  const invitationB = await memberService.createInvitation({
+    familyId: familyB,
+    invitedEmail: memberEmail,
+    role: 'ADMINISTRATOR',
+    invitedByAccountId: ownerB.accountId,
+    actorDeviceId: 'dev-owner-b',
+  });
+
+  // The acceptance itself succeeds: the invitation really was addressed to this
+  // account's own email, so the repository's identity binding is satisfied.
+  await memberService.acceptInvitation(invitationB.invitationId, member.accountId);
+
+  // THE PROPERTY UNDER TEST. The binder must refuse to move the account, and
+  // must not grant it a role in a family it is not bound to. The second write
+  // is `UPDATE ... WHERE family_id IS NULL`, so it is a no-op here, and the
+  // membership role is applied only when the row read back already carries the
+  // target family -- so neither effect may occur.
+  assert.equal(
+    await readAccountFamilyId(member.accountId),
+    familyA,
+    'an account already bound to one family must NEVER be reassigned to another by accepting a second invitation',
+  );
+  const membershipsInB = await getPool().query(
+    'SELECT membership_id FROM family_parent_memberships WHERE account_id = ? AND family_id = ?',
+    [member.accountId, familyB],
+  );
+  assert.equal(membershipsInB[0].length, 0, 'the account must gain NO membership row in the family it was not bound to');
+  const membershipsInA = await getPool().query(
+    'SELECT role, status FROM family_parent_memberships WHERE account_id = ? AND family_id = ?',
+    [member.accountId, familyA],
+  );
+  assert.equal(membershipsInA[0].length, 1, 'the original membership must survive untouched');
+  assert.equal(membershipsInA[0][0].status, 'ACTIVE');
+  assert.equal(membershipsInA[0][0].role, 'VIEWER', 'and its role must not be silently upgraded by the second invitation');
+
+  // RECORDED, NOT ENDORSED -- an observation for the register, not a
+  // specification. The invitation for family B IS consumed even though the bind
+  // was refused, because acceptAtomically commits before the binder runs and the
+  // service does not pre-check parent_accounts.family_id (the binder's own doc
+  // comment says the caller must). So a second family's seat/invitation is spent
+  // with no membership to show for it. That is a product gap in the CALLER's
+  // conflict handling, not a breach of the containment property asserted above,
+  // and it is deliberately not asserted as desirable here.
+  const consumedInvitationB = await repository.findByIdForFamily(familyB, invitationB.invitationId);
+  assert.equal(consumedInvitationB.status, 'ACCEPTED');
 });
 
 // PCA-ADD-PA-023-style row-locking proof: two DIFFERENT members of the SAME
