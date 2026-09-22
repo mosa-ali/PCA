@@ -157,7 +157,14 @@ const REGISTER = new Map([
   ['MySqlRelayRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage exists in relay.mysql.test.mjs.' }],
   ['MySqlReleaseRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage exists in release.mysql.test.mjs.' }],
   ['MySqlChildProfileRegistryRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'synthetic DB suite plus a real-route suite in childProfileInvitationBindingHttp.mysql.test.mjs.' }],
-  ['MySqlFamilyMemberInvitationRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage inside parentAccount.mysql.test.mjs.' }],
+  ['MySqlFamilyMemberInvitationRepository', {
+    status: 'CERTIFIED',
+    realWriter: 'FamilyMemberInvitationService.acceptInvitation -> MySqlFamilyMemberInvitationRepository.acceptAtomically',
+    realReader: 'MySqlFamilyMemberInvitationRepository.findByIdForFamily, read back after the service returns',
+    hostileCase: 'two independent failure paths: a non-addressee with a valid account gets NOT_FOUND and the row stays PENDING (and an ACCEPTED invitation is indistinguishable from one that never existed); and an entitlement-ledger failure during acceptance rolls the whole transaction back, leaving PENDING and charging zero seats',
+    testFile: 'test/db/parentAccount.mysql.test.mjs',
+    testName: 'accepting a family-member invitation consumes exactly one parent-member seat, in the SAME transaction as the invitation transition',
+  }],
   ['MySqlEyeProtectionSettingsRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'synthetic DB suite plus a real-route suite in eyeProtectionSettingsHttp.mysql.test.mjs.' }],
   ['MySqlEntitlementRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage via EntitlementService exists in platformEntitlements*.mysql.test.mjs.' }],
   ['MySqlChangeRequestRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage via ChangeRequestService exists in platformEntitlements*.mysql.test.mjs.' }],
@@ -182,12 +189,12 @@ const REGISTER = new Map([
   ['MySqlPlatformAdminActivationRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'audited as real-writer AND in CI via platformAdminBootstrap, but the exact test name was not re-verified when this register was written, so it is tracked rather than claimed.' }],
   ['MySqlPlatformAdminAlertAdapter', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in platformAdminAlerts.mysql.test.mjs.' }],
   ['MySqlOwnerParentDeviceResolver', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'resolves the Owner device only (documented KNOWN GAP, PCA-DEC-031); coverage in protectionAlerts.mysql.test.mjs.' }],
-  ['MySqlFamilyMembershipRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'covered through parentAccount.mysql.test.mjs.' }],
-  ['MySqlFamilyMemberAccountBinder', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'covered through parentAccount.mysql.test.mjs.' }],
+  ['MySqlFamilyMembershipRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'CORRECTED NOTE (the previous one named parentAccount.mysql.test.mjs as its coverage; that file never names or constructs this class). It has ZERO direct test coverage -- searching every test/**/*.mjs finds it only in the certification register itself. Production-reachable in two places: MySqlParentAccountRepository holds a private instance and forwards createGenesisAdministrator/applyAcceptedInvitationRole/applyAcceptedInvitationRoleOnConnection/findActiveRole to it, and MySqlFamilyMemberAccountBinder default-constructs it. So coverage is at best INDIRECT, through the delegating parent-account repository, and the genesis delegate is not indirect-covered at all: the one suite that would exercise it, parentAccount.mysql.test.mjs, contains an explicit test that verify-email does NOT create family authority before the separate DSK genesis ceremony. Needs a real DB suite that drives the delegating caller, not a note that claims one exists.' }],
+  ['MySqlFamilyMemberAccountBinder', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'VERIFIED CLOSER TO CERTIFIED THAN THE PREVIOUS NOTE SUGGESTED, but blocked on one specific missing property rather than on CI execution. parentAccount.mysql.test.mjs DOES construct the real MySqlFamilyMemberAccountBinder, inject it into the real FamilyMemberInvitationService, and assert its durable effect through a direct DB read of parent_accounts.family_id ("the real MySqlFamilyMemberAccountBinder must have durably bound the member"). What it lacks is a hostile or failure-path case: the binder is exercised only on the success path (the documented best-effort bind outside acceptAtomically\'s transaction), so nothing tests what a failed or partial bind leaves behind. Certify it once a failure-path assertion exists, not before.' }],
 ]);
 
 /** The gap count may only go DOWN. See the ratchet test. */
-const BASELINE_GAP_COUNT = 45;
+const BASELINE_GAP_COUNT = 44;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
