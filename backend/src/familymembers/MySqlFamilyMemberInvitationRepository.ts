@@ -269,6 +269,36 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
     bindAccountInTransaction?: BindAccountInTransactionHook,
   ): Promise<AcceptResult> {
     return runInTransaction(async (conn) => {
+      // PCA-DEC-036 DEADLOCK FIX. This is the transaction's FIRST lock request,
+      // and it is EXCLUSIVE, on the accepting account's own parent_accounts row.
+      //
+      // Why it exists, and why it must be first: the guarded UPDATE below JOINS
+      // parent_accounts to bind the invitation to the accepting account's own
+      // email hash, and a JOIN inside an UPDATE takes a SHARED lock on the joined
+      // row. The bind later in this same transaction needs an EXCLUSIVE lock on
+      // that row. Two families accepting invitations for the SAME account
+      // therefore both held a shared lock on one row and then both tried to
+      // upgrade it -- a textbook S->X upgrade deadlock, which InnoDB resolves by
+      // rolling one transaction back. The loser was reported to its caller as a
+      // raw driver error (ER_LOCK_DEADLOCK) instead of the honest refusal, which
+      // is how CI caught this: `ISOLATED_PASS != CONCURRENCY_PROOF`, and the
+      // two-family test passed locally while deadlocking on a runner.
+      //
+      // Taking the exclusive lock FIRST makes the cycle impossible by
+      // construction rather than by timing: both transactions' very first
+      // statement requests the SAME single row exclusively, so they are totally
+      // ordered -- one proceeds, the other waits at its first statement holding
+      // no other lock, so there is nothing for it to cycle against. The later
+      // bind's UPDATE then operates on a row this transaction already holds
+      // exclusively, so there is no upgrade left to perform.
+      //
+      // It deliberately does NOT replace the identity predicate in the UPDATE
+      // below: the hash read here is used as a parameter to that same guarded
+      // statement, so the binding is still decided by ONE atomic guarded write
+      // rather than by a read the caller acts on. Locking, not reading, is what
+      // this statement is for.
+      await execute(conn, `SELECT email_hash FROM parent_accounts WHERE account_id = ? FOR UPDATE`, [acceptedByAccountId]);
+
       const updated = await execute(
         conn,
         `UPDATE family_member_invitations AS invitation
