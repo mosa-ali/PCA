@@ -249,7 +249,7 @@ const REGISTER = new Map([
     testFile: 'test/db/platformEntitlementsCore.mysql.test.mjs',
     testName: 'parent-member request: never carries a quote, approved directly PENDING -> APPROVED, raises parentMemberLimit',
   }],
-  ['MySqlSlotReservationRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage exists, but the RESERVED->CONSUMED hook has no production caller (PCA-DEC-031).' }],
+  ['MySqlSlotReservationRepository', { status: 'GAP', category: 'NO_PRODUCTION_WRITER', note: 'RE-CATEGORISED from NOT_EXECUTED_IN_CI, which was factually wrong: the file runs in CI. The reserve/release paths ARE driven by a real production caller -- platformEntitlementsSlots.mysql.test.mjs constructs the real SlotReservationService and drives it through the real InvitationService, asserting that a capacity-rejected invitation persists nothing. What is missing is a PRODUCTION CALLER for one transition: the test itself is named "slot consumption hook: RESERVED -> CONSUMED moves reserved count to active count (defined, though not wired to any caller in this codebase -- see PCA-PA-2 final report)". So the store is half-wired, and certifying it would imply the whole API is reachable in production. Tracked as PCA-DEC-031.' }],
   ['MySqlComplimentaryGrantRepository', {
     status: 'CERTIFIED',
     realWriter: 'the real HTTP route POST /platform-admin/families/:familyId/complimentary-grants, through PlatformAdminComplimentaryGrantService and ComplimentaryEntitlementService into the real repository',
@@ -282,8 +282,8 @@ const REGISTER = new Map([
     testFile: 'test/db/platformAdminBootstrap.mysql.test.mjs',
     testName: 'POST_COMMIT_PROVIDER_FAILURE_RECOVERABLE: provider delivery failure AFTER a successful atomic commit never invalidates the bootstrapped owner',
   }],
-  ['MySqlFamilyAuthorityGenesisStore', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'real-writer coverage, but with a TEST-ONLY signature verifier rather than the production one.' }],
-  ['MySqlFamilyAuthorityAttestationChainStore', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'same: test-only verifier; the production verifier is rejecting, so production never writes it.' }],
+  ['MySqlFamilyAuthorityGenesisStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RE-CATEGORISED from NOT_EXECUTED_IN_CI. VERIFIED IN SOURCE: main.ts passes new RejectingDeviceSignatureVerifier() into FamilyOwnerAttestationChainEngine (the genesis store is its first argument), so in PRODUCTION this store is never written -- the engine refuses first, pending the CRYPTO_SUITE human security review (PCA-DEC-020 family). familyCommercialAuthority.mysql.test.mjs and protectionAlerts.mysql.test.mjs exercise it with createTestOnlyDeviceSignatureVerifier() instead. Certifying on a test-only verifier would certify a production path that does not exist, which is precisely the substitution this rule forbids. Stays honestly gated until PCA-DEC-020-R2.' }],
+  ['MySqlFamilyAuthorityAttestationChainStore', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RE-CATEGORISED from NOT_EXECUTED_IN_CI, same evidence and same reason as MySqlFamilyAuthorityGenesisStore: production wires RejectingDeviceSignatureVerifier into the same engine, so nothing appends through it today, and the DB suites use a TEST-ONLY verifier. Do NOT certify it with a test-only verifier, and do NOT add a test-only bypass to move the number.' }],
   ['MySqlDeviceChallengeRepository', { status: 'GAP', category: 'CRYPTO_GATED', note: 'the production device-signature verifier rejects unconditionally pending PCA-DEC-020.' }],
   ['MySqlEnvelopeAcceptanceTransaction', { status: 'GAP', category: 'CRYPTO_GATED', note: 'RejectingEnvelopeSignatureVerifier + rejecting context resolver make no production write reachable.' }],
   ['MySqlMessageIdempotencyLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through envelope acceptance, which the rejecting verifier blocks.' }],
@@ -292,10 +292,24 @@ const REGISTER = new Map([
   ['MySqlSequenceProgressLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through the same envelope-acceptance path; no production envelope is accepted, so no sequence is recorded.' }],
   ['MySqlFamilyAuditEventLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'the crypto-bound composer throws first, so delivery records nothing.' }],
   ['MySqlProtectionAlertLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'same rejecting composer shape as the audit ledger.' }],
-  ['MySqlCommercialNotificationPublisher', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in commercialNotifications*.mysql.test.mjs.' }],
-  ['MySqlCommercialMaintenanceRunner', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in commercialMaintenance.mysql.test.mjs.' }],
-  ['MySqlPlatformAdminAuthRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in platformadmin.mysql.test.mjs; the MFA/step-up suites are the highest-value ones currently absent from CI.' }],
-  ['MySqlPlatformAdminActivationRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'audited as real-writer AND in CI via platformAdminBootstrap, but the exact test name was not re-verified when this register was written, so it is tracked rather than claimed.' }],
+  ['MySqlCommercialNotificationPublisher', { status: 'GAP', category: 'POPULATED_STATE_FAILURE', note: 'REVERTED from CERTIFIED in the same session it was promoted, because the empirical gate refused it. The writer/reader evidence is solid: commercialMaintenance.mysql.test.mjs constructs the real runner and the real publisher over a real notification repository, and the crash-gap test reads notification rows back asserting exactly one per quote. But the FILE fails the populated-state gate, in the test "MySQL: quote-expiry-notification catch-up drains a backlog larger than one batch across multiple passes within a single runOnce()". ROOT CAUSE, traced in source rather than guessed: CommercialMaintenanceRunner loops up to MAX_PASSES_PER_RUN (1000) and breaks only when a pass returns FEWER rows than quoteExpiryBatchSize; the test sets that batch size to 2, and an expired quote with no increase_request_ref is never notified by design (its own sibling test asserts that) yet is not excluded from the missing-notification scan. Each run of that sibling test leaves one such row permanently occupying the batch window, so the test passes on a freshly reset database and fails once enough runs have accumulated -- CI hides it because the FULL DB job resets first. Blocked on fixing that test (or excluding unattributable rows from the scan), NOT on coverage.' }],
+  ['MySqlCommercialMaintenanceRunner', { status: 'GAP', category: 'POPULATED_STATE_FAILURE', note: 'REVERTED from CERTIFIED for the same reason as MySqlCommercialNotificationPublisher, in the same file: the runner itself is constructed for real and driven by four racing instances with durable read-back, but the file fails the populated-state gate on the backlog-drain test described there. Note the difference between this category and the other four -- the evidence is not missing, the test is not state-independent.' }],
+  ['MySqlPlatformAdminAuthRepository', {
+    status: 'CERTIFIED',
+    realWriter: 'PlatformAdminAuthService.login / PlatformAdminAccountService, both holding the real repository (the suite constructs the real pair over it)',
+    realReader: 'session validation and the durable lockout state are read back through the service; the audit read path is queried back too',
+    hostileCase: 'lockout: after 5 failed attempts inside the window a 6th attempt with the CORRECT password and TOTP is still rejected -- the failure counter is durably read, not held in memory; plus the raw session token is never stored, only its hash, and a duplicate ACTIVE role grant is rejected by the DB unique constraint',
+    testFile: 'test/db/platformadmin.mysql.test.mjs',
+    testName: 'MySQL: lockout after 5 failed attempts within the window rejects a 6th attempt even with the correct password+code',
+  }],
+  ['MySqlPlatformAdminActivationRepository', {
+    status: 'CERTIFIED',
+    realWriter: 'createFirstOwnerBootstrap and the real PlatformAdminActivationService issuing and consuming the token inside the atomic bootstrap',
+    realReader: 'the full real lifecycle -- bootstrap, then login/whoami/logout -- reads the activation back through the service, and a separate case asserts the PERSISTED token_hash equals hashActivationToken(rawToken) and does not contain the raw token',
+    hostileCase: 'a forced real duplicate on the activation-token INSERT rejects the whole bootstrap, and the test reads the token table back asserting ACTIVATION_DELTA = 0; separately ACTIVATION_REISSUE invalidates the old token and the old pending TOTP',
+    testFile: 'test/db/platformAdminBootstrap.mysql.test.mjs',
+    testName: 'FIRST_OWNER_END_TO_END_ACTIVATION: full real lifecycle through the atomic bootstrap, then login/whoami/logout',
+  }],
   ['MySqlPlatformAdminAlertAdapter', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in platformAdminAlerts.mysql.test.mjs.' }],
   ['MySqlOwnerParentDeviceResolver', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'resolves the Owner device only (documented KNOWN GAP, PCA-DEC-031); coverage in protectionAlerts.mysql.test.mjs.' }],
   ['MySqlFamilyMembershipRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'CORRECTED NOTE (the previous one named parentAccount.mysql.test.mjs as its coverage; that file never names or constructs this class). It has ZERO direct test coverage -- searching every test/**/*.mjs finds it only in the certification register itself. Production-reachable in two places: MySqlParentAccountRepository holds a private instance and forwards createGenesisAdministrator/applyAcceptedInvitationRole/applyAcceptedInvitationRoleOnConnection/findActiveRole to it, and MySqlFamilyMemberAccountBinder default-constructs it. So coverage is at best INDIRECT, through the delegating parent-account repository, and the genesis delegate is not indirect-covered at all: the one suite that would exercise it, parentAccount.mysql.test.mjs, contains an explicit test that verify-email does NOT create family authority before the separate DSK genesis ceremony. Needs a real DB suite that drives the delegating caller, not a note that claims one exists.' }],
@@ -303,13 +317,23 @@ const REGISTER = new Map([
 ]);
 
 /** The gap count may only go DOWN. See the ratchet test. */
-const BASELINE_GAP_COUNT = 31;
+const BASELINE_GAP_COUNT = 29;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
   'SYNTHETIC_ONLY',
   'NOT_EXECUTED_IN_CI',
   'CRYPTO_GATED',
+  // Added when the empirical gate first ran over an expanded certified scope.
+  // The four original categories all describe MISSING COVERAGE (no writer, only
+  // doubles, never executed, honestly crypto-gated). This one describes a
+  // different blocker that the other four cannot express without lying: the
+  // real writer/dependency/reader path IS verified, but the file FAILS the
+  // populated-state gate, so the row is blocked by a TEST defect rather than by
+  // absent evidence. Without it such a row had to be filed under a category that
+  // was factually false, which is the failure mode this whole register exists to
+  // eliminate.
+  'POPULATED_STATE_FAILURE',
 ]);
 
 function durableStoresConstructedIn(mainSource) {

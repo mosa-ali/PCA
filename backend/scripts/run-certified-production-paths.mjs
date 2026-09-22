@@ -55,6 +55,7 @@ const CERTIFIED_FILES = [
   'test/db/freeAccessEnforcement.mysql.test.mjs',
   'test/db/settlement.mysql.test.mjs',
   'test/db/platformAdminBootstrap.mysql.test.mjs',
+  'test/db/platformadmin.mysql.test.mjs',
 ];
 
 if (CERTIFIED_FILES.length === 0) {

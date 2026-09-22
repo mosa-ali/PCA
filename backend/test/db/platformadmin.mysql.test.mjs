@@ -177,6 +177,14 @@ test('MySQL: platform_admin_audit_events append-only enforcement is grant-based,
 
 test('MySQL: audit read scoping -- queryForRole restricts a non-owner/auditor role to its own actions only', async () => {
   const { accountService } = buildServices();
+  // Narrow both reads to events created from here on. queryForRole returns a
+  // bounded page ordered newest-first, so on a populated database (which the
+  // certified-scope run deliberately uses -- it runs AFTER the full suite and
+  // is never reset) a large pre-existing audit log pushes this test's own rows
+  // out of the page and the assertions below fail for a reason unrelated to
+  // read scoping. This is the same defect previously fixed in
+  // platformAdminAuditPrivileges.mysql.test.mjs.
+  const since = new Date();
   const actorOneAccount = await accountService.createAccount('Actor One', hashAdminEmail(uniqueEmail('actorone')), 'password-value', 'APP_OWNER', 'BOOTSTRAP');
   const actorOne = { adminId: actorOneAccount.adminId, roles: ['APP_OWNER'] };
   // actorOne performs an action (creating a second admin), generating audit
@@ -185,14 +193,14 @@ test('MySQL: audit read scoping -- queryForRole restricts a non-owner/auditor ro
 
   // Queried AS a non-owner/auditor role (e.g. SUPPORT_ADMIN), actorOne sees
   // only events it was the actor of.
-  const ownEvents = await auditService.queryForRole(['SUPPORT_ADMIN'], actorOne.adminId, {});
+  const ownEvents = await auditService.queryForRole(['SUPPORT_ADMIN'], actorOne.adminId, { sinceOccurredAt: since, limit: 1000 });
   assert.ok(ownEvents.length > 0);
   assert.ok(ownEvents.every((e) => e.actorAdminId === actorOne.adminId));
 
   // Queried as APP_OWNER, the same caller sees the full log, including
   // events it did NOT act in (e.g. the bootstrap-created first admin, actor
   // null).
-  const fullEvents = await auditService.queryForRole(['APP_OWNER'], actorOne.adminId, {});
+  const fullEvents = await auditService.queryForRole(['APP_OWNER'], actorOne.adminId, { sinceOccurredAt: since, limit: 1000 });
   assert.ok(fullEvents.some((e) => e.targetRef === `admin:${actorTwoAccount.adminId}`));
   assert.ok(fullEvents.some((e) => e.actorAdminId === null));
 });
