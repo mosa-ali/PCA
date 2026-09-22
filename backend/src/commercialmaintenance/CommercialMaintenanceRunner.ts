@@ -86,6 +86,12 @@
  */
 
 import { execute, runInTransaction } from '../db/pool.js';
+import {
+  classifyUnattributableReason,
+  isProvablyTerminal,
+  nextAttributionAttemptAt,
+} from './attributionRetry.js';
+import type { AttributionReasonCode, PersistedAttributionState } from './attributionRetry.js';
 import type { QuoteRepository } from '../billing/quote.js';
 import type { ChangeRequestRepository } from '../entitlements/requests/ChangeRequestRepository.js';
 import { DEFAULT_MESSAGE_KEYS } from '../commercialnotifications/CommercialNotificationPublisher.js';
@@ -205,7 +211,7 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
     // still be notified later if it ever becomes attributable.
     let cursor: { expiresAt: Date; quoteId: string } | null = null;
     for (let pass = 0; pass < MAX_PASSES_PER_RUN; pass++) {
-      const rows = await this.findExpiredQuotesMissingNotification(this.config.quoteExpiryBatchSize, cursor);
+      const rows = await this.findExpiredQuotesMissingNotification(this.config.quoteExpiryBatchSize, cursor, this.now());
       if (rows.length === 0) break; // scan exhausted
       for (const row of rows) {
         published += await this.publishOne(row);
@@ -220,6 +226,7 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
   private async findExpiredQuotesMissingNotification(
     limit: number,
     after: { expiresAt: Date; quoteId: string } | null = null,
+    now: Date = this.now(),
   ): Promise<PendingQuoteExpiryNotificationRow[]> {
     // Keyset pagination, not OFFSET: OFFSET would still re-scan the skipped
     // prefix each pass and would double-count rows as notifications appear
@@ -227,7 +234,17 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
     // `(expires_at, quote_id) > (?, ?)` so the ORDER BY can be satisfied by the
     // existing (expires_at, quote_id) index in the same direction.
     const afterClause = after === null ? '' : 'AND (bq.expires_at > ? OR (bq.expires_at = ? AND bq.quote_id > ?))';
-    const params: unknown[] = after === null ? [limit] : [after.expiresAt, after.expiresAt, after.quoteId, limit];
+    // PCA-COMMERCIAL-LIVENESS-2: rows whose durable attribution state says
+    // "terminal" or "not due yet" are excluded HERE, in the scan, rather than
+    // being re-selected and then skipped. That is the whole point of the state
+    // table -- a not-yet-attributable quote costs one row of work per backoff
+    // interval instead of one row of work per pass of every run for ever. A row
+    // with no state yet is always eligible, so first sighting is unchanged.
+    const params: unknown[] = after === null
+      ? [now, limit]
+      // ORDER MATTERS and must follow the SQL text: the retry predicate's `now`
+      // comes BEFORE the afterClause's three placeholders, then LIMIT.
+      : [now, after.expiresAt, after.expiresAt, after.quoteId, limit];
     const { rows } = await runInTransaction((conn) =>
       execute<PendingQuoteExpiryNotificationRow>(
         conn,
@@ -235,7 +252,10 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
            FROM billing_quotes bq
            LEFT JOIN commercial_notifications cn
              ON cn.dedupe_key = CONCAT('QUOTE_EXPIRED:', bq.quote_id)
+           LEFT JOIN commercial_quote_attribution_retry ar
+             ON ar.quote_id = bq.quote_id
           WHERE bq.status = 'EXPIRED' AND cn.notification_id IS NULL
+            AND (ar.quote_id IS NULL OR (ar.state = 'PENDING_ATTRIBUTION' AND ar.next_attempt_at <= ?))
             ${afterClause}
           ORDER BY bq.expires_at ASC, bq.quote_id ASC
           LIMIT ?`,
@@ -253,22 +273,28 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
       // guess/substitute an account: skip, counted toward quotesExpired
       // (it DID transition) but never toward notificationsPublished.
       //
-      // This row keeps reappearing in the backlog scan on every future run (it
-      // can never gain a notification unless the reference is later repaired),
-      // and that IS intentional -- a self-documenting signal rather than a
-      // silent drop. What was NOT true, and what this comment used to claim, is
-      // that the cost of that choice is "cheap" and "bounded". It was neither:
-      // because the scan re-issued the same query every pass and could not
-      // advance past a row it always skips, a batch-full of these rows starved
-      // every eligible row behind them for ever and drove the loop to
-      // MAX_PASSES_PER_RUN on every single run (measured: 1,000 passes and
-      // 3,000 of these warns for a 3-row batch). The scan now advances a keyset
-      // cursor past every row it has considered, so the intent above is
-      // preserved without the liveness cost -- see
-      // publishPendingQuoteExpiryNotifications' own note.
+      // PCA-COMMERCIAL-LIVENESS-2: the skip is now DURABLE and BOUNDED rather
+      // than repeated every cycle. What this comment used to claim -- that the
+      // cost of re-scanning the row for ever is "cheap" and "bounded" -- was
+      // neither: a batch-full of these rows starved every eligible row behind
+      // them and drove each run to MAX_PASSES_PER_RUN (measured: 1,000 passes,
+      // 3,000 of these warns, 0 notified). The keyset cursor made the scan
+      // PROGRESS; recording the reason here is what makes it stop re-attempting
+      // a row it cannot yet attribute.
+      //
+      // The reason code decides the state, and the two are not
+      // interchangeable -- see attributionRetry.ts:
+      //   REFERENCE_ABSENT     provably permanent (the reference column is
+      //                        write-once), so TERMINAL_UNATTRIBUTABLE.
+      //   REFERENCE_UNRESOLVED not provably permanent, so PENDING_ATTRIBUTION
+      //                        with backoff -- never terminalised on age or on
+      //                        retry count, both of which would be a guess.
+      const reasonCode = classifyUnattributableReason(row.increase_request_ref);
+      await this.recordUnattributableAttempt(row.quote_id, reasonCode, this.now());
       this.logger.warn('commercial_maintenance.quote_expired_unattributed', {
         quoteId: row.quote_id,
         increaseRequestRef: row.increase_request_ref,
+        reasonCode,
       });
       return 0;
     }
@@ -284,6 +310,14 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
         },
         this.now(),
       );
+      // A quote that WAS pending attribution and is now attributable must not
+      // leave its retry state behind. The notification row is the durable
+      // evidence of the derived NOTIFIED state, so once an outcome is returned
+      // (PUBLISHED, or ALREADY_PUBLISHED from the concurrent runner that won)
+      // the retry row has served its purpose and is removed -- which is what
+      // keeps "a previously unattributable quote later becomes attributable"
+      // working rather than accumulating dead state.
+      await this.clearAttributionRetry(row.quote_id);
       return outcome.outcome === 'PUBLISHED' ? 1 : 0;
     } catch (error) {
       // A transient failure here (e.g. a dropped connection) must not crash
@@ -385,6 +419,97 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
     if (increaseRequestRef === null) return null;
     const request = await this.changeRequestRepository.getById(increaseRequestRef);
     return request?.familyId ?? null;
+  }
+
+  /**
+   * Records a failed attribution attempt durably.
+   *
+   * Read-modify-write inside ONE transaction with the row locked FOR UPDATE, so
+   * the decision is made against a state no concurrent runner can change
+   * underneath it:
+   *   * a provably permanent reason (REFERENCE_ABSENT) transitions to
+   *     TERMINAL_UNATTRIBUTABLE exactly once -- a second runner finds it already
+   *     terminal and does nothing, so the transition is not duplicated;
+   *   * anything else gets/keeps PENDING_ATTRIBUTION and a recomputed
+   *     next_attempt_at, so it is retried on a decaying schedule instead of on
+   *     every cycle.
+   * The attempt count is deliberately NOT used to decide terminality -- it only
+   * widens the backoff. See attributionRetry.ts for why terminality comes from
+   * source semantics alone.
+   */
+  private async recordUnattributableAttempt(quoteId: string, reasonCode: AttributionReasonCode, now: Date): Promise<void> {
+    if (isProvablyTerminal(reasonCode)) {
+      // ONE statement, deliberately. A "SELECT ... FOR UPDATE, then INSERT"
+      // sequence does NOT make this safe: FOR UPDATE cannot lock a row that does
+      // not exist yet -- it takes a gap lock, which does not stop a concurrent
+      // transaction from also seeing "no row" and also INSERTing, and the loser
+      // then fails with ER_DUP_ENTRY. That was a real failure, caught by the
+      // concurrent-runner test below, not a theoretical one.
+      //
+      // `state` is assigned LAST on purpose: MySQL evaluates ON DUPLICATE KEY
+      // UPDATE assignments left to right and later assignments see the values
+      // already updated, so every IF above still reads the OLD state. The
+      // transition therefore happens exactly once, no matter how many runners
+      // arrive at the same instant.
+      await runInTransaction((conn) =>
+        execute(
+          conn,
+          `INSERT INTO commercial_quote_attribution_retry
+             (quote_id, state, reason_code, attempt_count, next_attempt_at, terminal_at, created_at, updated_at)
+           VALUES (?, 'TERMINAL_UNATTRIBUTABLE', ?, 0, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             updated_at = IF(state = 'TERMINAL_UNATTRIBUTABLE', updated_at, VALUES(updated_at)),
+             terminal_at = IF(state = 'TERMINAL_UNATTRIBUTABLE', terminal_at, VALUES(terminal_at)),
+             next_attempt_at = IF(state = 'TERMINAL_UNATTRIBUTABLE', next_attempt_at, VALUES(next_attempt_at)),
+             reason_code = IF(state = 'TERMINAL_UNATTRIBUTABLE', reason_code, VALUES(reason_code)),
+             state = 'TERMINAL_UNATTRIBUTABLE'`,
+          [quoteId, reasonCode, now, now, now, now],
+        ),
+      );
+      return;
+    }
+
+    await runInTransaction(async (conn) => {
+      // Step 1: create-or-count in ONE atomic statement, so the row provably
+      // exists afterwards and the attempt is never lost or double-inserted.
+      // A terminal row is left untouched -- REFERENCE_ABSENT is the only
+      // terminal reason and it is permanent, so nothing may revive it.
+      await execute(
+        conn,
+        `INSERT INTO commercial_quote_attribution_retry
+           (quote_id, state, reason_code, attempt_count, next_attempt_at, terminal_at, created_at, updated_at)
+         VALUES (?, 'PENDING_ATTRIBUTION', ?, 1, ?, NULL, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           attempt_count = IF(state = 'TERMINAL_UNATTRIBUTABLE', attempt_count, attempt_count + 1),
+           updated_at = VALUES(updated_at)`,
+        [quoteId, reasonCode, nextAttributionAttemptAt(0, now), now, now],
+      );
+      // Step 2: NOW the row exists, so FOR UPDATE takes a real record lock. The
+      // schedule is computed here, from a stable count, which keeps the backoff
+      // formula in exactly one place (the pure function) instead of duplicating
+      // it in SQL where it would drift.
+      const current = await execute<{ state: PersistedAttributionState; attempt_count: number }>(
+        conn,
+        'SELECT state, attempt_count FROM commercial_quote_attribution_retry WHERE quote_id = ? FOR UPDATE',
+        [quoteId],
+      );
+      const row = current.rows[0];
+      if (row === undefined || row.state === 'TERMINAL_UNATTRIBUTABLE') return;
+      await execute(
+        conn,
+        `UPDATE commercial_quote_attribution_retry
+            SET reason_code = ?, next_attempt_at = ?, updated_at = ?
+          WHERE quote_id = ? AND state = 'PENDING_ATTRIBUTION'`,
+        // attempt_count already includes THIS attempt, so the number of prior
+        // failures is one less -- that is what the pure function expects.
+        [reasonCode, nextAttributionAttemptAt(row.attempt_count - 1, now), now, quoteId],
+      );
+    });
+  }
+
+  /** Removes retry state once a quote has been dealt with; see the call site. */
+  private async clearAttributionRetry(quoteId: string): Promise<void> {
+    await runInTransaction((conn) => execute(conn, 'DELETE FROM commercial_quote_attribution_retry WHERE quote_id = ?', [quoteId]));
   }
 
   /** Section 13 bounded retention: drains the prune backlog for this run,

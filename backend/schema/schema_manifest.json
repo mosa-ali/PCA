@@ -2282,6 +2282,102 @@
       ],
       "foreignKeys": []
     },
+    "commercial_quote_attribution_retry": {
+      "columns": [
+        {
+          "name": "quote_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "state",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "reason_code",
+          "type": "varchar(24)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "next_attempt_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "terminal_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "commercial_quote_attribution_retry_due_idx",
+          "unique": false,
+          "column": "state",
+          "seq": 1
+        },
+        {
+          "name": "commercial_quote_attribution_retry_due_idx",
+          "unique": false,
+          "column": "next_attempt_at",
+          "seq": 2
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "quote_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "commercial_quote_attribution_retry_quote_id_fk",
+          "column": "quote_id",
+          "referencedTable": "billing_quotes",
+          "referencedColumn": "quote_id"
+        }
+      ]
+    },
     "complimentary_entitlement_grants": {
       "columns": [
         {

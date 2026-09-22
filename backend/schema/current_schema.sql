@@ -419,6 +419,25 @@ CREATE TABLE `commercial_notifications` (
   CONSTRAINT `commercial_notifications_resource_ref_check` CHECK (((`resource_ref` is null) or (char_length(`resource_ref`) between 1 and 128)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- commercial_quote_attribution_retry
+CREATE TABLE `commercial_quote_attribution_retry` (
+  `quote_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `reason_code` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `attempt_count` int unsigned NOT NULL DEFAULT '0',
+  `next_attempt_at` datetime(3) NOT NULL,
+  `terminal_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`quote_id`),
+  KEY `commercial_quote_attribution_retry_due_idx` (`state`,`next_attempt_at`),
+  CONSTRAINT `commercial_quote_attribution_retry_quote_id_fk` FOREIGN KEY (`quote_id`) REFERENCES `billing_quotes` (`quote_id`) ON DELETE CASCADE,
+  CONSTRAINT `commercial_quote_attribution_retry_pending_check` CHECK (((`state` <> _utf8mb4'PENDING_ATTRIBUTION') or (`terminal_at` is null))),
+  CONSTRAINT `commercial_quote_attribution_retry_reason_check` CHECK ((`reason_code` in (_utf8mb4'REFERENCE_ABSENT',_utf8mb4'REFERENCE_UNRESOLVED'))),
+  CONSTRAINT `commercial_quote_attribution_retry_state_check` CHECK ((`state` in (_utf8mb4'PENDING_ATTRIBUTION',_utf8mb4'TERMINAL_UNATTRIBUTABLE'))),
+  CONSTRAINT `commercial_quote_attribution_retry_terminal_check` CHECK (((`state` <> _utf8mb4'TERMINAL_UNATTRIBUTABLE') or (`terminal_at` is not null)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- complimentary_entitlement_grants
 CREATE TABLE `complimentary_entitlement_grants` (
   `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

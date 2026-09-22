@@ -265,6 +265,8 @@ const files = [
   "test/tooling/canonicalSchemaDrift.test.mjs",
   "test/tooling/productionInMemoryStores.test.mjs",
   "test/tooling/productionPathCertification.test.mjs",
+  "test/tooling/commercialAttributionPermanence.test.mjs",
+  "test/commercialmaintenance/attributionRetry.test.mjs",
   "test/invitation/enrollmentProfile.test.mjs",
   "test/location/safeZoneRepository.test.mjs",
   "test/mutation/privacyBoundaries.test.mjs",

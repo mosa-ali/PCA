@@ -35,6 +35,25 @@ CREATE TABLE `account_entitlements` (
   CONSTRAINT `account_entitlements_plan_ref_check` CHECK ((char_length(`plan_ref`) between 1 and 32))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- commercial_quote_attribution_retry (defined by backend/migrations/0048_commercial_quote_attribution_retry.sql)
+CREATE TABLE `commercial_quote_attribution_retry` (
+  `quote_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `reason_code` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `attempt_count` int unsigned NOT NULL DEFAULT 0,
+  `next_attempt_at` datetime(3) NOT NULL,
+  `terminal_at` datetime(3) NULL,
+  `created_at` datetime(3) NOT NULL,
+  `updated_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`quote_id`),
+  KEY `commercial_quote_attribution_retry_due_idx` (`state`, `next_attempt_at`),
+  CONSTRAINT `commercial_quote_attribution_retry_quote_id_fk` FOREIGN KEY (`quote_id`) REFERENCES `billing_quotes` (`quote_id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `commercial_quote_attribution_retry_state_check` CHECK ((`state` in (_utf8mb4'PENDING_ATTRIBUTION',_utf8mb4'TERMINAL_UNATTRIBUTABLE'))),
+  CONSTRAINT `commercial_quote_attribution_retry_reason_check` CHECK ((`reason_code` in (_utf8mb4'REFERENCE_ABSENT',_utf8mb4'REFERENCE_UNRESOLVED'))),
+  CONSTRAINT `commercial_quote_attribution_retry_terminal_check` CHECK (((`state` <> _utf8mb4'TERMINAL_UNATTRIBUTABLE') or (`terminal_at` is not null))),
+  CONSTRAINT `commercial_quote_attribution_retry_pending_check` CHECK (((`state` <> _utf8mb4'PENDING_ATTRIBUTION') or (`terminal_at` is null)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- action_idempotency_ledger (defined by backend/migrations/0047_action_idempotency_ledger.sql)
 CREATE TABLE `action_idempotency_ledger` (
   `scope` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,

@@ -50,7 +50,15 @@ INSERT INTO `schema_migrations` (`version`, `applied_at`) VALUES
   ('0037_enrollment_bootstrap_attempt_invitation_fk.sql', CURRENT_TIMESTAMP(3)),
   ('0038_email_outbox.sql', CURRENT_TIMESTAMP(3)),
   ('0039_profile_protection_mode.sql', CURRENT_TIMESTAMP(3)),
-  ('0040_delete_now_ledger.sql', CURRENT_TIMESTAMP(3));
+  ('0040_delete_now_ledger.sql', CURRENT_TIMESTAMP(3)),
+  ('0041_platform_admin_activation_tokens.sql', CURRENT_TIMESTAMP(3)),
+  ('0042_parent_login_step_up_codes.sql', CURRENT_TIMESTAMP(3)),
+  ('0043_parent_family_memberships_and_profile.sql', CURRENT_TIMESTAMP(3)),
+  ('0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql', CURRENT_TIMESTAMP(3)),
+  ('0045_pca_dec_020_r2_genesis_step_up.sql', CURRENT_TIMESTAMP(3)),
+  ('0046_parent_daily_login_grants.sql', CURRENT_TIMESTAMP(3)),
+  ('0047_action_idempotency_ledger.sql', CURRENT_TIMESTAMP(3)),
+  ('0048_commercial_quote_attribution_retry.sql', CURRENT_TIMESTAMP(3));
 
 -- =========================================================================
 -- 2. Production reference data (from backend/migrations/0007_billing_core.sql)

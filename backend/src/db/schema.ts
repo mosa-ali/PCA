@@ -1,16 +1,18 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 86 tables, including schema_migrations itself),
+// central MySQL schema (all 87 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0047; 45 files, 0009/0010 never existed) from an empty database
+// through 0048; 46 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
 // docs/database/PCA_CANONICAL_SCHEMA_REPORT.md §21);
 // parent_genesis_step_up_authorizations (0045) and parent_daily_login_grants
 // (0046) followed, and action_idempotency_ledger (0047) after them -- the
-// P1-04 change that made parent-action replay protection durable.
+// P1-04 change that made parent-action replay protection durable -- and
+// commercial_quote_attribution_retry (0048), which gave an unattributable
+// expired quote a durable retry state instead of an unconditional re-scan.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -168,6 +170,44 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
       { column: "plan_ref", impliedReferencedTable: "billing_plans", impliedReferencedColumn: "plan_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Bounded enum-like plan code (e.g. FREE_STARTER), not billing_plans' opaque row id -- type-incompatible by design, same plane-isolation convention.", source: "backend/migrations/0006_platform_entitlements_enrollment_limits.sql" },
+    ],
+  },
+  {
+    name: "commercial_quote_attribution_retry",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0048_commercial_quote_attribution_retry.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/commercialmaintenance",
+    columns: [
+      { name: "quote_id", columnType: "char(36)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque identifier of the expired billing_quotes row this attribution state belongs to (real FK, ON DELETE CASCADE). Carries no family, parent or child identity." },
+      { name: "state", columnType: "varchar(24)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary attribution state: PENDING_ATTRIBUTION or TERMINAL_UNATTRIBUTABLE. NOTIFIED is deliberately NOT storable -- the commercial_notifications row is its evidence, and a second copy could diverge from the row the exactly-once guarantee rests on." },
+      { name: "reason_code", columnType: "varchar(24)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Closed-vocabulary reason: REFERENCE_ABSENT (provably permanent, reference column is write-once) or REFERENCE_UNRESOLVED (not proven permanent, stays pending). No free text, no identifiers." },
+      { name: "attempt_count", columnType: "int unsigned", dataType: "int", charset: null, collation: null, nullable: false, default: "0", autoIncrement: false, unsigned: true, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Numeric/boolean operational counter, limit, flag, rate, or version." },
+      { name: "next_attempt_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "terminal_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+      { name: "updated_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["quote_id"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "commercial_quote_attribution_retry_due_idx", columns: ["state", "next_attempt_at"], unique: false },
+    ],
+    foreignKeys: [
+      { name: "commercial_quote_attribution_retry_quote_id_fk", columns: ["quote_id"], referencedTable: "billing_quotes", referencedColumns: ["quote_id"], onDelete: "CASCADE", onUpdate: "NO ACTION" },
+    ],
+    checkConstraints: [
+      { name: "commercial_quote_attribution_retry_state_check", clause: "(`state` in (_utf8mb4'PENDING_ATTRIBUTION',_utf8mb4'TERMINAL_UNATTRIBUTABLE'))" },
+      { name: "commercial_quote_attribution_retry_reason_check", clause: "(`reason_code` in (_utf8mb4'REFERENCE_ABSENT',_utf8mb4'REFERENCE_UNRESOLVED'))" },
+      { name: "commercial_quote_attribution_retry_terminal_check", clause: "((`state` <> _utf8mb4'TERMINAL_UNATTRIBUTABLE') or (`terminal_at` is not null))" },
+      { name: "commercial_quote_attribution_retry_pending_check", clause: "((`state` <> _utf8mb4'PENDING_ATTRIBUTION') or (`terminal_at` is null))" },
+    ],
+    applicationEnforcedRelations: [
+
     ],
   },
   {

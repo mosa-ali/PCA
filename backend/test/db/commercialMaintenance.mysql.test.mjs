@@ -131,6 +131,41 @@ async function readNotificationRow(dedupeKey) {
   return rows[0] ?? null;
 }
 
+/** The durable attribution state for one quote, or null when the quote has none
+ * (i.e. it was never unattributable, or its state was cleared after a publish). */
+async function readAttributionRow(quoteId) {
+  const [rows] = await getPool().query(
+    'SELECT state, reason_code, attempt_count, next_attempt_at, terminal_at FROM commercial_quote_attribution_retry WHERE quote_id = ?',
+    [quoteId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Test control over the BACKOFF CLOCK only, never over the decision: it moves
+ * `next_attempt_at` into the past so the next runOnce() considers the row due,
+ * exactly as waiting would. It cannot make a terminal row eligible again, which
+ * is what keeps TERMINAL_UNATTRIBUTABLE honest. */
+async function makeAttributionDue(quoteId, when = new Date(Date.now() - 1_000)) {
+  await getPool().query('UPDATE commercial_quote_attribution_retry SET next_attempt_at = ? WHERE quote_id = ?', [when, quoteId]);
+}
+
+/** Same as createChangeRequestForFamily, but with a CALLER-CHOSEN request id, so a
+ * test can write a quote that references a request which does not exist YET and
+ * then create it -- the only way to exercise "temporarily unattributable". */
+async function createChangeRequestWithId(changeRequestRepository, familyId, requestId) {
+  await runInTransaction((conn) =>
+    changeRequestRepository.create(conn, {
+      requestId,
+      familyId,
+      limitType: 'MANAGED_DEVICE_LIMIT',
+      currentLimitAtRequest: 0,
+      targetLimit: 5,
+      now: new Date(),
+    }),
+  );
+  return requestId;
+}
+
 test('MySQL BOUNDARY: a quote whose expiresAt has just passed is expired; one whose expiresAt has not yet passed is untouched', async () => {
   const adminId = await createAdmin();
   const { quoteRepository } = buildQuoteService();
@@ -388,6 +423,7 @@ test('MySQL LIVENESS: unattributable expired quotes filling the batch must not s
   );
 
   // REPEATED_RUN_ON_POPULATED_DB = IDEMPOTENT and SECOND_RUN_DUPLICATE_NOTIFICATION = NO.
+  const warnsBeforeSecondRun = unattributedWarns;
   const second = await runner.runOnce();
   assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleQuoteId}`), 1, 'a second run must not publish a duplicate for the same quote');
   for (const quoteId of ineligibleQuoteIds) {
@@ -395,12 +431,19 @@ test('MySQL LIVENESS: unattributable expired quotes filling the batch must not s
   }
   assert.equal(second.notificationsPublished, 0, 'a second run over an already-drained backlog must publish nothing');
 
-  // Re-examined, not excluded: the unattributable rows must still be visible to
-  // the scan on the NEXT run (that is this module's documented intent -- they
-  // are a signal, not a silent drop), which is exactly why the fix had to make
-  // the scan ADVANCE rather than merely skip them. A non-zero warn count on the
-  // second run proves they were revisited.
-  assert.ok(unattributedWarns >= BATCH, 'unattributable rows must still be re-examined on later runs, not permanently excluded');
+  // SUPERSEDED BY THE OWNER'S ATTRIBUTION DECISION (PCA-COMMERCIAL-LIVENESS-2).
+  // This used to assert that unattributable rows are re-examined on every later
+  // run. They no longer are -- and that is the point of the state table: the
+  // rows here carry no reference at all, so they are PROVABLY permanent
+  // (REFERENCE_ABSENT) and become TERMINAL_UNATTRIBUTABLE on first sighting,
+  // which is what stops an unattributable backlog costing work for ever. The
+  // earlier assertion would now be pinning the removed behaviour as the spec.
+  for (const quoteId of ineligibleQuoteIds) {
+    const state = await readAttributionRow(quoteId);
+    assert.equal(state.state, 'TERMINAL_UNATTRIBUTABLE', 'a quote with no reference at all is provably never attributable');
+    assert.equal(state.reason_code, 'REFERENCE_ABSENT');
+  }
+  assert.equal(unattributedWarns, warnsBeforeSecondRun, 'now-terminal rows must NOT be re-scanned on a later run');
 });
 
 test('MySQL LIVENESS: a SINGLE unattributable expired quote must not loop the drain to the pass cap, and an eligible row behind it is still processed', async () => {
@@ -436,6 +479,229 @@ test('MySQL LIVENESS: a SINGLE unattributable expired quote must not loop the dr
   assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${ineligibleQuoteId}`), 0, 'the unattributable quote must never be notified');
   assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleQuoteId}`), 1, 'the eligible quote behind it must still be processed in the SAME run');
   assert.ok(unattributedWarns < 1_000, `batch size 1 must not drive the drain to the pass cap; got ${unattributedWarns} unattributed warns`);
+});
+
+// ---------------------------------------------------------------------------
+// ATTRIBUTION STATE (PCA-COMMERCIAL-LIVENESS-2)
+//
+// The owner's decision: model attribution explicitly, make terminality depend on
+// PROOF rather than on age or retry count, and give anything not provably
+// permanent a durable bounded retry instead of an unconditional re-scan.
+// ---------------------------------------------------------------------------
+test('MySQL ATTRIBUTION: a quote whose reference does not resolve YET stays PENDING_ATTRIBUTION, then becomes attributable and is notified exactly once', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const familyId = `family_${randomUUID()}`;
+
+  // A reference to a change request that deliberately does not exist yet.
+  const futureRequestId = randomUUID();
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: futureRequestId, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  const runner = buildRunner({ quoteService: { quoteRepository }, changeRequestRepository });
+
+  await runner.runOnce();
+
+  // Not attributable, and NOT terminalised: nothing in source proves this
+  // reference can never later resolve, so it must stay pending rather than being
+  // written off.
+  const pending = await readAttributionRow(quoteId);
+  assert.equal(pending.state, 'PENDING_ATTRIBUTION', 'an unresolved reference must stay pending, never terminal');
+  assert.equal(pending.reason_code, 'REFERENCE_UNRESOLVED');
+  assert.equal(Number(pending.attempt_count), 1);
+  assert.equal(pending.terminal_at, null);
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0);
+
+  // Now the referenced request appears -- the "temporarily unattributable" case.
+  await createChangeRequestWithId(changeRequestRepository, familyId, futureRequestId);
+
+  // Elapse the backoff (test control over the CLOCK only).
+  await makeAttributionDue(quoteId);
+  const recovered = await runner.runOnce();
+
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 1, 'once attributable, the quote must be notified');
+  assert.equal(recovered.notificationsPublished, 1);
+  assert.equal(await readAttributionRow(quoteId), null, 'the retry state must be cleared once the notification exists');
+
+  // And exactly once, across a further run.
+  await runner.runOnce();
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 1);
+});
+
+test('MySQL ATTRIBUTION: a quote with NO reference at all is TERMINAL_UNATTRIBUTABLE exactly once, and is never re-scanned', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: null, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  let unattributedWarns = 0;
+  const logger = { warn: (event) => { if (event === 'commercial_maintenance.quote_expired_unattributed') unattributedWarns += 1; } };
+  const runner = buildRunner({ quoteService: { quoteRepository }, changeRequestRepository, logger });
+
+  await runner.runOnce();
+
+  const terminal = await readAttributionRow(quoteId);
+  assert.equal(terminal.state, 'TERMINAL_UNATTRIBUTABLE', 'no reference at all is provably permanent');
+  assert.equal(terminal.reason_code, 'REFERENCE_ABSENT');
+  assert.ok(terminal.terminal_at, 'a terminal row must record when it became terminal');
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0, 'a terminal quote is never notified');
+
+  // Run twice more: the terminal state must be reached exactly once and the row
+  // must drop out of the scan entirely (no further skip-warnings for it).
+  const firstTerminalAt = terminal.terminal_at;
+  const [firstCount] = await getPool().query('SELECT COUNT(*) AS n FROM commercial_quote_attribution_retry WHERE quote_id = ?', [quoteId]);
+  assert.equal(Number(firstCount[0].n), 1);
+  const warnsAfterFirstRun = unattributedWarns;
+
+  await runner.runOnce();
+  await runner.runOnce();
+
+  const after = await readAttributionRow(quoteId);
+  assert.equal(after.state, 'TERMINAL_UNATTRIBUTABLE');
+  assert.deepEqual(after.terminal_at, firstTerminalAt, 'terminal_at must not move: the transition happens exactly once');
+  const [secondCount] = await getPool().query('SELECT COUNT(*) AS n FROM commercial_quote_attribution_retry WHERE quote_id = ?', [quoteId]);
+  assert.equal(Number(secondCount[0].n), 1, 're-terminalising must not create a second row');
+  assert.equal(unattributedWarns, warnsAfterFirstRun, 'a terminal row must not be re-scanned on later runs');
+});
+
+test('MySQL ATTRIBUTION: a not-yet-due pending row is NOT re-scanned before next_attempt_at', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: randomUUID(), expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  let unattributedWarns = 0;
+  const logger = { warn: (event) => { if (event === 'commercial_maintenance.quote_expired_unattributed') unattributedWarns += 1; } };
+  const runner = buildRunner({ quoteService: { quoteRepository }, changeRequestRepository, logger });
+
+  await runner.runOnce();
+  const first = await readAttributionRow(quoteId);
+  assert.equal(first.state, 'PENDING_ATTRIBUTION');
+  assert.ok(new Date(first.next_attempt_at).getTime() > Date.now(), 'the schedule must be in the FUTURE, not due immediately');
+  const warnsAfterFirstRun = unattributedWarns;
+
+  // Several cycles pass with the row not yet due.
+  await runner.runOnce();
+  await runner.runOnce();
+
+  assert.equal(unattributedWarns, warnsAfterFirstRun, 'a not-yet-due pending row must not be re-scanned every cycle');
+  const unchanged = await readAttributionRow(quoteId);
+  assert.equal(Number(unchanged.attempt_count), 1, 'an un-attempted cycle must not inflate attempt_count');
+
+  // And once due, it is retried (attempt_count advances) -- bounded retry, not
+  // abandonment.
+  await makeAttributionDue(quoteId);
+  await runner.runOnce();
+  const retried = await readAttributionRow(quoteId);
+  assert.equal(Number(retried.attempt_count), 2, 'a due pending row must be retried');
+  assert.ok(new Date(retried.next_attempt_at).getTime() > Date.now(), 'and rescheduled into the future again');
+});
+
+test('MySQL ATTRIBUTION: a large not-due pending backlog cannot starve a newly eligible quote', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const familyId = `family_${randomUUID()}`;
+  const requestId = await createChangeRequestForFamily(changeRequestRepository, familyId);
+
+  const now = Date.now();
+  // A backlog of unresolved-reference quotes, all of which become not-yet-due
+  // pending rows on first sighting.
+  const backlog = [];
+  for (let i = 0; i < 6; i++) {
+    backlog.push((await insertQuoteAt(quoteRepository, { increaseRequestRef: randomUUID(), expiresAt: new Date(now - 50_000 + i * 100), adminId })).quoteId);
+  }
+  const runner = buildRunner({ quoteService: { quoteRepository }, changeRequestRepository, config: { ...COMMERCIAL_MAINTENANCE_CONFIG_DEFAULTS, quoteExpiryBatchSize: 2 } });
+  await runner.runOnce();
+  for (const id of backlog) {
+    assert.equal((await readAttributionRow(id)).state, 'PENDING_ATTRIBUTION');
+  }
+
+  // A brand-new eligible quote arrives while the whole backlog is not due.
+  const eligibleId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: requestId, expiresAt: new Date(now - 5_000), adminId })).quoteId;
+  const run = await runner.runOnce();
+
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleId}`), 1, 'a newly eligible quote must be processed in the SAME run even with a pending backlog ahead of it');
+  assert.ok(run.notificationsPublished >= 1);
+  for (const id of backlog) {
+    assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${id}`), 0, 'backlog rows must remain un-notified, not guessed at');
+  }
+});
+
+test('MySQL ATTRIBUTION: retry state survives a restart (a brand-new runner instance honours the persisted schedule)', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: randomUUID(), expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  let firstInstanceWarns = 0;
+  const firstLogger = { warn: (event) => { if (event === 'commercial_maintenance.quote_expired_unattributed') firstInstanceWarns += 1; } };
+  await buildRunner({ quoteService: { quoteRepository }, changeRequestRepository, logger: firstLogger }).runOnce();
+  const persisted = await readAttributionRow(quoteId);
+  assert.equal(Number(persisted.attempt_count), 1);
+
+  // A completely separate instance, as a restarted process would be. Nothing is
+  // carried in memory, so the schedule must come from the database.
+  let secondInstanceWarns = 0;
+  const secondLogger = { warn: (event) => { if (event === 'commercial_maintenance.quote_expired_unattributed') secondInstanceWarns += 1; } };
+  await buildRunner({ quoteService: { quoteRepository }, changeRequestRepository, logger: secondLogger }).runOnce();
+
+  assert.equal(secondInstanceWarns, 0, 'the restarted process must respect the persisted next_attempt_at, not retry immediately');
+  assert.equal(Number((await readAttributionRow(quoteId)).attempt_count), 1, 'and must not inflate attempt_count');
+});
+
+test('MySQL ATTRIBUTION: concurrent runners do not duplicate the terminal transition', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: null, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  // Four instances race the same unattributable quote.
+  const runners = Array.from({ length: 4 }, () => buildRunner({ quoteService: { quoteRepository }, changeRequestRepository }));
+  await Promise.all(runners.map((r) => r.runOnce()));
+
+  const rows = await getPool().query('SELECT state, terminal_at FROM commercial_quote_attribution_retry WHERE quote_id = ?', [quoteId]);
+  assert.equal(rows[0].length, 1, 'exactly one state row may exist, whatever raced');
+  assert.equal(rows[0][0].state, 'TERMINAL_UNATTRIBUTABLE');
+
+  const [count] = await getPool().query('SELECT COUNT(*) AS n FROM commercial_quote_attribution_retry WHERE quote_id = ? AND terminal_at IS NOT NULL', [quoteId]);
+  assert.equal(Number(count[0].n), 1, 'the terminal transition must happen exactly once even under concurrency');
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0);
+});
+
+test('MySQL ATTRIBUTION: the state table CHECK constraints reject an out-of-vocabulary state or reason', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const now = Date.now();
+  const quoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: null, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  await assert.rejects(
+    () => getPool().query(
+      `INSERT INTO commercial_quote_attribution_retry (quote_id, state, reason_code, attempt_count, next_attempt_at, terminal_at, created_at, updated_at)
+       VALUES (?, 'NOTIFIED', 'REFERENCE_ABSENT', 0, ?, ?, ?, ?)`,
+      [quoteId, new Date(), new Date(), new Date(), new Date()],
+    ),
+    (error) => error.code === 'ER_CHECK_CONSTRAINT_VIOLATED',
+    'NOTIFIED must be unstorable: the notification row is its evidence, and a copy could diverge from it',
+  );
+  await assert.rejects(
+    () => getPool().query(
+      `INSERT INTO commercial_quote_attribution_retry (quote_id, state, reason_code, attempt_count, next_attempt_at, terminal_at, created_at, updated_at)
+       VALUES (?, 'TERMINAL_UNATTRIBUTABLE', 'REFERENCE_UNRESOLVED', 0, ?, NULL, ?, ?)`,
+      [quoteId, new Date(), new Date(), new Date()],
+    ),
+    (error) => error.code === 'ER_CHECK_CONSTRAINT_VIOLATED',
+    'a terminal row must carry terminal_at; the constraint asserts it in both directions',
+  );
 });
 
 test('MySQL RETENTION: a notification older than the configured retention window is pruned; a newer one is retained (never earlier than policy)', async () => {
