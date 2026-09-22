@@ -319,3 +319,65 @@ test('the audit record attributes a decision to the role the DECISION was made w
   assert.equal(events[0].authorizationRole, 'OWNER', 'the audit must name the role the verdict used, not the post-rotation one');
   assert.equal(events[0].trustSetEpoch, 1);
 });
+
+test('the audit record names the verdict the caller was actually RETURNED, not the one this call computed before losing the insert race', async () => {
+  // Same fidelity requirement as the role attribution above, one step further
+  // on: under a concurrent duplicate, authorize() returns the DURABLE record's
+  // outcome rather than its own locally computed one. Auditing the local verdict
+  // would then file an audit event for a decision that was never returned --
+  // e.g. a generic denial for a call the caller was told was a step-up failure.
+  const T0 = new Date('2026-01-01T00:00:00Z');
+  const { repo, service } = freshAudit();
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch({
+    familyId: 'fam-audit-11',
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+    entries: [{ deviceId: 'dev-viewer', role: 'VIEWER', dskKeyId: 'k1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' }],
+    issuedAt: T0,
+    supersedesEpoch: null,
+    signature: 'sig',
+  });
+  const resolver = new FamilyTrustSetRoleResolver(store);
+  const request = {
+    familyId: 'fam-audit-11',
+    actorDeviceId: 'dev-viewer',
+    operation: 'EDIT_CHILD_POLICY',
+    targetScope: { kind: 'FAMILY', id: 'fam-audit-11' },
+    issuedAt: T0,
+    expiresAt: new Date(T0.getTime() + 15 * 60 * 1000),
+    stepUp: null,
+    idempotencyKey: 'idem-audit-race-1',
+    actionId: 'act-audit-race-1',
+  };
+
+  // Learn the fingerprint this shape produces, then have the injected ledger
+  // hand back a DIFFERENT recorded verdict for that same (actionId, fingerprint)
+  // -- exactly what first-writer-wins does to the loser of the race.
+  const learning = new InMemoryActionIdempotencyLedger();
+  await new ParentActionAuthorizationService(resolver, defaultFamilyRbacPolicyConfig, learning, () => T0).authorize(request);
+  const fingerprint = (await learning.getRecorded('fam-audit-11', 'idem-audit-race-1')).requestFingerprint;
+
+  const authz = new ParentActionAuthorizationService(
+    resolver,
+    defaultFamilyRbacPolicyConfig,
+    {
+      getRecorded: async () => null, // nothing was recorded when this caller looked
+      record: async () => ({ actionId: 'act-audit-race-1', requestFingerprint: fingerprint, outcome: '{"verdict":"DENY","reason":"STEP_UP_FAILED"}' }),
+    },
+    () => T0,
+    undefined,
+    service,
+  );
+
+  // Locally this is a plain role denial; the durable record says step-up failure.
+  const decision = await authz.authorize(request);
+  assert.deepEqual(decision, { verdict: 'DENY', reason: 'STEP_UP_FAILED' });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const events = await repo.listForFamily('fam-audit-11');
+  assert.equal(events.length, 1);
+  // STEP_UP_FAILURE, not DENIED_AUTHORIZATION_ATTEMPT: the audit must describe
+  // the step-up denial the caller was handed.
+  assert.equal(events[0].actionType, 'STEP_UP_FAILURE');
+});

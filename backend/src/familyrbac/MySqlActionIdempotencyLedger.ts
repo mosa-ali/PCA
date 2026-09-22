@@ -17,6 +17,29 @@ interface IdempotencyRow {
 const MAX_CONFLICT_READBACK_ATTEMPTS = 3;
 
 /**
+ * One canonical shape for "no fingerprint", applied to every path that produces
+ * a RecordedAuthorization: the property is OMITTED, never present-with-undefined.
+ *
+ * This was a real (if quiet) defect, caught only by a strengthened concurrency
+ * assertion that deep-compared what record() returns against what getRecorded()
+ * reads: record() handed back the caller's object verbatim (no key at all when
+ * the caller omitted it), while getRecorded() built an object that always had
+ * the key. `===` cannot tell the two apart, so no verdict was ever wrong -- but
+ * the interface's shape depended on which path produced the value, and
+ * Object.keys / 'in' / deepEqual in any consumer would have disagreed with
+ * itself depending on the writer's call pattern. Normalising at the boundary is
+ * cheaper than making every consumer reason about it.
+ */
+function canonicalRecorded(recorded: RecordedAuthorization): RecordedAuthorization {
+  // `??` rather than a falsy test: an empty-string fingerprint is malformed but
+  // present, and collapsing it to absent would silently change what is stored.
+  const fingerprint = recorded.requestFingerprint ?? null;
+  return fingerprint === null
+    ? { actionId: recorded.actionId, outcome: recorded.outcome }
+    : { actionId: recorded.actionId, requestFingerprint: fingerprint, outcome: recorded.outcome };
+}
+
+/**
  * Durable, MySQL-backed ActionIdempotencyLedger -- the P1-04 drop-in
  * replacement for InMemoryActionIdempotencyLedger.
  *
@@ -53,16 +76,22 @@ const MAX_CONFLICT_READBACK_ATTEMPTS = 3;
  * provide. Because the bound is GLOBAL rather than per-scope, a busy owner can
  * therefore evict another owner's, or the platform scope's, replay record before
  * that record's window has elapsed, degrading exactly-once to at-most-once for
- * the evicted key. `trimIfOverCapacity` is nevertheless deliberately GLOBAL,
+ * the evicted key. It is also a SOFT ceiling, not an exact one: the trim is
+ * best-effort and the row just written is excluded from its own trim, so the
+ * table can transiently sit at capacity+1 until a later write trims it. Neither
+ * number is a security parameter -- do not read "4096" as a guarantee either
+ * way. `trimIfOverCapacity` is nevertheless deliberately GLOBAL,
  * matching MySqlMessageIdempotencyLedger's identical decision and migration
  * 0004's reasoning: a per-scope bound cannot bound memory at all, since the
  * number of scopes is not something this class controls. Closing the gap needs a
  * replay-RETENTION POLICY (a window and bound per scope, and what a miss means
  * to each caller) which is an architecture/security decision rather than
  * something this implementation may invent to tidy itself up; until then the
- * limitation is stated here, asserted in
- * test/familyrbac/ActionIdempotencyLedger.test.mjs, and raised as a finding
- * rather than left implicit.
+ * limitation is stated here, pinned for the in-memory bound in
+ * test/familyrbac/ActionIdempotencyLedger.test.mjs and executed for the real
+ * DELETE (small capacity, no swallowed failure, just-written row survives) in
+ * test/db/actionIdempotency.mysql.test.mjs, and raised as a finding rather than
+ * left implicit.
  *
  * Eviction is best-effort and never on the correctness path -- a COUNT is
  * checked first so the table-wide DELETE runs only on the rare write that
@@ -97,17 +126,20 @@ export class MySqlActionIdempotencyLedger implements ActionIdempotencyLedger {
     );
     const row = rows[0];
     if (row === undefined) return null;
-    return {
+    // Absent stays ABSENT -- the key is omitted rather than set to undefined, so
+    // a caller that never populates a fingerprint reads back exactly the shape it
+    // wrote (see canonicalRecorded).
+    return canonicalRecorded({
       actionId: row.action_id,
-      // Absent stays absent: an undefined fingerprint must not become the
-      // string "null", or a caller that never populates it would compare
-      // against a value it never wrote.
       requestFingerprint: row.request_fingerprint ?? undefined,
       outcome: row.outcome,
-    };
+    });
   }
 
   async record(scope: IdempotencyScope, idempotencyKey: IdempotencyKey, recorded: RecordedAuthorization): Promise<RecordedAuthorization> {
+    // Normalised up front so the INSERT payload and every value this method
+    // returns (its own or a winner's) have one shape.
+    const offered = canonicalRecorded(recorded);
     for (let attempt = 0; attempt < MAX_CONFLICT_READBACK_ATTEMPTS; attempt += 1) {
       try {
         await runInTransaction((conn) =>
@@ -115,11 +147,11 @@ export class MySqlActionIdempotencyLedger implements ActionIdempotencyLedger {
             conn,
             `INSERT INTO action_idempotency_ledger (scope, idempotency_key, action_id, request_fingerprint, outcome, created_at)
              VALUES (?, ?, ?, ?, ?, ?)`,
-            [scope, idempotencyKey, recorded.actionId, recorded.requestFingerprint ?? null, recorded.outcome, new Date()],
+            [scope, idempotencyKey, offered.actionId, offered.requestFingerprint ?? null, offered.outcome, new Date()],
           ),
         );
         await this.trimIfOverCapacity(scope, idempotencyKey);
-        return recorded;
+        return offered;
       } catch (error) {
         // Already recorded by an earlier (or concurrent) writer: first-writer-wins
         // makes this a success, not a conflict -- but the winning entry is what

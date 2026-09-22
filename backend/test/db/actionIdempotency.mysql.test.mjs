@@ -134,7 +134,7 @@ test('CONCURRENCY: concurrent records for the SAME (scope, key) resolve to exact
   // Eight writers, alternating instances on purpose: the arbiter must be the
   // database's own unique index, not any in-process serialisation these two
   // objects might happen to share.
-  await Promise.all(
+  const results = await Promise.all(
     candidates.map((candidate, index) =>
       new MySqlActionIdempotencyLedger().record(scope, key, recorded(`act-${candidate}`, `{"verdict":"${candidate}"}`)),
     ),
@@ -147,6 +147,18 @@ test('CONCURRENCY: concurrent records for the SAME (scope, key) resolve to exact
     candidates.some((candidate) => stored.outcome === `{"verdict":"${candidate}"}`),
     `the surviving outcome must be one of the writers' complete values, never a mix: got ${stored.outcome}`,
   );
+  // Every writer is told the SAME thing -- the durable row -- not its own
+  // verdict. This is the read-back under genuine concurrency rather than a
+  // sequential duplicate, so `record`'s return value is exercised for real.
+  // deepEqual rather than a field-by-field check on purpose: it is what caught
+  // record() handing back a caller's object with the `requestFingerprint` key
+  // simply absent while getRecorded() returned the key present-and-undefined.
+  for (const result of results) assert.deepEqual(result, stored);
+  // Pin the canonical shape explicitly, so "present but undefined" cannot come
+  // back as a regression that deepEqual happens to see identically on both sides.
+  for (const result of [...results, stored]) {
+    assert.equal('requestFingerprint' in result, false, 'an absent fingerprint must be OMITTED, not present-with-undefined');
+  }
   // And it must be STABLE -- a second read cannot disagree with the first.
   const reread = await new MySqlActionIdempotencyLedger().getRecorded(scope, key);
   assert.deepEqual(reread, stored);
@@ -295,6 +307,63 @@ test('REAL WRITER: a raw composite fingerprint is REFUSED by the column, so hash
     /fingerprint/i,
   );
   assert.equal(await rowCountForScope(scope), 0);
+});
+
+test('MULTI_INSTANCE read-back: the LOSER of the insert race is handed the WINNER entry, never its own', async () => {
+  // Pins `return existing` on the ER_DUP_ENTRY path. Without it the loser is
+  // told its own verdict, and AuthorizeRequest callers would then hold an answer
+  // the durable record contradicts -- so this assertion is load-bearing, not
+  // decoration: delete that return and this case fails.
+  const scope = uniqueScope();
+  const key = uniqueKey();
+  const winner = recorded('act-winner', '{"verdict":"ALLOW"}', 'b'.repeat(64));
+  const loser = recorded('act-loser', '{"verdict":"DENY","reason":"STEP_UP_FAILED"}', 'c'.repeat(64));
+
+  const firstResult = await new MySqlActionIdempotencyLedger().record(scope, key, winner);
+  const secondResult = await new MySqlActionIdempotencyLedger().record(scope, key, loser);
+
+  assert.deepEqual(firstResult, winner, 'the winner is told what it just recorded');
+  assert.deepEqual(secondResult, winner, 'the loser must be told what is DURABLE, not what it offered');
+  assert.notDeepEqual(secondResult, loser);
+  assert.equal(await rowCountForScope(scope), 1);
+});
+
+test('CAPACITY TRIM: the DELETE executes against real MySQL, the just-written row survives its own trim, and no failure is swallowed', async () => {
+  // The trim is unreachable in every other case here: the default capacity is
+  // 4096 rows, so `total <= capacity` is always true and the DELETE never runs.
+  // A small capacity forces it onto the real server, which is the only way to
+  // know the statement is accepted by MySQL 8.4 rather than merely plausible --
+  // the failure mode is a logged-and-swallowed error leaving the table silently
+  // unbounded. Put LAST in this file on purpose: the bound is global (see the
+  // class doc comment), so this case necessarily trims rows written by others.
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  let survivor;
+  try {
+    const ledger = new MySqlActionIdempotencyLedger(1); // capacity 1: the third write certainly overflows
+    const scope = uniqueScope();
+    survivor = { scope, key: uniqueKey() };
+    await ledger.record(uniqueScope(), uniqueKey(), recorded('act-trim-1', 'a'));
+    await ledger.record(uniqueScope(), uniqueKey(), recorded('act-trim-2', 'b'));
+    await ledger.record(survivor.scope, survivor.key, recorded('act-trim-3', '{"verdict":"ALLOW"}'));
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(
+    warnings.filter((warning) => warning.includes('action_idempotency_ledger_trim_failed')).length,
+    0,
+    'a trim failure is logged, so any occurrence here means the DELETE was rejected by MySQL',
+  );
+  // created_at is DATETIME(3), so all three writes can share a millisecond and
+  // the `keep` set is then a tie. The just-written row must survive regardless:
+  // it is excluded by predicate, not by ordering.
+  const stored = await new MySqlActionIdempotencyLedger().getRecorded(survivor.scope, survivor.key);
+  assert.notEqual(stored, null, 'the row this call just wrote must never be the one its own trim deletes');
+  assert.equal(stored.outcome, '{"verdict":"ALLOW"}');
 });
 
 test.after(async () => {

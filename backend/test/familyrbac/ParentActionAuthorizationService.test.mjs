@@ -714,10 +714,43 @@ test('SEC-1 regression: the fingerprint written to the ledger is a SHA-256 hex d
   // Deterministic for the same shape, and bound to the shape: the SAME key with
   // a mutated targetScope must produce a DIFFERENT fingerprint, or a caller
   // could replay the original target's verdict against a new one (PCA10).
-  await service.authorize(request);
-  assert.equal((await ledger.getRecorded('fam-1', 'idem-fp-1')).requestFingerprint, stored.requestFingerprint);
+  //
+  // The determinism half is asserted across TWO DIFFERENT keys/actionIds rather
+  // than by re-reading the same row: re-reading compares a value with itself
+  // through the cached-read path and cannot fail under any mutation of the
+  // production code, which is the vacuous-assertion species that let SEC-1
+  // through in the first place. Two independent writes for the same SHAPE must
+  // agree, which fails if the fingerprint ever picks up the key, the actionId, a
+  // nonce or a timestamp.
+  await service.authorize(
+    baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, idempotencyKey: 'idem-fp-1b', actionId: 'act-fp-1b' }),
+  );
+  assert.equal((await ledger.getRecorded('fam-1', 'idem-fp-1b')).requestFingerprint, stored.requestFingerprint);
+
   await service.authorize(baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-fp-2', actionId: 'act-fp-2' }));
   assert.notEqual((await ledger.getRecorded('fam-1', 'idem-fp-2')).requestFingerprint, stored.requestFingerprint);
+});
+
+test('SEC-1 hardening: two DISTINCT id strings must never collapse to one fingerprint', async () => {
+  // The case a delimiter-based preimage gets wrong, and the reason the preimage
+  // is JSON rather than a join. '\uD800' and '\uD801' are different JS strings
+  // that both encode to the SAME UTF-8 bytes (EF BF BD) -- so joining them with
+  // any separator and hashing the result made them fingerprint-identical, with
+  // no separator involved at all. JSON.stringify escapes lone surrogates
+  // distinctly (ES2019 well-formed stringify), so the preimages differ here.
+  const { service, ledger } = makeService();
+  const loneSurrogates = ['\uD800', '\uD801'];
+  for (const [index, id] of loneSurrogates.entries()) {
+    await service.authorize(
+      baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id }, idempotencyKey: `idem-surrogate-${index}`, actionId: `act-surrogate-${index}` }),
+    );
+  }
+
+  const fingerprints = await Promise.all(
+    loneSurrogates.map(async (_, index) => (await ledger.getRecorded('fam-1', `idem-surrogate-${index}`)).requestFingerprint),
+  );
+  for (const fingerprint of fingerprints) assert.match(fingerprint, /^[0-9a-f]{64}$/);
+  assert.notEqual(fingerprints[0], fingerprints[1], 'distinct id strings must not share a fingerprint');
 });
 
 test('SEC-5 regression: a lost insert race returns the ledger RECORDED verdict, never this caller own freshly computed one', async () => {

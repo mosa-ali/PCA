@@ -134,12 +134,6 @@ export class ParentActionAuthorizationService {
       requestFingerprint: fingerprint,
       outcome: JSON.stringify(decision),
     });
-    // Fire-and-forget: the AUDIT append is deliberately not part of the
-    // authorization result -- a verdict must not depend on an audit-store
-    // write succeeding, and the injected reference append() has no real I/O
-    // to await. This is unrelated to the ledger write above, which IS awaited:
-    // that one carries the replay guarantee and so cannot be best-effort.
-    void this.recordAudit(request, decision, resolvedActor);
     // The durable record is authoritative. If a concurrent delivery of the SAME
     // (actionId, fingerprint) won the insert race, its outcome is what every
     // future replay will return, so this caller returns THAT rather than a
@@ -148,10 +142,44 @@ export class ParentActionAuthorizationService {
     // actionId/fingerprint (the same key reused for something else) is
     // deliberately NOT returned: this call has just evaluated THIS request, and
     // adopting another request's verdict is the laundering PCA10 forbids.
-    if (effective.actionId === request.actionId && effective.requestFingerprint === fingerprint) {
-      return JSON.parse(effective.outcome) as AuthorizationDecision;
-    }
-    return decision;
+    //
+    // ACCEPTED TRADE, stated because it is a real direction of change: in the
+    // race above the loser can receive a verdict more permissive than its own
+    // (the actor was demoted between the two evaluations, so the winner's ALLOW
+    // is returned to a caller whose own evaluation said DENY). That is the
+    // idempotency contract working, not a fail-open hole: the two calls are the
+    // same action under the same actionId, the server authorized it once, the
+    // recorded answer is what every later replay will return regardless, and
+    // answering the loser with its own contradicting verdict would be exactly
+    // the divergence this ledger exists to remove. The alternative -- returning
+    // the stricter of the two, or the local one -- is strictly worse, because it
+    // makes the answer depend on arrival order rather than on the record.
+    const returnedDecision =
+      effective.actionId === request.actionId && effective.requestFingerprint === fingerprint
+        ? (JSON.parse(effective.outcome) as AuthorizationDecision)
+        : decision;
+    // Fire-and-forget: the AUDIT append is deliberately not part of the
+    // authorization result -- a verdict must not depend on an audit-store
+    // write succeeding. This is unrelated to the ledger write above, which IS
+    // awaited: that one carries the replay guarantee and so cannot be
+    // best-effort. It audits the verdict this call actually RETURNS, not merely
+    // the one it computed: under the concurrent-duplicate race the two differ,
+    // and an audit record naming a verdict the caller never received fails the
+    // same fidelity requirement the single actor-resolution above exists to
+    // satisfy. The `.catch` is not decoration either -- `void` on a rejecting
+    // promise is an unhandled rejection, which under Node 22's default
+    // --unhandled-rejections=throw terminates the process; logging is the honest
+    // middle between that and swallowing a lost audit event in silence.
+    void this.recordAudit(request, returnedDecision, resolvedActor).catch((error: unknown) => {
+      console.warn(
+        JSON.stringify({
+          event: 'parent_action_audit_append_failed',
+          actionId: request.actionId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    });
+    return returnedDecision;
   }
 
   private async recordAudit(request: AuthorizeRequest, decision: AuthorizationDecision, resolved: ActorResolution): Promise<void> {
@@ -308,11 +336,20 @@ export class ParentActionAuthorizationService {
  *     target id in a readable central table for no benefit -- the privacy
  *     classification for that column is hash material, and this keeps it
  *     true rather than aspirational.
- * Every field is separated by a delimiter that cannot appear in a UUID, an
- * operation name or a target id, so distinct shapes cannot collide by
- * concatenation.
+ *
+ * The preimage is JSON, not a delimiter join. A join with a "cannot appear in
+ * these fields" separator is only unambiguous if that assumption HOLDS, and
+ * nothing enforces it here: these are plain strings at this point in the code.
+ * Two concrete counterexamples, both real JS strings, both arriving through
+ * JSON.parse: a lone surrogate ("\uD800" and "\uD801" both encode to the same
+ * UTF-8 bytes, EF BF BD, so they hash identically even with no separator
+ * involved), and any field containing the separator itself. JSON.stringify
+ * escapes and delimits explicitly, so it is unambiguous for every possible
+ * string with no domain assumption to get wrong. This narrows the collision
+ * surface to "two different request shapes with the same SHA-256", i.e. to
+ * SHA-256 itself.
  */
 function fingerprintRequest(request: AuthorizeRequest): string {
-  const shape = [request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id].join('\u0000');
+  const shape = JSON.stringify([request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id]);
   return createHash('sha256').update(shape, 'utf8').digest('hex');
 }
