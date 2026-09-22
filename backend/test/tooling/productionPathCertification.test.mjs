@@ -292,8 +292,22 @@ const REGISTER = new Map([
   ['MySqlSequenceProgressLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'reached only through the same envelope-acceptance path; no production envelope is accepted, so no sequence is recorded.' }],
   ['MySqlFamilyAuditEventLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'the crypto-bound composer throws first, so delivery records nothing.' }],
   ['MySqlProtectionAlertLedger', { status: 'GAP', category: 'CRYPTO_GATED', note: 'same rejecting composer shape as the audit ledger.' }],
-  ['MySqlCommercialNotificationPublisher', { status: 'GAP', category: 'POPULATED_STATE_FAILURE', note: 'REVERTED from CERTIFIED in the same session it was promoted, because the empirical gate refused it. The writer/reader evidence is solid: commercialMaintenance.mysql.test.mjs constructs the real runner and the real publisher over a real notification repository, and the crash-gap test reads notification rows back asserting exactly one per quote. But the FILE fails the populated-state gate, in the test "MySQL: quote-expiry-notification catch-up drains a backlog larger than one batch across multiple passes within a single runOnce()". ROOT CAUSE, traced in source rather than guessed: CommercialMaintenanceRunner loops up to MAX_PASSES_PER_RUN (1000) and breaks only when a pass returns FEWER rows than quoteExpiryBatchSize; the test sets that batch size to 2, and an expired quote with no increase_request_ref is never notified by design (its own sibling test asserts that) yet is not excluded from the missing-notification scan. Each run of that sibling test leaves one such row permanently occupying the batch window, so the test passes on a freshly reset database and fails once enough runs have accumulated -- CI hides it because the FULL DB job resets first. Blocked on fixing that test (or excluding unattributable rows from the scan), NOT on coverage.' }],
-  ['MySqlCommercialMaintenanceRunner', { status: 'GAP', category: 'POPULATED_STATE_FAILURE', note: 'REVERTED from CERTIFIED for the same reason as MySqlCommercialNotificationPublisher, in the same file: the runner itself is constructed for real and driven by four racing instances with durable read-back, but the file fails the populated-state gate on the backlog-drain test described there. Note the difference between this category and the other four -- the evidence is not missing, the test is not state-independent.' }],
+  ['MySqlCommercialNotificationPublisher', {
+    status: 'CERTIFIED',
+    realWriter: 'MySqlCommercialMaintenanceRunner.runOnce publishing through the real MySqlCommercialNotificationPublisher into a real CommercialNotificationRepository (buildRunner injects both)',
+    realReader: 'countNotificationRows(QUOTE_EXPIRED:<quoteId>) and readNotificationRow read the persisted commercial_notifications rows back and assert exact counts',
+    hostileCase: 'the crash-gap case: a quote transitioned to EXPIRED but never notified (exactly the state a crash between transition and publish leaves) must be published EXACTLY ONCE by the next runOnce, and a third runOnce must publish nothing; plus concurrent retention-prune passes never double-delete',
+    testFile: 'test/db/commercialMaintenance.mysql.test.mjs',
+    testName: 'MySQL RESTART SAFETY: a quote transitioned to EXPIRED but never notified (simulated crash between transition and publish) is picked up -- exactly once -- by the NEXT runOnce(), never duplicated',
+  }],
+  ['MySqlCommercialMaintenanceRunner', {
+    status: 'CERTIFIED',
+    realWriter: 'the runner itself, constructed with real quote/change-request/notification repositories -- four independent instances, as separate processes would be',
+    realReader: 'readQuoteStatus and countNotificationRows read both the quote transition and the notification row back from MySQL',
+    hostileCase: 'TWO layers. Concurrency: four instances racing runOnce() against the same due quotes produce exactly one QUOTE_EXPIRED notification per quote, no duplicates. Liveness (the regression added with PCA-COMMERCIAL-LIVENESS-1): with a batch-full of permanently unattributable expired quotes sitting AHEAD of an eligible one in the (expires_at ASC) scan order, the eligible quote is still reached and notified exactly once, and the drain ends by exhausting the scan -- bounded by counting the skip-warnings the runner emits per skipped row, since reaching MAX_PASSES_PER_RUN would require at least 1000x batchSize of them. Before the fix this exact scenario was measured at 1,000 passes, 3,000 skip-warnings and ZERO notifications for the eligible quote: indefinite starvation, with the pass cap as the only exit.',
+    testFile: 'test/db/commercialMaintenance.mysql.test.mjs',
+    testName: 'MySQL LIVENESS: unattributable expired quotes filling the batch must not starve an eligible quote behind them, and the drain must end by exhaustion, not by the pass cap',
+  }],
   ['MySqlPlatformAdminAuthRepository', {
     status: 'CERTIFIED',
     realWriter: 'PlatformAdminAuthService.login / PlatformAdminAccountService, both holding the real repository (the suite constructs the real pair over it)',
@@ -317,7 +331,7 @@ const REGISTER = new Map([
 ]);
 
 /** The gap count may only go DOWN. See the ratchet test. */
-const BASELINE_GAP_COUNT = 29;
+const BASELINE_GAP_COUNT = 27;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',

@@ -19,9 +19,16 @@
  * `billing_quotes` rows that are already `status = 'EXPIRED'` but have no
  * corresponding `commercial_notifications` row yet (a `LEFT JOIN` on the
  * documented `QUOTE_EXPIRED:<quote_id>` dedupe-key convention), and
- * publishes for those, bounded by `quoteExpiryBatchSize` per pass, looping
- * (bounded by MAX_PASSES_PER_RUN) until the backlog is drained or the pass
- * limit is hit. This is deliberately MORE robust than trying to thread
+ * publishes for those, bounded by `quoteExpiryBatchSize` per pass and
+ * advancing a KEYSET CURSOR over (`expires_at`, `quote_id`) between passes,
+ * so the scan converges on genuine exhaustion rather than on
+ * `MAX_PASSES_PER_RUN`. The cursor matters for liveness, not just tidiness:
+ * a pass can SKIP a row it will never notify, a skipped row never leaves the
+ * `missing notification` predicate, and re-issuing the same `LIMIT` query
+ * therefore returns the same oldest rows for ever -- which starved eligible
+ * rows behind a batch-full of unattributable ones and forced every run to
+ * burn all 1,000 passes. See `publishPendingQuoteExpiryNotifications` for the
+ * measurement. This is deliberately MORE robust than trying to thread
  * batch-size-bounded row identities through the single unbounded UPDATE:
  *   - It is trivially exactly-once: eligibility is `status = 'EXPIRED' AND
  *     no notification row yet`, which can only ever be true because
@@ -170,18 +177,57 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
 
   private async publishPendingQuoteExpiryNotifications(): Promise<number> {
     let published = 0;
+    // KEYSET CURSOR over the scan's own (expires_at, quote_id) order. Read this
+    // before reverting to a plain repeated `LIMIT ?` query.
+    //
+    // The previous version re-issued the IDENTICAL query every pass and treated
+    // "this pass returned fewer rows than the batch size" as its only
+    // convergence signal. That signal is invalid whenever a pass SKIPS a row
+    // rather than consuming it: `publishOne` deliberately returns 0 for a quote
+    // with no attributable account, and such a row never gains a notification,
+    // so it stays in `WHERE cn.notification_id IS NULL` for ever. Because the
+    // scan is ordered `expires_at ASC` and those rows never leave, once at least
+    // `quoteExpiryBatchSize` of them exist the window is permanently full of the
+    // SAME oldest rows, and every eligible row behind them is starved
+    // indefinitely -- not merely delayed. Measured against real MySQL before
+    // this change, with 3 ineligible rows and a batch size of 3: 1,000 passes
+    // executed, 3,000 unattributed-warn events, and an eligible expired quote
+    // that was never notified while sitting in EXPIRED state. The loop's only
+    // exit was MAX_PASSES_PER_RUN, i.e. the safety net had become the normal
+    // termination path.
+    //
+    // The cursor makes forward progress unconditional: a skipped row advances
+    // the cursor exactly like a published one, so eligible rows behind it are
+    // reached within the same run, and the loop converges on genuine exhaustion
+    // rather than on the pass cap. Nothing is excluded permanently -- each
+    // runOnce() starts with a null cursor, so every unattributable row is still
+    // re-examined on every future run exactly as this module documents, and can
+    // still be notified later if it ever becomes attributable.
+    let cursor: { expiresAt: Date; quoteId: string } | null = null;
     for (let pass = 0; pass < MAX_PASSES_PER_RUN; pass++) {
-      const rows = await this.findExpiredQuotesMissingNotification(this.config.quoteExpiryBatchSize);
-      if (rows.length === 0) break;
+      const rows = await this.findExpiredQuotesMissingNotification(this.config.quoteExpiryBatchSize, cursor);
+      if (rows.length === 0) break; // scan exhausted
       for (const row of rows) {
         published += await this.publishOne(row);
       }
-      if (rows.length < this.config.quoteExpiryBatchSize) break; // backlog drained
+      const last = rows[rows.length - 1];
+      cursor = { expiresAt: last.expires_at, quoteId: last.quote_id };
+      if (rows.length < this.config.quoteExpiryBatchSize) break; // scan exhausted
     }
     return published;
   }
 
-  private async findExpiredQuotesMissingNotification(limit: number): Promise<PendingQuoteExpiryNotificationRow[]> {
+  private async findExpiredQuotesMissingNotification(
+    limit: number,
+    after: { expiresAt: Date; quoteId: string } | null = null,
+  ): Promise<PendingQuoteExpiryNotificationRow[]> {
+    // Keyset pagination, not OFFSET: OFFSET would still re-scan the skipped
+    // prefix each pass and would double-count rows as notifications appear
+    // underneath it. The predicate is a plain row comparison rather than
+    // `(expires_at, quote_id) > (?, ?)` so the ORDER BY can be satisfied by the
+    // existing (expires_at, quote_id) index in the same direction.
+    const afterClause = after === null ? '' : 'AND (bq.expires_at > ? OR (bq.expires_at = ? AND bq.quote_id > ?))';
+    const params: unknown[] = after === null ? [limit] : [after.expiresAt, after.expiresAt, after.quoteId, limit];
     const { rows } = await runInTransaction((conn) =>
       execute<PendingQuoteExpiryNotificationRow>(
         conn,
@@ -190,9 +236,10 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
            LEFT JOIN commercial_notifications cn
              ON cn.dedupe_key = CONCAT('QUOTE_EXPIRED:', bq.quote_id)
           WHERE bq.status = 'EXPIRED' AND cn.notification_id IS NULL
+            ${afterClause}
           ORDER BY bq.expires_at ASC, bq.quote_id ASC
           LIMIT ?`,
-        [limit],
+        params,
       ),
     );
     return rows;
@@ -204,10 +251,21 @@ export class MySqlCommercialMaintenanceRunner implements CommercialMaintenanceRu
       // No attributable family/account -- e.g. a Quote with no
       // increase_request_ref, or whose request no longer resolves. Never
       // guess/substitute an account: skip, counted toward quotesExpired
-      // (it DID transition) but never toward notificationsPublished. This
-      // row will keep appearing in the backlog scan every future run (it
-      // can never gain a notification), which is intentional -- a cheap,
-      // bounded, self-documenting signal rather than a silent drop.
+      // (it DID transition) but never toward notificationsPublished.
+      //
+      // This row keeps reappearing in the backlog scan on every future run (it
+      // can never gain a notification unless the reference is later repaired),
+      // and that IS intentional -- a self-documenting signal rather than a
+      // silent drop. What was NOT true, and what this comment used to claim, is
+      // that the cost of that choice is "cheap" and "bounded". It was neither:
+      // because the scan re-issued the same query every pass and could not
+      // advance past a row it always skips, a batch-full of these rows starved
+      // every eligible row behind them for ever and drove the loop to
+      // MAX_PASSES_PER_RUN on every single run (measured: 1,000 passes and
+      // 3,000 of these warns for a 3-row batch). The scan now advances a keyset
+      // cursor past every row it has considered, so the intent above is
+      // preserved without the liveness cost -- see
+      // publishPendingQuoteExpiryNotifications' own note.
       this.logger.warn('commercial_maintenance.quote_expired_unattributed', {
         quoteId: row.quote_id,
         increaseRequestRef: row.increase_request_ref,

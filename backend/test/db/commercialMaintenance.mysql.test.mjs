@@ -302,6 +302,142 @@ test('MySQL: quote-expiry-notification catch-up drains a backlog larger than one
   }
 });
 
+// ---------------------------------------------------------------------------
+// LIVENESS REGRESSION (PCA-COMMERCIAL-LIVENESS-1)
+//
+// This is the test whose ABSENCE let a production starvation defect ship. The
+// drain loop used to re-issue the same `LIMIT ?` scan every pass and treat "this
+// pass returned fewer rows than the batch size" as its only convergence signal.
+// That signal is invalid whenever a pass SKIPS a row: an unattributable expired
+// quote never gains a notification, so it never leaves the
+// `missing notification` predicate, and because the scan is ordered
+// `expires_at ASC` a batch-full of them permanently occupies the head of the
+// window. Measured before the fix, with 3 such rows and a batch size of 3: 1,000
+// passes executed (the MAX_PASSES_PER_RUN cap, i.e. the safety net WAS the
+// termination path), 3,000 unattributed warns, and an eligible expired quote
+// behind them never notified at all -- starved indefinitely, not merely delayed.
+//
+// The assertions below are deliberately about PROGRESS, not about counts of
+// notifications alone: a test that only asserted "the eligible row is notified"
+// on an otherwise-empty database would have passed against the broken loop too,
+// which is precisely how the defect survived.
+test('MySQL LIVENESS: unattributable expired quotes filling the batch must not starve an eligible quote behind them, and the drain must end by exhaustion, not by the pass cap', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const familyId = `family_${randomUUID()}`;
+  const requestId = await createChangeRequestForFamily(changeRequestRepository, familyId);
+
+  const BATCH = 3;
+  const now = Date.now();
+
+  // Ineligible rows FIRST in scan order: unattributable (no increase_request_ref)
+  // and OLDER than the eligible row, so they sit at the head of the
+  // (expires_at ASC, quote_id ASC) window. Exactly BATCH of them, so every pass
+  // that re-issued the same query would return these same rows and nothing else.
+  const ineligibleQuoteIds = [];
+  for (let i = 0; i < BATCH; i++) {
+    // insertQuoteAt returns the inserted QuoteRow, so take .quoteId.
+    const row = await insertQuoteAt(quoteRepository, { increaseRequestRef: null, expiresAt: new Date(now - 50_000 + i * 1_000), adminId });
+    ineligibleQuoteIds.push(row.quoteId);
+  }
+  // One ELIGIBLE row behind them: it has a resolvable increase_request_ref, so
+  // it is genuinely publishable and must eventually be reached. (The helper
+  // pins issued_at to 60s ago, so every expiry here must stay inside that
+  // minute -- billing_quotes_expiry_check requires expires_at > issued_at --
+  // which is why the ineligible rows use -50s..-48s and this one -10s.)
+  const eligibleQuoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: requestId, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  // Count passes indirectly and independently of the implementation: publishOne
+  // emits exactly one `quote_expired_unattributed` warn per skipped row per
+  // pass. Reaching MAX_PASSES_PER_RUN (1,000) therefore REQUIRES at least
+  // 1,000 x BATCH = 3,000 warns, so any warn total below 1,000 is proof on its
+  // own that the loop terminated by exhaustion rather than by the cap. This
+  // matters because the cap must remain a safety net, never the normal exit.
+  let unattributedWarns = 0;
+  const logger = {
+    warn: (event) => {
+      if (event === 'commercial_maintenance.quote_expired_unattributed') unattributedWarns += 1;
+    },
+  };
+
+  const runner = buildRunner({
+    quoteService: { quoteRepository },
+    changeRequestRepository,
+    config: { ...COMMERCIAL_MAINTENANCE_CONFIG_DEFAULTS, quoteExpiryBatchSize: BATCH },
+    logger,
+  });
+
+  const first = await runner.runOnce();
+
+  // INELIGIBLE_ROWS_NOT_NOTIFIED -- skipping must stay a skip, never a guess.
+  for (const quoteId of ineligibleQuoteIds) {
+    assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0, `unattributable quote ${quoteId} must never be notified`);
+  }
+
+  // ELIGIBLE_ROW_BEHIND_UNATTRIBUTABLE_ROWS = EVENTUALLY_PROCESSED, and
+  // ELIGIBLE_NOTIFICATION_EXACTLY_ONCE.
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleQuoteId}`), 1, 'the eligible quote BEHIND a batch-full of unattributable rows must still be reached and notified exactly once');
+  assert.ok(first.notificationsPublished >= 1);
+
+  // RUN_TERMINATES_BEFORE_MAX_PASSES / MAX_PASS_LIMIT = SAFETY_NET, NOT
+  // NORMAL_TERMINATION / NO_PROGRESS_LOOP.
+  assert.ok(
+    unattributedWarns < 1_000,
+    `the drain must terminate by exhausting the scan, not by hitting MAX_PASSES_PER_RUN; ${unattributedWarns} unattributed warns means it did not (reaching the cap needs at least 3,000)`,
+  );
+
+  // REPEATED_RUN_ON_POPULATED_DB = IDEMPOTENT and SECOND_RUN_DUPLICATE_NOTIFICATION = NO.
+  const second = await runner.runOnce();
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleQuoteId}`), 1, 'a second run must not publish a duplicate for the same quote');
+  for (const quoteId of ineligibleQuoteIds) {
+    assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${quoteId}`), 0);
+  }
+  assert.equal(second.notificationsPublished, 0, 'a second run over an already-drained backlog must publish nothing');
+
+  // Re-examined, not excluded: the unattributable rows must still be visible to
+  // the scan on the NEXT run (that is this module's documented intent -- they
+  // are a signal, not a silent drop), which is exactly why the fix had to make
+  // the scan ADVANCE rather than merely skip them. A non-zero warn count on the
+  // second run proves they were revisited.
+  assert.ok(unattributedWarns >= BATCH, 'unattributable rows must still be re-examined on later runs, not permanently excluded');
+});
+
+test('MySQL LIVENESS: a SINGLE unattributable expired quote must not loop the drain to the pass cap, and an eligible row behind it is still processed', async () => {
+  const adminId = await createAdmin();
+  const { quoteRepository } = buildQuoteService();
+  const changeRequestRepository = new MySqlChangeRequestRepository();
+  const familyId = `family_${randomUUID()}`;
+  const requestId = await createChangeRequestForFamily(changeRequestRepository, familyId);
+
+  const now = Date.now();
+  const ineligibleQuoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: null, expiresAt: new Date(now - 50_000), adminId })).quoteId;
+  const eligibleQuoteId = (await insertQuoteAt(quoteRepository, { increaseRequestRef: requestId, expiresAt: new Date(now - 10_000), adminId })).quoteId;
+
+  let unattributedWarns = 0;
+  const logger = {
+    warn: (event) => {
+      if (event === 'commercial_maintenance.quote_expired_unattributed') unattributedWarns += 1;
+    },
+  };
+
+  // Batch size 1 is the tightest window: EVERY pass returns exactly one row, so
+  // the old loop could only ever exit via the pass cap once it reached a row it
+  // always skips (ONE_UNATTRIBUTABLE_EXPIRED_QUOTE = DOES_NOT_LOOP_FOREVER).
+  const runner = buildRunner({
+    quoteService: { quoteRepository },
+    changeRequestRepository,
+    config: { ...COMMERCIAL_MAINTENANCE_CONFIG_DEFAULTS, quoteExpiryBatchSize: 1 },
+    logger,
+  });
+
+  await runner.runOnce();
+
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${ineligibleQuoteId}`), 0, 'the unattributable quote must never be notified');
+  assert.equal(await countNotificationRows(`QUOTE_EXPIRED:${eligibleQuoteId}`), 1, 'the eligible quote behind it must still be processed in the SAME run');
+  assert.ok(unattributedWarns < 1_000, `batch size 1 must not drive the drain to the pass cap; got ${unattributedWarns} unattributed warns`);
+});
+
 test('MySQL RETENTION: a notification older than the configured retention window is pruned; a newer one is retained (never earlier than policy)', async () => {
   const publisher = new MySqlCommercialNotificationPublisher(new CommercialNotificationRepository());
   const accountRef = `family_${randomUUID()}`;
