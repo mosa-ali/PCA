@@ -56,6 +56,11 @@ const CERTIFIED_FILES = [
   'test/db/settlement.mysql.test.mjs',
   'test/db/platformAdminBootstrap.mysql.test.mjs',
   'test/db/platformadmin.mysql.test.mjs',
+  // Added with the MySqlPlatformAdminAlertAdapter promotion (PCA-DEC-033 burn-down):
+  // the row's real-writer test lives here, so this file must be executed by CI
+  // (gate 6) and re-run against a POPULATED database (gate 7) for the
+  // certification to mean anything.
+  'test/db/platformAdminAlerts.mysql.test.mjs',
   'test/db/commercialMaintenance.mysql.test.mjs',
 ];
 

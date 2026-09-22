@@ -340,13 +340,25 @@ const REGISTER = new Map([
     testFile: 'test/db/platformAdminBootstrap.mysql.test.mjs',
     testName: 'FIRST_OWNER_END_TO_END_ACTIVATION: full real lifecycle through the atomic bootstrap, then login/whoami/logout',
   }],
-  ['MySqlPlatformAdminAlertAdapter', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'coverage in platformAdminAlerts.mysql.test.mjs.' }],
+  ['MySqlPlatformAdminAlertAdapter', {
+    status: 'CERTIFIED',
+    // Was NOT_EXECUTED_IN_CI with the note "coverage in platformAdminAlerts.mysql.test.mjs" --
+    // which was true and insufficient: both of that file's original tests construct
+    // the adapter themselves and call notifyAppOwners directly, so they prove the
+    // adapter WRITES and say nothing about whether production ever calls it. Exactly the
+    // STORE_TEST_PASS != PRODUCTION_PATH_PASS shape.
+    realWriter: 'PlatformAdminAuthService.login -> recordFailureAndMaybeAlert -> the injected PlatformAdminAlertPort, which is MySqlPlatformAdminAlertAdapter; the test constructs the REAL MySqlPlatformAdminAuthRepository and the REAL adapter, so nothing between the service and the row is a double',
+    realReader: 'the durable row is read back from platform_admin_security_alerts by (source_admin_id, kind, delivery_state, delivered_at), and the login attempt is read back from platform_admin_login_attempts to prove the alert is an addition to the audit trail rather than a substitute for it',
+    hostileCase: 'A genuine failed login for an ACTIVE APP_OWNER account -- a REAL scrypt credential for a password the test does not supply, so the failure is a real credential mismatch rather than a malformed-credential short circuit. Asserts the OTHER active APP_OWNER is notified, that the source owner is NOT notified of its own failure, that kind is LOGIN_FAILED (not LOCKED_OUT), and that delivery_state is PENDING with delivered_at NULL so no external delivery is fabricated. Falsifying by construction: no other writer of that table runs in this test, so the row cannot exist unless the real adapter was reached through the real service -- a swapped-in LoggingAlertAdapter or an unwired port fails it.',
+    testFile: 'test/db/platformAdminAlerts.mysql.test.mjs',
+    testName: 'MySQL REAL-WRITER: a failed login through the REAL PlatformAdminAuthService reaches the real alert adapter and durably notifies the other APP_OWNER',
+  }],
   ['MySqlOwnerParentDeviceResolver', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'resolves the Owner device only (documented KNOWN GAP, PCA-DEC-031); coverage in protectionAlerts.mysql.test.mjs.' }],
   ['MySqlFamilyMembershipRepository', { status: 'GAP', category: 'NOT_EXECUTED_IN_CI', note: 'CORRECTED NOTE (the previous one named parentAccount.mysql.test.mjs as its coverage; that file never names or constructs this class). It has ZERO direct test coverage -- searching every test/**/*.mjs finds it only in the certification register itself. Production-reachable in two places: MySqlParentAccountRepository holds a private instance and forwards createGenesisAdministrator/applyAcceptedInvitationRole/applyAcceptedInvitationRoleOnConnection/findActiveRole to it, and MySqlFamilyMemberAccountBinder default-constructs it. So coverage is at best INDIRECT, through the delegating parent-account repository, and the genesis delegate is not indirect-covered at all: the one suite that would exercise it, parentAccount.mysql.test.mjs, contains an explicit test that verify-email does NOT create family authority before the separate DSK genesis ceremony. Needs a real DB suite that drives the delegating caller, not a note that claims one exists.' }],
 ]);
 
 /** The gap count may only go DOWN. See the ratchet test. */
-const BASELINE_GAP_COUNT = 26;
+const BASELINE_GAP_COUNT = 25;
 
 const GAP_CATEGORIES = new Set([
   'NO_PRODUCTION_WRITER',
