@@ -44,13 +44,34 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
     {
       durableRequired: false,
       classification:
-        'NOT YET DETERMINED -- deliberately so. FamilyAuditStore.ts:36-37 documents this repository as ' +
-        '"append-only, family-local/E2EE store -- never a PCA server audit log", with real persistence ' +
-        'scoped to family-device-local storage. FamilyAuditRecord also carries freeTextNote. Making it a ' +
-        'readable server-side table without an explicit architecture/privacy decision risks creating the ' +
-        'central readable family-activity store PCA-SEC-023 forbids, and would have to satisfy the ' +
-        'machine-enforced privacy gate in test/schema-privacy.test.mjs. Determination required BEFORE ' +
-        'any persistence change here.',
+        'DETERMINED -- NO DURABLE SERVER-SIDE COUNTERPART IS PERMITTED, so this is not debt. The ' +
+        'determination the previous entry deferred has since been made by reading the governing ' +
+        'document rather than inferring from the code comment. Doc 18 states the rule about audit ' +
+        'records AS A CLASS, not about a "content" subset of event categories: PCA-FR-092 "never a ' +
+        'readable PCA-server copy"; Section 4 "the family audit event is encrypted to authorized ' +
+        'devices"; Section 5 "they are not PCA server audit logs and do not carry activity ' +
+        'plaintext" and free text is "E2EE only, and excluded from push/email/logging"; Section 6 ' +
+        'asserts no URLs/locations/activity detail/plaintext in infrastructure logs. ' +
+        'docs/product-completion/PCA_FAMILY_AUTHORITY_COMPLETION_ARCHITECTURE.md left this as an ' +
+        'open NEW_OWNER_DECISION_REQUIRED sub-question only because it lacked doc 18\'s full text, ' +
+        'and instructed that the safe reading stand unless a human reviewed Section 5/6 and said ' +
+        'otherwise. That review is done and it does NOT relax the rule. So a readable server-side ' +
+        'table for FamilyAuditRecord (including its freeTextNote) is forbidden, and the server-side ' +
+        'representation is the OPAQUE one that already exists and is already wired: ' +
+        'FamilyAuditEventProducer composes a crypto-bound envelope, MySqlFamilyAuditEventLedger ' +
+        'holds only ciphertext under a server-ciphertext TTL, and decryption happens in the trusted ' +
+        'parent browser. GET /api/parent/families/:familyId/audit-events returns opaque fields only, ' +
+        'so no plaintext read endpoint exists either. Restart loss of THIS in-process copy therefore ' +
+        'loses nothing that is supposed to be durable server-side. Residual gap, stated rather than ' +
+        'smoothed over: the delivery composer is createRejectingOpaqueFamilyAuditEventComposer, the ' +
+        'same CRYPTO_SUITE = PENDING_HUMAN_SECURITY_REVIEW gate as every other E2EE surface, so ' +
+        'until that review lands an event is generated and then discarded fail-closed -- a recorded ' +
+        'owner-gated dependency (PCA-DEC-020), not a source-actionable defect, because the ' +
+        'alternative is exactly the readable store doc 18 forbids. Note for future sessions: ' +
+        'server-generated STEP_UP_SUCCESS/STEP_UP_FAILURE/DENIED_AUTHORIZATION_ATTEMPT records are ' +
+        'still FAMILY AUDIT RECORDS (doc 18 Section 5 lists them as required examples). Being ' +
+        'server-GENERATED does not entitle the server to a readable COPY of them, and they must not ' +
+        'be moved into a "server-appropriate" plaintext store on that reasoning.',
     },
   ],
   [
