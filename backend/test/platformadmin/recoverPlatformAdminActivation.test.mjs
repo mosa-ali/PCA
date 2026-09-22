@@ -29,6 +29,7 @@ import {
   RecoveryRefusalError,
   evaluateRecoveryTarget,
 } from '../../scripts/lib/platformAdminRecoveryVerdict.mjs';
+import { ACTIVATION_RECOVERY_LOCK_NAME } from '../../scripts/recover-platform-admin-activation.mjs';
 
 const script = readFileSync(new URL('../../scripts/recover-platform-admin-activation.mjs', import.meta.url), 'utf8');
 const verdictModule = readFileSync(new URL('../../scripts/lib/platformAdminRecoveryVerdict.mjs', import.meta.url), 'utf8');
@@ -150,34 +151,78 @@ test('the pure refusal module imports nothing from dist, so its rules are testab
 
 test('the script refuses before writing anything: a read-only preflight runs before the write transaction opens', () => {
   const preflightIndex = script.indexOf('const preflightVerdict = evaluateRecoveryTarget(preflight');
-  const transactionIndex = script.indexOf('const committed = await runInTransaction(');
+  const transactionIndex = script.indexOf('committed = await runInTransaction(');
   assert.ok(preflightIndex >= 0, 'the preflight verdict must exist');
   assert.ok(transactionIndex >= 0, 'the write transaction must exist');
   assert.ok(preflightIndex < transactionIndex, 'the preflight must run before the write transaction opens');
   assert.match(script, /if \(!preflightVerdict\.allowed\) throw new RecoveryRefusalError\(preflightVerdict\.reason\);/);
 });
 
-test('the decision is re-taken under lock inside the transaction, so a state change or a second racer cannot slip past the preflight', () => {
-  const transactionBody = script.slice(script.indexOf('const committed = await runInTransaction('));
-  assert.match(transactionBody, /const locked = await readTargetState\(conn, emailHash, true\);/);
-  assert.match(transactionBody, /const verdict = evaluateRecoveryTarget\(locked, \{ allowPendingMaterial \}\);/);
+test('the decision is re-taken inside the transaction, so an account state change cannot slip past the preflight', () => {
+  const transactionBody = script.slice(script.indexOf('committed = await runInTransaction('));
+  assert.match(transactionBody, /const reread = await readTargetState\(conn, emailHash\);/);
+  assert.match(transactionBody, /const verdict = evaluateRecoveryTarget\(reread, \{ allowPendingMaterial \}\);/);
   assert.match(transactionBody, /if \(!verdict\.allowed\) throw new RecoveryRefusalError\(verdict\.reason\);/);
   // The in-transaction re-check is the safety boundary and must exist
   // independently, not reuse the preflight's earlier result.
   assert.doesNotMatch(transactionBody, /evaluateRecoveryTarget\(preflight/);
 });
 
-test('the account row is read (and locked) before roles and MFA, keeping lock order consistent', () => {
+test('the account row is read before roles and MFA, so a refusal never costs more than the read it needs', () => {
   const readBody = script.slice(script.indexOf('async function readTargetState'));
-  const accountSelect = readBody.indexOf('FROM platform_admin_accounts WHERE email_hash = ?${lock}');
+  const accountSelect = readBody.indexOf('FROM platform_admin_accounts WHERE email_hash = ?');
   const roleSelect = readBody.indexOf('FROM platform_admin_role_assignments');
   const mfaSelect = readBody.indexOf('FROM platform_admin_mfa_state');
   assert.ok(accountSelect >= 0 && roleSelect >= 0 && mfaSelect >= 0);
   assert.ok(accountSelect < roleSelect && roleSelect < mfaSelect, 'accounts, then roles, then MFA');
 });
 
+test('SECURITY: the script takes NO row lock, because locking the account or MFA row would invert the lock order the activation lifecycle depends on', () => {
+  // Comment-stripped: the header deliberately names `FOR UPDATE` in order to
+  // explain why it is NOT used here.
+  assert.doesNotMatch(codeLines, /FOR UPDATE/);
+
+  // The ordering this script must not contradict, read from the repository
+  // itself rather than restated: complete() locks activation_tokens, then
+  // mfa_state, then accounts.
+  const completeBody = activationRepository.slice(activationRepository.indexOf('async complete('));
+  const tokenLock = completeBody.indexOf('FROM platform_admin_activation_tokens');
+  const mfaLock = completeBody.indexOf('FROM platform_admin_mfa_state');
+  const accountLock = completeBody.indexOf('FROM platform_admin_accounts');
+  assert.ok(tokenLock >= 0 && mfaLock > tokenLock && accountLock > mfaLock);
+  // A reissue that locked accounts FIRST and then waited on mfa_state would
+  // form a cycle against that sequence. The only locking statement this script
+  // can reach is the repository's own, whose order is a prefix of complete()'s.
+  assert.match(script, /await issueActivationTokenOnConnection\(conn, \{/);
+});
+
+test('the operator invariant is serialized by a dedicated advisory lock, held from before the preflight until after the transaction settles', () => {
+  assert.equal(ACTIVATION_RECOVERY_LOCK_NAME, 'pca:platform-admin-activation-recovery');
+  // Dedicated, NOT the shared bootstrap lock: this script does not mutate the
+  // "does an active APP_OWNER exist yet" invariant those scripts serialize,
+  // so sharing their lock would block an unrelated operation.
+  assert.doesNotMatch(script, /FIRST_OWNER_BOOTSTRAP_LOCK_NAME/);
+  assert.match(codeLines, /SELECT GET_LOCK\(\?, \?\) AS acquired/);
+  assert.match(codeLines, /SELECT RELEASE_LOCK\(\?\) AS released/);
+
+  const tryIdx = script.indexOf('try {', script.indexOf('const lock = await acquireRecoveryLock(pool);'));
+  const acquireIdx = script.indexOf('const lock = await acquireRecoveryLock(pool);');
+  const preflightIdx = script.indexOf('const preflight = await readTargetState(lock, emailHash);');
+  const transactionIdx = script.indexOf('committed = await runInTransaction(');
+  const releaseIdx = script.indexOf('await releaseRecoveryLock(lock);');
+  const deliveryIdx = script.indexOf('const deliveryOutcome = await attemptDeliveryAndRecordOutcome(');
+  assert.ok(acquireIdx >= 0 && preflightIdx >= 0 && transactionIdx >= 0 && releaseIdx >= 0 && deliveryIdx >= 0);
+  assert.ok(acquireIdx < tryIdx, 'the lock is taken before the guarded block opens');
+  assert.ok(tryIdx < preflightIdx, 'the precondition is read while the lock is held');
+  assert.ok(preflightIdx < transactionIdx, 'the preflight precedes the write transaction');
+  assert.ok(transactionIdx < releaseIdx, 'the lock is released only after the transaction settles');
+  assert.ok(releaseIdx < deliveryIdx, 'the lock is never held across the network delivery attempt');
+  // Released in a finally{}, so a refusal or a thrown error cannot leak it.
+  assert.match(script, /\} finally \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*await releaseRecoveryLock\(lock\);/);
+});
+
 test('token, outbox row and audit event are written by THREE writes on ONE transaction connection, and the network send is outside it', () => {
-  const transactionIndex = script.indexOf('const committed = await runInTransaction(');
+  const transactionIndex = script.indexOf('committed = await runInTransaction(');
   const issueIndex = script.indexOf('await issueActivationTokenOnConnection(conn, {');
   const outboxIndex = script.indexOf('await insertEmailOutboxRowOnConnection(conn, {');
   const auditIndex = script.indexOf('await insertPlatformAdminAuditEventRow(conn, {');

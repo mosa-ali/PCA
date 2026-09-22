@@ -55,6 +55,28 @@
 // transaction resolves and inside no transaction, exactly like every other
 // outbox message.
 //
+// WHY THE OPERATOR INVARIANT IS SERIALIZED BY AN ADVISORY LOCK AND NOT BY ROW
+// LOCKS: the invariant is "at most one live activation link exists for this
+// admin", and two operators (or one operator running this twice) must not
+// interleave the revoke/insert pair. The obvious implementation -- SELECT ...
+// FOR UPDATE on the account and MFA rows -- is WRONG here, and quietly so:
+// MySqlPlatformAdminActivationRepository.complete() locks activation_tokens,
+// then mfa_state, then accounts; beginMfa() locks activation_tokens, then
+// accounts, then mfa_state. A reissue that grabbed accounts first and then
+// waited on mfa_state would form a real cycle against a concurrent activation
+// completion holding mfa_state and waiting on accounts. MySQL would detect the
+// deadlock and roll one statement back -- a degraded operator experience
+// rather than corruption, but an avoidable one. Taking the same named advisory
+// lock bootstrap-platform-owner.mjs uses for its own one-time invariant
+// serializes this operation without touching row-lock order at all, and the
+// destructive step stays guarded by issueActivationTokenOnConnection's own
+// `WHERE ... status = 'PENDING_SETUP'` clauses.
+//
+// The lock name is DEDICATED, not the bootstrap's: this script does not mutate
+// the "does an active APP_OWNER exist yet" invariant that
+// bootstrap-platform-owner.mjs and promote-first-app-owner.mjs share, so
+// serializing them against each other would block an unrelated operation.
+//
 // WHY actorAdminId IS NULL ON THE AUDIT EVENT: there is no authenticated
 // actor -- that absence is the entire reason this script exists. NULL is the
 // documented convention for a system/operator-granted change (see
@@ -129,11 +151,47 @@ function requireEnv(env, name) {
   return value;
 }
 
-async function readTargetState(conn, emailHash, forUpdate) {
-  const lock = forUpdate ? ' FOR UPDATE' : '';
+/**
+ * Advisory lock name for this script's one-time operator invariant. Exported
+ * so tests can pin that the lock is acquired, is held across the write, and is
+ * released before the network delivery attempt.
+ */
+export const ACTIVATION_RECOVERY_LOCK_NAME = 'pca:platform-admin-activation-recovery';
+const LOCK_TIMEOUT_SECONDS = 30;
+
+// Same acquire/release shape (and the same GET_LOCK/RELEASE_LOCK pair)
+// bootstrap-platform-owner.mjs uses -- reusing the idiom rather than inventing
+// a second serialization mechanism for the same kind of one-time operator run.
+async function acquireRecoveryLock(pool) {
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query('SELECT GET_LOCK(?, ?) AS acquired', [ACTIVATION_RECOVERY_LOCK_NAME, LOCK_TIMEOUT_SECONDS]);
+    if (!rows[0] || Number(rows[0].acquired) !== 1) throw new Error('Unable to acquire the Platform Admin activation recovery lock.');
+    return connection;
+  } catch (error) {
+    connection.release();
+    throw error instanceof Error ? error : new Error('Unable to acquire the Platform Admin activation recovery lock.');
+  }
+}
+
+async function releaseRecoveryLock(connection) {
+  try {
+    const [rows] = await connection.query('SELECT RELEASE_LOCK(?) AS released', [ACTIVATION_RECOVERY_LOCK_NAME]);
+    if (!rows[0] || Number(rows[0].released) !== 1) throw new Error('Unable to release the Platform Admin activation recovery lock.');
+  } finally {
+    connection.release();
+  }
+}
+
+// Deliberately takes NO row locks. See this file's header: locking the account
+// or MFA row here would invert the lock order PlatformAdminActivationRepository
+// .complete() relies on, so serialization belongs to the advisory lock taken by
+// runRecovery and the destructive step stays guarded by the repository's own
+// WHERE clauses.
+async function readTargetState(conn, emailHash) {
   const { rows: accountRows } = await execute(
     conn,
-    `SELECT admin_id, status FROM platform_admin_accounts WHERE email_hash = ?${lock}`,
+    `SELECT admin_id, status FROM platform_admin_accounts WHERE email_hash = ?`,
     [emailHash],
   );
   const adminId = accountRows.length > 0 ? accountRows[0].admin_id : null;
@@ -141,7 +199,7 @@ async function readTargetState(conn, emailHash, forUpdate) {
     ? await execute(conn, `SELECT role FROM platform_admin_role_assignments WHERE admin_id = ? AND revoked_at IS NULL ORDER BY role`, [adminId])
     : { rows: [] };
   const { rows: mfaRows } = adminId
-    ? await execute(conn, `SELECT status, totp_secret_ciphertext, totp_secret_nonce FROM platform_admin_mfa_state WHERE admin_id = ?${lock}`, [adminId])
+    ? await execute(conn, `SELECT status, totp_secret_ciphertext, totp_secret_nonce FROM platform_admin_mfa_state WHERE admin_id = ?`, [adminId])
     : { rows: [] };
   return {
     accounts: accountRows.map((row) => ({ adminId: row.admin_id, status: row.status })),
@@ -156,15 +214,6 @@ async function readTargetState(conn, emailHash, forUpdate) {
       }
       : null,
   };
-}
-
-async function withConnection(fn) {
-  const conn = await getPool().getConnection();
-  try {
-    return await fn(conn);
-  } finally {
-    conn.release();
-  }
 }
 
 export async function runRecovery(env = process.env) {
@@ -187,17 +236,9 @@ export async function runRecovery(env = process.env) {
   const emailHash = hashAdminEmail(email);
   const now = new Date();
 
-  // Read-only preflight on its own connection: refuse BEFORE computing or
-  // writing anything durable, so an operator pointed at the wrong account
-  // gets a reason rather than a side effect. The authoritative re-check
-  // happens again inside the write transaction, under lock.
-  const preflight = await withConnection((conn) => readTargetState(conn, emailHash, false));
-  const preflightVerdict = evaluateRecoveryTarget(preflight, { allowPendingMaterial });
-  if (!preflightVerdict.allowed) throw new RecoveryRefusalError(preflightVerdict.reason);
-
-  // Everything below is pure local computation (UUIDs, HMAC, AES-256-GCM)
-  // done BEFORE opening the write transaction, so that transaction spans only
-  // the three durable writes.
+  // Everything below is pure local computation (UUIDs, HMAC, AES-256-GCM),
+  // done BEFORE the advisory lock is taken so the lock is held for as short a
+  // window as possible: only the precondition re-check and one DB transaction.
   const { rawToken, tokenHash } = generateActivationToken();
   const activationId = randomUUID();
   const activationExpiresAt = new Date(now.getTime() + ACTIVATION_TTL_MS);
@@ -212,60 +253,79 @@ export async function runRecovery(env = process.env) {
   const outboxExpiresAt = new Date(now.getTime() + OUTBOX_MESSAGE_TTL_MS);
   const correlationId = randomUUID();
 
-  const committed = await runInTransaction(async (conn) => {
-    // Re-read UNDER LOCK and re-decide. The preflight above is a courtesy to
-    // the operator, not the safety boundary: two concurrent invocations, or
-    // an account state change between the preflight and here, must not both
-    // proceed. Row-level locking is defense in depth here; the re-evaluation
-    // is what makes the second racer refuse instead of overwrite.
-    const locked = await readTargetState(conn, emailHash, true);
-    const verdict = evaluateRecoveryTarget(locked, { allowPendingMaterial });
-    if (!verdict.allowed) throw new RecoveryRefusalError(verdict.reason);
+  const pool = getPool();
+  const lock = await acquireRecoveryLock(pool);
+  let committed;
+  let roles;
+  try {
+    // Read-only preflight on the lock connection: refuse BEFORE writing
+    // anything durable, so an operator pointed at the wrong account gets a
+    // reason rather than a side effect. Deliberately not `FOR UPDATE` -- see
+    // readTargetState's own comment.
+    const preflight = await readTargetState(lock, emailHash);
+    const preflightVerdict = evaluateRecoveryTarget(preflight, { allowPendingMaterial });
+    if (!preflightVerdict.allowed) throw new RecoveryRefusalError(preflightVerdict.reason);
+    roles = preflightVerdict.roles;
 
-    await issueActivationTokenOnConnection(conn, {
-      activationId,
-      adminId: verdict.adminId,
-      tokenHash,
-      createdAt: now,
-      expiresAt: activationExpiresAt,
-    });
-    const outboxOutcome = await insertEmailOutboxRowOnConnection(conn, {
-      outboxId,
-      idempotencyKey,
-      encryptedPayload,
-      createdAt: now,
-      expiresAt: outboxExpiresAt,
-      initialClaimableAt: new Date(now.getTime() + EMAIL_OUTBOX_CLAIM_LEASE_MS),
-    });
-    await insertPlatformAdminAuditEventRow(conn, {
-      eventId: randomUUID(),
-      eventType: 'SETTING_CHANGED',
-      actorAdminId: null, // NULL = operator/system-initiated, see this file's header.
-      actorRole: null,
-      targetRef: `admin:${verdict.adminId}`,
-      result: 'SUCCESS',
-      occurredAt: now,
-      correlationId,
-      // Non-secret, non-identifying operational metadata only. Deliberately
-      // NOT here: the email address, the raw token, the activation URL, or
-      // anything derived from PLATFORM_ADMIN_MFA_ENC_KEY.
-      metadata: {
-        change: 'PLATFORM_ADMIN_ACTIVATION_REISSUED',
-        source: 'OPERATOR_CREDENTIAL_RECOVERY',
-        roles: verdict.roles,
-        mfaStatusBefore: 'PENDING_SETUP',
-        mfaStatusAfter: 'PENDING_SETUP',
-        clearedPendingTotpMaterial: verdict.clearedPendingTotpMaterial,
-        passwordCredentialChanged: false,
-        tokenRevokedBeforeIssue: true,
-      },
-    });
-    return { adminId: verdict.adminId, outboxOutcome };
-  });
+    committed = await runInTransaction(async (conn) => {
+      // Re-read and re-decide inside the transaction. The preflight above is a
+      // courtesy to the operator, not the safety boundary: an account state
+      // change between the preflight and here must still be caught, and the
+      // evalutation is what makes that catch possible.
+      const reread = await readTargetState(conn, emailHash);
+      const verdict = evaluateRecoveryTarget(reread, { allowPendingMaterial });
+      if (!verdict.allowed) throw new RecoveryRefusalError(verdict.reason);
 
-  // Transaction already committed: this immediate delivery attempt is a real
-  // network call and must never happen inside a DB transaction. If it fails,
-  // the already-durable outbox row stays retryable by the background
+      await issueActivationTokenOnConnection(conn, {
+        activationId,
+        adminId: verdict.adminId,
+        tokenHash,
+        createdAt: now,
+        expiresAt: activationExpiresAt,
+      });
+      const outboxOutcome = await insertEmailOutboxRowOnConnection(conn, {
+        outboxId,
+        idempotencyKey,
+        encryptedPayload,
+        createdAt: now,
+        expiresAt: outboxExpiresAt,
+        initialClaimableAt: new Date(now.getTime() + EMAIL_OUTBOX_CLAIM_LEASE_MS),
+      });
+      await insertPlatformAdminAuditEventRow(conn, {
+        eventId: randomUUID(),
+        eventType: 'SETTING_CHANGED',
+        actorAdminId: null, // NULL = operator/system-initiated, see this file's header.
+        actorRole: null,
+        targetRef: `admin:${verdict.adminId}`,
+        result: 'SUCCESS',
+        occurredAt: now,
+        correlationId,
+        // Non-secret, non-identifying operational metadata only. Deliberately
+        // NOT here: the email address, the raw token, the activation URL, or
+        // anything derived from PLATFORM_ADMIN_MFA_ENC_KEY.
+        metadata: {
+          change: 'PLATFORM_ADMIN_ACTIVATION_REISSUED',
+          source: 'OPERATOR_CREDENTIAL_RECOVERY',
+          roles: verdict.roles,
+          mfaStatusBefore: 'PENDING_SETUP',
+          mfaStatusAfter: 'PENDING_SETUP',
+          clearedPendingTotpMaterial: verdict.clearedPendingTotpMaterial,
+          passwordCredentialChanged: false,
+          tokenRevokedBeforeIssue: true,
+        },
+      });
+      return { adminId: verdict.adminId, outboxOutcome };
+    });
+  } finally {
+    // Released the moment the transaction has committed OR rolled back, and
+    // never held across the network delivery attempt below.
+    await releaseRecoveryLock(lock);
+  }
+
+  // Transaction already committed, lock already released: this immediate
+  // delivery attempt is a real network call and must never happen inside a DB
+  // transaction or while holding the advisory lock. If it fails, the
+  // already-durable outbox row stays retryable by the background
   // EmailOutboxWorker -- the owner is not stranded.
   const deliveryOutcome = await attemptDeliveryAndRecordOutcome(
     { repository: new MySqlEmailOutboxRepository(), providerAdapter: provider, env },
@@ -276,7 +336,7 @@ export async function runRecovery(env = process.env) {
 
   return {
     adminId: committed.adminId,
-    roles: preflightVerdict.roles,
+    roles,
     outboxOutcome: committed.outboxOutcome,
     deliveryOutcome,
     providerName: provider.providerName,
