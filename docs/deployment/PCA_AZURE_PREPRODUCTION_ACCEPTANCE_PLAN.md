@@ -100,6 +100,132 @@ actual subscription before any resource is created.
 
 ---
 
+### 3.1 Reconciled live estate (read-only, 2026-09-22) — and why nothing was deployed
+
+A read-only reconciliation against the authenticated subscription found an
+**existing, publicly-addressed estate**. This is the fact that changes the shape of
+the deployment, so it is recorded before any command set.
+
+| Resource | Resource group | What it is | Public address |
+|---|---|---|---|
+| `pca` | `AppWenPlan` | App Service, **sitecontainers**, port 4001, VNet-integrated, system-assigned identity | Azure default hostname |
+| `pcaSafe` | `pca-group` | App Service, sitecontainers | **`www.pcasafe.com`** (custom domain bound) |
+| `pcaParent` | `pca-group` | App Service, sitecontainers | **`parent.pcasafe.com`** (custom domain bound) |
+| `pcaSafe` ACR | `pca-group` | `pcasafe.azurecr.io` | — |
+| `pca-key` Key Vault | `pca-group` | secret store | — |
+| `pca-mysql` | `pca-group` | MySQL **Flexible Server** + private endpoint in `AppWenPlan` VNet | private only |
+
+Two further read-only findings:
+
+- **No deployment slots exist on any of the three apps.** So there is no
+  slot-based staging path available today; a slot would have to be *created*, which
+  is itself a mutation of a production App Service resource (and slots share the
+  app's plan and identity).
+- Images are pulled from the existing `pcasafe.azurecr.io` ACR in `sitecontainers`
+  mode, so a staging deployment reuses that registry rather than needing a new one.
+
+**Decision taken while the owner was unavailable, recorded so it can be reversed
+explicitly:**
+
+> **No Azure resource was created, modified, or deployed.** The existing estate is
+> bound to real public hostnames, so deploying this SHA to it is a *production*
+> deployment — `AZURE_PRODUCTION_DEPLOYMENT = NOT_YET_APPROVED`, and
+> `DNS/TLS_CHANGE`, `PRODUCTION_DB_MUTATION` and `PRODUCTION_SECRET_ROTATION` are all
+> `NOT YET`. The alternative — a brand-new isolated estate — is billable and
+> externally visible and requires topology choices (region, plan, MySQL SKU, naming,
+> reuse-vs-new) that belong to the owner. `APPROVED_TO_PREPARE` was read as its
+> operative qualifier: preparing is authorised, executing is not. Standing up
+> MySQL Flexible Server capacity unilaterally in someone else's subscription is
+> exactly the class of action a prior standing instruction forbade.
+
+Nothing in this section required a write. Every fact above came from `az group list`,
+`az resource list`, `az webapp deployment slot list`, and
+`az webapp config container show`, all read-only.
+
+### 3.2 The two viable staging shapes (owner to choose)
+
+Both are written below as a **reviewable command set, not an executed one**. Neither
+has been run. Both are in `uaenorth`, consistent with the existing estate.
+
+**Shape A — slot on the existing `pca` App Service** (cheapest; no new DNS)
+Uses a deployment slot so nothing is swapped into production, but it does add a slot
+to a production app and shares its plan, identity and VNet.
+
+**Shape B — fully isolated estate in a new resource group** (true isolation; new cost)
+A new plan, app, Key Vault and MySQL Flexible Server. No production touch at all,
+but a new recurring bill and a new hostname/TLS to arrange.
+
+> **Prerequisite for either shape — do not skip.** §5's reconciliation must be
+> signed off first: this plan's own gate is that staging is not stood up until the
+> configuration, the rollback point, and the separate migration credential are
+> settled. Shape A additionally requires the owner to accept a mutation on the
+> production App Service resource.
+
+```powershell
+# ---------------------------------------------------------------------------
+# READ-ONLY PRE-FLIGHT — safe to run as-is. Establishes the facts the deploy
+# depends on and prints the environment-variable NAMES (never values) so a
+# staging set can be assembled without copying secrets.
+# ---------------------------------------------------------------------------
+$SUB = '5f5205e2-4e56-4cea-8ce7-3d408ed1507b'
+az account show --query '{name:name,id:id,state:state}' -o table
+
+# Which image is live today, and on which registry?
+foreach ($app in @(@('AppWenPlan','pca'), @('pca-group','pcaSafe'), @('pca-group','pcaParent'))) {
+  az webapp config container show -g $app[0] -n $app[1] -o json
+}
+
+# NAMES ONLY. Deliberately not `--show-values`: configuration names are needed to
+# build a staging set, values are secrets and must not pass through a terminal log.
+foreach ($app in @(@('AppWenPlan','pca'), @('pca-group','pcaSafe'), @('pca-group','pcaParent'))) {
+  az webapp config appsettings list -g $app[0] -n $app[1] --query '[].name' -o tsv
+}
+
+# Existing slots (confirmed none on 2026-09-22) and the MySQL server version/SKU.
+az webapp deployment slot list -g AppWenPlan -n pca -o table
+az mysql flexible-server show -g pca-group -n pca-mysql `
+  --query '{version:version, sku:sku.name, tier:sku.tier, ha:highAvailability.mode}' -o table
+```
+
+```powershell
+# ---------------------------------------------------------------------------
+# SHAPE A — staging SLOT on the existing pca app. NOT RUN. Requires approval.
+# Do this only after §5 is signed off.
+# ---------------------------------------------------------------------------
+# az webapp deployment slot create -g AppWenPlan -n pca --slot staging --configuration-source pca
+#   -> then set staging-specific app settings (names from the pre-flight above),
+#      with a NON-production database and a NON-production email identity.
+#   -> then deploy the pinned image and run §6's campaign against the slot hostname.
+#   -> A slot is NOT swapped into production by this plan. No `slot swap`. Ever,
+#      until AZURE_PRODUCTION_DEPLOYMENT is approved.
+```
+
+```powershell
+# ---------------------------------------------------------------------------
+# SHAPE B — ISOLATED estate. NOT RUN. Requires approval AND the owner's choices.
+# Values in <> are decisions, not defaults. Nothing here is inferred.
+# ---------------------------------------------------------------------------
+# az group create -l uaenorth -n <staging-resource-group>
+# az appservice plan create -g <rg> -n <staging-plan> --is-linux --sku <B1|P0v3|...>
+# az webapp create -g <rg> -p <staging-plan> -n <staging-app> \
+#   --deployment-container-image-name <image>            # reuse pcasafe.azurecr.io
+# az mysql flexible-server create -g <rg> -n <staging-mysql> \
+#   -l uaenorth --tier <Burstable|GeneralPurpose> --sku-name <Standard_B1ms|...> \
+#   --version <8.4> --admin-user <user>
+#   -> private networking, TLS, and the firewall posture must be decided explicitly;
+#      the production server uses a private endpoint, and staging should not be
+#      more exposed than production.
+#   -> PCA_DATABASE_TLS must be stated explicitly or the pool refuses to connect.
+```
+
+**Migration, in both shapes, is a two-credential operation.** `scripts/migrate.mjs`
+records that the fallback to `PCA_DATABASE_URL` was removed, so the staging database
+needs an explicitly separate, more-privileged `PCA_MIGRATION_DATABASE_URL`
+independent of the runtime credential. Migrate with the privileged credential, then
+verify the runtime credential is least-privilege — mirroring the CI proof that the
+runtime principal is rejected by the database itself for `UPDATE`/`DELETE` on
+`platform_admin_audit_events`.
+
 ## 4. Configuration inventory (extracted from source, not assumed)
 
 Backend container environment variables, each found by reading

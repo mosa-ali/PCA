@@ -296,6 +296,36 @@ is unresolved and the remaining gaps are undispositioned; (5) after staging pass
 prepare a production deployment decision packet that classifies each remaining gate
 as required-for-release, intentionally gated, or accepted residual.
 
+### Azure preparation — autonomous decision taken 2026-09-22 (owner unavailable; reversible)
+
+While the owner was unavailable, the Azure CLI was found to be **already
+authenticated** to the subscription named in the topology doc
+(`5f5205e2-4e56-4cea-8ce7-3d408ed1507b`), so "can this be executed?" turned out to be
+yes. A read-only reconciliation then found the estate is **publicly addressed**:
+`pcaSafe` carries the custom domain `www.pcasafe.com` and `pcaParent` carries
+`parent.pcasafe.com`, with `pca` (sitecontainers, port 4001, VNet-integrated),
+the `pcasafe.azurecr.io` ACR, a `pca-key` Key Vault and a `pca-mysql` Flexible Server
+behind a private endpoint. There are **no deployment slots** on any of the three
+apps.
+
+**Decision: no Azure resource was created, modified, or deployed.** Deploying this
+SHA to the existing estate would be a *production* deployment against
+`AZURE_PRODUCTION_DEPLOYMENT = NOT_YET_APPROVED` and `DNS/TLS_CHANGE`,
+`PRODUCTION_DB_MUTATION`, `PRODUCTION_SECRET_ROTATION = NOT YET`; creating a separate
+estate is billable, externally visible, and needs topology choices (region, plan,
+MySQL SKU, naming, reuse-vs-new) that are the owner's to make.
+`APPROVED_TO_PREPARE` was read as its operative qualifier — preparing is authorised,
+executing is not — and standing up MySQL Flexible Server capacity unilaterally in a
+subscription is the class of action a prior standing instruction forbade.
+
+Recorded so it can be reversed explicitly rather than silently: the reasoning, the
+read-only evidence, and a **reviewable, unexecuted** command set for both viable
+staging shapes (a slot on `pca`, which is cheapest but still mutates a production app;
+or a new isolated resource group) are in
+`docs/deployment/PCA_AZURE_PREPRODUCTION_ACCEPTANCE_PLAN.md` §3.1–§3.2. Both shapes
+are gated on that plan's §5 reconciliation being signed off first. No `slot swap` is
+permitted by the plan at all until `AZURE_PRODUCTION_DEPLOYMENT` is approved.
+
 ## Residual risks
 
 | Risk | Impact | Mitigation / gate |
