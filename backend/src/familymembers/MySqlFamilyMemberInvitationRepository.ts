@@ -2,6 +2,7 @@ import { execute, isDeadlock, isDuplicateEntry, runInTransaction } from '../db/p
 import type {
   AcceptResult,
   AcceptTransactionHook,
+  BindAccountInTransactionHook,
   CreateInvitationCapacityGuard,
   CreateInvitationResult,
   FamilyMemberInvitationRepository,
@@ -56,6 +57,21 @@ function mapRow(row: FamilyMemberInvitationRow): FamilyMemberInvitationRecord {
  * same class of risk.
  */
 const MAX_CREATE_ATTEMPTS = 3;
+
+/**
+ * Module-private sentinel: the ONLY way to undo an acceptance that has already
+ * flipped its invitation row and charged its seat (PCA-DEC-036). runInTransaction
+ * rolls the whole transaction back when the callback throws, which is exactly
+ * the "nothing is consumed on conflict" property the owner required; catching
+ * the sentinel here keeps the rollback an implementation detail and hands
+ * callers an ordinary AcceptResult instead of an exception.
+ */
+class FamilyBindingConflictRollback extends Error {
+  constructor() {
+    super('family binding conflict');
+    this.name = 'FamilyBindingConflictRollback';
+  }
+}
 
 export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvitationRepository {
   /**
@@ -233,6 +249,24 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
     acceptedByAccountId: OpaqueAccountId,
     acceptedAt: Date,
     onAcceptedInTransaction?: AcceptTransactionHook,
+    bindAccountInTransaction?: BindAccountInTransactionHook,
+  ): Promise<AcceptResult> {
+    try {
+      return await this.acceptInTransaction(invitationId, acceptedByAccountId, acceptedAt, onAcceptedInTransaction, bindAccountInTransaction);
+    } catch (error) {
+      // The only reason this method rolls itself back. Everything else is
+      // either a legitimate result or a genuine fault that must surface.
+      if (error instanceof FamilyBindingConflictRollback) return { outcome: 'FAMILY_CONFLICT' };
+      throw error;
+    }
+  }
+
+  private async acceptInTransaction(
+    invitationId: FamilyMemberInvitationId,
+    acceptedByAccountId: OpaqueAccountId,
+    acceptedAt: Date,
+    onAcceptedInTransaction?: AcceptTransactionHook,
+    bindAccountInTransaction?: BindAccountInTransactionHook,
   ): Promise<AcceptResult> {
     return runInTransaction(async (conn) => {
       const updated = await execute(
@@ -292,6 +326,23 @@ export class MySqlFamilyMemberInvitationRepository implements FamilyMemberInvita
           if (Number(priorAcceptances.rows[0]?.prior ?? 0) === 0) {
             await onAcceptedInTransaction(conn, record);
           }
+        }
+        // PCA-DEC-036. Bind the accepting account to this family as the LAST
+        // step of the SAME transaction that flipped the invitation and charged
+        // the seat, so the three cannot disagree. A caller that instead
+        // accepted here and bound after commit left a window in which the
+        // invitation was spent and the account was still unbound -- two
+        // families racing into that window each consumed an invitation and a
+        // seat for an account only one of them can hold.
+        //
+        // Deliberately AFTER the seat hook above: the seat hook counts prior
+        // acceptances scoped to accounts still bound to this family, so binding
+        // first would make a removed-and-re-invited member look already charged.
+        // On refusal the sentinel rolls BOTH effects back, so the ordering
+        // costs nothing -- nothing ordered before the throw survives it.
+        if (bindAccountInTransaction) {
+          const binding = await bindAccountInTransaction(conn, record);
+          if (binding === 'BOUND_TO_ANOTHER_FAMILY') throw new FamilyBindingConflictRollback();
         }
         return { outcome: 'ACCEPTED', record };
       }

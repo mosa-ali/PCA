@@ -425,6 +425,7 @@
         "capacityExceeded": "This account has reached its parent and guardian limit.",
         "notPending": "This invitation is no longer pending, so its role can no longer be changed.",
         "alreadyAccepted": "This invitation was already accepted.",
+        "familyConflict": "This account already belongs to another parent group, so this invitation cannot be accepted. The invitation has been left open.",
         "expired": "This invitation has expired.",
         "revoked": "This invitation was already revoked.",
         "network": "Could not reach the PCA service. Check your connection and try again.",

@@ -96,6 +96,12 @@ function errorStatus(code: FamilyMemberInvitationError['code']): number {
     case 'CAPACITY_EXCEEDED':
     case 'CANNOT_REMOVE_SELF':
     case 'CANNOT_REMOVE_OWNER':
+    // PCA-DEC-036: a state conflict on the accepting ACCOUNT rather than on the
+    // invitation (which was valid and is left PENDING, unspent). 409 + the
+    // distinguishing body code, so a client can tell "you already belong to
+    // another family" apart from "that invitation is gone" without guessing
+    // from the status alone -- every one of these is 409 already.
+    case 'FAMILY_CONFLICT':
       return 409;
     case 'NOT_AUTHORIZED':
     // FREE_ACCESS_ENFORCEMENT_V1: same 403 + explicit code every other

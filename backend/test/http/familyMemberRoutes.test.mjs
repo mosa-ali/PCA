@@ -239,6 +239,55 @@ test('any authenticated parent account (even one in no family yet) can accept an
   }
 });
 
+test('accepting an invitation while the account already belongs to another family is refused with a DISTINGUISHABLE 409 family_conflict -- and the invitation is left PENDING, not fabricated as accepted', async () => {
+  // PCA-DEC-036 at the API boundary. The route must turn the domain conflict
+  // into a status a client can act on, and must not report a success it did not
+  // achieve: the invitation stays available for when the conflict is resolved.
+  const accountBinder = {
+    async bindAccountToFamily() { throw new Error('accept must bind on the acceptance transaction, not after it'); },
+    async tryBindAccountToFamilyOnConnection() { return 'BOUND_TO_ANOTHER_FAMILY'; },
+  };
+  const { app } = buildApp({ accountBinder });
+  try {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+      payload: { invitedEmail: 'newmember@example.test', role: 'VIEWER' },
+    });
+    const invitationId = invite.json().invitation.invitationId;
+
+    const accept = await app.inject({
+      method: 'POST',
+      url: `/api/parent/member-invitations/${invitationId}/accept`,
+      headers: { cookie: 'pca_family_session=session-no-family; pca_family_csrf=csrf-d', 'x-pca-csrf-token': 'csrf-d' },
+    });
+    assert.equal(accept.statusCode, 409, 'a family conflict is a state conflict, not a 400 or a 500');
+    assert.equal(
+      accept.json().error,
+      'family_conflict',
+      'the body must distinguish this from already_accepted/expired/revoked, which share the 409 status',
+    );
+    assert.equal(
+      JSON.stringify(accept.json()).includes('fam-'),
+      false,
+      'the refusal must not name the other family -- an account that guessed an invitation id learns nothing about it',
+    );
+
+    // And it really was refused, not merely reported as refused. The invitation
+    // is still PENDING and the accepting account gained nothing.
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/parent/families/${FAMILY}/members/invitations`,
+      headers: { ...ownerHeaders, authorization: 'Bearer dev-token-owner' },
+    });
+    const listedInvitation = listed.json().invitations.find((i) => i.invitationId === invitationId);
+    assert.equal(listedInvitation.status, 'PENDING', 'the refused acceptance must not have consumed the invitation');
+  } finally {
+    await app.close();
+  }
+});
+
 test('a request missing CSRF header/cookie match is rejected on every mutating route', async () => {
   const { app } = buildApp();
   try {

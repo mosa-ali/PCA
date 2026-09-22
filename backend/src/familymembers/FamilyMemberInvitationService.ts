@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PoolConnection } from 'mysql2/promise';
 import { hashInvitedEmail, isPlausibleInvitedEmail } from './emailHash.js';
-import type { CreateInvitationCapacityGuard, FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
+import type { CreateInvitationCapacityGuard, FamilyBindingOutcome, FamilyMemberInvitationRepository } from './FamilyMemberInvitationRepository.js';
 import type {
   FamilyMemberInvitationId,
   FamilyMemberInvitationRecord,
@@ -36,7 +36,18 @@ export type FamilyMemberInvitationErrorCode =
   /** removeMember only ever targets ANOTHER parent's membership -- see removeMember's own doc comment for why a self-removal is refused rather than modeled as a "leave this family" flow. */
   | 'CANNOT_REMOVE_SELF'
   /** removeMember never revokes ownership -- see FamilyMemberInvitationRepository.removeMemberAtomically's own doc comment for exactly how the Owner is identified without a durable role column. */
-  | 'CANNOT_REMOVE_OWNER';
+  | 'CANNOT_REMOVE_OWNER'
+  /**
+   * PCA-DEC-036. The accepting account is CURRENTLY BOUND TO A DIFFERENT
+   * FAMILY, so this invitation cannot be accepted. Distinguishable on
+   * purpose: the invitation was valid, the caller was the addressee, and the
+   * refusal is about the ACCOUNT -- "you already belong to another family"
+   * is a statement a user can act on, whereas NOT_FOUND would be a lie and a
+   * generic 500 would be a dead end. NOTHING is consumed: the invitation
+   * stays PENDING and no parent-member seat is charged, because the conflict
+   * is detected inside the acceptance transaction, which rolls back whole.
+   */
+  | 'FAMILY_CONFLICT';
 
 /** Message text is always a fixed, generic string per code -- never interpolates the raw email or family data. */
 export class FamilyMemberInvitationError extends Error {
@@ -61,6 +72,12 @@ const FAMILY_MEMBER_INVITATION_ERROR_MESSAGES: Record<FamilyMemberInvitationErro
   NOT_PENDING: 'This invitation is no longer pending and its role can no longer be changed.',
   CANNOT_REMOVE_SELF: 'You cannot remove your own membership from this family.',
   CANNOT_REMOVE_OWNER: 'The family owner cannot be removed.',
+  // Deliberately does NOT name the other family or confirm which one it is:
+  // the caller is the invitation's addressee, so telling them "this account
+  // already belongs to a family" is honest and actionable, while naming the
+  // family would hand an account that merely guessed an invitation id a fact
+  // about a different family's membership.
+  FAMILY_CONFLICT: 'This account already belongs to a family, so the invitation cannot be accepted.',
 };
 
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days -- a person-invitation is not a one-time device bootstrap link, longer-lived than enrollment_invitations' short TTL is appropriate.
@@ -96,11 +113,42 @@ function operationForRole(role: InvitedFamilyRole): 'ADD_ADMINISTRATOR' | 'ADD_V
 export interface FamilyMemberAccountBinder {
   /** Idempotent: must not overwrite an account that is already bound to a (possibly different) family -- accepting an invitation never silently reassigns an existing membership. */
   bindAccountToFamily(accountId: OpaqueAccountId, familyId: OpaqueFamilyId, now: Date, role: InvitedFamilyRole): Promise<void>;
+  /**
+   * PCA-DEC-036. The same bind, but on a connection the CALLER owns and
+   * inside the caller's transaction, so acceptance and binding commit or
+   * roll back together instead of exposing a window in which the invitation
+   * is spent and the account is still unbound. `BOUND_TO_ANOTHER_FAMILY`
+   * means the acceptance must be abandoned; the caller rolls its whole
+   * transaction back, so the implementation must NOT undo anything itself
+   * (and must not write the membership role on that path).
+   *
+   * A separate method rather than a flag on bindAccountToFamily because the
+   * two have genuinely different transaction ownership: this one is
+   * forbidden from opening its own transaction, the other one must.
+   */
+  tryBindAccountToFamilyOnConnection(
+    conn: PoolConnection,
+    accountId: OpaqueAccountId,
+    familyId: OpaqueFamilyId,
+    now: Date,
+    role: InvitedFamilyRole,
+  ): Promise<FamilyBindingOutcome>;
 }
 
 export class NoopFamilyMemberAccountBinder implements FamilyMemberAccountBinder {
   async bindAccountToFamily(): Promise<void> {
     // Deliberately does nothing -- see FamilyMemberAccountBinder's own doc comment.
+  }
+
+  /**
+   * Reports BOUND without binding, matching bindAccountToFamily's no-op. It
+   * must never report BOUND_TO_ANOTHER_FAMILY: this double stands in for "no
+   * binding is being modelled at all", and refusing here would fail callers
+   * that legitimately run without a parent_accounts write, not catch
+   * anything real.
+   */
+  async tryBindAccountToFamilyOnConnection(): Promise<FamilyBindingOutcome> {
+    return 'BOUND';
   }
 }
 
@@ -533,10 +581,35 @@ export class FamilyMemberInvitationService {
           await entitlementRepository.adjustParentMemberUsedCount(conn, record.familyId, 1, acceptedAt);
         }
       : undefined;
-    const result = await this.repository.acceptAtomically(invitationId, acceptingAccountId, acceptedAt, consumeParentMemberSeat);
+    // PCA-DEC-036. The bind runs INSIDE the acceptance transaction, as the
+    // last step before commit. It used to run after acceptAtomically returned
+    // -- i.e. after the invitation had already flipped and the seat had already
+    // been charged -- which meant the containment the binder has always applied
+    // (`WHERE family_id IS NULL`) protected the ACCOUNT but not the invitation
+    // or the seat: an account bound elsewhere had its invitation spent and its
+    // family's seat burned for a membership it never received. Moving the write
+    // into the transaction makes the precondition authoritative rather than
+    // advisory, because the row lock on parent_accounts.family_id is what
+    // serialises two families racing for the same unbound account.
+    //
+    // A read-before-write pre-check here would NOT be equivalent and is
+    // explicitly rejected (see PCA-DEC-036): both families could observe the
+    // account unbound and then race, which is the same defect one level up.
+    const bindAcceptingAccount = async (conn: PoolConnection, record: FamilyMemberInvitationRecord): Promise<FamilyBindingOutcome> =>
+      this.accountBinder.tryBindAccountToFamilyOnConnection(conn, acceptingAccountId, record.familyId, acceptedAt, record.role);
+    const result = await this.repository.acceptAtomically(
+      invitationId,
+      acceptingAccountId,
+      acceptedAt,
+      consumeParentMemberSeat,
+      bindAcceptingAccount,
+    );
     switch (result.outcome) {
       case 'ACCEPTED':
-        await this.accountBinder.bindAccountToFamily(acceptingAccountId, result.record.familyId, acceptedAt, result.record.role);
+        // No post-commit bind call any more: bindAcceptingAccount above already
+        // bound the account on the acceptance transaction's own connection, so
+        // the family_id assignment is atomic with acceptance -- no window exists
+        // in which the invitation is ACCEPTED and the account is still unbound.
         await this.auditService.record({
           familyId: result.record.familyId,
           actionType: 'ROLE_ACCEPT',
@@ -560,6 +633,10 @@ export class FamilyMemberInvitationService {
         throw new FamilyMemberInvitationError('REVOKED');
       case 'EXPIRED':
         throw new FamilyMemberInvitationError('EXPIRED');
+      case 'FAMILY_CONFLICT':
+        // The repository rolled the whole acceptance back, so the invitation is
+        // still PENDING and no seat was charged. Nothing to undo here.
+        throw new FamilyMemberInvitationError('FAMILY_CONFLICT');
       case 'NOT_FOUND':
         throw new FamilyMemberInvitationError('NOT_FOUND');
     }

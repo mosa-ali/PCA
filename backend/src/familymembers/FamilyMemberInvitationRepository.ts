@@ -6,7 +6,48 @@ export type AcceptResult =
   | { outcome: 'ALREADY_ACCEPTED' }
   | { outcome: 'REVOKED' }
   | { outcome: 'EXPIRED' }
+  // PCA-DEC-036. The addressee is CURRENTLY BOUND TO A DIFFERENT FAMILY.
+  // Deliberately its own outcome rather than NOT_FOUND or a generic failure:
+  // the invitation itself was acceptable, so the caller must be able to say
+  // something true and specific ("this account already belongs to another
+  // family") without either leaking the account's other family or, worse,
+  // spending the invitation and the seat on an acceptance that cannot happen.
+  // Reaching this outcome guarantees NOTHING was consumed -- the conflict is
+  // detected inside the acceptance transaction, which is rolled back whole.
+  | { outcome: 'FAMILY_CONFLICT' }
   | { outcome: 'NOT_FOUND' };
+
+/**
+ * The verdict of the in-transaction family-binding precondition
+ * (PCA-DEC-036). `BOUND_TO_ANOTHER_FAMILY` is the only value that aborts an
+ * acceptance, and it aborts it by ROLLING BACK rather than by reporting after
+ * the fact: by the time a post-commit check could run, the invitation row and
+ * the parent-member seat would already be spent, and no error can un-spend
+ * them. `ALREADY_BOUND_TO_THIS_FAMILY` is NOT a refusal -- re-inviting an
+ * existing member is the only way to offer them a different role, and that
+ * flow legitimately accepts a second invitation from an account this family
+ * already holds.
+ */
+export type FamilyBindingOutcome = 'BOUND' | 'ALREADY_BOUND_TO_THIS_FAMILY' | 'BOUND_TO_ANOTHER_FAMILY';
+
+/**
+ * Runs on the SAME connection as the acceptance, AFTER the seat hook and
+ * BEFORE the commit, so the binding decision is transactionally authoritative:
+ * a competing acceptance for the same account either blocked on the row lock
+ * over `parent_accounts.family_id` or re-evaluated its guard against the
+ * winner's already-committed row and matched nothing. A preceding SELECT -- the
+ * obvious "check first, then write" shape -- could be raced by two families
+ * that both observed an unbound account, which is precisely the TOCTOU the
+ * owner ruled insufficient.
+ *
+ * ORDER IS LOAD-BEARING and is why this is a separate hook from
+ * AcceptTransactionHook rather than folded into it. The seat hook decides
+ * whether to charge a seat by counting this member's PRIOR ACCEPTED
+ * invitations whose account is still bound to this family; binding first would
+ * satisfy that predicate for a removed-and-re-invited member and silently skip
+ * the seat they owe.
+ */
+export type BindAccountInTransactionHook = (conn: PoolConnection, record: FamilyMemberInvitationRecord) => Promise<FamilyBindingOutcome>;
 
 /**
  * Runs inside the SAME transaction as acceptAtomically's accepting UPDATE,
@@ -135,6 +176,7 @@ export interface FamilyMemberInvitationRepository {
     acceptedByAccountId: OpaqueAccountId,
     acceptedAt: Date,
     onAcceptedInTransaction?: AcceptTransactionHook,
+    bindAccountInTransaction?: BindAccountInTransactionHook,
   ): Promise<AcceptResult>;
   /**
    * Family-scoped revoke: the UPDATE itself is filtered by family_id (not

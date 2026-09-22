@@ -158,15 +158,78 @@ test('acceptInvitation transitions PENDING -> ACCEPTED and records the accepting
   assert.equal(accepted.acceptedByAccountId, 'acct-new-member');
 });
 
-test('acceptInvitation calls the injected FamilyMemberAccountBinder exactly once with the family id', async () => {
+test('acceptInvitation binds the accepting account ON the acceptance transaction, through the binder, with the invitation role', async () => {
+  // PCA-DEC-036. This test previously asserted the same call through
+  // bindAccountToFamily, i.e. AFTER acceptAtomically returned -- which was the
+  // defect. The binding is now requested from inside the acceptance transaction,
+  // so the assertion moved to tryBindAccountToFamilyOnConnection and, crucially,
+  // now checks the ROLE and the CONNECTION it is handed. `null` is the in-memory
+  // double's documented stand-in for the transaction connection (it has no real
+  // transaction); a real transaction is proved at the DB layer, not here.
   const calls = [];
-  const accountBinder = { async bindAccountToFamily(accountId, familyId, now) { calls.push({ accountId, familyId, now }); } };
+  const accountBinder = {
+    async bindAccountToFamily() { throw new Error('the post-commit bind must not be used by acceptInvitation any more'); },
+    async tryBindAccountToFamilyOnConnection(conn, accountId, familyId, now, role) {
+      calls.push({ conn, accountId, familyId, now, role });
+      return 'BOUND';
+    },
+  };
   const { service } = buildService({ accountBinder });
   const created = await service.createInvitation(baseInput);
   await service.acceptInvitation(created.invitationId, 'acct-new-member');
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].accountId, 'acct-new-member');
-  assert.deepEqual(calls[0].familyId, 'fam-1');
+  assert.equal(calls[0].accountId, 'acct-new-member');
+  assert.equal(calls[0].familyId, 'fam-1');
+  assert.equal(calls[0].role, 'VIEWER', 'the invitation role is the source for the membership role -- never inferred');
+  assert.equal(calls[0].conn, null, 'the acceptance transaction connection, not a post-commit one');
+});
+
+test('acceptInvitation refuses with a distinguishable FAMILY_CONFLICT when the account already belongs to another family, consuming NEITHER the invitation NOR a seat', async () => {
+  // The owner's requirement, unit-level: the conflict must be reported (not
+  // silently accepted, not a lie about the invitation being gone) and the
+  // losing family must keep its invitation and its seat. Seat accounting is
+  // asserted directly by counting the entitlement adjustments, so "no seat was
+  // charged" is measured rather than assumed.
+  const seatAdjustments = [];
+  const entitlementRepository = {
+    // Generous capacity so createInvitation succeeds and the ACCEPT is what the
+    // seat assertion is actually measuring.
+    async getEffectiveSnapshotForFamily() {
+      return { effectiveParentMemberLimit: 10, baseParentMemberLimit: 10, complimentaryParentMemberCapacity: 0, parentMemberUsed: 0 };
+    },
+    async lockForFamily() { return { familyId: 'fam-1' }; },
+    async adjustParentMemberUsedCount(_conn, familyId, delta) { seatAdjustments.push({ familyId, delta }); },
+  };
+  const accountBinder = {
+    async bindAccountToFamily() { throw new Error('unreachable'); },
+    async tryBindAccountToFamilyOnConnection() { return 'BOUND_TO_ANOTHER_FAMILY'; },
+  };
+  const { service, repository } = buildService({ accountBinder, entitlementRepository });
+  const created = await service.createInvitation(baseInput);
+  await assert.rejects(
+    () => service.acceptInvitation(created.invitationId, 'acct-new-member'),
+    (err) => err instanceof FamilyMemberInvitationError && err.code === 'FAMILY_CONFLICT',
+  );
+  assert.deepEqual(seatAdjustments, [], 'a refused acceptance must not charge a parent-member seat');
+  const stored = await repository.findByIdForFamily('fam-1', created.invitationId);
+  assert.equal(stored.status, 'PENDING', 'the invitation must remain PENDING, unconsumed, so it can be accepted after the conflict is resolved');
+  assert.equal(stored.acceptedAt, null);
+  assert.equal(stored.acceptedByAccountId, null);
+});
+
+test('acceptInvitation reports BOUND_TO_ANOTHER_FAMILY from the binder as FAMILY_CONFLICT, and a bind that reports BOUND is accepted -- the outcome is what decides, not merely that the binder ran', async () => {
+  // Negative control for the test above: identical setup, the ONLY difference
+  // being the binder's verdict. Without this, a suite that always refused would
+  // look exactly like a suite that correctly honours the verdict.
+  const { service } = buildService({
+    accountBinder: {
+      async bindAccountToFamily() { throw new Error('unreachable'); },
+      async tryBindAccountToFamilyOnConnection() { return 'BOUND'; },
+    },
+  });
+  const created = await service.createInvitation(baseInput);
+  const accepted = await service.acceptInvitation(created.invitationId, 'acct-new-member');
+  assert.equal(accepted.status, 'ACCEPTED');
 });
 
 test('the default NoopFamilyMemberAccountBinder does nothing at all -- and nothing may treat "it did not throw" as evidence an account was bound', async () => {
@@ -207,7 +270,10 @@ test('acceptInvitation on a REVOKED invitation fails honestly', async () => {
 
 test('acceptInvitation on an EXPIRED invitation fails honestly and never binds the account', async () => {
   const calls = [];
-  const accountBinder = { async bindAccountToFamily(...args) { calls.push(args); } };
+  const accountBinder = {
+    async bindAccountToFamily() { throw new Error('unreachable'); },
+    async tryBindAccountToFamilyOnConnection(...args) { calls.push(args); return 'BOUND'; },
+  };
   const { service, clock } = buildService({ accountBinder });
   const created = await service.createInvitation(baseInput);
   clock.advance(8 * 24 * 60 * 60 * 1000); // past the 7-day default TTL
@@ -359,7 +425,10 @@ test('acceptInvitation refuses an authenticated account the invitation was NOT a
 
 test('acceptInvitation never binds a non-addressee to the family, and the real addressee can still accept afterwards', async () => {
   const bindCalls = [];
-  const accountBinder = { async bindAccountToFamily(accountId, familyId) { bindCalls.push({ accountId, familyId }); } };
+  const accountBinder = {
+    async bindAccountToFamily() { throw new Error('unreachable'); },
+    async tryBindAccountToFamilyOnConnection(_conn, accountId, familyId) { bindCalls.push({ accountId, familyId }); return 'BOUND'; },
+  };
   const repository = createInMemoryFamilyMemberInvitationRepository({
     accountEmailHashes: seededAccountEmailHashes([['acct-stranger', hashInvitedEmail('stranger@example.test')]]),
   });

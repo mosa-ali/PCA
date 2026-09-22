@@ -171,11 +171,19 @@ const REGISTER = new Map([
   ['MySqlDeleteNowLedger', { status: 'GAP', category: 'SYNTHETIC_ONLY', note: 'the delete PLAN is hand-built in 5 of 6 cases; the real planner is not driven into it.' }],
   ['MySqlFamilyMemberAccountBinder', {
     status: 'CERTIFIED',
-    realWriter: 'FamilyMemberInvitationService.acceptInvitation -> MySqlFamilyMemberAccountBinder.bindAccountToFamily, the real binder injected into the real service',
+    // PCA-DEC-036 changed WHERE the bind happens, so the named writer path was
+    // updated with it: the service no longer calls bindAccountToFamily after the
+    // acceptance commits. It now passes
+    // tryBindAccountToFamilyOnConnection as a hook that acceptAtomically invokes
+    // on its OWN transaction connection, before commit -- which is what makes the
+    // `WHERE family_id IS NULL` guard an authoritative precondition instead of an
+    // advisory one. bindAccountToFamily still exists and still delegates here; it
+    // is simply no longer this path.
+    realWriter: 'FamilyMemberInvitationService.acceptInvitation -> MySqlFamilyMemberAccountBinder.tryBindAccountToFamilyOnConnection (invoked by MySqlFamilyMemberInvitationRepository.acceptInTransaction on the acceptance transaction\'s own connection, before commit), the real binder injected into the real service',
     realReader: 'readAccountFamilyId reads parent_accounts.family_id back after acceptance, and the membership row is read back from family_parent_memberships',
-    hostileCase: 'BINDER CONTAINMENT (added to close this row): an account already bound to family A accepts a second, genuinely-addressed invitation for family B. The binder must refuse to move it -- the UPDATE is `WHERE family_id IS NULL` so it is a no-op, and the membership role is applied only when the row read back already carries the TARGET family. Asserts family_id is still A, that NO membership row exists for B, and that A\'s existing VIEWER membership survives with its role NOT silently upgraded to the ADMINISTRATOR the second invitation offered. Recorded as an observation, not endorsed: the family-B invitation IS consumed despite the refused bind, because acceptAtomically commits before the binder runs and the service does not pre-check family_id (see PCA-DEC-036).',
+    hostileCase: 'BINDER CONTAINMENT (added to close this row): an account already bound to family A accepts a second, genuinely-addressed invitation for family B. The binder must refuse to move it -- the UPDATE is `WHERE family_id IS NULL` so it is a no-op, and the membership role is applied only when the row read back already carries the TARGET family. Asserts family_id is still A, that NO membership row exists for B, and that A\'s existing VIEWER membership survives with its role NOT silently upgraded to the ADMINISTRATOR the second invitation offered. UPDATED by PCA-DEC-036 (the previous note recorded the family-B invitation BEING consumed as "an observation, not endorsed"; that is now fixed, so the test asserts the opposite): the refusal is distinguishable (FAMILY_CONFLICT), the family-B invitation stays PENDING with no acceptance stamped on it, and the losing family\'s parent_member_used_count stays 0 against a real account_entitlements row. The CONCURRENT case the owner required -- two families accepting invitations for the same initially-UNBOUND account -- is the row\'s other hostile case below.',
     testFile: 'test/db/parentAccount.mysql.test.mjs',
-    testName: 'MySQL SECURITY: an account already bound to ONE family cannot be rebound by accepting a second family invitation, and gains no membership in it',
+    testName: 'MySQL SECURITY: an account already bound to ONE family is REFUSED when it tries to accept a second family invitation -- the invitation stays PENDING and that family spends NO seat',
   }],
   ['MySqlInvitationRepository', {
     status: 'CERTIFIED',

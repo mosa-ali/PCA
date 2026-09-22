@@ -119,7 +119,7 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
       return [...byId.values()].filter((r) => r.familyId === familyId).map((r) => ({ ...r }));
     },
 
-    async acceptAtomically(invitationId, acceptedByAccountId, acceptedAt, onAcceptedInTransaction) {
+    async acceptAtomically(invitationId, acceptedByAccountId, acceptedAt, onAcceptedInTransaction, bindAccountInTransaction) {
       const record = byId.get(invitationId);
       if (!record) return { outcome: 'NOT_FOUND' };
       // Identity binding checked BEFORE any state disambiguation, exactly as
@@ -155,6 +155,19 @@ export function createInMemoryFamilyMemberInvitationRepository({ accountEmailHas
             other.status === 'ACCEPTED' &&
             other.acceptedByAccountId === acceptedByAccountId,
         );
+      // PCA-DEC-036. The binding precondition runs BEFORE anything is
+      // published, and BEFORE the seat hook. The real implementation orders
+      // these the other way round (seat, then bind, with a sentinel rolling the
+      // seat back), but the ONLY observable difference between the two orders
+      // is intermediate state, which no transaction can observe and which this
+      // double -- having no transaction to roll back -- therefore must not
+      // expose either. Deriving the net effect instead keeps both
+      // implementations agreeing on what a caller can see: a conflict consumes
+      // neither the invitation nor the seat.
+      if (bindAccountInTransaction) {
+        const binding = await bindAccountInTransaction(null, { ...accepted });
+        if (binding === 'BOUND_TO_ANOTHER_FAMILY') return { outcome: 'FAMILY_CONFLICT' };
+      }
       if (onAcceptedInTransaction && !alreadyAMember) await onAcceptedInTransaction(null, { ...accepted });
       byId.set(invitationId, accepted);
       return { outcome: 'ACCEPTED', record: { ...accepted } };
