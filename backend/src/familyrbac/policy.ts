@@ -64,16 +64,75 @@ const OPERATION_MATRIX: Record<ParentOperation, Record<FamilyRole, Authorization
  */
 export type ResolvedAuthorizationVerdict = Exclude<AuthorizationVerdict, 'ALLOW_IF_CONFIGURED_WITH_STEP_UP'>;
 
+/**
+ * doc 18 Section 2 marks exactly TWO of its table rows as Owner-configurable, and
+ * `FamilyRbacPolicyConfig` is the two booleans those rows are expressed as:
+ *
+ *   "Add Viewer / remove non-owner parent"                      -> Administrator: "configurable policy + step-up"
+ *   "Remove/revoke device or disable protection policy"         -> Administrator: "configurable + step-up"
+ *
+ * and then: "An Owner may choose whether an Administrator can add/remove a Viewer
+ * or revoke a child device; the safe default is off."
+ *
+ * THIS CONFIGURABLE LAYER IS NOT IMPLEMENTED. Two independent facts say so:
+ *
+ *   1. `ALLOW_IF_CONFIGURED_WITH_STEP_UP` is never used as a matrix cell, so no
+ *      cell in OPERATION_MATRIX consults `config` at all.
+ *   2. `resolveOperationAuthorization` does not read `config`; the parameter is
+ *      accepted only so the call sites already carry the value when the layer is
+ *      built. `test/familyrbac/policy.test.mjs` PROVES this insensitivity by
+ *      feeding maximally-permissive and maximally-restrictive configs and
+ *      asserting identical verdicts.
+ *
+ * The consequence is stated plainly rather than left to be inferred: the four
+ * operations below are hard-coded `ALLOW_WITH_STEP_UP` for ADMINISTRATOR, so the
+ * EFFECTIVE default on them is ON, while the documented default is OFF. The
+ * safe default is not what runs today.
+ *
+ * Why this is not simply flipped here to `ALLOW_IF_CONFIGURED_WITH_STEP_UP`, which
+ * would collapse to DENY and match the documented default: there is no writer.
+ * `FamilyRbacPolicyConfigStore.setForFamily`/`loadFamily` have zero callers in
+ * `src/**`, so no Owner, in any family, could ever turn the capability back on --
+ * flipping the cells would not implement the documented feature, it would remove
+ * Administrator capability outright with no way to restore it. And the writer
+ * cannot be added in isolation either: doc 18 Section 2 requires "Policy
+ * configuration is itself E2EE, signed, and auditable", so a policy write needs a
+ * signed envelope and an audit record, neither of which exists on this surface
+ * yet (`MySqlFamilyRbacPolicyConfigRepository` writes plaintext booleans with no
+ * signature and no audit event).
+ *
+ * Tracked as PCA-DEC-034. Do not discharge it by adding a writer that bypasses
+ * the signed/audited requirement, and do not discharge it by adding a test that
+ * makes the register green.
+ */
+export const CONFIGURABLE_POLICY_OPERATIONS: readonly ParentOperation[] = [
+  'ADD_VIEWER',
+  'REMOVE_NON_OWNER_PARENT',
+  'REMOVE_REVOKE_DEVICE',
+  'DISABLE_PROTECTION_POLICY',
+];
+
 export function resolveOperationAuthorization(
   role: FamilyRole,
   operation: ParentOperation,
   config: FamilyRbacPolicyConfig,
 ): ResolvedAuthorizationVerdict {
+  // Referenced deliberately so the gap above cannot be hidden by an
+  // unused-parameter suppression: the value is threaded through every call site,
+  // and it is discarded right here until PCA-DEC-034 is ruled on.
+  void config;
+
   const row = OPERATION_MATRIX[operation];
   if (row === undefined) return 'DENY';
   const verdict = row[role];
   if (verdict === undefined) return 'DENY';
 
+  // Fail-closed collapse, and currently DEAD: no matrix cell uses this verdict
+  // (see CONFIGURABLE_POLICY_OPERATIONS). It is retained because it is the
+  // correct treatment for the configurable cells once they exist -- an
+  // unconfigured configurable operation must never be reachable -- and because
+  // the alternative, treating it as ALLOW_WITH_STEP_UP, would silently grant
+  // authority if a future cell were added with it.
   if (verdict === 'ALLOW_IF_CONFIGURED_WITH_STEP_UP') return 'DENY';
   return verdict;
 }

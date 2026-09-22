@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  CONFIGURABLE_POLICY_OPERATIONS,
   deriveDeliveryStatus,
   isRequestOnly,
   isRoleChangeTargetAllowed,
@@ -27,12 +28,104 @@ test('doc 18 table row: EDIT_CHILD_POLICY / approvals -- Owner+Admin allow, View
   }
 });
 
-test('owner architecture: ADD_VIEWER / REMOVE_NON_OWNER_PARENT are normal Administrator administration with step-up', () => {
+// CORRECTION OF A TEST THAT PINNED AN UNRATIFIED DEFAULT AS THE SPECIFICATION.
+//
+// The preceding version of this test was named "... are normal Administrator
+// administration with step-up" and asserted ALLOW_WITH_STEP_UP for ADMINISTRATOR
+// while passing `defaultFamilyRbacPolicyConfig()` -- the config whose documented
+// meaning is "the Owner has NOT granted this". doc 18 Section 2 does not give
+// these cells a flat allow: its table says "configurable policy + step-up" /
+// "configurable + step-up", and its prose says "An Owner may choose whether an
+// Administrator can add/remove a Viewer or revoke a child device; the SAFE
+// DEFAULT IS OFF."
+//
+// So the old test asserted, as the specification, the exact behaviour that the
+// specification forbids: an Administrator permitted to add a Viewer under a
+// config that grants nothing. A green test was providing assurance about a
+// security-sensitive authorization decision that the document contradicts.
+//
+// The assertions are KEPT rather than deleted -- deleting them would hide the
+// real behaviour instead of recording it -- but they are re-framed for what they
+// are: a RECORD OF A DISCREPANCY between doc 18 Section 2 and the code, pending
+// PCA-DEC-034. This test does NOT endorse the behaviour and must not be cited as
+// evidence that it is correct.
+test('PCA-DEC-034 DISCREPANCY RECORD: ADD_VIEWER / REMOVE_NON_OWNER_PARENT are allowed to ADMINISTRATOR even under the default (never-granted) config', () => {
+  const neverGranted = defaultFamilyRbacPolicyConfig();
+  assert.deepEqual(neverGranted, { administratorCanManageViewers: false, administratorCanRevokeDeviceOrDisableProtection: false }, 'the default config is the documented "safe default is off"');
   for (const op of ['ADD_VIEWER', 'REMOVE_NON_OWNER_PARENT']) {
-    assert.equal(resolveOperationAuthorization('OWNER', op, defaultFamilyRbacPolicyConfig()), 'ALLOW');
-    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, defaultFamilyRbacPolicyConfig()), 'ALLOW_WITH_STEP_UP');
+    assert.equal(resolveOperationAuthorization('OWNER', op, neverGranted), 'ALLOW');
+    // doc 18 Section 2 cell: ADMINISTRATOR "configurable policy + step-up"; prose: "safe default is off".
+    // Actual: allowed. Recorded, not endorsed -- see PCA-DEC-034.
+    assert.equal(resolveOperationAuthorization('ADMINISTRATOR', op, neverGranted), 'ALLOW_WITH_STEP_UP');
     assert.equal(resolveOperationAuthorization('VIEWER', op, CONFIGURED), 'DENY');
     assert.equal(resolveOperationAuthorization('CHILD', op, CONFIGURED), 'DENY');
+  }
+});
+
+test('PCA-DEC-034 DISCREPANCY RECORD: the configurable verdict is never used as a matrix cell, and the resolver is insensitive to config', () => {
+  // Two facts, both asserted rather than asserted-in-a-comment, because together
+  // they are the whole reason the four configurable operations above behave as
+  // they do. This is the PROOF of the discard: not "the config has no writer"
+  // (that is a call-graph fact) but "the config cannot change a verdict at all"
+  // (a behavioural fact, proven by feeding the extremes).
+  //
+  // This test will FAIL the moment the configurable layer is implemented. That is
+  // deliberate and it is the point: implementing it is a documented FEATURE with
+  // a security requirement attached (doc 18 Section 2: policy configuration is
+  // "itself E2EE, signed, and auditable"), so it must not land as a silent
+  // refactor. If this fails, update PCA-DEC-034 and the production-path register
+  // in the same change, and replace this test with one that asserts the
+  // configured semantics.
+  const maximallyPermissive = { administratorCanManageViewers: true, administratorCanRevokeDeviceOrDisableProtection: true };
+  const maximallyRestrictive = { administratorCanManageViewers: false, administratorCanRevokeDeviceOrDisableProtection: false };
+  const ROLES = ['OWNER', 'ADMINISTRATOR', 'VIEWER', 'CHILD'];
+  const OPERATIONS = [
+    'VIEW_DASHBOARD', 'EDIT_CHILD_POLICY', 'APPROVE_BONUS_TIME', 'APPROVE_UNBLOCK', 'APPROVE_EXCEPTION',
+    'APPROVE_INSTALL', 'ADD_VIEWER', 'REMOVE_NON_OWNER_PARENT', 'ADD_ADMINISTRATOR', 'CHANGE_ROLE',
+    'CHANGE_RETENTION', 'DELETE_NOW', 'EXPORT_FAMILY_DATA', 'REMOVE_REVOKE_DEVICE', 'DISABLE_PROTECTION_POLICY',
+    'OWNERSHIP_TRANSFER_INITIATION', 'RECOVERY_SENSITIVE_ACTION',
+  ];
+  let comparisons = 0;
+  for (const operation of OPERATIONS) {
+    for (const role of ROLES) {
+      assert.equal(
+        resolveOperationAuthorization(role, operation, maximallyPermissive),
+        resolveOperationAuthorization(role, operation, maximallyRestrictive),
+        `${role}/${operation} responds to FamilyRbacPolicyConfig, which means the configurable layer has been wired -- update PCA-DEC-034 and the register, do not just adjust this test`,
+      );
+      comparisons += 1;
+    }
+  }
+  assert.equal(comparisons, 68, 'every role/operation pair must actually be compared -- a loop that compared nothing would pass vacuously');
+
+  // And the configurable verdict is still absent from the matrix: if a cell were
+  // added with it, the cells above would collapse to DENY and this record would
+  // be stale.
+  for (const operation of OPERATIONS) {
+    for (const role of ROLES) {
+      assert.notEqual(
+        resolveOperationAuthorization(role, operation, maximallyPermissive),
+        undefined,
+        `${role}/${operation} resolved to undefined`,
+      );
+    }
+  }
+});
+
+test('PCA-DEC-034 DISCREPANCY RECORD: the four operations doc 18 Section 2 marks configurable are exactly those the register tracks', () => {
+  // Keeps the code-side enumeration (CONFIGURABLE_POLICY_OPERATIONS) and the doc
+  // reading in agreement, so the set cannot silently shrink or grow.
+  assert.deepEqual(
+    [...CONFIGURABLE_POLICY_OPERATIONS].sort(),
+    ['ADD_VIEWER', 'DISABLE_PROTECTION_POLICY', 'REMOVE_NON_OWNER_PARENT', 'REMOVE_REVOKE_DEVICE'],
+    'the operations doc 18 Section 2 marks "configurable" changed -- confirm against the doc table before adjusting this list',
+  );
+  for (const operation of CONFIGURABLE_POLICY_OPERATIONS) {
+    assert.equal(
+      resolveOperationAuthorization('ADMINISTRATOR', operation, defaultFamilyRbacPolicyConfig()),
+      'ALLOW_WITH_STEP_UP',
+      `${operation} is documented configurable with a safe default of OFF; this records what actually happens under the default config`,
+    );
   }
 });
 
