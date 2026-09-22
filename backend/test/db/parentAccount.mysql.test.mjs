@@ -346,6 +346,82 @@ async function registerAndVerifyRealAccount(service, emailSender, email, passwor
   return service.verifyEmail(email, emailSender.lastCodeFor(email));
 }
 
+// PCA-DEC-033 / MySqlFamilyMembershipRepository.findActiveRole.
+//
+// This deliberately links the repository's two PRODUCTION-REACHABLE methods
+// through their real callers instead of calling either method directly:
+//
+//   FamilyMemberInvitationService.acceptInvitation
+//     -> MySqlFamilyMemberAccountBinder
+//     -> applyAcceptedInvitationRoleOnConnection (writer)
+//
+//   ParentAccountService.readSession
+//     -> resolveFamilyRole
+//     -> findActiveRole (consumer)
+//
+// The final REVOKED assertion is the hostile half of the reader contract: a
+// durable row is not authority merely because it exists. Only ACTIVE may be
+// returned to the browser session.
+test('MySQL REAL WRITER->CONSUMER: accepted family membership is returned by ParentAccountService, while a revoked row fails closed', async () => {
+  const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
+  const { FamilyMemberInvitationService } = await import('../../dist/familymembers/FamilyMemberInvitationService.js');
+  const { MySqlFamilyMemberAccountBinder } = await import('../../dist/familymembers/MySqlFamilyMemberAccountBinder.js');
+  const { MySqlEntitlementRepository } = await import('../../dist/entitlements/MySqlEntitlementRepository.js');
+  const { service, emailSender } = buildService();
+  const password = 'a genuinely long password';
+  const owner = await registerAndVerifyRealAccount(service, emailSender, uniqueEmail(), password);
+  const memberEmail = uniqueEmail();
+  const member = await registerAndVerifyRealAccount(service, emailSender, memberEmail, password);
+  const familyId = randomUUID();
+  const now = new Date();
+
+  await bindAccountToFamilyForTest(owner.accountId, familyId);
+  await bindAccountToFamilyForTest(member.accountId, familyId);
+  const beforeInvitation = await service.readSession(member.rawSessionToken);
+  assert.equal(beforeInvitation.familyId, familyId);
+  assert.equal(beforeInvitation.role, null, 'a family-bound account with no ACTIVE membership must fail closed before invitation acceptance');
+  const entitlementRepository = new MySqlEntitlementRepository();
+  await entitlementRepository.getOrCreateForFamily(
+    familyId,
+    'FREE_STARTER',
+    { tier: 'FREE_STARTER', parentMemberLimit: 2, managedDeviceLimit: 5, updatedAt: now, updatedByAdminId: null },
+    now,
+  );
+
+  const invitationService = new FamilyMemberInvitationService(
+    new MySqlFamilyMemberInvitationRepository(),
+    { authorize: () => ({ verdict: 'ALLOW' }) },
+    () => now,
+    undefined,
+    new MySqlFamilyMemberAccountBinder(),
+    entitlementRepository,
+  );
+  const invitation = await invitationService.createInvitation({
+    familyId,
+    invitedEmail: memberEmail,
+    role: 'VIEWER',
+    invitedByAccountId: owner.accountId,
+    actorDeviceId: 'dev-owner',
+  });
+  await invitationService.acceptInvitation(invitation.invitationId, member.accountId);
+
+  const activeSession = await service.readSession(member.rawSessionToken);
+  assert.equal(activeSession.familyId, familyId);
+  assert.equal(activeSession.role, 'VIEWER', 'the real browser-session consumer must see the role written by the real invitation path');
+
+  const [revoked] = await getPool().query(
+    `UPDATE family_parent_memberships
+     SET status = 'REVOKED', updated_at = ?
+     WHERE account_id = ? AND family_id = ? AND status = 'ACTIVE'`,
+    [new Date(now.getTime() + 1), member.accountId, familyId],
+  );
+  assert.equal(revoked.affectedRows, 1, 'hostile precondition: exactly the accepted membership is revoked');
+
+  const revokedSession = await service.readSession(member.rawSessionToken);
+  assert.equal(revokedSession.familyId, familyId, 'revoking normal role authority does not rewrite account identity');
+  assert.equal(revokedSession.role, null, 'a REVOKED durable row must fail closed through the real ParentAccountService consumer');
+});
+
 test('MySQL SECURITY: a family-member invitation can only be accepted by the account whose OWN registered email it was addressed to -- a stranger with a valid session gets NOT_FOUND and the invitation stays PENDING', async () => {
   const { MySqlFamilyMemberInvitationRepository } = await import('../../dist/familymembers/MySqlFamilyMemberInvitationRepository.js');
   const { hashInvitedEmail } = await import('../../dist/familymembers/emailHash.js');
