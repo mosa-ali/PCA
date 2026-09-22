@@ -13,6 +13,16 @@ export interface FamilyAuditEventDeliveryOutcome {
 }
 
 /**
+ * Log the first failure, then every Nth. Bounded at 1/N of the event volume,
+ * never fully silent -- see this file's class doc comment for why a
+ * once-per-instance flag was wrong.
+ */
+const LOG_EVERY_NTH_FAILURE = 100;
+function shouldLogFailure(occurrences: number): boolean {
+  return occurrences === 1 || occurrences % LOG_EVERY_NTH_FAILURE === 0;
+}
+
+/**
  * Best-effort delivery of one already-recorded FamilyAuditRecord to every
  * one of the family's registered parent devices, as an opaque encrypted
  * envelope. Mirrors alerts/ProtectionAlertProducer.ts's composition chain
@@ -42,16 +52,24 @@ export interface FamilyAuditEventDeliveryOutcome {
  * or any record content -- notably NOT the audit record itself, whose free text
  * doc 18 Section 5 requires to stay E2EE-only and out of infrastructure logs).
  *
- * Both logs are emitted ONCE PER INSTANCE rather than once per record: a
- * resolver or ledger outage would otherwise produce one line per audit event for
- * the duration of the outage, turning a diagnosable fault into a log flood. The
- * return contract is unchanged -- still `[]`/`FAILED`, still never throwing --
- * so no caller's behaviour depends on the log.
+ * Both logs are BOUNDED but never one-shot: the first failure is logged and
+ * then every Nth, with a running count, and the count RESETS on the next success.
+ * An earlier version logged once per instance, which independent review showed
+ * traded a log flood for something worse -- "once per instance" is "once per
+ * PROCESS" here (main.ts constructs exactly one producer for the process
+ * lifetime), and because the production composer currently rejects every call,
+ * the FIRST audit event after startup would have consumed the budget and left
+ * every later failure, including a completely different one such as a real
+ * ledger outage, silent forever. Rate-limiting keeps the log bounded at 1/N of
+ * the event volume without ever going fully silent, and resetting on success
+ * means a recovered-and-failed-again dependency reports immediately rather than
+ * waiting out the interval. The return contract is unchanged -- still
+ * `[]`/`FAILED`, still never throwing -- so no caller depends on the logging.
  */
 export class FamilyAuditEventProducer {
-  /** Bounded, once-per-instance logging -- see this class's doc comment. */
-  private recipientResolutionFailureLogged = false;
-  private deviceDeliveryFailureLogged = false;
+  /** Counted, rate-limited logging -- see this class's doc comment. */
+  private recipientResolutionFailureCount = 0;
+  private deviceDeliveryFailureCount = 0;
 
   constructor(
     private readonly ledger: FamilyAuditEventLedger,
@@ -65,19 +83,23 @@ export class FamilyAuditEventProducer {
     try {
       parentDevices = await this.resolveParentDevices(record.familyId);
     } catch (error) {
-      if (!this.recipientResolutionFailureLogged) {
-        this.recipientResolutionFailureLogged = true;
+      this.recipientResolutionFailureCount += 1;
+      if (shouldLogFailure(this.recipientResolutionFailureCount)) {
         console.warn(
           JSON.stringify({
             event: 'family_audit_event_recipient_resolution_failed',
             familyId: record.familyId,
+            occurrences: this.recipientResolutionFailureCount,
             message: error instanceof Error ? error.message : String(error),
-            note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged once per producer instance.',
+            note: 'audit events are NOT reaching this family; this is a resolution failure, not an empty recipient list. Logged on the first failure and every Nth thereafter.',
           }),
         );
       }
       return [];
     }
+    // Recovered: reset so the next outage reports at occurrence 1 rather than
+    // waiting out the interval.
+    this.recipientResolutionFailureCount = 0;
 
     const outcomes: FamilyAuditEventDeliveryOutcome[] = [];
     for (const parentDevice of parentDevices) {
@@ -100,15 +122,16 @@ export class FamilyAuditEventProducer {
         outcomes.push({ parentDeviceId: parentDevice.deviceId, outcome: 'FAILED' });
         // The returned array is discarded by FamilyAuditService.record, so
         // without this the failure existed only in a value nobody reads.
-        if (!this.deviceDeliveryFailureLogged) {
-          this.deviceDeliveryFailureLogged = true;
+        this.deviceDeliveryFailureCount += 1;
+        if (shouldLogFailure(this.deviceDeliveryFailureCount)) {
           console.warn(
             JSON.stringify({
               event: 'family_audit_event_device_delivery_failed',
               familyId: record.familyId,
               parentDeviceId: parentDevice.deviceId,
+              occurrences: this.deviceDeliveryFailureCount,
               message: error instanceof Error ? error.message : String(error),
-              note: 'this audit event did not reach this parent device. Logged once per producer instance; further per-device failures are suppressed.',
+              note: 'this audit event did not reach this parent device. Logged on the first failure and every Nth thereafter.',
             }),
           );
         }

@@ -1,6 +1,6 @@
 import { canonicalizeTrustSetEpoch } from './canonicalize.js';
 import { activeOwnerCount, findActiveOwner, findDuplicateIdentity } from './FamilyTrustSetEngine.js';
-import { isDistinctKeyPair } from './policy.js';
+import { isDistinctKeyPair, isPlausibleEpochNumber, isPlausibleKeyEpoch, isPlausibleOpaqueId, isPlausibleSignature, MAX_ENTRIES_PER_EPOCH } from './policy.js';
 import type { RecoveryTransactionLedger } from './RecoveryTransactionLedger.js';
 import type { FamilyTrustSetStore } from './FamilyTrustSetStore.js';
 import type { TrustSetSignatureVerifier } from './TrustSetSignatureVerifier.js';
@@ -10,6 +10,7 @@ import type { FamilyTrustSetEntry, FamilyTrustSetEpoch } from './types.js';
 export type RecoveryFtsRejectionReason =
   | 'MALFORMED_RECOVERY_PROOF'
   | 'INVALID_BOUND_EPOCH'
+  | 'MALFORMED_CANDIDATE_EPOCH'
   | 'NO_ESTABLISHED_FAMILY'
   | 'FAMILY_MISMATCH'
   | 'ENVELOPE_EPOCH_MISMATCH'
@@ -28,25 +29,6 @@ export type RecoveryFtsRejectionReason =
 export type RecoveryFtsVerdict =
   | { accepted: true }
   | { accepted: false; reason: RecoveryFtsRejectionReason };
-
-/**
- * Bound on the OpaqueIdentifier-shaped fields of a recovery proof, mirroring this
- * codebase's 128-character convention for opaque identifiers (audit targetRef,
- * the action/message idempotency-key CHECKs).
- */
-const MAX_RECOVERY_PROOF_IDENTIFIER_LENGTH = 128;
-
-/**
- * A recovery proof's envelope id and one-time transaction id are OPAQUE
- * IDENTIFIERS: non-empty and bounded. An empty one is not an identifier, and
- * accepting one is not harmless -- `recoveryTransactionId` is exactly the value
- * the one-time claim is keyed on, so an empty id makes every malformed request
- * share a single claim slot instead of each representing a distinct, unguessable
- * transaction.
- */
-function isPlausibleRecoveryProofIdentifier(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_RECOVERY_PROOF_IDENTIFIER_LENGTH;
-}
 
 /**
  * The dedicated recovery-authorized FTS epoch acceptance path (doc 09
@@ -104,19 +86,55 @@ export async function acceptRecoveryEpoch(
   //
   // Ordered FIRST, ahead of the family checks, deliberately: a malformed proof
   // then learns nothing about family state at all.
-  if (
-    !isPlausibleRecoveryProofIdentifier(opened.recoveryEnvelopeId) ||
-    !isPlausibleRecoveryProofIdentifier(opened.recoveryTransactionId)
-  ) {
+  //
+  // The ids are checked with the store's OWN `isPlausibleOpaqueId` rather than a
+  // private copy, so `MAX_OPAQUE_ID_LENGTH` has one definition. Note precisely
+  // what this branch does and does not buy: `recoveryEnvelopeId` is a contract
+  // assertion only -- the engine never otherwise reads it, so rejecting a
+  // malformed one closes no path through this function. `recoveryTransactionId`
+  // is the one that matters, because it is the key the one-time claim is taken
+  // on, and an empty key would put every malformed request in the same claim
+  // slot instead of each representing a distinct, unguessable transaction.
+  if (!isPlausibleOpaqueId(opened.recoveryEnvelopeId) || !isPlausibleOpaqueId(opened.recoveryTransactionId)) {
     return { accepted: false, reason: 'MALFORMED_RECOVERY_PROOF' };
   }
-  if (
-    !Number.isInteger(opened.boundTrustSetEpoch) ||
-    !Number.isInteger(opened.boundKeyEpoch) ||
-    opened.boundTrustSetEpoch < 0 ||
-    opened.boundKeyEpoch < 0
-  ) {
+  // The bound epochs are the SAME KINDS of number as the epoch's own (a
+  // trustSetEpoch and a keyEpoch), so they use the same two validators.
+  if (!isPlausibleEpochNumber(opened.boundTrustSetEpoch) || !isPlausibleKeyEpoch(opened.boundKeyEpoch)) {
     return { accepted: false, reason: 'INVALID_BOUND_EPOCH' };
+  }
+
+  // THE CANDIDATE EPOCH IS VALIDATED IN THE SAME CALL, and this half is not
+  // optional. The numbers below are WRITTEN INTO THE TRUST SET, so an
+  // implausible value does not merely fail one comparison -- it permanently
+  // destroys the comparisons themselves. A candidate with
+  // `trustSetEpoch: NaN` passes BOTH "must strictly advance" guards below
+  // (`NaN <= current` is false), is accepted, and is then stored at
+  // `store.setCurrentEpoch(epoch)`. After that write `<= NaN` is false for every
+  // future value, so the advancement invariant and the envelope-binding check
+  // are silently dead for the life of that store, for the ORDINARY path too
+  // (`acceptEpoch` uses the same `<=`). `Infinity` inverts the failure instead:
+  // every future epoch, ordinary or recovery, is rejected forever -- a permanent
+  // denial of trust-set advancement for that family. Validating only the half
+  // that is merely compared, while this half is the one that persists, would be
+  // the same incomplete-fix mistake one level up.
+  //
+  // Every rule here is the store's own, and the same set `parseFamilyTrustSetEpoch`
+  // already enforces on the wire path -- so a legitimately parsed epoch can never
+  // be rejected here, and a hand-built one cannot slip past. `entries` and
+  // `signature` are included for a different reason: a non-array `entries` would
+  // throw out of `activeOwnerCount()` and a non-string `signature` would throw
+  // out of a real verifier, and this function's contract is to RETURN a verdict,
+  // never to throw one -- a throw would leave the calling coordinator's
+  // transaction INITIATED forever instead of recording FAILED with a reason.
+  if (
+    !Array.isArray(epoch.entries) ||
+    epoch.entries.length > MAX_ENTRIES_PER_EPOCH ||
+    !isPlausibleSignature(epoch.signature) ||
+    !isPlausibleEpochNumber(epoch.trustSetEpoch) ||
+    !isPlausibleKeyEpoch(epoch.keyEpoch)
+  ) {
+    return { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' };
   }
 
   // Recovery is a controlled trust TRANSITION for an already-established

@@ -296,6 +296,60 @@ test('ATTACK: every malformed proof SHAPE is rejected with a precise reason, and
   assert.deepEqual(store.getCurrentEpoch(), before, 'no malformed proof may mutate the current trust set');
 });
 
+test('ATTACK: a candidate epoch carrying an implausible epoch NUMBER is rejected, and never reaches the trust set', async () => {
+  // The OTHER HALF of the same defect, found by independent review of the fix
+  // above: validating the proof while leaving the epoch it authorises
+  // unvalidated. These values are WRITTEN INTO THE TRUST SET, so accepting one
+  // does not merely fail a comparison -- it destroys the comparison. `NaN <=
+  // current` is false, so a NaN candidate passes BOTH "must strictly advance"
+  // guards, is stored, and thereafter `<= NaN` is false for every future value:
+  // the advancement invariant and the envelope-binding check are dead for the
+  // life of that store, for the ordinary `acceptEpoch` path too. `Infinity`
+  // inverts the failure instead -- every future epoch, ordinary or recovery, is
+  // rejected forever, permanently denying that family any trust-set advancement.
+  const { store, verifier, ledger } = await establishedFamily();
+  const before = store.getCurrentEpoch();
+
+  const candidates = [
+    ['NaN trustSetEpoch', { trustSetEpoch: Number.NaN }],
+    ['NaN keyEpoch', { keyEpoch: Number.NaN }],
+    ['Infinity trustSetEpoch', { trustSetEpoch: Number.POSITIVE_INFINITY }],
+    ['Infinity keyEpoch', { keyEpoch: Number.POSITIVE_INFINITY }],
+    ['fractional trustSetEpoch', { trustSetEpoch: 1.5 }],
+    ['negative keyEpoch', { keyEpoch: -1 }],
+    ['zero trustSetEpoch', { trustSetEpoch: 0 }],
+  ];
+
+  for (const [label, overrides] of candidates) {
+    const candidate = legitimateRecoveryEpoch(overrides);
+    const signed = { ...candidate, signature: signTestOnlyEpoch('new-owner-dsk-pub', canonicalizeTrustSetEpoch(candidate)) };
+    const verdict = await acceptRecoveryEpoch(signed, opened(), store, verifier, ledger);
+    assert.deepEqual(verdict, { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' }, `${label} must be rejected`);
+  }
+
+  // A non-array `entries` must produce a VERDICT, not a TypeError thrown out of
+  // activeOwnerCount() -- a throw would leave the calling coordinator's
+  // transaction INITIATED forever rather than recording FAILED with a reason.
+  const notAnArray = await acceptRecoveryEpoch(
+    { ...legitimateRecoveryEpoch(), entries: 'not-an-array' },
+    opened(),
+    store,
+    verifier,
+    ledger,
+  );
+  assert.deepEqual(notAnArray, { accepted: false, reason: 'MALFORMED_CANDIDATE_EPOCH' });
+
+  assert.deepEqual(store.getCurrentEpoch(), before, 'no implausible candidate may reach the trust set');
+
+  // And the invariant those rejections protect is demonstrably still alive
+  // afterwards: a plausible recovery still succeeds on the same store. Without
+  // the validation this would be impossible -- with a NaN trust set epoch
+  // already stored, EVERY subsequent acceptance, legitimate or not, is refused.
+  const good = legitimateRecoveryEpoch();
+  const goodSigned = { ...good, signature: signTestOnlyEpoch('new-owner-dsk-pub', canonicalizeTrustSetEpoch(good)) };
+  assert.deepEqual(await acceptRecoveryEpoch(goodSigned, opened(), store, verifier, ledger), { accepted: true });
+});
+
 test('ATTACK: clock manipulation -- acceptance never reads issuedAt against wall-clock time; only epoch numbers gate acceptance', async () => {
   const { store, verifier, ledger } = await establishedFamily();
   const farFuture = legitimateRecoveryEpoch({ issuedAt: new Date('2099-01-01T00:00:00.000Z') });
