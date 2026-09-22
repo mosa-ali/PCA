@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { AuthService } from '../../dist/auth/AuthService.js';
@@ -38,7 +38,17 @@ test('MySQL: the same identity resolves to the same account across sessions (DB-
 test('MySQL: token hash uniqueness is DB-enforced', async () => {
   const now = new Date();
   const accountId = (await repository.findOrCreateAccount(Buffer.from(subject()), now)).accountId;
-  const shared = { sessionId: randomUUID(), accountId, tokenHash: 'a'.repeat(64), issuedAt: now, expiresAt: new Date(now.getTime() + 60_000), revokedAt: null };
+  // A FRESH 64-hex hash per run, never a fixed literal. The property under test is
+  // that the DATABASE rejects a duplicate token_hash, which is proven by inserting
+  // the same value twice -- the value itself is irrelevant. Using a fixed
+  // 'a'.repeat(64) made the test depend on that value NOT already existing: it
+  // passed against a clean database and failed on the second run against the same
+  // database, at the FIRST insert rather than the second. That is exactly the
+  // empty-table dependency the production-path certification gate forbids
+  // (gate 7), and it was found by `npm run test:db:certified-paths`, which re-runs
+  // the certified suites WITHOUT resetting -- the empirical check a static lint
+  // cannot perform.
+  const shared = { sessionId: randomUUID(), accountId, tokenHash: randomBytes(32).toString('hex'), issuedAt: now, expiresAt: new Date(now.getTime() + 60_000), revokedAt: null };
   await repository.createSession(shared);
   await assert.rejects(
     () => repository.createSession({ ...shared, sessionId: randomUUID() }),

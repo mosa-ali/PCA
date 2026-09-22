@@ -264,6 +264,7 @@ const files = [
   "test/tooling/migrationResumability.test.mjs",
   "test/tooling/canonicalSchemaDrift.test.mjs",
   "test/tooling/productionInMemoryStores.test.mjs",
+  "test/tooling/productionPathCertification.test.mjs",
   "test/invitation/enrollmentProfile.test.mjs",
   "test/location/safeZoneRepository.test.mjs",
   "test/mutation/privacyBoundaries.test.mjs",

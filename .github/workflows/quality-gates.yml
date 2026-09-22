@@ -533,11 +533,57 @@ jobs:
               await conn.end();
             })().catch((error) => { console.error(error); process.exit(1); });
           "
+      - name: Recreate the disposable database with the repository's canonical charset/collation
+        # NOT OPTIONAL, and its absence is what made this job's first CI run fail
+        # with "Unsupported database charset/collation: must be utf8mb4/utf8mb4_bin.
+        # Found: utf8mb4/utf8mb4_0900_ai_ci."
+        #
+        # A MySQL 8.4 service container creates MYSQL_DATABASE with the SERVER
+        # default collation, utf8mb4_0900_ai_ci, which scripts/verify-mysql.mjs's
+        # assertSupportedEnvironment rejects by design. The two focused DB jobs
+        # above never hit this because `reset-test-db.mjs` is INSIDE their npm
+        # scripts (`test:db:bootstrap`, `test:db:auth-certification` both begin
+        # `... reset-test-db.mjs && ... verify-mysql.mjs`), so the database was
+        # always recreated before anything checked it. `npm run test:db` does NOT
+        # reset -- it expects a database already prepared -- so this job must
+        # prepare it explicitly.
+        #
+        # Local runs hid this: a developer's `pca_test` has been recreated by
+        # earlier runs, so its collation is already correct. Only CI, starting from
+        # a virgin container, sees the real requirement. Worth recording because
+        # the failure mode is a single opaque line at the very start of the suite.
+        working-directory: backend
+        run: node --env-file=test.env --env-file=test.db.env scripts/reset-test-db.mjs
       - name: Run the full MySQL-backed DB suite
         working-directory: backend
         env:
           PCA_MIGRATION_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
         run: npm run test:db
+      - name: Certify the production writer -> reader paths against the POPULATED database
+        # PCA_PRODUCTION_PATH_CERTIFICATION gates 5, 6 and 7, enforced by
+        # OBSERVATION rather than by reading the source:
+        #    5. SKIP_COUNT = 0 for the certified scope
+        #    6. ORDER_DEPENDENT_TEST = FORBIDDEN
+        #    7. EMPTY_TABLE_DEPENDENCY = FORBIDDEN
+        #
+        # It runs immediately AFTER `npm run test:db`, deliberately: by this point
+        # the database is fully populated by the 62 suites above, so re-running the
+        # certified files here is a genuine "against realistic repository state"
+        # check rather than a second lap of the clean-database path. A certified
+        # test that only passes because a table was near-empty, or because its row
+        # landed inside the newest N by a global ordering, FAILS at this step.
+        #
+        # This is not theoretical: the first execution found
+        # auth.mysql.test.mjs's "token hash uniqueness is DB-enforced" inserting a
+        # hardcoded 'a'.repeat(64) and failing on the second run at its FIRST
+        # insert, because the value already existed -- it proved the property only
+        # on a clean database. It also fails (rather than skips) when the
+        # migration credential is absent, because for the certified scope "could
+        # not certify" must never render as "certified".
+        working-directory: backend
+        env:
+          PCA_MIGRATION_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
+        run: npm run test:db:certified-paths
 
   real-backend-e2e:
     # 2026-09-21, PCA full assessment findings P1-13 and P1-14.
