@@ -233,6 +233,69 @@ search cannot prove absence unless it actually traversed the scope it claims to
 have searched (PowerShell's `Select-String -Path src/**/*.ts` is **not**
 recursive; it matches one directory level only).
 
+## Owner ruling — 2026-09-22: Azure pre-production deployment authorised to prepare
+
+The shift this records: the source position is now strong enough that Azure itself
+becomes the next **test** environment, rather than the programme waiting for every
+remaining problem to be discoverable locally. It is authorised as a controlled
+acceptance environment, **not** as the live customer cutover.
+
+```
+AZURE_STAGING_DEPLOYMENT = APPROVED_TO_PREPARE
+AZURE_PRODUCTION_DEPLOYMENT = NOT_YET_APPROVED
+
+DEPLOY_SHA = b2dcbf0ed8ac03e8bb2081fabe69be2de16989f7
+
+CI = 35700989399 SUCCESS
+
+SOURCE_CERTIFICATION = 26 CERTIFIED / 24 TRACKED GAPS
+
+NEXT_PHASE = AZURE PRE-PRODUCTION ACCEPTANCE
+
+PRODUCTION_DB_MUTATION = NOT YET
+PRODUCTION_SECRET_ROTATION = NOT YET
+DNS/TLS_CHANGE = NOT YET
+MAIN_MERGE = NOT YET
+PUBLIC_RELEASE = NOT YET
+```
+
+`APPROVED_TO_PREPARE` is the operative qualifier: preparing the environment,
+configuration reconciliation and acceptance campaign is authorised; **executing** a
+deployment, or any production mutation, is not. The prepared plan is
+`docs/deployment/PCA_AZURE_PREPRODUCTION_ACCEPTANCE_PLAN.md`, which is deliberately
+source-grounded (every configuration item cites the file it was read from) and
+states in its own header that no Azure resource, DNS record, TLS certificate, SMTP
+credential, production database or branch-protection setting was created, modified
+or rotated in producing it.
+
+**The reason a staging deployment is the right next step rather than a production
+one:** the remaining blockers are no longer ordinary CI failures. Production
+intentionally wires several security-sensitive paths to rejecting implementations
+pending PCA-DEC-020, so the honest next question is not "does the suite pass" but
+"does the real Azure container/runtime behave as certified, and does the real
+configuration hold" — which only a deployed environment can answer.
+
+**What must NOT be mistaken for a defect in staging:** behaviour closed by
+PCA-DEC-020 (no durable protection alert, and the envelope/device-session/Trust-Set/
+Safe-Zone paths that depend on the reviewed crypto suite). Those are `EXPECTED_GATED`.
+Substituting a permissive composer, verifier or key to make a demonstration work
+would convert a reviewed gate into an undocumented production behaviour, and is
+forbidden by that module's own doc comment.
+
+**Five ordered steps recorded:** (1) deploy the exact SHA to an isolated Azure
+environment/slot with a non-production database and test email/provider
+configuration; (2) run the Azure acceptance campaign — migrations from zero and from
+an upgrade baseline, `/health`, `/health/db`, `/health/email`, Parent Web
+CORS/origin/cookies, real registration/login/OTP, Platform Admin, restart
+persistence, scheduled workers, DB least privilege, logs/alerts, EN/AR, and browser
+tests against the Azure URLs; (3) reconcile production configuration before touching
+live (migration watermark versus source, required environment variables, SMTP
+provider, secrets/rotation, DNS/TLS/origins, rollback point and backup, and the
+exact Azure topology); (4) do **not** call the build production-ready while PCA-DEC-020
+is unresolved and the remaining gaps are undispositioned; (5) after staging passes,
+prepare a production deployment decision packet that classifies each remaining gate
+as required-for-release, intentionally gated, or accepted residual.
+
 ## Residual risks
 
 | Risk | Impact | Mitigation / gate |
