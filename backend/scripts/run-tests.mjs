@@ -153,6 +153,7 @@ const files = [
   "test/platformadmin/accountService.test.mjs",
   "test/platformadmin/activation.test.mjs",
   "test/platformadmin/bootstrapPlatformOwner.test.mjs",
+  "test/platformadmin/recoverPlatformAdminActivation.test.mjs",
   "test/platformadmin/fastifyPlatformAdminAuthPlugin.test.mjs",
   "test/platformadmin/crossRealm.test.mjs",
   "test/platformadmin/privacy.test.mjs",
