@@ -236,7 +236,17 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
       const repository = new MySqlPlatformAdminAuditRepository();
       const eventId = randomUUID();
       const correlationId = randomUUID();
-      const occurredAt = new Date('2026-01-01T00:00:00.000Z');
+      // A FRESH instant, not a fixture date, and the read below is narrowed by
+      // it. Both details matter: queryForRole reads `ORDER BY occurred_at DESC
+      // LIMIT n`, so a row written with a fixed PAST timestamp is only returned
+      // while fewer than n newer rows exist. This case originally used
+      // 2026-01-01T00:00:00Z and passed when the file ran alone -- then failed
+      // the first time the FULL 62-suite DB run executed it, because every other
+      // platform-admin suite had filled the table with NOW()-timestamped rows
+      // and pushed this one out of the window. A read-back that depends on how
+      // empty the table happens to be is not a production-path assertion, so the
+      // filter below selects by this run's own timestamp rather than by position.
+      const occurredAt = new Date();
 
       // 1. THE REAL WRITER, as the real principal. This is the assertion that
       //    would have caught an INSERT needing a column the plan omits.
@@ -254,8 +264,11 @@ if (!process.env.PCA_MIGRATION_DATABASE_URL) {
 
       // 2. THE REAL READER, not the table: proves queryForRole's SELECT is also
       //    inside the grant, and that the exact value/semantics survive the
-      //    round trip (timestamp and the JSON-typed metadata column).
-      const rows = await repository.queryForRole(['APP_OWNER'], 'probe-admin', { limit: 50 });
+      //    round trip (timestamp and the JSON-typed metadata column). Narrowed to
+      //    everything at-or-after this run's own instant, which is this row and
+      //    essentially nothing else, so the assertion does not depend on the size
+      //    of a table 60 other suites also write to.
+      const rows = await repository.queryForRole(['APP_OWNER'], 'probe-admin', { sinceOccurredAt: occurredAt, limit: 1000 });
       const readBack = rows.find((row) => row.eventId === eventId);
       assert.ok(readBack, 'the real consumer must see the row the real writer just inserted');
       assert.equal(readBack.correlationId, correlationId);

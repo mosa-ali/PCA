@@ -445,6 +445,100 @@ jobs:
         working-directory: backend
         run: npm run test:db:auth-certification
 
+  backend-full-db-certification:
+    # 2026-09-22, PRODUCTION_PATH_CERTIFICATION_RULE. The two focused DB jobs above
+    # each certify a slice. This job runs the WHOLE MySQL-backed suite -- all 62
+    # files under backend/test/db/ -- because a systematic store-vs-writer
+    # inventory found that the great majority of this repository's real-writer
+    # coverage lived in suites NO workflow ever executed, while the focused jobs
+    # made CI look like it covered the database.
+    #
+    # What that gap actually cost, concretely: the envelope-durability and
+    # atomic-acceptance suites (syncDurability, atomicEnvelopeAcceptance), every
+    # platform-admin MFA/step-up suite, protectionAlerts and
+    # auditAlertCiphertextExpiry, the billing/entitlement/concurrency suites
+    # (refundBalanceRaceConcurrency, raiseLimitReservationSurvival,
+    # checkoutRetryRecovery), settlement, deleteNowLedger, commercial
+    # notifications, and the 1000-line real-route http.mysql.test.mjs were all
+    # written, all passing locally, and all invisible to CI. An assertion that
+    # never executes is not a certification, and a green run was being read as
+    # one.
+    #
+    # `npm run test:db` is exactly the repository's own documented full-suite
+    # entry point; this job does not invent a new way to run it. On a fresh
+    # service container `verify-mysql.mjs` applies the entire migration chain from
+    # empty to latest, which is what makes it safe to run here and why no
+    # `reset-test-db` step is needed ahead of it.
+    #
+    # PCA_MIGRATION_DATABASE_URL is set for the whole job, which additionally
+    # means the platform-admin audit privilege gate (whose assertions are
+    # otherwise `# SKIP`'d, see the bootstrap job above) runs FOR REAL as part of
+    # this suite rather than reporting itself skipped.
+    #
+    # DISPOSABLE ONLY, no real credential: the MySQL service container is
+    # ephemeral, destroyed with the runner, reachable only from this job's own
+    # steps, and uses the same explicitly-named test-only
+    # "pca_test_only_not_a_secret" value the repository's docker-compose.yml
+    # already uses for local development.
+    name: Backend FULL DB certification (all MySQL suites, disposable MySQL)
+    runs-on: ubuntu-24.04
+    # Measured, not guessed: the whole suite (build + the entire migration chain
+    # + all 62 files, --test-concurrency=1) completes in ~4.2 minutes locally.
+    # 30 minutes leaves ample room for a slower runner and a cold container while
+    # still failing fast on a genuine hang.
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4.11
+        env:
+          MYSQL_ROOT_PASSWORD: pca_test_only_not_a_secret
+          MYSQL_DATABASE: pca_test
+          MYSQL_USER: pca_test_app
+          MYSQL_PASSWORD: pca_test_only_not_a_secret
+        # Host port 33061, matching backend/test.db.env's own PCA_DATABASE_URL
+        # exactly (127.0.0.1:33061/pca_test), so no override is needed.
+        ports:
+          - 33061:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -ppca_test_only_not_a_secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Set disposable MySQL service to UTC (matches docker-compose.yml's --default-time-zone=+00:00)
+        # Same requirement as the two focused DB jobs: the `services:` schema has
+        # no docker-compose `command:` equivalent, so the container boots with
+        # time_zone=SYSTEM and scripts/verify-mysql.mjs's assertSupportedEnvironment
+        # fails closed on anything other than '+00:00'. Must run before any test
+        # connects, because a fresh connection's SESSION time_zone inherits GLOBAL.
+        working-directory: backend
+        run: |
+          node -e "
+            const mysql = require('mysql2/promise');
+            (async () => {
+              const conn = await mysql.createConnection({ host: '127.0.0.1', port: 33061, user: 'root', password: 'pca_test_only_not_a_secret' });
+              await conn.query(\"SET GLOBAL time_zone = '+00:00'\");
+              await conn.end();
+            })().catch((error) => { console.error(error); process.exit(1); });
+          "
+      - name: Run the full MySQL-backed DB suite
+        working-directory: backend
+        env:
+          PCA_MIGRATION_DATABASE_URL: mysql://root:pca_test_only_not_a_secret@127.0.0.1:33061/pca_test
+        run: npm run test:db
+
   real-backend-e2e:
     # 2026-09-21, PCA full assessment findings P1-13 and P1-14.
     #

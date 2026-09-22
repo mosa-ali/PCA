@@ -104,6 +104,31 @@ const ALLOWED_KEY_COLUMNS = new Set([
   // content, never key material. See that migration's own header and
   // ChildProfileRegistryRepository.ts's doc comment for the full rationale.
   'creation_request_key',
+  // required_key_epoch (family_authority_chain_heads, migration 0044) is the
+  // FLOOR of accepted keyEpoch for a family's attestation chain: an
+  // `int unsigned NOT NULL DEFAULT 1` with CHECK (required_key_epoch >= 1),
+  // i.e. the same FamilyTrustSetEpoch.keyEpoch counter as `key_epoch` above,
+  // never key material. schema.ts classifies it OPERATIONAL_METADATA,
+  // "Minimum accepted device-signing-key epoch".
+  //
+  // Added 2026-09-22 as the review this allowlist exists to force, and the
+  // reason it is worth a comment rather than a silent line: this gate had been
+  // RED since migration 0044 introduced the column, and NOTHING NOTICED,
+  // because schema-privacy.mysql.test.mjs is one of the ~53 DB suites no
+  // workflow ever ran. It surfaced the first time the full suite was executed.
+  'required_key_epoch',
+  // parent_genesis_challenges.candidate_key_id / candidate_public_key
+  // (migration 0044, PCA-DEC-020-R1 genesis challenges) are the candidate
+  // genesis device's DSK identifier and its PUBLIC signing key -- the two
+  // base names `key_id` and `public_key` are already allowed above, and these
+  // are the same two things under their column-qualified names. schema.ts
+  // classifies them independently and agrees: candidate_key_id is
+  // OPAQUE_IDENTIFIER ("Server-minted candidate DSK identifier", char(36)
+  // ascii_bin), and candidate_public_key is SECURITY_METADATA, "Public signing
+  // key only; never private key material". Neither can hold a private key by
+  // construction: a public key is published, and a server-minted UUID-length
+  // id is not key material at all.
+  'candidate_key_id', 'candidate_public_key',
 ]);
 
 test('MySQL SCHEMA PRIVACY: no table or column name matches a prohibited family-monitoring term', async () => {
