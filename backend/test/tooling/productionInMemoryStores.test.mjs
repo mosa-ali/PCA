@@ -119,10 +119,25 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
     {
       durableRequired: true,
       classification:
-        'TRACKED DEBT, NOT ACCEPTED (and the worst failure mode of the set). It feeds a parent dashboard ' +
-        'card, so losing it on restart does not merely lose data -- it renders as a genuine-looking "no ' +
-        'blocks recorded", which a parent would read as a fact about their child. Either make it durable ' +
-        'or make the card explicitly report itself as unavailable.',
+        'TRACKED DEBT, NOT ACCEPTED -- the failure mode was the worst of the set, and the WORST HALF OF ' +
+        'IT IS NOW FIXED. It feeds a parent dashboard card, so restart loss did not merely lose data: ' +
+        'the card rendered it as capabilityState AVAILABLE plus "No recent site blocks", which a ' +
+        'parent reads as a fact about their child. That was worse in production than the restart case ' +
+        'suggests, because nothing in the process ever writes to this store (the Safe-Browser ' +
+        'recording surface is not wired to a route), so the card asserted "no blocks" to every family ' +
+        'unconditionally, from an empty map, and dashboard/types.ts forbids exactly that ("a card must ' +
+        'never report AVAILABLE merely because its UI exists"). WebFilteringDashboardCardProvider now ' +
+        'takes a REQUIRED BlockHistoryCompleteness and main.ts passes INCOMPLETE_EPHEMERAL, so the ' +
+        'card reports UNAVAILABLE with "Site block history unavailable" and surfaces no count -- which ' +
+        'is the resolution this row already prescribed (make it durable, or make the card report ' +
+        'itself unavailable) and the only one reachable without inventing policy. What REMAINS is the ' +
+        'durable half, and it must NOT be discharged as a plaintext table: BlockDecisionState carries ' +
+        'the full url/pageTitle, and the store documents itself as device-local by contract ("no MySQL ' +
+        'repository is provided, since this module must never centralize readable browsing history ' +
+        'server-side") -- so a plaintext table here would be the single worst privacy outcome in the ' +
+        'codebase, not a fix. The E2EE-consistent shape is the opaque-envelope pattern already built ' +
+        'for audit events and alerts, which is gated by the same crypto review as every other E2EE ' +
+        'surface.',
     },
   ],
   [

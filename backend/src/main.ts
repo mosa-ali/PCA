@@ -847,13 +847,29 @@ async function start(): Promise<void> {
   // through once THAT surface is itself wired to a route (a separate,
   // still-open gap this task does not close, per this task's own scope) --
   // this dashboard card only ever reads it.
+  //
+  // 'INCOMPLETE_EPHEMERAL' IS NOT BOOKKEEPING, IT IS THE FIX. This store is
+  // in-memory, nothing in this process ever writes to it, and it is
+  // device-local by contract (see its own doc comment: full URL/title never
+  // leaves the devices, no MySQL repository is provided because readable
+  // browsing history must never be centralized server-side). Every one of
+  // those facts means the card can only ever be empty here, and the card used
+  // to render that emptiness as `AVAILABLE` + "No recent site blocks" -- a
+  // confident factual claim about a child's browsing, to every parent, every
+  // time, indistinguishable from the truth. Passing the honest completeness
+  // makes the card report UNAVAILABLE instead, which is the register's own
+  // prescribed resolution (either make it durable or make the card report
+  // itself unavailable) and is the only one available without either
+  // centralizing readable browsing history or waiting on the crypto review
+  // that would allow the opaque-envelope alternative. If a genuinely complete
+  // source is ever wired here, it must change this argument deliberately.
   const blockDecisionStateRepository = new InMemoryBlockDecisionStateRepository();
   const profileModeRepository = new MySqlProfileModeRepository();
   const modeBFeatureFlagRepository = new InMemoryModeBFeatureFlagRepository();
   const modeTransitionService = new ModeTransitionService(profileModeRepository, modeBFeatureFlagRepository);
   const modeAUsageReportService = new ModeAUsageReportService();
   const dashboardAggregatorService = new DashboardAggregatorService([
-    new WebFilteringDashboardCardProvider(blockDecisionStateRepository),
+    new WebFilteringDashboardCardProvider(blockDecisionStateRepository, 'INCOMPLETE_EPHEMERAL'),
     new YouTubeDashboardCardProvider(modeTransitionService, modeAUsageReportService),
   ]);
 
