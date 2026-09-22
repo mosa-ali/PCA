@@ -171,7 +171,7 @@ export class FamilyMemberInvitationService {
     if (!isInvitedFamilyRole(input.role)) throw new FamilyMemberInvitationError('INVALID_INPUT');
 
     const createdAt = this.now();
-    const decision = this.authorization.authorize({
+    const decision = await this.authorization.authorize({
       familyId: input.familyId,
       actorDeviceId: input.actorDeviceId,
       operation: operationForRole(input.role),
@@ -332,9 +332,9 @@ export class FamilyMemberInvitationService {
     return Promise.all(records.map((record) => this.persistExpiryIfDue(record)));
   }
 
-  private authorizeFamilyOperation(familyId: OpaqueFamilyId, actorDeviceId: OpaqueAccountId, operation: 'REMOVE_NON_OWNER_PARENT' | 'CHANGE_ROLE'): void {
+  private async authorizeFamilyOperation(familyId: OpaqueFamilyId, actorDeviceId: OpaqueAccountId, operation: 'REMOVE_NON_OWNER_PARENT' | 'CHANGE_ROLE'): Promise<void> {
     const now = this.now();
-    const decision = this.authorization.authorize({
+    const decision = await this.authorization.authorize({
       familyId,
       actorDeviceId,
       operation,
@@ -350,7 +350,7 @@ export class FamilyMemberInvitationService {
 
   /** Family-scoped revoke: the UPDATE itself is filtered by family_id (see revokeForFamily), so a caller can never revoke another family's invitation by guessing an id. */
   async revokeInvitationForFamily(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId, actorDeviceId: OpaqueAccountId): Promise<FamilyMemberInvitationRecord> {
-    this.authorizeFamilyOperation(familyId, actorDeviceId, 'REMOVE_NON_OWNER_PARENT');
+    await this.authorizeFamilyOperation(familyId, actorDeviceId, 'REMOVE_NON_OWNER_PARENT');
     const record = await this.repository.revokeForFamily(familyId, invitationId, this.now());
     if (!record) throw new FamilyMemberInvitationError('NOT_FOUND');
     await this.auditService.record({
@@ -413,7 +413,7 @@ export class FamilyMemberInvitationService {
     actorDeviceId: OpaqueAccountId,
   ): Promise<{ auditEventId: string }> {
     if (targetAccountId === actorAccountId) throw new FamilyMemberInvitationError('CANNOT_REMOVE_SELF');
-    this.authorizeFamilyOperation(familyId, actorDeviceId, 'REMOVE_NON_OWNER_PARENT');
+    await this.authorizeFamilyOperation(familyId, actorDeviceId, 'REMOVE_NON_OWNER_PARENT');
 
     const removedAt = this.now();
     const entitlementRepository = this.entitlementRepository;
@@ -469,7 +469,7 @@ export class FamilyMemberInvitationService {
    */
   async changeInvitationRole(familyId: OpaqueFamilyId, invitationId: FamilyMemberInvitationId, newRole: InvitedFamilyRole, actorDeviceId: OpaqueAccountId): Promise<FamilyMemberInvitationRecord> {
     if (!isInvitedFamilyRole(newRole)) throw new FamilyMemberInvitationError('INVALID_INPUT');
-    this.authorizeFamilyOperation(familyId, actorDeviceId, 'CHANGE_ROLE');
+    await this.authorizeFamilyOperation(familyId, actorDeviceId, 'CHANGE_ROLE');
     const existing = await this.repository.findByIdForFamily(familyId, invitationId);
     if (!existing) throw new FamilyMemberInvitationError('NOT_FOUND');
     const current = await this.persistExpiryIfDue(existing);

@@ -58,7 +58,7 @@ export class EyeProtectionSettingsService {
     actionId: string,
   ): Promise<EyeProtectionSettings> {
     const issuedAt = this.now();
-    const decision = this.authorization.authorize({
+    const decision = await this.authorization.authorize({
       familyId,
       actorDeviceId,
       operation: 'EDIT_CHILD_POLICY',

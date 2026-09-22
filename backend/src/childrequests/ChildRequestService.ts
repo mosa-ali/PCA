@@ -235,7 +235,7 @@ export class ChildRequestService {
 
     if (!isLegalChildRequestTransition(request.state, outcome)) throw new ChildRequestError('ILLEGAL_TRANSITION');
 
-    const decision = this.authorization.authorize({
+    const decision = await this.authorization.authorize({
       familyId,
       actorDeviceId: decidingActorDeviceId,
       operation: operationForRequestType(request.requestType),

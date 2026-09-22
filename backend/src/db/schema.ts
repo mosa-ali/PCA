@@ -1,15 +1,16 @@
 // PCA canonical central database schema -- CANONICAL_EXPECTED_STATE.
 //
 // This file is the single declarative source of truth for the complete PCA
-// central MySQL schema (all 85 tables, including schema_migrations itself),
+// central MySQL schema (all 86 tables, including schema_migrations itself),
 // derived by applying every accepted migration (backend/migrations/0001
-// through 0046; 44 files, 0009/0010 never existed) from an empty database
+// through 0047; 45 files, 0009/0010 never existed) from an empty database
 // and introspecting the result via backend/scripts/introspect-schema.mjs.
 // parent_login_step_up_codes + parent_accounts.first_login_completed_at
 // (migration 0042) were added 2026-09-16 (see
 // docs/database/PCA_CANONICAL_SCHEMA_REPORT.md §21);
 // parent_genesis_step_up_authorizations (0045) and parent_daily_login_grants
-// (0046) followed.
+// (0046) followed, and action_idempotency_ledger (0047) after them -- the
+// P1-04 change that made parent-action replay protection durable.
 //
 // These three numbers are NOT merely kept current by hand. Before 2026-09-21
 // this header claimed "83 tables ... 0001 through 0044; 42 files" while the
@@ -167,6 +168,42 @@ export const PCA_CANONICAL_SCHEMA: readonly TableDefinition[] = [
     applicationEnforcedRelations: [
       { column: "family_id", impliedReferencedTable: "families", impliedReferencedColumn: "family_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Soft (unenforced) family_id reference -- schema-wide convention. families.family_id is CHAR(36) ascii_bin; every other table's family_id is VARCHAR(128) utf8mb4_bin. Membership existence is checked at the application layer (AuthzService.requiresFamilyScope).", source: "backend/migrations/0036_family_child_memberships.sql:44-54; backend/migrations/0027_family_member_invitations.sql:17-25; backend/migrations/0013_parent_account_identity.sql" },
       { column: "plan_ref", impliedReferencedTable: "billing_plans", impliedReferencedColumn: "plan_id", status: 'APPLICATION_ENFORCED_INTENTIONAL', rationale: "Bounded enum-like plan code (e.g. FREE_STARTER), not billing_plans' opaque row id -- type-incompatible by design, same plane-isolation convention.", source: "backend/migrations/0006_platform_entitlements_enrollment_limits.sql" },
+    ],
+  },
+  {
+    name: "action_idempotency_ledger",
+    engine: 'InnoDB',
+    charset: "utf8mb4",
+    collation: "utf8mb4_bin",
+    createdByMigration: "0047_action_idempotency_ledger.sql",
+    alteredByMigrations: [],
+    ownerModule: "backend/src/familyrbac",
+    columns: [
+      { name: "scope", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque owner namespace the idempotency key is scoped to (the acting family_id, or a fixed platform scope for model emergency directives). Deliberately not a family_id column -- a foreign key would make the platform caller unrepresentable -- so scope membership is enforced at the application layer by its two writers." },
+      { name: "idempotency_key", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Caller-supplied opaque action idempotency key (doc 18 Section 3), bounded by MAX_IDEMPOTENCY_KEY_LENGTH. Never a personal identifier." },
+      { name: "action_id", columnType: "varchar(128)", dataType: "varchar", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPAQUE_IDENTIFIER", privacyNote: "Opaque, caller-supplied action id the recorded outcome was computed for. A cached outcome is returned only when this AND request_fingerprint both match the incoming request." },
+      { name: "request_fingerprint", columnType: "char(64)", dataType: "char", charset: "ascii", collation: "ascii_bin", nullable: true, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Authentication/verification/integrity hash material, never a raw secret or raw identifying value." },
+      { name: "outcome", columnType: "text", dataType: "text", charset: "utf8mb4", collation: "utf8mb4_bin", nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "SECURITY_METADATA", privacyNote: "Opaque serialized AuthorizationDecision: a verdict plus a closed-vocabulary deny reason. Contains no family content, no child or parent data and no free text -- which is precisely why a readable server-side table is permitted here and is not permitted for the family-local/E2EE family audit store (PCA-SEC-023)." },
+      { name: "created_at", columnType: "datetime(3)", dataType: "datetime", charset: null, collation: null, nullable: false, default: null, autoIncrement: false, unsigned: false, onUpdateCurrentTimestamp: false, generatedExpression: null, generatedStorage: null, privacy: "OPERATIONAL_METADATA", privacyNote: "Timestamp." },
+    ],
+    primaryKey: ["scope", "idempotency_key"],
+    uniqueIndexes: [
+
+    ],
+    indexes: [
+      { name: "action_idempotency_ledger_created_at_idx", columns: ["created_at"], unique: false },
+    ],
+    foreignKeys: [
+
+    ],
+    checkConstraints: [
+      { name: "action_idempotency_ledger_action_id_check", clause: "(char_length(`action_id`) between 1 and 128)" },
+      { name: "action_idempotency_ledger_fingerprint_check", clause: "((`request_fingerprint` is null) or regexp_like(`request_fingerprint`,_utf8mb4'^[0-9a-f]{64}$'))" },
+      { name: "action_idempotency_ledger_key_check", clause: "(char_length(`idempotency_key`) between 1 and 128)" },
+      { name: "action_idempotency_ledger_scope_check", clause: "(char_length(`scope`) between 1 and 128)" },
+    ],
+    applicationEnforcedRelations: [
+
     ],
   },
   {

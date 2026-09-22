@@ -12,6 +12,14 @@
 // with a reason, and any entry below that no longer exists must be removed.
 //
 // DB-free, so it runs in the plain `npm test` pipeline.
+//
+// GRADUATED OUT (P1-04, Wave 1): `InMemoryActionIdempotencyLedger` used to be the
+// durableRequired entry here. The production root now constructs
+// `MySqlActionIdempotencyLedger` (migration 0047), so that class is no longer a
+// production in-memory store and its row was removed. The test below fails if a
+// register row outlives the construction it describes, which is why this note
+// exists rather than a silently deleted row. The in-memory class itself remains,
+// as the reference implementation the DB-free suites use.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -53,17 +61,6 @@ const PRODUCTION_IN_MEMORY_STORES = new Map([
         'ACCEPTED. Liveness-only working queue: durability of sequence progress is provided separately by ' +
         'MySqlSequenceProgressLedger, and restart simply re-runs acceptance through the full envelope ' +
         'pipeline. Losing the queue costs a retry, not correctness.',
-    },
-  ],
-  [
-    'InMemoryActionIdempotencyLedger',
-    {
-      durableRequired: true,
-      classification:
-        'TRACKED DEBT, NOT ACCEPTED. Parent-action replay protection. Losing it on restart silently reopens ' +
-        'the replay window, and on more than one instance each instance keeps its own ledger so the ' +
-        'guarantee is per-process. Requires: async interface (it is synchronous today), a MySQL-backed ' +
-        'implementation, a resumable migration, and a security review of the parent-authorization path.',
     },
   ],
   [
@@ -190,7 +187,7 @@ test('P1-04: every classification states a real reason, and the durable-required
     .sort();
   assert.deepEqual(
     durableRequired,
-    ['InMemoryActionIdempotencyLedger', 'InMemoryBlockDecisionStateRepository', 'InMemoryChildRequestRepository'],
+    ['InMemoryBlockDecisionStateRepository', 'InMemoryChildRequestRepository'],
     'the tracked-durable-debt set changed. If a store was made durable, remove its row from main.ts and from\n' +
       'this register together; if a NEW store is listed as durable-required, that is a new P1-04 item.',
   );

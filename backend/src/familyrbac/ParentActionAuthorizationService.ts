@@ -97,21 +97,32 @@ export class ParentActionAuthorizationService {
     this.auditService = auditService;
   }
 
-  authorize(request: AuthorizeRequest): AuthorizationDecision {
+  /**
+   * Asynchronous because the idempotency ledger it consults is durable: a
+   * recorded authorization outcome must survive a restart and be visible to
+   * every instance, which is impossible to honour from a synchronous method
+   * (see ActionIdempotencyLedger.ts's own doc comment). The verdict logic
+   * itself is unchanged and still pure -- evaluate() performs no I/O, so the
+   * only awaited work here is reading and recording the idempotency entry.
+   *
+   * The ledger is keyed by this request's familyId: an idempotency key is
+   * scoped to the family that issued it and must never be able to collide
+   * with, or evict, another family's record.
+   */
+  async authorize(request: AuthorizeRequest): Promise<AuthorizationDecision> {
     const fingerprint = fingerprintRequest(request);
-    const cached = this.idempotency.getRecorded(request.idempotencyKey);
+    const cached = await this.idempotency.getRecorded(request.familyId, request.idempotencyKey);
     if (cached !== null && cached.actionId === request.actionId && cached.requestFingerprint === fingerprint) {
       return JSON.parse(cached.outcome) as AuthorizationDecision;
     }
 
     const decision = this.evaluate(request);
-    this.idempotency.record(request.idempotencyKey, { actionId: request.actionId, requestFingerprint: fingerprint, outcome: JSON.stringify(decision) });
-    // Fire-and-forget: authorize() is, and remains, synchronous (many
-    // existing callers depend on that) -- the in-memory reference audit
-    // append() has no real I/O to await, so this never introduces an
-    // unhandled-rejection risk under normal operation, only under a
-    // caller-supplied auditService that itself throws synchronously-shaped
-    // errors, which is a caller defect, not this method's concern.
+    await this.idempotency.record(request.familyId, request.idempotencyKey, { actionId: request.actionId, requestFingerprint: fingerprint, outcome: JSON.stringify(decision) });
+    // Fire-and-forget: the AUDIT append is deliberately not part of the
+    // authorization result -- a verdict must not depend on an audit-store
+    // write succeeding, and the injected reference append() has no real I/O
+    // to await. This is unrelated to the ledger write above, which IS awaited:
+    // that one carries the replay guarantee and so cannot be best-effort.
     void this.recordAudit(request, decision);
     return decision;
   }

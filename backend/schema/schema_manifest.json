@@ -111,6 +111,79 @@
       ],
       "foreignKeys": []
     },
+    "action_idempotency_ledger": {
+      "columns": [
+        {
+          "name": "scope",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "action_id",
+          "type": "varchar(128)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "request_fingerprint",
+          "type": "char(64)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "action_idempotency_ledger_created_at_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "scope",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "idempotency_key",
+          "seq": 2
+        }
+      ],
+      "foreignKeys": []
+    },
     "billing_commercial_markets": {
       "columns": [
         {
@@ -5219,7 +5292,26 @@
           "seq": 1
         }
       ],
-      "foreignKeys": []
+      "foreignKeys": [
+        {
+          "constraint": "family_parent_memberships_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "family_parent_memberships_family_fk",
+          "column": "family_id",
+          "referencedTable": "families",
+          "referencedColumn": "family_id"
+        },
+        {
+          "constraint": "family_parent_memberships_service_account_fk",
+          "column": "service_account_id",
+          "referencedTable": "service_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
     },
     "family_rbac_policy_config": {
       "columns": [
@@ -5687,6 +5779,108 @@
       ],
       "foreignKeys": []
     },
+    "parent_daily_login_grants": {
+      "columns": [
+        {
+          "name": "grant_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "token_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "UNI",
+          "extra": ""
+        },
+        {
+          "name": "purpose",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "last_used_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_daily_login_grants_account_expiry_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_daily_login_grants_account_expiry_idx",
+          "unique": false,
+          "column": "expires_at",
+          "seq": 2
+        },
+        {
+          "name": "parent_daily_login_grants_token_hash_key",
+          "unique": true,
+          "column": "token_hash",
+          "seq": 1
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "grant_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_daily_login_grants_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
     "parent_email_verification_codes": {
       "columns": [
         {
@@ -5850,6 +6044,14 @@
           "extra": ""
         },
         {
+          "name": "genesis_authorization_id",
+          "type": "char(36)",
+          "nullable": true,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
           "name": "nonce",
           "type": "varchar(64)",
           "nullable": false,
@@ -5912,6 +6114,12 @@
           "seq": 2
         },
         {
+          "name": "parent_genesis_challenges_authorization_idx",
+          "unique": false,
+          "column": "genesis_authorization_id",
+          "seq": 1
+        },
+        {
           "name": "parent_genesis_challenges_family_idx",
           "unique": false,
           "column": "family_id",
@@ -5938,7 +6146,157 @@
           "referencedColumn": "account_id"
         },
         {
+          "constraint": "parent_genesis_challenges_authorization_fk",
+          "column": "genesis_authorization_id",
+          "referencedTable": "parent_genesis_step_up_authorizations",
+          "referencedColumn": "authorization_id"
+        },
+        {
           "constraint": "parent_genesis_challenges_service_account_fk",
+          "column": "service_account_id",
+          "referencedTable": "service_accounts",
+          "referencedColumn": "account_id"
+        }
+      ]
+    },
+    "parent_genesis_step_up_authorizations": {
+      "columns": [
+        {
+          "name": "authorization_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "PRI",
+          "extra": ""
+        },
+        {
+          "name": "account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "service_account_id",
+          "type": "char(36)",
+          "nullable": false,
+          "default": null,
+          "key": "MUL",
+          "extra": ""
+        },
+        {
+          "name": "session_id_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "operation",
+          "type": "varchar(32)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "code_hash",
+          "type": "char(64)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime(3)",
+          "nullable": false,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "attempt_count",
+          "type": "int unsigned",
+          "nullable": false,
+          "default": "0",
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "verified_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        },
+        {
+          "name": "consumed_at",
+          "type": "datetime(3)",
+          "nullable": true,
+          "default": null,
+          "key": "",
+          "extra": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "parent_genesis_step_up_service_account_fk",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_genesis_step_up_session_idx",
+          "unique": false,
+          "column": "account_id",
+          "seq": 1
+        },
+        {
+          "name": "parent_genesis_step_up_session_idx",
+          "unique": false,
+          "column": "service_account_id",
+          "seq": 2
+        },
+        {
+          "name": "parent_genesis_step_up_session_idx",
+          "unique": false,
+          "column": "session_id_hash",
+          "seq": 3
+        },
+        {
+          "name": "parent_genesis_step_up_session_idx",
+          "unique": false,
+          "column": "created_at",
+          "seq": 4
+        },
+        {
+          "name": "PRIMARY",
+          "unique": true,
+          "column": "authorization_id",
+          "seq": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "constraint": "parent_genesis_step_up_account_fk",
+          "column": "account_id",
+          "referencedTable": "parent_accounts",
+          "referencedColumn": "account_id"
+        },
+        {
+          "constraint": "parent_genesis_step_up_service_account_fk",
           "column": "service_account_id",
           "referencedTable": "service_accounts",
           "referencedColumn": "account_id"

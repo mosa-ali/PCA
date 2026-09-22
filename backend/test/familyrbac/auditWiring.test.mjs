@@ -159,7 +159,7 @@ test('a denied ParentActionAuthorizationService.authorize() call appends a DENIE
     undefined,
     service,
   );
-  const decision = authz.authorize({
+  const decision = await authz.authorize({
     familyId: 'fam-audit-7',
     actorDeviceId: 'dev-viewer',
     operation: 'DELETE_NOW',
@@ -171,8 +171,10 @@ test('a denied ParentActionAuthorizationService.authorize() call appends a DENIE
     actionId: 'act-denied-1',
   });
   assert.equal(decision.verdict, 'DENY');
-  // The audit append is fire-and-forget (authorize() stays synchronous) --
-  // yield the microtask queue once so the pending append lands.
+  // The audit append is fire-and-forget, deliberately excluded from the
+  // authorization result (authorize() itself is now async because the
+  // idempotency ledger is durable) -- yield the microtask queue once so the
+  // pending append lands.
   await new Promise((resolve) => setImmediate(resolve));
   const events = await repo.listForFamily('fam-audit-7');
   assert.equal(events.length, 1);
@@ -201,7 +203,7 @@ test('a STEP_UP_REQUIRED_BUT_ABSENT denial is categorized as STEP_UP_FAILURE, no
     undefined,
     service,
   );
-  const decision = authz.authorize({
+  const decision = await authz.authorize({
     familyId: 'fam-audit-8',
     actorDeviceId: 'dev-owner',
     operation: 'DELETE_NOW', // OWNER: ALLOW_WITH_STEP_UP -- no stepUp supplied below

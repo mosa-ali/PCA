@@ -15,16 +15,16 @@
 -- companion verification script re-checks the server version.
 --
 -- CONTENTS
---    85 tables
---   721 columns
---    85 primary keys
+--    86 tables
+--   727 columns
+--    86 primary keys
 --    95 foreign keys
 --    35 unique non-primary-key indexes
---   131 non-unique indexes
---   258 CHECK constraints
+--   132 non-unique indexes
+--   262 CHECK constraints
 --    14 production reference-data rows (currencies, markets, country
 --       rules, entitlement defaults -- the same rows migrations 0006/0007 insert)
---    44 schema_migrations journal rows
+--    45 schema_migrations journal rows
 --     0 views, 0 triggers, 0 stored routines
 --
 -- NO APPLICATION OR BUSINESS DATA. The only rows written are the
@@ -63,6 +63,22 @@ CREATE TABLE `account_entitlements` (
   CONSTRAINT `account_entitlements_parent_member_limit_check` CHECK ((`parent_member_limit` >= 0)),
   CONSTRAINT `account_entitlements_parent_member_used_count_check` CHECK ((`parent_member_used_count` >= 0)),
   CONSTRAINT `account_entitlements_plan_ref_check` CHECK ((char_length(`plan_ref`) between 1 and 32))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- action_idempotency_ledger (defined by backend/migrations/0047_action_idempotency_ledger.sql)
+CREATE TABLE `action_idempotency_ledger` (
+  `scope` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `idempotency_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `action_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `request_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `outcome` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`scope`, `idempotency_key`),
+  KEY `action_idempotency_ledger_created_at_idx` (`created_at`),
+  CONSTRAINT `action_idempotency_ledger_action_id_check` CHECK ((char_length(`action_id`) between 1 and 128)),
+  CONSTRAINT `action_idempotency_ledger_fingerprint_check` CHECK (((`request_fingerprint` is null) or regexp_like(`request_fingerprint`,_utf8mb4'^[0-9a-f]{64}$'))),
+  CONSTRAINT `action_idempotency_ledger_key_check` CHECK ((char_length(`idempotency_key`) between 1 and 128)),
+  CONSTRAINT `action_idempotency_ledger_scope_check` CHECK ((char_length(`scope`) between 1 and 128))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- billing_commercial_markets (defined by backend/migrations/0007_billing_core.sql)
@@ -1790,4 +1806,5 @@ INSERT INTO `schema_migrations` (`version`) VALUES
   ('0043_parent_family_memberships_and_profile.sql'),
   ('0044_pca_dec_020_r1_genesis_challenges_and_epoch_floors.sql'),
   ('0045_pca_dec_020_r2_genesis_step_up.sql'),
-  ('0046_parent_daily_login_grants.sql');
+  ('0046_parent_daily_login_grants.sql'),
+  ('0047_action_idempotency_ledger.sql');

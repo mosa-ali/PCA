@@ -9,14 +9,21 @@ import type { ParentActionAuthorizationService } from '../familyrbac/ParentActio
  * Owner.
  */
 export interface SafeZonePolicyAuthorizer {
-  authorize(request: AuthorizeRequest): AuthorizationDecision | Promise<AuthorizationDecision>;
+  /**
+   * Always asynchronous: the shared family-action matrix now records its
+   * authorization outcomes in a DURABLE idempotency ledger, so a synchronous
+   * implementation could only ever be backed by process-local memory. Allowing
+   * the union would let a future implementation quietly reintroduce exactly the
+   * P1-04 defect this signature was widened to remove.
+   */
+  authorize(request: AuthorizeRequest): Promise<AuthorizationDecision>;
 }
 
 /** Adapter that keeps Safe Zone routes on the shared family-action matrix. */
 export class ParentActionSafeZonePolicyAuthorizer implements SafeZonePolicyAuthorizer {
   constructor(private readonly parentActionAuthorization: Pick<ParentActionAuthorizationService, 'authorize'>) {}
 
-  authorize(request: AuthorizeRequest): AuthorizationDecision {
+  async authorize(request: AuthorizeRequest): Promise<AuthorizationDecision> {
     return this.parentActionAuthorization.authorize(request);
   }
 }

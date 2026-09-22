@@ -564,7 +564,7 @@ export class RemovalDecisionAuthority {
       throw new RemovalDecisionError('INVALID_STATE');
     }
 
-    const authorization = this.authorization.authorize({
+    const authorization = await this.authorization.authorize({
       familyId: request.familyId,
       actorDeviceId: signedDecision.actorDeviceId,
       operation: request.operation,

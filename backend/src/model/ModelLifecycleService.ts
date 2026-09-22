@@ -4,6 +4,7 @@ import type { ModelEmergencyDirective, ModelEmergencyDirectiveVerifier } from '.
 import type { PackageVerificationGate } from './PackageVerificationGate.js';
 import type { DeviceRuntimeCapability, ModelId, ModelLifecycleRecord, ModelLifecycleState, ModelPackageMetadata } from './types.js';
 import type { ActionIdempotencyLedger } from '../familyrbac/ActionIdempotencyLedger.js';
+import { PLATFORM_EMERGENCY_DIRECTIVE_SCOPE } from '../familyrbac/ActionIdempotencyLedger.js';
 import type { ReleaseRecord } from '../release/types.js';
 
 export type ModelLifecycleErrorCode =
@@ -74,7 +75,7 @@ export class ModelLifecycleService {
       throw new ModelLifecycleError('DIRECTIVE_MISSING_ROLLBACK_TARGET');
     }
 
-    const cached = this.directiveLedger.getRecorded(directive.directiveId);
+    const cached = await this.directiveLedger.getRecorded(PLATFORM_EMERGENCY_DIRECTIVE_SCOPE, directive.directiveId);
     if (cached !== null) return 'REPLAYED';
 
     const signatureValid = await this.directiveVerifier.verify(directive);
@@ -187,7 +188,7 @@ export class ModelLifecycleService {
       target.state === 'ACTIVE' ? target : { ...target, state: 'ACTIVE', enteredStateAt: this.now(), lastVerificationFailureReason: null };
     await this.repository.put(newActive);
     await this.repository.setActiveModelId(newActive.metadata.purpose, targetModelId);
-    this.directiveLedger.record(directive.directiveId, { actionId: directive.directiveId, outcome: 'ROLLBACK_APPLIED' });
+    await this.directiveLedger.record(PLATFORM_EMERGENCY_DIRECTIVE_SCOPE, directive.directiveId, { actionId: directive.directiveId, outcome: 'ROLLBACK_APPLIED' });
 
     return { rolledBack, newActive };
   }
@@ -217,7 +218,7 @@ export class ModelLifecycleService {
     const disabled = await this.transition(modelId, 'DISABLED');
     const currentActive = await this.repository.getActiveModelId(record.metadata.purpose);
     if (currentActive === modelId) await this.repository.setActiveModelId(record.metadata.purpose, null);
-    this.directiveLedger.record(directive.directiveId, { actionId: directive.directiveId, outcome: 'DISABLE_APPLIED' });
+    await this.directiveLedger.record(PLATFORM_EMERGENCY_DIRECTIVE_SCOPE, directive.directiveId, { actionId: directive.directiveId, outcome: 'DISABLE_APPLIED' });
     return disabled;
   }
 

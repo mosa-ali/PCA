@@ -42,7 +42,7 @@ import {
 } from './runtime-sync/index.js';
 import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
-import { InMemoryActionIdempotencyLedger } from './familyrbac/ActionIdempotencyLedger.js';
+import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotencyLedger.js';
 import { ParentActionAuthorizationService } from './familyrbac/ParentActionAuthorizationService.js';
 import { FamilyRbacPolicyConfigStore, MySqlFamilyRbacPolicyConfigRepository } from './familyrbac/FamilyRbacPolicyConfigStore.js';
 import { UnavailableTrustSetRoleResolver } from './familyrbac/UnavailableTrustSetRoleResolver.js';
@@ -607,10 +607,17 @@ async function start(): Promise<void> {
   // repository) is the correct shape for ParentActionAuthorizationService's
   // synchronous, advisory-only configProvider contract.
   const familyRbacPolicyConfigStore = new FamilyRbacPolicyConfigStore(new MySqlFamilyRbacPolicyConfigRepository());
+  // DURABLE action idempotency (PCA full assessment finding P1-04, Wave 1).
+  // This was InMemoryActionIdempotencyLedger, which lost every recorded
+  // authorization on restart -- reopening the replay window for a retry the
+  // server had already answered -- and made the guarantee per-process, so a
+  // multi-instance deployment gave each instance its own partial protection.
+  // See MySqlActionIdempotencyLedger's own doc comment and migration 0047.
+  const actionIdempotencyLedger = new MySqlActionIdempotencyLedger();
   const safeZoneParentActionAuthorization = new ParentActionAuthorizationService(
     trustSetRoleResolver,
     familyRbacPolicyConfigStore.snapshotFor,
-    new InMemoryActionIdempotencyLedger(),
+    actionIdempotencyLedger,
     () => new Date(),
     childProfileMembershipResolver,
     familyAuditService,
@@ -653,8 +660,10 @@ async function start(): Promise<void> {
   // family-policy content contracts/schedule-runtime/SchedulePolicyV1.md
   // treats as E2EE-only, so this lane does not introduce a new central
   // plaintext MySQL table for it -- the same posture as familyrbac's own
-  // FamilyAuditRepository/ActionIdempotencyLedger reference implementations
-  // above.
+  // FamilyAuditRepository reference implementation above. NOTE that
+  // ActionIdempotencyLedger is no longer in that list: it holds no family
+  // content or personal data at all (an opaque verdict plus identifiers), so
+  // it is durable as of migration 0047 -- see its own comment above.
   const childRequestRepository = new InMemoryChildRequestRepository();
   const childRequestService = new ChildRequestService(childRequestRepository, safeZoneParentActionAuthorization);
   const bonusGrantLedger = new BonusGrantLedger();

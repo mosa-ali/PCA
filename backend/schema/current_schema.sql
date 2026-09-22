@@ -22,6 +22,22 @@ CREATE TABLE `account_entitlements` (
   CONSTRAINT `account_entitlements_plan_ref_check` CHECK ((char_length(`plan_ref`) between 1 and 32))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- action_idempotency_ledger
+CREATE TABLE `action_idempotency_ledger` (
+  `scope` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `idempotency_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `action_id` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `request_fingerprint` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `outcome` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`scope`,`idempotency_key`),
+  KEY `action_idempotency_ledger_created_at_idx` (`created_at`),
+  CONSTRAINT `action_idempotency_ledger_action_id_check` CHECK ((char_length(`action_id`) between 1 and 128)),
+  CONSTRAINT `action_idempotency_ledger_fingerprint_check` CHECK (((`request_fingerprint` is null) or regexp_like(`request_fingerprint`,_utf8mb4'^[0-9a-f]{64}$'))),
+  CONSTRAINT `action_idempotency_ledger_key_check` CHECK ((char_length(`idempotency_key`) between 1 and 128)),
+  CONSTRAINT `action_idempotency_ledger_scope_check` CHECK ((char_length(`scope`) between 1 and 128))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- billing_commercial_markets
 CREATE TABLE `billing_commercial_markets` (
   `commercial_market` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -973,6 +989,9 @@ CREATE TABLE `family_parent_memberships` (
   UNIQUE KEY `family_parent_memberships_account_family_key` (`account_id`,`family_id`),
   KEY `family_parent_memberships_family_idx` (`family_id`),
   KEY `family_parent_memberships_service_account_idx` (`service_account_id`),
+  CONSTRAINT `family_parent_memberships_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `family_parent_memberships_family_fk` FOREIGN KEY (`family_id`) REFERENCES `families` (`family_id`),
+  CONSTRAINT `family_parent_memberships_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
   CONSTRAINT `family_parent_memberships_role_check` CHECK ((`role` in (_utf8mb4'ADMINISTRATOR',_utf8mb4'VIEWER',_utf8mb4'CHILD'))),
   CONSTRAINT `family_parent_memberships_status_check` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'REVOKED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
@@ -1067,6 +1086,25 @@ CREATE TABLE `parent_accounts` (
   CONSTRAINT `parent_accounts_verified_has_free_access_check` CHECK ((((`status` = _utf8mb4'PENDING_VERIFICATION') and (`verified_at` is null) and (`free_access_mode` is null)) or ((`status` = _utf8mb4'VERIFIED') and (`verified_at` is not null) and (`free_access_mode` is not null))))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- parent_daily_login_grants
+CREATE TABLE `parent_daily_login_grants` (
+  `grant_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `purpose` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `last_used_at` datetime(3) DEFAULT NULL,
+  `revoked_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`grant_id`),
+  UNIQUE KEY `parent_daily_login_grants_token_hash_key` (`token_hash`),
+  KEY `parent_daily_login_grants_account_expiry_idx` (`account_id`,`expires_at`),
+  CONSTRAINT `parent_daily_login_grants_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_daily_login_grants_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_daily_login_grants_hash_check` CHECK (regexp_like(`token_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `parent_daily_login_grants_purpose_check` CHECK ((`purpose` = _utf8mb4'PARENT_DAILY_LOGIN'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- parent_email_verification_codes
 CREATE TABLE `parent_email_verification_codes` (
   `code_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -1092,6 +1130,7 @@ CREATE TABLE `parent_genesis_challenges` (
   `candidate_key_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `candidate_public_key` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `candidate_platform` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'BROWSER',
+  `genesis_authorization_id` char(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `nonce` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `operation` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `protocol_version` smallint unsigned NOT NULL,
@@ -1102,13 +1141,39 @@ CREATE TABLE `parent_genesis_challenges` (
   KEY `parent_genesis_challenges_account_idx` (`account_id`,`created_at`),
   KEY `parent_genesis_challenges_family_idx` (`family_id`),
   KEY `parent_genesis_challenges_service_account_fk` (`service_account_id`),
+  KEY `parent_genesis_challenges_authorization_idx` (`genesis_authorization_id`),
   CONSTRAINT `parent_genesis_challenges_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_genesis_challenges_authorization_fk` FOREIGN KEY (`genesis_authorization_id`) REFERENCES `parent_genesis_step_up_authorizations` (`authorization_id`),
   CONSTRAINT `parent_genesis_challenges_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
   CONSTRAINT `parent_genesis_challenges_expiry_check` CHECK ((`expires_at` > `created_at`)),
   CONSTRAINT `parent_genesis_challenges_nonce_check` CHECK ((char_length(`nonce`) = 43)),
-  CONSTRAINT `parent_genesis_challenges_operation_check` CHECK ((`operation` = _utf8mb4'GENESIS')),
-  CONSTRAINT `parent_genesis_challenges_platform_check` CHECK ((`candidate_platform` in (_utf8mb4'ANDROID',_utf8mb4'IOS',_utf8mb4'BROWSER'))),
+  CONSTRAINT `parent_genesis_challenges_operation_check` CHECK ((`operation` = _ascii'GENESIS')),
+  CONSTRAINT `parent_genesis_challenges_platform_check` CHECK ((`candidate_platform` in (_ascii'ANDROID',_ascii'IOS',_ascii'BROWSER'))),
   CONSTRAINT `parent_genesis_challenges_protocol_check` CHECK ((`protocol_version` = 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- parent_genesis_step_up_authorizations
+CREATE TABLE `parent_genesis_step_up_authorizations` (
+  `authorization_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `service_account_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `session_id_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `operation` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime(3) NOT NULL,
+  `expires_at` datetime(3) NOT NULL,
+  `attempt_count` int unsigned NOT NULL DEFAULT '0',
+  `verified_at` datetime(3) DEFAULT NULL,
+  `consumed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`authorization_id`),
+  KEY `parent_genesis_step_up_session_idx` (`account_id`,`service_account_id`,`session_id_hash`,`created_at`),
+  KEY `parent_genesis_step_up_service_account_fk` (`service_account_id`),
+  CONSTRAINT `parent_genesis_step_up_account_fk` FOREIGN KEY (`account_id`) REFERENCES `parent_accounts` (`account_id`),
+  CONSTRAINT `parent_genesis_step_up_service_account_fk` FOREIGN KEY (`service_account_id`) REFERENCES `service_accounts` (`account_id`),
+  CONSTRAINT `parent_genesis_step_up_code_hash_check` CHECK ((char_length(`code_hash`) = 64)),
+  CONSTRAINT `parent_genesis_step_up_expiry_check` CHECK ((`expires_at` > `created_at`)),
+  CONSTRAINT `parent_genesis_step_up_operation_check` CHECK ((`operation` = _utf8mb4'FAMILY_GENESIS')),
+  CONSTRAINT `parent_genesis_step_up_session_hash_check` CHECK ((char_length(`session_id_hash`) = 64))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- parent_login_step_up_codes
