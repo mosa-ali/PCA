@@ -48,7 +48,20 @@ export const PLATFORM_EMERGENCY_DIRECTIVE_SCOPE = 'platform:model-emergency-dire
 
 export interface ActionIdempotencyLedger {
   getRecorded(scope: IdempotencyScope, idempotencyKey: IdempotencyKey): Promise<RecordedAuthorization | null>;
-  record(scope: IdempotencyScope, idempotencyKey: IdempotencyKey, recorded: RecordedAuthorization): Promise<void>;
+  /**
+   * Records `recorded`, and returns the entry that is durably present for this
+   * (scope, key) AFTERWARDS -- which under first-writer-wins is the existing
+   * entry whenever one is already there, not `recorded` itself.
+   *
+   * That return value is load-bearing, not a convenience: two concurrent
+   * deliveries of the same action can each evaluate independently and reach
+   * different verdicts if trust-set state changes between them, and only one of
+   * those verdicts becomes the durable record. A caller that returned its own
+   * loser verdict would hold an answer the ledger contradicts, which is exactly
+   * the divergence replay protection exists to prevent. authorize() therefore
+   * returns this entry's outcome whenever it matches the request.
+   */
+  record(scope: IdempotencyScope, idempotencyKey: IdempotencyKey, recorded: RecordedAuthorization): Promise<RecordedAuthorization>;
 }
 
 /**
@@ -70,6 +83,15 @@ export interface ActionIdempotencyLedger {
  * existed. A per-scope bound would not bound memory at all, since the number
  * of scopes is not bounded by anything this class controls, and unbounded
  * memory in a replay-protection structure is the failure mode to avoid.
+ *
+ * Eviction is therefore not free of security consequence, and the honest
+ * statement of it is: it cannot let one owner read or displace another's entry
+ * (that is the (scope, key) key space's job and eviction cannot violate it),
+ * but it DOES reopen the replay window for whatever key it removes, and because
+ * the bound is global a busy owner can evict another owner's record before its
+ * window has elapsed -- degrading exactly-once to at-most-once for that key.
+ * See MySqlActionIdempotencyLedger's doc comment: closing that gap needs a
+ * replay-retention policy decision, not an implementer's guess.
  */
 export class InMemoryActionIdempotencyLedger implements ActionIdempotencyLedger {
   private readonly byScope = new Map<IdempotencyScope, Map<IdempotencyKey, RecordedAuthorization>>();
@@ -78,6 +100,14 @@ export class InMemoryActionIdempotencyLedger implements ActionIdempotencyLedger 
   private readonly capacity: number;
 
   constructor(capacity: number = ACTION_IDEMPOTENCY_LEDGER_CAPACITY) {
+    // A non-positive budget would make record() a silent no-op, i.e. the
+    // ledger would serve verdicts while protecting against nothing and never
+    // say so. That is a fail-open configuration in the one component whose
+    // contract is "never let a caller believe an unrecorded authorization is
+    // durable", so it is rejected at construction instead.
+    if (!Number.isInteger(capacity) || capacity <= 0) {
+      throw new Error(`ActionIdempotencyLedger capacity must be a positive integer, got ${capacity}`);
+    }
     this.capacity = capacity;
   }
 
@@ -85,10 +115,10 @@ export class InMemoryActionIdempotencyLedger implements ActionIdempotencyLedger 
     return this.byScope.get(scope)?.get(idempotencyKey) ?? null;
   }
 
-  async record(scope: IdempotencyScope, idempotencyKey: IdempotencyKey, recorded: RecordedAuthorization): Promise<void> {
-    if (this.capacity <= 0) return;
+  async record(scope: IdempotencyScope, idempotencyKey: IdempotencyKey, recorded: RecordedAuthorization): Promise<RecordedAuthorization> {
     const existing = this.byScope.get(scope);
-    if (existing?.has(idempotencyKey)) return; // first writer wins -- see this class's doc comment
+    const alreadyRecorded = existing?.get(idempotencyKey);
+    if (alreadyRecorded !== undefined) return alreadyRecorded; // first writer wins -- see this class's doc comment
 
     if (this.insertionOrder.length >= this.capacity) this.evictOldest();
 
@@ -96,6 +126,7 @@ export class InMemoryActionIdempotencyLedger implements ActionIdempotencyLedger 
     if (!existing) this.byScope.set(scope, scopeEntries);
     scopeEntries.set(idempotencyKey, recorded);
     this.insertionOrder.push([scope, idempotencyKey]);
+    return recorded;
   }
 
   private evictOldest(): void {

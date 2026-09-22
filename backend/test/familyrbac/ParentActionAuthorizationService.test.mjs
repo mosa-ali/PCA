@@ -692,3 +692,83 @@ test('P0-A success criterion: does not crash or throw when authorizing against U
     ),
   );
 });
+
+test('SEC-1 regression: the fingerprint written to the ledger is a SHA-256 hex digest, never the raw request shape', async () => {
+  // This is the fast, DB-free half of the SEC-1 regression. The durable column
+  // is CHAR(64) ascii with a hex-pattern CHECK, so a raw
+  // "family|device|operation|kind|id" composite is not merely inelegant -- it is
+  // REJECTED by the database, and because a CHECK violation is not a
+  // duplicate-key error the ledger rethrows it and authorize() rejects on every
+  // call. The unit suite and the ledger DB suite both stayed green while that
+  // was true, because both wrote synthetic fingerprints; this case asserts the
+  // WRITER's own output instead, which is what the real table receives.
+  const { service, ledger } = makeService();
+  const request = baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' }, idempotencyKey: 'idem-fp-1', actionId: 'act-fp-1' });
+  await service.authorize(request);
+
+  const stored = await ledger.getRecorded('fam-1', 'idem-fp-1');
+  assert.match(stored.requestFingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(stored.requestFingerprint.includes('|'), false, 'the raw composite must never be what is stored');
+  assert.equal(stored.requestFingerprint.includes('child-A'), false, 'nor may it embed a target id in readable form');
+
+  // Deterministic for the same shape, and bound to the shape: the SAME key with
+  // a mutated targetScope must produce a DIFFERENT fingerprint, or a caller
+  // could replay the original target's verdict against a new one (PCA10).
+  await service.authorize(request);
+  assert.equal((await ledger.getRecorded('fam-1', 'idem-fp-1')).requestFingerprint, stored.requestFingerprint);
+  await service.authorize(baseRequest({ operation: 'EDIT_CHILD_POLICY', targetScope: { kind: 'CHILD_PROFILE', id: 'child-B' }, idempotencyKey: 'idem-fp-2', actionId: 'act-fp-2' }));
+  assert.notEqual((await ledger.getRecorded('fam-1', 'idem-fp-2')).requestFingerprint, stored.requestFingerprint);
+});
+
+test('SEC-5 regression: a lost insert race returns the ledger RECORDED verdict, never this caller own freshly computed one', async () => {
+  // Two concurrent deliveries of the same action can each find the ledger empty,
+  // each evaluate against trust-set state that moved in between, and reach
+  // DIFFERENT verdicts. Only one of those becomes the durable record, and every
+  // future replay returns it -- so a losing caller that returned its own verdict
+  // would hold an answer the ledger contradicts, i.e. the exact divergence
+  // replay protection exists to prevent. The ledger double below reproduces that
+  // race exactly: it misses on read, then reveals the winner on write.
+  const { service, ledger } = makeService();
+  const request = baseRequest({
+    operation: 'EDIT_CHILD_POLICY',
+    targetScope: { kind: 'CHILD_PROFILE', id: 'child-A' },
+    idempotencyKey: 'idem-race',
+    actionId: 'act-race',
+  });
+  await service.authorize(request); // learn the fingerprint this request shape produces
+  const winningFingerprint = (await ledger.getRecorded('fam-1', 'idem-race')).requestFingerprint;
+  const concurrentWinner = { actionId: 'act-race', requestFingerprint: winningFingerprint, outcome: '{"verdict":"DENY","reason":"STEP_UP_NOT_FRESH"}' };
+
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch(epoch());
+  const racingService = new ParentActionAuthorizationService(
+    new FamilyTrustSetRoleResolver(store),
+    defaultFamilyRbacPolicyConfig,
+    { getRecorded: async () => null, record: async () => concurrentWinner },
+    () => T0,
+  );
+
+  assert.deepEqual(await racingService.authorize(request), { verdict: 'DENY', reason: 'STEP_UP_NOT_FRESH' });
+});
+
+test('SEC-5 boundary: a record under a DIFFERENT actionId is NOT adopted -- authorize() never launders another request verdict', async () => {
+  // The other half of the rule above. The same idempotency key reused for a
+  // DIFFERENT action must not let this caller inherit whatever outcome that
+  // other action recorded: this call has just evaluated THIS request, and
+  // adopting an unrelated verdict is the laundering PCA10 forbids. The winner
+  // row is kept (first-writer-wins) but the caller gets its own verdict.
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch(epoch());
+  const otherRequestRecord = { actionId: 'act-someone-else', requestFingerprint: 'a'.repeat(64), outcome: '{"verdict":"ALLOW"}' };
+  const service = new ParentActionAuthorizationService(
+    new FamilyTrustSetRoleResolver(store),
+    defaultFamilyRbacPolicyConfig,
+    { getRecorded: async () => null, record: async () => otherRequestRecord },
+    () => T0,
+  );
+
+  const decision = await service.authorize(
+    baseRequest({ actorDeviceId: 'dev-child', operation: 'EDIT_CHILD_POLICY', idempotencyKey: 'idem-shared', actionId: 'act-mine' }),
+  );
+  assert.deepEqual(decision, { verdict: 'REQUEST_ONLY' });
+});

@@ -249,3 +249,73 @@ test('device session revocation appends a DEVICE_LIFECYCLE_TRANSITION record onl
   const eventsAfter = await repo.listForFamily('fam-audit-9');
   assert.equal(eventsAfter.length, events.length);
 });
+
+test('the audit record attributes a decision to the role the DECISION was made with, even when the trust set rotates during the awaited ledger write', async () => {
+  // authorize() awaits the durable ledger write between evaluating the request
+  // and appending its audit record. If the audit re-resolved the actor at that
+  // later point, a trust-set rotation landing in the window would make the
+  // record claim a role and epoch the decision was never made with -- an audit
+  // trail that does not describe what authorized the action. So the actor is
+  // resolved once and carried. The ledger double below rotates the trust set
+  // inside record(), i.e. exactly in that window.
+  const T0 = new Date('2026-01-01T00:00:00Z');
+  const epochWith = (role, trustSetEpoch) => ({
+    familyId: 'fam-audit-10',
+    trustSetEpoch,
+    keyEpoch: 1,
+    entries: [{ deviceId: 'dev-owner', role, dskKeyId: 'k1', dskPublicKey: 'pk1', dekKeyId: 'k2', dekPublicKey: 'pk2', status: 'ACTIVE' }],
+    issuedAt: T0,
+    supersedesEpoch: null,
+    signature: 'sig',
+  });
+
+  const { repo, service } = freshAudit();
+  const store = new InMemoryFamilyTrustSetStore();
+  store.setCurrentEpoch(epochWith('OWNER', 1));
+
+  const backingLedger = new InMemoryActionIdempotencyLedger();
+  const rotatesDuringWrite = {
+    getRecorded: (scope, idempotencyKey) => backingLedger.getRecorded(scope, idempotencyKey),
+    record: async (scope, idempotencyKey, recorded) => {
+      store.setCurrentEpoch(epochWith('VIEWER', 2)); // the rotation lands mid-authorize()
+      return backingLedger.record(scope, idempotencyKey, recorded);
+    },
+  };
+
+  const authz = new ParentActionAuthorizationService(
+    new FamilyTrustSetRoleResolver(store),
+    defaultFamilyRbacPolicyConfig,
+    rotatesDuringWrite,
+    () => T0,
+    undefined,
+    service,
+  );
+  const decision = await authz.authorize({
+    familyId: 'fam-audit-10',
+    actorDeviceId: 'dev-owner',
+    operation: 'EDIT_CHILD_POLICY',
+    targetScope: { kind: 'FAMILY', id: 'fam-audit-10' },
+    issuedAt: T0,
+    expiresAt: new Date(T0.getTime() + 15 * 60 * 1000),
+    stepUp: { state: 'FRESH', assertedAt: T0, freshUntil: new Date(T0.getTime() + 60_000) },
+    idempotencyKey: 'idem-rotate-1',
+    actionId: 'act-rotate-1',
+  });
+  assert.deepEqual(decision, { verdict: 'ALLOW' }); // decided while still OWNER
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // Non-vacuity check: the rotation is genuinely visible to a resolution made
+  // NOW -- which is exactly when recordAudit() used to resolve. Without the
+  // fix this same resolution is what the audit record would have carried, so
+  // the assertions below distinguish fixed from unfixed rather than merely
+  // passing either way.
+  const postRotation = new FamilyTrustSetRoleResolver(store).resolveActor('fam-audit-10', 'dev-owner');
+  assert.equal(postRotation.role, 'VIEWER');
+  assert.equal(postRotation.trustSetEpoch, 2);
+
+  const events = await repo.listForFamily('fam-audit-10');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].actionType, 'STEP_UP_SUCCESS');
+  assert.equal(events[0].authorizationRole, 'OWNER', 'the audit must name the role the verdict used, not the post-rotation one');
+  assert.equal(events[0].trustSetEpoch, 1);
+});

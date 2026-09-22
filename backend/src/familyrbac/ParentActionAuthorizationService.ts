@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { resolveOperationAuthorization, requiresStepUp, STEP_UP_MAX_FRESHNESS_MS } from './policy.js';
 import type { ActionIdempotencyLedger } from './ActionIdempotencyLedger.js';
-import { isActorResolutionFailure, type TrustSetRoleResolver } from './TrustSetRoleResolver.js';
+import { isActorResolutionFailure, type ActorResolutionFailure, type ResolvedActor, type TrustSetRoleResolver } from './TrustSetRoleResolver.js';
 import type { FamilyRbacPolicyConfig, ParentOperation, StepUpAssertion, TargetScope } from './types.js';
 import {
   UnavailableChildProfileMembershipResolver,
@@ -8,6 +9,9 @@ import {
 } from '../childprofiles/ChildProfileMembershipResolver.js';
 import { isPlausibleChildProfileId } from '../childprofiles/policy.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './FamilyAuditStore.js';
+
+/** Either a usable actor or a specific reason it was not resolvable -- the shape roleResolver.resolveActor returns, carried around unchanged so it is resolved exactly once per authorize() call. */
+type ActorResolution = ResolvedActor | ActorResolutionFailure;
 
 const STEP_UP_DENY_REASONS: ReadonlySet<AuthorizationDenyReason> = new Set([
   'STEP_UP_REQUIRED_BUT_ABSENT',
@@ -116,19 +120,47 @@ export class ParentActionAuthorizationService {
       return JSON.parse(cached.outcome) as AuthorizationDecision;
     }
 
-    const decision = this.evaluate(request);
-    await this.idempotency.record(request.familyId, request.idempotencyKey, { actionId: request.actionId, requestFingerprint: fingerprint, outcome: JSON.stringify(decision) });
+    // Resolved ONCE, here, and carried into both the verdict and the audit
+    // record below. It deliberately happens AFTER the ledger read above (a
+    // replay returns the recorded outcome and must not depend on current
+    // trust-set state at all) and BEFORE the ledger write: resolving a second
+    // time inside recordAudit() would run after that await, so a trust-set
+    // rotation in the window would let the audit attribute the decision to a
+    // role and epoch the decision was never actually made with.
+    const resolvedActor = this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
+    const decision = this.evaluate(request, resolvedActor);
+    const effective = await this.idempotency.record(request.familyId, request.idempotencyKey, {
+      actionId: request.actionId,
+      requestFingerprint: fingerprint,
+      outcome: JSON.stringify(decision),
+    });
     // Fire-and-forget: the AUDIT append is deliberately not part of the
     // authorization result -- a verdict must not depend on an audit-store
     // write succeeding, and the injected reference append() has no real I/O
     // to await. This is unrelated to the ledger write above, which IS awaited:
     // that one carries the replay guarantee and so cannot be best-effort.
-    void this.recordAudit(request, decision);
+    void this.recordAudit(request, decision, resolvedActor);
+    // The durable record is authoritative. If a concurrent delivery of the SAME
+    // (actionId, fingerprint) won the insert race, its outcome is what every
+    // future replay will return, so this caller returns THAT rather than a
+    // verdict the ledger now contradicts -- the two evaluations can genuinely
+    // differ if trust-set state changed between them. A record under a DIFFERENT
+    // actionId/fingerprint (the same key reused for something else) is
+    // deliberately NOT returned: this call has just evaluated THIS request, and
+    // adopting another request's verdict is the laundering PCA10 forbids.
+    if (effective.actionId === request.actionId && effective.requestFingerprint === fingerprint) {
+      return JSON.parse(effective.outcome) as AuthorizationDecision;
+    }
     return decision;
   }
 
-  private async recordAudit(request: AuthorizeRequest, decision: AuthorizationDecision): Promise<void> {
-    const resolved = this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
+  private async recordAudit(request: AuthorizeRequest, decision: AuthorizationDecision, resolved: ActorResolution): Promise<void> {
+    // `resolved` is the SAME resolution evaluate() decided with, passed in rather
+    // than looked up again here. Re-resolving would happen AFTER the awaiting
+    // ledger write this method is called behind, so a trust-set rotation in that
+    // window would make the audit attribute the decision to a role and epoch the
+    // decision was never actually made with -- an audit record that does not
+    // describe what authorized the action is worse than no audit record.
     const role = isActorResolutionFailure(resolved) ? null : resolved.role;
     const trustSetEpoch = isActorResolutionFailure(resolved) ? 0 : resolved.trustSetEpoch;
 
@@ -182,14 +214,13 @@ export class ParentActionAuthorizationService {
     }
   }
 
-  private evaluate(request: AuthorizeRequest): AuthorizationDecision {
+  private evaluate(request: AuthorizeRequest, resolved: ActorResolution): AuthorizationDecision {
     const now = this.now();
 
     if (now.getTime() > request.expiresAt.getTime()) {
       return { verdict: 'DENY', reason: 'ACTION_EXPIRED' };
     }
 
-    const resolved = this.roleResolver.resolveActor(request.familyId, request.actorDeviceId);
     if (isActorResolutionFailure(resolved)) {
       return { verdict: 'DENY', reason: 'ACTOR_NOT_RESOLVABLE' };
     }
@@ -267,7 +298,21 @@ export class ParentActionAuthorizationService {
  * importantly for PCA10 -- a mutated targetScope must never be treated as a
  * replay of the original decision; authorize() falls through to fresh
  * evaluation whenever this fingerprint doesn't match the cached one.
+ *
+ * It is a SHA-256 of that shape, NOT the concatenated fields themselves, for
+ * two reasons that are both load-bearing:
+ *   * the durable column (migration 0047) is CHAR(64) ascii with a
+ *     hex-pattern CHECK, because a fingerprint is comparison material and
+ *     never needs to be readable back as its inputs; and
+ *   * storing the raw composite would put a familyId, a device id and a
+ *     target id in a readable central table for no benefit -- the privacy
+ *     classification for that column is hash material, and this keeps it
+ *     true rather than aspirational.
+ * Every field is separated by a delimiter that cannot appear in a UUID, an
+ * operation name or a target id, so distinct shapes cannot collide by
+ * concatenation.
  */
 function fingerprintRequest(request: AuthorizeRequest): string {
-  return [request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id].join('|');
+  const shape = [request.familyId, request.actorDeviceId, request.operation, request.targetScope.kind, request.targetScope.id].join('\u0000');
+  return createHash('sha256').update(shape, 'utf8').digest('hex');
 }
