@@ -21,7 +21,7 @@ if (!process.env.PLATFORM_ADMIN_MFA_ENC_KEY) process.env.PLATFORM_ADMIN_MFA_ENC_
 if (!process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL) process.env.PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL = 'http://localhost:4100/platform-admin/activate';
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import test from 'node:test';
@@ -293,9 +293,23 @@ test('BOOTSTRAP_ATOMIC_ISSUANCE_FAILURE (activation-token step): this is the exa
 
   // Force the activation-token INSERT (the step that failed in the original
   // stranding defect) to fail via a real ER_DUP_ENTRY on its primary key.
+  //
+  // The token_hash must be FRESH PER RUN and must NOT equal built.tokenHash:
+  //   * fresh, because this row is never cleaned up, so a literal like
+  //     'a'.repeat(64) makes the SETUP ITSELF raise ER_DUP_ENTRY on
+  //     platform_admin_activation_tokens_hash_key during any later run against
+  //     populated state -- an empty-table dependency in the setup of a test
+  //     whose whole subject is atomic rollback;
+  //   * distinct from built.tokenHash, because the assertions below prove the
+  //     rollback by reading back `WHERE token_hash = built.tokenHash` and
+  //     requiring zero rows -- using the same value here would make that
+  //     assertion vacuous rather than stronger.
+  // The forced failure is the PRIMARY KEY collision on activation_id, which is
+  // what this test has always exercised.
+  const collisionTokenHash = randomBytes(32).toString('hex');
   await getPool().query(
     `INSERT INTO platform_admin_activation_tokens (activation_id, admin_id, token_hash, purpose, created_at, expires_at, used_at, revoked_at) VALUES (?, ?, ?, 'PLATFORM_ADMIN_FIRST_TIME', NOW(3), DATE_ADD(NOW(3), INTERVAL 30 MINUTE), NULL, NULL)`,
-    [built.activationId, anchor.adminId, 'a'.repeat(64)],
+    [built.activationId, anchor.adminId, collisionTokenHash],
   );
 
   await assert.rejects(() => createFirstOwnerBootstrap(built.input), (error) => isDuplicateEntry(error));

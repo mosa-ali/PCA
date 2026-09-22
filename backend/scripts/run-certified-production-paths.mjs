@@ -43,6 +43,18 @@ const CERTIFIED_FILES = [
   'test/db/auth.mysql.test.mjs',
   'test/db/authz.mysql.test.mjs',
   'test/db/parentAccount.mysql.test.mjs',
+  'test/db/invitation.mysql.test.mjs',
+  'test/db/relay.mysql.test.mjs',
+  'test/db/release.mysql.test.mjs',
+  'test/db/device.mysql.test.mjs',
+  'test/db/enrollment.mysql.test.mjs',
+  'test/db/childProfileInvitationBindingHttp.mysql.test.mjs',
+  'test/db/eyeProtectionSettingsHttp.mysql.test.mjs',
+  'test/db/platformEntitlementsCore.mysql.test.mjs',
+  'test/db/complimentaryGrants.mysql.test.mjs',
+  'test/db/freeAccessEnforcement.mysql.test.mjs',
+  'test/db/settlement.mysql.test.mjs',
+  'test/db/platformAdminBootstrap.mysql.test.mjs',
 ];
 
 if (CERTIFIED_FILES.length === 0) {

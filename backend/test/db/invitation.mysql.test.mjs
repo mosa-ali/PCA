@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { InvitationService } from '../../dist/invitation/InvitationService.js';
 import { MySqlInvitationRepository } from '../../dist/invitation/MySqlInvitationRepository.js';
@@ -30,10 +30,18 @@ test('MySQL: create/redeem lifecycle persists through real MySQL', async () => {
 
 test('MySQL: token hash uniqueness is DB-enforced (duplicate hash rejected by the database itself)', async () => {
   const now = new Date('2026-01-01T00:00:00.000Z');
+  // A FRESH hash per run, not a hardcoded one. The property under test is that
+  // the SECOND insert of the SAME hash is rejected by the DB, which needs the
+  // hash to be unique WITHIN the table first -- a literal like 'a'.repeat(64)
+  // is only unique on a virgin database, so the first insert itself raises
+  // ER_DUP_ENTRY on any later run against populated state. That is exactly the
+  // empty-table dependency the production-path gate exists to catch; it was
+  // found by running the certified scope against the populated database.
+  const tokenHash = randomBytes(32).toString('hex');
   const first = {
     invitationId: randomUUID(),
     familyId: `family-${randomUUID()}`,
-    tokenHash: 'a'.repeat(64),
+    tokenHash,
     platform: 'ANDROID',
     requestedProtectionMode: 'ANDROID_STANDARD',
     status: 'CREATED',

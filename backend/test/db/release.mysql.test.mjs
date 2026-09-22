@@ -2,12 +2,44 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ReleaseService } from '../../dist/release/ReleaseService.js';
 import { MySqlReleaseRepository } from '../../dist/release/MySqlReleaseRepository.js';
-import { closePool } from '../../dist/db/pool.js';
+import { closePool, getPool } from '../../dist/db/pool.js';
 
 if (!process.env.PCA_DATABASE_URL) throw new Error('PCA_DATABASE_URL is required for backend/test/db tests.');
 
 const repository = new MySqlReleaseRepository();
 const service = new ReleaseService(repository, () => new Date());
+
+// A per-run version base, DERIVED FROM PERSISTED STATE rather than guessed.
+//
+// The two pointer tests below own the MODEL_PACKAGE lanes exclusively (every
+// other test here uses the default RULE_PACKAGE/SHARED lane) and assert a
+// MONOTONICITY property: an ordinary publish may never move the pointer
+// backward, and an explicit rollback is the only thing that can. With Fixed
+// Literal versions those assertions passed only while the lane happened to be
+// virgin -- a second run against the same populated database inherited the
+// previous run's high-water mark, the publish was refused, and the pointer
+// stayed where the last rollback left it.
+//
+// Reading the lane's current pointer major and starting one above it makes the
+// precondition explicit AND keeps the property being tested. It is read-only:
+// nothing is deleted, and no version is invented that the service would reject
+// (components are capped at 999_999 by parseVersion, so a clock-derived major
+// is not usable).
+//
+// The POINTER row is the right source even though a rollback leaves the pointer
+// BELOW the lane's high-water mark: the highest version any run publishes shares
+// a major with that run's base, so the next run's base+1 is above everything the
+// previous run left behind either way -- above the pointer in the
+// backward-pointer test (which ends on the higher version) and above the
+// un-rolled-back high-water in the rollback test (a larger major dominates a
+// larger minor/patch).
+async function laneBaseMajor(packageType, platform) {
+  const [rows] = await getPool().query(
+    'SELECT COALESCE(MAX(version_major), 0) AS max_major FROM release_current_pointers WHERE package_type = ? AND platform = ?',
+    [packageType, platform],
+  );
+  return Number(rows[0].max_major) + 1;
+}
 
 let sequence = 0;
 function uniquePlatform() {
@@ -54,25 +86,29 @@ test('MySQL: identical resubmission is idempotent', async () => {
 test('MySQL: ordinary publish cannot silently move the current pointer backward', async () => {
   const packageType = 'MODEL_PACKAGE';
   const platform = 'ANDROID';
-  const higher = release({ packageType, platform, version: '9.0.0', artifactDigest: 'c'.repeat(64) });
-  const lower = release({ packageType, platform, version: '1.0.0', artifactDigest: 'd'.repeat(64) });
+  const base = await laneBaseMajor(packageType, platform);
+  const higher = release({ packageType, platform, version: `${base}.0.9`, artifactDigest: 'c'.repeat(64) });
+  const lower = release({ packageType, platform, version: `${base}.0.1`, artifactDigest: 'd'.repeat(64) });
   await service.publishRelease(higher);
   await service.publishRelease(lower);
   const current = await service.getCurrentRelease(packageType, platform);
-  assert.equal(current.version, '9.0.0');
+  assert.equal(current.version, `${base}.0.9`);
 });
 
 test('MySQL: rollback is a distinct transaction that CAN move the pointer backward', async () => {
   const packageType = 'MODEL_PACKAGE';
   const platform = 'IOS';
-  await service.publishRelease(release({ packageType, platform, version: '1.0.0', artifactDigest: 'e'.repeat(64) }));
-  await service.publishRelease(release({ packageType, platform, version: '2.0.0', artifactDigest: 'f'.repeat(64) }));
+  const base = await laneBaseMajor(packageType, platform);
+  const first = `${base}.0.1`;
+  const second = `${base}.0.5`;
+  await service.publishRelease(release({ packageType, platform, version: first, artifactDigest: 'e'.repeat(64) }));
+  await service.publishRelease(release({ packageType, platform, version: second, artifactDigest: 'f'.repeat(64) }));
   let current = await service.getCurrentRelease(packageType, platform);
-  assert.equal(current.version, '2.0.0');
+  assert.equal(current.version, second);
 
-  await service.rollbackToRelease(packageType, platform, '1.0.0');
+  await service.rollbackToRelease(packageType, platform, first);
   current = await service.getCurrentRelease(packageType, platform);
-  assert.equal(current.version, '1.0.0');
+  assert.equal(current.version, first);
 });
 
 test('MySQL REQUIRED CONCURRENCY: simultaneous FIRST publishes into an empty pointer lane converge to the highest version, never a race-order artifact', async () => {
