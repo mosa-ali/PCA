@@ -143,7 +143,7 @@ export class MySqlFamilyAuthorityAttestationChainStore implements FamilyAuthorit
             conn,
             `UPDATE family_authority_chain_heads
              SET head_attestation_id = ?, head_revision = ?, required_trust_set_epoch = ?, required_key_epoch = ?, status = 'ACTIVE', updated_at = ?
-             WHERE family_id = ? AND head_revision = ? AND status = 'ACTIVE' AND status = 'ACTIVE'`,
+             WHERE family_id = ? AND head_revision = ? AND status = 'ACTIVE'`,
             [attestationId, attestation.attestationRevision, attestation.trustSetEpoch, attestation.keyEpoch, attestation.issuedAt, attestation.familyId, expectedPreviousRevision],
           );
           if (updated.rowCount === 0) throw new SoftFailure<AppendSoftCode>('REJECTED_STALE_REVISION');
