@@ -47,13 +47,102 @@ import type { FreeAccessStatus } from '../domain/freeAccess';
 import type { DeleteNowResult, ExportRequestResult, RetentionDefaults, RetentionPolicySettings, RetentionPolicySubmitResult } from '../domain/retention';
 import type { ActivityTimelineEntry } from '../domain/activityTimeline';
 
-export interface AuthenticatedSession {
+/**
+ * PARENT AUTHENTICATION HAS TWO LEGITIMATE AUTHENTICATED STATES (PCA-DEC-027 /
+ * PCA-ADD-IDENT-004). This used to be a single flat interface with
+ * `familyId: string` and `role: FamilyRole`, which made the pre-family state
+ * UNREPRESENTABLE -- so the only way to return it was to fabricate a family or
+ * throw, and the client threw. See the note on `GENESIS_REQUIRED` below.
+ */
+export type AuthenticatedSession = GenesisRequiredSession | FamilyReadySession;
+
+/**
+ * A verified, authenticated parent who has NO family yet.
+ *
+ * This is a SUCCESS state, not an error and not a threat: the backend
+ * deliberately allows a VERIFIED identity to exist before family genesis,
+ * because genesis needs an authenticated account to bind the family to. The
+ * account-level session is real; only family authority is absent.
+ *
+ * `role` is `null` and MUST stay `null` -- it is never bridged with a fake role
+ * or an empty string. Resolving this to `ADMINISTRATOR` would grant family
+ * authority before the cryptographic genesis ceremony and would bypass the
+ * family authorization boundary outright. This state is allowed to reach only
+ * onboarding/genesis/account-level operations; every family-scoped surface
+ * (children, policy, billing, member administration, ADMINISTRATOR-only
+ * actions) must stay unreachable until genesis completes.
+ */
+export interface GenesisRequiredSession {
+  state: 'GENESIS_REQUIRED';
+  accountId: string;
+  displayName: string;
+  familyId: null;
+  /** No membership row exists yet, so there is no member id -- deliberately not the account id, which would imply a membership that does not exist. */
+  memberId: null;
+  role: null;
+  /** Stays `boolean` (as the flat type always had it): only the dev fixture varies it, and the security-relevant discriminator is `state`/`familyId`/`role`, not this UI-level flag. */
+  serviceAuthenticated: boolean;
+}
+
+/** An established family session: a real membership with a real normal role. */
+export interface FamilyReadySession {
+  state: 'FAMILY_READY';
   accountId: string;
   displayName: string;
   familyId: string;
   memberId: string;
   role: FamilyRole;
   serviceAuthenticated: boolean;
+}
+
+/** Narrows to the established-family case, so callers cannot read family fields off a pre-family session by accident. */
+export function isFamilyReady(session: AuthenticatedSession): session is FamilyReadySession {
+  return session.state === 'FAMILY_READY';
+}
+
+/**
+ * PCA-FAMILY-AUTH-1-R1 client-key genesis ceremony (PCA-DEC-020-R1).
+ *
+ * Verification establishes ACCOUNT IDENTITY ONLY; a family is created by this
+ * separate, explicit, cryptographically-bound ceremony. The browser becomes the
+ * family's FIRST TRUSTED PARENT by signing with a non-extractable P-256 endpoint
+ * key it generates locally -- see security/genesisProof.ts, the verified browser
+ * counterpart of the backend's canonicalizers.
+ */
+export type GenesisPlatform = 'ANDROID' | 'IOS' | 'BROWSER';
+
+/**
+ * The server's own statement of what is being signed. Every signed field is
+ * copied FROM this object rather than re-derived client-side: a client that
+ * recomputed any of it would be signing something the server never issued.
+ */
+export interface GenesisChallenge {
+  protocolVersion: number;
+  /** Fixed by the protocol AND by a database check constraint: parent_genesis_challenges.operation = 'GENESIS'. */
+  operation: 'GENESIS';
+  accountId: string;
+  serviceAccountId: string;
+  familyId: string;
+  deviceId: string;
+  keyId: string;
+  publicKey: string;
+  platform: GenesisPlatform;
+  challengeId: string;
+  nonce: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** The three signatures plus the temporal/epoch window the backend verifies. */
+export interface GenesisCompletionInput {
+  challengeId: string;
+  proofSignature: string;
+  anchorSignature: string;
+  attestationSignature: string;
+  trustSetEpoch: number;
+  keyEpoch: number;
+  issuedAt: string;
+  expiresAt: string;
 }
 
 /** Result of a self-service registration/verification call -- PCA-AUTH-SESSION-1 (FAMILY_SERVICE_SESSION_V1). Never leaks whether an email already existed. */
@@ -94,6 +183,17 @@ export interface ServiceAuthClient {
   signOut(): Promise<void>;
   /** Re-authentication for a step-up-protected action; binds to an action id. */
   stepUp(actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }>;
+  /**
+   * Starts the family-genesis step-up: password re-auth bound to the CURRENT
+   * session, which emails a fresh one-time code. Resolves 202 on success.
+   */
+  startGenesisStepUp(email: string, password: string): Promise<void>;
+  /** Consumes the one-time genesis step-up code. Resolves 200 on success. */
+  completeGenesisStepUp(code: string): Promise<void>;
+  /** Requests a genesis challenge for the freshly generated device public key. Resolves 201 (NOT 200). */
+  requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge>;
+  /** Submits the signed proof/anchor/attestation. The backend atomically creates the family, membership and authority chain. */
+  completeGenesis(input: GenesisCompletionInput): Promise<void>;
   /**
    * PCA-AUTH-SESSION-1 (PCA-DEC-026): self-service registration. Server
    * validates password===passwordConfirmation itself. Always resolves to

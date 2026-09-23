@@ -36,6 +36,7 @@ describe('RealServiceAuthClient', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', emailVerified: true, role: 'ADMINISTRATOR' }));
     const session = await client.getSession();
     expect(session).toEqual({
+      state: 'FAMILY_READY',
       accountId: 'acc-1',
       displayName: 'acc-1',
       familyId: 'fam-1',
@@ -45,9 +46,17 @@ describe('RealServiceAuthClient', () => {
     });
   });
 
-  it('getSession rejects an unresolved family role instead of defaulting to Viewer or Owner', async () => {
+  it('getSession returns an EXPLICIT pre-family state (GENESIS_REQUIRED) for an unresolved family role -- it no longer rejects a legitimate authenticated pre-family response', async () => {
+    // THIS TEST PREVIOUSLY ASSERTED THE DEFECT AS THE SPECIFICATION: it required
+    // getSession() to REJECT `{familyId: null, role: null}` with
+    // UNAUTHORIZED_FAMILY_SCOPE. But the backend deliberately allows a VERIFIED
+    // identity before family genesis, and its own contract documents
+    // "`familyId` may be null if genesis is not currently available" -- so the
+    // old assertion demanded that a SUCCESS be reported as a failure. That is
+    // exactly the shape this programme exists to remove.
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null }));
-    await expect(client.getSession()).rejects.toMatchObject({ code: 'UNAUTHORIZED_FAMILY_SCOPE' });
+    const session = await client.getSession();
+    expect(session).toEqual({ state: 'GENESIS_REQUIRED', accountId: 'acc-1', displayName: 'acc-1', familyId: null, memberId: null, role: null, serviceAuthenticated: true });
   });
 
   // ---------------------------------------------------------------------
@@ -81,6 +90,7 @@ describe('RealServiceAuthClient', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: 'fam-1', role: 'ADMINISTRATOR', sessionEstablished: true }));
     const session = await client.verifyEmail('parent@example.test', '123456');
     expect(session).toEqual({
+      state: 'FAMILY_READY',
       accountId: 'acc-1',
       displayName: 'acc-1',
       familyId: 'fam-1',

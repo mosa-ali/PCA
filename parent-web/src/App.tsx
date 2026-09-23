@@ -47,7 +47,9 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import Login from './pages/auth/Login';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
+import Genesis from './pages/auth/Genesis';
 import { RouteGuard } from './rbac/RouteGuard';
+import { AuthLayout } from './components/auth/AuthLayout';
 
 export default function App() {
   return (
@@ -55,11 +57,19 @@ export default function App() {
       {/* PCA-AUTH-SESSION-1: unauthenticated auth pages, deliberately outside
           AppLayout's chrome (no family-scoped nav/shell makes sense before a
           session exists). */}
-      <Route path="register" element={<Register />} />
-      <Route path="verify-email" element={<VerifyEmail />} />
-      <Route path="login" element={<Login />} />
-      <Route path="forgot-password" element={<ForgotPassword />} />
-      <Route path="reset-password" element={<ResetPassword />} />
+      <Route element={<AuthLayout />}>
+        <Route path="register" element={<Register />} />
+        <Route path="verify-email" element={<VerifyEmail />} />
+        <Route path="login" element={<Login />} />
+        <Route path="forgot-password" element={<ForgotPassword />} />
+        <Route path="reset-password" element={<ResetPassword />} />
+        {/* GENESIS ONBOARDING (PCA-DEC-020-R1): a verified account that owns
+            no family yet. Deliberately INSIDE AuthLayout but OUTSIDE
+            AppLayout -- AppLayout is the family console chrome and is also
+            what redirects this state here, so nesting it would
+            redirect-loop. */}
+        <Route path="genesis" element={<Genesis />} />
+      </Route>
 
       <Route element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />

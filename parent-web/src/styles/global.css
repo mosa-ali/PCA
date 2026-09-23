@@ -2021,6 +2021,22 @@ table.data-table td {
   padding: var(--space-4);
 }
 
+/* The language control for the authentication / onboarding surface.
+   AuthLayout renders this as a SIBLING of the page, so it is positioned
+   globally rather than inside the page's own 24rem column -- it therefore
+   re-states that column's width, centring and inline padding so the control
+   lines up with the right edge of the form beneath it. Logical properties
+   only: `flex-end` is already writing-direction aware, so `dir="rtl"` mirrors
+   the control to the inline-start edge with no physical override. */
+.auth-page-lang {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 24rem;
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+  margin-block-start: var(--space-4);
+}
+
 .auth-page > form {
   background: var(--surface);
   border: 1px solid var(--border);

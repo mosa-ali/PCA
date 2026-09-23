@@ -1,5 +1,5 @@
-import type { ServiceAuthClient, AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, SignInResult } from '../interfaces';
-import { buildDevSession, setServiceAuthenticated } from './devState';
+import type { ServiceAuthClient, AuthenticatedSession, GenesisChallenge, GenesisCompletionInput, GenesisPlatform, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, SignInResult } from '../interfaces';
+import { buildDevSession, setGenesisPending, setServiceAuthenticated } from './devState';
 
 const DELAY_MS = 120;
 const delay = (ms = DELAY_MS) => new Promise((r) => setTimeout(r, ms));
@@ -29,6 +29,49 @@ export class DevServiceAuthClient implements ServiceAuthClient {
   async signOut(): Promise<void> {
     await delay();
     setServiceAuthenticated(false);
+  }
+
+  /**
+   * DEVELOPMENT_ONLY genesis fixture.
+   *
+   * Deliberately does NOT shortcut the ceremony: the caller still generates a
+   * real non-extractable key and signs with the REAL canonicalization helpers,
+   * so dev/demo exercises the browser signing path rather than a mock of it.
+   * Only the server's verification is faked.
+   */
+  async startGenesisStepUp(_email: string, _password: string): Promise<void> {
+    await delay();
+  }
+
+  async completeGenesisStepUp(_code: string): Promise<void> {
+    await delay();
+  }
+
+  async requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge> {
+    await delay();
+    const now = new Date();
+    return {
+      protocolVersion: 1,
+      operation: 'GENESIS',
+      accountId: 'dev-account-1',
+      serviceAccountId: 'dev-service-account-1',
+      familyId: 'dev-family-1',
+      deviceId: 'dev-device-1',
+      keyId: 'dev-key-1',
+      // Echoed back exactly as offered: the signer signs the server's statement,
+      // never a locally recomputed copy.
+      publicKey,
+      platform,
+      challengeId: `dev-challenge-${now.getTime()}`,
+      nonce: `dev-nonce-${now.getTime()}`,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
+    };
+  }
+
+  async completeGenesis(_input: GenesisCompletionInput): Promise<void> {
+    await delay();
+    setGenesisPending(false);
   }
 
   async stepUp(_actionId: string): Promise<{ granted: boolean; expiresAtUtc: string }> {

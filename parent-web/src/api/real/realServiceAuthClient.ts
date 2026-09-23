@@ -26,8 +26,9 @@
 // part of this contract) -- stepUp() below honestly rejects rather than
 // call a URL that doesn't exist.
 //
-import type { AuthenticatedSession, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient, SignInResult } from '../interfaces';
+import type { AuthenticatedSession, GenesisChallenge, GenesisCompletionInput, GenesisPlatform, RegistrationResult, RequestPasswordResetResult, ResetPasswordResult, ServiceAuthClient, SignInResult } from '../interfaces';
 import type { ParentSignupProfile } from '../interfaces';
+import { reportDiagnostic } from '../../security/diagnosticConsole';
 
 export type ServiceAuthErrorCode =
   | 'INVALID_CREDENTIALS'
@@ -98,15 +99,59 @@ function readCsrfCookie(): string | null {
 }
 
 function toAuthenticatedSession(body: SessionResponseBody | EstablishedSessionResponseBody): AuthenticatedSession {
-  if (body.role !== 'ADMINISTRATOR' && body.role !== 'VIEWER' && body.role !== 'CHILD') {
+  const accountId = body.accountId;
+  const familyId = body.familyId;
+  const role = body.role;
+
+  // The wire body has always been nullable (see SessionResponseBody /
+  // EstablishedSessionResponseBody above) and matches the backend, whose
+  // contract explicitly documents "`familyId` may be null if genesis is not
+  // currently available". The previous version of this function contradicted
+  // that by throwing for every role other than the three normal ones -- which
+  // turned a SUCCESSFUL login step-up (HTTP 200, session cookie set, daily
+  // grant issued) into `UNAUTHORIZED_FAMILY_SCOPE`, surfaced to the parent as
+  // the generic "Unable to complete the action" message. The parent's login
+  // was never failing.
+
+  // GENUINELY INCONSISTENT: exactly one of familyId/role resolved. This is not
+  // the pre-family state -- it is a server contract violation, and it is the
+  // case `UNAUTHORIZED_FAMILY_SCOPE` is actually for. Keep it, so the code
+  // retains a real inconsistent-authorization signal rather than swallowing
+  // everything.
+  if ((familyId === null) !== (role === null)) {
     throw new ServiceAuthError('UNAUTHORIZED_FAMILY_SCOPE', 'The family membership could not be resolved.');
   }
+
+  // PRE-FAMILY ONBOARDING -- a legitimate authenticated state, NOT an error.
+  // Modelled explicitly rather than bridged with an empty string or a fabricated
+  // role (both of which the previous code did: `familyId: body.familyId ?? ''`).
+  if (familyId === null || role === null) {
+    reportDiagnostic('PARENT_SESSION_STATE', 'GENESIS_REQUIRED');
+    return {
+      state: 'GENESIS_REQUIRED',
+      accountId,
+      displayName: accountId,
+      familyId: null,
+      memberId: null,
+      role: null,
+      serviceAuthenticated: true,
+    };
+  }
+
+  // Defensive: the wire type already restricts this, but a server that ever sent
+  // a fourth role must not be silently trusted as family-ready.
+  if (role !== 'ADMINISTRATOR' && role !== 'VIEWER' && role !== 'CHILD') {
+    throw new ServiceAuthError('UNAUTHORIZED_FAMILY_SCOPE', 'The family membership could not be resolved.');
+  }
+
+  reportDiagnostic('PARENT_SESSION_STATE', 'FAMILY_READY');
   return {
-    accountId: body.accountId,
-    displayName: body.accountId,
-    familyId: body.familyId ?? '',
-    memberId: body.accountId,
-    role: body.role,
+    state: 'FAMILY_READY',
+    accountId,
+    displayName: accountId,
+    familyId,
+    memberId: accountId,
+    role,
     serviceAuthenticated: true,
   };
 }
@@ -277,7 +322,92 @@ export class RealServiceAuthClient implements ServiceAuthClient {
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected login step-up status ${response.status}`);
     const body = await parseJsonSafe<EstablishedSessionResponseBody>(response);
     if (!body) throw new ServiceAuthError('UNKNOWN', 'Step-up succeeded but the session response was empty.');
+    // PARENT_LOGIN_STEP_UP_STAGE is emitted as SESSION_ISSUED only. Its sibling
+    // stage DAILY_GRANT_PERSISTED is deliberately NOT emitted here: the daily
+    // login grant cookie (`dailyLoginGrantCookieName()`) is set HttpOnly, so
+    // this client cannot observe whether it was persisted, and asserting it
+    // would be an unverifiable claim rather than a diagnostic. The grant is
+    // written server-side in the same request, and ParentAccountService rolls
+    // the new session back if that write fails -- so HTTP 200 here does mean
+    // both happened, but only the SERVER can honestly report the second stage.
+    reportDiagnostic('PARENT_LOGIN_STEP_UP_STAGE', 'SESSION_ISSUED');
     return toAuthenticatedSession(body);
+  }
+
+  /**
+   * FAMILY GENESIS (PCA-DEC-020-R1). Four steps, each bound to the SAME session
+   * the first one ran under: the backend records the session that requested the
+   * step-up and requires the ceremony to complete under it.
+   *
+   * Every request carries the double-submit CSRF header and `credentials:
+   * 'include'`, like every other state-changing call in this client. Stage
+   * diagnostics are emitted through the sanctioned `reportDiagnostic` sink and
+   * carry STATUS ONLY -- never a password, code, token, cookie, or signature.
+   */
+  async startGenesisStepUp(email: string, password: string): Promise<void> {
+    const response = await this.genesisPost('/api/parent/genesis/step-up', { email, password });
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'Password confirmation failed.');
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
+    // 202 Accepted -- NOT 200. A client that only accepts 200 silently
+    // reports failure for a request the server accepted.
+    if (response.status !== 202) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis step-up status ${response.status}`);
+    reportDiagnostic('PARENT_GENESIS_STAGE', 'STEP_UP_REQUIRED');
+  }
+
+  async completeGenesisStepUp(code: string): Promise<void> {
+    const response = await this.genesisPost('/api/parent/genesis/step-up/complete', { code });
+    if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That code is incorrect or has expired.');
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
+    if (response.status !== 200) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis step-up completion status ${response.status}`);
+    reportDiagnostic('PARENT_GENESIS_STAGE', 'STEP_UP_VERIFIED');
+  }
+
+  async requestGenesisChallenge(publicKey: string, platform: GenesisPlatform): Promise<GenesisChallenge> {
+    const response = await this.genesisPost('/api/parent/genesis/challenge', { publicKey, platform });
+    if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'The device key could not be registered.');
+    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
+    // 201 Created -- the challenge is a newly created server resource.
+    if (response.status !== 201) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis challenge status ${response.status}`);
+    const body = await parseJsonSafe<GenesisChallenge>(response);
+    if (!body) throw new ServiceAuthError('UNKNOWN', 'Genesis challenge was empty.');
+    reportDiagnostic('PARENT_GENESIS_STAGE', 'CHALLENGE_CREATED');
+    return body;
+  }
+
+  async completeGenesis(input: GenesisCompletionInput): Promise<void> {
+    const response = await this.genesisPost('/api/parent/genesis/complete', input);
+    if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
+    if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
+    if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
+    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'The family setup request was rejected.');
+    if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis completion status ${response.status}`);
+    reportDiagnostic('PARENT_GENESIS_STAGE', 'COMPLETED');
+  }
+
+  /** Shared POST for the four genesis calls: same-origin credentials, JSON body, double-submit CSRF header. */
+  private async genesisPost(path: string, body: unknown): Promise<Response> {
+    const csrfToken = readCsrfCookie();
+    try {
+      return await fetch(this.url(path), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw networkError(err);
+    }
   }
 
   async signOut(): Promise<void> {

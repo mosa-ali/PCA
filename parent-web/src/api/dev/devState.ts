@@ -21,8 +21,20 @@ function initialDevRole(): FamilyRole {
   return 'OWNER';
 }
 
+function initialGenesisPending(): boolean {
+  // Test-only convenience, same rationale as `demoRole`: a
+  // `?demoGenesis=required` query param lets Playwright preset the pre-family
+  // state across a full page navigation, so the genesis routing guard and
+  // ceremony can be exercised in e2e instead of only on their success path.
+  if (typeof window !== 'undefined') {
+    return new URLSearchParams(window.location.search).get('demoGenesis') === 'required';
+  }
+  return false;
+}
+
 let currentRole: FamilyRole = initialDevRole();
 let serviceAuthenticated = true;
+let genesisPending = initialGenesisPending();
 
 const listeners = new Set<() => void>();
 
@@ -53,8 +65,34 @@ export function setServiceAuthenticated(value: boolean): void {
   notify();
 }
 
+/** True while the dev fixture is modelling an authenticated account that has not yet created a family. */
+export function getGenesisPending(): boolean {
+  return genesisPending;
+}
+
+export function setGenesisPending(value: boolean): void {
+  genesisPending = value;
+  notify();
+}
+
 export function buildDevSession(): AuthenticatedSession {
+  // An account that has authenticated but owns no family yet. The session must
+  // say so EXPLICITLY rather than presenting null family fields behind a
+  // FAMILY_READY-shaped object, which is what made the pre-family case
+  // indistinguishable from a broken family scope.
+  if (serviceAuthenticated && genesisPending) {
+    return {
+      state: 'GENESIS_REQUIRED',
+      accountId: 'dev-account-1',
+      displayName: 'Dev Parent',
+      familyId: null,
+      memberId: null,
+      role: null,
+      serviceAuthenticated: true,
+    };
+  }
   return {
+    state: 'FAMILY_READY',
     accountId: 'dev-account-1',
     displayName: 'Dev Parent',
     familyId: 'dev-family-1',

@@ -15,11 +15,14 @@
 // `role: null` for them (ParentAccountService.resolveFamilyRole fails closed
 // on a null familyId).
 //
-// That is correct product behaviour, and the Parent Web client reflects it:
-// RealServiceAuthClient.toAuthenticatedSession rejects a session whose `role`
-// is not a real family role with UNAUTHORIZED_FAMILY_SCOPE. So a fixture
-// account without a completed genesis can authenticate but can never reach
-// /dashboard -- which is exactly what the real-backend E2E suites assert.
+// The Parent Web client now models that split explicitly rather than
+// rejecting it: a verified account whose session has no family yet resolves to
+// `AuthenticatedSession.state === 'GENESIS_REQUIRED'`, and the app routes that
+// state to genesis onboarding. Only a session carrying a real family role
+// ('FAMILY_READY') may reach /dashboard. The one case still rejected as
+// UNAUTHORIZED_FAMILY_SCOPE is a self-inconsistent session in which familyId
+// and role disagree (exactly one of them null), which no production path can
+// produce. The real-backend E2E suites assert this split.
 //
 // NOTHING HERE WEAKENS A PRODUCTION CONTROL. This helper drives the SAME
 // ParentAccountService methods the production HTTP routes drive, with a real

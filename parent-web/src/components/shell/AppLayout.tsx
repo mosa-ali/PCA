@@ -8,6 +8,7 @@ import { DemoBanner } from '../common/DemoBanner';
 import { ConnectionStatusBanner } from '../common/ConnectionStatusBanner';
 import { FreeAccessReminderBanner } from '../freeaccess/FreeAccessReminderBanner';
 import { useAuth } from '../../state/AuthContext';
+import { isFamilyReady } from '../../api/interfaces';
 
 /**
  * Authentication gate for every route this layout wraps (all of them
@@ -71,6 +72,28 @@ export function AppLayout() {
   if (loading) return null;
   if (session === null) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  /*
+   * PRE-FAMILY GENESIS GATE.
+   *
+   * An account can be fully VERIFIED and AUTHENTICATED while owning no family
+   * at all -- that is the normal state between verifying an email and running
+   * the genesis ceremony, and it is modelled explicitly as GENESIS_REQUIRED
+   * (see api/interfaces.ts). It is not a broken session, and it is not an
+   * error; but it also cannot use any route this layout wraps, because every
+   * one of them assumes a familyId and a role that do not exist yet.
+   *
+   * So this gate sends it to the ceremony, which is mounted OUTSIDE this
+   * layout. The check is on the discriminated `state` field rather than on
+   * `familyId === null`, so a 4th session state can never fall through it by
+   * accident: only a session that positively reports FAMILY_READY continues.
+   *
+   * `from` is passed through the same hardened `safeReturnPath` on the other
+   * side, so this never becomes an open redirect.
+   */
+  if (!isFamilyReady(session)) {
+    return <Navigate to="/genesis" replace state={{ from: location.pathname }} />;
   }
 
   return (

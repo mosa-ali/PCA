@@ -65,6 +65,7 @@ describe('Login step-up flow', () => {
   it('completing the step-up code calls completeLoginStepUp with the same email and navigates on success', async () => {
     signInMock.mockResolvedValueOnce({ status: 'STEP_UP_REQUIRED' });
     completeLoginStepUpMock.mockResolvedValueOnce({
+      state: 'FAMILY_READY',
       accountId: 'acc-1',
       displayName: 'acc-1',
       familyId: 'fam-1',
@@ -108,7 +109,7 @@ describe('Login step-up flow', () => {
   it('an ordinary AUTHENTICATED sign-in never shows the step-up form', async () => {
     signInMock.mockResolvedValueOnce({
       status: 'AUTHENTICATED',
-      session: { accountId: 'acc-1', displayName: 'acc-1', familyId: 'fam-1', memberId: 'acc-1', role: 'VIEWER', serviceAuthenticated: true },
+      session: { state: 'FAMILY_READY', accountId: 'acc-1', displayName: 'acc-1', familyId: 'fam-1', memberId: 'acc-1', role: 'VIEWER', serviceAuthenticated: true },
     });
     renderWithProviders(<Login />);
 
