@@ -168,15 +168,20 @@ test('a wrong code and an unreadable secret are distinguished, where they used t
   assert.ok(!h2.captured.some((d) => d.stage === 'MFA_CODE_VERIFICATION'));
 });
 
-test('a refused persistence write is an infrastructure failure, not a bad code', async () => {
+test('a completion that did not apply is reported neutrally, not as an infrastructure failure', async () => {
   const h = harness({ completeResult: false });
   const token = await issueToken(h);
   const started = await h.service.start(token);
   const secret = base32Decode(new URL(started.otpauthUri).searchParams.get('secret'));
   await assert.rejects(() => h.service.complete(token, 'a new owner password', computeTotp(secret, h.now().getTime())));
-  // The code verified -- the write is what was refused.
+  // The code verified -- so this is NOT a bad code...
   assert.ok(h.captured.some((d) => d.stage === 'MFA_CODE_VERIFICATION' && d.outcome === 'OK'));
-  assert.ok(h.captured.some((d) => d.stage === 'MFA_PERSISTENCE' && d.outcome === 'FAILED' && d.reason === 'PERSISTENCE_REFUSED'));
+  // ...but no exception was observed either, so it is not FAILED and it must not
+  // name one of the possible causes (stale token / concurrent completion /
+  // unmatched guarded UPDATE) as though it were established.
+  const persistence = h.captured.find((d) => d.stage === 'MFA_PERSISTENCE');
+  assert.equal(persistence?.outcome, 'REJECTED');
+  assert.equal(persistence?.reason, 'COMPLETION_NOT_APPLIED');
 });
 
 test('a legacy-sealed pending secret activates through the bounded fallback, and a LOST repair race is benign', async () => {
@@ -198,16 +203,40 @@ test('a legacy-sealed pending secret activates through the bounded fallback, and
     // The activation SUCCEEDS either way: losing the repair race is not a failure.
     assert.equal(h.mfa.status, 'ACTIVE');
     assert.equal(h.captured.find((d) => d.stage === 'MFA_SECRET_DECRYPT')?.keySource, 'PREVIOUS_1');
-    assert.equal(h.captured.find((d) => d.stage === 'MFA_READ_REPAIR')?.repaired, casResult);
+    const repair = h.captured.find((d) => d.stage === 'MFA_READ_REPAIR');
+    assert.equal(repair?.repaired, casResult);
     assert.ok(h.captured.some((d) => d.stage === 'ACTIVATION_COMPLETE' && d.outcome === 'OK'));
 
+    // Leak coverage for the three classes an earlier assertion list omitted: the
+    // ciphertext, the nonce, and the previous key itself. The legacy path is the
+    // only place all three are in play at once, which is why the check lives here.
+    const serialized = JSON.stringify(h.captured);
+    for (const forbidden of [
+      legacy.ciphertext.toString('hex'),
+      legacy.nonce.toString('hex'),
+      PREVIOUS_1_HEX,
+      ACTIVE_HEX,
+      base32Encode(secret),
+      token,
+    ]) {
+      assert.ok(!serialized.includes(forbidden), `secret material leaked into diagnostics: ${forbidden.slice(0, 8)}…`);
+    }
+
     if (casResult) {
+      // A successful repair reports no reason: there is nothing to explain.
+      assert.equal(repair?.reason, undefined);
       // Repair won: the row now opens with the ACTIVE key alone, which is what
       // makes PREVIOUS_1 retirable.
       assert.deepEqual(decryptTotpSecret(h.mfa.totpSecretCiphertext, h.mfa.totpSecretNonce, Buffer.from(ACTIVE_HEX, 'hex')), secret);
     } else {
       // Repair lost: the row is untouched, which is expected and harmless.
       assert.deepEqual(h.mfa.totpSecretCiphertext, legacy.ciphertext);
+      // Cause-NEUTRAL by necessity. A lost race and a storage exception swallowed
+      // by the helper are indistinguishable from a false return, so the diagnostic
+      // says only that the repair did not apply -- it does not assert a fault that
+      // was never observed, nor prescribe a recovery the evidence does not support.
+      assert.equal(repair?.outcome, 'REJECTED');
+      assert.equal(repair?.reason, 'REPAIR_NOT_APPLIED');
     }
   }
 });

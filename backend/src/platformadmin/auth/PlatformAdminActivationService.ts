@@ -123,9 +123,13 @@ export class PlatformAdminActivationService {
     }
     const begun = await this.activationRepository.beginMfa({ tokenHash: hashActivationToken(rawToken), now, ciphertext: encrypted.ciphertext, nonce: encrypted.nonce });
     if (!begun) {
-      // beginMfa is a single-winner initialization; losing it means a
-      // concurrent start already persisted a secret for this enrollment.
-      this.diagnostics.stage('ACTIVATION_START', 'REJECTED', { reason: 'MFA_ALREADY_STARTED' });
+      // The preconditions were re-checked and PASSED immediately above, so a null
+      // here means the row changed between that read and this write -- a
+      // concurrent start, a reissue, or a status change. Which one is not
+      // observable from a boolean, so the reason stays neutral rather than
+      // asserting MFA_ALREADY_STARTED, which would send an operator looking for a
+      // prior enrollment that may not exist.
+      this.diagnostics.stage('ACTIVATION_START', 'REJECTED', { reason: 'ENROLLMENT_STATE_CHANGED' });
       throw new PlatformAdminActivationError();
     }
     this.diagnostics.stage('ACTIVATION_START', 'OK');
@@ -194,9 +198,17 @@ export class PlatformAdminActivationService {
         observedNonce: current.mfa.totpSecretNonce,
         secret,
       });
-      // A false result is either a lost race or the row having moved on; both
-      // are benign, and the activation below proceeds either way.
-      this.diagnostics.stage('MFA_READ_REPAIR', repaired ? 'OK' : 'REJECTED', { repaired, keySource });
+      // A false result is either a lost race or the row having moved on; both are
+      // benign, and the activation below proceeds either way. Cause-neutral by
+      // necessity: repairMfaSecretCiphertext also swallows a storage exception,
+      // so a false does not prove which of the two happened. Reporting REJECTED
+      // with a neutral reason keeps the legacy key demonstrably still required
+      // without asserting a fault that was never observed.
+      this.diagnostics.stage('MFA_READ_REPAIR', repaired ? 'OK' : 'REJECTED', {
+        repaired,
+        keySource,
+        ...(repaired ? {} : { reason: 'REPAIR_NOT_APPLIED' }),
+      });
     }
     const counter = verifyTotp(secret, totpCode, now.getTime());
     if (counter === null) {
@@ -207,10 +219,13 @@ export class PlatformAdminActivationService {
     const credential = await hashPassword(password);
     const completed = await this.activationRepository.complete({ tokenHash, now, passwordCredential: credential, acceptedTotpCounter: counter });
     if (!completed) {
-      // The code verified but the write was refused (concurrent completion, or
-      // the atomic guarded UPDATE matched nothing). An infrastructure outcome,
-      // not a bad code -- previously indistinguishable from one.
-      this.diagnostics.stage('MFA_PERSISTENCE', 'FAILED', { reason: 'PERSISTENCE_REFUSED' });
+      // The code verified; the completion write did not apply. The repository
+      // returns false for a stale or already-used token, a concurrent completion,
+      // or a guarded UPDATE that matched nothing -- and NO exception was observed,
+      // so this is not FAILED and must not name a cause. It is some form of "the
+      // enrollment was no longer in the expected state", which is what the
+      // operator needs to know.
+      this.diagnostics.stage('MFA_PERSISTENCE', 'REJECTED', { reason: 'COMPLETION_NOT_APPLIED' });
       throw new PlatformAdminActivationError();
     }
     this.diagnostics.stage('ACTIVATION_COMPLETE', 'OK');

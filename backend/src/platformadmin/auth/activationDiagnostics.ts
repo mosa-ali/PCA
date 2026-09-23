@@ -57,10 +57,19 @@ export const ACTIVATION_OUTCOMES = ['OK', 'REJECTED', 'FAILED'] as const;
 
 /**
  * OK       -- the stage did what it was asked to do.
- * REJECTED -- a legitimate refusal of the submitted input (bad token, wrong
- *             code, already started). Expected and benign.
- * FAILED   -- an infrastructural or configuration problem. Never the operator's
- *             fault, and the class most worth alerting on.
+ * REJECTED -- a legitimate refusal of the request. Benign and expected. Used for
+ *             both bad input and a lost race, because a refusal is not a fault.
+ * FAILED   -- an OBSERVED exception: something threw and we caught it.
+ *
+ * FAILED IS RESERVED FOR A CAUGHT THROW and must not be used for a `false` or
+ * `null` return. A boolean cannot say why it is false -- for example
+ * `beginMfa` returns null for a concurrent start, an expired/revoked token or an
+ * inactive account, and `complete` returns false for a stale token, a concurrent
+ * completion or a guarded UPDATE that matched nothing. Labelling those FAILED, or
+ * naming one of the possible causes as if it were established, sends an operator
+ * to a recovery action the evidence does not support. Where a cause genuinely
+ * cannot be distinguished, use a NEUTRAL reason (`*_NOT_APPLIED`,
+ * `ENROLLMENT_STATE_CHANGED`) that says what is true without inventing why.
  */
 export type ActivationOutcome = (typeof ACTIVATION_OUTCOMES)[number];
 
@@ -73,7 +82,9 @@ export const ACTIVATION_REASONS = [
   'KEYRING_MISCONFIGURED',
   'NO_PERMITTED_KEY',
   'INVALID_CODE',
-  'PERSISTENCE_REFUSED',
+  'ENROLLMENT_STATE_CHANGED',
+  'COMPLETION_NOT_APPLIED',
+  'REPAIR_NOT_APPLIED',
 ] as const;
 
 export type ActivationReason = (typeof ACTIVATION_REASONS)[number];
