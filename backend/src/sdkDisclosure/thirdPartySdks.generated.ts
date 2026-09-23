@@ -56,6 +56,11 @@ export const THIRD_PARTY_SDK_DISCLOSURE: ThirdPartySdkDisclosure = {
         "category": "internationalization"
       },
       {
+        "name": "qrcode.react",
+        "version": "^4.2.0",
+        "category": "QR code rendering"
+      },
+      {
         "name": "react",
         "version": "18.3.1",
         "category": "UI framework"

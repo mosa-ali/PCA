@@ -24,6 +24,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
+import { GenesisChallengeError } from '../../parentaccount/GenesisChallengeService.js';
 import { createKeyedRateLimiter } from '../../parentaccount/rateLimiter.js';
 import { hashParentEmail } from '../../parentaccount/emailHash.js';
 import {
@@ -387,6 +388,11 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    // Same fail-closed gate as /challenge and /complete, checked BEFORE the
+    // rate limiter and before any service call: a deployment that cannot
+    // complete a ceremony must not ask the parent for their password and a
+    // one-time code, burn the code, and only then report the impossibility.
+    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const { email, password } = request.body as Record<string, unknown>;
     if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
@@ -406,6 +412,9 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    // Same fail-closed gate as the other genesis routes, checked BEFORE the
+    // rate limiter and before any service call -- see /genesis/step-up above.
+    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
     if (!isPlainObject(request.body) || typeof (request.body as Record<string, unknown>).code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
     if (!rateLimiter.consume('genesis-step-up-complete:ip', request.ip, GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
       return reply.code(429).send({ error: 'rate_limited' });
@@ -459,7 +468,21 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         expiresAt: challenge.expiresAt.toISOString(),
       });
     } catch (error) {
-      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
+      // Explicit on the CODE rather than the class: today beginGenesisChallenge
+      // only throws UNAUTHORIZED, but a class-level mapping would silently
+      // answer a future INVALID_INPUT as a session problem.
+      if (error instanceof ParentAccountError) {
+        if (error.code === 'UNAUTHORIZED') return reply.code(401).send({ error: 'unauthorized' });
+        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+      }
+      // GenesisChallengeService.begin validates the P-256 point strictly and
+      // reports a client-supplied key that is not a valid point as
+      // INVALID_PUBLIC_KEY. The route's shape check only sees a string, so
+      // this class reaches the catch for any malformed key: a 400 about the
+      // request, not a server fault.
+      if (error instanceof GenesisChallengeError && error.code === 'INVALID_PUBLIC_KEY') {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       throw error;
     }
   });
@@ -499,12 +522,24 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       });
       return reply.code(200).send({ ...result, genesisCompleted: true });
     } catch (error) {
-      // 401 is reserved for a genuinely missing or invalid SESSION, which is
-      // checked and answered above before any work happens. Answering a rejected
-      // PROOF with 401 made the client report an expired session -- false, and it
-      // sent the parent to sign in again for a problem that signing in cannot fix.
-      // A rejected proof is a 400 about the proof.
-      if (error instanceof ParentAccountError) return reply.code(400).send({ error: 'invalid_genesis_proof' });
+      // 401 is reserved for a genuinely missing or invalid SESSION or step-up
+      // authorization, which ParentAccountService.completeGenesis reports as
+      // ParentAccountError('UNAUTHORIZED'). That is exactly what the client's
+      // SESSION_EXPIRED handling is for; collapsing it into the proof status
+      // below would hide a real re-authentication need.
+      if (error instanceof ParentAccountError) {
+        if (error.code === 'UNAUTHORIZED') return reply.code(401).send({ error: 'unauthorized' });
+        if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
+      }
+      // A REJECTED PROOF (GenesisChallengeError: NOT_FOUND / EXPIRED /
+      // ALREADY_CONSUMED / INVALID_SIGNATURE, thrown by GenesisChallengeService
+      // and ParentGenesisService) is a 400 about the proof, with ONE body for
+      // all four codes: the challenge is session-bound, but the endpoint must
+      // not hand the caller a NOT_FOUND/CONSUMED oracle for free.
+      // Answering it with 401 was the defect: it made the client report an
+      // expired session -- false, and it sent the parent to sign in again for a
+      // problem that signing in cannot fix.
+      if (error instanceof GenesisChallengeError) return reply.code(400).send({ error: 'invalid_genesis_proof' });
       // Anything else is a server-side fault. Rethrow and let the shared error
       // boundary answer, rather than inventing a client-facing classification
       // here that would misattribute an infrastructure failure.

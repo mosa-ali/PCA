@@ -573,11 +573,22 @@ async function start(): Promise<void> {
   // PCA-DEC-020-R1: the first-family ceremony is a single explicit source
   // boundary. The active production verifier remains rejecting until the
   // external human cryptographic review authorizes a real verifier.
+  //
+  // ONE verifier instance feeds both consumers (challenge-proof verification
+  // and anchor/attestation verification) AND the availability flag below, so
+  // the flag cannot drift from the composition it describes: the day a real
+  // verifier replaces this instance, `genesisCryptographyAvailable` becomes
+  // true in the same change, and until then /genesis/step-up,
+  // /genesis/step-up/complete, /genesis/challenge and /genesis/complete all
+  // answer 503 genesis_unavailable BEFORE any ceremony work, instead of
+  // surfacing a rejected proof as a session or proof error it is not.
+  const parentGenesisSignatureVerifier = new RejectingDeviceSignatureVerifier();
   const parentGenesisService = new ParentGenesisService(
-    new GenesisChallengeService(new MySqlGenesisChallengeRepository(), new RejectingDeviceSignatureVerifier()),
+    new GenesisChallengeService(new MySqlGenesisChallengeRepository(), parentGenesisSignatureVerifier),
     new MySqlGenesisTransactionRepository(),
-    new RejectingDeviceSignatureVerifier(),
+    parentGenesisSignatureVerifier,
   );
+  const genesisCryptographyAvailable = !(parentGenesisSignatureVerifier instanceof RejectingDeviceSignatureVerifier);
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
@@ -970,6 +981,9 @@ async function start(): Promise<void> {
     familyAuthorityRequestChallengeService,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
     parentAccountService,
+    // Derived from the verifier INSTANCE above, never a second constant that
+    // can drift -- see parentGenesisSignatureVerifier's own comment.
+    genesisCryptographyAvailable,
     parentPreferenceRepository,
     safeZoneRepository,
     safeZonePolicyAuthorizer,

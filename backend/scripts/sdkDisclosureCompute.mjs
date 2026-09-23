@@ -13,6 +13,7 @@ const DEV_ONLY_HINT_PATTERNS = [/^@types\//, /^eslint/, /^typescript$/, /^vite/,
 function classifyNpmPackage(name) {
   if (name === 'fastify') return 'HTTP server framework';
   if (name === 'mysql2') return 'database driver';
+  if (name === 'qrcode.react') return 'QR code rendering';
   if (name.startsWith('react')) return 'UI framework';
   if (name.startsWith('i18next')) return 'internationalization';
   return 'uncategorized';

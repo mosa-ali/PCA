@@ -230,6 +230,15 @@ export interface ServerDependencies {
   familyAuthorityRequestChallengeService?: import('../familycommercial/authority/FamilyAuthorityRequestChallengeService.js').FamilyAuthorityRequestChallengeService;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
   parentAccountService: ParentAccountService;
+  /**
+   * PCA-DEC-020-R1: whether the composed genesis verifier can actually verify
+   * a ceremony. Derived in main.ts from the verifier INSTANCE itself (never a
+   * second constant that can drift) and passed to registerParentAccountRoutes
+   * so the genesis routes fail closed with 503 genesis_unavailable BEFORE any
+   * ceremony work. `undefined` means AVAILABLE: a composer that has not
+   * declared the capability must not be silently told genesis is impossible.
+   */
+  genesisCryptographyAvailable?: boolean;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
@@ -597,6 +606,10 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,
+    // Passed through so the genesis routes fail closed with 503
+    // genesis_unavailable in a composition whose verifier cannot verify --
+    // see ServerDependencies.genesisCryptographyAvailable.
+    genesisCryptographyAvailable: deps.genesisCryptographyAvailable,
     parentPreferenceRepository: deps.parentPreferenceRepository,
     safeZoneRepository: deps.safeZoneRepository,
     safeZonePolicyAuthorizer: deps.safeZonePolicyAuthorizer,
