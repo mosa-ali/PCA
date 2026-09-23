@@ -256,6 +256,60 @@ Microsoft Graph variant: `PCA_GRAPH_TENANT_ID`, `PCA_GRAPH_CLIENT_ID`,
 not prefixed `PCA_` — a staging environment assembled from a `PCA_*` checklist alone
 will be missing it), `PCA_TRUSTED_PROXY_CIDRS`.
 
+### Rotating `PLATFORM_ADMIN_MFA_ENC_KEY` (read before rotating)
+
+This key seals every Platform Admin TOTP secret. It is a **bounded key ring**, not
+a single key: decryption accepts the active key plus up to two explicitly named,
+decrypt-only previous generations:
+
+| Variable | Role |
+| --- | --- |
+| `PLATFORM_ADMIN_MFA_ENC_KEY` | **Active.** Seals all new material. Required. |
+| `PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1` | Optional. Decrypt-only. The outgoing key. |
+| `PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_2` | Optional. Decrypt-only. The generation before that. |
+
+A legacy slot that is **absent or blank** is skipped. A legacy slot that is
+**present but malformed** is a hard configuration failure — deliberately, because
+silently ignoring a mistyped rotation key is indistinguishable from having no
+legacy key at all, and fails straight into the lockout the ring exists to prevent.
+There is **no enumeration** of Key Vault versions or history: only these two named
+slots are ever consulted, so no version an attacker could create becomes trusted.
+
+**The rotation sequence. Clearing the old key is a separate, later, deliberate act.**
+
+1. Set `PLATFORM_ADMIN_MFA_ENC_KEY` to the **new** key `K2`.
+2. Set `PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1` to the **outgoing** key `K1`
+   **in the same change**. Deploy them together.
+3. Run the drain audit (read-only, writes nothing):
+   `node backend/scripts/reseal-platform-admin-mfa-secrets.mjs`
+4. Apply the reseal to migrate every remaining row onto `K2`:
+   `node backend/scripts/reseal-platform-admin-mfa-secrets.mjs --apply`
+   (idempotent; safe to re-run)
+5. Repeat (4) until the audit reports `legacy: 0` and `undecryptable: 0`. **Only
+   then** is `K1` safe to clear.
+
+The drain audit is required because read repair is **decrypt-driven**: a row is
+resealed only when something decrypts it, so a dormant admin who never logs in
+keeps their secret sealed under `K1` with nothing to indicate it. Without step (3)
+the audit, clearing `K1` is a blind act.
+
+**Never do this:**
+- Rotate the active key to `K2`, deploy, and only later remember `K1`. Once `K1`
+  is gone while `K1`-encrypted rows remain, **no software can recover them** — the
+  operator is locked out of the admin plane with no authenticated path back in.
+- Clear `PREVIOUS_1` in the same change that rotates the active key.
+- Rotate twice before draining. With two slots this works, but an admin idle
+  across both rotations falls off the ring.
+
+**Exit codes of the drain audit** (it is designed to be used as a gate):
+`0` nothing depends on a previous key — retirement is safe;
+`3` at least one row is still sealed under a previous key — **do not** clear it;
+`2` at least one row could not be decrypted with any permitted key — data is
+already unreachable; configure the correct key before anything else.
+Output is counts and key-generation names only: never an admin id, ciphertext,
+nonce, plaintext secret, or key material, so it is safe to paste into an incident
+channel.
+
 **Defaults / product configuration**
 `PCA_DEFAULT_PARENT_MEMBER_LIMIT`, `PCA_DEFAULT_MANAGED_DEVICE_LIMIT`,
 `PCA_FREE_ACCESS_MODE`, `PCA_FREE_ACCESS_DURATION_DAYS`.
