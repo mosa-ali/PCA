@@ -11,7 +11,9 @@ import { TOTP_CLOCK_SKEW_STEPS, TOTP_DIGITS, TOTP_STEP_SECONDS } from './policy.
  *   - TOTP: RFC 6238 over HMAC-SHA1 (node:crypto's createHmac), 30-second
  *     step, 6 digits, accepting the current step ±1 for clock skew.
  *   - At-rest secret encryption: AES-256-GCM (node:crypto's
- *     createCipheriv/createDecipheriv), keyed by PLATFORM_ADMIN_MFA_ENC_KEY.
+ *     createCipheriv/createDecipheriv), keyed by a bounded KEYRING whose active
+ *     key is PLATFORM_ADMIN_MFA_ENC_KEY (see the keyring section below for why
+ *     decryption also accepts explicitly named, decrypt-only previous keys).
  *
  * FAIL-CLOSED CONTRACT (binding): loadMfaEncryptionKey throws SYNCHRONOUSLY
  * if PLATFORM_ADMIN_MFA_ENC_KEY is missing or is not exactly a 64-character
@@ -22,6 +24,10 @@ import { TOTP_CLOCK_SKEW_STEPS, TOTP_DIGITS, TOTP_STEP_SECONDS } from './policy.
  * malformed. This is a deliberate, permanent fail-closed boundary: there
  * is no code path in this module that stores or verifies a TOTP secret
  * without a valid encryption key present.
+ *
+ * The keyring preserves that boundary rather than relaxing it: the ACTIVE key
+ * is still mandatory and still validated identically, and a legacy key that is
+ * present but malformed is a hard error. See loadMfaEncryptionKeyring.
  */
 
 const MFA_ENC_KEY_ENV_VAR = 'PLATFORM_ADMIN_MFA_ENC_KEY';
@@ -64,6 +70,115 @@ export function decryptTotpSecret(ciphertext: Buffer, nonce: Buffer, key: Buffer
   const decipher = createDecipheriv('aes-256-gcm', key, nonce);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+}
+
+// ---- Bounded MFA encryption keyring (rotation without losing enrollments) --
+//
+// WHY THIS EXISTS
+// ---------------
+// `loadMfaEncryptionKey` reads exactly ONE key. That is correct for ENCRYPTION
+// and catastrophic for DECRYPTION across a rotation: the moment the operator
+// sets a new PLATFORM_ADMIN_MFA_ENC_KEY, every TOTP secret already sealed under
+// the previous key becomes undecryptable, so any admin mid-enrollment fails
+// `complete()`, and any already-enrolled admin is locked out of MFA. Recovery
+// then requires DESTROYING the pending material and reissuing activation -- a
+// manual, privileged, one-admin-at-a-time operation.
+//
+// The keyring makes rotation a non-event: `active` seals new material, and an
+// explicitly named, bounded set of previous keys may DECRYPT ONLY. A successful
+// legacy decrypt is reported so the caller can read-repair (re-seal under the
+// active key), which retires the legacy key one row at a time.
+//
+// BOUNDED by construction. The legacy slots are two NAMED environment
+// variables, not a lookup: there is deliberately no enumeration of Key Vault
+// secret versions or history, because that would turn a rotation bug into an
+// unbounded credential-discovery surface, and would let a stale or attacker
+// planted version silently become a valid decryption key. Two slots is the
+// whole rotation window (rotate once, and once more before the first drains).
+//
+// FAIL-CLOSED, with the same strictness as the active key. An ABSENT legacy
+// variable is simply skipped. A legacy variable that is PRESENT but malformed
+// throws: silently ignoring a mistyped rotation key would look exactly like
+// having no legacy key at all, and would fail open into the very lockout this
+// exists to prevent.
+export const MFA_LEGACY_ENC_KEY_ENV_VARS = [
+  'PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1',
+  'PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_2',
+] as const;
+
+export type MfaDecryptionKeySource = 'ACTIVE' | 'PREVIOUS_1' | 'PREVIOUS_2';
+
+export interface MfaEncryptionKeyring {
+  active: Buffer;
+  /** Bounded, ordered decrypt-only keys. Empty when no rotation is pending. */
+  legacy: ReadonlyArray<{ source: MfaDecryptionKeySource; key: Buffer }>;
+}
+
+export interface MfaDecryptionResult {
+  secret: Buffer;
+  keySource: MfaDecryptionKeySource;
+  /**
+   * True when the secret was sealed under a LEGACY key. Callers that own a
+   * writable row should re-seal with `keyring.active` and persist, which is
+   * what drains the legacy key. Callers that cannot write may safely ignore
+   * this, but must not treat it as an error.
+   */
+  requiresReadRepair: boolean;
+}
+
+export function loadMfaEncryptionKeyring(env: NodeJS.ProcessEnv = process.env): MfaEncryptionKeyring {
+  const active = loadMfaEncryptionKey(env);
+  const legacy: Array<{ source: MfaDecryptionKeySource; key: Buffer }> = [];
+  MFA_LEGACY_ENC_KEY_ENV_VARS.forEach((name, index) => {
+    const hex = env[name];
+    // Absent or blank means "no such generation" -- a clean skip, so an
+    // operator with nothing to rotate is not forced to set anything.
+    if (hex === undefined || hex.trim() === '') return;
+    if (!/^[0-9a-f]{64}$/i.test(hex) || hex.length !== MFA_ENC_KEY_HEX_LENGTH) {
+      // Names the VARIABLE, never the value.
+      throw new Error(
+        `${name} is set but is not a ${MFA_ENC_KEY_HEX_LENGTH}-character hex string (32 raw bytes). Refusing to perform any MFA operation (fail-closed).`,
+      );
+    }
+    const source: MfaDecryptionKeySource = index === 0 ? 'PREVIOUS_1' : 'PREVIOUS_2';
+    legacy.push({ source, key: Buffer.from(hex, 'hex') });
+  });
+  return { active, legacy };
+}
+
+/**
+ * Decrypts a sealed TOTP secret by trying the ACTIVE key first, then the
+ * bounded legacy keys in order. Throws if no permitted key authenticates the
+ * ciphertext (GCM's auth tag is the check, so a wrong key cannot silently
+ * yield garbage plaintext).
+ *
+ * The error message carries no key material and no plaintext.
+ */
+export function decryptTotpSecretWithKeyring(
+  ciphertext: Buffer,
+  nonce: Buffer,
+  keyring: MfaEncryptionKeyring,
+): MfaDecryptionResult {
+  // Malformed input is a data-shape error, not a key-selection problem, so it
+  // is rejected before any key is tried rather than surfacing as "no key works".
+  if (ciphertext.length < GCM_AUTH_TAG_BYTES) throw new Error('Malformed TOTP ciphertext.');
+
+  try {
+    return { secret: decryptTotpSecret(ciphertext, nonce, keyring.active), keySource: 'ACTIVE', requiresReadRepair: false };
+  } catch {
+    // Fall through to the legacy keys. The failure is deliberately swallowed:
+    // it is the EXPECTED outcome during a rotation window.
+  }
+
+  for (const { source, key } of keyring.legacy) {
+    try {
+      return { secret: decryptTotpSecret(ciphertext, nonce, key), keySource: source, requiresReadRepair: true };
+    } catch {
+      // Try the next generation.
+    }
+  }
+
+  throw new Error('TOTP secret could not be decrypted with any permitted MFA encryption key.');
 }
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

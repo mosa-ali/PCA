@@ -7,9 +7,11 @@ import {
   buildOtpauthUri,
   computeTotp,
   decryptTotpSecret,
+  decryptTotpSecretWithKeyring,
   encryptTotpSecret,
   generateTotpSecret,
   loadMfaEncryptionKey,
+  loadMfaEncryptionKeyring,
   verifyTotp,
 } from '../../dist/platformadmin/auth/totp.js';
 
@@ -96,4 +98,136 @@ test('buildOtpauthUri embeds issuer/algorithm/digits/period and never the raw se
   assert.match(uri, /algorithm=SHA1/);
   assert.match(uri, /digits=6/);
   assert.match(uri, /period=30/);
+});
+
+// ---- Bounded MFA encryption keyring (rotation) --------------------------
+//
+// The defect these cover: before the keyring, decryption accepted exactly ONE
+// key, so rotating PLATFORM_ADMIN_MFA_ENC_KEY made every already-sealed secret
+// undecryptable. That stranded admins mid-enrollment and locked enrolled admins
+// out of MFA, with no recovery short of destroying the pending material and
+// reissuing activation. Each test below pins one property of the fix; none of
+// them weaken the fail-closed contract, which the earlier tests still enforce.
+
+const ACTIVE_HEX = 'ab'.repeat(32);
+const PREVIOUS_1_HEX = 'cd'.repeat(32);
+const PREVIOUS_2_HEX = 'ef'.repeat(32);
+
+/** Seals a fresh secret under an arbitrary generation's key. */
+function sealedUnder(hex) {
+  const secret = generateTotpSecret();
+  const { ciphertext, nonce } = encryptTotpSecret(secret, Buffer.from(hex, 'hex'));
+  return { secret, ciphertext, nonce };
+}
+
+test('keyring decrypts an ACTIVE-sealed secret with the active key and needs no repair', () => {
+  const { secret, ciphertext, nonce } = sealedUnder(ACTIVE_HEX);
+  const keyring = loadMfaEncryptionKeyring({ PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX });
+  const result = decryptTotpSecretWithKeyring(ciphertext, nonce, keyring);
+  assert.deepEqual(result.secret, secret);
+  assert.equal(result.keySource, 'ACTIVE');
+  assert.equal(result.requiresReadRepair, false);
+});
+
+test('keyring decrypts a legacy-sealed secret via the bounded previous key and flags read repair', () => {
+  const { secret, ciphertext, nonce } = sealedUnder(PREVIOUS_1_HEX);
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX,
+  });
+  const result = decryptTotpSecretWithKeyring(ciphertext, nonce, keyring);
+  assert.deepEqual(result.secret, secret);
+  assert.equal(result.keySource, 'PREVIOUS_1');
+  assert.equal(result.requiresReadRepair, true);
+});
+
+test('keyring tries the ACTIVE key first, so a current secret is never misattributed to a legacy key', () => {
+  const { ciphertext, nonce } = sealedUnder(ACTIVE_HEX);
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_2: PREVIOUS_2_HEX,
+  });
+  assert.equal(decryptTotpSecretWithKeyring(ciphertext, nonce, keyring).keySource, 'ACTIVE');
+});
+
+test('keyring reaches the SECOND previous key only after the first fails (declared order)', () => {
+  const { secret, ciphertext, nonce } = sealedUnder(PREVIOUS_2_HEX);
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_2: PREVIOUS_2_HEX,
+  });
+  const result = decryptTotpSecretWithKeyring(ciphertext, nonce, keyring);
+  assert.deepEqual(result.secret, secret);
+  assert.equal(result.keySource, 'PREVIOUS_2');
+  assert.equal(result.requiresReadRepair, true);
+});
+
+test('keyring treats absent or blank legacy slots as a clean skip, not an error', () => {
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: '',
+  });
+  assert.equal(keyring.legacy.length, 0);
+});
+
+test('a legacy slot PRESENT but malformed fails closed rather than being silently ignored', () => {
+  assert.throws(
+    () =>
+      loadMfaEncryptionKeyring({
+        PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+        PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: 'not-hex',
+      }),
+    /PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1/,
+  );
+});
+
+test('the ACTIVE key stays mandatory even when legacy keys are configured', () => {
+  assert.throws(() => loadMfaEncryptionKeyring({ PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX }));
+});
+
+test('keyring is BOUNDED: a differently named previous key is never consulted', () => {
+  const { ciphertext, nonce } = sealedUnder(PREVIOUS_1_HEX);
+  // PREVIOUS_3 is not a recognised slot. Boundedness is the security property
+  // here: an enumerating implementation would also accept any Key Vault version
+  // an attacker could create.
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_3: PREVIOUS_1_HEX,
+  });
+  assert.equal(keyring.legacy.length, 0);
+  assert.throws(() => decryptTotpSecretWithKeyring(ciphertext, nonce, keyring), /could not be decrypted/);
+});
+
+test('no permitted key decrypting fails closed, and the error leaks no key material', () => {
+  const unknownHex = '11'.repeat(32);
+  const { ciphertext, nonce } = sealedUnder(unknownHex);
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX,
+  });
+  assert.throws(
+    () => decryptTotpSecretWithKeyring(ciphertext, nonce, keyring),
+    (err) =>
+      !String(err.message).includes(ACTIVE_HEX) &&
+      !String(err.message).includes(PREVIOUS_1_HEX) &&
+      !String(err.message).includes(unknownHex),
+  );
+});
+
+test('a tampered ciphertext is rejected even when a legacy key owns that generation', () => {
+  const { ciphertext, nonce } = sealedUnder(PREVIOUS_1_HEX);
+  const tampered = Buffer.from(ciphertext);
+  tampered[0] ^= 0xff;
+  const keyring = loadMfaEncryptionKeyring({
+    PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX,
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: PREVIOUS_1_HEX,
+  });
+  assert.throws(() => decryptTotpSecretWithKeyring(tampered, nonce, keyring));
+});
+
+test('a malformed ciphertext is a data-shape error, rejected before any key is tried', () => {
+  const keyring = loadMfaEncryptionKeyring({ PLATFORM_ADMIN_MFA_ENC_KEY: ACTIVE_HEX });
+  assert.throws(() => decryptTotpSecretWithKeyring(Buffer.alloc(8), Buffer.alloc(16), keyring), /Malformed TOTP ciphertext/);
 });

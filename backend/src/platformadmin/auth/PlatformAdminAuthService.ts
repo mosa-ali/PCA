@@ -7,7 +7,7 @@ import {
 import { computeExpiry, isLockedOut, PLATFORM_ADMIN_LOGIN_ATTEMPT_LOOKBACK_LIMIT, PLATFORM_ADMIN_SESSION_TTL_MS, PLATFORM_ADMIN_STEP_UP_TTL_MS } from './policy.js';
 import { DUMMY_PASSWORD_CREDENTIAL, verifyPassword } from './passwordCredential.js';
 import { hashAdminEmail } from './emailHash.js';
-import { decryptTotpSecret, loadMfaEncryptionKey, verifyTotp } from './totp.js';
+import { decryptTotpSecretWithKeyring, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
 import type { PlatformAdminAlertPort } from './alertPort.js';
 import type {
@@ -139,8 +139,13 @@ export class PlatformAdminAuthService {
       throw new PlatformAdminAuthError();
     }
 
-    const key = loadMfaEncryptionKey();
-    const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
+    // Rotation-tolerant: an already-enrolled admin must not be locked out of
+    // MFA because the operator rotated the encryption key.
+    const { secret } = decryptTotpSecretWithKeyring(
+      mfaState.totpSecretCiphertext,
+      mfaState.totpSecretNonce,
+      loadMfaEncryptionKeyring(),
+    );
     const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     if (matchedCounter === null) {
       await this.recordFailureAndMaybeAlert(emailHash, 'FAILED_MFA', now, correlationId, account.adminId);
@@ -392,8 +397,11 @@ export class PlatformAdminAuthService {
     const mfaState = await this.repository.getMfaState(adminId);
     let matchedCounter: number | null = null;
     if (mfaState && mfaState.status === 'ACTIVE' && mfaState.totpSecretCiphertext && mfaState.totpSecretNonce) {
-      const key = loadMfaEncryptionKey();
-      const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
+      const { secret } = decryptTotpSecretWithKeyring(
+        mfaState.totpSecretCiphertext,
+        mfaState.totpSecretNonce,
+        loadMfaEncryptionKeyring(),
+      );
       matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     }
     // TOTP-REPLAY-1: claiming is the LAST gate, right before the granted

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDuplicateEntry } from '../../db/pool.js';
 import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
-import { base32Encode, buildOtpauthUri, decryptTotpSecret, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, verifyTotp } from './totp.js';
+import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
 import type { PlatformAdminAccountRecord, PlatformAdminId, PlatformAdminRole } from './types.js';
 import type { PlatformAdminAuditEvent } from '../audit/types.js';
@@ -179,8 +179,14 @@ export class PlatformAdminAccountService {
       throw new PlatformAdminAccountError();
     }
 
-    const key = loadMfaEncryptionKey();
-    const secret = decryptTotpSecret(mfaState.totpSecretCiphertext, mfaState.totpSecretNonce, key);
+    // Rotation-tolerant: this enrollment may have been sealed under a bounded
+    // legacy key if the operator rotated PLATFORM_ADMIN_MFA_ENC_KEY after it
+    // began. Decryption must not fail merely because the key moved.
+    const { secret } = decryptTotpSecretWithKeyring(
+      mfaState.totpSecretCiphertext,
+      mfaState.totpSecretNonce,
+      loadMfaEncryptionKeyring(),
+    );
     const now = this.now();
     const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     if (matchedCounter === null) throw new PlatformAdminAccountError();

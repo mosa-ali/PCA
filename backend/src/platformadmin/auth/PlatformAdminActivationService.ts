@@ -3,7 +3,7 @@ import type { EmailSenderPort } from '../../parentaccount/EmailSenderPort.js';
 import { hashAdminEmail } from './emailHash.js';
 import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
-import { base32Encode, buildOtpauthUri, decryptTotpSecret, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, verifyTotp } from './totp.js';
+import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
 import type { PlatformAdminActivationRepository } from './PlatformAdminActivationRepository.js';
 import type { PlatformAdminId, PlatformAdminRole } from './types.js';
@@ -77,7 +77,14 @@ export class PlatformAdminActivationService {
     const tokenHash = hashActivationToken(rawToken);
     const current = await this.activationRepository.findUsable(tokenHash, now);
     if (!current || current.account.status !== 'ACTIVE' || current.mfa.status !== 'PENDING_SETUP' || !current.mfa.totpSecretCiphertext || !current.mfa.totpSecretNonce) throw new PlatformAdminActivationError();
-    const secret = decryptTotpSecret(current.mfa.totpSecretCiphertext, current.mfa.totpSecretNonce, loadMfaEncryptionKey(this.env));
+    // Rotation-tolerant decryption. Before the keyring, a rotation between
+    // `start` and `complete` made this call throw, and the only recovery was
+    // destroying the pending material and reissuing the activation link.
+    const { secret } = decryptTotpSecretWithKeyring(
+      current.mfa.totpSecretCiphertext,
+      current.mfa.totpSecretNonce,
+      loadMfaEncryptionKeyring(this.env),
+    );
     const counter = verifyTotp(secret, totpCode, now.getTime());
     if (counter === null) throw new PlatformAdminActivationError();
     const credential = await hashPassword(password);
