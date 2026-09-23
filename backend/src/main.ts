@@ -40,6 +40,10 @@ import {
   RejectingEnvelopeSignatureVerifier,
   rejectingResolveEnvelopeContext,
 } from './runtime-sync/index.js';
+// Type-only: the genesis verifier is deliberately held as the INTERFACE so the
+// composition-truth test below (`instanceof RejectingDeviceSignatureVerifier`)
+// stays meaningful when an accepting verifier replaces the stub.
+import type { DeviceSignatureVerifier } from './deviceauth/DeviceSignatureVerifier.js';
 import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotencyLedger.js';
@@ -590,7 +594,11 @@ async function start(): Promise<void> {
   // /genesis/step-up/complete, /genesis/challenge and /genesis/complete all
   // answer 503 genesis_unavailable BEFORE any ceremony work, instead of
   // surfacing a rejected proof as a session or proof error it is not.
-  const parentGenesisSignatureVerifier = new RejectingDeviceSignatureVerifier();
+  //
+  // Typed as the INTERFACE on purpose: the `instanceof` check below is the
+  // composition-truth test, and a future accepting verifier drops in here
+  // without any second constant to update.
+  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = new RejectingDeviceSignatureVerifier();
   const parentGenesisService = new ParentGenesisService(
     new GenesisChallengeService(new MySqlGenesisChallengeRepository(), parentGenesisSignatureVerifier),
     new MySqlGenesisTransactionRepository(),

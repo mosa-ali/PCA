@@ -17,10 +17,11 @@ test('R2 production composition keeps the legacy bootstrap path out of productio
 
 test('F-A/F2: main.ts derives genesisCryptographyAvailable from the ONE verifier instance the ceremony composes', async () => {
   const main = await readFile(path.join(backendRoot, 'src/main.ts'), 'utf8');
-  // The verifier is named and is the SAME instance for both consumers: the
-  // challenge service (proof verification) and ParentGenesisService
-  // (anchor/attestation verification).
-  assert.match(main, /const parentGenesisSignatureVerifier = new RejectingDeviceSignatureVerifier\(\);/);
+  // The verifier is named (typed as the INTERFACE, so replacing the stub with a
+  // real verifier needs no second constant) and is the SAME instance for both
+  // consumers: the challenge service (proof verification) and
+  // ParentGenesisService (anchor/attestation verification).
+  assert.match(main, /const parentGenesisSignatureVerifier: DeviceSignatureVerifier = new RejectingDeviceSignatureVerifier\(\);/);
   assert.match(main, /new GenesisChallengeService\(new MySqlGenesisChallengeRepository\(\), parentGenesisSignatureVerifier\)/);
   // The availability flag is DERIVED from that instance -- never a second
   // constant that can drift from the composition it describes.

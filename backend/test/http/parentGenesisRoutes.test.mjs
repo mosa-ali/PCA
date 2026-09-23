@@ -1,5 +1,9 @@
-// F-A (Fix A completion) -- hostile HTTP-level tests for the genesis failure
-// contract in parentAccountRoutes.ts.
+// F-A-min (Claude CLAUDE_20260924T0540_LEAD_release_scope_ruling, Item 1 B8) --
+// hostile HTTP-level tests for the genesis failure contract in
+// parentAccountRoutes.ts, driven through the REAL buildServer() composition
+// (so the shared 500 boundary is the same one production uses) with a stub
+// parentAccountService that throws exactly the domain errors the real services
+// throw.
 //
 // The defect these tests pin down: the production composition wires a
 // REJECTING genesis verifier (see main.ts), so ParentGenesisService.complete
@@ -406,6 +410,86 @@ test('flag false: a dead session still gets 401 BEFORE the capability check -- s
   try {
     const response = await app.inject({ method: 'POST', url: '/api/parent/genesis/complete', payload: VALID_COMPLETION_BODY });
     assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Transport gates on ALL FOUR genesis routes: 401 before body, 403 on CSRF
+// ---------------------------------------------------------------------------
+
+const ALL_GENESIS_ROUTES = [
+  { url: '/api/parent/genesis/step-up', payload: { email: 'parent@example.test', password: 'a genuinely long password' } },
+  { url: '/api/parent/genesis/step-up/complete', payload: { code: '123456' } },
+  { url: '/api/parent/genesis/challenge', payload: { publicKey: 'stub-public-key', platform: 'BROWSER' } },
+  { url: '/api/parent/genesis/complete', payload: VALID_COMPLETION_BODY },
+];
+
+for (const route of ALL_GENESIS_ROUTES) {
+  test(`${route.url}: no session cookie -> 401 before any service call`, async () => {
+    const service = makeStubService();
+    const app = buildApp({ service });
+    try {
+      const response = await app.inject({ method: 'POST', url: route.url, payload: route.payload });
+      assert.equal(response.statusCode, 401);
+      assert.deepEqual(response.json(), { error: 'unauthorized' });
+      assert.equal(service.calls.length, 0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test(`${route.url}: mismatched CSRF cookie/header -> 403 before any service call`, async () => {
+    const service = makeStubService();
+    const app = buildApp({ service });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: { cookie: `${SESSION_COOKIE}; ${CSRF_COOKIE}`, 'x-pca-csrf-token': 'wrong-value' },
+        payload: route.payload,
+      });
+      assert.equal(response.statusCode, 403);
+      assert.deepEqual(response.json(), { error: 'csrf_mismatch' });
+      assert.equal(service.calls.length, 0);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/parent/session carries the ADDITIVE genesisAvailable signal (B7)
+// ---------------------------------------------------------------------------
+
+test('B7: GET /api/parent/session carries genesisAvailable=false when the composed verifier cannot complete a ceremony', async () => {
+  const service = makeStubService({
+    readSession: async () => ({ accountId: 'acc-1', familyId: null, emailVerified: true, role: null }),
+  });
+  const app = buildApp({ service, genesisCryptographyAvailable: false });
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: SESSION_COOKIE } });
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.genesisAvailable, false);
+    // The rest of the session contract is unchanged.
+    assert.equal(body.accountId, 'acc-1');
+    assert.equal(body.familyId, null);
+  } finally {
+    await app.close();
+  }
+});
+
+test('B7: GET /api/parent/session carries genesisAvailable=true when the flag is undefined (available by default)', async () => {
+  const service = makeStubService({
+    readSession: async () => ({ accountId: 'acc-2', familyId: 'fam-2', emailVerified: true, role: 'ADMINISTRATOR' }),
+  });
+  const app = buildApp({ service });
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/parent/session', headers: { cookie: SESSION_COOKIE } });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().genesisAvailable, true);
   } finally {
     await app.close();
   }

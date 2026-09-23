@@ -193,6 +193,23 @@ function csrfOk(request: FastifyRequest): boolean {
   return cookieToken === headerToken;
 }
 
+/**
+ * F-A-min: ONE fail-closed gate for the whole genesis surface. A deployment
+ * whose composed verifier cannot verify a ceremony must say so BEFORE the
+ * parent is asked for a password, before any one-time code is burned, and
+ * before any ceremony state is written -- rather than accepting work it is
+ * structurally unable to complete. `undefined` means AVAILABLE: a composer
+ * that has not declared the capability must not be silently told genesis is
+ * impossible.
+ */
+function refuseIfGenesisUnavailable(deps: ParentAccountRoutesDeps, reply: FastifyReply): boolean {
+  if (deps.genesisCryptographyAvailable === false) {
+    reply.code(503).send({ error: 'genesis_unavailable' });
+    return true;
+  }
+  return false;
+}
+
 export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAccountRoutesDeps): void {
   const { parentAccountService } = deps;
   const rateLimiter = createKeyedRateLimiter();
@@ -392,7 +409,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     // rate limiter and before any service call: a deployment that cannot
     // complete a ceremony must not ask the parent for their password and a
     // one-time code, burn the code, and only then report the impossibility.
-    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
+    if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const { email, password } = request.body as Record<string, unknown>;
     if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
@@ -414,7 +431,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
     // Same fail-closed gate as the other genesis routes, checked BEFORE the
     // rate limiter and before any service call -- see /genesis/step-up above.
-    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
+    if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!isPlainObject(request.body) || typeof (request.body as Record<string, unknown>).code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
     if (!rateLimiter.consume('genesis-step-up-complete:ip', request.ip, GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
       return reply.code(429).send({ error: 'rate_limited' });
@@ -436,7 +453,14 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     }
     try {
       const result = await parentAccountService.readSession(token);
-      await reply.code(200).send(result);
+      // F-A-min: ADDITIVE onboarding-availability signal. A production parent
+      // whose deployment cannot complete a genesis ceremony learns it HERE, on
+      // load, and the onboarding page renders the unavailable state
+      // immediately -- instead of being asked for a password and a one-time
+      // code that cannot lead anywhere. Additive field: every existing
+      // consumer ignores it, and `undefined` (a composer that has not declared
+      // the capability) has always meant AVAILABLE.
+      await reply.code(200).send({ ...result, genesisAvailable: deps.genesisCryptographyAvailable !== false });
     } catch {
       await reply.code(401).send({ error: 'unauthorized' });
     }
@@ -446,7 +470,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
-    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
+    if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!deps.parentAccountService || !isPlainObject(request.body)) return reply.code(503).send({ error: 'not_configured' });
     const body = request.body as Record<string, unknown>;
     if (typeof body.publicKey !== 'string' || !isGenesisPlatform(body.platform)) return reply.code(400).send({ error: 'invalid_request' });
@@ -475,12 +499,10 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
         if (error.code === 'UNAUTHORIZED') return reply.code(401).send({ error: 'unauthorized' });
         if (error.code === 'INVALID_INPUT') return reply.code(400).send({ error: 'invalid_request' });
       }
-      // GenesisChallengeService.begin validates the P-256 point strictly and
-      // reports a client-supplied key that is not a valid point as
-      // INVALID_PUBLIC_KEY. The route's shape check only sees a string, so
-      // this class reaches the catch for any malformed key: a 400 about the
-      // request, not a server fault.
-      if (error instanceof GenesisChallengeError && error.code === 'INVALID_PUBLIC_KEY') {
+      // A genesis-proof error from the challenge boundary is a 400 about the
+      // REQUEST (e.g. INVALID_PUBLIC_KEY for a key that is not a valid P-256
+      // point); the route's shape check only sees a string. Never a 500.
+      if (error instanceof GenesisChallengeError) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       throw error;
@@ -494,7 +516,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     // Checked BEFORE the body is parsed or any work is done: a deployment that
     // cannot complete a ceremony should say so immediately rather than accepting
     // a proof it is structurally unable to verify.
-    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
+    if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body as Record<string, unknown>;
     const issuedAt = typeof body.issuedAt === 'string' ? new Date(body.issuedAt) : null;
