@@ -1274,6 +1274,7 @@
     "genesisStillPending": "Your account was set up, but this browser has not picked up the new session yet. Reload this page to continue.",
     "genesisSignOut": "Sign out",
     "genesisUnavailable": "Account setup is not available right now. Please try again shortly.",
+    "genesisRejected": "Setup could not be completed. Please start again.",
     "forgotPasswordLink": "Forgot password?",
     "forgotPasswordTitle": "Reset your password",
     "forgotPasswordBody": "Enter your account email and we'll send you a one-time code to reset your password, if an account exists for that address.",

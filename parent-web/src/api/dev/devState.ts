@@ -89,6 +89,7 @@ export function buildDevSession(): AuthenticatedSession {
       memberId: null,
       role: null,
       serviceAuthenticated: true,
+      genesisAvailable: true,
     };
   }
   return {

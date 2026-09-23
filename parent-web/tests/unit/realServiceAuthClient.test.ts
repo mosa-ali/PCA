@@ -56,7 +56,18 @@ describe('RealServiceAuthClient', () => {
     // exactly the shape this programme exists to remove.
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null }));
     const session = await client.getSession();
-    expect(session).toEqual({ state: 'GENESIS_REQUIRED', accountId: 'acc-1', displayName: 'acc-1', familyId: null, memberId: null, role: null, serviceAuthenticated: true });
+    // genesisAvailable defaults to true when the server predates the additive
+    // field (`!== false`, never truthiness) -- see the dedicated mapping tests.
+    expect(session).toEqual({
+      state: 'GENESIS_REQUIRED',
+      accountId: 'acc-1',
+      displayName: 'acc-1',
+      familyId: null,
+      memberId: null,
+      role: null,
+      serviceAuthenticated: true,
+      genesisAvailable: true,
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -199,11 +210,11 @@ describe('RealServiceAuthClient', () => {
   });
 
   // ---------------------------------------------------------------------
-  // GENESIS transports -- the honest failure contract (F-A).
+  // GENESIS transports -- the honest failure contract (F-A-min, W4).
   //
   // These construct REAL Response objects with the exact statuses the backend
-  // now returns, rather than mocking this client's own mapping: a test that
-  // mocks the mapper can pass while the mapper is wrong.
+  // returns, rather than mocking this client's own mapping: a test that mocks
+  // the mapper can pass while the mapper is wrong.
   // ---------------------------------------------------------------------
 
   const COMPLETION_INPUT = {
@@ -217,44 +228,101 @@ describe('RealServiceAuthClient', () => {
     expiresAt: '2026-01-01T01:00:00.000Z',
   };
 
-  it('completeGenesis maps 400 (rejected genesis proof) to GENESIS_REJECTED -- NEVER SESSION_EXPIRED', async () => {
+  const GENESIS_MATRIX = [
+    {
+      name: 'startGenesisStepUp',
+      call: () => client.startGenesisStepUp('parent@example.test', 'correct-horse-battery'),
+      cases: [
+        [400, 'INVALID_REQUEST'],
+        [401, 'INVALID_CREDENTIALS'],
+        [403, 'INVALID_REQUEST'],
+        [429, 'RATE_LIMITED'],
+        [500, 'UNKNOWN'],
+        [503, 'NOT_IMPLEMENTED'],
+      ],
+    },
+    {
+      name: 'completeGenesisStepUp',
+      call: () => client.completeGenesisStepUp('123456'),
+      cases: [
+        [400, 'INVALID_REQUEST'],
+        [401, 'INVALID_CREDENTIALS'],
+        [403, 'INVALID_REQUEST'],
+        [429, 'RATE_LIMITED'],
+        [500, 'UNKNOWN'],
+        [503, 'NOT_IMPLEMENTED'],
+      ],
+    },
+    {
+      name: 'requestGenesisChallenge',
+      call: () => client.requestGenesisChallenge('public-key', 'BROWSER'),
+      cases: [
+        [400, 'INVALID_REQUEST'],
+        [401, 'SESSION_EXPIRED'],
+        [403, 'INVALID_REQUEST'],
+        [429, 'RATE_LIMITED'],
+        [500, 'UNKNOWN'],
+        [503, 'NOT_IMPLEMENTED'],
+      ],
+    },
+    {
+      name: 'completeGenesis',
+      call: () => client.completeGenesis(COMPLETION_INPUT),
+      cases: [
+        [400, 'GENESIS_REJECTED'],
+        [401, 'SESSION_EXPIRED'],
+        [403, 'INVALID_REQUEST'],
+        [429, 'RATE_LIMITED'],
+        [500, 'UNKNOWN'],
+        [503, 'NOT_IMPLEMENTED'],
+      ],
+    },
+  ] as const;
+
+  for (const method of GENESIS_MATRIX) {
+    for (const [status, expectedCode] of method.cases) {
+      it(`${method.name} maps ${status} to ${expectedCode}`, async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse(status, { error: 'stub' }));
+        await expect(method.call()).rejects.toMatchObject({ code: expectedCode });
+      });
+    }
+
+    it(`${method.name} surfaces a transport failure as NETWORK_ERROR`, async () => {
+      fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      await expect(method.call()).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+    });
+  }
+
+  it('INVARIANT: completeGenesis maps a rejected genesis proof (400) to GENESIS_REJECTED -- NEVER SESSION_EXPIRED', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_genesis_proof' }));
     await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'GENESIS_REJECTED' });
   });
 
-  it('completeGenesis keeps 401 as SESSION_EXPIRED -- that status is reserved for a genuinely missing/invalid session', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
-    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
-  });
-
-  it('completeGenesis maps 503 (genesis cryptography unavailable) to NOT_IMPLEMENTED -- the session is fine, the capability is absent', async () => {
+  it('INVARIANT: completeGenesis maps unavailable genesis cryptography (503) to NOT_IMPLEMENTED -- the session is fine, the capability is absent', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
     await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
   });
 
-  it('completeGenesis surfaces an unexpected 5xx as UNKNOWN infrastructure failure, not as a session or proof problem', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: 'internal_error' }));
-    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'UNKNOWN' });
+  // ---------------------------------------------------------------------
+  // GET /api/parent/session -- additive genesisAvailable signal (W1/B7)
+  // ---------------------------------------------------------------------
+
+  it('getSession maps genesisAvailable:false onto the GENESIS_REQUIRED session', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null, genesisAvailable: false }));
+    const session = await client.getSession();
+    expect(session).toMatchObject({ state: 'GENESIS_REQUIRED', accountId: 'acc-1', genesisAvailable: false });
   });
 
-  it('requestGenesisChallenge maps 503 (genesis unavailable) to NOT_IMPLEMENTED', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
-    await expect(client.requestGenesisChallenge('public-key', 'BROWSER')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  it('getSession treats an ABSENT genesisAvailable as available (a server that predates the field is never read as unavailable)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null }));
+    const session = await client.getSession();
+    expect(session).toMatchObject({ state: 'GENESIS_REQUIRED', genesisAvailable: true });
   });
 
-  it('startGenesisStepUp maps 503 (genesis unavailable) to NOT_IMPLEMENTED -- no password ceremony for an impossible completion', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
-    await expect(client.startGenesisStepUp('parent@example.test', 'correct-horse-battery')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
-  });
-
-  it('completeGenesisStepUp maps 503 (genesis unavailable) to NOT_IMPLEMENTED', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
-    await expect(client.completeGenesisStepUp('123456')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
-  });
-
-  it('requestGenesisChallenge keeps 401 as SESSION_EXPIRED (the challenge route answers 401 only for a session problem)', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
-    await expect(client.requestGenesisChallenge('public-key', 'BROWSER')).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+  it('getSession keeps genesisAvailable:true when the deployment declares availability', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { accountId: 'acc-1', familyId: null, emailVerified: true, role: null, genesisAvailable: true }));
+    const session = await client.getSession();
+    expect(session).toMatchObject({ state: 'GENESIS_REQUIRED', genesisAvailable: true });
   });
 
   // ---------------------------------------------------------------------

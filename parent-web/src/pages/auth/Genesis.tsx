@@ -71,8 +71,17 @@ export default function Genesis() {
     }
     if (isFamilyReady(session)) {
       window.location.assign('/dashboard');
+      return;
     }
-  }, [loading, session]);
+    // F-A-min: a production deployment whose genesis cryptography is not
+    // activated says so HERE, on load. The parent is never asked for a password
+    // and a one-time code that cannot lead anywhere, and is never told their
+    // session expired when it is perfectly valid.
+    if (session.genesisAvailable === false) {
+      setError(t('auth.genesisUnavailable'));
+      setStage('UNAVAILABLE');
+    }
+  }, [loading, session, t]);
 
   async function handleStepUpSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,7 +95,16 @@ export default function Genesis() {
       setPassword('');
       setStage('CODE');
     } catch (err) {
-      setError(messageFor(err));
+      if (err instanceof ServiceAuthError && err.code === 'NOT_IMPLEMENTED') {
+        // The capability is absent; repeating the form cannot change that.
+        setError(messageFor(err));
+        setStage('UNAVAILABLE');
+      } else if (err instanceof ServiceAuthError && err.code === 'SESSION_EXPIRED') {
+        // The one case where re-authenticating IS the fix.
+        window.location.assign('/login');
+      } else {
+        setError(messageFor(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -125,13 +143,21 @@ export default function Genesis() {
         setCodeInvalid(true);
         setError(t('auth.invalidCode'));
         setStage('CODE');
-      } else if (err instanceof ServiceAuthError && (err.code === 'GENESIS_REJECTED' || err.code === 'NOT_IMPLEMENTED')) {
-        // A rejected proof or an absent capability cannot be fixed by
-        // retrying the code step -- sending the parent back there would only
-        // burn another one-time code for an outcome that will not change.
-        // Show the true state; sign-out stays reachable below.
+      } else if (err instanceof ServiceAuthError && err.code === 'NOT_IMPLEMENTED') {
+        // An absent capability cannot be fixed by retrying the ceremony.
         setError(messageFor(err));
         setStage('UNAVAILABLE');
+      } else if (err instanceof ServiceAuthError && err.code === 'GENESIS_REJECTED') {
+        // A rejected proof restarts the ceremony from the beginning -- a
+        // reload-equivalent, honest restart (the single-use key is cleared
+        // below, so the next attempt generates a fresh one).
+        setError(t('auth.genesisRejected'));
+        setStage('PASSWORD');
+      } else if (err instanceof ServiceAuthError && err.code === 'SESSION_EXPIRED') {
+        // A genuinely dead session: signing in again is the fix.
+        clearEndpointKey();
+        window.location.assign('/login');
+        return;
       } else {
         setError(messageFor(err));
         setStage('CODE');
@@ -151,10 +177,9 @@ export default function Genesis() {
       if (err.code === 'INVALID_CREDENTIALS') return t('auth.invalidCredentials');
       if (err.code === 'SESSION_EXPIRED') return t('serviceAuth.sessionExpired');
       if (err.code === 'NOT_IMPLEMENTED') return t('auth.genesisUnavailable');
-      // The proof was rejected or the ceremony is unavailable: in both cases
-      // the honest message is that setup cannot complete right now -- never
-      // that the parent's session expired.
-      if (err.code === 'GENESIS_REJECTED') return t('auth.genesisUnavailable');
+      // Defensive: the rejected-proof case is handled explicitly above with a
+      // restart; this keeps the honest copy if it ever reaches here.
+      if (err.code === 'GENESIS_REJECTED') return t('auth.genesisRejected');
     }
     return t('auth.genericError');
   }

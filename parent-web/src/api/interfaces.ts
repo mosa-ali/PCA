@@ -82,6 +82,16 @@ export interface GenesisRequiredSession {
   role: null;
   /** Stays `boolean` (as the flat type always had it): only the dev fixture varies it, and the security-relevant discriminator is `state`/`familyId`/`role`, not this UI-level flag. */
   serviceAuthenticated: boolean;
+  /**
+   * F-A-min: whether THIS deployment can actually complete a genesis ceremony
+   * (the additive `genesisAvailable` field on GET /api/parent/session). When
+   * false, onboarding renders the unavailable state immediately instead of
+   * asking for a password and a one-time code that cannot lead anywhere.
+   * Optional with `undefined` meaning AVAILABLE, mirroring the server, where a
+   * composer that has not declared the capability must not be told genesis is
+   * impossible.
+   */
+  genesisAvailable?: boolean;
 }
 
 /** An established family session: a real membership with a real normal role. */

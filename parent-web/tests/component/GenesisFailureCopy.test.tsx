@@ -7,15 +7,18 @@ import Genesis from '../../src/pages/auth/Genesis';
 import { ServiceAuthError } from '../../src/api/real/realServiceAuthClient';
 import i18n from '../../src/i18n';
 
-// F-A: the user-facing half of the genesis failure contract.
+// F-A-min, client half (Claude CLAUDE_20260924T0540_LEAD_release_scope_ruling, W2/W4).
 //
-// The release-visible defect this pins down: in the production composition the
-// genesis verifier rejects every completion, the backend answered 401, and the
-// client told a parent with a perfectly VALID session that it had expired.
-// These tests drive the real page through the ceremony against the exact
-// ServiceAuthError codes the transport now produces and assert the EXACT
-// rendered copy per status, in EN and AR -- a valid session must never be
-// reported as expired because genesis cannot complete.
+// The user-facing contract, in EN and AR:
+//  - a VALID authenticated parent in a deployment whose genesis cryptography is
+//    unavailable sees the family-setup-unavailable state ON LOAD -- never a
+//    password prompt and never "your session expired";
+//  - an absent capability (NOT_IMPLEMENTED) is terminal, not a retry loop;
+//  - a genuinely dead session (SESSION_EXPIRED) goes to sign-in, the one case
+//    where re-authenticating is the fix;
+//  - a rejected proof restarts the ceremony from the password step with its own
+//    honest copy (unreachable in production while the verifier rejects, so no
+//    retry-ceremony UX in this release).
 const GENESIS_REQUIRED_SESSION = {
   state: 'GENESIS_REQUIRED',
   accountId: 'acc-1',
@@ -24,6 +27,7 @@ const GENESIS_REQUIRED_SESSION = {
   memberId: null,
   role: null,
   serviceAuthenticated: true,
+  genesisAvailable: true as boolean | undefined,
 };
 
 const sessionMock = vi.fn();
@@ -49,8 +53,8 @@ vi.mock('../../src/api/client', () => ({
 }));
 
 // The ceremony's Web Crypto work is covered by genesisProof/trustedEndpointKey
-// tests; this file exercises the page's failure-state handling only, so the
-// key generation and completion-building steps are stubbed.
+// tests; this file exercises the page's state handling only, so the key
+// generation and completion-building steps are stubbed.
 vi.mock('../../src/security/genesisCeremony', () => ({
   createGenesisDeviceKey: vi.fn().mockResolvedValue({ publicKey: 'stub-public-key', privateKey: {} }),
   buildGenesisCompletion: vi.fn().mockResolvedValue({
@@ -77,34 +81,79 @@ async function submitCode() {
   await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.genesisCodeSubmit') }));
 }
 
-describe('Genesis failure copy (F-A)', () => {
+describe('Genesis failure copy (F-A-min)', () => {
+  const assignMock = vi.fn();
+
   beforeEach(async () => {
     await i18n.changeLanguage('en');
-    sessionMock.mockReset().mockResolvedValue(GENESIS_REQUIRED_SESSION);
+    sessionMock.mockReset().mockResolvedValue({ ...GENESIS_REQUIRED_SESSION });
     startGenesisStepUpMock.mockReset().mockResolvedValue(undefined);
     completeGenesisStepUpMock.mockReset().mockResolvedValue(undefined);
     requestGenesisChallengeMock.mockReset().mockResolvedValue({ challengeId: 'challenge-stub' });
     completeGenesisMock.mockReset().mockResolvedValue(undefined);
     signOutMock.mockReset().mockResolvedValue(undefined);
+    assignMock.mockReset();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign: assignMock },
+    });
   });
 
-  it('EN: a REJECTED genesis proof (GENESIS_REJECTED) shows the honest unavailable copy -- never session-expired -- and does not return to the code step', async () => {
-    completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('GENESIS_REJECTED', 'rejected'));
-    renderWithProviders(<Genesis />, { route: '/genesis' });
+  // ---------------------------------------------------------------------
+  // Load-time: the session itself says the capability is absent
+  // ---------------------------------------------------------------------
 
-    await driveToCodeStep();
-    await submitCode();
+  it('EN: a valid session with genesisAvailable=false renders the unavailable state ON LOAD -- no password prompt, no session-expired copy, sign-out present', async () => {
+    sessionMock.mockResolvedValue({ ...GENESIS_REQUIRED_SESSION, genesisAvailable: false });
+    renderWithProviders(<Genesis />, { route: '/genesis' });
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(i18n.t('auth.genesisUnavailable'));
     expect(alert).not.toHaveTextContent(i18n.t('serviceAuth.sessionExpired'));
-    // The code step is GONE: retrying cannot succeed and would burn another code.
-    expect(screen.queryByLabelText(i18n.t('auth.codeLabel'))).not.toBeInTheDocument();
-    // Sign-out stays reachable.
+    expect(screen.queryByLabelText(i18n.t('auth.passwordLabel'))).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(i18n.t('auth.emailLabel'))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('auth.genesisSignOut') })).toBeInTheDocument();
+    // The step-up endpoints are never called: no code is requested, none burned.
+    expect(startGenesisStepUpMock).not.toHaveBeenCalled();
+  });
+
+  it('AR: the same load-time state renders the ARABIC unavailable copy', async () => {
+    await i18n.changeLanguage('ar');
+    sessionMock.mockResolvedValue({ ...GENESIS_REQUIRED_SESSION, genesisAvailable: false });
+    renderWithProviders(<Genesis />, { route: '/genesis' });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(i18n.t('auth.genesisUnavailable'));
+    expect(alert).not.toHaveTextContent(i18n.t('serviceAuth.sessionExpired'));
+    expect(screen.queryByLabelText(i18n.t('auth.passwordLabel'))).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: i18n.t('auth.genesisSignOut') })).toBeInTheDocument();
   });
 
-  it('EN: an UNAVAILABLE capability (NOT_IMPLEMENTED from the challenge) shows the same honest copy, not a session problem', async () => {
+  it('EN: genesisAvailable=true (or absent) keeps the normal ceremony -- the password form renders', async () => {
+    renderWithProviders(<Genesis />, { route: '/genesis' });
+    expect(await screen.findByLabelText(i18n.t('auth.passwordLabel'))).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------
+  // Absent capability discovered mid-ceremony -> terminal UNAVAILABLE
+  // ---------------------------------------------------------------------
+
+  it('EN: NOT_IMPLEMENTED from the step-up (503) moves to UNAVAILABLE without burning anything further', async () => {
+    startGenesisStepUpMock.mockRejectedValueOnce(new ServiceAuthError('NOT_IMPLEMENTED', 'unavailable'));
+    renderWithProviders(<Genesis />, { route: '/genesis' });
+
+    await userEvent.type(await screen.findByLabelText(i18n.t('auth.emailLabel')), 'parent@example.test');
+    await userEvent.type(screen.getByLabelText(i18n.t('auth.passwordLabel')), 'correct-horse-battery');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.genesisStepUpSubmit') }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(i18n.t('auth.genesisUnavailable'));
+    expect(screen.queryByLabelText(i18n.t('auth.passwordLabel'))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('auth.genesisSignOut') })).toBeInTheDocument();
+  });
+
+  it('EN: NOT_IMPLEMENTED from the challenge (503) moves to UNAVAILABLE, not back to the code step', async () => {
     requestGenesisChallengeMock.mockRejectedValueOnce(new ServiceAuthError('NOT_IMPLEMENTED', 'unavailable'));
     renderWithProviders(<Genesis />, { route: '/genesis' });
 
@@ -118,44 +167,41 @@ describe('Genesis failure copy (F-A)', () => {
     expect(screen.getByRole('button', { name: i18n.t('auth.genesisSignOut') })).toBeInTheDocument();
   });
 
-  it('EN: SESSION_EXPIRED keeps its own copy (a genuinely dead session is still reported honestly) and the code step remains available after re-authentication', async () => {
+  // ---------------------------------------------------------------------
+  // Genuinely dead session -> sign-in (the one case re-auth is the fix)
+  // ---------------------------------------------------------------------
+
+  it('EN: SESSION_EXPIRED sends the parent to sign-in instead of showing a dead-end copy', async () => {
     completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('SESSION_EXPIRED', 'dead session'));
     renderWithProviders(<Genesis />, { route: '/genesis' });
 
     await driveToCodeStep();
     await submitCode();
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(i18n.t('serviceAuth.sessionExpired'));
-    expect(alert).not.toHaveTextContent(i18n.t('auth.genesisUnavailable'));
-    expect(screen.getByLabelText(i18n.t('auth.codeLabel'))).toBeInTheDocument();
+    expect(assignMock).toHaveBeenCalledWith('/login');
   });
 
-  it('EN: RATE_LIMITED keeps the rate-limit copy', async () => {
-    completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('RATE_LIMITED', 'slow down'));
+  // ---------------------------------------------------------------------
+  // Rejected proof -> honest copy, restart from the password step
+  // ---------------------------------------------------------------------
+
+  it('EN: GENESIS_REJECTED shows the rejected-setup copy and returns to the PASSWORD stage -- never the session-expired copy', async () => {
+    completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('GENESIS_REJECTED', 'rejected'));
     renderWithProviders(<Genesis />, { route: '/genesis' });
 
     await driveToCodeStep();
     await submitCode();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(i18n.t('auth.rateLimited'));
-  });
-
-  it('EN: an unavailable capability on the PASSWORD step (startGenesisStepUp 503) shows the unavailable copy without leaving the password form', async () => {
-    startGenesisStepUpMock.mockRejectedValueOnce(new ServiceAuthError('NOT_IMPLEMENTED', 'unavailable'));
-    renderWithProviders(<Genesis />, { route: '/genesis' });
-
-    await userEvent.type(await screen.findByLabelText(i18n.t('auth.emailLabel')), 'parent@example.test');
-    await userEvent.type(screen.getByLabelText(i18n.t('auth.passwordLabel')), 'correct-horse-battery');
-    await userEvent.click(screen.getByRole('button', { name: i18n.t('auth.genesisStepUpSubmit') }));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(i18n.t('auth.genesisUnavailable'));
+    expect(alert).toHaveTextContent(i18n.t('auth.genesisRejected'));
+    expect(alert).not.toHaveTextContent(i18n.t('serviceAuth.sessionExpired'));
+    expect(alert).not.toHaveTextContent(i18n.t('auth.genesisUnavailable'));
+    // Restarted at the beginning of the ceremony: password form, no code form.
+    expect(screen.getByLabelText(i18n.t('auth.passwordLabel'))).toBeInTheDocument();
     expect(screen.queryByLabelText(i18n.t('auth.codeLabel'))).not.toBeInTheDocument();
   });
 
-  it('AR: a rejected genesis proof shows the ARABIC unavailable copy, and the AR string reads as "not available right now", not as a rejection of the parent', async () => {
+  it('AR: GENESIS_REJECTED renders the ARABIC rejected-setup copy and the password stage', async () => {
     await i18n.changeLanguage('ar');
     completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('GENESIS_REJECTED', 'rejected'));
     renderWithProviders(<Genesis />, { route: '/genesis' });
@@ -164,10 +210,24 @@ describe('Genesis failure copy (F-A)', () => {
     await submitCode();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(i18n.t('auth.genesisUnavailable'));
-    // The Arabic copy must not collapse into the session-expired message.
+    expect(alert).toHaveTextContent(i18n.t('auth.genesisRejected'));
     expect(alert).not.toHaveTextContent(i18n.t('serviceAuth.sessionExpired'));
-    expect(screen.queryByLabelText(i18n.t('auth.codeLabel'))).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: i18n.t('auth.genesisSignOut') })).toBeInTheDocument();
+    expect(screen.getByLabelText(i18n.t('auth.passwordLabel'))).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------
+  // Rate limiting keeps its own copy and the form
+  // ---------------------------------------------------------------------
+
+  it('EN: RATE_LIMITED keeps the rate-limit copy and the form remains usable', async () => {
+    completeGenesisMock.mockRejectedValueOnce(new ServiceAuthError('RATE_LIMITED', 'slow down'));
+    renderWithProviders(<Genesis />, { route: '/genesis' });
+
+    await driveToCodeStep();
+    await submitCode();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(i18n.t('auth.rateLimited'));
+    expect(screen.getByLabelText(i18n.t('auth.codeLabel'))).toBeInTheDocument();
   });
 });

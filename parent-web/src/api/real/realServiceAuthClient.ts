@@ -58,6 +58,8 @@ interface SessionResponseBody {
   familyId: string | null;
   emailVerified: true;
   role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
+  /** F-A-min (additive): whether this deployment can complete a genesis ceremony. Absent means AVAILABLE, mirroring the server's `undefined` semantics. */
+  genesisAvailable?: boolean;
 }
 
 interface EstablishedSessionResponseBody {
@@ -65,6 +67,8 @@ interface EstablishedSessionResponseBody {
   familyId: string | null;
   sessionEstablished: true;
   role: 'ADMINISTRATOR' | 'VIEWER' | 'CHILD' | null;
+  /** F-A-min (additive): see SessionResponseBody.genesisAvailable. A verified account with no family may arrive through either response shape. */
+  genesisAvailable?: boolean;
 }
 
 interface StepUpRequiredResponseBody {
@@ -137,6 +141,9 @@ function toAuthenticatedSession(body: SessionResponseBody | EstablishedSessionRe
       memberId: null,
       role: null,
       serviceAuthenticated: true,
+      // Additive signal; absent === available (`!== false`, never truthiness:
+      // a server that predates the field must not read as "unavailable").
+      genesisAvailable: body.genesisAvailable !== false,
     };
   }
 
