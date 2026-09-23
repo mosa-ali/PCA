@@ -54,6 +54,34 @@ export class MySqlPlatformAdminActivationRepository implements PlatformAdminActi
     });
   }
 
+  /**
+   * Guarded read-repair of an existing sealed MFA secret under the active key
+   * (same contract as MySqlAuthRepository.compareAndSwapMfaSecretCiphertext).
+   * Deliberately NOT built on beginMfa: that operation is token-bound and is
+   * guarded at three layers to refuse any row that already has a ciphertext, so
+   * it can neither express nor perform a repair.
+   */
+  async compareAndSwapMfaSecretCiphertext(input: {
+    adminId: PlatformAdminId;
+    expectedCiphertext: Buffer;
+    expectedNonce: Buffer;
+    ciphertext: Buffer;
+    nonce: Buffer;
+  }): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE platform_admin_mfa_state
+            SET totp_secret_ciphertext = ?, totp_secret_nonce = ?
+          WHERE admin_id = ?
+            AND totp_secret_ciphertext = ?
+            AND totp_secret_nonce = ?`,
+        [input.ciphertext, input.nonce, input.adminId, input.expectedCiphertext, input.expectedNonce],
+      ),
+    );
+    return rowCount === 1;
+  }
+
   async beginMfa(input: { tokenHash: string; now: Date; ciphertext: Buffer; nonce: Buffer }): Promise<ActivationState | null> {
     return runInTransaction(async (conn) => {
       const { rows: tokens } = await execute<TokenRow>(conn, `SELECT * FROM platform_admin_activation_tokens WHERE token_hash = ? AND purpose = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ? FOR UPDATE`, [input.tokenHash, PLATFORM_ADMIN_ACTIVATION_PURPOSE, input.now]);

@@ -9,6 +9,7 @@ import { DUMMY_PASSWORD_CREDENTIAL, verifyPassword } from './passwordCredential.
 import { hashAdminEmail } from './emailHash.js';
 import { decryptTotpSecretWithKeyring, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
+import { repairMfaSecretCiphertext } from './mfaSecretReadRepair.js';
 import type { PlatformAdminAlertPort } from './alertPort.js';
 import type {
   PlatformAdminId,
@@ -141,11 +142,24 @@ export class PlatformAdminAuthService {
 
     // Rotation-tolerant: an already-enrolled admin must not be locked out of
     // MFA because the operator rotated the encryption key.
-    const { secret } = decryptTotpSecretWithKeyring(
+    const keyring = loadMfaEncryptionKeyring();
+    const { secret, requiresReadRepair } = decryptTotpSecretWithKeyring(
       mfaState.totpSecretCiphertext,
       mfaState.totpSecretNonce,
-      loadMfaEncryptionKeyring(),
+      keyring,
     );
+    if (requiresReadRepair) {
+      // ACTIVE-row read repair: without this, an already-enrolled admin would
+      // keep the legacy key permanently required, defeating its retirement.
+      // Best-effort -- a lost race is not an authentication failure.
+      await repairMfaSecretCiphertext(this.repository, {
+        adminId: account.adminId,
+        keyring,
+        observedCiphertext: mfaState.totpSecretCiphertext,
+        observedNonce: mfaState.totpSecretNonce,
+        secret,
+      });
+    }
     const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     if (matchedCounter === null) {
       await this.recordFailureAndMaybeAlert(emailHash, 'FAILED_MFA', now, correlationId, account.adminId);
@@ -397,11 +411,22 @@ export class PlatformAdminAuthService {
     const mfaState = await this.repository.getMfaState(adminId);
     let matchedCounter: number | null = null;
     if (mfaState && mfaState.status === 'ACTIVE' && mfaState.totpSecretCiphertext && mfaState.totpSecretNonce) {
-      const { secret } = decryptTotpSecretWithKeyring(
+      const keyring = loadMfaEncryptionKeyring();
+      const { secret, requiresReadRepair } = decryptTotpSecretWithKeyring(
         mfaState.totpSecretCiphertext,
         mfaState.totpSecretNonce,
-        loadMfaEncryptionKeyring(),
+        keyring,
       );
+      if (requiresReadRepair) {
+        // Same ACTIVE-row repair as login; step-up decrypts the same secret.
+        await repairMfaSecretCiphertext(this.repository, {
+          adminId,
+          keyring,
+          observedCiphertext: mfaState.totpSecretCiphertext,
+          observedNonce: mfaState.totpSecretNonce,
+          secret,
+        });
+      }
       matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     }
     // TOTP-REPLAY-1: claiming is the LAST gate, right before the granted

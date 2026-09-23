@@ -5,6 +5,7 @@ import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
 import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
+import { repairMfaSecretCiphertext } from './mfaSecretReadRepair.js';
 import type { PlatformAdminActivationRepository } from './PlatformAdminActivationRepository.js';
 import type { PlatformAdminId, PlatformAdminRole } from './types.js';
 
@@ -77,14 +78,28 @@ export class PlatformAdminActivationService {
     const tokenHash = hashActivationToken(rawToken);
     const current = await this.activationRepository.findUsable(tokenHash, now);
     if (!current || current.account.status !== 'ACTIVE' || current.mfa.status !== 'PENDING_SETUP' || !current.mfa.totpSecretCiphertext || !current.mfa.totpSecretNonce) throw new PlatformAdminActivationError();
-    // Rotation-tolerant decryption. Before the keyring, a rotation between
+    // Rotation-tolerant decryption. Before the key ring, a rotation between
     // `start` and `complete` made this call throw, and the only recovery was
     // destroying the pending material and reissuing the activation link.
-    const { secret } = decryptTotpSecretWithKeyring(
+    const keyring = loadMfaEncryptionKeyring(this.env);
+    const { secret, requiresReadRepair } = decryptTotpSecretWithKeyring(
       current.mfa.totpSecretCiphertext,
       current.mfa.totpSecretNonce,
-      loadMfaEncryptionKeyring(this.env),
+      keyring,
     );
+    if (requiresReadRepair) {
+      // Best-effort read repair BEFORE the state transition below, so the row is
+      // re-sealed under the active key while it is still PENDING_SETUP. Guarded
+      // by a CAS on the observed value, which also means a concurrent reissue
+      // that legitimately replaced this material cannot be overwritten.
+      await repairMfaSecretCiphertext(this.activationRepository, {
+        adminId: current.token.adminId,
+        keyring,
+        observedCiphertext: current.mfa.totpSecretCiphertext,
+        observedNonce: current.mfa.totpSecretNonce,
+        secret,
+      });
+    }
     const counter = verifyTotp(secret, totpCode, now.getTime());
     if (counter === null) throw new PlatformAdminActivationError();
     const credential = await hashPassword(password);

@@ -4,6 +4,7 @@ import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
 import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
+import { repairMfaSecretCiphertext } from './mfaSecretReadRepair.js';
 import type { PlatformAdminAccountRecord, PlatformAdminId, PlatformAdminRole } from './types.js';
 import type { PlatformAdminAuditEvent } from '../audit/types.js';
 
@@ -182,11 +183,24 @@ export class PlatformAdminAccountService {
     // Rotation-tolerant: this enrollment may have been sealed under a bounded
     // legacy key if the operator rotated PLATFORM_ADMIN_MFA_ENC_KEY after it
     // began. Decryption must not fail merely because the key moved.
-    const { secret } = decryptTotpSecretWithKeyring(
+    const keyring = loadMfaEncryptionKeyring();
+    const { secret, requiresReadRepair } = decryptTotpSecretWithKeyring(
       mfaState.totpSecretCiphertext,
       mfaState.totpSecretNonce,
-      loadMfaEncryptionKeyring(),
+      keyring,
     );
+    if (requiresReadRepair) {
+      // Best-effort: re-seal under the active key so the legacy key can
+      // eventually be retired. A false result (lost race, or the row moved on)
+      // is benign and must not fail an activation whose code already verified.
+      await repairMfaSecretCiphertext(this.repository, {
+        adminId,
+        keyring,
+        observedCiphertext: mfaState.totpSecretCiphertext,
+        observedNonce: mfaState.totpSecretNonce,
+        secret,
+      });
+    }
     const now = this.now();
     const matchedCounter = verifyTotp(secret, totpCode, now.getTime());
     if (matchedCounter === null) throw new PlatformAdminAccountError();

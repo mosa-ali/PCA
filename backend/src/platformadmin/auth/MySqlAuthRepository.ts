@@ -340,6 +340,35 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
     return rows[0] ? toMfaState(rows[0]) : null;
   }
 
+  /**
+   * Guarded read-repair of an existing sealed MFA secret under the active key.
+   * The WHERE clause is the whole concurrency mechanism: it matches only while
+   * the row still holds the exact pair the caller decrypted, so of N concurrent
+   * repairs exactly one commits and the rest see zero rows. No state column is
+   * touched and no activation token is involved -- this is not a transition, so
+   * it deliberately cannot create, activate, or re-create an enrollment.
+   */
+  async compareAndSwapMfaSecretCiphertext(input: {
+    adminId: PlatformAdminId;
+    expectedCiphertext: Buffer;
+    expectedNonce: Buffer;
+    ciphertext: Buffer;
+    nonce: Buffer;
+  }): Promise<boolean> {
+    const { rowCount } = await runInTransaction((conn) =>
+      execute(
+        conn,
+        `UPDATE platform_admin_mfa_state
+            SET totp_secret_ciphertext = ?, totp_secret_nonce = ?
+          WHERE admin_id = ?
+            AND totp_secret_ciphertext = ?
+            AND totp_secret_nonce = ?`,
+        [input.ciphertext, input.nonce, input.adminId, input.expectedCiphertext, input.expectedNonce],
+      ),
+    );
+    return rowCount === 1;
+  }
+
   async beginMfaEnrollment(input: { adminId: PlatformAdminId; totpSecretCiphertext: Buffer; totpSecretNonce: Buffer }): Promise<boolean> {
     const { rowCount } = await runInTransaction((conn) =>
       execute(

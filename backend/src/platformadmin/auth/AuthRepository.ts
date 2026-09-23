@@ -99,6 +99,25 @@ export interface ActivateMfaInput {
 }
 
 /**
+ * Read-repair input for the bounded MFA key ring.
+ *
+ * `expectedCiphertext`/`expectedNonce` are the values the caller actually
+ * decrypted; the write only lands if the row STILL holds them, so two
+ * concurrent repairs cannot both apply and a repair can never overwrite a
+ * newer secret. `ciphertext`/`nonce` are the same secret re-sealed under the
+ * ACTIVE key. Scope is both PENDING_SETUP and ACTIVE rows: restricting it to
+ * pending would leave already-enrolled admins permanently dependent on a
+ * legacy key. No activation token is involved, and no state is changed.
+ */
+export interface CompareAndSwapMfaSecretCiphertextInput {
+  adminId: PlatformAdminId;
+  expectedCiphertext: Buffer;
+  expectedNonce: Buffer;
+  ciphertext: Buffer;
+  nonce: Buffer;
+}
+
+/**
  * Persistence port for the entire Platform Administration auth domain
  * (accounts, roles, sessions, MFA, step-up, login attempts). Deliberately
  * one wide interface rather than one-repository-per-table: several
@@ -128,6 +147,23 @@ export interface PlatformAdminAuthRepository {
   beginMfaEnrollment(input: BeginMfaEnrollmentInput): Promise<boolean>;
   /** Atomically activates a pending factor and claims its first TOTP counter. */
   activateMfa(input: ActivateMfaInput): Promise<boolean>;
+  /**
+   * Read-repair for the bounded MFA key ring: replaces an existing sealed
+   * secret with the same secret re-sealed under the active key, guarded by a
+   * compare-and-swap on the observed old ciphertext/nonce identity.
+   *
+   * Unlike `beginMfaEnrollment` (which stores a secret exactly once while MFA is
+   * pending) this is NOT a lifecycle transition: it applies to both
+   * PENDING_SETUP and ACTIVE rows, changes no state column, requires and
+   * consumes no activation token, and never creates an enrollment.
+   *
+   * Returns true iff exactly one row was updated. False means the row already
+   * moved on -- most often a concurrent repair that won the race. That is a
+   * benign outcome, NOT an authentication or activation failure: callers must
+   * treat false as "already handled" and continue. InnoDB's row lock on this
+   * UPDATE's WHERE clause is the concurrency-safety mechanism.
+   */
+  compareAndSwapMfaSecretCiphertext(input: CompareAndSwapMfaSecretCiphertextInput): Promise<boolean>;
 
   createSession(record: PlatformAdminSessionRecord): Promise<void>;
   findSessionForValidation(tokenHash: string): Promise<SessionValidationLookup | null>;
