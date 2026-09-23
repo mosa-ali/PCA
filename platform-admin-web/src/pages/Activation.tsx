@@ -6,6 +6,25 @@ import { platformAdminActivationApi } from '../api/platformAdminActivationClient
 import { PlatformAdminApiError } from '../api/platformAdminAuthClient';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 
+/**
+ * Maps a failure to the ONE thing the operator should do about it.
+ *
+ * The activation client wraps EVERY non-2xx status in a PlatformAdminApiError
+ * carrying the same hardcoded code (`activation_failed`), so the STATUS is the
+ * only usable discriminator -- the code cannot distinguish a rejected link from
+ * a database outage.
+ *
+ *  - 401 is the backend's genuine rejection of the link (PlatformAdminActivationError).
+ *  - 429 and every other status, including 5xx from a key-ring or database fault,
+ *    say nothing about the link. Reporting those as an invalid link is what sent
+ *    operators to reissue a credential they still held.
+ *  - A thrown non-PlatformAdminApiError is a transport failure: fetch rejected, so
+ *    no status exists at all.
+ */
+function errorKeyFor(error: unknown): string {
+  return error instanceof PlatformAdminApiError && error.status === 401 ? 'activation.invalid' : 'activation.unavailable';
+}
+
 export default function Activation() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -47,16 +66,17 @@ export default function Activation() {
     platformAdminActivationApi
       .start(token)
       .then((result) => setOtpauthUri(result.otpauthUri))
-      // A refused activation is an invalid link; a transport or service failure is
-      // NOT, and blaming the link sends the operator down an unnecessary reissue.
-      .catch((err) => setErrorKey(err instanceof PlatformAdminApiError ? 'activation.invalid' : 'activation.unavailable'))
+      // A refused activation is an invalid link; anything else is a service or
+      // transport condition. See errorKeyFor for why the status, not the code,
+      // is what has to decide this.
+      .catch((err) => setErrorKey(errorKeyFor(err)))
       .finally(() => setBusy(false));
   }, [token]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setErrorKey(null);
     try { await platformAdminActivationApi.complete(token, password, totpCode); navigate('/login', { replace: true }); }
-    catch (err) { setErrorKey(err instanceof PlatformAdminApiError ? 'activation.invalid' : 'activation.unavailable'); }
+    catch (err) { setErrorKey(errorKeyFor(err)); }
     finally { setBusy(false); }
   };
   return <div className="login-page"><div className="login-language-bar"><LanguageSwitcher /></div><form className="card login-card" onSubmit={submit} noValidate>

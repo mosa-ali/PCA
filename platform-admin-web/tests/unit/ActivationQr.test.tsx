@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../../src/i18n';
 import Activation from '../../src/pages/Activation';
+import { PlatformAdminApiError } from '../../src/api/platformAdminAuthClient';
 
 // The activation QR must be generated ENTIRELY inside this browser from the
 // enrollment URI the authorized activation call already returned. These tests
@@ -17,11 +18,12 @@ import Activation from '../../src/pages/Activation';
 
 const ENROLLMENT_URI = 'otpauth://totp/PCA:owner@example.test?secret=JBSWY3DPEHPK3PXP&issuer=PCA';
 const startMock = vi.fn();
+const completeMock = vi.fn();
 
 vi.mock('../../src/api/platformAdminActivationClient', () => ({
   platformAdminActivationApi: {
     start: (token: string) => startMock(token),
-    complete: vi.fn(),
+    complete: (token: string, password: string, totpCode: string) => completeMock(token, password, totpCode),
   },
 }));
 
@@ -33,6 +35,20 @@ function renderActivation() {
       </MemoryRouter>
     </I18nextProvider>,
   );
+}
+
+/**
+ * For tests that must render more than once.
+ *
+ * Activation deliberately consumes the token by stripping the query string on
+ * mount, so a second render in the same test would otherwise read an empty
+ * search string, see no token, and report an invalid link WITHOUT ever calling
+ * start -- which silently invalidates any assertion made against the second or
+ * later render.
+ */
+function renderFreshActivation() {
+  window.history.replaceState({}, '', '/activate?token=TOKEN123456');
+  return renderActivation();
 }
 
 describe('Platform Admin activation QR', () => {
@@ -157,6 +173,41 @@ describe('Platform Admin activation QR', () => {
     expect(await screen.findByText(i18n.t('activation.unavailable'))).toBeInTheDocument();
     // The link itself was never rejected. Telling the operator it was invalid
     // sends them to an unnecessary reissue of a credential they still hold.
+    expect(screen.queryByText(i18n.t('activation.invalid'))).not.toBeInTheDocument();
+  });
+
+  it('maps a backend 401 to an invalid link, and 5xx or 429 to the service being unavailable', async () => {
+    // 401 IS the backend rejecting the link, so invalid copy is correct here.
+    startMock.mockReset();
+    startMock.mockRejectedValue(new PlatformAdminApiError(401, 'activation_failed'));
+    const rejected = renderFreshActivation();
+    expect(await screen.findByText(i18n.t('activation.invalid'))).toBeInTheDocument();
+    rejected.unmount();
+
+    // 500 is a server fault and 429 is throttling. Neither says anything about the
+    // link. The client wraps EVERY non-2xx status in the same class with the same
+    // hardcoded code, so mapping on the class alone blamed the link for a server
+    // outage -- which is the defect this covers. Status is the only discriminator.
+    for (const status of [500, 429]) {
+      startMock.mockReset();
+      startMock.mockRejectedValue(new PlatformAdminApiError(status, 'activation_failed'));
+      const view = renderFreshActivation();
+      expect(await screen.findByText(i18n.t('activation.unavailable'))).toBeInTheDocument();
+      expect(screen.queryByText(i18n.t('activation.invalid'))).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('applies the same 401-versus-service mapping to completion, not just start', async () => {
+    renderActivation();
+    await screen.findByRole('img', { name: i18n.t('activation.qrAlt') });
+    await userEvent.type(screen.getByLabelText(i18n.t('activation.password')), 'correct-horse-battery');
+    await userEvent.type(screen.getByLabelText(i18n.t('activation.totp')), '123456');
+
+    completeMock.mockRejectedValueOnce(new PlatformAdminApiError(500, 'activation_failed'));
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('activation.submit') }));
+
+    expect(await screen.findByText(i18n.t('activation.unavailable'))).toBeInTheDocument();
     expect(screen.queryByText(i18n.t('activation.invalid'))).not.toBeInTheDocument();
   });
 });
