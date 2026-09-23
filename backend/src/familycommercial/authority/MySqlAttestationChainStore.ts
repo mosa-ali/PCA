@@ -131,11 +131,19 @@ export class MySqlFamilyAuthorityAttestationChainStore implements FamilyAuthorit
             throw error;
           }
         } else {
+          // `AND status = 'ACTIVE'` is load-bearing, not defensive style.
+          //
+          // markHeadRevoked flips `status` WITHOUT bumping `head_revision`, so a
+          // revision-only predicate still matches a revoked head -- and the SET
+          // clause below writes `status = 'ACTIVE'`, which RESURRECTS revoked
+          // owner authority. Revision is not sufficient identity for this CAS:
+          // the observed status is part of it. Zero rows affected is the correct
+          // outcome for a head that was revoked between the read and this write.
           const updated = await execute(
             conn,
             `UPDATE family_authority_chain_heads
              SET head_attestation_id = ?, head_revision = ?, required_trust_set_epoch = ?, required_key_epoch = ?, status = 'ACTIVE', updated_at = ?
-             WHERE family_id = ? AND head_revision = ?`,
+             WHERE family_id = ? AND head_revision = ? AND status = 'ACTIVE' AND status = 'ACTIVE'`,
             [attestationId, attestation.attestationRevision, attestation.trustSetEpoch, attestation.keyEpoch, attestation.issuedAt, attestation.familyId, expectedPreviousRevision],
           );
           if (updated.rowCount === 0) throw new SoftFailure<AppendSoftCode>('REJECTED_STALE_REVISION');

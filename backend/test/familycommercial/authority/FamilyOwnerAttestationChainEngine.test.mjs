@@ -248,6 +248,58 @@ test('transfer: broken chain link (wrong previousAttestationId) -> INVALID_PROOF
   assert.equal(result.status, 'INVALID_PROOF');
 });
 
+test('RACE: a revocation landing between the head read and the append cannot resurrect revoked authority', async () => {
+  // REVIEWER FINDING (Codex, CODEX_20260923T213721Z_genesis_priority_ruling item 4),
+  // independently confirmed in both stores before fixing.
+  //
+  // markHeadRevoked flips `status` WITHOUT bumping `headRevision`, and the append
+  // CAS matched on revision alone -- while its SET clause writes status back to
+  // 'ACTIVE'. A renewal or transfer that raced a revocation therefore succeeded and
+  // RESURRECTED revoked owner authority, silently undoing the revocation.
+  //
+  // This cannot be reproduced sequentially: the engine reads the head first and
+  // returns STALE_OR_REVOKED if it is already revoked, so the defect is reachable
+  // only in the gap between that read and the write. That gap is exactly why the
+  // existing suite missed it, so the revocation is injected from inside findHead.
+  const anchorStore = new InMemoryGenesisAnchorStore();
+  const store = new InMemoryAttestationChainStore();
+  const now = () => new Date('2026-01-03T00:00:00Z');
+  const bootstrapEngine = new FamilyOwnerAttestationChainEngine(anchorStore, store, createTestOnlyDeviceSignatureVerifier(), now);
+  const anchor = buildGenesisAnchor();
+  const genesisAttestation = buildGenesisAttestation(anchor);
+  const boot = await bootstrapEngine.bootstrapFamilyAuthority({ anchor, genesisAttestation });
+  assert.equal(boot.status, 'BOOTSTRAPPED');
+
+  let revocationInjected = false;
+  const racingStore = {
+    findHead: async (familyId) => {
+      const head = await store.findHead(familyId);
+      if (!revocationInjected && head !== null && head.status === 'ACTIVE') {
+        revocationInjected = true;
+        await store.markHeadRevoked(familyId, now());
+      }
+      return head;
+    },
+    findAttestationById: (familyId, id) => store.findAttestationById(familyId, id),
+    appendIfCurrentRevision: (attestation, id, revision) => store.appendIfCurrentRevision(attestation, id, revision),
+    markHeadRevoked: (familyId, at) => store.markHeadRevoked(familyId, at),
+  };
+  const racingEngine = new FamilyOwnerAttestationChainEngine(anchorStore, racingStore, createTestOnlyDeviceSignatureVerifier(), now);
+
+  const next = buildTransferAttestation(genesisAttestation, boot.attestationId);
+  const result = await racingEngine.transferOwnerAuthority(anchor.familyId, next);
+
+  // The append must be refused. It matched on revision (revocation does not bump
+  // it), so the status guard is the only thing that can stop it.
+  assert.equal(result.status, 'REJECTED_STALE_REVISION');
+
+  // The decisive assertion: revocation is STILL in force, and the head did not
+  // advance. Before the fix the UPDATE matched and wrote status = 'ACTIVE'.
+  const head = await store.findHead(anchor.familyId);
+  assert.equal(head.status, 'REVOKED');
+  assert.equal(head.headRevision, 1);
+});
+
 test('transfer: non-monotonic revision -> INVALID_PROOF', async () => {
   const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped();
   const forged = buildTransferAttestation(genesisAttestation, attestationId, { attestationRevision: 5 });
