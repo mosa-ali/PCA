@@ -38,6 +38,33 @@ test('createAccount by an APP_OWNER actor succeeds', async () => {
   await assert.doesNotReject(() => service.createAccount('Someone', hashAdminEmail(`y-${randomUUID()}@example.test`), 'password-value', 'SUPPORT_ADMIN', actor));
 });
 
+test('beginMfaEnrollment refuses a malformed configured legacy key BEFORE writing anything', async () => {
+  // REVIEWER FINDING (Codex, CODEX_20260923T202742Z_e1d2e5e1): the malformed-key
+  // negative test covered only ActivationService.start. This is the OTHER sealing
+  // site, and it had the same defect -- sealing with the active key alone, while
+  // activateMfa validates the whole ring. A malformed PREVIOUS_1 therefore let the
+  // write land and the enrollment burn, with recovery possible only by reissue.
+  const { repository, service } = buildService();
+  const actor = { adminId: randomUUID(), roles: ['APP_OWNER'] };
+  const account = await service.createAccount('Owner', hashAdminEmail(`enroll-${randomUUID()}@example.test`), 'password-value', 'APP_OWNER', 'BOOTSTRAP');
+  assert.equal((await repository.getMfaState(account.adminId)).status, 'PENDING_SETUP');
+
+  process.env.PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1 = 'not-hex';
+  try {
+    await assert.rejects(() => service.beginMfaEnrollment(account.adminId, actor));
+    // The refusal must come BEFORE the write, so the operator can fix the
+    // configuration and retry rather than being sent to a reissue.
+    const mfa = await repository.getMfaState(account.adminId);
+    assert.equal(mfa.totpSecretCiphertext, null);
+    assert.equal(mfa.totpSecretNonce, null);
+    assert.equal(mfa.status, 'PENDING_SETUP');
+  } finally {
+    // The ring is read from process.env, so the malformed slot must not leak into
+    // any later test in this file.
+    delete process.env.PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1;
+  }
+});
+
 test('duplicate email is rejected generically (DB unique constraint surfaced through the domain error)', async () => {
   const { service } = buildService();
   const email = `dup-${randomUUID()}@example.test`;
