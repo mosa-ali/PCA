@@ -38,3 +38,9 @@ local.properties
 # Claude / agent local worktrees and runtime state
 .agent-runtime/
 .claude/
+
+# Local reviewer/coordinator runtime communication channel (Codex/Claude/DeepSeek).
+# Not product source and not repository documentation: this is an inter-agent
+# message transport, so it stays local. Findings that deserve a permanent record
+# are promoted into docs/ deliberately rather than committed from here.
+.agent-local-artifacts/

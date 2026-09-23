@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -21,27 +21,42 @@ export default function Activation() {
   // share and screenshot. It is now revealed only on explicit request.
   const [uriRevealed, setUriRevealed] = useState(false);
 
-  // DEPENDENCIES ARE [token] ONLY, AND THAT IS LOAD-BEARING.
+  // The ceremony is started EXACTLY ONCE, for two independent reasons.
   //
-  // This effect used to depend on `t` as well, and react-i18next hands back a
-  // NEW `t` on every language change. Switching language on this page therefore
-  // re-ran `start`, which on the backend goes through beginMfa's single-winner
-  // guard: the second call is refused, the client maps that to
-  // activation.invalid, and a parent who merely switched to a language they
-  // read better was told their activation link was invalid -- mid-ceremony,
+  // (1) LANGUAGE. This effect used to depend on `t` as well, and react-i18next
+  // hands back a NEW `t` on every language change. Switching language therefore
+  // re-ran `start`; its second call is refused by beginMfa's single-winner guard,
+  // the client mapped that to activation.invalid, and an operator who merely chose
+  // a language they read better was told their link was invalid -- mid-ceremony,
   // with the enrollment secret already issued. The error is stored as a KEY and
-  // translated at render, so the copy still follows the active language without
-  // anything language-dependent inside the dep array.
+  // translated at render, so copy still follows the active language with nothing
+  // language-dependent in the dep array.
+  //
+  // (2) STRICTMODE. In development React 18 mounts, runs effects, then RE-RUNS
+  // them on the same instance, so even a [token]-only effect fires `start` twice
+  // and produces the same false "invalid link" beside a QR that actually works.
+  // A ref survives that replay because the instance is not recreated, which is
+  // exactly why the guard is a ref and not state. `token` comes from a lazy
+  // useState initialiser and never changes, so a guarded re-run is never wanted.
+  const startAttempted = useRef(false);
   useEffect(() => {
     window.history.replaceState({}, document.title, `${window.location.pathname}`);
     if (!token) { setErrorKey('activation.invalid'); setBusy(false); return; }
-    platformAdminActivationApi.start(token).then((result) => setOtpauthUri(result.otpauthUri)).catch(() => setErrorKey('activation.invalid')).finally(() => setBusy(false));
+    if (startAttempted.current) return;
+    startAttempted.current = true;
+    platformAdminActivationApi
+      .start(token)
+      .then((result) => setOtpauthUri(result.otpauthUri))
+      // A refused activation is an invalid link; a transport or service failure is
+      // NOT, and blaming the link sends the operator down an unnecessary reissue.
+      .catch((err) => setErrorKey(err instanceof PlatformAdminApiError ? 'activation.invalid' : 'activation.unavailable'))
+      .finally(() => setBusy(false));
   }, [token]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setErrorKey(null);
     try { await platformAdminActivationApi.complete(token, password, totpCode); navigate('/login', { replace: true }); }
-    catch (err) { setErrorKey(err instanceof PlatformAdminApiError ? 'activation.invalid' : 'activation.invalid'); }
+    catch (err) { setErrorKey(err instanceof PlatformAdminApiError ? 'activation.invalid' : 'activation.unavailable'); }
     finally { setBusy(false); }
   };
   return <div className="login-page"><div className="login-language-bar"><LanguageSwitcher /></div><form className="card login-card" onSubmit={submit} noValidate>

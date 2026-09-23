@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -125,5 +126,37 @@ describe('Platform Admin activation QR', () => {
     expect(screen.getByLabelText(i18n.t('activation.uri'))).toHaveValue(ENROLLMENT_URI);
     // The activation call ran exactly once, so the ceremony was not restarted.
     expect(startMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts the ceremony exactly once under StrictMode effect replay', async () => {
+    render(
+      <StrictMode>
+        <I18nextProvider i18n={i18n}>
+          <MemoryRouter initialEntries={['/activate']}>
+            <Activation />
+          </MemoryRouter>
+        </I18nextProvider>
+      </StrictMode>,
+    );
+    await screen.findByRole('img', { name: i18n.t('activation.qrAlt') });
+
+    // Development StrictMode runs effects twice on the SAME instance. Without the
+    // once-guard, the replay's second start is refused by the backend's
+    // single-winner guard, which showed a false "invalid link" right beside a QR
+    // that actually worked. This is a second, independent cause of the same
+    // symptom the language-switch test above covers.
+    expect(startMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(i18n.t('activation.invalid'))).not.toBeInTheDocument();
+  });
+
+  it('blames the service, not the link, when start fails for transport reasons', async () => {
+    startMock.mockReset();
+    startMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderActivation();
+
+    expect(await screen.findByText(i18n.t('activation.unavailable'))).toBeInTheDocument();
+    // The link itself was never rejected. Telling the operator it was invalid
+    // sends them to an unnecessary reissue of a credential they still hold.
+    expect(screen.queryByText(i18n.t('activation.invalid'))).not.toBeInTheDocument();
   });
 });

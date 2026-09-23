@@ -58,8 +58,18 @@ export default function Genesis() {
   // An account that already owns a family has no business on this page --
   // e.g. the parent bookmarked it, or came back after completing onboarding.
   // Send it to the console rather than starting a second ceremony.
+  //
+  // A LOADED BUT UNAUTHENTICATED session is equally out of place. Every control
+  // here submits to step-up endpoints that require a session, so rendering the
+  // form just invites a 401 the parent cannot act on; there is no session to
+  // onboard, so send them to sign in instead.
   useEffect(() => {
-    if (!loading && session !== null && isFamilyReady(session)) {
+    if (loading) return;
+    if (session === null) {
+      window.location.assign('/login');
+      return;
+    }
+    if (isFamilyReady(session)) {
       window.location.assign('/dashboard');
     }
   }, [loading, session]);
