@@ -74,7 +74,6 @@ export const ACTIVATION_REASONS = [
   'NO_PERMITTED_KEY',
   'INVALID_CODE',
   'PERSISTENCE_REFUSED',
-  'UNEXPECTED',
 ] as const;
 
 export type ActivationReason = (typeof ACTIVATION_REASONS)[number];
@@ -92,7 +91,15 @@ export interface ActivationDiagnostics {
   stage(stage: ActivationStage, outcome: ActivationOutcome, detail?: ActivationDiagnosticDetail): void;
 }
 
-/** Discards everything. The default for callers that did not opt in. */
+/**
+ * Discards everything, and is the CONSTRUCTOR DEFAULT.
+ *
+ * Observability is opt-in at the composition root (main.ts injects
+ * CONSOLE_ACTIVATION_DIAGNOSTICS explicitly). Defaulting to the console sink
+ * instead would make every construction site -- including every test that never
+ * asked for diagnostics -- emit operational log lines as a side effect, and would
+ * leave the choice invisible at the point where it is actually made.
+ */
 export const NOOP_ACTIVATION_DIAGNOSTICS: ActivationDiagnostics = {
   stage() {
     /* intentionally empty */

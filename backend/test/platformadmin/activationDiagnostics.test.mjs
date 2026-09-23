@@ -34,7 +34,7 @@ const GOOD_ENV = {
 /** The ONLY fields a diagnostic is allowed to emit. */
 const ALLOWED_FIELDS = new Set(['stage', 'outcome', 'reason', 'keySource', 'repaired']);
 
-function harness({ env = GOOD_ENV, casResult = true, completeResult = true, diagnostics } = {}) {
+function harness({ env = GOOD_ENV, casResult = true, completeResult = true, diagnostics, omitSink = false } = {}) {
   const email = 'mdrwesh@outlook.com';
   const account = { adminId: 'admin-1', emailHash: hashAdminEmail(email), displayName: 'Owner', passwordCredential: 'placeholder', status: 'ACTIVE', createdAt: new Date(), disabledAt: null };
   const mfa = { adminId: 'admin-1', status: 'PENDING_SETUP', totpSecretCiphertext: null, totpSecretNonce: null, activatedAt: null, createdAt: new Date(), lastAcceptedTotpCounter: null };
@@ -53,7 +53,9 @@ function harness({ env = GOOD_ENV, casResult = true, completeResult = true, diag
   let now = new Date('2026-01-01T00:00:00Z');
   const captured = [];
   const sink = diagnostics ?? { stage: (stage, outcome, detail) => captured.push({ stage, outcome, ...detail }) };
-  const service = new PlatformAdminActivationService(auth, repo, emailSender, env, () => now, sink);
+  const service = omitSink
+    ? new PlatformAdminActivationService(auth, repo, emailSender, env, () => now)
+    : new PlatformAdminActivationService(auth, repo, emailSender, env, () => now, sink);
   return { service, account, mfa, tokens, sent, captured, casCalls, now: () => now };
 }
 
@@ -126,14 +128,18 @@ test('a key ring configuration failure is reported as such, and still fails clos
 test('a malformed configured legacy key is a configuration failure, never silently skipped', async () => {
   const h = harness({ env: { ...GOOD_ENV, PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: 'not-hex' } });
   const token = await issueToken(h);
-  // `start` seals with the ACTIVE key only, so the malformed legacy slot does not
-  // surface until the key ring is loaded -- which `complete` does.
-  const started = await h.service.start(token);
-  const secret = base32Decode(new URL(started.otpauthUri).searchParams.get('secret'));
-  await assert.rejects(() => h.service.complete(token, 'a new owner password', computeTotp(secret, h.now().getTime())));
+  // start() validates the FULL ring before sealing, so the malformed slot is
+  // refused HERE -- before any enrollment is persisted -- rather than surfacing
+  // later in complete() with the enrollment already burned. This was a real
+  // defect: validating only the active key let start() succeed, hand out a QR,
+  // and burn the enrollment.
+  await assert.rejects(() => h.service.start(token));
   const reported = h.captured.find((d) => d.stage === 'MFA_KEYRING_CONFIGURATION');
   assert.equal(reported?.outcome, 'FAILED');
   assert.equal(reported?.reason, 'KEYRING_MISCONFIGURED');
+  // Nothing was sealed, so the operator can fix the configuration and retry the
+  // SAME activation link.
+  assert.equal(h.mfa.totpSecretCiphertext, null);
 });
 
 test('a wrong code and an unreadable secret are distinguished, where they used to be identical', async () => {
@@ -209,4 +215,28 @@ test('a legacy-sealed pending secret activates through the bounded fallback, and
 test('the no-op sink discards everything without throwing', () => {
   assert.equal(NOOP_ACTIVATION_DIAGNOSTICS.stage('ACTIVATION_START', 'OK'), undefined);
   assert.equal(NOOP_ACTIVATION_DIAGNOSTICS.stage('MFA_KEYRING_CONFIGURATION', 'FAILED', { reason: 'KEYRING_MISCONFIGURED' }), undefined);
+});
+
+test('a service constructed WITHOUT a sink emits nothing: the default is the no-op sink, not the console one', async () => {
+  // console.warn writes to stderr, so intercepting stderr detects the console
+  // sink. This is the runtime check for the default, which the closed TypeScript
+  // detail shape cannot assert on its own.
+  const writes = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    writes.push(String(chunk));
+    return true;
+  };
+  try {
+    const h = harness({ omitSink: true });
+    const token = await issueToken(h);
+    // A successful start emits ACTIVATION_START:OK when a sink is wired at all.
+    await h.service.start(token);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.ok(
+    !writes.some((line) => line.includes('PLATFORM_ADMIN_ACTIVATION')),
+    'constructing the service must not emit operational diagnostics by default',
+  );
 });

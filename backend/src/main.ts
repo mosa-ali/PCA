@@ -133,6 +133,7 @@ import { MySqlCommercialNotificationPublisher } from './commercialnotifications/
 // PCA-PA-3B: Platform Administration operational/commercial API wiring.
 import { PlatformAdminAccountService } from './platformadmin/auth/PlatformAdminAccountService.js';
 import { PlatformAdminActivationService } from './platformadmin/auth/PlatformAdminActivationService.js';
+import { CONSOLE_ACTIVATION_DIAGNOSTICS } from './platformadmin/auth/activationDiagnostics.js';
 import { MySqlPlatformAdminActivationRepository } from './platformadmin/auth/MySqlPlatformAdminActivationRepository.js';
 import { PlatformAdminEntitlementService } from './platformadmin/entitlements/PlatformAdminEntitlementService.js';
 import { SlotReservationService } from './entitlements/slots/SlotReservationService.js';
@@ -559,6 +560,14 @@ async function start(): Promise<void> {
     platformAdminAuthRepository,
     new MySqlPlatformAdminActivationRepository(),
     emailInfrastructure.emailSender,
+    // Injected EXPLICITLY here. The constructor defaults to the no-op sink, so
+    // turning on operational stage logging is a visible decision at the
+    // composition root rather than an implicit consequence of constructing the
+    // service. env and now are left to their defaults (passing undefined keeps
+    // them defaulted).
+    undefined,
+    undefined,
+    CONSOLE_ACTIVATION_DIAGNOSTICS,
   );
   const familyMembershipRepository = new MySqlFamilyMembershipRepository();
   // PCA-DEC-020-R1: the first-family ceremony is a single explicit source

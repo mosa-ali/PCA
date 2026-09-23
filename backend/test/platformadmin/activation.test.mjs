@@ -56,3 +56,37 @@ test('APP_OWNER reissue revokes the old token and invalidates abandoned TOTP enr
   await assert.rejects(() => h.service.start(first), PlatformAdminActivationError);
   await assert.doesNotReject(() => h.service.start(second));
 });
+
+test('a malformed configured legacy key refuses start BEFORE anything is persisted', async () => {
+  const email = 'mdrwesh@outlook.com';
+  const account = { adminId: 'admin-1', emailHash: hashAdminEmail(email), displayName: 'Owner', passwordCredential: 'placeholder', status: 'ACTIVE', createdAt: new Date(), disabledAt: null };
+  const mfa = { adminId: 'admin-1', status: 'PENDING_SETUP', totpSecretCiphertext: null, totpSecretNonce: null, activatedAt: null, createdAt: new Date(), lastAcceptedTotpCounter: null };
+  const tokens = new Map();
+  let beginCalls = 0;
+  const auth = { findAccountById: async () => account, findActiveRoles: async () => ['PLATFORM_ADMIN'], getMfaState: async () => mfa };
+  const repo = {
+    issue: async (input) => { tokens.set(input.tokenHash, { ...input, usedAt: null, revokedAt: null }); },
+    findUsable: async (hash, now) => { const t = tokens.get(hash); if (!t || t.usedAt || t.revokedAt || t.expiresAt <= now) return null; return { token: t, account, mfa }; },
+    beginMfa: async (input) => { beginCalls += 1; mfa.totpSecretCiphertext = input.ciphertext; mfa.totpSecretNonce = input.nonce; return { token: tokens.get(input.tokenHash), account, mfa }; },
+    complete: async () => false,
+  };
+  const sent = [];
+  const emailSender = { sendVerificationCode: async () => {}, sendPasswordResetCode: async () => {}, sendPlatformAdminActivationLink: async (toEmail, url) => sent.push({ toEmail, url }) };
+  const service = new PlatformAdminActivationService(auth, repo, emailSender, {
+    NODE_ENV: 'test',
+    PCA_PLATFORM_ADMIN_ACTIVATION_BASE_URL: 'https://www.pcasafe.com/platform-admin/activate',
+    PLATFORM_ADMIN_MFA_ENC_KEY: 'ab'.repeat(32),
+    PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1: 'not-hex',
+  }, () => new Date('2026-01-01T00:00:00Z'));
+
+  await service.issueActivation('admin-1', email, { adminId: 'owner-1', roles: ['APP_OWNER'] });
+  const token = new URL(sent[0].url).searchParams.get('token');
+
+  // start() seals with the active key, so validating only that key would let this
+  // succeed and hand out a QR -- and complete() would then fail on the ring,
+  // burning the enrollment and forcing a reissue. Refusing here means the operator
+  // fixes the configuration and retries the SAME link.
+  await assert.rejects(() => service.start(token));
+  assert.equal(beginCalls, 0);
+  assert.equal(mfa.totpSecretCiphertext, null);
+});

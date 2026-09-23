@@ -3,10 +3,10 @@ import type { EmailSenderPort } from '../../parentaccount/EmailSenderPort.js';
 import { hashAdminEmail } from './emailHash.js';
 import { hashPassword } from './passwordCredential.js';
 import { authorizePlatformAdminOperation } from './rbacPolicy.js';
-import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKey, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
+import { base32Encode, buildOtpauthUri, decryptTotpSecretWithKeyring, encryptTotpSecret, generateTotpSecret, loadMfaEncryptionKeyring, verifyTotp } from './totp.js';
 import type { PlatformAdminAuthRepository } from './AuthRepository.js';
 import { repairMfaSecretCiphertext } from './mfaSecretReadRepair.js';
-import { CONSOLE_ACTIVATION_DIAGNOSTICS, type ActivationDiagnostics } from './activationDiagnostics.js';
+import { NOOP_ACTIVATION_DIAGNOSTICS, type ActivationDiagnostics } from './activationDiagnostics.js';
 import type { PlatformAdminActivationRepository } from './PlatformAdminActivationRepository.js';
 import type { PlatformAdminId, PlatformAdminRole } from './types.js';
 
@@ -52,10 +52,11 @@ export class PlatformAdminActivationService {
     private readonly emailSender: EmailSenderPort,
     private readonly env: NodeJS.ProcessEnv = process.env,
     private readonly now: () => Date = () => new Date(),
-    // Defaults to the console sink so the stages are observable in a running
-    // service; tests inject a capturing double. This is never a decision input:
-    // no stage outcome below changes what the caller receives.
-    diagnostics: ActivationDiagnostics = CONSOLE_ACTIVATION_DIAGNOSTICS,
+    // Defaults to the NO-OP sink deliberately: observability is a decision made
+    // at the composition root, never an implicit consequence of constructing the
+    // service, and every test that does not opt in stays silent. main.ts injects
+    // CONSOLE_ACTIVATION_DIAGNOSTICS explicitly.
+    diagnostics: ActivationDiagnostics = NOOP_ACTIVATION_DIAGNOSTICS,
   ) {
     this.diagnostics = {
       stage: (stage, outcome, detail) => {
@@ -109,7 +110,11 @@ export class PlatformAdminActivationService {
     const secret = generateTotpSecret();
     let encrypted: ReturnType<typeof encryptTotpSecret>;
     try {
-      encrypted = encryptTotpSecret(secret, loadMfaEncryptionKey(this.env));
+      // Validates the FULL key ring, not just the active key. Sealing with the
+      // active key alone would let a start() succeed and hand out a QR while a
+      // malformed legacy slot guarantees the later complete() must fail -- burning
+      // the enrollment and forcing a reissue, which is the opposite of fail-closed.
+      encrypted = encryptTotpSecret(secret, loadMfaEncryptionKeyring(this.env).active);
     } catch (error) {
       // Reported, then re-thrown unchanged: the fail-closed contract and the
       // caller-visible outcome are identical to before.

@@ -154,7 +154,11 @@ export class PlatformAdminAccountService {
       throw new PlatformAdminAccountError();
     }
 
-    const key = loadMfaEncryptionKey();
+    // Validates the FULL key ring before sealing, for the same reason as the
+    // activation start path: this method writes the enrollment secret that a
+    // later activateMfa must decrypt through the ring, so a malformed legacy slot
+    // has to refuse the write rather than strand a half-built enrollment.
+    const key = loadMfaEncryptionKeyring().active;
     const secret = generateTotpSecret();
     const { ciphertext, nonce } = encryptTotpSecret(secret, key);
     const stored = await this.repository.beginMfaEnrollment({ adminId, totpSecretCiphertext: ciphertext, totpSecretNonce: nonce });
