@@ -264,6 +264,7 @@ const files = [
   "test/tooling/migrationIdentityFailClosed.test.mjs",
   "test/tooling/migrationResumability.test.mjs",
   "test/tooling/canonicalSchemaDrift.test.mjs",
+  "test/tooling/runtimeGrantPolicy.test.mjs",
   "test/tooling/productionInMemoryStores.test.mjs",
   "test/tooling/productionPathCertification.test.mjs",
   "test/tooling/commercialAttributionPermanence.test.mjs",
