@@ -101,6 +101,75 @@ test('request proof: guessed actor ID is rejected; a session-bound digest proof 
   );
 });
 
+test('E-3/A-2 NEGATIVE CONTROL: an engine composed WITHOUT a request-challenge verifier refuses EVERY proof -- even a genuine one with a correct key resolver', async () => {
+  // This is the defect the production wiring had: main.ts constructed the
+  // engine with five arguments and the challenge service only afterwards, so
+  // after crypto activation every owner-gated commercial mutation would have
+  // failed INVALID_PROOF forever -- with a perfectly valid proof. The engine
+  // fails closed without a verifier (FamilyOwnerAttestationChainEngine:307),
+  // which is correct; the composition must therefore always pass one.
+  const expectedPublicKey = 'BArQn4mGDfD8WbmEr3y436L0C_MxjRuPMWujop0xjrNt-dHBPBuGdWziFXdjHW1d322DsGA0CNg8uqRRdViMd5E';
+  const keyResolver = {
+    async isActiveDsk({ familyId, deviceId, keyId, publicKey }) {
+      return familyId === 'fam-1' && deviceId === 'dev-genesis-owner' && keyId === 'gk-1' && publicKey === expectedPublicKey;
+    },
+  };
+  const consumed = new Set();
+  const requestChallengeVerifier = {
+    async consume(proof) {
+      if (consumed.has(proof.challengeId)) return false;
+      consumed.add(proof.challengeId);
+      return proof.serviceAccountId === 'svc-1' && proof.familyId === 'fam-1' && proof.deviceId === 'dev-genesis-owner';
+    },
+  };
+  const anchor = buildGenesisAnchor({ genesisDskPublicKey: expectedPublicKey });
+  const unsignedProof = {
+    protocolVersion: 1,
+    operation: 'FAMILY_COMMERCIAL_REQUEST_CREATE',
+    serviceAccountId: 'svc-1',
+    familyId: 'fam-1',
+    deviceId: 'dev-genesis-owner',
+    keyId: 'gk-1',
+    publicKey: expectedPublicKey,
+    challengeId: 'challenge-a9',
+    nonce: '0123456789012345678901234567890123456789abc',
+    requestDigest: digestAuthorityRequestBody('{"targetLimit":5}'),
+    issuedAt: new Date('2026-01-03T00:00:00Z'),
+    expiresAt: new Date('2026-01-03T00:05:00Z'),
+  };
+  const proof = { ...unsignedProof, signature: signTestOnlyChallenge(unsignedProof.publicKey, canonicalizeFamilyAuthorityRequestProof(unsignedProof)) };
+
+  const composedWithoutVerifier = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    createTestOnlyDeviceSignatureVerifier(),
+    () => new Date('2026-01-03T00:00:00Z'),
+    keyResolver,
+  );
+  await composedWithoutVerifier.bootstrapFamilyAuthority({ anchor, genesisAttestation: buildGenesisAttestation(anchor) });
+  assert.deepEqual(
+    await composedWithoutVerifier.resolveCurrentOwner('fam-1', proof, 'svc-1', unsignedProof.operation, unsignedProof.requestDigest),
+    { status: 'INVALID_PROOF' },
+  );
+
+  // Positive control: the SAME proof against the SAME composition plus the
+  // challenge verifier resolves OWNER_AUTHORIZED -- proving the refusal above
+  // is caused by the missing verifier and not by a malformed proof.
+  const composedWithVerifier = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    new InMemoryAttestationChainStore(),
+    createTestOnlyDeviceSignatureVerifier(),
+    () => new Date('2026-01-03T00:00:00Z'),
+    keyResolver,
+    requestChallengeVerifier,
+  );
+  await composedWithVerifier.bootstrapFamilyAuthority({ anchor, genesisAttestation: buildGenesisAttestation(anchor) });
+  assert.deepEqual(
+    await composedWithVerifier.resolveCurrentOwner('fam-1', proof, 'svc-1', unsignedProof.operation, unsignedProof.requestDigest),
+    { status: 'OWNER_AUTHORIZED' },
+  );
+});
+
 test('bootstrap: repeated identical bootstrap is idempotent -> ALREADY_BOOTSTRAPPED, never a second root', async () => {
   const engine = buildEngine();
   const anchor = buildGenesisAnchor();

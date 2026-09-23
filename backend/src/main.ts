@@ -440,15 +440,23 @@ async function start(): Promise<void> {
   // Shared instance -- also reused below by protectionAlertParentDeviceResolver
   // (PCA-ADD-ENR-020), never a second independently-constructed copy.
   const familyAuthorityAttestationChainStore = new MySqlFamilyAuthorityAttestationChainStore();
+  // E-3/A-2: issuance (familyCommercialRoutes) and consumption (the engine's
+  // proof branch) MUST share ONE challenge service. The engine returns
+  // INVALID_PROOF for every proof when no request-challenge verifier is
+  // composed (FamilyOwnerAttestationChainEngine:307), so without this argument
+  // every owner-gated commercial mutation would fail forever the moment a
+  // real device-signature verifier is activated. Constructed BEFORE the
+  // engine and passed as its sixth argument.
+  const familyAuthorityRequestChallengeService = new FamilyAuthorityRequestChallengeService(new MySqlFamilyAuthorityRequestChallengeRepository());
   const familyAuthorityChainEngine = new FamilyOwnerAttestationChainEngine(
     new MySqlFamilyAuthorityGenesisStore(),
     familyAuthorityAttestationChainStore,
     new RejectingDeviceSignatureVerifier(),
     () => new Date(),
     new DeviceRepositoryFamilyAuthorityKeyResolver(deviceRepository),
+    familyAuthorityRequestChallengeService,
   );
   const familyCommercialAuthorityResolver = new AttestationChainFamilyCommercialAuthorityResolver(familyAuthorityChainEngine);
-  const familyAuthorityRequestChallengeService = new FamilyAuthorityRequestChallengeService(new MySqlFamilyAuthorityRequestChallengeRepository());
 
   // PCA-COMMERCIAL-NOTIFY-1 wiring, constructed early so it can be threaded
   // into ChangeRequestService/WebhookService below (Wave 3A correction R1:
