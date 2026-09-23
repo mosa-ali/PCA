@@ -103,6 +103,26 @@ test('the exit contract refuses to be green while a key is still load-bearing', 
   assert.notEqual(exitCodeFor(unreadable), exitCodeFor(stillLegacy));
 });
 
+test('an INCOMPLETE sealed pair is UNDECRYPTABLE, never silently skipped', () => {
+  const { ciphertext, nonce } = sealedUnder(ACTIVE_HEX);
+  // The schema allows either column to be null independently with no pair
+  // constraint, so a half-written row is reachable. It must be COUNTED rather
+  // than excluded: excluding it is what would let the audit report
+  // retirementSafe while a malformed sealed row still existed.
+  assert.equal(auditRow({ ciphertext, nonce: null, keyring }).outcome, 'UNDECRYPTABLE');
+  assert.equal(auditRow({ ciphertext: null, nonce, keyring }).outcome, 'UNDECRYPTABLE');
+
+  const summary = summarize([
+    auditRow({ ciphertext, nonce: null, keyring }),
+    auditRow({ ciphertext, nonce, keyring }),
+  ]);
+  assert.equal(summary.total, 2);
+  assert.equal(summary.undecryptable, 1);
+  assert.equal(summary.legacy, 0);
+  // Unreadable data must block retirement, not be quietly tolerated.
+  assert.equal(exitCodeFor(summary), 2);
+});
+
 test('an empty table is a clean, retirement-safe result', () => {
   const summary = summarize([]);
   assert.deepEqual(summary, { total: 0, byKeySource: {}, legacy: 0, undecryptable: 0 });

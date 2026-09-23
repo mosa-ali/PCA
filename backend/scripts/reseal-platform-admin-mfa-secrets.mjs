@@ -58,10 +58,16 @@ async function main() {
   const { rows } = await runInTransaction((conn) =>
     execute(
       conn,
+      // EITHER field non-null, NOT both. Schema 0005 and schema.ts allow each
+      // column to be null independently and declare no pair constraint, so an
+      // AND predicate makes a half-written row INVISIBLE -- the audit would then
+      // exit 0, report retirementSafe, and be wrong while a malformed sealed row
+      // still existed. auditRow already classifies an incomplete pair as
+      // UNDECRYPTABLE, so the predicate only has to let it reach the classifier.
       `SELECT admin_id, totp_secret_ciphertext, totp_secret_nonce
          FROM platform_admin_mfa_state
         WHERE totp_secret_ciphertext IS NOT NULL
-          AND totp_secret_nonce IS NOT NULL`,
+           OR totp_secret_nonce IS NOT NULL`,
     ),
   );
 
@@ -106,12 +112,17 @@ async function main() {
       {
         event: 'MFA_SECRET_DRAIN_AUDIT',
         mode: APPLY ? 'APPLY' : 'DRY_RUN',
+        // These counts describe the state BEFORE any repair performed by THIS
+        // run, so a successful --apply still reports legacy > 0 and exits 3. That
+        // is deliberately conservative: the retirement verdict must come from a
+        // FRESH dry run after apply, never from the run that did the writing.
         total: summary.total,
         byKeySource: summary.byKeySource,
         legacy: summary.legacy,
         undecryptable: summary.undecryptable,
         repaired,
         repairLost,
+        countsArePreApply: true,
         retirementSafe: exitCode === 0,
       },
       null,
