@@ -84,6 +84,26 @@ const ACTOR_DEVICE_HEADER = 'x-pca-actor-device-id';
 
 export interface ParentAccountRoutesDeps {
   parentAccountService: ParentAccountService;
+  /**
+   * Whether this deployment can actually COMPLETE a genesis ceremony.
+   *
+   * The production composition wires a rejecting device-signature verifier until
+   * the external human cryptographic review passes (see main.ts), so every
+   * completion is refused at signature verification. That refusal is the
+   * CORRECT fail-closed behaviour -- but the route reported it as 401, so the
+   * client told the parent their SESSION had expired. It had not: nothing was
+   * wrong with the session, and signing in again cannot fix it. A dedicated 503
+   * (`genesis_unavailable`) says the true thing, and lets the client fail BEFORE
+   * generating a device key it has no way to use.
+   *
+   * Optional for the same additive-dependency reason as `deviceSessionService`,
+   * and declared so that the Safe Zone routes' precedent is followed: an
+   * unavailable capability fails closed with a SEMANTIC 503 rather than a crash
+   * or a misleading 4xx. `undefined` is treated as AVAILABLE, because a composer
+   * that has not declared the capability must not be silently told genesis is
+   * impossible.
+   */
+  genesisCryptographyAvailable?: boolean;
   parentPreferenceRepository?: ParentPreferenceRepository;
   safeZoneRepository?: SafeZoneRepository;
   safeZonePolicyAuthorizer?: SafeZonePolicyAuthorizer;
@@ -417,6 +437,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
     if (!deps.parentAccountService || !isPlainObject(request.body)) return reply.code(503).send({ error: 'not_configured' });
     const body = request.body as Record<string, unknown>;
     if (typeof body.publicKey !== 'string' || !isGenesisPlatform(body.platform)) return reply.code(400).send({ error: 'invalid_request' });
@@ -447,6 +468,10 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     const token = readSessionCookie(request);
     if (token === null) return reply.code(401).send({ error: 'unauthorized' });
     if (!csrfOk(request)) return reply.code(403).send({ error: 'csrf_mismatch' });
+    // Checked BEFORE the body is parsed or any work is done: a deployment that
+    // cannot complete a ceremony should say so immediately rather than accepting
+    // a proof it is structurally unable to verify.
+    if (deps.genesisCryptographyAvailable === false) return reply.code(503).send({ error: 'genesis_unavailable' });
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const body = request.body as Record<string, unknown>;
     const issuedAt = typeof body.issuedAt === 'string' ? new Date(body.issuedAt) : null;
@@ -474,8 +499,16 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       });
       return reply.code(200).send({ ...result, genesisCompleted: true });
     } catch (error) {
-      if (error instanceof ParentAccountError) return reply.code(401).send({ error: 'unauthorized' });
-      return reply.code(401).send({ error: 'invalid_genesis_proof' });
+      // 401 is reserved for a genuinely missing or invalid SESSION, which is
+      // checked and answered above before any work happens. Answering a rejected
+      // PROOF with 401 made the client report an expired session -- false, and it
+      // sent the parent to sign in again for a problem that signing in cannot fix.
+      // A rejected proof is a 400 about the proof.
+      if (error instanceof ParentAccountError) return reply.code(400).send({ error: 'invalid_genesis_proof' });
+      // Anything else is a server-side fault. Rethrow and let the shared error
+      // boundary answer, rather than inventing a client-facing classification
+      // here that would misattribute an infrastructure failure.
+      throw error;
     }
   });
 
