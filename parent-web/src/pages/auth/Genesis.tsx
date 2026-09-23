@@ -37,7 +37,7 @@ import { safeReturnPath } from './Login';
  *  - The device key is generated per attempt and never persisted, so a reload
  *    restarts the ceremony rather than resuming a half-written authority.
  */
-type Stage = 'PASSWORD' | 'CODE' | 'CREATING' | 'AWAITING_SESSION';
+type Stage = 'PASSWORD' | 'CODE' | 'CREATING' | 'AWAITING_SESSION' | 'UNAVAILABLE';
 
 export default function Genesis() {
   const { t } = useTranslation();
@@ -125,6 +125,13 @@ export default function Genesis() {
         setCodeInvalid(true);
         setError(t('auth.invalidCode'));
         setStage('CODE');
+      } else if (err instanceof ServiceAuthError && (err.code === 'GENESIS_REJECTED' || err.code === 'NOT_IMPLEMENTED')) {
+        // A rejected proof or an absent capability cannot be fixed by
+        // retrying the code step -- sending the parent back there would only
+        // burn another one-time code for an outcome that will not change.
+        // Show the true state; sign-out stays reachable below.
+        setError(messageFor(err));
+        setStage('UNAVAILABLE');
       } else {
         setError(messageFor(err));
         setStage('CODE');
@@ -144,6 +151,10 @@ export default function Genesis() {
       if (err.code === 'INVALID_CREDENTIALS') return t('auth.invalidCredentials');
       if (err.code === 'SESSION_EXPIRED') return t('serviceAuth.sessionExpired');
       if (err.code === 'NOT_IMPLEMENTED') return t('auth.genesisUnavailable');
+      // The proof was rejected or the ceremony is unavailable: in both cases
+      // the honest message is that setup cannot complete right now -- never
+      // that the parent's session expired.
+      if (err.code === 'GENESIS_REJECTED') return t('auth.genesisUnavailable');
     }
     return t('auth.genericError');
   }
@@ -252,6 +263,12 @@ export default function Genesis() {
             </p>
           )}
         </>
+      )}
+
+      {stage === 'UNAVAILABLE' && (
+        <p id="genesis-error" role="alert" className="field-error">
+          {error}
+        </p>
       )}
 
       <p>

@@ -36,6 +36,8 @@ export type ServiceAuthErrorCode =
   | 'UNAUTHORIZED_FAMILY_SCOPE'
   | 'SESSION_EXPIRED'
   | 'INVALID_REQUEST'
+  /** A genesis ceremony proof the server could not verify (rejected/expired/consumed challenge, invalid signature). Distinct from SESSION_EXPIRED on purpose: the session is fine; signing in again cannot fix a rejected proof. */
+  | 'GENESIS_REJECTED'
   | 'RATE_LIMITED'
   | 'NOT_IMPLEMENTED'
   | 'NETWORK_ERROR'
@@ -347,6 +349,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
   async startGenesisStepUp(email: string, password: string): Promise<void> {
     const response = await this.genesisPost('/api/parent/genesis/step-up', { email, password });
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'Password confirmation failed.');
+    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
@@ -359,6 +362,7 @@ export class RealServiceAuthClient implements ServiceAuthClient {
   async completeGenesisStepUp(code: string): Promise<void> {
     const response = await this.genesisPost('/api/parent/genesis/step-up/complete', { code });
     if (response.status === 401) throw new ServiceAuthError('INVALID_CREDENTIALS', 'That code is incorrect or has expired.');
+    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
     if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'Genesis step-up request was invalid.');
@@ -383,10 +387,20 @@ export class RealServiceAuthClient implements ServiceAuthClient {
 
   async completeGenesis(input: GenesisCompletionInput): Promise<void> {
     const response = await this.genesisPost('/api/parent/genesis/complete', input);
+    // 401 stays SESSION_EXPIRED and is reserved for a genuinely missing or
+    // invalid session -- the backend answers 401 only for that.
     if (response.status === 401) throw new ServiceAuthError('SESSION_EXPIRED', 'Your session is no longer valid.');
+    // The server cannot run a genesis ceremony in this deployment (no activated
+    // cryptography). The session is fine; the capability is absent.
+    if (response.status === 503) throw new ServiceAuthError('NOT_IMPLEMENTED', 'Family setup is not available right now.');
     if (response.status === 429) throw new ServiceAuthError('RATE_LIMITED', 'Too many attempts. Please try again later.');
     if (response.status === 403) throw new ServiceAuthError('INVALID_REQUEST', 'Request could not be authorised.');
-    if (response.status === 400) throw new ServiceAuthError('INVALID_REQUEST', 'The family setup request was rejected.');
+    // 400 from /genesis/complete is a REJECTED GENESIS PROOF (the backend maps
+    // GenesisChallengeError to 400 invalid_genesis_proof and INVALID_INPUT to
+    // 400 invalid_request). It is NOT an expired session, and reporting it as
+    // one told a parent with a perfectly valid session to sign in again for a
+    // problem that signing in cannot fix.
+    if (response.status === 400) throw new ServiceAuthError('GENESIS_REJECTED', 'The family setup proof was rejected.');
     if (!response.ok) throw new ServiceAuthError('UNKNOWN', `Unexpected genesis completion status ${response.status}`);
     reportDiagnostic('PARENT_GENESIS_STAGE', 'COMPLETED');
   }

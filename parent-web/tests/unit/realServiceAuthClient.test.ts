@@ -199,6 +199,65 @@ describe('RealServiceAuthClient', () => {
   });
 
   // ---------------------------------------------------------------------
+  // GENESIS transports -- the honest failure contract (F-A).
+  //
+  // These construct REAL Response objects with the exact statuses the backend
+  // now returns, rather than mocking this client's own mapping: a test that
+  // mocks the mapper can pass while the mapper is wrong.
+  // ---------------------------------------------------------------------
+
+  const COMPLETION_INPUT = {
+    challengeId: 'challenge-1',
+    proofSignature: 'proof-signature',
+    anchorSignature: 'anchor-signature',
+    attestationSignature: 'attestation-signature',
+    trustSetEpoch: 1,
+    keyEpoch: 1,
+    issuedAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: '2026-01-01T01:00:00.000Z',
+  };
+
+  it('completeGenesis maps 400 (rejected genesis proof) to GENESIS_REJECTED -- NEVER SESSION_EXPIRED', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: 'invalid_genesis_proof' }));
+    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'GENESIS_REJECTED' });
+  });
+
+  it('completeGenesis keeps 401 as SESSION_EXPIRED -- that status is reserved for a genuinely missing/invalid session', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
+    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+  });
+
+  it('completeGenesis maps 503 (genesis cryptography unavailable) to NOT_IMPLEMENTED -- the session is fine, the capability is absent', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
+    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  });
+
+  it('completeGenesis surfaces an unexpected 5xx as UNKNOWN infrastructure failure, not as a session or proof problem', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: 'internal_error' }));
+    await expect(client.completeGenesis(COMPLETION_INPUT)).rejects.toMatchObject({ code: 'UNKNOWN' });
+  });
+
+  it('requestGenesisChallenge maps 503 (genesis unavailable) to NOT_IMPLEMENTED', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
+    await expect(client.requestGenesisChallenge('public-key', 'BROWSER')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  });
+
+  it('startGenesisStepUp maps 503 (genesis unavailable) to NOT_IMPLEMENTED -- no password ceremony for an impossible completion', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
+    await expect(client.startGenesisStepUp('parent@example.test', 'correct-horse-battery')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  });
+
+  it('completeGenesisStepUp maps 503 (genesis unavailable) to NOT_IMPLEMENTED', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'genesis_unavailable' }));
+    await expect(client.completeGenesisStepUp('123456')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
+  });
+
+  it('requestGenesisChallenge keeps 401 as SESSION_EXPIRED (the challenge route answers 401 only for a session problem)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
+    await expect(client.requestGenesisChallenge('public-key', 'BROWSER')).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+  });
+
+  // ---------------------------------------------------------------------
   // Network errors
   // ---------------------------------------------------------------------
 
