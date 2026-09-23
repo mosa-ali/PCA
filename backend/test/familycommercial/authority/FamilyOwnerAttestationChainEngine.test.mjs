@@ -26,13 +26,19 @@ function buildEngine(now = () => new Date('2026-01-03T00:00:00Z')) {
   );
 }
 
-async function bootstrapped(now) {
-  const engine = buildEngine(now);
+async function bootstrapped(now = () => new Date('2026-01-03T00:00:00Z')) {
+  const attestationStore = new InMemoryAttestationChainStore();
+  const engine = new FamilyOwnerAttestationChainEngine(
+    new InMemoryGenesisAnchorStore(),
+    attestationStore,
+    createTestOnlyDeviceSignatureVerifier(),
+    now,
+  );
   const anchor = buildGenesisAnchor();
   const genesisAttestation = buildGenesisAttestation(anchor);
   const result = await engine.bootstrapFamilyAuthority({ anchor, genesisAttestation });
   assert.equal(result.status, 'BOOTSTRAPPED');
-  return { engine, anchor, genesisAttestation, attestationId: result.attestationId };
+  return { engine, anchor, genesisAttestation, attestationId: result.attestationId, attestationStore };
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +408,139 @@ test('epoch floors: accepted increments become the new floor and stale or downgr
   const keyDowngrade = buildTransferAttestation(next, first.attestationId, { trustSetEpoch: 2, keyEpoch: 1 });
   const keyResult = await engine.transferOwnerAuthority(anchor.familyId, keyDowngrade);
   assert.deepEqual(keyResult, { status: 'INVALID_PROOF', reason: 'KEY_EPOCH_DOWNGRADE' });
+});
+
+// ---------------------------------------------------------------------------
+// PCA-DEC-025 Option A same-owner renewal (E-1)
+//
+// The genesis head (fixtures) is issued 2026-01-01T00:00:00Z and expires
+// 2026-01-08T00:00:00Z. Expiry of the cached proof bounds WHAT THE OLD
+// ATTESTATION MAY AUTHORIZE; it does not gate a fresh renewal signed by the
+// still-ACTIVE owner key. An OWNER-CHANGE transfer after expiry stays refused.
+// ---------------------------------------------------------------------------
+
+const GENESIS_PROOF_EXPIRES = new Date('2026-01-08T00:00:00Z');
+
+function sameOwnerRenewal(current, headAttestationId, overrides = {}) {
+  return buildTransferAttestation(current, headAttestationId, {
+    ownerDeviceId: current.ownerDeviceId,
+    ownerDskKeyId: current.ownerDskKeyId,
+    ownerDskPublicKey: current.ownerDskPublicKey,
+    issuedAt: new Date('2026-01-08T00:00:00Z'),
+    expiresAt: new Date('2026-01-15T00:00:00Z'),
+    ...overrides,
+  });
+}
+
+test('E-1 renewal: same-owner re-attestation BEFORE the cached proof expires -> TRANSFERRED (unchanged behaviour)', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped(() => new Date('2026-01-07T00:00:00Z'));
+  const result = await engine.transferOwnerAuthority(anchor.familyId, sameOwnerRenewal(genesisAttestation, attestationId));
+  assert.equal(result.status, 'TRANSFERRED');
+});
+
+test('E-1 renewal: at EXACTLY the cached proof expiresAt the renewal is INSIDE the window -> TRANSFERRED (strictly-greater-than boundary, documented)', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped(() => GENESIS_PROOF_EXPIRES);
+  const result = await engine.transferOwnerAuthority(anchor.familyId, sameOwnerRenewal(genesisAttestation, attestationId));
+  assert.equal(result.status, 'TRANSFERRED');
+});
+
+test('E-1 renewal: one millisecond AFTER expiry, a fresh proof by the still-ACTIVE owner key -> TRANSFERRED, head advances, and the OLD proof authorized nothing before it', async () => {
+  let clock = new Date(GENESIS_PROOF_EXPIRES.getTime() + 1);
+  const { engine, anchor, genesisAttestation, attestationId, attestationStore } = await bootstrapped(() => clock);
+  // The OLD attestation stays worthless after expiry -- resolve-side gate unchanged.
+  assert.equal((await engine.resolveCurrentOwner(anchor.familyId, anchor.genesisDeviceId)).status, 'STALE_OR_REVOKED');
+  const result = await engine.transferOwnerAuthority(anchor.familyId, sameOwnerRenewal(genesisAttestation, attestationId));
+  assert.equal(result.status, 'TRANSFERRED');
+  const head = await attestationStore.findHead(anchor.familyId);
+  assert.equal(head.headRevision, 2);
+  assert.equal(head.status, 'ACTIVE');
+  // The renewed head authorizes the owner again.
+  clock = new Date('2026-01-09T00:00:00Z');
+  assert.deepEqual(await engine.resolveCurrentOwner(anchor.familyId, anchor.genesisDeviceId), { status: 'OWNER_AUTHORIZED' });
+});
+
+test('E-1 NEGATIVE CONTROL (retained): an OWNER-CHANGE transfer after expiry -> STALE_OR_REVOKED, head unchanged', async () => {
+  const { engine, anchor, genesisAttestation, attestationId, attestationStore } = await bootstrapped(() => new Date('2026-01-09T00:00:00Z'));
+  // Default fixture fields = a genuine owner change (dev-new-owner).
+  const result = await engine.transferOwnerAuthority(anchor.familyId, buildTransferAttestation(genesisAttestation, attestationId));
+  assert.equal(result.status, 'STALE_OR_REVOKED');
+  const head = await attestationStore.findHead(anchor.familyId);
+  assert.equal(head.headRevision, 1);
+  assert.equal(head.status, 'ACTIVE');
+});
+
+test('E-1 renewal: after expiry with the owner key NO LONGER ACTIVE in the directory -> INVALID_PROOF CURRENT_SIGNER_KEY_NOT_ACTIVE, head unchanged', async () => {
+  let keyActive = true;
+  const keyResolver = {
+    async isActiveDsk() {
+      return keyActive;
+    },
+  };
+  const anchorStore = new InMemoryGenesisAnchorStore();
+  const chainStore = new InMemoryAttestationChainStore();
+  const engine = new FamilyOwnerAttestationChainEngine(
+    anchorStore,
+    chainStore,
+    createTestOnlyDeviceSignatureVerifier(),
+    () => new Date('2026-01-09T00:00:00Z'),
+    keyResolver,
+  );
+  const anchor = buildGenesisAnchor();
+  const genesisAttestation = buildGenesisAttestation(anchor);
+  const boot = await engine.bootstrapFamilyAuthority({ anchor, genesisAttestation });
+  assert.equal(boot.status, 'BOOTSTRAPPED');
+  keyActive = false;
+  const result = await engine.transferOwnerAuthority(anchor.familyId, sameOwnerRenewal(genesisAttestation, boot.attestationId));
+  assert.deepEqual(result, { status: 'INVALID_PROOF', reason: 'CURRENT_SIGNER_KEY_NOT_ACTIVE' });
+  const head = await chainStore.findHead(anchor.familyId);
+  assert.equal(head.headRevision, 1);
+});
+
+test('E-1 renewal: a REVOKED head refuses renewal after expiry exactly as before -> STALE_OR_REVOKED', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped(() => new Date('2026-01-09T00:00:00Z'));
+  await engine.revokeCurrentOwner(anchor.familyId);
+  const result = await engine.transferOwnerAuthority(anchor.familyId, sameOwnerRenewal(genesisAttestation, attestationId));
+  assert.equal(result.status, 'STALE_OR_REVOKED');
+});
+
+test('E-1 renewal: signed by a device that is not the current owner -> INVALID_PROOF SIGNER_MUST_BE_OUTGOING_OWNER', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped(() => new Date('2026-01-09T00:00:00Z'));
+  const forged = sameOwnerRenewal(genesisAttestation, attestationId, {
+    signerDeviceId: 'dev-someone-else',
+    signerDskKeyId: 'other-key',
+    signerDskPublicKey: 'pk-other',
+  });
+  assert.deepEqual(await engine.transferOwnerAuthority(anchor.familyId, forged), { status: 'INVALID_PROOF', reason: 'SIGNER_MUST_BE_OUTGOING_OWNER' });
+});
+
+test('E-1 renewal: a SEQUENTIAL replay of an already-applied renewal artifact -> INVALID_PROOF REVISION_NOT_MONOTONIC (shape check), head unchanged and no second append', async () => {
+  // Two different "duplicate" shapes, both fail closed:
+  //  - sequential replay of the identical artifact is caught by the shape
+  //    check first (its revision no longer equals head+1) -> INVALID_PROOF;
+  //  - two CONCURRENT applications of a renewal for the same prior revision
+  //    both pass the shape check and race the CAS -> exactly one wins (see the
+  //    concurrent test below).
+  const { engine, anchor, genesisAttestation, attestationId, attestationStore } = await bootstrapped(() => new Date('2026-01-09T00:00:00Z'));
+  const renewal = sameOwnerRenewal(genesisAttestation, attestationId);
+  const first = await engine.transferOwnerAuthority(anchor.familyId, renewal);
+  const replay = await engine.transferOwnerAuthority(anchor.familyId, renewal);
+  assert.equal(first.status, 'TRANSFERRED');
+  assert.deepEqual(replay, { status: 'INVALID_PROOF', reason: 'REVISION_NOT_MONOTONIC' });
+  const head = await attestationStore.findHead(anchor.familyId);
+  assert.equal(head.headRevision, 2);
+  assert.equal(head.headAttestationId, first.attestationId);
+});
+
+test('E-1 renewal: two CONCURRENT same-owner renewals -> exactly one TRANSFERRED, one REJECTED_STALE_REVISION', async () => {
+  const { engine, anchor, genesisAttestation, attestationId } = await bootstrapped(() => new Date('2026-01-09T00:00:00Z'));
+  const renewalA = sameOwnerRenewal(genesisAttestation, attestationId, { expiresAt: new Date('2026-01-15T00:00:00Z') });
+  const renewalB = sameOwnerRenewal(genesisAttestation, attestationId, { expiresAt: new Date('2026-01-16T00:00:00Z') });
+  const [resultA, resultB] = await Promise.all([
+    engine.transferOwnerAuthority(anchor.familyId, renewalA),
+    engine.transferOwnerAuthority(anchor.familyId, renewalB),
+  ]);
+  const statuses = [resultA.status, resultB.status].sort();
+  assert.deepEqual(statuses, ['REJECTED_STALE_REVISION', 'TRANSFERRED']);
 });
 
 // ---------------------------------------------------------------------------

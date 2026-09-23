@@ -48,15 +48,20 @@ export interface FamilyAuthorityRequestChallengeVerifier {
  * Bounds the attestation's OWN (issuedAt, expiresAt) duration only --
  * mission Section 14's "not too long" half. Freshness relative to the
  * CURRENT time ("was this actually issued recently, not merely not-yet-
- * expired") is enforced separately, at every resolution/transfer call, by
- * comparing the live clock against `expiresAt` (never against `issuedAt`):
- * see resolveCurrentOwner/transferOwnerAuthority's own `now() >
- * expiresAt` checks. Deliberately NOT also comparing `now` to `issuedAt`
- * here: at ingestion time those two are expected to be close, but nothing
- * downstream depends on that -- the real freshness guarantee always comes
- * from the expiry check, so this function stays a pure, clock-independent
- * shape check (easier to reason about, and correct even if ingestion is
- * processed slightly out of band from issuance).
+ * expired") is enforced separately by comparing the live clock against
+ * `expiresAt`, and it bounds WHAT AN ATTESTATION MAY AUTHORIZE, not who
+ * may re-attest: every resolveCurrentOwner call is gated on the head's
+ * expiry, and an owner-CHANGE transfer requires the outgoing owner's
+ * authority to be current -- while a SAME-OWNER renewal is a fresh proof
+ * by the still-ACTIVE owner key and is not gated by the cached proof's
+ * expiry (PCA-DEC-025 Option A cache semantics). See the
+ * resolveCurrentOwner/transferOwnerAuthority call sites. Deliberately NOT
+ * also comparing `now` to `issuedAt` here: at ingestion time those two are
+ * expected to be close, but nothing downstream depends on that -- the real
+ * freshness guarantee always comes from the expiry check, so this function
+ * stays a pure, clock-independent shape check (easier to reason about, and
+ * correct even if ingestion is processed slightly out of band from
+ * issuance).
  */
 function hasSaneTtl(issuedAt: Date, expiresAt: Date): boolean {
   const ttl = expiresAt.getTime() - issuedAt.getTime();
@@ -178,7 +183,18 @@ export class FamilyOwnerAttestationChainEngine {
       currentAttestation.signature,
     );
     if (!currentValid) return { status: 'INVALID_PROOF', reason: 'CURRENT_HEAD_SIGNATURE_INVALID' };
-    if (this.now().getTime() > currentAttestation.expiresAt.getTime()) return { status: 'STALE_OR_REVOKED' };
+    // PCA-DEC-025 Option A: an attestation is a cached, short-lived PROOF; the
+    // durable authority is the root plus the signed lineage. A same-owner
+    // renewal is a fresh proof by the still-ACTIVE owner key (eligibility is
+    // established by the REVOKED, isActiveDsk, signer-must-be-outgoing-owner,
+    // epoch-floor, TTL-sanity, signature and CAS checks around this line), so
+    // the expiry of the cached proof does not gate it. An OWNER-CHANGE transfer
+    // still requires the outgoing owner's authority to be current.
+    const isSameOwnerRenewal =
+      nextAttestation.ownerDeviceId === currentAttestation.ownerDeviceId &&
+      nextAttestation.ownerDskKeyId === currentAttestation.ownerDskKeyId &&
+      nextAttestation.ownerDskPublicKey === currentAttestation.ownerDskPublicKey;
+    if (!isSameOwnerRenewal && this.now().getTime() > currentAttestation.expiresAt.getTime()) return { status: 'STALE_OR_REVOKED' };
 
     const reason = this.validateTransferShape(familyId, head.headAttestationId, head.headRevision, currentAttestation, nextAttestation);
     if (reason !== null) return { status: 'INVALID_PROOF', reason };

@@ -86,9 +86,97 @@ test('MySQL CONCURRENCY: two conflicting Owner transitions from the same prior r
   assert.equal(resolved.status, 'OWNER_AUTHORIZED');
 });
 
-test('MySQL DURABILITY: state survives across independent store/engine instances (restart/multi-instance proof -- no process-local cache)', async () => {
-  const familyId = `fam-durability-${randomUUID()}`;
+test('MySQL RACE (revoke wins the read/append gap): a revocation landing between the head read and the append is REFUSED and leaves NO orphan attestation row', async () => {
+  // Claude _0300 F-2 REQUIRED_BEFORE_FINAL_CERTIFICATION proof, order 1.
+  // The window is the same one the in-memory test injects: markHeadRevoked
+  // flips `status` WITHOUT bumping head_revision, so the append CAS is only
+  // safe because its predicate also requires status = 'ACTIVE'.
+  const familyId = `fam-revokegap-${randomUUID()}`;
   const anchor = buildGenesisAnchor({ familyId, genesisDeviceId: 'dev-genesis' });
+  const genesisAttestation = buildGenesisAttestation(anchor);
+  const bootstrapResult = await freshEngine().bootstrapFamilyAuthority({ anchor, genesisAttestation });
+  assert.equal(bootstrapResult.status, 'BOOTSTRAPPED');
+
+  const store = new MySqlFamilyAuthorityAttestationChainStore();
+  let revocationInjected = false;
+  const racingStore = {
+    findHead: async (requestedFamilyId) => {
+      const head = await store.findHead(requestedFamilyId);
+      if (!revocationInjected && head !== null && head.status === 'ACTIVE') {
+        revocationInjected = true;
+        // A second connection, like a concurrent admin revocation arriving
+        // exactly between the engine's read and its append.
+        await new MySqlFamilyAuthorityAttestationChainStore().markHeadRevoked(requestedFamilyId, new Date('2026-01-03T00:00:01Z'));
+      }
+      return head;
+    },
+    findAttestationById: (requestedFamilyId, id) => store.findAttestationById(requestedFamilyId, id),
+    appendIfCurrentRevision: (attestation, id, revision) => store.appendIfCurrentRevision(attestation, id, revision),
+    markHeadRevoked: (requestedFamilyId, at) => store.markHeadRevoked(requestedFamilyId, at),
+  };
+  assert.equal(revocationInjected, false);
+  const racingEngine = new FamilyOwnerAttestationChainEngine(
+    new MySqlFamilyAuthorityGenesisStore(),
+    racingStore,
+    createTestOnlyDeviceSignatureVerifier(),
+    () => new Date('2026-01-03T00:00:01.500Z'),
+  );
+
+  const next = buildTransferAttestation(genesisAttestation, bootstrapResult.attestationId);
+  const result = await racingEngine.transferOwnerAuthority(familyId, next);
+  assert.equal(result.status, 'REJECTED_STALE_REVISION');
+
+  const [heads] = await getPool().query(`SELECT status, head_revision FROM family_authority_chain_heads WHERE family_id = ?`, [familyId]);
+  assert.equal(heads[0].status, 'REVOKED', 'revocation must still be in force after the refused append');
+  assert.equal(Number(heads[0].head_revision), 1, 'the head must not have advanced');
+  const [orphans] = await getPool().query(
+    `SELECT COUNT(*) AS n FROM family_authority_attestations WHERE family_id = ? AND attestation_revision = 2`,
+    [familyId],
+  );
+  assert.equal(Number(orphans[0].n), 0, 'the refused append must not leave an orphan attestation row (single transaction rollback)');
+});
+
+test('MySQL RACE (other order): a revocation AFTER a successful append is still terminal -- the append never resurrects revoked authority', async () => {
+  // Claude _0300 F-2 REQUIRED_BEFORE_FINAL_CERTIFICATION proof, order 2.
+  // The append wins its window; the revocation that follows must still take
+  // effect and must not be undone by any later append state.
+  const familyId = `fam-revokeafter-${randomUUID()}`;
+  const anchor = buildGenesisAnchor({ familyId, genesisDeviceId: 'dev-genesis' });
+  const genesisAttestation = buildGenesisAttestation(anchor);
+  const bootstrapResult = await freshEngine().bootstrapFamilyAuthority({ anchor, genesisAttestation });
+  assert.equal(bootstrapResult.status, 'BOOTSTRAPPED');
+
+  const renewal = buildTransferAttestation(genesisAttestation, bootstrapResult.attestationId, {
+    ownerDeviceId: 'dev-genesis',
+    ownerDskKeyId: anchor.genesisDskKeyId,
+    ownerDskPublicKey: anchor.genesisDskPublicKey,
+  });
+  const transferred = await freshEngine().transferOwnerAuthority(familyId, renewal);
+  assert.equal(transferred.status, 'TRANSFERRED');
+
+  await freshEngine().revokeCurrentOwner(familyId);
+
+  const resolved = await freshEngine().resolveCurrentOwner(familyId, anchor.genesisDeviceId);
+  assert.equal(resolved.status, 'STALE_OR_REVOKED');
+
+  const [heads] = await getPool().query(`SELECT status, head_revision FROM family_authority_chain_heads WHERE family_id = ?`, [familyId]);
+  assert.equal(heads[0].status, 'REVOKED');
+  assert.equal(Number(heads[0].head_revision), 2, 'the revocation is terminal at the revision the append produced');
+
+  // A subsequent append attempt (even a well-formed same-owner renewal for the
+  // now-current revision) must be refused: revocation is terminal for the
+  // chain-head append transition.
+  const afterRevoke = buildTransferAttestation(renewal, transferred.attestationId, {
+    ownerDeviceId: 'dev-genesis',
+    ownerDskKeyId: anchor.genesisDskKeyId,
+    ownerDskPublicKey: anchor.genesisDskPublicKey,
+  });
+  const refused = await freshEngine().transferOwnerAuthority(familyId, afterRevoke);
+  assert.equal(refused.status, 'STALE_OR_REVOKED');
+});
+
+test('MySQL DURABILITY: state survives across independent store/engine instances (restart/multi-instance proof -- no process-local cache)', async () => {
+  const familyId = `fam-durability-${randomUUID()}`;  const anchor = buildGenesisAnchor({ familyId, genesisDeviceId: 'dev-genesis' });
   const genesisAttestation = buildGenesisAttestation(anchor);
 
   await freshEngine().bootstrapFamilyAuthority({ anchor, genesisAttestation });
