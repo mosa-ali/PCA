@@ -21,11 +21,15 @@ test('F-A/F2: main.ts derives genesisCryptographyAvailable from the ONE verifier
   // real verifier needs no second constant) and is the SAME instance for both
   // consumers: the challenge service (proof verification) and
   // ParentGenesisService (anchor/attestation verification).
-  assert.match(main, /const parentGenesisSignatureVerifier: DeviceSignatureVerifier = new RejectingDeviceSignatureVerifier\(\);/);
+  assert.match(main, /const parentGenesisVerifierComposition = resolveGenesisSignatureVerifier\(process\.env\);/);
+  assert.match(main, /const parentGenesisSignatureVerifier: DeviceSignatureVerifier = parentGenesisVerifierComposition\.verifier;/);
   assert.match(main, /new GenesisChallengeService\(new MySqlGenesisChallengeRepository\(\), parentGenesisSignatureVerifier\)/);
-  // The availability flag is DERIVED from that instance -- never a second
-  // constant that can drift from the composition it describes.
-  assert.match(main, /const genesisCryptographyAvailable = !\(parentGenesisSignatureVerifier instanceof RejectingDeviceSignatureVerifier\);/);
+  // The availability flag is DERIVED from the composed instance (inside the
+  // resolver, via instanceof RejectingDeviceSignatureVerifier) -- never a
+  // second constant that can drift from the composition it describes.
+  assert.match(main, /const genesisCryptographyAvailable = parentGenesisVerifierComposition\.available;/);
+  const resolver = await readFile(path.join(backendRoot, 'src/parentaccount/genesisVerifierComposition.ts'), 'utf8');
+  assert.match(resolver, /available: !\(verifier instanceof RejectingDeviceSignatureVerifier\)/);
   // ... and threaded into the server composition.
   assert.match(main, /^    genesisCryptographyAvailable,$/m);
 

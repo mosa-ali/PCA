@@ -35,7 +35,7 @@ function buildResolver(map) {
   };
 }
 
-function buildHarness({ resolver } = {}) {
+function buildHarness({ resolver, familyAuthorityRequestChallengeService, authorityDeviceDirectory } = {}) {
   const authService = new AuthService(createInMemoryAuthRepository());
   const authzRepository = createInMemoryAuthzRepository();
   const entitlementRepository = createInMemoryEntitlementRepository();
@@ -74,6 +74,8 @@ function buildHarness({ resolver } = {}) {
     familyCommercialAuthorityResolver: resolver ?? buildResolver(new Map()),
     rateLimiter,
     authAttemptLimiter: rateLimiter({ windowMs: 60_000, max: 1000, bucket: 'test-auth-attempt' }),
+    familyAuthorityRequestChallengeService,
+    authorityDeviceDirectory,
   });
   return { app, authService, authzRepository, changeRequestRepository, subscriptionsByFamily };
 }
@@ -431,4 +433,94 @@ test('payment-method read never serializes anything beyond the allowlisted safe 
   for (const key of Object.keys(paymentMethods[0])) {
     assert.ok(allowedKeys.has(key), `unexpected payment-method field leaked to the wire: ${key}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Owner-authority challenge issuance is bound to the device's registering
+// account (C-1 server half). Two parents of one family who share a browser
+// share its storage; the second must never obtain a challenge for the first
+// parent's device.
+// ---------------------------------------------------------------------------
+
+const P256_POINT = 'BArQn4mGDfD8WbmEr3y436L0C_MxjRuPMWujop0xjrNt-dHBPBuGdWziFXdjHW1d322DsGA0CNg8uqRRdViMd5E';
+
+function recordingChallengeService() {
+  const issued = [];
+  return {
+    issued,
+    async issue(input) {
+      issued.push(input);
+      return { ...input, protocolVersion: 1, challengeId: `ch-${issued.length}`, nonce: 'n', issuedAt: FIXED_NOW, expiresAt: new Date(FIXED_NOW.getTime() + 60000), consumedAt: null };
+    },
+  };
+}
+
+/** Two verified parents, both ACTIVE-scoped to family-A; `devices` is filled after account ids exist. */
+async function twoParentsOneFamily({ withDirectory = true } = {}) {
+  const devices = [];
+  const challengeService = recordingChallengeService();
+  const harness = buildHarness({
+    familyAuthorityRequestChallengeService: challengeService,
+    authorityDeviceDirectory: withDirectory
+      ? { async findDeviceForFamily(familyId, deviceId) { return devices.find((d) => d.familyId === familyId && d.deviceId === deviceId) ?? null; } }
+      : undefined,
+  });
+  const a = await issueToken(harness.authService, 'parent-a');
+  const b = await issueToken(harness.authService, 'parent-b');
+  harness.authzRepository._grantScope(a.accountId, 'family-A', 'ACTIVE');
+  harness.authzRepository._grantScope(b.accountId, 'family-A', 'ACTIVE');
+  return { ...harness, devices, challengeService, a, b };
+}
+
+function challengeRequest(app, rawToken, deviceId) {
+  return app.inject({
+    method: 'POST',
+    url: '/v1/families/family-A/authority/challenge',
+    headers: { authorization: `Bearer ${rawToken}` },
+    payload: { operation: 'BILLING_CHECKOUT_CREATE', deviceId, keyId: 'key-1', publicKey: P256_POINT, requestDigest: digestAuthorityRequestBody('{}') },
+  });
+}
+
+test('authority challenge: issued for a device the SESSION ACCOUNT registered', async () => {
+  const { app, devices, challengeService, a } = await twoParentsOneFamily();
+  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
+  const response = await challengeRequest(app, a.rawToken, 'dev-a');
+  assert.equal(response.statusCode, 201);
+  assert.equal(challengeService.issued.length, 1);
+  assert.equal(challengeService.issued[0].serviceAccountId, a.accountId);
+});
+
+test('authority challenge: a SECOND PARENT of the same family cannot obtain a challenge for the first parent device', async () => {
+  const { app, devices, challengeService, a, b } = await twoParentsOneFamily();
+  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
+  const response = await challengeRequest(app, b.rawToken, 'dev-a');
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.json(), { error: 'forbidden' });
+  assert.equal(challengeService.issued.length, 0, 'no challenge row may be created for a refused request');
+});
+
+test('authority challenge: a REVOKED device is refused even for its own registering account', async () => {
+  const { app, devices, challengeService, a } = await twoParentsOneFamily();
+  devices.push({ familyId: 'family-A', deviceId: 'dev-a', status: 'REVOKED', registeredByAccountId: a.accountId });
+  const response = await challengeRequest(app, a.rawToken, 'dev-a');
+  assert.equal(response.statusCode, 403);
+  assert.equal(challengeService.issued.length, 0);
+});
+
+test('authority challenge: an unknown or other-family device is refused with the same body', async () => {
+  const { app, devices, challengeService, a } = await twoParentsOneFamily();
+  devices.push({ familyId: 'family-B', deviceId: 'dev-a', status: 'ACTIVE', registeredByAccountId: a.accountId });
+  for (const deviceId of ['dev-a', 'dev-missing']) {
+    const response = await challengeRequest(app, a.rawToken, deviceId);
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(response.json(), { error: 'forbidden' });
+  }
+  assert.equal(challengeService.issued.length, 0);
+});
+
+test('authority challenge: fails CLOSED (503) when the device directory is not composed', async () => {
+  const { app, challengeService, a } = await twoParentsOneFamily({ withDirectory: false });
+  const response = await challengeRequest(app, a.rawToken, 'dev-a');
+  assert.equal(response.statusCode, 503);
+  assert.equal(challengeService.issued.length, 0);
 });

@@ -79,6 +79,7 @@ import { buildEffectiveEntitlementDto } from '../../entitlements/complimentary/M
 import { digestAuthorityRequestBody } from '../../familycommercial/authority/requestProofProtocol.js';
 import type { FamilyAuthorityRequestProof } from '../../familycommercial/authority/FamilyOwnerAttestationChainEngine.js';
 import type { FamilyAuthorityRequestChallengeService } from '../../familycommercial/authority/FamilyAuthorityRequestChallengeService.js';
+import type { DeviceRepository } from '../../device/DeviceRepository.js';
 
 const MAX_BODY_BYTES = 4 * 1024;
 const MAX_REQUEST_ID_LENGTH = 128;
@@ -99,6 +100,8 @@ export interface FamilyCommercialRoutesDeps {
   complimentaryEntitlementService?: ComplimentaryEntitlementService;
   /** Source-complete request-proof challenge issuer. Omission fails the challenge route closed. */
   familyAuthorityRequestChallengeService?: FamilyAuthorityRequestChallengeService;
+  /** Device directory used to bind owner-authority challenge issuance to the device's registering account. Absent -> issuance fails closed (503). */
+  authorityDeviceDirectory?: Pick<DeviceRepository, 'findDeviceForFamily'>;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -205,6 +208,20 @@ export function registerFamilyCommercialRoutes(app: FastifyInstance, deps: Famil
         typeof body.publicKey !== 'string' ||
         typeof body.requestDigest !== 'string'
       ) return reply.code(400).send({ error: 'invalid_request' });
+      // ACCOUNT BINDING (C-1, server half): an owner-authority challenge is
+      // issued only for a device that is ACTIVE in THIS family and was
+      // registered by THIS session's account. Two parents of one family who
+      // share a browser profile share its storage; without this check the
+      // second parent could obtain a challenge for the first parent's device
+      // and sign it with the first parent's key. The engine's proof branch
+      // requires the consumed challenge to match the session account, so
+      // binding issuance binds the whole proof. Fails closed when the device
+      // directory is not composed.
+      if (!deps.authorityDeviceDirectory) return reply.code(503).send({ error: 'not_configured' });
+      const claimedDevice = await deps.authorityDeviceDirectory.findDeviceForFamily(familyId, body.deviceId);
+      if (!claimedDevice || claimedDevice.status !== 'ACTIVE' || claimedDevice.registeredByAccountId !== request.accountId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
       const challenge = await deps.familyAuthorityRequestChallengeService.issue({
         serviceAccountId: request.accountId as string,
         familyId,

@@ -194,6 +194,7 @@ const files = [
   "test/parentaccount/dailyLoginGrant.test.mjs",
   "test/parentaccount/routes.test.mjs",
   "test/http/parentGenesisRoutes.test.mjs",
+  "test/parentaccount/genesisVerifierComposition.test.mjs",
   "test/parentaccount/cookies.test.mjs",
   "test/parentaccount/verificationCode.test.mjs",
   "test/parentaccount/passwordCredential.test.mjs",

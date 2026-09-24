@@ -44,6 +44,7 @@ import {
 // composition-truth test below (`instanceof RejectingDeviceSignatureVerifier`)
 // stays meaningful when an accepting verifier replaces the stub.
 import type { DeviceSignatureVerifier } from './deviceauth/DeviceSignatureVerifier.js';
+import { resolveGenesisSignatureVerifier } from './parentaccount/genesisVerifierComposition.js';
 import { MySqlDeleteNowLedger } from './retention/MySqlDeleteNowLedger.js';
 import { FamilyAuditService, InMemoryFamilyAuditRepository } from './familyrbac/FamilyAuditStore.js';
 import { MySqlActionIdempotencyLedger } from './familyrbac/MySqlActionIdempotencyLedger.js';
@@ -583,28 +584,28 @@ async function start(): Promise<void> {
   );
   const familyMembershipRepository = new MySqlFamilyMembershipRepository();
   // PCA-DEC-020-R1: the first-family ceremony is a single explicit source
-  // boundary. The active production verifier remains rejecting until the
-  // external human cryptographic review authorizes a real verifier.
+  // boundary. The verifier is selected by resolveGenesisSignatureVerifier
+  // (parentaccount/genesisVerifierComposition.ts): DEFAULT FAIL-CLOSED
+  // (RejectingDeviceSignatureVerifier) unless the operator explicitly sets
+  // PCA_GENESIS_DEVICE_SIGNATURE_VERIFIER=P256. Production activation remains
+  // an explicit owner act under the PCA-DEC-020 review gate; this code does not
+  // record or imply that review.
   //
   // ONE verifier instance feeds both consumers (challenge-proof verification
   // and anchor/attestation verification) AND the availability flag below, so
-  // the flag cannot drift from the composition it describes: the day a real
-  // verifier replaces this instance, `genesisCryptographyAvailable` becomes
-  // true in the same change, and until then /genesis/step-up,
-  // /genesis/step-up/complete, /genesis/challenge and /genesis/complete all
-  // answer 503 genesis_unavailable BEFORE any ceremony work, instead of
-  // surfacing a rejected proof as a session or proof error it is not.
-  //
-  // Typed as the INTERFACE on purpose: the `instanceof` check below is the
-  // composition-truth test, and a future accepting verifier drops in here
-  // without any second constant to update.
-  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = new RejectingDeviceSignatureVerifier();
+  // the flag cannot drift from the composition it describes. While rejecting,
+  // /genesis/step-up, /genesis/step-up/complete, /genesis/challenge and
+  // /genesis/complete all answer 503 genesis_unavailable BEFORE any work.
+  const parentGenesisVerifierComposition = resolveGenesisSignatureVerifier(process.env);
+  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = parentGenesisVerifierComposition.verifier;
   const parentGenesisService = new ParentGenesisService(
     new GenesisChallengeService(new MySqlGenesisChallengeRepository(), parentGenesisSignatureVerifier),
     new MySqlGenesisTransactionRepository(),
     parentGenesisSignatureVerifier,
   );
-  const genesisCryptographyAvailable = !(parentGenesisSignatureVerifier instanceof RejectingDeviceSignatureVerifier);
+  const genesisCryptographyAvailable = parentGenesisVerifierComposition.available;
+  // eslint-disable-next-line no-console -- one bounded boot line naming the composed genesis verifier mode; no secret material.
+  console.log(JSON.stringify({ event: 'PARENT_GENESIS_VERIFIER', mode: parentGenesisVerifierComposition.mode, available: genesisCryptographyAvailable }));
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,
@@ -995,6 +996,7 @@ async function start(): Promise<void> {
     // PCA-MYKIDS-BILL-2: family-facing commercial API.
     familyCommercialService,
     familyAuthorityRequestChallengeService,
+    authorityDeviceDirectory: deviceRepository,
     // PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance.
     parentAccountService,
     // Derived from the verifier INSTANCE above, never a second constant that

@@ -228,6 +228,8 @@ export interface ServerDependencies {
   /** PCA-MYKIDS-BILL-2: family-facing commercial API -- see registerFamilyCommercialRoutes below. */
   familyCommercialService: FamilyCommercialService;
   familyAuthorityRequestChallengeService?: import('../familycommercial/authority/FamilyAuthorityRequestChallengeService.js').FamilyAuthorityRequestChallengeService;
+  /** Binds owner-authority challenge issuance to the device's registering account (familyCommercialRoutes). */
+  authorityDeviceDirectory?: Pick<import('../device/DeviceRepository.js').DeviceRepository, 'findDeviceForFamily'>;
   /** PCA-AUTH-SESSION-1: browser-reachable parent identity + session issuance -- see registerParentAccountRoutes below. */
   parentAccountService: ParentAccountService;
   /**
@@ -603,6 +605,7 @@ export function buildServer(deps: ServerDependencies): FastifyInstance {
     authAttemptLimiter,
     complimentaryEntitlementService: deps.complimentaryEntitlementService,
     familyAuthorityRequestChallengeService: deps.familyAuthorityRequestChallengeService,
+    authorityDeviceDirectory: deps.authorityDeviceDirectory,
   });
   registerParentAccountRoutes(app, {
     parentAccountService: deps.parentAccountService,
