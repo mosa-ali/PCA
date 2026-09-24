@@ -107,6 +107,23 @@ honest, expected state — do not "fix" the gate script to pass; fix the
 underlying conditions (get the crypto suite reviewed, run real UAT, close
 the external gates) instead.
 
+## Current release (pca-dev deployment candidate, 2026-09-24): recorded scope
+
+This section RECORDS the current deployment candidate's scope. It closes no
+gate, changes no `releaseScope`, and does not alter the NOT READY verdict
+above — it makes the candidate's fail-closed posture auditable, per the
+release-lead scope ruling (`CLAUDE_20260924T0540_LEAD_release_scope_ruling`).
+The same record is carried in `EXTERNAL_GATE_MATRIX.md` via
+`external_gate_matrix.json`'s `PRODUCTION_CRYPTO_SUITE` description.
+
+| Item | Status | Evidence / meaning for this candidate |
+|---|---|---|
+| `GENESIS_PRODUCTION_COMPOSITION` | **FAIL_CLOSED_BY_DESIGN** | The production composition wires `RejectingDeviceSignatureVerifier` for the genesis ceremony. All four genesis routes (`/genesis/step-up`, `/genesis/step-up/complete`, `/genesis/challenge`, `/genesis/complete`) answer `503 genesis_unavailable` BEFORE body parsing, rate limiting or any service call, and `GET /api/parent/session` carries the additive `genesisAvailable` field so onboarding renders the unavailable state on load instead of prompting for a password. Route-tested through the real `buildServer` composition (`backend/test/http/parentGenesisRoutes.test.mjs`); the verifier-derived flag is source-asserted by `backend/test/security/pcaDec020R2Composition.test.mjs`. |
+| `BROWSER_KEY_CUSTODY` | **SHIPPED_UNWIRED** | `parent-web/src/security/deviceKeyCustody.ts` and `indexedDbDeviceKeyRecordStore.ts` ship with NO production importer — nothing persists a key on any production path. Known C-1 (account binding), C-2 (canonical SEC1-point fingerprint) and C-3 (transaction-complete / atomic add-vs-put adapter) corrections are open and tracked in the OWNER-AUTHORITY ACTIVATION PROGRAMME. |
+| `OWNER_AUTHORITY_LONGEVITY` | **ACTIVATION_PROGRAMME_ENTRY_CONDITION** | The genesis-flow gap carried by `67747d03` (one-hour browser head, memory-only signer, no renewal endpoint) is UNREACHABLE in production behind the rejecting verifier, and is the entry condition of the activation programme. |
+| `PRODUCTION_OWNER_AUTHORITY_READY` | **NO** | No real family genesis — and therefore no production owner authority — is reachable until `CRYPTO_ACTIVATION` / `PRODUCTION_CRYPTO_SUITE` close. |
+| `KEY_ROTATION_PROCEDURE_CERTIFIED` | **NO** | The Platform Admin MFA key-ring rotation ships DORMANT: with no `PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_n` configured, the ring is the active key alone and behaviour is identical to the pre-ring code. **Do not configure `_PREVIOUS_n` or run the drain audit `--apply` against production data until the MySQL CAS proof and the drain-audit execution-path test exist.** See the platform rotation runbook: `docs/deployment/PCA_AZURE_PREPRODUCTION_ACCEPTANCE_PLAN.md` → "Rotating `PLATFORM_ADMIN_MFA_ENC_KEY`". |
+
 ## What this gate does not cover
 
 Passing this gate is necessary, not sufficient. It does not replace the

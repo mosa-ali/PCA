@@ -258,6 +258,15 @@ will be missing it), `PCA_TRUSTED_PROXY_CIDRS`.
 
 ### Rotating `PLATFORM_ADMIN_MFA_ENC_KEY` (read before rotating)
 
+> **NOT CERTIFIED FOR PRODUCTION YET (`KEY_ROTATION_PROCEDURE_CERTIFIED = NO`).**
+> Do not configure `PLATFORM_ADMIN_MFA_ENC_KEY_PREVIOUS_1`/`_PREVIOUS_2`, and do
+> not run the drain audit with `--apply` against production data, until the MySQL
+> CAS proof for the reseal path AND the drain-audit execution-path test exist.
+> The rotation feature ships DORMANT: with no `_PREVIOUS_n` configured the key
+> ring is the active key alone, and behaviour is identical to the pre-ring code.
+> See `docs/release_readiness/RELEASE_GATE.md` ("Current release ... recorded
+> scope") and `docs/release_readiness/EXTERNAL_GATE_MATRIX.md`.
+
 This key seals every Platform Admin TOTP secret. It is a **bounded key ring**, not
 a single key: decryption accepts the active key plus up to two explicitly named,
 decrypt-only previous generations:
