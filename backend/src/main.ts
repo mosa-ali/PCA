@@ -596,16 +596,16 @@ async function start(): Promise<void> {
   // the flag cannot drift from the composition it describes. While rejecting,
   // /genesis/step-up, /genesis/step-up/complete, /genesis/challenge and
   // /genesis/complete all answer 503 genesis_unavailable BEFORE any work.
-  const parentGenesisVerifierComposition = resolveGenesisSignatureVerifier(process.env);
-  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = parentGenesisVerifierComposition.verifier;
+  const genesisVerifierComposition = resolveGenesisSignatureVerifier(process.env);
+  const parentGenesisSignatureVerifier: DeviceSignatureVerifier = genesisVerifierComposition.verifier;
   const parentGenesisService = new ParentGenesisService(
     new GenesisChallengeService(new MySqlGenesisChallengeRepository(), parentGenesisSignatureVerifier),
     new MySqlGenesisTransactionRepository(),
     parentGenesisSignatureVerifier,
   );
-  const genesisCryptographyAvailable = parentGenesisVerifierComposition.available;
+  const genesisCryptographyAvailable = genesisVerifierComposition.available;
   // eslint-disable-next-line no-console -- one bounded boot line naming the composed genesis verifier mode; no secret material.
-  console.log(JSON.stringify({ event: 'PARENT_GENESIS_VERIFIER', mode: parentGenesisVerifierComposition.mode, available: genesisCryptographyAvailable }));
+  console.log(JSON.stringify({ event: 'PARENT_GENESIS_VERIFIER', mode: genesisVerifierComposition.mode, available: genesisCryptographyAvailable }));
   const parentAccountService = new ParentAccountService({
     repository: new MySqlParentAccountRepository(),
     authService,

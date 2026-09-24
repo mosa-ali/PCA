@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 /**
@@ -34,7 +35,7 @@ const OTHER_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
 const GRANT_COOKIE = 'pca_parent_daily_login_grant';
 const BASE_URL = 'http://localhost:4002';
 const STEP_UP_CODE = '246813';
-const BACKEND_DIR = path.resolve(__dirname, '../../backend');
+const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../backend');
 
 test.skip(
   !EMAIL || !PASSWORD || !GRANT || !OTHER_EMAIL || !OTHER_PASSWORD || !OTHER_GRANT,
