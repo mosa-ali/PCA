@@ -124,6 +124,7 @@ export function registerPlatformAdminAuthRoutes(app: FastifyInstance, deps: Plat
     async (request: FastifyRequest) => {
       return {
         adminId: request.platformAdminId,
+        displayName: request.platformAdminDisplayName,
         roles: request.platformAdminRoles ?? [],
         sessionExpiresAt: request.platformAdminSessionExpiresAt?.toISOString(),
       };

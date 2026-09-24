@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 import { PlatformAdminApiError } from '../api/platformAdminAuthClient';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
+import { AppearanceSelector } from '../components/common/AppearanceSelector';
 
 /**
  * Single-form credentials + MFA login (mission Section 5/6). The backend
@@ -66,6 +67,7 @@ export default function Login() {
     <div className="login-page">
       <div className="login-language-bar">
         <LanguageSwitcher />
+        <AppearanceSelector />
       </div>
       <form className="card login-card" onSubmit={handleSubmit} noValidate>
         <h1>{t('login.title')}</h1>

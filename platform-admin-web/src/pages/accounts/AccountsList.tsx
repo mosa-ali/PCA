@@ -19,22 +19,23 @@ export default function AccountsList() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [includeDeleted, setIncludeDeleted] = useState(false);
-  const [familyIdQuery, setFamilyIdQuery] = useState('');
-  const [appliedFamilyIdQuery, setAppliedFamilyIdQuery] = useState('');
+  const [parentEmailQuery, setParentEmailQuery] = useState('');
+  const [appliedParentEmailQuery, setAppliedParentEmailQuery] = useState('');
   const [sortBy, setSortBy] = useState<AccountSortField>('createdAt');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setError(null);
     platformAdminApi
-      .get<PagedResult<AccountSummaryDto>>('/platform-admin/accounts', {
+      .post<PagedResult<AccountSummaryDto>>('/platform-admin/accounts/search', {
         limit: PAGE_SIZE,
         offset,
         includeDeleted: includeDeleted ? 'true' : undefined,
-        familyId: appliedFamilyIdQuery || undefined,
+        parentEmail: appliedParentEmailQuery || undefined,
         sortBy,
         sortDir,
       })
@@ -49,12 +50,18 @@ export default function AccountsList() {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on paging/filter/sort change only
-  useEffect(load, [offset, includeDeleted, appliedFamilyIdQuery, sortBy, sortDir]);
+  useEffect(load, [offset, includeDeleted, appliedParentEmailQuery, sortBy, sortDir]);
 
   const onSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
-    setAppliedFamilyIdQuery(familyIdQuery.trim());
+    const normalized = parentEmailQuery.trim();
+    if (normalized && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) || normalized.length > 254)) {
+      setSearchError(t('accounts.parentEmailInvalid'));
+      return;
+    }
+    setSearchError(null);
+    setAppliedParentEmailQuery(normalized);
   };
 
   /** Clicking the already-active column reverses direction; clicking the other column switches to it, defaulting to descending (matches this list's original default order). */
@@ -78,8 +85,8 @@ export default function AccountsList() {
 
       <form className="filters" onSubmit={onSearchSubmit}>
         <div>
-          <label htmlFor="accounts-family-id-search">{t('accounts.familyIdSearchLabel')}</label>
-          <input id="accounts-family-id-search" value={familyIdQuery} onChange={(e) => setFamilyIdQuery(e.target.value)} maxLength={128} />
+          <label htmlFor="accounts-parent-email-search">{t('accounts.parentEmailSearchLabel')}</label>
+          <input id="accounts-parent-email-search" type="text" inputMode="email" placeholder={t('accounts.parentEmailPlaceholder')} value={parentEmailQuery} onChange={(e) => setParentEmailQuery(e.target.value)} maxLength={254} />
         </div>
         <label htmlFor="accounts-include-deleted" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <input
@@ -98,11 +105,12 @@ export default function AccountsList() {
           {t('common.applyFilters')}
         </button>
       </form>
+      {searchError && <p className="field-error" role="alert">{searchError}</p>}
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}
 
-      {!loading && !error && items.length === 0 && <p className="status-unavailable">{t('common.empty')}</p>}
+      {!loading && !error && items.length === 0 && <p className="status-unavailable">{appliedParentEmailQuery ? t('accounts.parentEmailNoFamilies') : t('common.empty')}</p>}
 
       {!loading && !error && items.length > 0 && (
         <div className="table-wrap">

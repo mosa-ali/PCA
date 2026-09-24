@@ -30,9 +30,10 @@ test.describe('Platform Administration login + MFA', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ adminId: 'owner-1', roles: ['APP_OWNER'], sessionExpiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+        body: JSON.stringify({ adminId: 'owner-1', displayName: 'Alex Admin', roles: ['APP_OWNER', 'PLATFORM_ADMIN'], sessionExpiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
       });
     });
+    await page.route('**/platform-admin/auth/logout', async (route) => route.fulfill({ status: 204 }));
 
     await page.goto('/login');
     await page.getByLabel(/email/i).fill('owner@pca.test');
@@ -41,7 +42,46 @@ test.describe('Platform Administration login + MFA', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
 
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
-    await expect(page.getByText('owner-1', { exact: true })).toBeVisible();
+    const header = page.locator('.app-header');
+    const accountButton = header.locator('.account-menu-trigger');
+    await expect(accountButton).toBeVisible();
+    await expect(header).not.toContainText('owner-1');
+    await accountButton.click();
+    const accountMenu = page.locator('.account-menu-panel');
+    await expect(accountMenu.getByText('App Owner')).toBeVisible();
+    await expect(accountMenu.getByText('Platform Admin')).toBeVisible();
+    await expect(accountMenu.getByText('Session expires')).toBeVisible();
+    await page.getByLabel('Appearance').selectOption('light');
+    await expect(page.locator('html')).toHaveAttribute('data-appearance', 'light');
+    for (const width of [768, 375]) {
+      await page.setViewportSize({ width, height: 812 });
+      const headerSize = await header.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+      expect(headerSize.scrollWidth).toBeLessThanOrEqual(headerSize.clientWidth);
+      const menuBounds = await accountMenu.boundingBox();
+      expect(menuBounds).not.toBeNull();
+      expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(width);
+    }
+    await page.getByRole('button', { name: 'Log out' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByLabel('Appearance')).toHaveValue('light');
+  });
+
+  test('login page offers all appearance choices and remembers the selection', async ({ page }) => {
+    const cspErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error' && message.text().includes('Refused to')) cspErrors.push(message.text());
+    });
+    await page.goto('/login');
+    const appearance = page.getByLabel('Appearance');
+    await expect(appearance.locator('option')).toHaveCount(3);
+    await appearance.selectOption('slate');
+    await expect(page.locator('html')).toHaveAttribute('data-appearance', 'slate');
+    await page.reload();
+    await expect(page.getByLabel('Appearance')).toHaveValue('slate');
+    expect(cspErrors).toHaveLength(0);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByLabel('Appearance')).toBeVisible();
   });
 
   test('an invalid code shows a generic, enumeration-resistant error and does not navigate', async ({ page }) => {

@@ -21,6 +21,7 @@ export interface LoginResult {
 
 export interface WhoAmI {
   adminId: string;
+  displayName?: string;
   roles: PlatformAdminRole[];
   sessionExpiresAt: string | undefined;
 }

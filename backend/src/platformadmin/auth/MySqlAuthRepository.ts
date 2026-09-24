@@ -62,6 +62,7 @@ interface SessionRow extends RowDataPacket {
   expires_at: Date;
   revoked_at: Date | null;
   account_status: string;
+  display_name: string;
 }
 
 interface StepUpRow extends RowDataPacket {
@@ -419,7 +420,7 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
     return runInTransaction(async (conn) => {
       const { rows } = await execute<SessionRow>(
         conn,
-        `SELECT s.session_id, s.admin_id, s.token_hash, s.realm, s.issued_at, s.expires_at, s.revoked_at, a.status AS account_status
+        `SELECT s.session_id, s.admin_id, s.token_hash, s.realm, s.issued_at, s.expires_at, s.revoked_at, a.status AS account_status, a.display_name
          FROM platform_admin_sessions s
          JOIN platform_admin_accounts a ON a.admin_id = s.admin_id
          WHERE s.token_hash = ?`,
@@ -442,6 +443,7 @@ export class MySqlPlatformAdminAuthRepository implements PlatformAdminAuthReposi
           expiresAt: row.expires_at,
           revokedAt: row.revoked_at,
         },
+        displayName: row.display_name,
         accountStatus: row.account_status as SessionValidationLookup['accountStatus'],
         activeRoles: roleRows.map((r) => r.role as PlatformAdminRole),
       };

@@ -21,6 +21,7 @@ const MAX_AUTHORIZATION_HEADER_LENGTH = 4096;
 declare module 'fastify' {
   interface FastifyRequest {
     platformAdminId?: PlatformAdminId;
+    platformAdminDisplayName?: string;
     platformAdminRoles?: PlatformAdminRole[];
     platformAdminSessionId?: PlatformAdminSessionId;
     platformAdminSessionExpiresAt?: Date;
@@ -53,6 +54,7 @@ export function createRequirePlatformAdminSession(authService: PlatformAdminAuth
     try {
       const identity = await authService.validateSession(rawToken);
       request.platformAdminId = identity.adminId;
+      request.platformAdminDisplayName = identity.displayName;
       request.platformAdminRoles = identity.roles;
       request.platformAdminSessionId = identity.sessionId;
       request.platformAdminSessionExpiresAt = identity.sessionExpiresAt;

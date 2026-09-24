@@ -11,6 +11,7 @@ export type SignOutReason = 'EXPIRED' | 'REVOKED' | null;
 interface AuthState {
   status: 'SIGNED_OUT' | 'SIGNED_IN';
   adminId: string | null;
+  displayName: string | null;
   roles: PlatformAdminRole[];
   sessionExpiresAt: string | null;
   signOutReason: SignOutReason;
@@ -26,7 +27,7 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const initialState: AuthState = { status: 'SIGNED_OUT', adminId: null, roles: [], sessionExpiresAt: null, signOutReason: null };
+const initialState: AuthState = { status: 'SIGNED_OUT', adminId: null, displayName: null, roles: [], sessionExpiresAt: null, signOutReason: null };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState);
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState({
           status: 'SIGNED_IN',
           adminId: who.adminId,
+          displayName: who.displayName ?? null,
           roles,
           sessionExpiresAt: who.sessionExpiresAt ?? null,
           signOutReason: null,

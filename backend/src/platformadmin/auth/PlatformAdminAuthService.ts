@@ -292,7 +292,7 @@ export class PlatformAdminAuthService {
     if (session.revokedAt) throw new PlatformAdminAuthError();
     if (session.expiresAt.getTime() <= now.getTime()) throw new PlatformAdminAuthError();
     if (accountStatus !== 'ACTIVE') throw new PlatformAdminAuthError();
-    return { adminId: session.adminId, roles: activeRoles, sessionId: session.sessionId, sessionExpiresAt: session.expiresAt };
+    return { adminId: session.adminId, displayName: lookup.displayName, roles: activeRoles, sessionId: session.sessionId, sessionExpiresAt: session.expiresAt };
   }
 
   /** Idempotent: revoking an unknown, already-revoked, or expired token is never an error. */

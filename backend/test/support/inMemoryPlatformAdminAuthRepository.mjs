@@ -175,7 +175,7 @@ export function createInMemoryPlatformAdminAuthRepository() {
       const session = sessionsByTokenHash.get(tokenHash);
       if (!session) return null;
       const account = accountsById.get(session.adminId);
-      return { session: { ...session }, accountStatus: account ? account.status : 'DISABLED', activeRoles: activeRolesFor(session.adminId) };
+      return { session: { ...session }, displayName: account?.displayName ?? '', accountStatus: account ? account.status : 'DISABLED', activeRoles: activeRolesFor(session.adminId) };
     },
 
     async revokeSessionByTokenHash(tokenHash, revokedAt, auditEvent) {

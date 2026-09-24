@@ -24,13 +24,19 @@
     "settings": "Settings"
   },
   "shell": {
-    "signedInAs": "Signed in as {{adminId}}",
-    "role_one": "Role: {{roles}}",
-    "role_other": "Roles: {{roles}}",
+    "accountMenuLabel": "Administrator account menu",
+    "accountFallback": "Administrator",
+    "sessionExpiryLabel": "Session expires",
     "logout": "Log out",
     "sessionExpiresAt": "Session expires {{time}}",
     "sessionExpired": "Your session has expired. Please sign in again.",
     "sessionRevoked": "This session has been revoked. Please sign in again."
+  },
+  "appearance": {
+    "label": "Appearance",
+    "dark": "Dark",
+    "slate": "Slate",
+    "light": "Light"
   },
   "login": {
     "title": "Platform Administration Sign In",
@@ -156,7 +162,11 @@
   },
   "accounts": {
     "includeDeleted": "Include deleted accounts",
-    "familyIdSearchLabel": "Search by family ID",
+    "parentEmailSearchLabel": "Search by Parent Email",
+    "parentEmailPlaceholder": "parent@example.com",
+    "parentEmailInvalid": "Enter a valid Parent email address.",
+    "parentEmailNoFamilies": "No eligible family accounts were found for this email.",
+    "parentEmailMultipleFamilies": "Choose a family linked to this Parent",
     "familyId": "Family ID",
     "createdAt": "Created",
     "status": "Status",

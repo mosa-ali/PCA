@@ -109,6 +109,7 @@ export interface PlatformAdminLoginAttemptRecord {
 /** Output of an authenticated whoami/session-validation lookup: the admin id and every currently-active (granted, not revoked) role. */
 export interface PlatformAdminIdentity {
   adminId: PlatformAdminId;
+  displayName: string;
   roles: PlatformAdminRole[];
   sessionId: PlatformAdminSessionId;
   sessionExpiresAt: Date;

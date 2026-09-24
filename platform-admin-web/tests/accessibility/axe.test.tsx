@@ -119,7 +119,7 @@ function mockFetch() {
 
     // Account detail (single id path) vs. accounts list -- list has no
     // further path segment after "/accounts".
-    if (/\/platform-admin\/accounts\/[^/?]+/.test(url)) return Promise.resolve(jsonResponse(200, ACCOUNT_SUMMARY));
+    if (/\/platform-admin\/accounts\/[^/?]+/.test(url) && !url.includes('/accounts/search')) return Promise.resolve(jsonResponse(200, ACCOUNT_SUMMARY));
     if (url.includes('/platform-admin/accounts')) return Promise.resolve(jsonResponse(200, EMPTY_PAGED));
 
     if (url.includes('/complimentary-grants')) return Promise.resolve(jsonResponse(200, EMPTY_ITEMS));

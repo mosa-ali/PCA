@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { LanguageSwitcher } from '../common/LanguageSwitcher';
+import { AppearanceSelector } from '../common/AppearanceSelector';
 
 interface HeaderProps {
   onToggleDrawer: () => void;
@@ -10,7 +11,7 @@ interface HeaderProps {
 
 export function Header({ onToggleDrawer }: HeaderProps) {
   const { t } = useTranslation();
-  const { adminId, roles, sessionExpiresAt, logout } = useAuth();
+  const { displayName, adminId, roles, sessionExpiresAt, logout } = useAuth();
   const navigate = useNavigate();
   const { notify } = useToast();
 
@@ -19,8 +20,6 @@ export function Header({ onToggleDrawer }: HeaderProps) {
     notify(t('shell.logout'), 'info');
     navigate('/login', { replace: true });
   };
-
-  const roleLabels = roles.map((role) => t(`roles.${role}`)).join(', ');
 
   return (
     <header className="app-header">
@@ -37,17 +36,23 @@ export function Header({ onToggleDrawer }: HeaderProps) {
       <div className="spacer" />
       <LanguageSwitcher />
       {adminId && (
-        <div className="identity-badge">
-          <span>{t('shell.signedInAs', { adminId })}</span>
-          {roles.length > 0 && <span>{t('shell.role', { count: roles.length, roles: roleLabels })}</span>}
-          {sessionExpiresAt && (
-            <span className="session-expiry">{t('shell.sessionExpiresAt', { time: new Date(sessionExpiresAt).toLocaleTimeString() })}</span>
-          )}
-        </div>
+        <details className="account-menu">
+          <summary className="account-menu-trigger" aria-label={t('shell.accountMenuLabel')}>
+            {displayName || t('shell.accountFallback')}
+            <span aria-hidden="true"> ▾</span>
+          </summary>
+          <div className="account-menu-panel">
+            <strong className="account-menu-name">{displayName || t('shell.accountFallback')}</strong>
+            <div className="account-menu-section">
+              <span className="account-menu-label">{t('dashboard.rolesLabel')}</span>
+              <ul>{roles.map((role) => <li key={role}>{t(`roles.${role}`)}</li>)}</ul>
+            </div>
+            {sessionExpiresAt && <p className="account-menu-expiry"><span className="account-menu-label">{t('shell.sessionExpiryLabel')}</span><br />{new Date(sessionExpiresAt).toLocaleString()}</p>}
+            <div className="account-menu-section"><AppearanceSelector /></div>
+            <button type="button" className="btn account-menu-logout" onClick={handleLogout}>{t('shell.logout')}</button>
+          </div>
+        </details>
       )}
-      <button type="button" className="btn" onClick={handleLogout}>
-        {t('shell.logout')}
-      </button>
     </header>
   );
 }

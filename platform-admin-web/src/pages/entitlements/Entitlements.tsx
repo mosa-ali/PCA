@@ -10,6 +10,7 @@ import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useStepUp } from '../../state/StepUpContext';
+import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 import { useToast } from '../../state/ToastContext';
 
 export default function Entitlements() {
@@ -134,8 +135,7 @@ export default function Entitlements() {
 
       <form className="filters" onSubmit={onSearch}>
         <div>
-          <label htmlFor="entitlements-family-id">{t('entitlements.familyIdLabel')}</label>
-          <input id="entitlements-family-id" value={familyIdInput} onChange={(e) => setFamilyIdInput(e.target.value)} maxLength={128} required />
+          <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} onFamilyIdChange={(value) => { setFamilyIdInput(value); setFamilyId(value); setSearchParams(value ? { familyId: value } : {}); }} />
         </div>
         <button type="submit" className="btn btn-primary">
           {t('entitlements.lookup')}

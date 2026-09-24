@@ -46,6 +46,7 @@ test('login succeeds with correct password + correct TOTP and returns a pa_-pref
   const result = await harness.authService.login(admin.email, admin.password, code);
   assert.match(result.rawToken, /^pa_/);
   assert.equal(result.adminId, admin.adminId);
+  assert.equal((await harness.authService.validateSession(result.rawToken)).displayName, 'Test Admin');
 });
 
 test('login with correct password but missing/wrong TOTP code fails with the single generic error', async () => {

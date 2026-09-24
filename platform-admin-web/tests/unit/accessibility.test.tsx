@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import { axe } from 'vitest-axe';
 import { MemoryRouter } from 'react-router-dom';
 import Login from '../../src/pages/Login';
+import { AppearanceProvider } from '../../src/state/AppearanceContext';
 import { AuthProvider } from '../../src/state/AuthContext';
 import { StepUpProvider } from '../../src/state/StepUpContext';
 import { ComingSoon } from '../../src/components/common/ComingSoon';
@@ -24,7 +25,7 @@ describe('accessibility', () => {
     const { container } = render(
       <MemoryRouter>
         <AuthProvider>
-          <Login />
+          <AppearanceProvider><Login /></AppearanceProvider>
         </AuthProvider>
       </MemoryRouter>,
     );
@@ -37,7 +38,7 @@ describe('accessibility', () => {
     const { container } = render(
       <MemoryRouter>
         <AuthProvider>
-          <Login />
+          <AppearanceProvider><Login /></AppearanceProvider>
         </AuthProvider>
       </MemoryRouter>,
     );

@@ -8,6 +8,7 @@ import i18n from './i18n';
 import { AuthProvider } from './state/AuthContext';
 import { StepUpProvider } from './state/StepUpContext';
 import { ToastProvider } from './state/ToastContext';
+import { AppearanceProvider } from './state/AppearanceContext';
 import { AppErrorBoundary } from './components/common/AppErrorBoundary';
 import './styles/global.css';
 
@@ -20,9 +21,11 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
-            <StepUpProvider>
-              <App />
-            </StepUpProvider>
+            <AppearanceProvider>
+              <StepUpProvider>
+                <App />
+              </StepUpProvider>
+            </AppearanceProvider>
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

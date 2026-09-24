@@ -18,6 +18,7 @@ import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
+import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -198,10 +199,7 @@ export default function EntitlementRequests() {
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="er-family">{t('entitlements.familyIdLabel')}</label>
-          <input id="er-family" value={familyIdFilter} onChange={(e) => setFamilyIdFilter(e.target.value)} maxLength={128} />
-        </div>
+        <ParentEmailFamilyLookup id="entitlement-requests" familyId={familyIdFilter} onFamilyIdChange={setFamilyIdFilter} />
         <button type="submit" className="btn">
           {t('common.applyFilters')}
         </button>

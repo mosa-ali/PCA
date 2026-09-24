@@ -6,6 +6,7 @@ import { AuthProvider } from '../../src/state/AuthContext';
 import { StepUpProvider } from '../../src/state/StepUpContext';
 import { ToastProvider } from '../../src/state/ToastContext';
 import { secureSession } from '../../src/security/secureSession';
+import { AppearanceProvider } from '../../src/state/AppearanceContext';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -42,7 +43,7 @@ function renderAppAt(path: string) {
       <ToastProvider>
         <AuthProvider>
           <StepUpProvider>
-            <App />
+            <AppearanceProvider><App /></AppearanceProvider>
           </StepUpProvider>
         </AuthProvider>
       </ToastProvider>

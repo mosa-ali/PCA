@@ -9,6 +9,7 @@ import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorState } from '../../components/common/ErrorState';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
+import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -111,10 +112,7 @@ export default function BillingQuotes() {
       <h1>{t('nav.billingQuotes')}</h1>
 
       <form className="filters" onSubmit={onFilterSubmit}>
-        <div>
-          <label htmlFor="quotes-family-id">{t('entitlements.familyIdLabel')}</label>
-          <input id="quotes-family-id" value={familyId} onChange={(e) => setFamilyId(e.target.value)} maxLength={128} />
-        </div>
+        <ParentEmailFamilyLookup id="quotes" familyId={familyId} onFamilyIdChange={setFamilyId} />
         <div>
           <label htmlFor="quotes-since">{t('billing.sinceCreatedAt')}</label>
           <input id="quotes-since" type="date" value={since} onChange={(e) => setSince(e.target.value)} />

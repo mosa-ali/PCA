@@ -1,6 +1,6 @@
 // B103/B105: GET /platform-admin/accounts had rows but no way to search or
 // sort them (docs/product-completion/PCA_P1_P2_BEHAVIOR_LEDGER.csv). This
-// proves the search form sends `familyId`, and that clicking a sortable
+// proves the search form sends `parentEmail`, and that clicking a sortable
 // column header sends `sortBy`/`sortDir` and toggles direction on a second
 // click -- mirrors AdminUsersMfaAndSearch.test.tsx's "assert on the query
 // string actually sent" convention.
@@ -33,11 +33,11 @@ const ACCOUNT = {
 };
 
 function mockFetchFor(accountsCalls: string[]) {
-  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+  return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
     if (url.includes('/platform-admin/accounts')) {
-      accountsCalls.push(url);
+      accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
       return Promise.resolve(jsonResponse(200, { items: [ACCOUNT], total: 1, limit: 20, offset: 0 }));
     }
     return Promise.resolve(jsonResponse(404, { error: 'not_found' }));
@@ -72,21 +72,32 @@ describe('AccountsList search and sort', () => {
     const calls: string[] = [];
     renderPage(calls);
     expect(await screen.findByText('fam-1')).toBeInTheDocument();
-    expect(calls[calls.length - 1]).toContain('sortBy=createdAt');
-    expect(calls[calls.length - 1]).toContain('sortDir=desc');
+    expect(calls[calls.length - 1]).toContain('"sortBy":"createdAt"');
+    expect(calls[calls.length - 1]).toContain('"sortDir":"desc"');
   });
 
-  it('sends familyId in the query string once the search form is submitted', async () => {
+  it('trims and sends Parent Email in the query string once the search form is submitted', async () => {
     const calls: string[] = [];
     renderPage(calls);
     await screen.findByText('fam-1');
 
-    const input = screen.getByLabelText('Search by family ID');
-    await userEvent.type(input, 'fam-1');
+    const input = screen.getByLabelText('Search by Parent Email');
+    await userEvent.type(input, ' parent@example.com ');
     await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
 
     const last = calls[calls.length - 1];
-    expect(last).toContain('familyId=fam-1');
+    expect(last).toContain('"parentEmail":"parent@example.com"');
+  });
+
+  it('shows invalid email feedback without issuing the filtered request', async () => {
+    const calls: string[] = [];
+    renderPage(calls);
+    await screen.findByText('fam-1');
+    const previousCount = calls.length;
+    await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'not-an-email');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid Parent email address.');
+    expect(calls).toHaveLength(previousCount);
   });
 
   it('sorts by Family ID (descending) on first click, and reverses to ascending on a second click', async () => {
@@ -100,13 +111,13 @@ describe('AccountsList search and sort', () => {
     // node by the time the next click needs it.
     await userEvent.click(screen.getByRole('button', { name: /Family ID/ }));
     let last = calls[calls.length - 1];
-    expect(last).toContain('sortBy=familyId');
-    expect(last).toContain('sortDir=desc');
+    expect(last).toContain('"sortBy":"familyId"');
+    expect(last).toContain('"sortDir":"desc"');
 
     await userEvent.click(screen.getByRole('button', { name: /Family ID/ }));
     last = calls[calls.length - 1];
-    expect(last).toContain('sortBy=familyId');
-    expect(last).toContain('sortDir=asc');
+    expect(last).toContain('"sortBy":"familyId"');
+    expect(last).toContain('"sortDir":"asc"');
   });
 
   it('marks the active sort column with aria-sort for assistive technology', async () => {

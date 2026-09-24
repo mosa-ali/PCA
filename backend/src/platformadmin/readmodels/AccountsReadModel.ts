@@ -118,6 +118,7 @@ export type SortDirection = 'asc' | 'desc';
 export interface AccountListFilter {
   /** Exact match on the opaque family UUID -- mirrors this codebase's existing accountRef/familyId filter convention (BillingReadModel, EntitlementRequestsReadModel: always `= ?`, never a fuzzy LIKE, since these are opaque identifiers an operator pastes in whole, not names). */
   readonly familyId?: string;
+  readonly parentEmailHash?: Buffer;
   readonly sortBy?: AccountSortField;
   readonly sortDir?: SortDirection;
 }
@@ -131,6 +132,17 @@ export class AccountsReadModel {
       if (filter.familyId) {
         conditions.push('f.family_id = ?');
         params.push(filter.familyId);
+      }
+      if (filter.parentEmailHash) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM parent_accounts pa
+          WHERE pa.email_hash = ? AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
+            AND (pa.family_id = f.family_id OR EXISTS (
+              SELECT 1 FROM family_parent_memberships m
+              WHERE m.account_id = pa.account_id AND m.family_id = f.family_id AND m.status = 'ACTIVE'
+            ))
+        )`);
+        params.push(filter.parentEmailHash);
       }
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const { rows: countRows } = await execute<{ total: number }>(

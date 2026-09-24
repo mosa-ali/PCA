@@ -23,6 +23,9 @@ import { PlatformAdminAuthError } from '../../../platformadmin/auth/PlatformAdmi
 import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
 import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
+import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
+import { execute, runInTransaction } from '../../../db/pool.js';
+import type { PlatformAdminRole } from '../../../platformadmin/auth/types.js';
 
 export interface PlatformAdminAccountsRoutesDeps {
   platformAdminAuthService: PlatformAdminAuthService;
@@ -125,36 +128,88 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
   const requirePlatformAdminSession = createRequirePlatformAdminSession(deps.platformAdminAuthService);
   const readLimiter = deps.rateLimiter({ windowMs: 60_000, max: 120, bucket: 'platform-admin-accounts' });
   const mutateLimiter = deps.rateLimiter({ windowMs: 60_000, max: 20, bucket: 'platform-admin-accounts-mutate' });
+  const emailLookupLimiter = deps.rateLimiter({ windowMs: 60_000, max: 30, bucket: 'platform-admin-parent-email-lookup' });
   const readModel = new AccountsReadModel();
   const familyStatusService = new FamilyAccountStatusService(deps.platformAdminAuthService);
 
-  app.get(
-    '/platform-admin/accounts',
-    { preHandler: [readLimiter, requirePlatformAdminSession] },
+  app.post(
+    '/platform-admin/accounts/resolve-parent-email',
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [emailLookupLimiter, requirePlatformAdminSession] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const roles = request.platformAdminRoles ?? [];
       if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') {
         return reply.code(403).send({ error: 'forbidden' });
       }
-      const query = (request.query ?? {}) as Record<string, unknown>;
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      if (!isPlausibleEmail(email)) return reply.code(400).send({ error: 'invalid_request' });
+      const includeDeleted = body.includeDeleted === true;
+      const { rows } = await runInTransaction((conn) => execute<{ family_id: string }>(
+        conn,
+        `SELECT DISTINCT f.family_id
+         FROM families f
+         INNER JOIN parent_accounts pa ON pa.email_hash = ?
+           AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
+         WHERE ${includeDeleted ? '' : 'f.deleted_at IS NULL AND'}
+           (pa.family_id = f.family_id OR EXISTS (
+             SELECT 1 FROM family_parent_memberships m
+             WHERE m.account_id = pa.account_id AND m.family_id = f.family_id AND m.status = 'ACTIVE'
+           ))
+         ORDER BY f.family_id ASC`,
+        [hashParentEmail(email)],
+      ));
+      return reply.code(200).send({ familyIds: rows.map((row) => row.family_id) });
+    },
+  );
+
+  async function listAccounts(query: Record<string, unknown>, roles: PlatformAdminRole[], reply: FastifyReply) {
       const page = parsePageRequest(query);
-      const includeDeleted = query.includeDeleted === 'true';
+      const includeDeleted = query.includeDeleted === 'true' || query.includeDeleted === true;
       // B103/B105: familyId is an exact-match search (mirrors accountRef
       // filtering on every other Platform Administration list route --
       // family_id is an opaque UUID, never a fuzzy-searched display name).
       // sortBy/sortDir are validated against AccountsReadModel's own
       // fixed allow-list (never passed through as a raw column/direction).
       const familyId = typeof query.familyId === 'string' && query.familyId.length > 0 && query.familyId.length <= FAMILY_ID_MAX_LENGTH ? query.familyId : undefined;
+      const parentEmail = typeof query.parentEmail === 'string' ? query.parentEmail.trim() : undefined;
+      if (query.parentEmail !== undefined && (!parentEmail || !isPlausibleEmail(parentEmail))) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
       const sortBy = query.sortBy === 'familyId' ? 'familyId' : 'createdAt';
       const sortDir = query.sortDir === 'asc' ? 'asc' : 'desc';
       const canViewBilling = authorizeBillingOperation(roles, 'VIEW_BILLING_RECORDS') === 'ALLOW';
-      const result = await readModel.list(page, includeDeleted, { familyId, sortBy, sortDir });
+      const result = await readModel.list(page, includeDeleted, { familyId, parentEmailHash: parentEmail ? hashParentEmail(parentEmail) : undefined, sortBy, sortDir });
       return reply.code(200).send({
         items: result.items.map((account) => toAccountDto(account, canViewBilling)),
         total: result.total,
         limit: result.limit,
         offset: result.offset,
       });
+  }
+
+  app.get(
+    '/platform-admin/accounts',
+    { preHandler: [readLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      const query = (request.query ?? {}) as Record<string, unknown>;
+      if (query.parentEmail !== undefined) return reply.code(400).send({ error: 'invalid_request' });
+      return listAccounts(query, roles, reply);
+    },
+  );
+
+  app.post(
+    '/platform-admin/accounts/search',
+    { bodyLimit: MAX_BODY_BYTES, preHandler: [emailLookupLimiter, requirePlatformAdminSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const roles = request.platformAdminRoles ?? [];
+      if (authorizePlatformAdminOperation(roles, 'VIEW_SUPPORT_ACCOUNT_METADATA') !== 'ALLOW') return reply.code(403).send({ error: 'forbidden' });
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      if (!isPlainObject(body)) return reply.code(400).send({ error: 'invalid_request' });
+      if (body.parentEmail !== undefined && (typeof body.parentEmail !== 'string' || !isPlausibleEmail(body.parentEmail.trim()))) return reply.code(400).send({ error: 'invalid_request' });
+      return listAccounts(body, roles, reply);
     },
   );
 

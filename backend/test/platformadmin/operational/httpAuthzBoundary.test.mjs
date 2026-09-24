@@ -343,6 +343,46 @@ test('GET /platform-admin/accounts/:accountId applies the same split as the list
   });
 });
 
+test('Parent Email resolver rejects unauthenticated and unauthorized callers before any database lookup', async () => {
+  const unauthenticated = await buildAccountsApp(new Map());
+  const missing = await unauthenticated.inject({ method: 'POST', url: '/platform-admin/accounts/resolve-parent-email', payload: { email: 'parent@example.test' } });
+  assert.equal(missing.statusCode, 401);
+  await unauthenticated.close();
+
+  const sessions = new Map();
+  const token = registerSession(sessions, []);
+  const app = await buildAccountsApp(sessions);
+  const denied = await app.inject({ method: 'POST', url: '/platform-admin/accounts/resolve-parent-email', headers: { authorization: `Bearer ${token}` }, payload: { email: 'parent@example.test' } });
+  assert.equal(denied.statusCode, 403);
+  await app.close();
+});
+
+test('Parent Email account search validates input and keeps email values out of query strings', async () => {
+  const { AccountsReadModel } = await import('../../../dist/platformadmin/readmodels/AccountsReadModel.js');
+  const { hashParentEmail } = await import('../../../dist/parentaccount/emailHash.js');
+  const sessions = new Map();
+  const token = registerSession(sessions, ['APP_OWNER']);
+  const app = await buildAccountsApp(sessions);
+  const invalid = await app.inject({ method: 'POST', url: '/platform-admin/accounts/search', headers: { authorization: `Bearer ${token}` }, payload: { parentEmail: 'not-an-email' } });
+  assert.equal(invalid.statusCode, 400);
+  await withStubbedMethod(AccountsReadModel.prototype, 'list', async (_page, _includeDeleted, filter) => {
+    assert.equal(filter.parentEmailHash.toString('hex'), hashParentEmail('Parent@Example.test').toString('hex'));
+    assert.equal(_includeDeleted, true);
+    return { items: [STUB_ACCOUNT], total: 1, limit: 10, offset: 20 };
+  }, async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/platform-admin/accounts/search',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { parentEmail: '  Parent@Example.test  ', includeDeleted: true, limit: 10, offset: 20 },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().items[0].familyId, STUB_ACCOUNT.familyId);
+    assert.equal(response.body.includes('Parent@Example.test'), false);
+  });
+  await app.close();
+});
+
 // ---- GET /platform-admin/entitlement-requests ----------------------------
 
 const STUB_REQUEST_ROW = {

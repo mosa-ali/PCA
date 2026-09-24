@@ -53,6 +53,7 @@ export interface RevokeRoleResult {
 
 export interface SessionValidationLookup {
   session: PlatformAdminSessionRecord;
+  displayName: string;
   accountStatus: PlatformAdminAccountStatus;
   activeRoles: PlatformAdminRole[];
 }

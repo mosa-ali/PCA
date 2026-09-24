@@ -22,6 +22,7 @@ function mockFetchFor(quoteCalls: string[]) {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
+    if (url.includes('/platform-admin/accounts/resolve-parent-email')) return Promise.resolve(jsonResponse(200, { familyIds: ['fam-123'] }));
     if (url.includes('/platform-admin/quotes/pending')) {
       quoteCalls.push(url);
       return Promise.resolve(jsonResponse(200, { items: [], total: 0 }));
@@ -54,14 +55,15 @@ describe('Billing quotes family/date filter', () => {
     secureSession.clear();
   });
 
-  it('sends familyId/since/until in the query string once the filter form is submitted', async () => {
+  it('resolves Parent Email to a family and preserves date filters when submitted', async () => {
     const quoteCalls: string[] = [];
     renderPage(quoteCalls);
 
-    const familyInput = await screen.findByLabelText('Family ID');
+    const familyInput = await screen.findByLabelText('Search by Parent Email');
     const sinceInput = screen.getByLabelText('From date');
     const untilInput = screen.getByLabelText('To date');
-    await userEvent.type(familyInput, 'fam-123');
+    await userEvent.type(familyInput, ' parent@example.com ');
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     await userEvent.type(sinceInput, '2026-01-01');
     await userEvent.type(untilInput, '2026-01-31');
     await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
