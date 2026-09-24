@@ -35,6 +35,7 @@ const OTHER_GRANT = process.env.E2E_REAL_SECOND_PARENT_DAILY_GRANT;
 const GRANT_COOKIE = 'pca_parent_daily_login_grant';
 const BASE_URL = 'http://localhost:4002';
 const STEP_UP_CODE = '246813';
+const LOGIN_CODE = '135792';
 const BACKEND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../backend');
 
 test.skip(
@@ -47,12 +48,30 @@ function support(...args: string[]): Record<string, unknown> {
   return JSON.parse(out.trim().split('\n').pop()!);
 }
 
+/** First sign-in of a provisioned parent: the provisioner's daily grant makes it a routine login. */
 async function signIn(page: Page, email: string, password: string, grant: string) {
   await page.context().addCookies([{ name: GRANT_COOKIE, value: grant, url: BASE_URL }]);
   await page.goto('/login');
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in/i }).click();
+}
+
+/**
+ * Sign-in from a browser that holds NO valid daily grant -- after sign-out
+ * (logout revokes this browser's grant) or from a different browser. The real
+ * backend answers STEP_UP_REQUIRED and emails a login code; as with the genesis
+ * step-up, the helper substitutes the stored hash of a code the spec chose.
+ */
+async function signInWithLoginStepUp(page: Page, email: string, password: string) {
+  await page.goto('/login');
+  await page.getByLabel(/email/i).fill(email);
+  await page.getByLabel(/password/i).fill(password);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page.getByLabel('Verification code')).toBeVisible();
+  expect(support('set-login-step-up-code', email, LOGIN_CODE)).toEqual({ updated: 1 });
+  await page.getByLabel('Verification code').fill(LOGIN_CODE);
+  await page.getByRole('button', { name: 'Verify and sign in' }).click();
 }
 
 async function session(page: Page): Promise<{ accountId: string; familyId: string | null; role: string | null; genesisAvailable?: boolean }> {
@@ -193,8 +212,8 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
       await signOut(page);
     });
 
-    await test.step('the genesis parent signs back in: FAMILY_READY again, and the device key is still theirs', async () => {
-      await signIn(page, EMAIL!, PASSWORD!, GRANT!);
+    await test.step('the genesis parent signs back in (sign-out revoked the grant, so the real login step-up runs): FAMILY_READY again, and the device key is still theirs', async () => {
+      await signInWithLoginStepUp(page, EMAIL!, PASSWORD!);
       await expect(page).toHaveURL(/\/dashboard$/);
       expect((await session(page)).familyId).toBe(familyId);
       expect((await custodySlot(page, accountId))!.binding.familyId).toBe(familyId);
@@ -214,8 +233,10 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
     });
 
     await test.step('Genesis cannot be repeated for a parent who already owns a family', async () => {
-      await signIn(page, EMAIL!, PASSWORD!, GRANT!);
+      // The restarted profile kept the session cookie and the grant the login step-up issued.
+      await page.goto('/dashboard');
       await expect(page).toHaveURL(/\/dashboard$/);
+      expect((await session(page)).familyId).toBe(familyId);
       await page.goto('/genesis');
       await expect(page).toHaveURL(/\/dashboard$/);
     });
@@ -226,7 +247,7 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
 });
 
 test('real browser: a DIFFERENT browser signed in as the same parent holds no device key (key possession is per browser)', async ({ page }) => {
-  await signIn(page, EMAIL!, PASSWORD!, GRANT!);
+  await signInWithLoginStepUp(page, EMAIL!, PASSWORD!);
   await expect(page).toHaveURL(/\/dashboard$/);
   const current = await session(page);
   expect(await custodySlot(page, current.accountId)).toBeNull();

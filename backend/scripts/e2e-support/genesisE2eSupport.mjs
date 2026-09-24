@@ -12,7 +12,8 @@
 // commit -- runs unmodified in the real backend.
 //
 // Commands (all output is JSON on stdout, no secret material):
-//   set-step-up-code <email> <6-digit code>
+//   set-step-up-code <email> <6-digit code>        (genesis step-up)
+//   set-login-step-up-code <email> <6-digit code>  (login step-up after sign-out)
 //   genesis-device <email>   -> { familyId, deviceId, keyId, publicKey, status }
 import { closePool, execute, runInTransaction } from '../../dist/db/pool.js';
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
@@ -53,6 +54,26 @@ try {
         hashVerificationCode(code),
         rows[0].authorization_id,
       ]);
+      return { updated: updated.rowCount };
+    });
+    console.log(JSON.stringify(result));
+  } else if (command === 'set-login-step-up-code') {
+    // Same substitution for the LOGIN step-up: after sign-out revokes the
+    // browser's daily grant, the next sign-in is STEP_UP_REQUIRED and the code is
+    // emailed in-process. Targets exactly the row the service will verify: the
+    // account's latest code (same ordering as findLatestLoginStepUpCode), and
+    // only while it is unconsumed.
+    if (!/^\d{6}$/.test(code ?? '')) refuse('code must be 6 digits.');
+    const result = await runInTransaction(async (conn) => {
+      const account = await accountByEmail(conn, email);
+      const { rows } = await execute(
+        conn,
+        `SELECT code_id, consumed_at FROM parent_login_step_up_codes
+          WHERE account_id = ? ORDER BY created_at DESC, code_id DESC LIMIT 1 FOR UPDATE`,
+        [account.account_id],
+      );
+      if (!rows[0] || rows[0].consumed_at !== null) refuse('no pending login step-up code -- submit the password in the browser first.');
+      const updated = await execute(conn, `UPDATE parent_login_step_up_codes SET code_hash = ? WHERE code_id = ?`, [hashVerificationCode(code), rows[0].code_id]);
       return { updated: updated.rowCount };
     });
     console.log(JSON.stringify(result));
