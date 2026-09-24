@@ -6,16 +6,18 @@
 // P-256 endpoint key generated in this tab and never exported.
 //
 // This module owns exactly one job: turn a server-issued GenesisChallenge into
-// the three signatures + epoch/TTL window the backend verifies. It does NOT
-// invent protocol fields, does NOT re-derive anything the server already
-// stated, and does NOT persist key material.
+// the three signatures + epoch/TTL window the backend verifies, and -- only
+// after the server has COMMITTED genesis -- hand the non-extractable key to
+// durable per-account custody (deviceKeyCustody.ts). It does NOT invent
+// protocol fields and does NOT re-derive anything the server already stated.
 //
 // Every signed value is copied FROM the challenge. That is deliberate: the
 // server signs a statement about what it issued, so a client that recomputed
 // (say) the family id or the challenge expiry would be signing a different
 // statement than the one the server will verify.
 
-import { generateEndpointSigningKey } from './trustedEndpointKeyStore';
+import { createDeviceKeyCustody, fingerprintPublicKey, generateCustodyKeyPair, publicPointBase64Url, type DeviceKeyCustody } from './deviceKeyCustody';
+import { createIndexedDbDeviceKeyRecordStore } from './indexedDbDeviceKeyRecordStore';
 import { signGenesisAnchor, signGenesisProof, signOwnerAttestation } from './genesisProof';
 import { reportDiagnostic } from './diagnosticConsole';
 import type { GenesisChallenge, GenesisCompletionInput } from '../api/interfaces';
@@ -51,8 +53,11 @@ const ATTESTATION_TTL_MS = 60 * 60 * 1000;
 export interface GenesisDeviceKey {
   /** SEC1 uncompressed point (0x04 || X || Y), base64url without padding -- the exact encoding the protocol signs over. */
   publicKey: string;
-  /** SHA-256 fingerprint of the exported public key JWK, hex. Public data: safe to display for out-of-band comparison. */
+  /** SHA-256 over the SEC1 point, hex (canonical; see deviceKeyCustody.fingerprintPublicKey). Public data. */
   fingerprint: string;
+  /** Non-extractable signing key for THIS ceremony. Held in memory until custody takes it after commit. */
+  privateKey: CryptoKey;
+  publicKeyHandle: CryptoKey;
 }
 
 function base64UrlNoPadding(bytes: Uint8Array): string {
@@ -114,10 +119,12 @@ export function jwkToUncompressedPoint(jwk: JsonWebKey): string {
  * challenge anyway.
  */
 export async function createGenesisDeviceKey(): Promise<GenesisDeviceKey> {
-  const generated = await generateEndpointSigningKey();
+  const pair = await generateCustodyKeyPair();
   return {
-    publicKey: jwkToUncompressedPoint(generated.publicKeyJwk),
-    fingerprint: generated.fingerprint,
+    publicKey: await publicPointBase64Url(pair.publicKey),
+    fingerprint: await fingerprintPublicKey(pair.publicKey),
+    privateKey: pair.privateKey,
+    publicKeyHandle: pair.publicKey,
   };
 }
 
@@ -129,9 +136,15 @@ export async function createGenesisDeviceKey(): Promise<GenesisDeviceKey> {
  * device creating it. `previousAttestationId` is null because there is no
  * earlier attestation in the chain -- revision 1 is the origin.
  */
-export async function buildGenesisCompletion(challenge: GenesisChallenge): Promise<GenesisCompletionInput> {
+export async function buildGenesisCompletion(challenge: GenesisChallenge, device: GenesisDeviceKey): Promise<GenesisCompletionInput> {
   if (challenge.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
     throw new Error('unsupported_genesis_protocol_version');
+  }
+  // Never sign a challenge the server issued for a DIFFERENT key: the signed
+  // statement names the public key, and signing someone else's would bind this
+  // device to an identity it does not hold.
+  if (challenge.publicKey !== device.publicKey) {
+    throw new Error('genesis_challenge_key_mismatch');
   }
 
   // `protocolVersion: 1` is the literal `GenesisProofFields.protocolVersion`
@@ -150,7 +163,7 @@ export async function buildGenesisCompletion(challenge: GenesisChallenge): Promi
     nonce: challenge.nonce,
     createdAt: challenge.createdAt,
     expiresAt: challenge.expiresAt,
-  });
+  }, device.privateKey);
 
   const anchorSignature = await signGenesisAnchor({
     familyId: challenge.familyId,
@@ -159,7 +172,7 @@ export async function buildGenesisCompletion(challenge: GenesisChallenge): Promi
     genesisDskPublicKey: challenge.publicKey,
     protocolVersion: challenge.protocolVersion,
     createdAt: challenge.createdAt,
-  });
+  }, device.privateKey);
 
   const issuedAt = new Date();
   const expiresAt = new Date(issuedAt.getTime() + ATTESTATION_TTL_MS);
@@ -178,7 +191,7 @@ export async function buildGenesisCompletion(challenge: GenesisChallenge): Promi
     signerDeviceId: challenge.deviceId,
     signerDskKeyId: challenge.keyId,
     signerDskPublicKey: challenge.publicKey,
-  });
+  }, device.privateKey);
 
   reportDiagnostic('PARENT_GENESIS_STAGE', 'PROOF_SIGNED');
 
@@ -192,4 +205,29 @@ export async function buildGenesisCompletion(challenge: GenesisChallenge): Promi
     issuedAt: issuedAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
   };
+}
+
+/**
+ * Hands the genesis key to durable per-account custody. Call ONLY after the
+ * server has committed genesis (completeGenesis resolved): a failed or rejected
+ * ceremony must leave no custody record, so the next attempt starts from a fresh
+ * key. Never replaces an existing record (no silent key replacement).
+ */
+export async function persistGenesisDeviceKey(
+  challenge: GenesisChallenge,
+  device: GenesisDeviceKey,
+  custody: DeviceKeyCustody = createDeviceKeyCustody(createIndexedDbDeviceKeyRecordStore()),
+): Promise<void> {
+  await custody.save({
+    binding: {
+      accountId: challenge.accountId,
+      familyId: challenge.familyId,
+      deviceId: challenge.deviceId,
+      keyId: challenge.keyId,
+      publicKeyFingerprint: device.fingerprint,
+    },
+    privateKey: device.privateKey,
+    publicKey: device.publicKeyHandle,
+  });
+  reportDiagnostic('PARENT_GENESIS_STAGE', 'DEVICE_KEY_CUSTODIED');
 }

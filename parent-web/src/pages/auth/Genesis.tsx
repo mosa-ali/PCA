@@ -4,8 +4,8 @@ import { useLocation } from 'react-router-dom';
 import { getApiClients } from '../../api/client';
 import { ServiceAuthError } from '../../api/real/realServiceAuthClient';
 import { isFamilyReady } from '../../api/interfaces';
-import { buildGenesisCompletion, createGenesisDeviceKey } from '../../security/genesisCeremony';
-import { clearEndpointKey } from '../../security/trustedEndpointKeyStore';
+import { buildGenesisCompletion, createGenesisDeviceKey, persistGenesisDeviceKey } from '../../security/genesisCeremony';
+import { reportDiagnostic } from '../../security/diagnosticConsole';
 import { useAuth } from '../../state/AuthContext';
 import { safeReturnPath } from './Login';
 
@@ -34,8 +34,9 @@ import { safeReturnPath } from './Login';
  *    reports FAMILY_READY. A client that optimistically set
  *    role = 'ADMINISTRATOR' here would be granting itself authority the server
  *    had not yet recorded.
- *  - The device key is generated per attempt and never persisted, so a reload
- *    restarts the ceremony rather than resuming a half-written authority.
+ *  - The device key is generated per attempt and persisted to durable,
+ *    per-account, non-extractable custody ONLY after the server commits, so a
+ *    reload mid-ceremony restarts it rather than resuming half-written authority.
  */
 type Stage = 'PASSWORD' | 'CODE' | 'CREATING' | 'AWAITING_SESSION' | 'UNAVAILABLE';
 
@@ -124,8 +125,20 @@ export default function Genesis() {
       // exists yet: the three signatures below are what actually create it.
       const device = await createGenesisDeviceKey();
       const challenge = await clients.serviceAuth.requestGenesisChallenge(device.publicKey, 'BROWSER');
-      const completion = await buildGenesisCompletion(challenge);
+      const completion = await buildGenesisCompletion(challenge, device);
       await clients.serviceAuth.completeGenesis(completion);
+
+      // The server has COMMITTED genesis. Only now does the key enter durable,
+      // per-account, non-extractable custody -- a failed or rejected ceremony
+      // never leaves a custody record behind. A custody failure (private mode,
+      // storage disabled, quota) does not undo the committed family: the parent
+      // still enters the console, and this browser is recorded as having lost
+      // its device key rather than silently minting a replacement.
+      try {
+        await persistGenesisDeviceKey(challenge, device);
+      } catch {
+        reportDiagnostic('PARENT_GENESIS_STAGE', 'DEVICE_KEY_CUSTODY_FAILED');
+      }
 
       // The backend has committed. The session cookie now describes a family,
       // but this component must not assume that -- it re-reads the
@@ -155,17 +168,16 @@ export default function Genesis() {
         setStage('PASSWORD');
       } else if (err instanceof ServiceAuthError && err.code === 'SESSION_EXPIRED') {
         // A genuinely dead session: signing in again is the fix.
-        clearEndpointKey();
         window.location.assign('/login');
         return;
       } else {
         setError(messageFor(err));
         setStage('CODE');
       }
-      // The key generated for this attempt is single-use and the challenge may
-      // already be consumed, so a retry must start from a fresh key rather than
-      // reuse the one that just failed.
-      clearEndpointKey();
+      // The key generated for this attempt lived only in this handler's scope
+      // and was never custodied (custody happens only after commit), so a retry
+      // necessarily starts from a fresh key. The pairing module's endpoint key
+      // is a different key and is deliberately left untouched.
     } finally {
       setSubmitting(false);
     }

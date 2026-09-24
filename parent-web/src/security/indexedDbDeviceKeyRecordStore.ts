@@ -1,4 +1,4 @@
-import type { DeviceKeyRecord, DeviceKeyRecordStore } from './deviceKeyCustody';
+import { DeviceKeyAlreadyCustodiedError, type DeviceKeyRecord, type DeviceKeyRecordStore } from './deviceKeyCustody';
 
 /**
  * IndexedDB adapter for durable Owner device-key custody.
@@ -35,7 +35,12 @@ import type { DeviceKeyRecord, DeviceKeyRecordStore } from './deviceKeyCustody';
 const DATABASE_NAME = 'pca-owner-device-key';
 const DATABASE_VERSION = 1;
 const OBJECT_STORE_NAME = 'custody';
-const RECORD_KEY = 'owner-device-key';
+const RECORD_KEY_PREFIX = 'owner-device-key:';
+
+function slotKey(accountId: string): string {
+  if (typeof accountId !== 'string' || accountId.length === 0) throw new Error('A device-key custody slot requires an account id.');
+  return `${RECORD_KEY_PREFIX}${accountId}`;
+}
 
 function isIndexedDbAvailable(): boolean {
   return typeof indexedDB !== 'undefined' && indexedDB !== null;
@@ -47,7 +52,7 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const database = request.result;
       if (!database.objectStoreNames.contains(OBJECT_STORE_NAME)) {
-        // Out-of-line keys: exactly one record, addressed by a fixed constant.
+        // Out-of-line keys: one record per account, addressed by slotKey(accountId).
         database.createObjectStore(OBJECT_STORE_NAME);
       }
     };
@@ -62,9 +67,19 @@ async function withStore<T>(mode: IDBTransactionMode, action: (store: IDBObjectS
     return await new Promise<T>((resolve, reject) => {
       const transaction = database.transaction(OBJECT_STORE_NAME, mode);
       const request = action(transaction.objectStore(OBJECT_STORE_NAME));
-      request.onsuccess = () => resolve(request.result);
+      let result: T;
+      request.onsuccess = () => {
+        result = request.result;
+        // A read has nothing to commit; a write is durable only once the
+        // TRANSACTION completes (C-3). Genesis navigates away immediately after
+        // saving, so resolving on request success could lose the key.
+        if (mode === 'readonly') resolve(result);
+      };
       request.onerror = () => reject(request.error ?? new Error('Device-key custody request failed.'));
-      transaction.onabort = () => reject(transaction.error ?? new Error('Device-key custody transaction aborted.'));
+      transaction.oncomplete = () => {
+        if (mode !== 'readonly') resolve(result);
+      };
+      transaction.onabort = () => reject(transaction.error ?? request.error ?? new Error('Device-key custody transaction aborted.'));
     });
   } finally {
     database.close();
@@ -73,10 +88,10 @@ async function withStore<T>(mode: IDBTransactionMode, action: (store: IDBObjectS
 
 export function createIndexedDbDeviceKeyRecordStore(): DeviceKeyRecordStore {
   return {
-    async read() {
+    async read(accountId: string) {
       if (!isIndexedDbAvailable()) return undefined;
       try {
-        return await withStore<unknown>('readonly', (store) => store.get(RECORD_KEY));
+        return await withStore<unknown>('readonly', (store) => store.get(slotKey(accountId)));
       } catch {
         // Treated as "nothing usable stored". The caller fails closed on null and
         // never generates a replacement key on its own.
@@ -84,18 +99,28 @@ export function createIndexedDbDeviceKeyRecordStore(): DeviceKeyRecordStore {
       }
     },
 
-    async write(record: DeviceKeyRecord) {
+    async write(record: DeviceKeyRecord, options: { replace: boolean }) {
       if (!isIndexedDbAvailable()) {
         throw new Error('IndexedDB is unavailable, so the owner device key cannot be durably custodied in this browser context.');
       }
-      // Deliberately NOT caught: a clone or quota failure must surface, because a
-      // caller that believes a key is durable when it is not has lost the key.
-      await withStore<IDBValidKey>('readwrite', (store) => store.put(record, RECORD_KEY));
+      try {
+        // add() refuses an existing key INSIDE the same transaction, so two tabs
+        // cannot both pass a separate existence check (C-3). put() only when the
+        // caller explicitly asked to replace.
+        await withStore<IDBValidKey>('readwrite', (store) => (options.replace ? store.put(record, slotKey(record.binding.accountId)) : store.add(record, slotKey(record.binding.accountId))));
+      } catch (error) {
+        if (!options.replace && error instanceof DOMException && error.name === 'ConstraintError') {
+          throw new DeviceKeyAlreadyCustodiedError();
+        }
+        // Deliberately rethrown: a clone or quota failure must surface, because a
+        // caller that believes a key is durable when it is not has lost the key.
+        throw error;
+      }
     },
 
-    async remove() {
+    async remove(accountId: string) {
       if (!isIndexedDbAvailable()) return;
-      await withStore<undefined>('readwrite', (store) => store.delete(RECORD_KEY) as unknown as IDBRequest<undefined>);
+      await withStore<undefined>('readwrite', (store) => store.delete(slotKey(accountId)) as unknown as IDBRequest<undefined>);
     },
   };
 }

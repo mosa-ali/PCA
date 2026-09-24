@@ -1,5 +1,4 @@
-import { signWithEndpointKey } from './trustedEndpointKeyStore';
-import { isStrictCanonicalBase64Url } from './p256Signature';
+import { canonicalizeP256Signature, isStrictCanonicalBase64Url } from './p256Signature';
 
 export interface GenesisProofFields {
   protocolVersion: 1;
@@ -67,8 +66,13 @@ export function canonicalizeGenesisProof(fields: GenesisProofFields): string {
   ]);
 }
 
-export async function signGenesisProof(fields: GenesisProofFields): Promise<string> {
-  return signCanonicalText(canonicalizeGenesisProof(fields));
+/**
+ * Every genesis signature is made with the EXPLICIT non-extractable key the
+ * ceremony generated for this family -- never the pairing module's shared
+ * in-memory endpoint key, which has a different lifetime and purpose.
+ */
+export async function signGenesisProof(fields: GenesisProofFields, privateKey: CryptoKey): Promise<string> {
+  return signCanonicalText(canonicalizeGenesisProof(fields), privateKey);
 }
 
 const GENESIS_ANCHOR_DOMAIN = 'PCA_FAMILY_AUTHORITY_GENESIS_V1';
@@ -115,16 +119,19 @@ export function canonicalizeOwnerAttestation(fields: OwnerAttestationFields): st
   ]);
 }
 
-export async function signGenesisAnchor(fields: GenesisAnchorFields): Promise<string> {
-  return signCanonicalText(canonicalizeGenesisAnchor(fields));
+export async function signGenesisAnchor(fields: GenesisAnchorFields, privateKey: CryptoKey): Promise<string> {
+  return signCanonicalText(canonicalizeGenesisAnchor(fields), privateKey);
 }
 
-export async function signOwnerAttestation(fields: OwnerAttestationFields): Promise<string> {
-  return signCanonicalText(canonicalizeOwnerAttestation(fields));
+export async function signOwnerAttestation(fields: OwnerAttestationFields, privateKey: CryptoKey): Promise<string> {
+  return signCanonicalText(canonicalizeOwnerAttestation(fields), privateKey);
 }
 
-async function signCanonicalText(canonicalText: string): Promise<string> {
-  const signature = await signWithEndpointKey(new TextEncoder().encode(canonicalText));
+async function signCanonicalText(canonicalText: string, privateKey: CryptoKey): Promise<string> {
+  // ECDSA P-256 / SHA-256 over the UTF-8 canonical text, normalised to the
+  // low-S IEEE-P1363 form the backend verifier requires.
+  const raw = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, new TextEncoder().encode(canonicalText));
+  const signature = canonicalizeP256Signature(raw);
   let binary = '';
   for (const byte of new Uint8Array(signature)) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

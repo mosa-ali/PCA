@@ -51,17 +51,29 @@
 //     corrupt record that gets silently deleted is one a later ceremony could
 //     then overwrite.
 //  4. BOUND, NOT JUST STORED. A record is only returned for the exact
-//     family/device it was stored for. A key for another family or device is
-//     unusable, not merely unexpected.
-
+//     account/family/device it was stored for. A key for another account,
+//     family or device is unusable, not merely unexpected.
 const SIGNING_ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 
-/** Non-secret identity a custodied key is bound to. Safe to log or display. */
+/**
+ * Non-secret identity a custodied key is bound to. Safe to log or display.
+ *
+ * `accountId` is part of the binding (C-1): two parents of the same family who
+ * share one browser profile share one IndexedDB, so a record bound only to
+ * family + device would let the second parent load the first parent's owner
+ * key. A record is usable ONLY by the account that created it.
+ */
 export interface DeviceKeyBinding {
+  accountId: string;
   familyId: string;
   deviceId: string;
   keyId: string;
-  /** SHA-256 of the exported PUBLIC key JWK. The public key is not secret. */
+  /**
+   * SHA-256 (hex) of the SEC1 uncompressed public point (0x04 || X || Y,
+   * exactly 65 bytes) -- the canonical encoding the genesis protocol signs over
+   * and the backend stores (C-2). Never a hash of JWK JSON, whose property order
+   * and optional members vary between engines and browser versions.
+   */
   publicKeyFingerprint: string;
 }
 
@@ -82,24 +94,51 @@ export interface DeviceKeyRecord {
   publicKey: CryptoKey;
 }
 
+/** Raised by a store when a non-replacing write finds an existing record. */
+export class DeviceKeyAlreadyCustodiedError extends Error {
+  constructor() {
+    super(
+      'A device key is already in durable custody for this browser. Replacing it requires an explicit replaceExisting, ' +
+        'because overwriting the sole working owner key would strand the family it signs for.',
+    );
+    this.name = 'DeviceKeyAlreadyCustodiedError';
+  }
+}
+
 /**
- * The storage seam. Deliberately tiny: read/write/remove of one opaque record, so
+ * The storage seam. Deliberately tiny: read/write/remove of one opaque record PER
+ * ACCOUNT (two parents sharing a browser profile each own a separate slot, so
+ * one parent's genesis can never collide with or overwrite the other's key), so
  * the security POLICY below is testable deterministically without IndexedDB, and
  * so the platform adapter stays thin enough to audit by eye.
+ *
+ * write() MUST be atomic with respect to `replace` (C-3): with replace=false it
+ * must fail with DeviceKeyAlreadyCustodiedError when a record exists, in the same
+ * storage operation as the insert (IndexedDB: IDBObjectStore.add), so two tabs
+ * can never both "win" a check-then-write race. It must resolve only once the
+ * write is durably committed.
  */
 export interface DeviceKeyRecordStore {
-  read(): Promise<unknown>;
-  write(record: DeviceKeyRecord): Promise<void>;
-  remove(): Promise<void>;
+  /** Reads the ONE slot owned by `accountId`. Other accounts' slots are never read. */
+  read(accountId: string): Promise<unknown>;
+  /** Writes the slot owned by `record.binding.accountId`. */
+  write(record: DeviceKeyRecord, options: { replace: boolean }): Promise<void>;
+  remove(accountId: string): Promise<void>;
+}
+
+export interface ExpectedDeviceKeyBinding {
+  accountId: string;
+  familyId: string;
+  deviceId: string;
 }
 
 export interface DeviceKeyCustody {
   /** Returns the bound key, or null. NEVER generates or repairs anything. */
-  load(expected: { familyId: string; deviceId: string }): Promise<CustodiedDeviceKey | null>;
+  load(expected: ExpectedDeviceKeyBinding): Promise<CustodiedDeviceKey | null>;
   /** Refuses to overwrite an existing record unless `replaceExisting` is set. */
   save(key: CustodiedDeviceKey, options?: { replaceExisting?: boolean }): Promise<void>;
-  /** Removes the record. Device loss / explicit revocation only. */
-  clear(): Promise<void>;
+  /** Removes this account's record. Device loss / explicit revocation only. */
+  clear(accountId: string): Promise<void>;
 }
 
 async function sha256Hex(input: BufferSource): Promise<string> {
@@ -107,13 +146,48 @@ async function sha256Hex(input: BufferSource): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** SEC1 uncompressed public point bytes. Only ever called with a PUBLIC key. */
+export async function exportPublicPointBytes(publicKey: CryptoKey): Promise<Uint8Array> {
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', publicKey));
+  if (raw.length !== 65 || raw[0] !== 0x04) throw new Error('invalid_p256_public_point');
+  return raw;
+}
+
+/** SEC1 uncompressed public point, unpadded base64url -- the protocol wire encoding. */
+export async function publicPointBase64Url(publicKey: CryptoKey): Promise<string> {
+  const bytes = await exportPublicPointBytes(publicKey);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 /**
- * SHA-256 fingerprint of a PUBLIC key. Only ever called with a public key --
- * exporting the private key is never done by this module.
+ * Canonical SHA-256 fingerprint of a PUBLIC key over its SEC1 point. Stable for
+ * a given key regardless of browser, engine or version. Exporting the private
+ * key is never done by this module.
  */
 export async function fingerprintPublicKey(publicKey: CryptoKey): Promise<string> {
-  const jwk = await crypto.subtle.exportKey('jwk', publicKey);
-  return sha256Hex(new TextEncoder().encode(JSON.stringify(jwk)));
+  return sha256Hex(await exportPublicPointBytes(publicKey));
+}
+
+function sameUsages(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length === expected.length && expected.every((usage) => actual.includes(usage));
+}
+
+/** C-4: the stored handles must be exactly the key kind custody issues. */
+function isExpectedP256Pair(privateKey: CryptoKey, publicKey: CryptoKey): boolean {
+  const privateAlgorithm = privateKey.algorithm as EcKeyAlgorithm;
+  const publicAlgorithm = publicKey.algorithm as EcKeyAlgorithm;
+  return (
+    privateKey.type === 'private' &&
+    publicKey.type === 'public' &&
+    privateAlgorithm?.name === 'ECDSA' &&
+    privateAlgorithm?.namedCurve === 'P-256' &&
+    publicAlgorithm?.name === 'ECDSA' &&
+    publicAlgorithm?.namedCurve === 'P-256' &&
+    sameUsages(privateKey.usages, ['sign']) &&
+    sameUsages(publicKey.usages, ['verify'])
+  );
 }
 
 function isRecord(value: unknown): value is DeviceKeyRecord {
@@ -121,8 +195,9 @@ function isRecord(value: unknown): value is DeviceKeyRecord {
   const candidate = value as Partial<DeviceKeyRecord>;
   const binding = candidate.binding as Partial<DeviceKeyBinding> | undefined;
   if (typeof binding !== 'object' || binding === null) return false;
-  if (typeof binding.familyId !== 'string' || typeof binding.deviceId !== 'string') return false;
+  if (typeof binding.accountId !== 'string' || typeof binding.familyId !== 'string' || typeof binding.deviceId !== 'string') return false;
   if (typeof binding.keyId !== 'string' || typeof binding.publicKeyFingerprint !== 'string') return false;
+  if (typeof CryptoKey !== 'undefined' && (!(candidate.privateKey instanceof CryptoKey) || !(candidate.publicKey instanceof CryptoKey))) return false;
   return typeof candidate.privateKey === 'object' && candidate.privateKey !== null && typeof candidate.publicKey === 'object' && candidate.publicKey !== null;
 }
 
@@ -131,7 +206,7 @@ export function createDeviceKeyCustody(store: DeviceKeyRecordStore): DeviceKeyCu
     async load(expected) {
       let raw: unknown;
       try {
-        raw = await store.read();
+        raw = await store.read(expected.accountId);
       } catch {
         // An unreadable store is indistinguishable from having no usable key, and
         // neither may cause a new key: return null and let the caller decide
@@ -144,12 +219,19 @@ export function createDeviceKeyCustody(store: DeviceKeyRecordStore): DeviceKeyCu
       // Malformed / wrong shape: fail closed and leave the record alone.
       if (!isRecord(raw)) return null;
 
-      // Bound, not merely stored.
-      if (raw.binding.familyId !== expected.familyId || raw.binding.deviceId !== expected.deviceId) return null;
+      // Bound, not merely stored: account, family AND device must all match.
+      if (
+        raw.binding.accountId !== expected.accountId ||
+        raw.binding.familyId !== expected.familyId ||
+        raw.binding.deviceId !== expected.deviceId
+      ) {
+        return null;
+      }
 
       // A stored private key that is extractable is corrupt by definition here.
       // Adopting it would make this module the place a key became readable.
       if (raw.privateKey.extractable !== false) return null;
+      if (!isExpectedP256Pair(raw.privateKey, raw.publicKey)) return null;
 
       // The stored identity must still describe the stored key: a record whose
       // fingerprint does not match its own public key is internally inconsistent,
@@ -171,22 +253,21 @@ export function createDeviceKeyCustody(store: DeviceKeyRecordStore): DeviceKeyCu
           'Refusing to custody an extractable private key -- durable custody exists to keep the owner signing key non-exportable.',
         );
       }
-      if (!options.replaceExisting) {
-        // NO SILENT REPLACEMENT. The one working owner key must not be lost to a
-        // failed or repeated ceremony.
-        const existing = await store.read();
-        if (existing !== undefined && existing !== null) {
-          throw new Error(
-            'A device key is already in durable custody for this browser. Replacing it requires an explicit replaceExisting, ' +
-              'because overwriting the sole working owner key would strand the family it signs for.',
-          );
-        }
+      if (!isExpectedP256Pair(key.privateKey, key.publicKey)) {
+        throw new Error('Refusing to custody a key that is not a non-extractable ECDSA P-256 signing pair.');
       }
-      await store.write({ binding: key.binding, privateKey: key.privateKey, publicKey: key.publicKey });
+      if ((await fingerprintPublicKey(key.publicKey)) !== key.binding.publicKeyFingerprint) {
+        throw new Error('Refusing to custody a key whose binding fingerprint does not describe its own public key.');
+      }
+      // NO SILENT REPLACEMENT: the store enforces it atomically (add, not put).
+      await store.write(
+        { binding: key.binding, privateKey: key.privateKey, publicKey: key.publicKey },
+        { replace: options.replaceExisting === true },
+      );
     },
 
-    async clear() {
-      await store.remove();
+    async clear(accountId) {
+      await store.remove(accountId);
     },
   };
 }
