@@ -647,6 +647,11 @@ jobs:
       # Both suites proxy same-origin through the Vite dev server, so the backend
       # needs no CORS layer for this run (it has none by design).
       VITE_E2E_REAL_PROXY_TARGET: http://127.0.0.1:4001
+      # The disposable backend in THIS job is composed with the real P-256
+      # genesis verifier so genesis.spec.ts can run the full ceremony in a real
+      # browser. Production stays fail-closed (unset = REJECTING) until the
+      # owner explicitly activates it; see parentaccount/genesisVerifierComposition.ts.
+      PCA_GENESIS_DEVICE_SIGNATURE_VERIFIER: P256
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -725,6 +730,10 @@ jobs:
             if (!second || !second.dailyLoginGrant) {
               process.exit(1);
             }
+            const genesis = manifest.genesisParent;
+            if (!genesis || !genesis.dailyLoginGrant || genesis.familyId !== null) {
+              process.exit(1);
+            }
             fs.appendFileSync(process.env.GITHUB_ENV, [
               'E2E_REAL_PARENT_EMAIL=' + account.email,
               'E2E_REAL_PARENT_PASSWORD=' + account.password,
@@ -732,6 +741,9 @@ jobs:
               'E2E_REAL_SECOND_PARENT_EMAIL=' + second.email,
               'E2E_REAL_SECOND_PARENT_PASSWORD=' + second.password,
               'E2E_REAL_SECOND_PARENT_DAILY_GRANT=' + second.dailyLoginGrant,
+              'E2E_REAL_GENESIS_PARENT_EMAIL=' + genesis.email,
+              'E2E_REAL_GENESIS_PARENT_PASSWORD=' + genesis.password,
+              'E2E_REAL_GENESIS_PARENT_DAILY_GRANT=' + genesis.dailyLoginGrant,
               'E2E_REAL_TEST_FAMILY_ID=' + family.familyId,
               'E2E_REAL_ADMIN_EMAIL=' + operator.email,
               'E2E_REAL_ADMIN_PASSWORD=' + operator.password,
@@ -787,7 +799,7 @@ jobs:
         working-directory: parent-web
         run: |
           actual=$(ls e2e-real/*.spec.ts | xargs -n1 basename | sort | tr '\n' ' ')
-          expected="acceptance-flow.spec.ts notStartedProgramme.spec.ts realBackend.spec.ts "
+          expected="acceptance-flow.spec.ts genesis.spec.ts notStartedProgramme.spec.ts realBackend.spec.ts "
           if [ "$actual" != "$expected" ]; then
             echo "The e2e-real/ spec set changed since this job's scope was set."
             echo "  found:    $actual"
@@ -892,6 +904,41 @@ jobs:
         if: always()
         working-directory: parent-web
         run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-realBackend.json --label "parent-web real-backend E2E" --manifest-out ../backend/parent-web-real-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
+      - name: Restart the backend so the genesis spec starts with a fresh abuse budget
+        working-directory: backend
+        run: |
+          pkill -f 'node dist/main.js' || true
+          for attempt in $(seq 1 20); do
+            if ! curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          nohup node dist/main.js > backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4001/health > /dev/null 2>&1; then
+              echo "Backend restarted after ${attempt}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not come back within 30s. Log follows:"
+          cat backend.log
+          exit 1
+      - name: Cross-client proof -- browser genesis signatures verify under the compiled backend verifier
+        working-directory: parent-web
+        env:
+          PCA_CROSS_CLIENT_VERIFY: '1'
+        run: npx vitest run tests/security/genesisCeremony.crossclient.test.ts
+      - name: Run parent-web real-backend E2E -- real-browser family genesis (certified)
+        working-directory: parent-web
+        env:
+          VITE_PCA_DEMO_MODE: 'false'
+          VITE_PCA_API_BASE_URL: /
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/real-e2e-genesis.json
+        run: npx playwright test --config=playwright.real.config.ts --project=chromium genesis.spec.ts
+      - name: Assert the genesis run was not vacuously skipped, and record evidence
+        if: always()
+        working-directory: parent-web
+        run: node ../tooling/e2e-real/assertRealE2eResults.mjs test-results/real-e2e-genesis.json --label "parent-web real-browser genesis E2E" --manifest-out ../backend/parent-web-genesis-e2e-evidence.json --source-sha "${{ github.sha }}" --workflow "${{ github.workflow }}"
       - name: Restart the backend before the platform-admin suite
         # Same reason: the platform-admin suite is a third independent consumer of
         # the same per-IP 'auth-attempt' budget.

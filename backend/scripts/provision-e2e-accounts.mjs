@@ -76,6 +76,9 @@ const TEST_EMAIL_DOMAIN = 'pca-e2e.test';
 const TEST_PASSWORD = 'Correct Horse Battery Staple 2026!';
 const PARENT_KEY = 'e2e-parent';
 const SECOND_PARENT_KEY = 'e2e-cross-family';
+// A VERIFIED parent that deliberately has NO family: the real-browser genesis
+// spec (parent-web/e2e-real/genesis.spec.ts) performs the ceremony itself.
+const GENESIS_PARENT_KEY = 'e2e-genesis';
 const ADMIN_KEY = 'e2e-owner';
 
 function refuse(reason) {
@@ -145,6 +148,20 @@ async function provisionParent(key) {
 const parent = await provisionParent(PARENT_KEY);
 const secondParent = await provisionParent(SECOND_PARENT_KEY);
 
+/** Verified, authenticated, pre-family (GENESIS_REQUIRED). Genesis is left to the browser. */
+async function provisionPreFamilyParent(key) {
+  const email = `${key}@${TEST_EMAIL_DOMAIN}`;
+  await parentAccountService.register(email, TEST_PASSWORD, TEST_PASSWORD);
+  const verificationCode = emailSender.lastCodeFor(email);
+  if (!verificationCode) refuse(`no verification code was recorded for ${key}.`);
+  const verified = await parentAccountService.verifyEmail(email, verificationCode);
+  if (!verified.accountId) refuse(`email verification did not yield an accountId for ${key}.`);
+  if (verified.familyId !== null) refuse(`${key} must start without a family.`);
+  const dailyLoginGrant = await issueDailyLoginGrant({ repository: parentAccountRepository, accountId: verified.accountId, now });
+  return { email, accountId: verified.accountId, familyId: null, dailyLoginGrant };
+}
+const genesisParent = await provisionPreFamilyParent(GENESIS_PARENT_KEY);
+
 // --- The family the platform-admin suite acts on -------------------------
 // The admin suite's suspend/reactivate round-trip needs a REAL families row to
 // operate on: it clicks that family's own link in the accounts list and asserts
@@ -206,6 +223,7 @@ await writeFile(
       generatedAtUtc: now.toISOString(),
       parent: { ...parent, password: TEST_PASSWORD },
       secondParent: { ...secondParent, password: TEST_PASSWORD },
+      genesisParent: { ...genesisParent, password: TEST_PASSWORD },
       operator: { email: adminEmail, password: TEST_PASSWORD, role: 'APP_OWNER', totpSecretBase32: base32Encode(totpSecret) },
       family: { familyId: testFamilyId },
       genesisCompleted: true,
@@ -217,7 +235,7 @@ await writeFile(
 );
 
 console.log('Provisioned the disposable E2E accounts.');
-console.log('Genesis completion state: completed for both parent fixtures.');
+console.log('Genesis completion state: completed for both parent fixtures; the genesis fixture is pre-family by design.');
 console.log('Wrote the E2E fixture manifest.');
 
 await closePool();
