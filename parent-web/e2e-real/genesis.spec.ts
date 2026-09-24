@@ -48,6 +48,19 @@ function support(...args: string[]): Record<string, unknown> {
   return JSON.parse(out.trim().split('\n').pop()!);
 }
 
+/**
+ * The backend applies ONE fixed-window anti-flood budget to every authenticated
+ * route: 60 requests / 60 s / IP (http/buildServer.ts authAttemptLimiter). A
+ * browser journey at Playwright speed spends that in seconds, and the UI then
+ * correctly shows "Too many attempts" (observed in CI on 2d76c947). That budget
+ * is a real control at human pace, so the spec never weakens it: it waits out
+ * the window at the journey's natural seams. A fixed window that began before
+ * the wait has always reset 61 s later.
+ */
+async function waitForFreshAuthBudget() {
+  await new Promise((resolve) => setTimeout(resolve, 61_000));
+}
+
 /** First sign-in of a provisioned parent: the provisioner's daily grant makes it a routine login. */
 async function signIn(page: Page, email: string, password: string, grant: string) {
   await page.context().addCookies([{ name: GRANT_COOKIE, value: grant, url: BASE_URL }]);
@@ -129,7 +142,7 @@ async function custodySlot(page: Page, accountId: string) {
 }
 
 test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, and the device key is durable, account-bound and non-exportable', async () => {
-  test.setTimeout(180_000);
+  test.setTimeout(420_000);
   const profile = mkdtempSync(path.join(tmpdir(), 'pca-genesis-profile-'));
   let context: BrowserContext = await chromium.launchPersistentContext(profile, { baseURL: BASE_URL });
   try {
@@ -200,6 +213,7 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
     });
 
     await test.step('a DIFFERENT parent signing into the same browser inherits nothing', async () => {
+      await waitForFreshAuthBudget();
       await signOut(page);
       await signIn(page, OTHER_EMAIL!, OTHER_PASSWORD!, OTHER_GRANT!);
       await expect(page).toHaveURL(/\/dashboard$/);
@@ -220,6 +234,7 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
     });
 
     await test.step('a real browser RESTART (same profile) keeps the same non-extractable key', async () => {
+      await waitForFreshAuthBudget();
       const before = (await custodySlot(page, accountId))!.publicKey;
       await context.close();
       context = await chromium.launchPersistentContext(profile, { baseURL: BASE_URL });
@@ -247,6 +262,8 @@ test('real browser: a verified parent completes Genesis, becomes FAMILY_READY, a
 });
 
 test('real browser: a DIFFERENT browser signed in as the same parent holds no device key (key possession is per browser)', async ({ page }) => {
+  test.setTimeout(150_000);
+  await waitForFreshAuthBudget();
   await signInWithLoginStepUp(page, EMAIL!, PASSWORD!);
   await expect(page).toHaveURL(/\/dashboard$/);
   const current = await session(page);
