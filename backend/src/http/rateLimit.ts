@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { clientAddressKey } from './clientAddress.js';
 
 export interface RateLimitOptions {
   windowMs: number;
@@ -43,7 +44,10 @@ export function createRateLimiter() {
 
   return function rateLimit(options: RateLimitOptions) {
     return async function rateLimitPreHandler(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-      const key = `${options.bucket}:${request.ip}`;
+      // S8: keyed on the RESOLVED client address with a forwarded ":port"
+      // stripped (see clientAddress.ts) -- an `ip:port` key forked the budget
+      // per request in production, so per-IP limits never tripped.
+      const key = `${options.bucket}:${clientAddressKey(request)}`;
       const now = Date.now();
       const existing = windows.get(key);
       if (!existing || existing.resetAt <= now) {

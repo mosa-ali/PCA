@@ -26,6 +26,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ParentAccountError, type ParentAccountService } from '../../parentaccount/ParentAccountService.js';
 import { GenesisChallengeError } from '../../parentaccount/GenesisChallengeService.js';
 import { createKeyedRateLimiter } from '../../parentaccount/rateLimiter.js';
+import { clientAddressKey } from '../clientAddress.js';
 import { hashParentEmail } from '../../parentaccount/emailHash.js';
 import {
   CSRF_HEADER_NAME,
@@ -230,7 +231,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('register', REGISTER_IP_RATE_LIMIT, REGISTER_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('register', REGISTER_IP_RATE_LIMIT, REGISTER_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -271,7 +272,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('verify-email', VERIFY_IP_RATE_LIMIT, VERIFY_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('verify-email', VERIFY_IP_RATE_LIMIT, VERIFY_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -299,7 +300,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('request-password-reset', REQUEST_PASSWORD_RESET_IP_RATE_LIMIT, REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('request-password-reset', REQUEST_PASSWORD_RESET_IP_RATE_LIMIT, REQUEST_PASSWORD_RESET_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -325,7 +326,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('reset-password', RESET_PASSWORD_IP_RATE_LIMIT, RESET_PASSWORD_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('reset-password', RESET_PASSWORD_IP_RATE_LIMIT, RESET_PASSWORD_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -352,7 +353,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('login', LOGIN_IP_RATE_LIMIT, LOGIN_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('login', LOGIN_IP_RATE_LIMIT, LOGIN_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -383,7 +384,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
       await reply.code(400).send({ error: 'invalid_request' });
       return;
     }
-    if (!rateLimited('login-step-up', LOGIN_STEP_UP_IP_RATE_LIMIT, LOGIN_STEP_UP_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('login-step-up', LOGIN_STEP_UP_IP_RATE_LIMIT, LOGIN_STEP_UP_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       await reply.code(429).send({ error: 'rate_limited' });
       return;
     }
@@ -413,7 +414,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     if (!isPlainObject(request.body)) return reply.code(400).send({ error: 'invalid_request' });
     const { email, password } = request.body as Record<string, unknown>;
     if (typeof email !== 'string' || typeof password !== 'string') return reply.code(400).send({ error: 'invalid_request' });
-    if (!rateLimited('genesis-step-up', GENESIS_STEP_UP_IP_RATE_LIMIT, GENESIS_STEP_UP_EMAIL_RATE_LIMIT, request.ip, email)) {
+    if (!rateLimited('genesis-step-up', GENESIS_STEP_UP_IP_RATE_LIMIT, GENESIS_STEP_UP_EMAIL_RATE_LIMIT, clientAddressKey(request), email)) {
       return reply.code(429).send({ error: 'rate_limited' });
     }
     try {
@@ -433,7 +434,7 @@ export function registerParentAccountRoutes(app: FastifyInstance, deps: ParentAc
     // rate limiter and before any service call -- see /genesis/step-up above.
     if (refuseIfGenesisUnavailable(deps, reply)) return;
     if (!isPlainObject(request.body) || typeof (request.body as Record<string, unknown>).code !== 'string') return reply.code(400).send({ error: 'invalid_request' });
-    if (!rateLimiter.consume('genesis-step-up-complete:ip', request.ip, GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
+    if (!rateLimiter.consume('genesis-step-up-complete:ip', clientAddressKey(request), GENESIS_STEP_UP_IP_RATE_LIMIT.windowMs, GENESIS_STEP_UP_IP_RATE_LIMIT.max)) {
       return reply.code(429).send({ error: 'rate_limited' });
     }
     try {

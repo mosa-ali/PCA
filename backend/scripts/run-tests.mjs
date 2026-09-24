@@ -245,6 +245,7 @@ const files = [
   "test/http/cors.test.mjs",
   "test/http/globalBodyLimit.test.mjs",
   "test/http/trustProxy.test.mjs",
+  "test/http/clientAddressRateLimit.test.mjs",
   "test/http/emailHealthRoute.test.mjs",
   "test/email/emailOutboxEncryption.test.mjs",
   "test/email/emailIdempotencyKey.test.mjs",
