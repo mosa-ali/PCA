@@ -72,9 +72,24 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   // --- migrations 0043-0048. Verbs derived from the actual repository
   // statements executing against each table (INSERT INTO / SELECT ... FROM /
   // UPDATE / DELETE FROM, including implicit UPDATE via INSERT ... ON
-  // DUPLICATE KEY UPDATE) -- NOT from a category rule. ---
+  // DUPLICATE KEY UPDATE) -- NOT from a category rule.
+  //
+  // READ-COLUMN RULE (2026-09-24 production 1143, parent_daily_login_grants):
+  // MySQL requires SELECT on every column a statement READS -- including the
+  // columns an UPDATE/DELETE references in its WHERE clause. Deriving "UPDATE"
+  // from `UPDATE t SET ... WHERE col ...` without also "SELECT" produced a
+  // principal that could not execute the repository's own statement
+  // (ER_COLUMNACCESS_DENIED_ERROR 1143 at the first re-sign-in that touched
+  // it, surfacing to parents as HTTP 500). Every entry declaring UPDATE or
+  // DELETE must therefore also declare SELECT; assertReadColumnRule below
+  // enforces that fail-closed at module load. ---
   family_parent_memberships: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
-  parent_daily_login_grants: Object.freeze(['INSERT', 'UPDATE']),
+  // SELECT is required for the read columns of validateAndTouchDailyLoginGrant's
+  // UPDATE ... WHERE (account_id, token_hash, purpose, revoked_at, expires_at) --
+  // without it every second sign-in from a browser holding a daily grant failed
+  // with 1143 (2026-09-24). No row reads of this table exist beyond those WHERE
+  // columns, which is why INSERT/UPDATE alone looked sufficient at declaration time.
+  parent_daily_login_grants: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   parent_genesis_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   parent_genesis_step_up_authorizations: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
   family_authority_request_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE']),
@@ -161,6 +176,36 @@ export const RUNTIME_TABLE_PRIVILEGES = Object.freeze({
   settlement_fx_snapshots: DML,
   sync_sequence_progress_ledger: DML,
 });
+
+/**
+ * READ-COLUMN RULE (MySQL 1143): a statement may only reference columns it
+ * holds a read privilege for -- including the columns an UPDATE or DELETE
+ * reads in its WHERE clause. A declaration with UPDATE or DELETE but no SELECT
+ * grants a principal that cannot execute the repository statement the verb was
+ * derived from. The 2026-09-24 production incident: parent_daily_login_grants
+ * declared INSERT/UPDATE only, and the daily-grant touch's UPDATE threw
+ * ER_COLUMNACCESS_DENIED_ERROR on every second parent sign-in.
+ *
+ * Enforced on the real matrix fail-closed at module load (any importer -- the
+ * provisioning script, the policy test, the disposable-principal proof -- fails
+ * immediately on a defective declaration). Exported so tests can also prove the
+ * rule rejects a synthetic defective declaration: a gate must be demonstrably
+ * able to fail.
+ */
+export function assertReadColumnRule(matrix) {
+  for (const [tableName, verbs] of Object.entries(matrix)) {
+    const readsRows = verbs.includes('UPDATE') || verbs.includes('DELETE');
+    if (readsRows && !verbs.includes('SELECT')) {
+      throw new Error(
+        `Runtime grant declaration for ${tableName} declares UPDATE or DELETE without SELECT. ` +
+          'MySQL requires SELECT for every column an UPDATE/DELETE reads (for example its WHERE clause); ' +
+          'add SELECT (table-level) or column-level SELECT for exactly the read columns.',
+      );
+    }
+  }
+}
+
+assertReadColumnRule(RUNTIME_TABLE_PRIVILEGES);
 
 /** Backtick-quotes a MySQL identifier (database or table name), doubling any embedded backtick per MySQL's own escaping rule. */
 export function quoteIdentifier(identifier) {

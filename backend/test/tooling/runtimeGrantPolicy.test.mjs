@@ -6,12 +6,18 @@
 //   3. that the declaration set and PCA_CANONICAL_SCHEMA cannot drift apart in
 //      EITHER direction, so a future migration cannot silently introduce a
 //      runtime table that the app is then denied access to (1142).
+//   4. the READ-COLUMN RULE (2026-09-24, MySQL 1143): any table declaring
+//      UPDATE or DELETE must also declare SELECT, because a statement may only
+//      reference columns it can read -- including the WHERE columns of an
+//      UPDATE. The daily-login-grant touch shipped without this and 500'd
+//      every second parent sign-in in production.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUDIT_TABLE_NAME,
   MIGRATIONS_TABLE_NAME,
   RUNTIME_TABLE_PRIVILEGES,
+  assertReadColumnRule,
   buildRuntimeGrantPlan,
   buildRuntimeGrantStatement,
   privilegesForTable,
@@ -24,7 +30,9 @@ const sorted = (verbs) => [...verbs].sort();
 /** Explicitly declared, source-derived verbs for the 0043-0048 tables. */
 const MIGRATION_0043_0048_EXPECTATIONS = Object.freeze({
   family_parent_memberships: ['SELECT', 'INSERT', 'UPDATE'],
-  parent_daily_login_grants: ['INSERT', 'UPDATE'],
+  // SELECT added 2026-09-24: the daily-grant touch's UPDATE reads its WHERE
+  // columns, and MySQL refuses that without SELECT (ER_COLUMNACCESS_DENIED 1143).
+  parent_daily_login_grants: ['SELECT', 'INSERT', 'UPDATE'],
   parent_genesis_challenges: ['SELECT', 'INSERT', 'UPDATE'],
   parent_genesis_step_up_authorizations: ['SELECT', 'INSERT', 'UPDATE'],
   family_authority_request_challenges: ['SELECT', 'INSERT', 'UPDATE'],
@@ -133,4 +141,34 @@ test('the audit table grant keeps UPDATE and DELETE absent while other tables ha
   const auditSql = buildRuntimeGrantStatement('pca_pro', AUDIT_TABLE_NAME, quoteUserAtHost('u', 'h'));
   assert.ok(!auditSql.includes('UPDATE'));
   assert.ok(!auditSql.includes('DELETE'));
+});
+
+test('READ-COLUMN RULE (MySQL 1143): every declaration with UPDATE or DELETE also declares SELECT', () => {
+  // The 2026-09-24 production defect this locks in: parent_daily_login_grants
+  // declared INSERT/UPDATE only, while validateAndTouchDailyLoginGrant's
+  // `UPDATE ... WHERE account_id = ? AND token_hash = ? ...` reads its WHERE
+  // columns -- which MySQL refuses without SELECT on them. First sign-ins never
+  // run the statement; every second sign-in within the grant's 24h window did,
+  // and got ER_COLUMNACCESS_DENIED_ERROR surfaced as HTTP 500.
+  for (const [table, verbs] of Object.entries(RUNTIME_TABLE_PRIVILEGES)) {
+    if (verbs.includes('UPDATE') || verbs.includes('DELETE')) {
+      assert.ok(
+        verbs.includes('SELECT'),
+        `${table} declares UPDATE/DELETE without SELECT -- MySQL requires SELECT for the columns read in WHERE (1143)`,
+      );
+    }
+  }
+});
+
+test('READ-COLUMN RULE self-test: the rule itself rejects a defective declaration (a gate must be demonstrably able to fail)', () => {
+  assert.throws(
+    () => assertReadColumnRule({ defective_update_probe: ['INSERT', 'UPDATE'] }),
+    /declares UPDATE or DELETE without SELECT/,
+  );
+  assert.throws(
+    () => assertReadColumnRule({ defective_delete_probe: ['INSERT', 'DELETE'] }),
+    /declares UPDATE or DELETE without SELECT/,
+  );
+  assert.doesNotThrow(() => assertReadColumnRule({ ok_probe: ['SELECT', 'INSERT', 'UPDATE'] }));
+  assert.doesNotThrow(() => assertReadColumnRule({ read_only_probe: ['SELECT'] }));
 });
