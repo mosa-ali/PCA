@@ -5,6 +5,8 @@
   },
   "nav": {
     "dashboard": "لوحة التحكم",
+    "enrollmentManagement": "إدارة التسجيل والاستحقاقات",
+    "commercialPricing": "الشؤون التجارية والأسعار",
     "accounts": "الحسابات",
     "entitlements": "الاستحقاقات",
     "entitlementRequests": "طلبات الاستحقاق",
@@ -37,6 +39,14 @@
     "dark": "داكن",
     "slate": "رمادي أردوازي",
     "light": "فاتح"
+  },
+  "enrollmentManagement": {
+    "title": "إدارة التسجيل والاستحقاقات",
+    "tabsLabel": "أقسام التسجيل والاستحقاقات"
+  },
+  "commercialPricing": {
+    "title": "الشؤون التجارية والأسعار",
+    "tabsLabel": "الأقسام التجارية وأقسام الأسعار"
   },
   "login": {
     "title": "تسجيل الدخول إلى إدارة المنصة",
@@ -166,6 +176,14 @@
     "parentEmailPlaceholder": "parent@example.com",
     "parentEmailInvalid": "أدخل عنوان بريد إلكتروني صالحًا لولي الأمر.",
     "parentEmailNoFamilies": "لم يتم العثور على حسابات أسر مرتبطة بهذا البريد.",
+    "parentEmailNotFound": "لم يتم العثور على حساب ولي أمر بهذا البريد الإلكتروني.",
+    "parentEmailReasons": {
+      "ACCOUNT_SUSPENDED": "حساب ولي الأمر أو أسرته معلّق.",
+      "EMAIL_NOT_VERIFIED": "حساب ولي الأمر موجود، لكن بريده الإلكتروني غير موثّق.",
+      "FAMILY_NOT_PROVISIONED": "حساب ولي الأمر موجود، لكن لم يتم إنشاء أسرة له.",
+      "ALREADY_ENTITLED": "لأسرة حساب ولي الأمر استحقاق بالفعل.",
+      "OTHER_APPROVED_REASON": "حساب ولي الأمر غير مؤهل لهذا الإجراء."
+    },
     "parentEmailMultipleFamilies": "اختر أسرة مرتبطة بولي الأمر",
     "familyId": "معرّف الأسرة",
     "createdAt": "تاريخ الإنشاء",

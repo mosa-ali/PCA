@@ -109,7 +109,7 @@ export default function BillingQuotes() {
 
   return (
     <div className="page">
-      <h1>{t('nav.billingQuotes')}</h1>
+      <h2>{t('nav.billingQuotes')}</h2>
 
       <form className="filters" onSubmit={onFilterSubmit}>
         <ParentEmailFamilyLookup id="quotes" familyId={familyId} onFamilyIdChange={setFamilyId} />

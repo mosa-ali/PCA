@@ -16,7 +16,7 @@ export function LanguageSwitcher() {
   };
 
   return (
-    <label>
+    <label className="language-switcher">
       <span className="visually-hidden">Language</span>
       <select aria-label="Language" value={i18n.language.split('-')[0]} onChange={(e) => changeLanguage(e.target.value)}>
         <option value="en">EN</option>

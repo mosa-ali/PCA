@@ -157,8 +157,23 @@ a {
   background: var(--surface);
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .spacer {
   flex: 1;
+  min-width: 0;
+}
+
+.app-header > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-btn {
@@ -182,7 +197,7 @@ a {
   text-align: end;
 }
 
-.account-menu { position: relative; max-width: min(18rem, 44vw); }
+.account-menu { position: relative; min-width: 0; max-width: min(18rem, 44vw); }
 .account-menu-trigger { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.45rem 0.65rem; color: var(--text); }
 .account-menu-panel { position: absolute; inset-block-start: calc(100% + 0.5rem); inset-inline-end: 0; z-index: 950; width: min(19rem, calc(100vw - 1.5rem)); padding: 1rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 24%); }
 .account-menu-name { display: block; overflow-wrap: anywhere; }
@@ -191,8 +206,19 @@ a {
 .account-menu-label { color: var(--text-muted); font-size: 0.8rem; }
 .account-menu-expiry { margin-block: 0.75rem 0; font-size: 0.9rem; }
 .account-menu-logout { width: 100%; margin-block-start: 0.75rem; }
-.appearance-selector { display: flex; align-items: center; gap: 0.45rem; margin: 0; font-size: 0.8rem; font-weight: 600; }
-.appearance-selector select { width: auto; min-width: 7rem; margin: 0; padding: 0.35rem; }
+.language-switcher,
+.appearance-selector { display: flex; align-items: center; margin: 0; }
+.language-switcher select,
+.appearance-selector select {
+  width: auto;
+  min-width: 0;
+  height: 2.4rem;
+  margin: 0;
+  padding: 0 0.65rem;
+  font: inherit;
+  border-radius: var(--radius);
+}
+.appearance-selector select { min-width: 7rem; }
 .parent-email-lookup { min-width: min(18rem, 100%); }
 .parent-email-lookup-row { display: flex; align-items: center; gap: 0.4rem; }
 .parent-email-lookup-row input { min-width: 10rem; }
@@ -223,6 +249,11 @@ a {
 
 .page h1 {
   margin-block-start: 0;
+}
+
+.workspace-page-panel > .page > h2 {
+  margin-block-start: 0;
+  font-size: 2em;
 }
 
 .kv-list {
@@ -325,6 +356,8 @@ select {
   align-items: center;
   gap: 0.75rem;
 }
+
+.login-language-bar > label { margin: 0; }
 
 .login-card {
   width: 100%;
@@ -637,6 +670,7 @@ select {
   }
 
   .account-menu { max-width: 40vw; }
+  .header-controls { gap: 0.5rem; }
 }
 
 @media (max-width: 480px) {
@@ -649,6 +683,7 @@ select {
   }
   .app-header > strong { max-width: 28vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .account-menu-trigger { max-width: 38vw; padding: 0.4rem; }
+  .header-controls { gap: 0.35rem; }
   .login-language-bar { flex-wrap: wrap; justify-content: center; }
 }
 

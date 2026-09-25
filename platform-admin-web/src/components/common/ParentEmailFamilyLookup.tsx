@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { platformAdminApi } from '../../api/platformAdminApiClient';
 
+type ParentEmailLookupResult =
+  | { outcome: 'ACCOUNT_NOT_FOUND' }
+  | { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE'; reason: string; familyIds: string[] }
+  | { outcome: 'ELIGIBLE_FAMILY_FOUND'; familyIds: string[] };
+
 export function ParentEmailFamilyLookup({ id, familyId, onFamilyIdChange, includeDeleted = false }: {
   id: string;
   familyId: string;
@@ -25,10 +30,17 @@ export function ParentEmailFamilyLookup({ id, familyId, onFamilyIdChange, includ
     setLoading(true);
     setMessage('');
     try {
-      const result = await platformAdminApi.post<{ familyIds: string[] }>('/platform-admin/accounts/resolve-parent-email', { email: normalized, includeDeleted });
-      setFamilyIds(result.familyIds);
-      onFamilyIdChange(result.familyIds.length === 1 ? result.familyIds[0] : '');
-      setMessage(result.familyIds.length === 0 ? t('accounts.parentEmailNoFamilies') : '');
+      const result = await platformAdminApi.post<ParentEmailLookupResult>('/platform-admin/accounts/resolve-parent-email', { email: normalized, includeDeleted });
+      const resolvedFamilyIds = result.outcome === 'ACCOUNT_NOT_FOUND' ? [] : result.familyIds;
+      setFamilyIds(resolvedFamilyIds);
+      onFamilyIdChange(resolvedFamilyIds.length === 1 ? resolvedFamilyIds[0] : '');
+      if (result.outcome === 'ACCOUNT_NOT_FOUND') {
+        setMessage(t('accounts.parentEmailNotFound'));
+      } else if (result.outcome === 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE') {
+        setMessage(t(`accounts.parentEmailReasons.${result.reason}`, t('accounts.parentEmailNoFamilies')));
+      } else {
+        setMessage('');
+      }
     } catch {
       setFamilyIds([]);
       onFamilyIdChange('');

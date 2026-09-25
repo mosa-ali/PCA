@@ -20,7 +20,13 @@ export function Sidebar({ drawerOpen, onNavigate }: SidebarProps) {
       {NAV_SECTIONS.map((section, idx) => {
         const visibleItems = section.items.filter(
           (item) =>
-            (item.operation ? isPermitted(roles, item.operation) : true) &&
+            (item.anyOf
+              ? item.anyOf.some((permission) =>
+                'operation' in permission ? isPermitted(roles, permission.operation)
+                  : 'billingOperation' in permission ? isBillingPermitted(roles, permission.billingOperation)
+                    : isSettlementPermitted(roles, permission.settlementOperation),
+              )
+              : item.operation ? isPermitted(roles, item.operation) : true) &&
             (item.billingOperation ? isBillingPermitted(roles, item.billingOperation) : true) &&
             (item.settlementOperation ? isSettlementPermitted(roles, item.settlementOperation) : true),
         );

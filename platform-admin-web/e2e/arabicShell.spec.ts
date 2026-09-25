@@ -35,6 +35,7 @@ test.describe('Arabic / RTL shell', () => {
 
     await expect(page.getByRole('heading', { name: 'لوحة التحكم' })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('link', { name: 'الحسابات' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'إدارة التسجيل والاستحقاقات' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'الحسابات' })).toHaveCount(0);
   });
 });

@@ -185,7 +185,7 @@ export default function EntitlementRequests() {
 
   return (
     <div className="page">
-      <h1>{t('nav.entitlementRequests')}</h1>
+      <h2>{t('nav.entitlementRequests')}</h2>
 
       <form className="filters" onSubmit={onFilterSubmit}>
         <div>

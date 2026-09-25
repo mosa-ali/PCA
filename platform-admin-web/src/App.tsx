@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppLayout } from './components/shell/AppLayout';
 import { RequireSession } from './rbac/RequireSession';
 import { RouteGuard } from './rbac/RouteGuard';
@@ -7,15 +7,7 @@ import { SettlementRouteGuard } from './rbac/SettlementRouteGuard';
 import Login from './pages/Login';
 import Activation from './pages/Activation';
 import Dashboard from './pages/Dashboard';
-import AccountsList from './pages/accounts/AccountsList';
 import AccountDetail from './pages/accounts/AccountDetail';
-import Entitlements from './pages/entitlements/Entitlements';
-import EntitlementRequests from './pages/entitlements/EntitlementRequests';
-import ComplimentaryCapacity from './pages/entitlements/ComplimentaryCapacity';
-import FreeAccessPolicy from './pages/entitlements/FreeAccessPolicy';
-import BillingPlans from './pages/billing/BillingPlans';
-import BillingPricing from './pages/billing/BillingPricing';
-import BillingQuotes from './pages/billing/BillingQuotes';
 import BillingInvoices from './pages/billing/BillingInvoices';
 import BillingPayments from './pages/billing/BillingPayments';
 import SettlementAccounts from './pages/billing/SettlementAccounts';
@@ -26,6 +18,15 @@ import Audit from './pages/Audit';
 import Settings from './pages/Settings';
 import NotPermitted from './pages/NotPermitted';
 import NotFound from './pages/NotFound';
+import EnrollmentManagement from './pages/EnrollmentManagement';
+import CommercialPricing from './pages/CommercialPricing';
+
+function LegacyWorkspaceRedirect({ workspace, tab }: { workspace: string; tab: string }) {
+  const location = useLocation();
+  const search = new URLSearchParams(location.search);
+  search.set('tab', tab);
+  return <Navigate to={`/${workspace}?${search.toString()}`} replace />;
+}
 
 export default function App() {
   return (
@@ -51,14 +52,9 @@ export default function App() {
           }
         />
 
-        <Route
-          path="accounts"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <AccountsList />
-            </RouteGuard>
-          }
-        />
+        <Route path="enrollment-management" element={<RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA"><EnrollmentManagement /></RouteGuard>} />
+        <Route path="commercial-pricing" element={<CommercialPricing />} />
+        <Route path="accounts" element={<LegacyWorkspaceRedirect workspace="enrollment-management" tab="accounts" />} />
         <Route
           path="accounts/:id"
           element={
@@ -68,65 +64,16 @@ export default function App() {
           }
         />
 
-        <Route
-          path="entitlements"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <Entitlements />
-            </RouteGuard>
-          }
-        />
-        <Route
-          path="entitlement-requests"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <EntitlementRequests />
-            </RouteGuard>
-          }
-        />
+        <Route path="entitlements" element={<LegacyWorkspaceRedirect workspace="enrollment-management" tab="entitlements" />} />
+        <Route path="entitlement-requests" element={<LegacyWorkspaceRedirect workspace="enrollment-management" tab="requests" />} />
 
-        <Route
-          path="complimentary-capacity"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <ComplimentaryCapacity />
-            </RouteGuard>
-          }
-        />
+        <Route path="complimentary-capacity" element={<LegacyWorkspaceRedirect workspace="enrollment-management" tab="complimentary-capacity" />} />
 
-        <Route
-          path="free-access-policy"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <FreeAccessPolicy />
-            </RouteGuard>
-          }
-        />
+        <Route path="free-access-policy" element={<LegacyWorkspaceRedirect workspace="commercial-pricing" tab="free-access-policy" />} />
 
-        <Route
-          path="billing/plans"
-          element={
-            <BillingRouteGuard operation="VIEW_BILLING_RECORDS">
-              <BillingPlans />
-            </BillingRouteGuard>
-          }
-        />
-        <Route
-          path="billing/pricing"
-          element={
-            <BillingRouteGuard operation="VIEW_PRICE_BOOK">
-              <BillingPricing />
-            </BillingRouteGuard>
-          }
-        />
-        <Route
-          path="billing/quotes"
-          element={
-            <RouteGuard operation="VIEW_SUPPORT_ACCOUNT_METADATA">
-              <BillingQuotes />
-            </RouteGuard>
-          }
-        />
+        <Route path="billing/plans" element={<LegacyWorkspaceRedirect workspace="commercial-pricing" tab="plans" />} />
+        <Route path="billing/pricing" element={<LegacyWorkspaceRedirect workspace="commercial-pricing" tab="price-book" />} />
+        <Route path="billing/quotes" element={<LegacyWorkspaceRedirect workspace="commercial-pricing" tab="custom-quotes" />} />
         <Route
           path="billing/invoices"
           element={

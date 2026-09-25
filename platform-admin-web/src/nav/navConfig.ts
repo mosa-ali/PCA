@@ -9,6 +9,12 @@ export interface NavItem {
   operation?: PlatformAdminOperation;
   billingOperation?: BillingOperation;
   settlementOperation?: SettlementOperation;
+  /** Show the item when any one of these independently-scoped operations is allowed. */
+  anyOf?: Array<
+    | { operation: PlatformAdminOperation }
+    | { billingOperation: BillingOperation }
+    | { settlementOperation: SettlementOperation }
+  >;
 }
 
 export interface NavSection {
@@ -22,19 +28,17 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     items: [
-      { path: '/accounts', labelKey: 'nav.accounts', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
-      { path: '/entitlements', labelKey: 'nav.entitlements', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
-      { path: '/entitlement-requests', labelKey: 'nav.entitlementRequests', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
-      { path: '/complimentary-capacity', labelKey: 'nav.complimentaryCapacity', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
-      { path: '/free-access-policy', labelKey: 'nav.freeAccessPolicy', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+      { path: '/enrollment-management', labelKey: 'nav.enrollmentManagement', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
     ],
   },
   {
     titleKey: 'nav.billing',
     items: [
-      { path: '/billing/plans', labelKey: 'nav.billingPlans', billingOperation: 'VIEW_BILLING_RECORDS' },
-      { path: '/billing/pricing', labelKey: 'nav.billingPricing', billingOperation: 'VIEW_PRICE_BOOK' },
-      { path: '/billing/quotes', labelKey: 'nav.billingQuotes', operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+      { path: '/commercial-pricing', labelKey: 'nav.commercialPricing', anyOf: [
+        { operation: 'VIEW_SUPPORT_ACCOUNT_METADATA' },
+        { billingOperation: 'VIEW_BILLING_RECORDS' },
+        { billingOperation: 'VIEW_PRICE_BOOK' },
+      ] },
       { path: '/billing/invoices', labelKey: 'nav.billingInvoices', billingOperation: 'VIEW_BILLING_RECORDS' },
       { path: '/billing/payments', labelKey: 'nav.billingPayments', billingOperation: 'VIEW_BILLING_RECORDS' },
       { path: '/settlement/accounts', labelKey: 'nav.settlementAccounts', settlementOperation: 'VIEW_SETTLEMENT_RECORDS' },

@@ -94,7 +94,7 @@ export default function BillingPricing() {
 
   return (
     <div className="page">
-      <h1>{t('nav.billingPricing')}</h1>
+      <h2>{t('nav.billingPricing')}</h2>
 
       <form className="filters" onSubmit={search}>
         <div>

@@ -6,7 +6,7 @@ export function AppearanceSelector() {
   const { appearance, setAppearance } = useAppearance();
   return (
     <label className="appearance-selector">
-      <span>{t('appearance.label')}</span>
+      <span className="visually-hidden">{t('appearance.label')}</span>
       <select aria-label={t('appearance.label')} value={appearance} onChange={(event) => setAppearance(event.target.value as Appearance)}>
         <option value="dark">{t('appearance.dark')}</option>
         <option value="slate">{t('appearance.slate')}</option>

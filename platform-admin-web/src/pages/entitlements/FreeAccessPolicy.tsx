@@ -141,7 +141,7 @@ export default function FreeAccessPolicy() {
 
   return (
     <div className="page">
-      <h1>{t('nav.freeAccessPolicy')}</h1>
+      <h2>{t('nav.freeAccessPolicy')}</h2>
 
       <section className="card">
         <h2 className="section-title">{t('freeAccessPolicy.globalDefaultsTitle')}</h2>

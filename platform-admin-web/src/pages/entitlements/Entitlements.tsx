@@ -131,7 +131,7 @@ export default function Entitlements() {
 
   return (
     <div className="page">
-      <h1>{t('nav.entitlements')}</h1>
+      <h2>{t('nav.entitlements')}</h2>
 
       <form className="filters" onSubmit={onSearch}>
         <div>

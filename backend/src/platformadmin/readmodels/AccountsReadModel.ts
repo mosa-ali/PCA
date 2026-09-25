@@ -137,9 +137,10 @@ export class AccountsReadModel {
         conditions.push(`EXISTS (
           SELECT 1 FROM parent_accounts pa
           WHERE pa.email_hash = ? AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
-            AND (pa.family_id = f.family_id OR EXISTS (
+            AND (pa.family_id = f.family_id OR f.provisioned_for_account_id = pa.account_id OR EXISTS (
               SELECT 1 FROM family_parent_memberships m
-              WHERE m.account_id = pa.account_id AND m.family_id = f.family_id AND m.status = 'ACTIVE'
+              WHERE m.account_id = pa.account_id AND m.family_id = f.family_id
+                AND m.status = 'ACTIVE' AND m.role = 'ADMINISTRATOR'
             ))
         )`);
         params.push(filter.parentEmailHash);

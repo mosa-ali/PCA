@@ -81,7 +81,7 @@ export default function AccountsList() {
 
   return (
     <div className="page">
-      <h1>{t('nav.accounts')}</h1>
+      <h2>{t('nav.accounts')}</h2>
 
       <form className="filters" onSubmit={onSearchSubmit}>
         <div>

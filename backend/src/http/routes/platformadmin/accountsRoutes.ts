@@ -24,7 +24,7 @@ import { parsePageRequest } from '../../../platformadmin/api/pagination.js';
 import { dateToJson } from '../../../platformadmin/api/dto.js';
 import type { createRateLimiter } from '../../rateLimit.js';
 import { hashParentEmail, isPlausibleEmail } from '../../../parentaccount/emailHash.js';
-import { execute, runInTransaction } from '../../../db/pool.js';
+import { resolveParentEmailFamilyLookup } from '../../../platformadmin/accounts/ParentEmailFamilyLookup.js';
 import type { PlatformAdminRole } from '../../../platformadmin/auth/types.js';
 
 export interface PlatformAdminAccountsRoutesDeps {
@@ -145,21 +145,8 @@ export function registerPlatformAdminAccountsRoutes(app: FastifyInstance, deps: 
       const email = typeof body.email === 'string' ? body.email.trim() : '';
       if (!isPlausibleEmail(email)) return reply.code(400).send({ error: 'invalid_request' });
       const includeDeleted = body.includeDeleted === true;
-      const { rows } = await runInTransaction((conn) => execute<{ family_id: string }>(
-        conn,
-        `SELECT DISTINCT f.family_id
-         FROM families f
-         INNER JOIN parent_accounts pa ON pa.email_hash = ?
-           AND pa.status = 'VERIFIED' AND pa.disabled_at IS NULL
-         WHERE ${includeDeleted ? '' : 'f.deleted_at IS NULL AND'}
-           (pa.family_id = f.family_id OR EXISTS (
-             SELECT 1 FROM family_parent_memberships m
-             WHERE m.account_id = pa.account_id AND m.family_id = f.family_id AND m.status = 'ACTIVE'
-           ))
-         ORDER BY f.family_id ASC`,
-        [hashParentEmail(email)],
-      ));
-      return reply.code(200).send({ familyIds: rows.map((row) => row.family_id) });
+      const result = await resolveParentEmailFamilyLookup(hashParentEmail(email), includeDeleted);
+      return reply.code(200).send(result);
     },
   );
 

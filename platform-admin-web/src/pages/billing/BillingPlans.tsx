@@ -122,7 +122,7 @@ export default function BillingPlans() {
 
   return (
     <div className="page">
-      <h1>{t('nav.billingPlans')}</h1>
+      <h2>{t('nav.billingPlans')}</h2>
 
       <section className="card">
         <h2 className="section-title">{t('billing.browseAllPlans')}</h2>

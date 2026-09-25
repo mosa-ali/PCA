@@ -5,6 +5,8 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "enrollmentManagement": "Enrollment Management",
+    "commercialPricing": "Commercial & Pricing",
     "accounts": "Accounts",
     "entitlements": "Entitlements",
     "entitlementRequests": "Entitlement Requests",
@@ -37,6 +39,14 @@
     "dark": "Dark",
     "slate": "Slate",
     "light": "Light"
+  },
+  "enrollmentManagement": {
+    "title": "Enrollment Management",
+    "tabsLabel": "Enrollment sections"
+  },
+  "commercialPricing": {
+    "title": "Commercial & Pricing",
+    "tabsLabel": "Commercial and pricing sections"
   },
   "login": {
     "title": "Platform Administration Sign In",
@@ -166,6 +176,14 @@
     "parentEmailPlaceholder": "parent@example.com",
     "parentEmailInvalid": "Enter a valid Parent email address.",
     "parentEmailNoFamilies": "No eligible family accounts were found for this email.",
+    "parentEmailNotFound": "No Parent account was found for this email.",
+    "parentEmailReasons": {
+      "ACCOUNT_SUSPENDED": "The Parent account or its family is suspended.",
+      "EMAIL_NOT_VERIFIED": "The Parent account exists, but its email is not verified.",
+      "FAMILY_NOT_PROVISIONED": "The Parent account exists, but no family has been provisioned.",
+      "ALREADY_ENTITLED": "The Parent account's family already has an entitlement.",
+      "OTHER_APPROVED_REASON": "The Parent account is not eligible for this action."
+    },
     "parentEmailMultipleFamilies": "Choose a family linked to this Parent",
     "familyId": "Family ID",
     "createdAt": "Created",
