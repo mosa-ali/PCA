@@ -69,16 +69,43 @@ test('MySQL lookup follows only direct, provisioned, or active administrator fam
     }
 
     const directResult = await resolveParentEmailFamilyLookupOnConnection(connection, direct.emailHash);
-    assert.deepEqual(directResult, { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: [directFamilyId] });
+    assert.equal(directResult.outcome, 'ELIGIBLE_FAMILY_FOUND');
+    assert.deepEqual(directResult.familyIds, [directFamilyId]);
+    assert.equal(directResult.account.status, 'VERIFIED');
+    assert.deepEqual(directResult.families.map((family) => family.familyId), [directFamilyId]);
 
     const provisionedResult = await resolveParentEmailFamilyLookupOnConnection(connection, provisioned.emailHash);
-    assert.deepEqual(provisionedResult, { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: [provisionedFamilyId] });
+    assert.equal(provisionedResult.outcome, 'ELIGIBLE_FAMILY_FOUND');
+    assert.deepEqual(provisionedResult.familyIds, [provisionedFamilyId]);
 
     const membershipResult = await resolveParentEmailFamilyLookupOnConnection(connection, membership.emailHash);
-    assert.deepEqual(membershipResult, { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: [adminFamilyId] });
+    assert.equal(membershipResult.outcome, 'ELIGIBLE_FAMILY_FOUND');
+    assert.deepEqual(membershipResult.familyIds, [adminFamilyId]);
     assert.ok(!membershipResult.familyIds.includes(viewerFamilyId));
     assert.ok(!membershipResult.familyIds.includes(revokedFamilyId));
     assert.ok(!membershipResult.familyIds.includes(unrelatedAdminFamilyId));
+  } finally {
+    await connection.rollback();
+    await connection.end();
+  }
+});
+
+test('MySQL lookup returns a safe account summary for a verified Parent without a family', async () => {
+  const connection = await mysql.createConnection(requireLoopbackTestDatabase());
+  await connection.beginTransaction();
+  try {
+    const parent = await insertVerifiedAccount(connection);
+    const result = await resolveParentEmailFamilyLookupOnConnection(connection, parent.emailHash);
+    assert.equal(result.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+    if (result.outcome !== 'ACCOUNT_NOT_FOUND') {
+      assert.equal(result.reason, 'FAMILY_NOT_PROVISIONED');
+      assert.equal(result.account.status, 'VERIFIED');
+      assert.equal(result.account.createdAt instanceof Date, true);
+      assert.equal(result.account.verifiedAt instanceof Date, true);
+      assert.deepEqual(result.familyIds, []);
+      assert.deepEqual(result.families, []);
+      assert.equal('email' in result.account, false);
+    }
   } finally {
     await connection.rollback();
     await connection.end();
@@ -98,10 +125,12 @@ test('an existing entitlement is classified without removing its linked family f
       [familyId],
     );
 
-    assert.deepEqual(
-      await resolveParentEmailFamilyLookupOnConnection(connection, parent.emailHash),
-      { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ALREADY_ENTITLED', familyIds: [familyId] },
-    );
+    const result = await resolveParentEmailFamilyLookupOnConnection(connection, parent.emailHash);
+    assert.equal(result.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+    if (result.outcome !== 'ACCOUNT_NOT_FOUND') {
+      assert.equal(result.reason, 'ALREADY_ENTITLED');
+      assert.deepEqual(result.familyIds, [familyId]);
+    }
   } finally {
     await connection.rollback();
     await connection.end();

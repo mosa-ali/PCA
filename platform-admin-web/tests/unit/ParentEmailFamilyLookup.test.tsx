@@ -8,6 +8,19 @@ import { ParentEmailFamilyLookup } from '../../src/components/common/ParentEmail
 
 const { mockPost } = vi.hoisted(() => ({ mockPost: vi.fn() }));
 
+const parentAccount = {
+  status: 'VERIFIED', createdAt: '2026-01-01T00:00:00.000Z', verifiedAt: '2026-01-01T00:00:00.000Z',
+  disabledAt: null, accountType: 'PARENT_GUARDIAN', estimatedChildCount: 2, freeAccessMode: 'TIME_LIMITED',
+  freeAccessStartedAt: null, freeAccessExpiresAt: null, defaultParentMemberLimit: 4, defaultManagedDeviceLimit: 5,
+};
+const lookupResult = (familyIds: string[], outcome: 'ELIGIBLE_FAMILY_FOUND' | 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE' = 'ELIGIBLE_FAMILY_FOUND', reason?: string) => ({
+  outcome,
+  familyIds,
+  account: parentAccount,
+  families: familyIds.map((familyId) => ({ familyId, status: 'ACTIVE', deletedAt: null })),
+  ...(reason ? { reason } : {}),
+});
+
 vi.mock('../../src/api/platformAdminApiClient', () => ({
   platformAdminApi: { post: mockPost },
 }));
@@ -16,7 +29,7 @@ function renderLookup(onFamilyIdChange = vi.fn()) {
   render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <ParentEmailFamilyLookup id="lookup" familyId="" onFamilyIdChange={onFamilyIdChange} />
+        <ParentEmailFamilyLookup id="lookup" familyId="" showAccountSummary onFamilyIdChange={onFamilyIdChange} />
       </MemoryRouter>
     </I18nextProvider>,
   );
@@ -30,7 +43,7 @@ describe('Parent Email family lookup outcomes', () => {
   });
 
   it('normalizes surrounding whitespace before submitting the lookup request', async () => {
-    mockPost.mockResolvedValue({ outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['family-1'] });
+    mockPost.mockResolvedValue(lookupResult(['family-1']));
     const onFamilyIdChange = renderLookup();
 
     await userEvent.type(screen.getByLabelText('Search by Parent Email'), '  Parent@example.test  ');
@@ -61,7 +74,7 @@ describe('Parent Email family lookup outcomes', () => {
     ['ALREADY_ENTITLED', "The Parent account's family already has an entitlement."],
     ['OTHER_APPROVED_REASON', 'The Parent account is not eligible for this action.'],
   ])('explains the %s ineligible outcome and keeps its family isolated', async (reason, message) => {
-    mockPost.mockResolvedValue({ outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason, familyIds: ['linked-family'] });
+    mockPost.mockResolvedValue(lookupResult(['linked-family'], 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason));
     const onFamilyIdChange = renderLookup();
 
     await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'parent@example.test');
@@ -73,7 +86,7 @@ describe('Parent Email family lookup outcomes', () => {
   });
 
   it('lets the operator choose among the eligible families returned for this Parent', async () => {
-    mockPost.mockResolvedValue({ outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['family-a', 'family-b'] });
+    mockPost.mockResolvedValue(lookupResult(['family-a', 'family-b']));
     const onFamilyIdChange = renderLookup();
 
     await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'parent@example.test');
@@ -83,5 +96,17 @@ describe('Parent Email family lookup outcomes', () => {
     expect(familyChoice).toHaveValue('');
     await userEvent.selectOptions(familyChoice, 'family-b');
     expect(onFamilyIdChange).toHaveBeenLastCalledWith('family-b');
+  });
+
+  it('renders the authorized account summary when a Parent exists without a family', async () => {
+    mockPost.mockResolvedValue(lookupResult([], 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', 'FAMILY_NOT_PROVISIONED'));
+    const onFamilyIdChange = renderLookup();
+    await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'parent@example.test');
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Parent account summary' })).toBeInTheDocument();
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.getByText('Family status')).toBeInTheDocument();
+    expect(onFamilyIdChange).toHaveBeenLastCalledWith('');
   });
 });

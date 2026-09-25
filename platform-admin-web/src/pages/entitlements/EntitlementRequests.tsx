@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
@@ -18,7 +18,7 @@ import { ErrorState } from '../../components/common/ErrorState';
 import { ConfirmButton } from '../../components/common/ConfirmButton';
 import { PermissionGate } from '../../rbac/PermissionGate';
 import { useToast } from '../../state/ToastContext';
-import { ParentEmailFamilyLookup } from '../../components/common/ParentEmailFamilyLookup';
+import { ParentEmailFamilyLookup, type ParentEmailLookupResult } from '../../components/common/ParentEmailFamilyLookup';
 
 const PAGE_SIZE = 20;
 
@@ -125,42 +125,64 @@ export default function EntitlementRequests() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState<EntitlementChangeRequestState | ''>('');
+  const [appliedState, setAppliedState] = useState<EntitlementChangeRequestState | ''>('');
   const [familyIdFilter, setFamilyIdFilter] = useState(searchParams.get('familyId') ?? '');
+  const [parentEmailLookupActive, setParentEmailLookupActive] = useState(false);
+  const [lookupFamilyIds, setLookupFamilyIds] = useState<string[]>([]);
+  const [parentEmailLookupResult, setParentEmailLookupResult] = useState<ParentEmailLookupResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const requestSequence = useRef(0);
 
   const load = () => {
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
+    setItems([]);
+    setTotal(0);
     platformAdminApi
       .get<PagedResult<FlatEntitlementRequestListItem>>('/platform-admin/entitlement-requests', {
         limit: PAGE_SIZE,
         offset,
-        state: state || undefined,
+        state: appliedState || undefined,
         familyId: familyIdFilter || undefined,
       })
       .then((result) => {
+        if (sequence !== requestSequence.current) return;
         setItems(result.items.map(normalizeFromFlatListItem));
         setTotal(result.total);
       })
       .catch((err: unknown) => {
+        if (sequence !== requestSequence.current) return;
+        setItems([]);
+        setTotal(0);
         setError(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (sequence === requestSequence.current) setLoading(false); });
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [offset, state, familyIdFilter]);
+  useEffect(() => {
+    if (parentEmailLookupActive && (!familyIdFilter || !lookupFamilyIds.includes(familyIdFilter))) {
+      requestSequence.current += 1;
+      setItems([]);
+      setTotal(0);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offset, appliedState, familyIdFilter, parentEmailLookupActive, lookupFamilyIds]);
 
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
+    setAppliedState(state);
     const next = new URLSearchParams(searchParams);
     if (familyIdFilter) next.set('familyId', familyIdFilter);
     else next.delete('familyId');
     setSearchParams(next);
-    load();
   };
 
   const applyUpdate = (updated: EntitlementRequestDto) => {
@@ -190,7 +212,29 @@ export default function EntitlementRequests() {
     <div className="page">
       <h2>{t('nav.entitlementRequests')}</h2>
 
-      <form className="filters" onSubmit={onFilterSubmit}>
+      <ParentEmailFamilyLookup id="entitlement-requests" familyId={familyIdFilter} showAccountSummary
+        onLookupStart={() => {
+          setParentEmailLookupActive(true);
+          setLookupFamilyIds([]);
+          setParentEmailLookupResult(null);
+          setItems([]);
+          setTotal(0);
+          setError(null);
+          setLoading(false);
+        }}
+        onResult={(result) => {
+          setParentEmailLookupResult(result);
+          setLookupFamilyIds(result.outcome === 'ACCOUNT_NOT_FOUND' ? [] : result.familyIds);
+        }}
+        onFamilyIdChange={(value) => {
+          setFamilyIdFilter(value);
+          const next = new URLSearchParams(searchParams);
+          if (value) next.set('familyId', value);
+          else next.delete('familyId');
+          setSearchParams(next);
+        }} />
+
+      <form className="filters enrollment-filter-row" onSubmit={onFilterSubmit}>
         <div>
           <label htmlFor="er-state">{t('entitlements.state')}</label>
           <select id="er-state" value={state} onChange={(e) => setState(e.target.value as EntitlementChangeRequestState | '')}>
@@ -202,11 +246,14 @@ export default function EntitlementRequests() {
             ))}
           </select>
         </div>
-        <ParentEmailFamilyLookup id="entitlement-requests" familyId={familyIdFilter} onFamilyIdChange={setFamilyIdFilter} />
         <button type="submit" className="btn">
           {t('common.applyFilters')}
         </button>
       </form>
+
+      {parentEmailLookupActive && parentEmailLookupResult !== null && parentEmailLookupResult.outcome !== 'ACCOUNT_NOT_FOUND' && !familyIdFilter && !loading && !error && (
+        <p className="status-unavailable" role="status">{lookupFamilyIds.length > 1 ? t('entitlementRequests.chooseFamilyToLoad') : t('entitlementRequests.familyUnavailable')}</p>
+      )}
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={load} />}

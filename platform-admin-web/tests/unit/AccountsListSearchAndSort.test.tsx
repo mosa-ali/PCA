@@ -36,6 +36,18 @@ function mockFetchFor(accountsCalls: string[]) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes('/platform-admin/auth/whoami')) return Promise.resolve(jsonResponse(200, { adminId: 'admin-1', roles: ['APP_OWNER'] }));
+    if (url.includes('/platform-admin/accounts/resolve-parent-email')) {
+      accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
+      return Promise.resolve(jsonResponse(200, {
+        outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['fam-1'],
+        account: {
+          status: 'VERIFIED', createdAt: '2026-01-01T00:00:00.000Z', verifiedAt: '2026-01-01T00:00:00.000Z',
+          disabledAt: null, accountType: 'PARENT_GUARDIAN', estimatedChildCount: null, freeAccessMode: null,
+          freeAccessStartedAt: null, freeAccessExpiresAt: null, defaultParentMemberLimit: null, defaultManagedDeviceLimit: null,
+        },
+        families: [{ familyId: 'fam-1', status: 'ACTIVE', deletedAt: null }],
+      }));
+    }
     if (url.includes('/platform-admin/accounts')) {
       accountsCalls.push(`${url} ${typeof init?.body === 'string' ? init.body : ''}`);
       return Promise.resolve(jsonResponse(200, { items: [ACCOUNT], total: 1, limit: 20, offset: 0 }));
@@ -72,30 +84,31 @@ describe('AccountsList search and sort', () => {
     const calls: string[] = [];
     renderPage(calls);
     expect(await screen.findByText('fam-1')).toBeInTheDocument();
-    expect(calls[calls.length - 1]).toContain('"sortBy":"createdAt"');
-    expect(calls[calls.length - 1]).toContain('"sortDir":"desc"');
+    expect(calls[calls.length - 1]).toContain('sortBy=createdAt');
+    expect(calls[calls.length - 1]).toContain('sortDir=desc');
   });
 
-  it('trims and sends Parent Email in the query string once the search form is submitted', async () => {
+  it('resolves Parent Email first, then uses the family account read model', async () => {
     const calls: string[] = [];
     renderPage(calls);
-    await screen.findByText('fam-1');
+    await screen.findAllByText('fam-1');
 
     const input = screen.getByLabelText('Search by Parent Email');
     await userEvent.type(input, ' parent@example.com ');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    const last = calls[calls.length - 1];
-    expect(last).toContain('"parentEmail":"parent@example.com"');
+    await screen.findAllByText('fam-1');
+    expect(calls.some((call) => call.includes('/resolve-parent-email') && call.includes('"email":"parent@example.com"'))).toBe(true);
+    expect(calls.some((call) => call.includes('/accounts/search') && call.includes('"parentEmail":"parent@example.com"'))).toBe(true);
   });
 
-  it('shows invalid email feedback without issuing the filtered request', async () => {
+  it('shows invalid email feedback without issuing an email resolution request', async () => {
     const calls: string[] = [];
     renderPage(calls);
     await screen.findByText('fam-1');
     const previousCount = calls.length;
     await userEvent.type(screen.getByLabelText('Search by Parent Email'), 'not-an-email');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid Parent email address.');
     expect(calls).toHaveLength(previousCount);
   });
@@ -111,13 +124,13 @@ describe('AccountsList search and sort', () => {
     // node by the time the next click needs it.
     await userEvent.click(screen.getByRole('button', { name: /Family ID/ }));
     let last = calls[calls.length - 1];
-    expect(last).toContain('"sortBy":"familyId"');
-    expect(last).toContain('"sortDir":"desc"');
+    expect(last).toContain('sortBy=familyId');
+    expect(last).toContain('sortDir=desc');
 
     await userEvent.click(screen.getByRole('button', { name: /Family ID/ }));
     last = calls[calls.length - 1];
-    expect(last).toContain('"sortBy":"familyId"');
-    expect(last).toContain('"sortDir":"asc"');
+    expect(last).toContain('sortBy=familyId');
+    expect(last).toContain('sortDir=asc');
   });
 
   it('marks the active sort column with aria-sort for assistive technology', async () => {

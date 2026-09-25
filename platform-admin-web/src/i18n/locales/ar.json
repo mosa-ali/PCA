@@ -186,6 +186,30 @@
       "OTHER_APPROVED_REASON": "حساب ولي الأمر غير مؤهل لهذا الإجراء."
     },
     "parentEmailMultipleFamilies": "اختر أسرة مرتبطة بولي الأمر",
+    "parentSummaryTitle": "ملخص حساب ولي الأمر",
+    "parentCreatedAt": "تاريخ إنشاء الحساب",
+    "parentVerifiedAt": "تاريخ توثيق البريد الإلكتروني",
+    "parentDisabledAt": "تاريخ تعطيل الحساب",
+    "parentAccountType": "نوع الحساب",
+    "estimatedChildCount": "عدد الأطفال التقديري",
+    "parentFreeAccess": "نمط الوصول المجاني",
+    "parentFreeAccessExpires": "انتهاء الوصول المجاني",
+    "parentDefaultMemberLimit": "الحد الافتراضي لأعضاء الوالدين",
+    "parentDefaultDeviceLimit": "الحد الافتراضي للأجهزة المُدارة",
+    "familyStatusTitle": "حالة الأسرة",
+    "parentEmailNoFamilyRows": "لا تتوفر سجلات حساب أسرة لولي الأمر هذا.",
+    "parentStatuses": {
+      "verified": "موثّق",
+      "pendingVerification": "البريد الإلكتروني غير موثّق"
+    },
+    "parentAccountTypes": {
+      "PARENT_GUARDIAN": "ولي أمر أو وصي",
+      "OTHER": "أخرى"
+    },
+    "parentFreeAccessModes": {
+      "TIME_LIMITED": "محدد المدة",
+      "PERPETUAL": "دائم"
+    },
     "familyId": "معرّف الأسرة",
     "createdAt": "تاريخ الإنشاء",
     "status": "الحالة",
@@ -359,6 +383,8 @@
     "adjusted": "تم تعديل الوصول المجاني."
   },
   "entitlementRequests": {
+    "familyUnavailable": "لم تُنشأ أسرة لولي الأمر هذا. طلبات الأسرة غير متاحة.",
+    "chooseFamilyToLoad": "اختر أسرة مرتبطة أعلاه لعرض طلباتها.",
     "invalidAmount": "أدخل مبلغًا صالحًا غير سالب، مثل 19.99.",
     "quoteIssued": "تم إصدار عرض السعر.",
     "amountLabel": "المبلغ",

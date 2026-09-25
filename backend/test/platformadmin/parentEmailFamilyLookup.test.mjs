@@ -4,6 +4,13 @@ import { classifyParentEmailFamilyLookup } from '../../dist/platformadmin/accoun
 import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 
 const activeParent = { status: 'VERIFIED', disabledAt: null };
+function expectFound(result, outcome, familyIds, reason) {
+  assert.equal(result.outcome, outcome);
+  if (reason) assert.equal(result.reason, reason);
+  assert.deepEqual(result.familyIds, familyIds);
+  assert.equal(result.account.status, 'VERIFIED');
+  assert.deepEqual(result.families.map((family) => family.familyId), familyIds);
+}
 const activeFamily = (familyId, alreadyEntitled = false) => ({
   familyId,
   status: 'ACTIVE',
@@ -23,54 +30,63 @@ test('classifies a missing normalized Parent account without returning family id
 });
 
 test('disabled or suspended accounts take precedence over email verification', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup({ status: 'PENDING_VERIFICATION', disabledAt: new Date() }, []),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ACCOUNT_SUSPENDED', familyIds: [] },
+  const disabled = classifyParentEmailFamilyLookup({ status: 'PENDING_VERIFICATION', disabledAt: new Date() }, []);
+  assert.equal(disabled.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+  if (disabled.outcome !== 'ACCOUNT_NOT_FOUND') assert.equal(disabled.reason, 'ACCOUNT_SUSPENDED');
+
+  const suspended = classifyParentEmailFamilyLookup(
+    { status: 'PENDING_VERIFICATION', disabledAt: null },
+    [{ ...activeFamily('family-suspended'), status: 'SUSPENDED' }],
   );
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(
-      { status: 'PENDING_VERIFICATION', disabledAt: null },
-      [{ ...activeFamily('family-suspended'), status: 'SUSPENDED' }],
-    ),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ACCOUNT_SUSPENDED', familyIds: ['family-suspended'] },
-  );
+  assert.equal(suspended.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+  if (suspended.outcome !== 'ACCOUNT_NOT_FOUND') {
+    assert.equal(suspended.reason, 'ACCOUNT_SUSPENDED');
+    assert.deepEqual(suspended.familyIds, ['family-suspended']);
+  }
 });
 
 test('verification precedes family provisioning', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup({ status: 'PENDING_VERIFICATION', disabledAt: null }, []),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'EMAIL_NOT_VERIFIED', familyIds: [] },
-  );
+  const result = classifyParentEmailFamilyLookup({ status: 'PENDING_VERIFICATION', disabledAt: null }, []);
+  assert.equal(result.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+  if (result.outcome !== 'ACCOUNT_NOT_FOUND') assert.equal(result.reason, 'EMAIL_NOT_VERIFIED');
 });
 
 test('a verified account without a usable linked family is not provisioned', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(activeParent, []),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'FAMILY_NOT_PROVISIONED', familyIds: [] },
-  );
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(activeParent, [{ ...activeFamily('family-deleted'), deletedAt: new Date() }]),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'FAMILY_NOT_PROVISIONED', familyIds: ['family-deleted'] },
-  );
+  expectFound(classifyParentEmailFamilyLookup(activeParent, []), 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', [], 'FAMILY_NOT_PROVISIONED');
+  expectFound(classifyParentEmailFamilyLookup(activeParent, [{ ...activeFamily('family-deleted'), deletedAt: new Date() }]), 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', ['family-deleted'], 'FAMILY_NOT_PROVISIONED');
 });
 
 test('an already entitled family remains available to read-only family searches', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-entitled', true)]),
-    { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ALREADY_ENTITLED', familyIds: ['family-entitled'] },
-  );
+  expectFound(classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-entitled', true)]), 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', ['family-entitled'], 'ALREADY_ENTITLED');
 });
 
 test('an eligible linked family is found and all directly linked IDs are retained', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-entitled', true), activeFamily('family-eligible')]),
-    { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['family-entitled', 'family-eligible'] },
-  );
+  expectFound(classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-entitled', true), activeFamily('family-eligible')]), 'ELIGIBLE_FAMILY_FOUND', ['family-entitled', 'family-eligible']);
 });
 
 test('duplicate family links are deduplicated and unrelated memberships are not part of classification', () => {
-  assert.deepEqual(
-    classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-1'), activeFamily('family-1')]),
-    { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds: ['family-1'] },
-  );
+  expectFound(classifyParentEmailFamilyLookup(activeParent, [activeFamily('family-1'), activeFamily('family-1')]), 'ELIGIBLE_FAMILY_FOUND', ['family-1']);
+});
+
+test('account summary retains only operational Parent facts and does not contain email or secret fields', () => {
+  const createdAt = new Date('2026-01-01T00:00:00.000Z');
+  const result = classifyParentEmailFamilyLookup({
+    ...activeParent,
+    createdAt,
+    verifiedAt: createdAt,
+    accountType: 'PARENT_GUARDIAN',
+    estimatedChildCount: 2,
+    freeAccessMode: 'TIME_LIMITED',
+    defaultParentMemberLimit: 4,
+    defaultManagedDeviceLimit: 5,
+  }, []);
+  assert.equal(result.outcome, 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE');
+  if (result.outcome !== 'ACCOUNT_NOT_FOUND') {
+    assert.equal(result.account.createdAt, createdAt);
+    assert.equal(result.account.verifiedAt, createdAt);
+    assert.equal(result.account.accountType, 'PARENT_GUARDIAN');
+    assert.equal(result.account.estimatedChildCount, 2);
+    assert.equal('email' in result.account, false);
+    assert.equal('passwordHash' in result.account, false);
+  }
 });

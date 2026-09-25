@@ -21,12 +21,48 @@ export type ParentEmailFamilyLookupResult =
       readonly reason: ParentEmailIneligibleReason;
       /** Directly linked family IDs remain available to read-only workspaces. */
       readonly familyIds: readonly string[];
+      readonly account: ParentEmailAccountSummary;
+      readonly families: readonly ParentEmailFamilySummary[];
     }
-  | { readonly outcome: 'ELIGIBLE_FAMILY_FOUND'; readonly familyIds: readonly string[] };
+  | {
+      readonly outcome: 'ELIGIBLE_FAMILY_FOUND';
+      readonly familyIds: readonly string[];
+      readonly account: ParentEmailAccountSummary;
+      readonly families: readonly ParentEmailFamilySummary[];
+    };
+
+export interface ParentEmailAccountSummary {
+  readonly status: string;
+  readonly createdAt: Date | null;
+  readonly verifiedAt: Date | null;
+  readonly disabledAt: Date | null;
+  readonly accountType: string | null;
+  readonly estimatedChildCount: number | null;
+  readonly freeAccessMode: string | null;
+  readonly freeAccessStartedAt: Date | null;
+  readonly freeAccessExpiresAt: Date | null;
+  readonly defaultParentMemberLimit: number | null;
+  readonly defaultManagedDeviceLimit: number | null;
+}
+
+export interface ParentEmailFamilySummary {
+  readonly familyId: string;
+  readonly status: 'ACTIVE' | 'SUSPENDED';
+  readonly deletedAt: Date | null;
+}
 
 export interface ParentEmailAccountState {
   readonly status: string;
   readonly disabledAt: Date | null;
+  readonly createdAt?: Date | null;
+  readonly verifiedAt?: Date | null;
+  readonly accountType?: string | null;
+  readonly estimatedChildCount?: number | null;
+  readonly freeAccessMode?: string | null;
+  readonly freeAccessStartedAt?: Date | null;
+  readonly freeAccessExpiresAt?: Date | null;
+  readonly defaultParentMemberLimit?: number | null;
+  readonly defaultManagedDeviceLimit?: number | null;
 }
 
 export interface ParentEmailFamilyState {
@@ -51,28 +87,54 @@ export function classifyParentEmailFamilyLookup(
 
   const familyIds = [...new Set(families.map((family) => family.familyId))];
   const linkedFamilies = families.filter((family) => familyIds.includes(family.familyId));
+  const accountSummary: ParentEmailAccountSummary = {
+    status: account.status,
+    createdAt: account.createdAt ?? null,
+    verifiedAt: account.verifiedAt ?? null,
+    disabledAt: account.disabledAt,
+    accountType: account.accountType ?? null,
+    estimatedChildCount: account.estimatedChildCount ?? null,
+    freeAccessMode: account.freeAccessMode ?? null,
+    freeAccessStartedAt: account.freeAccessStartedAt ?? null,
+    freeAccessExpiresAt: account.freeAccessExpiresAt ?? null,
+    defaultParentMemberLimit: account.defaultParentMemberLimit ?? null,
+    defaultManagedDeviceLimit: account.defaultManagedDeviceLimit ?? null,
+  };
+  const familySummaries = familyIds.map((familyId) => {
+    const family = linkedFamilies.find((candidate) => candidate.familyId === familyId);
+    return { familyId, status: family!.status, deletedAt: family!.deletedAt };
+  });
   const activeFamilies = linkedFamilies.filter((family) => family.status === 'ACTIVE' && family.deletedAt === null);
   const allLinkedFamiliesSuspended = linkedFamilies.length > 0 && activeFamilies.length === 0
     && linkedFamilies.some((family) => family.status === 'SUSPENDED');
 
   if (account.disabledAt !== null || allLinkedFamiliesSuspended) {
-    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ACCOUNT_SUSPENDED', familyIds };
+    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ACCOUNT_SUSPENDED', familyIds, account: accountSummary, families: familySummaries };
   }
   if (account.status !== 'VERIFIED') {
-    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'EMAIL_NOT_VERIFIED', familyIds };
+    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'EMAIL_NOT_VERIFIED', familyIds, account: accountSummary, families: familySummaries };
   }
   if (activeFamilies.length === 0) {
-    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'FAMILY_NOT_PROVISIONED', familyIds };
+    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'FAMILY_NOT_PROVISIONED', familyIds, account: accountSummary, families: familySummaries };
   }
   if (activeFamilies.every((family) => family.alreadyEntitled)) {
-    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ALREADY_ENTITLED', familyIds };
+    return { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE', reason: 'ALREADY_ENTITLED', familyIds, account: accountSummary, families: familySummaries };
   }
-  return { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds };
+  return { outcome: 'ELIGIBLE_FAMILY_FOUND', familyIds, account: accountSummary, families: familySummaries };
 }
 
 interface ParentAccountRow {
   status: string;
   disabled_at: Date | null;
+  created_at: Date;
+  verified_at: Date | null;
+  account_type: string | null;
+  estimated_child_count: number | null;
+  free_access_mode: string | null;
+  free_access_started_at: Date | null;
+  free_access_expires_at: Date | null;
+  default_parent_member_limit: number | null;
+  default_managed_device_limit: number | null;
 }
 
 interface FamilyRow {
@@ -98,7 +160,12 @@ export async function resolveParentEmailFamilyLookupOnConnection(
 ): Promise<ParentEmailFamilyLookupResult> {
   const { rows: accountRows } = await execute<ParentAccountRow>(
     conn,
-    `SELECT status, disabled_at FROM parent_accounts WHERE email_hash = ?`,
+    `SELECT status, disabled_at, created_at, verified_at, account_type,
+            estimated_child_count, free_access_mode, free_access_started_at,
+            free_access_expires_at, default_parent_member_limit,
+            default_managed_device_limit
+       FROM parent_accounts
+      WHERE email_hash = ?`,
     [emailHash],
   );
   const accountRow = accountRows[0];
@@ -134,7 +201,19 @@ export async function resolveParentEmailFamilyLookupOnConnection(
   );
 
   return classifyParentEmailFamilyLookup(
-    { status: accountRow.status, disabledAt: accountRow.disabled_at },
+    {
+      status: accountRow.status,
+      disabledAt: accountRow.disabled_at,
+      createdAt: accountRow.created_at,
+      verifiedAt: accountRow.verified_at,
+      accountType: accountRow.account_type,
+      estimatedChildCount: accountRow.estimated_child_count,
+      freeAccessMode: accountRow.free_access_mode,
+      freeAccessStartedAt: accountRow.free_access_started_at,
+      freeAccessExpiresAt: accountRow.free_access_expires_at,
+      defaultParentMemberLimit: accountRow.default_parent_member_limit,
+      defaultManagedDeviceLimit: accountRow.default_managed_device_limit,
+    },
     familyRows.map((row) => ({
       familyId: row.family_id,
       status: row.status,

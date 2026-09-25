@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError, isNotFoundError } from '../../api/platformAdminApiClient';
@@ -24,6 +24,7 @@ export default function Entitlements() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const requestSequence = useRef(0);
 
   const [limitType, setLimitType] = useState<LimitType>('MANAGED_DEVICE_LIMIT');
   const [limitValue, setLimitValue] = useState('');
@@ -35,36 +36,37 @@ export default function Entitlements() {
 
   const load = (id: string) => {
     if (!id) return;
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
     setNotFound(false);
+    setEntitlement(null);
     platformAdminApi
       .get<FamilyEntitlement>(`/platform-admin/families/${encodeURIComponent(id)}/entitlement`)
-      .then(setEntitlement)
+      .then((result) => { if (sequence === requestSequence.current) setEntitlement(result); })
       .catch((err: unknown) => {
+        if (sequence !== requestSequence.current) return;
+        setEntitlement(null);
         if (isNotFoundError(err)) {
           setNotFound(true);
           return;
         }
         setError(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (sequence === requestSequence.current) setLoading(false); });
   };
 
   useEffect(() => {
     if (familyId) load(familyId);
+    else {
+      requestSequence.current += 1;
+      setEntitlement(null);
+      setLoading(false);
+      setError(null);
+      setNotFound(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId]);
-
-  const onSearch = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = familyIdInput.trim();
-    setFamilyId(trimmed);
-    const next = new URLSearchParams(searchParams);
-    if (trimmed) next.set('familyId', trimmed);
-    else next.delete('familyId');
-    setSearchParams(next);
-  };
 
   const onSetLimit = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -136,9 +138,13 @@ export default function Entitlements() {
     <div className="page">
       <h2>{t('nav.entitlements')}</h2>
 
-      <form className="filters" onSubmit={onSearch}>
-        <div>
-          <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} onFamilyIdChange={(value) => {
+      <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} showAccountSummary onLookupStart={() => {
+        requestSequence.current += 1;
+        setEntitlement(null);
+        setLoading(false);
+        setError(null);
+        setNotFound(false);
+      }} onFamilyIdChange={(value) => {
             setFamilyIdInput(value);
             setFamilyId(value);
             const next = new URLSearchParams(searchParams);
@@ -146,11 +152,6 @@ export default function Entitlements() {
             else next.delete('familyId');
             setSearchParams(next);
           }} />
-        </div>
-        <button type="submit" className="btn btn-primary">
-          {t('entitlements.lookup')}
-        </button>
-      </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={() => load(familyId)} />}

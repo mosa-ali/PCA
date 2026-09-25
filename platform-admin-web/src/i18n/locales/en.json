@@ -186,6 +186,30 @@
       "OTHER_APPROVED_REASON": "The Parent account is not eligible for this action."
     },
     "parentEmailMultipleFamilies": "Choose a family linked to this Parent",
+    "parentSummaryTitle": "Parent account summary",
+    "parentCreatedAt": "Account created",
+    "parentVerifiedAt": "Email verified",
+    "parentDisabledAt": "Account disabled",
+    "parentAccountType": "Account type",
+    "estimatedChildCount": "Estimated children",
+    "parentFreeAccess": "Free access mode",
+    "parentFreeAccessExpires": "Free access expires",
+    "parentDefaultMemberLimit": "Default parent member limit",
+    "parentDefaultDeviceLimit": "Default managed device limit",
+    "familyStatusTitle": "Family status",
+    "parentEmailNoFamilyRows": "No family account rows are available for this Parent.",
+    "parentStatuses": {
+      "verified": "Verified",
+      "pendingVerification": "Email not verified"
+    },
+    "parentAccountTypes": {
+      "PARENT_GUARDIAN": "Parent or guardian",
+      "OTHER": "Other"
+    },
+    "parentFreeAccessModes": {
+      "TIME_LIMITED": "Time-limited",
+      "PERPETUAL": "Perpetual"
+    },
     "familyId": "Family ID",
     "createdAt": "Created",
     "status": "Status",
@@ -359,6 +383,8 @@
     "adjusted": "Free access adjusted."
   },
   "entitlementRequests": {
+    "familyUnavailable": "This Parent has no provisioned family. Family requests are unavailable.",
+    "chooseFamilyToLoad": "Choose a linked family above to load its requests.",
     "invalidAmount": "Enter a valid non-negative amount, e.g. 19.99.",
     "quoteIssued": "Quote issued.",
     "amountLabel": "Amount",

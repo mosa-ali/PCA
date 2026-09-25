@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { platformAdminApi, PlatformAdminApiError } from '../../api/platformAdminApiClient';
@@ -47,37 +47,38 @@ export default function ComplimentaryCapacity() {
   const [revokeReasonByGrant, setRevokeReasonByGrant] = useState<Record<string, string>>({});
   const [renewExpiresByGrant, setRenewExpiresByGrant] = useState<Record<string, string>>({});
   const [busyGrantId, setBusyGrantId] = useState<string | null>(null);
+  const requestSequence = useRef(0);
 
   const canMutate = isPermitted(roles, 'ADMINISTER_COMPLIMENTARY_GRANT');
   const canMutatePermanent = isPermitted(roles, 'ADMINISTER_COMPLIMENTARY_GRANT_PERMANENT');
 
   const load = (id: string) => {
     if (!id) return;
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
+    setGrants(null);
     platformAdminApi
       .get<{ items: ComplimentaryGrantDto[] }>(`/platform-admin/families/${encodeURIComponent(id)}/complimentary-grants`)
-      .then((result) => setGrants(result.items))
+      .then((result) => { if (sequence === requestSequence.current) setGrants(result.items); })
       .catch((err: unknown) => {
+        if (sequence !== requestSequence.current) return;
+        setGrants(null);
         setError(err instanceof PlatformAdminApiError ? t(`errors.${err.status}`, t('common.unexpectedError')) : t('common.unexpectedError'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (sequence === requestSequence.current) setLoading(false); });
   };
 
   useEffect(() => {
     if (familyId) load(familyId);
+    else {
+      requestSequence.current += 1;
+      setGrants(null);
+      setLoading(false);
+      setError(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId]);
-
-  const onSearch = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = familyIdInput.trim();
-    setFamilyId(trimmed);
-    const next = new URLSearchParams(searchParams);
-    if (trimmed) next.set('familyId', trimmed);
-    else next.delete('familyId');
-    setSearchParams(next);
-  };
 
   const effectiveDeviceCapacity = (grants ?? [])
     .filter((g) => g.entitlementType === 'MANAGED_DEVICE_CAPACITY' && g.status === 'ACTIVE')
@@ -181,9 +182,12 @@ export default function ComplimentaryCapacity() {
     <div className="page">
       <h2>{t('nav.complimentaryCapacity')}</h2>
 
-      <form className="filters" onSubmit={onSearch}>
-        <div>
-          <ParentEmailFamilyLookup id="complimentary-capacity" familyId={familyIdInput} onFamilyIdChange={(value) => {
+      <ParentEmailFamilyLookup id="complimentary-capacity" familyId={familyIdInput} showAccountSummary onLookupStart={() => {
+        requestSequence.current += 1;
+        setGrants(null);
+        setLoading(false);
+        setError(null);
+      }} onFamilyIdChange={(value) => {
             setFamilyIdInput(value);
             setFamilyId(value);
             const next = new URLSearchParams(searchParams);
@@ -191,11 +195,6 @@ export default function ComplimentaryCapacity() {
             else next.delete('familyId');
             setSearchParams(next);
           }} />
-        </div>
-        <button type="submit" className="btn btn-primary">
-          {t('entitlements.lookup')}
-        </button>
-      </form>
 
       {loading && <LoadingState />}
       {error && <ErrorState message={error} onRetry={() => load(familyId)} />}
