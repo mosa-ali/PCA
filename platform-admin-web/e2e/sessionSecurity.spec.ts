@@ -69,6 +69,9 @@ test.describe('session expiry / revocation', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
 
+    // Logout lives in the authenticated account disclosure alongside the
+    // aligned language/appearance controls; open it before locating the action.
+    await page.locator('details.account-menu > summary').click();
     await page.getByRole('button', { name: /log out/i }).click();
     await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
 

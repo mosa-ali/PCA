@@ -57,6 +57,8 @@ import { computeTotp, msUntilNextTotpWindow } from './support/totp';
  *        E2E_REAL_ADMIN_PASSWORD
  *        E2E_REAL_ADMIN_TOTP_SECRET (base32, from the bootstrap script's
  *          printed otpauth:// URI's `secret=` query parameter)
+ *        E2E_REAL_PARENT_EMAIL (verified Parent fixture with a provisioned
+ *          family, used by the real Parent-email entitlement lookup check)
  *        E2E_REAL_TEST_FAMILY_ID (optional -- a real families.family_id
  *          row that already exists in the database, e.g. from
  *          backend/scripts/seed-local.mjs's output. Only gates the
@@ -80,6 +82,10 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
   // navigation), exactly as a real operator's browser session would.
   const navigateTo = async (linkName: RegExp) => {
     await page.getByRole('link', { name: linkName }).click();
+  };
+  const navigateToWorkspace = async (workspaceName: RegExp, tabName: RegExp) => {
+    await navigateTo(workspaceName);
+    await page.getByRole('tab', { name: tabName }).click();
   };
 
   /**
@@ -128,10 +134,19 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await expect(page.getByText(/total accounts/i)).toBeVisible();
   });
 
-  await test.step('entitlements lookup for a family ID the real database has never explicitly provisioned auto-creates a real FREE_STARTER row (EntitlementService.getEntitlement -> getOrCreateForFamily) -- verified against real MySQL, not a client-side guess', async () => {
-    await navigateTo(/^entitlements$/i);
-    await page.getByLabel(/family id/i).fill('11111111-1111-1111-1111-111111111111');
-    await page.getByRole('button', { name: /look up/i }).click();
+  await test.step('Parent-email lookup distinguishes an unknown email and resolves a verified, provisioned Parent through real MySQL', async () => {
+    await navigateToWorkspace(/^enrollment management$/i, /^entitlements$/i);
+    const parentEmail = process.env.E2E_REAL_PARENT_EMAIL;
+    expect(parentEmail, 'real-backend Parent fixture is required for the Parent email lookup check').toBeTruthy();
+    const parentLookup = page.locator('.parent-email-lookup');
+    await parentLookup.getByLabel(/search by parent email/i).fill(`missing-${Date.now()}@pca.test`);
+    await parentLookup.getByRole('button', { name: /^search$/i }).click();
+    await expect(parentLookup.getByRole('status')).toContainText(/no parent account was found/i);
+    await expect(parentLookup.locator('select')).toHaveCount(0);
+
+    await parentLookup.getByLabel(/search by parent email/i).fill(parentEmail!);
+    await parentLookup.getByRole('button', { name: /^search$/i }).click();
+    await expect(parentLookup.getByRole('status')).toContainText(/an eligible family was found/i);
     await expect(page.getByRole('heading', { name: /entitlement overview/i })).toBeVisible();
     await expect(page.getByText('FREE_STARTER')).toBeVisible();
   });
@@ -188,7 +203,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     const familyId = process.env.E2E_REAL_TEST_FAMILY_ID;
     test.skip(!familyId, 'E2E_REAL_TEST_FAMILY_ID not set -- skipping the real suspend/reactivate check.');
 
-    await navigateTo(/^accounts$/i);
+    await navigateToWorkspace(/^enrollment management$/i, /^accounts$/i);
     await page.getByRole('link', { name: familyId! }).click();
     await expect(overviewCard().getByText('Active', { exact: true })).toBeVisible();
 
@@ -211,7 +226,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     // Navigate away and back to force a fresh GET, proving both mutations
     // actually persisted to MySQL rather than only local React state.
     await navigateTo(/^dashboard$/i);
-    await navigateTo(/^accounts$/i);
+    await navigateToWorkspace(/^enrollment management$/i, /^accounts$/i);
     await page.getByRole('link', { name: familyId! }).click();
     await expect(overviewCard().getByText('Active', { exact: true })).toBeVisible();
   });
@@ -263,7 +278,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
 
   await test.step('billing plan create + list round-trips through the real PlanService, and price-book publish round-trips exact money through real MySQL (no float drift)', async () => {
     const planCode = `e2e-real-plan-${Date.now()}`;
-    await navigateTo(/^plans$/i);
+    await navigateToWorkspace(/^commercial & pricing$/i, /^plans$/i);
     // The search form and the create-plan form both label a field "Plan
     // code" (same i18n key, by design -- BillingPlans.tsx) -- disambiguate
     // by id rather than relying on DOM order via .first()/.last().
@@ -285,7 +300,7 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     // Exact-money round trip: "19.99" must publish and redisplay as exactly
     // 19.99 -- not 19.989999999999998 (the classic parseFloat*100 failure
     // mode this app's money.ts is built to prevent).
-    await navigateTo(/^price book$/i);
+    await navigateToWorkspace(/^commercial & pricing$/i, /^price book$/i);
     await page.getByLabel(/target device limit/i).fill('5');
     await page.getByLabel(/amount/i).fill('19.99');
     await page.getByRole('button', { name: /^publish$/i }).click();
