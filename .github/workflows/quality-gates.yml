@@ -748,7 +748,7 @@ jobs:
               family.familyId,
               operator.email, operator.password, operator.totpSecretBase32,
             ]) {
-              if (value) process.stdout.write(`::add-mask::${value}\n`);
+              if (value) process.stdout.write('::add-mask::' + value + '\n');
             }
             fs.appendFileSync(process.env.GITHUB_ENV, [
               'E2E_REAL_PARENT_EMAIL=' + account.email,
