@@ -34,11 +34,10 @@ function totp(secret: string, at = Date.now()): { code: string; counter: number 
 async function currentTotp(secret: string): Promise<{ code: string; counter: number }> {
   // Leave a small margin at a 30-second boundary so the request cannot arrive
   // after this code has rolled out of the accepted TOTP window.
-  while (true) {
-    const result = totp(secret);
-    if (30_000 - (Date.now() % 30_000) > 3_000) return result;
+  while (30_000 - (Date.now() % 30_000) <= 3_000) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+  return totp(secret);
 }
 
 async function waitForNextTotpCounter(usedCounter: number): Promise<void> {

@@ -735,6 +735,21 @@ jobs:
             if (!mfa || !mfa.totpSecretBase32 || !mfa.familyId || mfa.dailyLoginGrant) {
               process.exit(1);
             }
+            // These credentials and tokens are generated for this disposable
+            // run rather than configured as GitHub Actions secrets, so register
+            // every sensitive value with the runner before placing any of them
+            // in GITHUB_ENV. This keeps debug output, Playwright diagnostics,
+            // and later step failures from exposing fixture passwords, TOTP
+            // secrets, daily-login grants, or account identifiers.
+            for (const value of [
+              account.email, account.password, account.dailyLoginGrant,
+              second.email, second.password, second.dailyLoginGrant,
+              mfa.email, mfa.password, mfa.totpSecretBase32, mfa.familyId,
+              family.familyId,
+              operator.email, operator.password, operator.totpSecretBase32,
+            ]) {
+              if (value) process.stdout.write(`::add-mask::${value}\n`);
+            }
             fs.appendFileSync(process.env.GITHUB_ENV, [
               'E2E_REAL_PARENT_EMAIL=' + account.email,
               'E2E_REAL_PARENT_PASSWORD=' + account.password,

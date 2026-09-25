@@ -1,4 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function confirmCommercialStepUp(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: 'Confirm with your authenticator app' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('textbox', { name: '6-digit authenticator code' }).fill('123456');
+  await dialog.getByRole('button', { name: 'Confirm' }).click();
+  await expect(dialog).toBeHidden();
+}
 
 // PCA-MYKIDS-BILL-1 (PCA_ADDENDUM_002 Section 18.1): the full parent
 // self-service commercial flow against a real browser + real dev-fixture
@@ -12,9 +20,15 @@ test.describe('Billing / subscription self-service (real browser)', () => {
     await expect(page.getByText('Price: Free')).toBeVisible();
   });
 
-  test('Administrator is blocked from the subscription route (Owner-only by default)', async ({ page }) => {
+  test('Administrator can view subscription and confirms TOTP before a commercial mutation', async ({ page }) => {
     await page.goto('/subscription?demoRole=ADMINISTRATOR');
-    await expect(page.getByRole('heading', { name: 'Action not permitted' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Subscription' })).toBeVisible();
+    await expect(page.getByText('Free Starter', { exact: true })).toBeVisible();
+
+    await page.goto('/subscription/increase-devices?demoRole=ADMINISTRATOR');
+    await page.getByRole('button', { name: '2 devices' }).click();
+    await confirmCommercialStepUp(page);
+    await expect(page.getByText('Quoted -- ready for payment')).toBeVisible();
   });
 
   test('Viewer is blocked from requesting a device increase', async ({ page }) => {
@@ -25,11 +39,13 @@ test.describe('Billing / subscription self-service (real browser)', () => {
   test('Owner requests a standard device increase, sees the exact price, pays, and the redirect page stays pending until the server confirms', async ({ page }) => {
     await page.goto('/subscription/increase-devices?demoRole=OWNER');
     await page.getByRole('button', { name: '2 devices' }).click();
+    await confirmCommercialStepUp(page);
 
     await expect(page.getByText('Quoted -- ready for payment')).toBeVisible();
     await expect(page.getByText('$4.99')).toBeVisible();
 
     await page.getByRole('button', { name: 'Proceed to payment' }).click();
+    await confirmCommercialStepUp(page);
 
     // Checkout handoff lands on the redirect page, which must show a
     // pending state -- never an immediate "approved" -- and only reflects
@@ -50,6 +66,7 @@ test.describe('Billing / subscription self-service (real browser)', () => {
     await page.goto('/subscription/increase-devices?demoRole=OWNER');
     await page.getByLabel('Or enter a custom total').fill('4');
     await page.getByRole('button', { name: 'Request this quantity' }).click();
+    await confirmCommercialStepUp(page);
 
     await expect(page.getByText('Pending quote review')).toBeVisible();
     await expect(page.getByText(/does not have a standard price/)).toBeVisible();
@@ -62,6 +79,7 @@ test.describe('Billing / subscription self-service (real browser)', () => {
 
     await page.getByLabel('New total parent-member limit').fill('2');
     await page.getByRole('button', { name: 'Submit request' }).click();
+    await confirmCommercialStepUp(page);
 
     await expect(page.getByText('Pending', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Proceed to payment' })).toHaveCount(0);
@@ -77,7 +95,9 @@ test.describe('Billing / subscription self-service (real browser)', () => {
     // one it later finds, not a coincidence of fixture defaults.
     await page.goto('/subscription/increase-devices?demoRole=OWNER');
     await page.getByRole('button', { name: '2 devices' }).click();
+    await confirmCommercialStepUp(page);
     await page.getByRole('button', { name: 'Proceed to payment' }).click();
+    await confirmCommercialStepUp(page);
     await expect(page.getByText('Approved')).toBeVisible({ timeout: 5000 });
 
     await page.getByRole('link', { name: 'Back' }).click();

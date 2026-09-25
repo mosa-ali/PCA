@@ -40,9 +40,9 @@ const password = requireEnv('E2E_REAL_PARENT_PASSWORD');
 // PCA-DEC-037: register -> verify -> first login (family provisioned, MFA grace started).
 const emailSender = createTestSandboxEmailSender();
 const service = createDisposableParentAccountService({ emailSender });
-const signedIn = await provisionSignedInParent({ service, emailSender, email, password });
+await provisionSignedInParent({ service, emailSender, email, password });
 
 console.log('Parent account created, verified and signed in for the configured E2E_REAL_PARENT_EMAIL.');
-console.log(`family provisioned: ${signedIn.familyId ? 'yes' : 'no'}; role: ${signedIn.role}`);
+console.log('Disposable Parent family provisioning completed.');
 
 await closePool();

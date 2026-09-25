@@ -26,12 +26,22 @@ const delay = (ms = DELAY_MS) => new Promise((r) => setTimeout(r, ms));
  */
 export const DEV_REJECTED_MFA_CODE = '000000';
 
-/**
- * A well-known PUBLIC example base32 value (RFC 4648 test vector style), not a
- * secret of any real account. It exists only so the fixture-mode setup page
- * has something to render.
- */
-const DEV_EXAMPLE_TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+let devTotpSecret: string | null = null;
+
+function getDevTotpSecret(): string {
+  if (devTotpSecret) return devTotpSecret;
+  const bytes = new Uint8Array(20);
+  globalThis.crypto.getRandomValues(bytes);
+  let bits = '';
+  for (const byte of bytes) bits += byte.toString(2).padStart(8, '0');
+  let encoded = '';
+  for (let offset = 0; offset < bits.length; offset += 5) {
+    encoded += BASE32_ALPHABET[Number.parseInt(bits.slice(offset, offset + 5).padEnd(5, '0'), 2)];
+  }
+  devTotpSecret = encoded;
+  return encoded;
+}
 
 function assertCodeAccepted(code: string): void {
   if (!/^\d{6}$/.test(code) || code === DEV_REJECTED_MFA_CODE) {
@@ -98,9 +108,10 @@ export class DevServiceAuthClient implements ServiceAuthClient {
   async startMfaEnrollment(email: string, _password: string): Promise<MfaEnrollmentStart> {
     await delay();
     const label = encodeURIComponent(`PCA:${email || 'dev'}`);
+    const secret = getDevTotpSecret();
     return {
-      otpauthUri: `otpauth://totp/${label}?secret=${DEV_EXAMPLE_TOTP_SECRET}&issuer=PCA&algorithm=SHA1&digits=6&period=30`,
-      secret: DEV_EXAMPLE_TOTP_SECRET,
+      otpauthUri: `otpauth://totp/${label}?secret=${secret}&issuer=PCA&algorithm=SHA1&digits=6&period=30`,
+      secret,
     };
   }
 
