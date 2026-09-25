@@ -63,11 +63,11 @@ describe('Commercial & Pricing tab shell', () => {
     const user = userEvent.setup();
     renderAt('/commercial-pricing?tab=free-access-policy');
 
-    await user.click(screen.getByRole('button', { name: 'Plans' }));
+    await user.click(screen.getByRole('tab', { name: 'Plans' }));
     expect(await screen.findByText('Plans panel')).toBeTruthy();
     expect(screen.getByLabelText('Current URL').textContent).toBe('/commercial-pricing?tab=plans');
 
-    await user.click(screen.getByRole('button', { name: 'Price Book' }));
+    await user.click(screen.getByRole('tab', { name: 'Price Book' }));
     expect(await screen.findByText('Price book panel')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
@@ -82,10 +82,10 @@ describe('Commercial & Pricing tab shell', () => {
 
     expect(await screen.findByText('Free access panel')).toBeTruthy();
     expect(screen.getByLabelText('Current URL').textContent).toBe('/commercial-pricing?tab=free-access-policy');
-    expect(screen.queryByRole('button', { name: 'Plans' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Price Book' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Free Access Policy' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Custom Quotes' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Plans' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Price Book' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Free Access Policy' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Custom Quotes' })).toBeTruthy();
   });
 
   it('renders no tabs when the identity has no allowed roles', async () => {
@@ -93,6 +93,17 @@ describe('Commercial & Pricing tab shell', () => {
     renderAt('/commercial-pricing?tab=plans');
 
     expect(await screen.findByText('Not permitted')).toBeTruthy();
-    expect(screen.queryByRole('navigation', { name: 'Commercial and pricing sections' })).toBeNull();
+    expect(screen.queryByRole('tablist', { name: 'Commercial and pricing sections' })).toBeNull();
+  });
+
+  it('exposes the selected tab and supports arrow-key navigation', async () => {
+    const user = userEvent.setup();
+    renderAt('/commercial-pricing?tab=free-access-policy');
+    const freeAccess = screen.getByRole('tab', { name: 'Free Access Policy' });
+    expect(freeAccess.getAttribute('aria-selected')).toBe('true');
+    await user.click(freeAccess);
+    await user.keyboard('{ArrowRight}');
+    expect(await screen.findByText('Plans panel')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Plans' }).getAttribute('aria-selected')).toBe('true');
   });
 });

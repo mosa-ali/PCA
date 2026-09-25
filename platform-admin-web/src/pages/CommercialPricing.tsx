@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import FreeAccessPolicy from './entitlements/FreeAccessPolicy';
@@ -22,6 +22,7 @@ export default function CommercialPricing() {
   const { t } = useTranslation();
   const roles = useCurrentRoles();
   const [searchParams, setSearchParams] = useSearchParams();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const requestedTab = searchParams.get('tab');
   const allowedTabs = COMMERCIAL_TABS.filter((tab) => tab.guard === 'billing'
     ? isBillingPermitted(roles, tab.operation as BillingOperation)
@@ -39,6 +40,25 @@ export default function CommercialPricing() {
     }
   }, [activeTabId, requestedTab, searchParams, setSearchParams]);
 
+  const selectTab = (tabId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tabId);
+    setSearchParams(next);
+  };
+
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % allowedTabs.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + allowedTabs.length) % allowedTabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = allowedTabs.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = allowedTabs[nextIndex];
+    selectTab(nextTab.id);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
   if (!activeTab) {
     return <div className="page"><p className="status-unavailable">{t('notPermitted.title')}</p></div>;
   }
@@ -48,25 +68,26 @@ export default function CommercialPricing() {
   return (
     <div className="page">
       <h1>{t('commercialPricing.title', 'Commercial & Pricing')}</h1>
-      <nav className="filters" aria-label={t('commercialPricing.tabsLabel', 'Commercial and pricing sections')}>
-        {allowedTabs.map((tab) => (
+      <div className="filters" role="tablist" aria-label={t('commercialPricing.tabsLabel', 'Commercial and pricing sections')}>
+        {allowedTabs.map((tab, index) => (
           <button
             key={tab.id}
+            ref={(element) => { tabRefs.current[index] = element; }}
             type="button"
+            role="tab"
+            id={`commercial-pricing-tab-${tab.id}`}
+            aria-selected={tab.id === activeTab.id}
             className={tab.id === activeTab.id ? 'btn btn-primary' : 'btn'}
-            aria-current={tab.id === activeTab.id ? 'page' : undefined}
             aria-controls="commercial-pricing-panel"
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.set('tab', tab.id);
-              setSearchParams(next);
-            }}
+            tabIndex={tab.id === activeTab.id ? 0 : -1}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => onTabKeyDown(event, index)}
           >
             {t(tab.label)}
           </button>
         ))}
-      </nav>
-      <section id="commercial-pricing-panel" className="workspace-page-panel" aria-label={t(activeTab.label)}>
+      </div>
+      <section id="commercial-pricing-panel" className="workspace-page-panel" role="tabpanel" aria-labelledby={`commercial-pricing-tab-${activeTab.id}`} tabIndex={0}>
         {activeTab.guard === 'billing' ? (
           <BillingRouteGuard operation={activeTab.operation as BillingOperation}>
             <ActivePage />
