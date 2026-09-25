@@ -60,7 +60,10 @@ export default function Entitlements() {
     e.preventDefault();
     const trimmed = familyIdInput.trim();
     setFamilyId(trimmed);
-    setSearchParams(trimmed ? { familyId: trimmed } : {});
+    const next = new URLSearchParams(searchParams);
+    if (trimmed) next.set('familyId', trimmed);
+    else next.delete('familyId');
+    setSearchParams(next);
   };
 
   const onSetLimit = async (e?: FormEvent) => {
@@ -135,7 +138,14 @@ export default function Entitlements() {
 
       <form className="filters" onSubmit={onSearch}>
         <div>
-          <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} onFamilyIdChange={(value) => { setFamilyIdInput(value); setFamilyId(value); setSearchParams(value ? { familyId: value } : {}); }} />
+          <ParentEmailFamilyLookup id="entitlements" familyId={familyIdInput} onFamilyIdChange={(value) => {
+            setFamilyIdInput(value);
+            setFamilyId(value);
+            const next = new URLSearchParams(searchParams);
+            if (value) next.set('familyId', value);
+            else next.delete('familyId');
+            setSearchParams(next);
+          }} />
         </div>
         <button type="submit" className="btn btn-primary">
           {t('entitlements.lookup')}

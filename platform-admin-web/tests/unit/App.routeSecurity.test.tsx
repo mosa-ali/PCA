@@ -87,9 +87,9 @@ describe('route security (mission Section 24)', () => {
       );
       renderAppAt('/billing/plans');
       await waitFor(() => expect(screen.queryByRole('heading', { name: /not permitted/i })).not.toBeInTheDocument());
-      // level: 1 disambiguates the page's own <h1> from the "All plans"
-      // browse-table <h2> BillingPlans.tsx also renders (both match /plans/i).
-      expect(await screen.findByRole('heading', { name: /plans/i, level: 1 })).toBeInTheDocument();
+      // Legacy plan URLs now open the Plans tab inside Commercial & Pricing.
+      expect(await screen.findByRole('heading', { name: /commercial & pricing/i, level: 1 })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^plans$/i })).toHaveAttribute('aria-current', 'page');
     });
 
     it('SUPPORT_ADMIN is redirected away from finance/billing access', async () => {

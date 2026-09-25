@@ -97,4 +97,14 @@ describe('EnrollmentManagement tabs', () => {
     expect(screen.getByRole('tab', { name: 'Accounts' })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getByLabelText('current location')).toHaveTextContent('/enrollment?keep=1&tab=accounts'));
   });
+
+  it('keeps the selected tab and unrelated query state when a nested page applies filters', async () => {
+    const user = userEvent.setup();
+    renderPage('/enrollment?keep=1&tab=requests');
+
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    expect(screen.getByRole('tab', { name: 'Entitlement Requests' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('current location')).toHaveTextContent('/enrollment?keep=1&tab=requests');
+  });
 });

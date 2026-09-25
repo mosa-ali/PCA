@@ -176,6 +176,7 @@
     "parentEmailPlaceholder": "parent@example.com",
     "parentEmailInvalid": "Enter a valid Parent email address.",
     "parentEmailNoFamilies": "No eligible family accounts were found for this email.",
+    "parentEmailEligibleFamily": "An eligible family was found.",
     "parentEmailNotFound": "No Parent account was found for this email.",
     "parentEmailReasons": {
       "ACCOUNT_SUSPENDED": "The Parent account or its family is suspended.",

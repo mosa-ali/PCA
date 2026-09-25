@@ -9,6 +9,12 @@ export type ParentEmailIneligibleReason =
   | 'OTHER_APPROVED_REASON';
 
 export type ParentEmailFamilyLookupResult =
+  // This resolver deliberately addresses the Parent identity domain only.
+  // `parent_accounts` has no account-class discriminator: its rows are Parents
+  // by construction. Other identity domains (notably Platform Admin) have
+  // separate tables and security boundaries. Probing those tables here would
+  // disclose cross-domain account existence, so an email with no Parent row
+  // is reported as ACCOUNT_NOT_FOUND rather than WRONG_ACCOUNT_CLASS.
   | { readonly outcome: 'ACCOUNT_NOT_FOUND' }
   | {
       readonly outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE';

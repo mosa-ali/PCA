@@ -5,7 +5,7 @@ import type { SettlementOperation } from '../domain/settlement';
 export interface NavItem {
   path: string;
   labelKey: string;
-  /** Item is hidden from the nav (not merely styled differently) when the current admin has none of these operations. Route-level enforcement still happens independently via RouteGuard/RBAC on the page itself. Exactly one of `operation`/`billingOperation`/`settlementOperation` is set per item -- billing/settlement views use their own finer-grained vocabularies (backend/src/billing/rbac.ts, backend/src/platformadmin/auth/rbacPolicy.ts's VIEW_SETTLEMENT_RECORDS family), everything else uses platformadmin/auth/rbacPolicy.ts's coarser vocabulary. */
+  /** Item is hidden when the admin has none of its permission requirements. A simple item uses one operation field; a consolidated item may use `anyOf` across permission domains. Route-level enforcement remains independent on the page. */
   operation?: PlatformAdminOperation;
   billingOperation?: BillingOperation;
   settlementOperation?: SettlementOperation;

@@ -175,7 +175,7 @@ test('no test file is executed twice by `npm test`', () => {
 });
 
 // The DB suite has exactly the same orphan hole -- its file list is inlined in
-// package.json's "test:db" script string. It is in sync today (51/51); this
+// package.json's "test:db" script string. It is in sync today (52/52); this
 // keeps it that way. `npm run test:db` needs a MySQL instance and so is not run
 // by this suite, but the REGISTRATION check needs no database at all.
 test('every DB-backed test file on disk is executed by `npm run test:db`', () => {

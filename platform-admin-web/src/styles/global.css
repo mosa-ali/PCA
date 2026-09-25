@@ -566,12 +566,15 @@ select {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   border-block-end: 1px solid var(--border);
   margin-block-end: 1rem;
 }
 
 .tab-btn {
+  min-width: 0;
+  max-width: 100%;
   background: none;
   border: none;
   border-block-end: 3px solid transparent;
@@ -579,6 +582,10 @@ select {
   padding: 0.5rem 0.9rem;
   cursor: pointer;
   font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-align: start;
+  white-space: normal;
 }
 
 .tab-btn.active {

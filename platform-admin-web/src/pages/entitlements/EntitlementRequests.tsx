@@ -156,7 +156,10 @@ export default function EntitlementRequests() {
   const onFilterSubmit = (e: FormEvent) => {
     e.preventDefault();
     setOffset(0);
-    setSearchParams(familyIdFilter ? { familyId: familyIdFilter } : {});
+    const next = new URLSearchParams(searchParams);
+    if (familyIdFilter) next.set('familyId', familyIdFilter);
+    else next.delete('familyId');
+    setSearchParams(next);
     load();
   };
 

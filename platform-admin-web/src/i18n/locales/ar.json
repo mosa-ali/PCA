@@ -176,6 +176,7 @@
     "parentEmailPlaceholder": "parent@example.com",
     "parentEmailInvalid": "أدخل عنوان بريد إلكتروني صالحًا لولي الأمر.",
     "parentEmailNoFamilies": "لم يتم العثور على حسابات أسر مرتبطة بهذا البريد.",
+    "parentEmailEligibleFamily": "تم العثور على أسرة مؤهلة.",
     "parentEmailNotFound": "لم يتم العثور على حساب ولي أمر بهذا البريد الإلكتروني.",
     "parentEmailReasons": {
       "ACCOUNT_SUSPENDED": "حساب ولي الأمر أو أسرته معلّق.",

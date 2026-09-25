@@ -73,7 +73,10 @@ export default function ComplimentaryCapacity() {
     e.preventDefault();
     const trimmed = familyIdInput.trim();
     setFamilyId(trimmed);
-    setSearchParams(trimmed ? { familyId: trimmed } : {});
+    const next = new URLSearchParams(searchParams);
+    if (trimmed) next.set('familyId', trimmed);
+    else next.delete('familyId');
+    setSearchParams(next);
   };
 
   const effectiveDeviceCapacity = (grants ?? [])
@@ -180,7 +183,14 @@ export default function ComplimentaryCapacity() {
 
       <form className="filters" onSubmit={onSearch}>
         <div>
-          <ParentEmailFamilyLookup id="complimentary-capacity" familyId={familyIdInput} onFamilyIdChange={(value) => { setFamilyIdInput(value); setFamilyId(value); setSearchParams(value ? { familyId: value } : {}); }} />
+          <ParentEmailFamilyLookup id="complimentary-capacity" familyId={familyIdInput} onFamilyIdChange={(value) => {
+            setFamilyIdInput(value);
+            setFamilyId(value);
+            const next = new URLSearchParams(searchParams);
+            if (value) next.set('familyId', value);
+            else next.delete('familyId');
+            setSearchParams(next);
+          }} />
         </div>
         <button type="submit" className="btn btn-primary">
           {t('entitlements.lookup')}

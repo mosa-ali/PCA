@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyParentEmailFamilyLookup } from '../../dist/platformadmin/accounts/ParentEmailFamilyLookup.js';
+import { hashParentEmail } from '../../dist/parentaccount/emailHash.js';
 
 const activeParent = { status: 'VERIFIED', disabledAt: null };
 const activeFamily = (familyId, alreadyEntitled = false) => ({
@@ -8,6 +9,13 @@ const activeFamily = (familyId, alreadyEntitled = false) => ({
   status: 'ACTIVE',
   deletedAt: null,
   alreadyEntitled,
+});
+
+test('Parent lookup email hashing trims surrounding whitespace and ignores case', () => {
+  assert.deepEqual(
+    hashParentEmail('  Mosamali2050@Gmail.com  '),
+    hashParentEmail('mosamali2050@gmail.com'),
+  );
 });
 
 test('classifies a missing normalized Parent account without returning family identifiers', () => {

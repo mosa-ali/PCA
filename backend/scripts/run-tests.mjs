@@ -151,6 +151,7 @@ const files = [
   "test/platformadmin/auditTypes.test.mjs",
   "test/platformadmin/authService.test.mjs",
   "test/platformadmin/accountService.test.mjs",
+  "test/platformadmin/parentEmailFamilyLookup.test.mjs",
   "test/platformadmin/activation.test.mjs",
   "test/platformadmin/activationDiagnostics.test.mjs",
   "test/platformadmin/bootstrapPlatformOwner.test.mjs",

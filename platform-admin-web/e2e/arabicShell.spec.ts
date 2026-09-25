@@ -33,9 +33,21 @@ test.describe('Arabic / RTL shell', () => {
     await page.getByLabel('رمز المصادقة').fill('123456');
     await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
 
-    await expect(page.getByRole('heading', { name: 'لوحة التحكم' })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.getByRole('link', { name: 'إدارة التسجيل والاستحقاقات' })).toBeVisible();
+    const enrollmentLink = page.getByRole('link', { name: 'إدارة التسجيل والاستحقاقات' });
+    await expect(enrollmentLink).toBeVisible();
     await expect(page.getByRole('link', { name: 'الحسابات' })).toHaveCount(0);
+    await enrollmentLink.click();
+    await expect(page.getByRole('heading', { name: 'إدارة التسجيل والاستحقاقات' })).toBeVisible();
+    for (const name of ['الحسابات', 'الاستحقاقات', 'طلبات الاستحقاق', 'السعة المجانية']) {
+      await expect(page.getByRole('tab', { name })).toBeVisible();
+    }
+
+    for (const width of [375, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.getByRole('tab', { name: 'الحسابات' })).toBeVisible();
+      const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(documentWidth, `Arabic shell should not overflow horizontally at ${width}px`).toBeLessThanOrEqual(width);
+    }
   });
 });

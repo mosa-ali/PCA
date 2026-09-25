@@ -118,9 +118,12 @@ test('real backend: an operator session exercises login/MFA, dashboard, entitlem
     await page.getByRole('button', { name: /sign in/i }).click();
 
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
-    // whoami's real role grant (translated "App Owner") renders on the
-    // identity card -- only true against a real server round trip.
-    await expect(page.getByText(/app owner/i).first()).toBeVisible();
+    // whoami's real role grant is disclosed from the administrator menu --
+    // only true against a real server round trip.
+    const accountMenu = page.locator('summary.account-menu-trigger');
+    await accountMenu.click();
+    await expect(page.locator('.account-menu-panel').getByText(/app owner/i).first()).toBeVisible();
+    await accountMenu.click();
     // Live DashboardReadModel snapshot rendered from the real read-model route.
     await expect(page.getByText(/total accounts/i)).toBeVisible();
   });

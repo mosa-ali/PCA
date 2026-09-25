@@ -4,7 +4,11 @@ import { platformAdminApi } from '../../api/platformAdminApiClient';
 
 type ParentEmailLookupResult =
   | { outcome: 'ACCOUNT_NOT_FOUND' }
-  | { outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE'; reason: string; familyIds: string[] }
+  | {
+      outcome: 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE';
+      reason: 'EMAIL_NOT_VERIFIED' | 'ACCOUNT_SUSPENDED' | 'FAMILY_NOT_PROVISIONED' | 'ALREADY_ENTITLED' | 'OTHER_APPROVED_REASON';
+      familyIds: string[];
+    }
   | { outcome: 'ELIGIBLE_FAMILY_FOUND'; familyIds: string[] };
 
 export function ParentEmailFamilyLookup({ id, familyId, onFamilyIdChange, includeDeleted = false }: {
@@ -39,7 +43,7 @@ export function ParentEmailFamilyLookup({ id, familyId, onFamilyIdChange, includ
       } else if (result.outcome === 'ACCOUNT_FOUND_BUT_NOT_ELIGIBLE') {
         setMessage(t(`accounts.parentEmailReasons.${result.reason}`, t('accounts.parentEmailNoFamilies')));
       } else {
-        setMessage('');
+        setMessage(t('accounts.parentEmailEligibleFamily'));
       }
     } catch {
       setFamilyIds([]);
